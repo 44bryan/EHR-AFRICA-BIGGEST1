@@ -1,0 +1,41 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Laboratory{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Laboratory Orders</h1>
+</div>
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2">
+      <div class="col-md-4"><select name="status" class="form-select form-select-sm"><option value="">All Statuses</option>{% for code, label in status_choices %}<option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm w-100">Filter</button></div>
+    </form>
+  </div>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr><th>Patient</th><th>Tests</th><th>Urgency</th><th>Ordered By</th><th>Date</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for order in orders %}
+          <tr>
+            <td><div class="fw-semibold">{{ order.patient.full_name }}</div><div class="text-muted small">{{ order.patient.patient_id }}</div></td>
+            <td class="small">{{ order.items.count }} test(s)</td>
+            <td><span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span></td>
+            <td class="small">{{ order.ordered_by.full_name }}</td>
+            <td class="small">{{ order.created_at|date:"d M Y" }}</td>
+            <td><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ order.get_status_display }}</span></td>
+            <td><a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No lab orders found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

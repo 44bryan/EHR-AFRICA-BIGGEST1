@@ -1,0 +1,159 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Edit Consultation — {{ consultation.patient.full_name }}{% endblock %}
+
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=consultation.patient %}
+{% endblock %}
+
+{% block content %}
+
+{% with dept_code=consultation.department.code %}
+
+<form method="post" id="consultationForm">
+{% csrf_token %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-semibold mb-0"><i class="bi bi-pencil me-2 text-primary"></i>Edit Consultation</h5>
+  <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+<div class="row g-3">
+
+  <!-- ═══════ SECTION 1: HISTORY ═══════ -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-uppercase text-primary">
+          <i class="bi bi-journal-text me-1"></i>History
+        </h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Department</label>
+            {{ form.department }}
+          </div>
+          <div class="col-md-8">
+            <label class="form-label fw-semibold small">Chief Complaint <span class="text-danger">*</span></label>
+            {{ form.presenting_complaint }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">History of Presenting Complaint</label>
+            {{ form.history_of_presenting_complaint }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Ocular History</label>
+            {{ form.ocular_history }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Systemic History</label>
+            {{ form.systemic_history }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Drug History</label>
+            {{ form.drug_history }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Family History</label>
+            {{ form.family_history }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Social History</label>
+            {{ form.social_history }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ SECTION 2: CLINICAL EXAMINATION ═══════ -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-success bg-opacity-10 border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-uppercase text-success">
+          <i class="bi bi-clipboard2-heart me-1"></i>Clinical Examination — {{ consultation.department.name }}
+        </h6>
+      </div>
+      <div class="card-body">
+        {% if dept_code == 'GEN_OPH' %}
+          {% include 'consultations/clinical/_gen_oph_form.html' %}
+        {% elif dept_code == 'RETINA' %}
+          {% include 'consultations/clinical/_retina_form.html' %}
+        {% elif dept_code == 'GLAUC' or dept_code == 'GLAUCOMA' %}
+          {% include 'consultations/clinical/_glaucoma_form.html' %}
+        {% elif dept_code == 'REFRAC' %}
+          {% include 'consultations/clinical/_refraction_form.html' %}
+        {% elif dept_code == 'PEDS' or dept_code == 'PEDS_OPH' %}
+          {% include 'consultations/clinical/_pediatric_form.html' %}
+        {% elif dept_code == 'CORNEA' %}
+          {% include 'consultations/clinical/_cornea_form.html' %}
+        {% elif dept_code == 'OCULOPLASTY' %}
+          {% include 'consultations/clinical/_oculoplastics_form.html' %}
+        {% elif dept_code == 'NEURO_OPH' %}
+          {% include 'consultations/clinical/_neuro_oph_form.html' %}
+        {% elif dept_code == 'CATARACT' %}
+          {% include 'consultations/clinical/_cataract_form.html' %}
+        {% else %}
+          {% include 'consultations/clinical/_gen_oph_form.html' %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ SECTION 3: MANAGEMENT ═══════ -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-warning bg-opacity-10 border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-uppercase text-warning">
+          <i class="bi bi-clipboard2-check me-1"></i>Management &amp; Plan
+        </h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold small">Management Plan</label>
+            {{ form.management_plan }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Follow-up Date</label>
+            {{ form.follow_up_date }}
+          </div>
+          <div class="col-md-5">
+            <label class="form-label fw-semibold small">Follow-up Instructions</label>
+            {{ form.follow_up_instructions }}
+          </div>
+          <div class="col-md-4"></div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Refer to Department</label>
+            {{ form.referral_department }}
+          </div>
+          <div class="col-md-5">
+            <label class="form-label fw-semibold small">Referral Reason</label>
+            {{ form.referral_reason }}
+          </div>
+        </div>
+
+        {% if form.errors %}
+        <div class="alert alert-danger mt-3">
+          {% for field, errors in form.errors.items %}{% for error in errors %}<div>{{ field }}: {{ error }}</div>{% endfor %}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2 justify-content-end mt-3 pt-3 border-top">
+          <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-secondary">Cancel</a>
+          <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-save me-1"></i>Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /row -->
+</form>
+
+{% endwith %}
+{% endblock %}

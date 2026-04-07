@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 10pt; color: #1a1a1a; }
+  .letterhead { border-bottom: 3px solid #0d6efd; padding-bottom: 12px; margin-bottom: 16px; }
+  .hospital-name { font-size: 18pt; font-weight: bold; color: #0d6efd; }
+  .hospital-info { font-size: 8pt; color: #666; }
+  .report-title { background: #0d6efd; color: white; padding: 8px 12px; font-size: 12pt; font-weight: bold; margin-bottom: 16px; }
+  .patient-bar { background: #f8f9fa; border-left: 4px solid #0d6efd; padding: 10px 12px; margin-bottom: 16px; }
+  .meta-grid { display: flex; gap: 30px; flex-wrap: wrap; }
+  .meta-item { font-size: 9pt; }
+  .meta-label { font-weight: 600; color: #444; margin-right: 4px; }
+  .section { margin-bottom: 14px; }
+  .section-title { font-size: 9pt; font-weight: bold; text-transform: uppercase; color: #0d6efd; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin-bottom: 8px; }
+  .field-row { display: flex; margin-bottom: 4px; }
+  .field-label { font-weight: 600; width: 180px; flex-shrink: 0; color: #444; }
+  .field-value { flex-grow: 1; }
+  .result-box { background: #f0f8ff; border: 1px solid #bee5eb; border-radius: 4px; padding: 12px; margin-bottom: 8px; }
+  .result-data-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .result-data-table th { background: #e9ecef; padding: 5px 8px; text-align: left; font-weight: 600; }
+  .result-data-table td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; }
+  .result-data-table tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 8pt; font-weight: 600; }
+  .badge-normal { background: #d4edda; color: #155724; }
+  .badge-abnormal { background: #f8d7da; color: #721c24; }
+  .badge-urgent { background: #fff3cd; color: #856404; }
+  .interp-box { background: #fff8e1; border-left: 3px solid #ffc107; padding: 10px 12px; margin-top: 8px; }
+  .verified-stamp { background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; padding: 6px 12px; font-size: 9pt; color: #155724; margin-top: 8px; }
+  .footer { border-top: 1px solid #dee2e6; margin-top: 20px; padding-top: 8px; font-size: 8pt; color: #888; }
+  .signature-line { border-top: 1px solid #1a1a1a; width: 200px; margin-top: 30px; padding-top: 4px; font-size: 8pt; }
+  @page { margin: 1.5cm 1.8cm; size: A4; }
+</style>
+</head>
+<body>
+
+<!-- Letterhead -->
+<div class="letterhead">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div class="hospital-name">{{ hospital_name }}</div>
+      <div class="hospital-info">{{ hospital_address }}</div>
+      <div class="hospital-info">Tel: {{ hospital_phone }}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="hospital-info"><strong>Eye Specialist Hospital</strong></div>
+      <div class="hospital-info">Confidential Medical Record</div>
+    </div>
+  </div>
+</div>
+
+<div class="report-title">
+  INVESTIGATION REPORT — {{ order.investigation_type.name|upper }}
+</div>
+
+<!-- Patient Bar -->
+<div class="patient-bar">
+  <div class="meta-grid">
+    <div class="meta-item"><span class="meta-label">Patient:</span>{{ patient.full_name }}</div>
+    <div class="meta-item"><span class="meta-label">ID:</span>{{ patient.patient_id }}</div>
+    <div class="meta-item"><span class="meta-label">Age / Sex:</span>{{ patient.age_display }} / {{ patient.get_gender_display }}</div>
+    <div class="meta-item"><span class="meta-label">Ordered:</span>{{ order.created_at|date:"d M Y H:i" }}</div>
+    {% if result %}
+    <div class="meta-item"><span class="meta-label">Reported:</span>{{ result.result_date|date:"d M Y H:i" }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Order Details -->
+<div class="section">
+  <div class="section-title">Investigation Details</div>
+  <div class="field-row">
+    <span class="field-label">Investigation:</span>
+    <span class="field-value"><strong>{{ order.investigation_type.name }}</strong> ({{ order.investigation_type.code }})</span>
+  </div>
+  <div class="field-row">
+    <span class="field-label">Category:</span>
+    <span class="field-value">{{ order.investigation_type.get_category_display }}</span>
+  </div>
+  <div class="field-row">
+    <span class="field-label">Eye(s):</span>
+    <span class="field-value">{{ order.get_eye_display }}</span>
+  </div>
+  <div class="field-row">
+    <span class="field-label">Urgency:</span>
+    <span class="field-value">
+      {% if order.urgency == 'EMERGENCY' %}
+      <span class="badge badge-abnormal">Emergency</span>
+      {% elif order.urgency == 'URGENT' %}
+      <span class="badge badge-urgent">Urgent</span>
+      {% else %}
+      Routine
+      {% endif %}
+    </span>
+  </div>
+  <div class="field-row">
+    <span class="field-label">Clinical Indication:</span>
+    <span class="field-value">{{ order.clinical_indication }}</span>
+  </div>
+  <div class="field-row">
+    <span class="field-label">Ordered by:</span>
+    <span class="field-value">Dr. {{ order.ordered_by.full_name|default:"—" }}</span>
+  </div>
+  {% if order.notes %}
+  <div class="field-row">
+    <span class="field-label">Notes:</span>
+    <span class="field-value">{{ order.notes }}</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Result -->
+{% if result %}
+<div class="section">
+  <div class="section-title">
+    Result
+    {% if result.is_normal is not None %}
+    &nbsp;
+    {% if result.is_normal %}
+    <span class="badge badge-normal">Normal</span>
+    {% else %}
+    <span class="badge badge-abnormal">Abnormal</span>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  {% if result.result_data %}
+  <div class="result-box">
+    <table class="result-data-table">
+      <thead>
+        <tr><th style="width:40%;">Parameter</th><th>Value</th></tr>
+      </thead>
+      <tbody>
+        {% for key, value in result.result_data.items %}
+        <tr>
+          <td>{{ key|title|cut:"_" }}</td>
+          <td><strong>{{ value }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if result.interpretation %}
+  <div class="interp-box">
+    <strong>Interpretation:</strong><br>
+    {{ result.interpretation|linebreaksbr }}
+  </div>
+  {% endif %}
+
+  {% if result.is_verified %}
+  <div class="verified-stamp">
+    <i>&#10003;</i> Verified by Dr. {{ result.verified_by.full_name|default:"—" }}
+    {% if result.verified_at %} on {{ result.verified_at|date:"d M Y H:i" }}{% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Performed by -->
+  <div style="margin-top:8px;">
+    <div class="field-row">
+      <span class="field-label">Performed by:</span>
+      <span class="field-value">{{ result.performed_by.full_name|default:"—" }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- Signature -->
+<div style="margin-top:20px;">
+  <div class="signature-line">
+    {% if result.verified_by %}Dr. {{ result.verified_by.full_name }}{% elif result.performed_by %}{{ result.performed_by.full_name }}{% endif %}<br>
+    Investigation Unit<br>
+    {{ result.result_date|date:"d M Y" }}
+  </div>
+</div>
+
+{% else %}
+<div class="section">
+  <div class="result-box" style="background:#fff3cd;border-color:#ffeeba;">
+    <strong>Pending:</strong> Results not yet available for this investigation.
+    Current status: <strong>{{ order.get_status_display }}</strong>
+  </div>
+</div>
+{% endif %}
+
+<div class="footer">
+  Generated: {% now "d M Y H:i" %} &middot; {{ hospital_name }} &middot; This is a confidential medical document.
+</div>
+
+</body>
+</html>

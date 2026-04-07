@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Georgia", "Times New Roman", serif; font-size: 11pt; color: #1a1a1a; }
+  .outer-border { border: 3px double #0d6efd; padding: 20px; min-height: 85vh; position: relative; }
+  .letterhead { border-bottom: 2px solid #0d6efd; padding-bottom: 12px; margin-bottom: 20px; text-align: center; }
+  .hospital-name { font-size: 18pt; font-weight: bold; color: #0d6efd; letter-spacing: 1px; }
+  .hospital-sub { font-size: 9pt; color: #444; margin-top: 4px; }
+  .cert-title { font-size: 15pt; font-weight: bold; text-align: center; text-transform: uppercase;
+                letter-spacing: 2px; margin: 20px 0; color: #0d6efd; border-top: 1px solid #ccc;
+                border-bottom: 1px solid #ccc; padding: 10px 0; }
+  .cert-number { font-size: 8pt; color: #888; text-align: right; margin-bottom: 16px; }
+  .body-text { font-size: 11pt; line-height: 1.9; }
+  .underline-field { display: inline-block; border-bottom: 1px solid #333; min-width: 180px;
+                     font-weight: bold; padding: 0 4px; }
+  .stamp-area { margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .signature-block { text-align: center; }
+  .signature-line { border-top: 1px solid #333; width: 220px; margin: 30px auto 0; padding-top: 6px; font-size: 9pt; }
+  .stamp-circle { width: 90px; height: 90px; border: 2px dashed #aaa; border-radius: 50%;
+                  display: flex; align-items: center; justify-content: center;
+                  font-size: 7pt; color: #aaa; text-align: center; line-height: 1.3; }
+  .footer { font-size: 7.5pt; color: #888; text-align: center; margin-top: 30px;
+            border-top: 1px solid #eee; padding-top: 8px; }
+  .confidential-banner { font-size: 7pt; letter-spacing: 3px; text-align: center;
+                          color: #bbb; text-transform: uppercase; margin-bottom: 4px; }
+  @page { margin: 1.8cm 2cm; size: A4; }
+</style>
+</head>
+<body>
+<div class="outer-border">
+
+<div class="confidential-banner">Confidential Medical Document</div>
+
+<!-- Letterhead -->
+<div class="letterhead">
+  <div class="hospital-name">{{ hospital_name }}</div>
+  <div class="hospital-sub">{{ hospital_address }} &nbsp;|&nbsp; Tel: {{ hospital_phone }}</div>
+  {% if hospital_reg %}<div class="hospital-sub">Reg. No: {{ hospital_reg }}</div>{% endif %}
+</div>
+
+<!-- Certificate Title -->
+<div class="cert-title">
+  {% if cert_type == 'SICK_NOTE' %}Medical Certificate / Sick Note
+  {% elif cert_type == 'FITNESS' %}Certificate of Fitness
+  {% elif cert_type == 'SCHOOL' %}School Absence Certificate
+  {% else %}Medical Certificate
+  {% endif %}
+</div>
+
+<div class="cert-number">Ref: CERT/{{ issue_date|date:"Ymd" }}/{{ patient.patient_id }}</div>
+
+<!-- Body -->
+<div class="body-text">
+  <p>This is to certify that:</p>
+  <br>
+  <p>
+    <strong>Name:</strong> <span class="underline-field">{{ patient.full_name }}</span>
+    &nbsp;&nbsp;
+    <strong>Date of Birth:</strong> <span class="underline-field">{{ patient.date_of_birth|date:"d M Y"|default:"—" }}</span>
+  </p>
+  <br>
+  <p>
+    <strong>Patient ID:</strong> <span class="underline-field">{{ patient.patient_id }}</span>
+    &nbsp;&nbsp;
+    <strong>Gender:</strong> <span class="underline-field">{{ patient.get_gender_display }}</span>
+  </p>
+  <br>
+
+  {% if cert_type == 'FITNESS' %}
+  <p>
+    Was examined at this facility on
+    <span class="underline-field">{{ consult.consultation_date|date:"d M Y" }}</span>
+    and is hereby certified as:
+  </p>
+  <br>
+  <p style="font-size:12pt; font-weight:bold; text-align:center; padding: 10px; border: 1px solid #0d6efd; border-radius:4px;">
+    {{ fitness_note|default:"Fit to resume normal duties" }}
+  </p>
+
+  {% else %}
+  <p>
+    Was examined at this facility on
+    <span class="underline-field">{{ consult.consultation_date|date:"d M Y" }}</span>
+    and was found to be unfit for
+    {% if cert_type == 'SCHOOL' %}school attendance{% else %}normal duties / activities{% endif %}
+    due to illness.
+  </p>
+  <br>
+  {% if diagnosis_text %}
+  <p><strong>Diagnosis:</strong> <span class="underline-field">{{ diagnosis_text }}</span></p>
+  <br>
+  {% endif %}
+  <p>
+    It is recommended that
+    {% if cert_type == 'SCHOOL' %}the student{% else %}the patient{% endif %}
+    be granted
+    {% if days_off %}
+    <span class="underline-field">{{ days_off }} day(s)</span>
+    {% else %}
+    a period
+    {% endif %}
+    of medical leave / rest
+    {% if date_from and date_to %}
+    from <span class="underline-field">{{ date_from }}</span>
+    to <span class="underline-field">{{ date_to }}</span> (inclusive).
+    {% else %}
+    as clinically indicated.
+    {% endif %}
+  </p>
+  {% endif %}
+
+  <br>
+  <p>This certificate is issued in good faith based on the clinical assessment performed on the above date.</p>
+  <br>
+  <p><strong>Date of Issue:</strong> <span class="underline-field">{{ issue_date|date:"d M Y" }}</span></p>
+</div>
+
+<!-- Signature & Stamp -->
+<div class="stamp-area">
+  <div class="signature-block">
+    <div class="signature-line">
+      Dr. {{ doctor.full_name|default:"Attending Doctor" }}<br>
+      {% if doctor.specialization %}{{ doctor.specialization }}<br>{% endif %}
+      {{ hospital_name }}
+    </div>
+  </div>
+  <div class="stamp-circle">Official<br>Stamp</div>
+</div>
+
+<div class="footer">
+  This document was generated by {{ hospital_name }} on {{ issue_date|date:"d M Y" }}.
+  It is a confidential medical document intended solely for the named recipient.
+</div>
+</div>
+</body>
+</html>

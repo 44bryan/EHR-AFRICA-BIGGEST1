@@ -1,0 +1,188 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}OPD / Triage Dashboard{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-heart-pulse me-2 text-danger"></i>OPD Triage &amp; Queue</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — Live patient flow</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-person-plus me-1"></i>Register Patient
+    </a>
+    <a href="{% url 'reception:walk_in' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-person-walking me-1"></i>Walk-in Check-in
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Stats strip #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-secondary">{{ total_today }}</div>
+      <div class="text-muted small">Total Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ waiting }}</div>
+      <div class="text-muted small">Waiting</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-info">{{ in_triage }}</div>
+      <div class="text-muted small">In Triage</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ in_consultation }}</div>
+      <div class="text-muted small">With Doctor</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ discharged }}</div>
+      <div class="text-muted small">Discharged</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <a href="{% url 'qms:dashboard' %}" class="text-decoration-none">
+        <div class="fs-3 text-primary"><i class="bi bi-ticket-perforated"></i></div>
+        <div class="text-muted small">QMS Board</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+{# Main triage queue #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="fw-semibold mb-0">
+      <i class="bi bi-list-check me-1 text-primary"></i>
+      Triage Queue — AI Priority Sorted
+    </h6>
+    <span class="badge bg-secondary">{{ triage_queue|length }} patient(s)</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:90px;">Priority</th>
+            <th>Patient</th>
+            <th>Chief Complaint</th>
+            <th>Ticket</th>
+            <th>VA</th>
+            <th>IOP</th>
+            <th>Status</th>
+            <th>Department</th>
+            <th>Arrived</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for visit in triage_queue %}
+          <tr class="{% if visit.ai_priority == 'EMERGENCY' %}table-danger{% elif visit.ai_priority == 'URGENT' %}table-warning{% endif %}">
+            <td>
+              {% if visit.ai_priority == 'EMERGENCY' %}
+              <span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>EMERGENCY</span>
+              {% elif visit.ai_priority == 'URGENT' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle me-1"></i>URGENT</span>
+              {% else %}
+              <span class="badge bg-secondary">Routine</span>
+              {% endif %}
+              {% if visit.ai_priority_reason %}
+              <div class="text-muted small mt-1" style="font-size:.65rem;">{{ visit.ai_priority_reason }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <div class="fw-semibold small">{{ visit.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:.7rem;">
+                {{ visit.patient.patient_id }} &bull; {{ visit.patient.age_display }}
+              </div>
+            </td>
+            <td class="small">{{ visit.chief_complaint|truncatechars:45|default:"—" }}</td>
+            <td class="text-nowrap">
+              {% with tk=visit.queue_tokens.filter %}
+              {% for t in visit.queue_tokens.all|slice:":1" %}
+                <span class="badge bg-primary">{{ t.display_token_number }}</span>
+              {% empty %}
+                <span class="text-muted small">—</span>
+              {% endfor %}
+              {% endwith %}
+            </td>
+            <td class="small text-nowrap">
+              {{ visit.va_right|default:"—" }}<br>
+              {{ visit.va_left|default:"—" }}
+            </td>
+            <td class="small text-nowrap">
+              {{ visit.iop_right|default:"—" }}<br>
+              {{ visit.iop_left|default:"—" }}
+            </td>
+            <td>
+              {% if visit.status == 'WAITING' or visit.status == 'REGISTERED' %}
+              <span class="badge bg-warning text-dark">Waiting</span>
+              {% elif visit.status == 'TRIAGE' %}
+              <span class="badge bg-info">Triage</span>
+              {% elif visit.status == 'IN_CONSULTATION' %}
+              <span class="badge bg-primary">With Doctor</span>
+              {% else %}
+              <span class="badge bg-secondary">{{ visit.status }}</span>
+              {% endif %}
+            </td>
+            <td class="small">{{ visit.department.name|default:"Unassigned" }}</td>
+            <td class="small text-nowrap">{{ visit.visit_date|time:"H:i" }}</td>
+            <td class="text-nowrap">
+              <a href="{% url 'patients:triage' visit_number=visit.visit_number %}"
+                 class="btn btn-sm btn-{% if visit.vital_signs %}outline-{% endif %}success">
+                {% if visit.vital_signs %}
+                <i class="bi bi-pencil me-1"></i>Edit Vitals
+                {% else %}
+                <i class="bi bi-heart-pulse me-1"></i>Triage
+                {% endif %}
+              </a>
+              <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}"
+                 class="btn btn-sm btn-outline-secondary ms-1">Journey</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10" class="text-center text-muted py-5">
+              <i class="bi bi-check-circle fs-2 d-block mb-2 text-success opacity-50"></i>
+              No patients currently in queue
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Auto-refresh every 30 seconds to keep queue live
+  setTimeout(() => location.reload(), 30000);
+
+  // Countdown indicator
+  let sec = 30;
+  const countdown = document.createElement('div');
+  countdown.className = 'text-muted small position-fixed bottom-0 end-0 p-2';
+  countdown.style.fontSize = '.7rem';
+  document.body.appendChild(countdown);
+  setInterval(() => {
+    countdown.textContent = `Auto-refresh in ${sec--}s`;
+    if (sec < 0) sec = 30;
+  }, 1000);
+</script>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Pharmacy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Pharmacy</h1>
+  <div>
+    <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary me-2">
+      <i class="bi bi-capsule me-1"></i>New Dispensing
+    </a>
+    <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-list-ul me-1"></i>Drug Formulary
+    </a>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-danger">{{ low_stock_count }}</div>
+        <div class="text-muted small">Low Stock Alerts</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ pending_dispensings }}</div>
+        <div class="text-muted small">Pending Dispensings</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ today_dispensings }}</div>
+        <div class="text-muted small">Dispensings Today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">&#8358;{{ today_revenue|floatformat:0 }}</div>
+        <div class="text-muted small">Revenue Today</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Low Stock Alert -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between">
+        <h6 class="mb-0 fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h6>
+        <a href="{% url 'pharmacy:drug_list' %}" class="small">View All</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+              <tr><th>Drug</th><th>Form</th><th>Stock</th><th>Reorder Level</th></tr>
+            </thead>
+            <tbody>
+              {% for drug in low_stock_drugs %}
+              <tr>
+                <td><a href="{% url 'pharmacy:drug_detail' drug.id %}">{{ drug.name }}</a></td>
+                <td>{{ drug.get_form_display }}</td>
+                <td><span class="badge bg-danger">{{ drug.current_stock }}</span></td>
+                <td>{{ drug.reorder_level }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-3">All stock levels are adequate</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Expiring Soon -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white">
+        <h6 class="mb-0 fw-semibold text-warning"><i class="bi bi-calendar-x me-2"></i>Expiring within 90 days</h6>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+              <tr><th>Drug</th><th>Batch</th><th>Expiry</th><th>Qty</th></tr>
+            </thead>
+            <tbody>
+              {% for stock in expiring_soon %}
+              <tr>
+                <td>{{ stock.drug.name }}</td>
+                <td>{{ stock.batch_number }}</td>
+                <td>
+                  <span class="{% if stock.days_to_expiry <= 30 %}text-danger fw-bold{% else %}text-warning{% endif %}">
+                    {{ stock.expiry_date|date:"d M Y" }}
+                  </span>
+                </td>
+                <td>{{ stock.quantity_remaining }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-3">No stock expiring soon</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

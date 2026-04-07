@@ -1,0 +1,161 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Add Statistics — {{ act.title }}{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{% url 'outreach:detail' pk=act.pk %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h5 class="fw-bold mb-0">Add Statistics Record</h5>
+    <p class="text-muted small mb-0">{{ act.title }} — {{ act.location_name }}</p>
+  </div>
+</div>
+
+<form method="post">
+{% csrf_token %}
+<div class="row g-4">
+
+  <!-- Date & headcount -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-primary bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-primary"><i class="bi bi-people me-1"></i>Head Count</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Record Date *</label>
+            <input type="date" name="record_date" class="form-control form-control-sm"
+                   value="{{ today }}" required>
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Total Screened *</label>
+            <input type="number" name="total_screened" class="form-control form-control-sm"
+                   min="0" value="0" required>
+          </div>
+          <div class="col-4">
+            <label class="form-label fw-semibold small">Male</label>
+            <input type="number" name="male_screened" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-4">
+            <label class="form-label fw-semibold small">Female</label>
+            <input type="number" name="female_screened" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-4">
+            <label class="form-label fw-semibold small">Children (&lt;18)</label>
+            <input type="number" name="children_screened" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Elderly (60+)</label>
+            <input type="number" name="elderly_screened" class="form-control form-control-sm" min="0" value="0">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clinical Findings -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-danger bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-danger"><i class="bi bi-eye me-1"></i>Clinical Findings</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-2 small">
+          {% for pair in "normal_vision|Normal Vision,refractive_errors|Refractive Errors,cataract|Cataract,glaucoma_suspects|Glaucoma Suspect,diabetic_retinopathy|Diabetic Retinopathy,pterygium|Pterygium,trachoma|Trachoma,corneal_opacity|Corneal Opacity,other_pathology|Other Pathology"|split:"," %}
+          {% with parts=pair|split:"|" %}
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:.75rem;">{{ parts.1 }}</label>
+            <input type="number" name="{{ parts.0 }}" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          {% endwith %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interventions -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-success bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-success"><i class="bi bi-bandaid me-1"></i>Interventions</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Total Treated / Managed</label>
+            <input type="number" name="total_treated" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Total Referred to Hospital</label>
+            <input type="number" name="total_referred" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Glasses Dispensed</label>
+            <input type="number" name="glasses_dispensed" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Medications Given</label>
+            <input type="number" name="medications_given" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Surgeries Performed On-site</label>
+            <input type="number" name="surgeries_performed" class="form-control form-control-sm" min="0" value="0">
+          </div>
+        </div>
+        <hr class="my-3">
+        <p class="fw-semibold small mb-2">Referral Breakdown</p>
+        <div class="row g-2">
+          <div class="col-6"><label class="form-label small">Cataract Referred</label>
+            <input type="number" name="referred_cataract" class="form-control form-control-sm" min="0" value="0"></div>
+          <div class="col-6"><label class="form-label small">Glaucoma Referred</label>
+            <input type="number" name="referred_glaucoma" class="form-control form-control-sm" min="0" value="0"></div>
+          <div class="col-6"><label class="form-label small">Retina Referred</label>
+            <input type="number" name="referred_retina" class="form-control form-control-sm" min="0" value="0"></div>
+          <div class="col-6"><label class="form-label small">Other Referred</label>
+            <input type="number" name="referred_other" class="form-control form-control-sm" min="0" value="0"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Costs & Notes -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-warning bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-warning"><i class="bi bi-cash me-1"></i>Costs &amp; Notes</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Drugs / Supplies (FCFA)</label>
+            <input type="number" name="drugs_cost" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Transport (FCFA)</label>
+            <input type="number" name="transport_cost" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">Other Costs (FCFA)</label>
+            <input type="number" name="other_cost" class="form-control form-control-sm" min="0" value="0">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small">Notes</label>
+            <textarea name="notes" class="form-control form-control-sm" rows="4"
+                      placeholder="Any observations, highlights, or issues..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="d-grid mt-3">
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-check-circle me-1"></i>Save Statistics Record
+      </button>
+    </div>
+  </div>
+
+</div>
+</form>
+{% endblock %}

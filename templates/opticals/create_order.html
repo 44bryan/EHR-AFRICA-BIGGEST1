@@ -1,0 +1,171 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Optical Order{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-eyeglasses me-2 text-primary"></i>New Optical Order</h5>
+        <a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+      </div>
+      <div class="card-body">
+        <form method="post" id="order-form">
+          {% csrf_token %}
+
+          <!-- Patient selection -->
+          {% if patient %}
+          <div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+            <i class="bi bi-person-check-fill fs-5"></i>
+            <div>
+              <strong>{{ patient.full_name }}</strong> &bull; {{ patient.patient_id }}
+              {% if rx %}<span class="badge bg-success ms-2">Optical Rx linked</span>{% endif %}
+            </div>
+          </div>
+          <input type="hidden" name="patient_id" value="{{ patient.id }}">
+          {% if rx %}<input type="hidden" name="prescription_id" value="{{ rx.id }}">{% endif %}
+          {% else %}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <div class="position-relative">
+              <input type="text" id="patient-search" class="form-control" placeholder="Search by name or patient ID…" autocomplete="off">
+              <div id="patient-results" class="dropdown-menu w-100" style="display:none;max-height:220px;overflow-y:auto;"></div>
+            </div>
+            <input type="hidden" name="patient_id" id="patient-id-hidden" required>
+            <div id="patient-selected" class="mt-2 alert alert-info d-none"></div>
+          </div>
+          {% endif %}
+
+          <div class="row g-3">
+            <!-- Frame -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Frame</label>
+              <select name="frame_id" id="frame-select" class="form-select">
+                <option value="">— No Frame / Patient's Own —</option>
+                {% for frame in frames %}
+                <option value="{{ frame.id }}" data-price="{{ frame.selling_price }}">
+                  {{ frame.brand }} {{ frame.model }} {% if frame.color %}({{ frame.color }}){% endif %} — {{ frame.selling_price|floatformat:0 }} FCFA ({{ frame.quantity_in_stock }} in stock)
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Frame Price (FCFA)</label>
+              <input type="number" name="frame_price" id="frame-price" class="form-control" min="0" step="0.01" value="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Fitting Charge (FCFA)</label>
+              <input type="number" name="fitting_charge" class="form-control" min="0" step="0.01" value="0">
+            </div>
+
+            <!-- Lens -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Lens Type</label>
+              <select name="lens_id" id="lens-select" class="form-select">
+                <option value="">— Select Lens —</option>
+                {% for lens in lenses %}
+                <option value="{{ lens.id }}" data-price="{{ lens.selling_price }}">
+                  {{ lens.name }} ({{ lens.get_lens_type_display }}) — {{ lens.selling_price|floatformat:0 }} FCFA
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Lens Price (FCFA)</label>
+              <input type="number" name="lens_price" id="lens-price" class="form-control" min="0" step="0.01" value="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Deposit Paid (FCFA)</label>
+              <input type="number" name="deposit_paid" class="form-control" min="0" step="0.01" value="0">
+            </div>
+
+            <!-- Order info -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Expected Ready Date</label>
+              <input type="date" name="expected_date" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Estimated Total (FCFA)</label>
+              <input type="text" id="total-display" class="form-control bg-light fw-bold" readonly value="0.00">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Special Instructions</label>
+              <textarea name="special_instructions" class="form-control" rows="2"
+                        placeholder="Tint, coatings, prism, reading segment height…"></textarea>
+            </div>
+          </div>
+
+          <hr class="my-4">
+          <button type="submit" class="btn btn-primary px-4" id="submit-btn" {% if not patient %}disabled{% endif %}>
+            <i class="bi bi-plus-circle me-1"></i>Create Optical Order
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function calcTotal() {
+  const fp = parseFloat(document.getElementById('frame-price').value) || 0;
+  const lp = parseFloat(document.getElementById('lens-price').value) || 0;
+  const fc = parseFloat(document.querySelector('[name=fitting_charge]').value) || 0;
+  document.getElementById('total-display').value = (fp + lp + fc).toFixed(2);
+}
+document.getElementById('frame-select').addEventListener('change', function () {
+  const price = this.options[this.selectedIndex].dataset.price;
+  if (price !== undefined) { document.getElementById('frame-price').value = price; calcTotal(); }
+});
+document.getElementById('lens-select').addEventListener('change', function () {
+  const price = this.options[this.selectedIndex].dataset.price;
+  if (price !== undefined) { document.getElementById('lens-price').value = price; calcTotal(); }
+});
+document.querySelectorAll('[type=number]').forEach(el => el.addEventListener('input', calcTotal));
+
+{% if not patient %}
+const searchInput = document.getElementById('patient-search');
+const results = document.getElementById('patient-results');
+const hiddenId = document.getElementById('patient-id-hidden');
+const selectedBadge = document.getElementById('patient-selected');
+const submitBtn = document.getElementById('submit-btn');
+let searchTimer;
+searchInput.addEventListener('input', function () {
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  if (q.length < 2) { results.style.display = 'none'; return; }
+  searchTimer = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        const list = data.results || [];
+        results.innerHTML = '';
+        if (!list.length) { results.innerHTML = '<span class="dropdown-item text-muted">No patients found</span>'; }
+        else {
+          list.forEach(p => {
+            const a = document.createElement('a');
+            a.className = 'dropdown-item'; a.href = '#';
+            a.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted small">${p.patient_id}</span>`;
+            a.addEventListener('click', e => {
+              e.preventDefault();
+              hiddenId.value = p.id;
+              searchInput.value = p.full_name;
+              selectedBadge.textContent = `✓ ${p.full_name} (${p.patient_id})`;
+              selectedBadge.classList.remove('d-none');
+              results.style.display = 'none';
+              submitBtn.disabled = false;
+            });
+            results.appendChild(a);
+          });
+        }
+        results.style.display = 'block';
+      });
+  }, 300);
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#patient-search') && !e.target.closest('#patient-results')) results.style.display = 'none';
+});
+{% endif %}
+</script>
+{% endblock %}

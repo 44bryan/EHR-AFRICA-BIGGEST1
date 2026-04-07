@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 9.5pt; color: #1a1a1a; }
+  .letterhead { border-bottom: 3px solid #0d6efd; padding-bottom: 10px; margin-bottom: 14px; }
+  .hospital-name { font-size: 16pt; font-weight: bold; color: #0d6efd; }
+  .hospital-info { font-size: 8pt; color: #666; }
+  .report-title { background: #0d6efd; color: white; padding: 7px 12px; font-size: 11pt; font-weight: bold; margin-bottom: 14px; }
+  .patient-card { background: #f0f4ff; border: 1px solid #c5d3f0; border-radius: 6px; padding: 12px; margin-bottom: 14px; }
+  .patient-card h4 { font-size: 13pt; font-weight: bold; color: #0d3a85; margin-bottom: 6px; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 20px; font-size: 9pt; }
+  .info-item { display: flex; flex-direction: column; }
+  .info-label { font-size: 7.5pt; text-transform: uppercase; color: #888; font-weight: 600; }
+  .info-value { font-weight: 500; }
+  .section { margin-bottom: 12px; }
+  .section-title { font-size: 9pt; font-weight: bold; text-transform: uppercase; color: #0d6efd;
+                   border-bottom: 1px solid #dee2e6; padding-bottom: 3px; margin-bottom: 7px; }
+  .consult-item { border-left: 3px solid #0d6efd; padding-left: 10px; margin-bottom: 8px; }
+  .consult-date { font-size: 8pt; color: #888; }
+  .dx-badge { display: inline-block; background: #e8f4f8; border: 1px solid #bee5eb;
+              border-radius: 3px; padding: 1px 6px; font-size: 8pt; margin: 1px; }
+  .inv-row { display: flex; gap: 12px; border-bottom: 1px solid #f0f0f0; padding: 4px 0; font-size: 9pt; }
+  .inv-date { color: #888; min-width: 75px; }
+  .mhx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; }
+  .mhx-item { border: 1px solid #e0e0e0; border-radius: 4px; padding: 6px 10px; }
+  .mhx-label { font-size: 7.5pt; text-transform: uppercase; color: #888; font-weight: 600; margin-bottom: 2px; }
+  .allergy-badge { background: #f8d7da; color: #842029; border-radius: 3px;
+                   padding: 2px 8px; font-size: 8.5pt; font-weight: bold; display: inline-block; margin: 1px; }
+  .no-data { color: #aaa; font-style: italic; font-size: 9pt; }
+  .footer { border-top: 1px solid #dee2e6; margin-top: 16px; padding-top: 6px;
+            font-size: 7.5pt; color: #888; display: flex; justify-content: space-between; }
+  @page { margin: 1.5cm 1.8cm; size: A4; }
+</style>
+</head>
+<body>
+
+<!-- Letterhead -->
+<div class="letterhead">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div class="hospital-name">{{ hospital_name }}</div>
+      <div class="hospital-info">{{ hospital_address }} &nbsp;|&nbsp; Tel: {{ hospital_phone }}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="hospital-info" style="font-weight:bold;">Eye Specialist Hospital</div>
+      <div class="hospital-info">Patient Summary Report</div>
+    </div>
+  </div>
+</div>
+
+<div class="report-title">PATIENT CLINICAL SUMMARY</div>
+
+<!-- Patient Card -->
+<div class="patient-card">
+  <h4>{{ patient.full_name }}</h4>
+  <div class="info-grid">
+    <div class="info-item"><span class="info-label">Patient ID</span><span class="info-value">{{ patient.patient_id }}</span></div>
+    <div class="info-item"><span class="info-label">Date of Birth</span><span class="info-value">{{ patient.date_of_birth|date:"d M Y"|default:"—" }}</span></div>
+    <div class="info-item"><span class="info-label">Gender</span><span class="info-value">{{ patient.get_gender_display }}</span></div>
+    <div class="info-item"><span class="info-label">Phone</span><span class="info-value">{{ patient.phone_number|default:"—" }}</span></div>
+    <div class="info-item"><span class="info-label">Blood Group</span><span class="info-value">{% if medical_history %}{{ medical_history.blood_group|default:"—" }}{% else %}—{% endif %}</span></div>
+    <div class="info-item"><span class="info-label">Age</span><span class="info-value">{{ patient.age_display }}</span></div>
+  </div>
+</div>
+
+<!-- Allergies (prominently) -->
+{% if medical_history and medical_history.allergies %}
+<div class="section">
+  <div class="section-title" style="color:#dc3545;">⚠ Allergies &amp; Adverse Reactions</div>
+  <div>
+    {% for allergy in medical_history.allergies %}
+    <span class="allergy-badge">{{ allergy }}</span>
+    {% empty %}
+    <span class="no-data">No known allergies recorded</span>
+    {% endfor %}
+    {% if medical_history.allergies and not medical_history.allergies|length %}
+    <span class="allergy-badge">{{ medical_history.allergies }}</span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Medical History Summary -->
+{% if medical_history %}
+<div class="section">
+  <div class="section-title">Medical &amp; Ocular History</div>
+  <div class="mhx-grid">
+    {% if medical_history.systemic_conditions %}
+    <div class="mhx-item">
+      <div class="mhx-label">Systemic Conditions</div>
+      <div>{{ medical_history.systemic_conditions|linebreaksbr }}</div>
+    </div>
+    {% endif %}
+    {% if medical_history.ocular_history %}
+    <div class="mhx-item">
+      <div class="mhx-label">Ocular History</div>
+      <div>{{ medical_history.ocular_history|linebreaksbr }}</div>
+    </div>
+    {% endif %}
+    {% if medical_history.current_medications %}
+    <div class="mhx-item">
+      <div class="mhx-label">Current Medications</div>
+      <div>{{ medical_history.current_medications|linebreaksbr }}</div>
+    </div>
+    {% endif %}
+    {% if medical_history.surgical_history %}
+    <div class="mhx-item">
+      <div class="mhx-label">Surgical History</div>
+      <div>{{ medical_history.surgical_history|linebreaksbr }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Recent Consultations -->
+<div class="section">
+  <div class="section-title">Recent Consultations (Last 3)</div>
+  {% for consult in recent_consults %}
+  <div class="consult-item">
+    <div style="display:flex;justify-content:space-between;">
+      <strong>{{ consult.department }}</strong>
+      <span class="consult-date">{{ consult.consultation_date|date:"d M Y" }}</span>
+    </div>
+    <div style="font-size:8.5pt;color:#444;margin-top:2px;">
+      Dr. {{ consult.consulting_doctor.full_name|default:"—" }}
+    </div>
+    {% if consult.presenting_complaint %}
+    <div style="font-size:8.5pt;margin-top:2px;">
+      <strong>Complaint:</strong> {{ consult.presenting_complaint|truncatechars:120 }}
+    </div>
+    {% endif %}
+    <div style="margin-top:4px;">
+      {% for cd in consult.consultation_diagnoses.all %}
+      <span class="dx-badge">{{ cd.diagnosis.icd10_code }} {{ cd.diagnosis.description|truncatechars:40 }}</span>
+      {% empty %}
+      <span class="no-data">No diagnosis recorded</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="no-data">No consultation records found.</div>
+  {% endfor %}
+</div>
+
+<!-- Recent Investigations -->
+<div class="section">
+  <div class="section-title">Recent Investigations (Last 5)</div>
+  {% for inv in recent_investigations %}
+  <div class="inv-row">
+    <span class="inv-date">{{ inv.created_at|date:"d M Y" }}</span>
+    <span style="flex:1;">{{ inv.investigation_type.name }}</span>
+    <span style="color:#444;">{{ inv.status|title }}</span>
+  </div>
+  {% empty %}
+  <div class="no-data">No investigation records found.</div>
+  {% endfor %}
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <span>Generated: {% now "d M Y H:i" %} &nbsp;·&nbsp; {{ hospital_name }}</span>
+  <span>Patient: {{ patient.patient_id }} &nbsp;·&nbsp; <strong>CONFIDENTIAL MEDICAL DOCUMENT</strong></span>
+</div>
+
+</body>
+</html>

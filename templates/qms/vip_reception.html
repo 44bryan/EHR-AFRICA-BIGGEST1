@@ -1,0 +1,167 @@
+{% extends "layouts/base_gatekeeper.html" %}
+{% block title %}VIP Reception — Back Entrance{% endblock %}
+{% block tab_vip %}active{% endblock %}
+
+{% block gk_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold">
+      <i class="bi bi-star-fill me-2 text-danger"></i>VIP Reception
+      <span class="badge bg-danger ms-2">Back Entrance</span>
+    </h4>
+    <small class="text-muted">VIP patients are not required to take a gate ticket. Issue here directly.</small>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <!-- VIP Info Card -->
+    <div class="card border-0 shadow-sm mb-3" style="background: linear-gradient(135deg,#7f0000,#c62828);">
+      <div class="card-body text-white text-center py-4">
+        <i class="bi bi-star-fill fs-1 mb-2 d-block opacity-75"></i>
+        <h5 class="fw-bold mb-1">VIP Service</h5>
+        <div class="opacity-75 small mb-3">Highest priority — served first in all queues</div>
+        <div class="d-flex justify-content-center gap-3 small">
+          <div class="text-center">
+            <div class="fw-bold fs-4">V-###</div>
+            <div class="opacity-75">Token Format</div>
+          </div>
+          <div class="text-center">
+            <div class="fw-bold fs-4">30</div>
+            <div class="opacity-75">Priority Score</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-3 small text-muted">
+        <div class="fw-semibold text-dark mb-2"><i class="bi bi-info-circle me-1"></i>VIP Pathway</div>
+        <ol class="mb-0 ps-3">
+          <li>Issue ticket here (optional)</li>
+          <li>Proceed directly to <strong>VIP Cashier</strong></li>
+          <li>Escorted to <strong>Parameters</strong></li>
+          <li>Routed to specialist of choice</li>
+          <li>Dedicated waiting lounge</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm border-0">
+      <div class="card-header" style="background:#7f0000;">
+        <h6 class="mb-0 text-white"><i class="bi bi-person-search me-2"></i>VIP Patient Details</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% url 'qms:vip_reception' %}" id="vipForm">
+          {% csrf_token %}
+          <input type="hidden" name="patient_id" id="selectedPatientId">
+          <input type="hidden" name="visit_id" id="selectedVisitId">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient Search</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="text" class="form-control" id="patientSearch"
+                     placeholder="Search by name, ID or phone..." autocomplete="off">
+            </div>
+            <div id="patientResults" class="list-group mt-1 shadow-sm"
+                 style="display:none; max-height:220px; overflow-y:auto; position:absolute; z-index:1050; width:calc(100% - 2rem);"></div>
+          </div>
+
+          <div id="selectedPatientCard" class="alert alert-danger d-none mb-3 p-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-star-fill fs-4 text-danger"></i>
+              <div>
+                <div class="fw-bold" id="selectedPatientName"></div>
+                <small id="selectedPatientMeta" class="text-muted"></small>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="clearPatient">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-3" id="walkinSection">
+            <label class="form-label text-muted">Walk-in name <span class="text-muted fw-normal">(if not yet registered)</span></label>
+            <input type="text" name="patient_name" class="form-control" placeholder="VIP patient full name">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Priority</label>
+            <div class="p-2 rounded border d-flex align-items-center gap-2" style="background:#fff5f5;">
+              <span class="badge bg-danger px-3 py-2">VIP — Priority 30 (Highest)</span>
+              <small class="text-muted">Served before all other tiers</small>
+            </div>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-danger btn-lg">
+              <i class="bi bi-star-fill me-2"></i>Issue VIP Ticket
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let searchTimeout;
+const searchInput = document.getElementById('patientSearch');
+const resultsDiv  = document.getElementById('patientResults');
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  const q = searchInput.value.trim();
+  if (q.length < 2) { resultsDiv.style.display = 'none'; return; }
+  searchTimeout = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        resultsDiv.innerHTML = '';
+        const list = data.results || data.patients || [];
+        if (!list.length) {
+          resultsDiv.innerHTML = '<div class="list-group-item text-muted small">No patients found</div>';
+        } else {
+          list.forEach(p => {
+            const item = document.createElement('a');
+            item.href = '#';
+            item.className = 'list-group-item list-group-item-action py-2';
+            item.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted small ms-2">${p.patient_id}</span>`;
+            item.addEventListener('click', e => { e.preventDefault(); selectPatient(p); });
+            resultsDiv.appendChild(item);
+          });
+        }
+        resultsDiv.style.display = 'block';
+      });
+  }, 300);
+});
+
+function selectPatient(p) {
+  document.getElementById('selectedPatientId').value = p.id || '';
+  document.getElementById('selectedPatientName').textContent = p.full_name;
+  document.getElementById('selectedPatientMeta').textContent = `${p.patient_id} · ${p.phone || ''}`;
+  document.getElementById('selectedPatientCard').classList.remove('d-none');
+  document.getElementById('walkinSection').style.display = 'none';
+  resultsDiv.style.display = 'none';
+  searchInput.value = p.full_name;
+}
+
+document.getElementById('clearPatient').addEventListener('click', () => {
+  document.getElementById('selectedPatientId').value = '';
+  document.getElementById('selectedPatientCard').classList.add('d-none');
+  document.getElementById('walkinSection').style.display = '';
+  searchInput.value = '';
+});
+
+document.addEventListener('click', e => {
+  if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+    resultsDiv.style.display = 'none';
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,214 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Staff Management Hub{% endblock %}
+{% block content %}
+
+{# ── Header ── #}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h3 mb-1"><i class="bi bi-shield-lock me-2 text-primary"></i>Staff Management Hub</h1>
+    <div class="text-muted small">Super Administrator &bull; Manage all staff accounts</div>
+  </div>
+  <a href="{% url 'accounts:user_create' %}" class="btn btn-primary">
+    <i class="bi bi-person-plus me-1"></i>Create Account
+  </a>
+</div>
+
+{# ── Stats strip ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ total_staff }}</div>
+      <div class="text-muted small">Active Staff</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-danger">{{ inactive_staff }}</div>
+      <div class="text-muted small">Inactive Accounts</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ departments|length }}</div>
+      <div class="text-muted small">Departments</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ all_roles|length }}</div>
+      <div class="text-muted small">Role Types</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  {# ── Left: Quick-create by role category ── #}
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-lightning me-2 text-warning"></i>Quick Create by Role</h6>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for cat in role_categories %}
+        <div class="list-group-item px-3 py-2">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <i class="bi {{ cat.icon }} text-{{ cat.color }}"></i>
+            <span class="fw-semibold small text-uppercase text-muted" style="font-size:.68rem;letter-spacing:.05em;">{{ cat.label }}</span>
+          </div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for r in cat.role_list %}
+            <a href="{% url 'accounts:user_create' %}?role={{ r.value }}"
+               class="btn btn-sm btn-outline-{{ cat.color }} position-relative"
+               style="font-size:.72rem;">
+              {{ r.label }}
+              {% if r.count %}
+              <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-{{ cat.color }}"
+                    style="font-size:.6rem;">{{ r.count }}</span>
+              {% endif %}
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Right: Staff list with search/filter ── #}
+  <div class="col-lg-8">
+    {# Filter bar #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+          <div class="col-md-3">
+            <input type="text" name="q" class="form-control form-control-sm" placeholder="Search name / email / ID…" value="{{ search }}">
+          </div>
+          <div class="col-md-3">
+            <select name="role" class="form-select form-select-sm">
+              <option value="">All Roles</option>
+              {% for value, label in all_roles %}
+              <option value="{{ value }}" {% if role_filter == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <select name="department" class="form-select form-select-sm">
+              <option value="">All Departments</option>
+              {% for dept in departments %}
+              <option value="{{ dept.id }}" {% if dept_filter == dept.id|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <select name="status" class="form-select form-select-sm">
+              <option value="">All Status</option>
+              <option value="active" {% if status_filter == "active" %}selected{% endif %}>Active</option>
+              <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>Inactive</option>
+            </select>
+          </div>
+          <div class="col-md-1 d-flex gap-1">
+            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i></button>
+            <a href="{% url 'accounts:staff_hub' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x"></i></a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {# Staff table #}
+    <div class="card border-0 shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Staff Member</th>
+              <th>Role</th>
+              <th>Department</th>
+              <th>Status</th>
+              <th>Last Login</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for staff in users %}
+            <tr class="{% if not staff.is_active %}table-secondary text-muted{% endif %}">
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="rounded-circle bg-{% if staff.is_active %}primary{% else %}secondary{% endif %} bg-opacity-10
+                               d-flex align-items-center justify-content-center fw-bold text-{% if staff.is_active %}primary{% else %}secondary{% endif %}"
+                       style="width:34px;height:34px;flex-shrink:0;font-size:.75rem;">
+                    {{ staff.first_name|first|upper }}{{ staff.last_name|first|upper }}
+                  </div>
+                  <div>
+                    <div class="fw-semibold">{{ staff.full_name }}</div>
+                    <div class="text-muted" style="font-size:.72rem;">{{ staff.email }} &bull; ID: {{ staff.employee_id }}</div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="badge
+                  {% if staff.role == 'super_admin' %}bg-dark
+                  {% elif staff.is_doctor %}bg-primary bg-opacity-75
+                  {% elif staff.is_nurse %}bg-danger bg-opacity-75
+                  {% elif staff.is_lab_tech or staff.is_investigation_tech %}bg-warning text-dark
+                  {% elif staff.is_billing_officer or staff.is_receptionist %}bg-success bg-opacity-75
+                  {% else %}bg-secondary{% endif %}">
+                  {{ staff.get_role_display }}
+                </span>
+              </td>
+              <td class="text-muted">{{ staff.department.name|default:"—" }}</td>
+              <td>
+                {% if staff.is_active %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">Active</span>
+                {% else %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Inactive</span>
+                {% endif %}
+              </td>
+              <td class="text-muted" style="font-size:.72rem;">{{ staff.last_login|date:"d M Y H:i"|default:"Never" }}</td>
+              <td class="text-end">
+                <div class="d-flex justify-content-end gap-1">
+                  <a href="{% url 'accounts:user_edit' pk=staff.pk %}" class="btn btn-xs btn-outline-secondary" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                  <a href="{% url 'accounts:reset_password' pk=staff.pk %}" class="btn btn-xs btn-outline-warning" title="Reset Password">
+                    <i class="bi bi-key"></i>
+                  </a>
+                  {% if staff != request.user %}
+                  <form method="post" action="{% url 'accounts:toggle_active' pk=staff.pk %}" class="d-inline"
+                        onsubmit="return confirm('{% if staff.is_active %}Deactivate{% else %}Activate{% endif %} {{ staff.full_name }}?')">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-xs btn-{% if staff.is_active %}outline-danger{% else %}outline-success{% endif %}"
+                            title="{% if staff.is_active %}Deactivate{% else %}Activate{% endif %}">
+                      <i class="bi bi-{% if staff.is_active %}person-dash{% else %}person-check{% endif %}"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-5">
+                <i class="bi bi-people fs-2 d-block mb-2 opacity-25"></i>
+                No staff accounts found.
+                <a href="{% url 'accounts:user_create' %}">Create the first one</a>.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if users %}
+      <div class="card-footer bg-white text-muted small py-2 d-flex justify-content-between">
+        <span>{{ users|length }} account(s) shown</span>
+        <a href="{% url 'accounts:user_create' %}" class="text-decoration-none"><i class="bi bi-plus me-1"></i>Add Staff</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{# btn-xs helper #}
+<style>.btn-xs{padding:.2rem .45rem;font-size:.72rem;line-height:1.3;}</style>
+{% endblock %}

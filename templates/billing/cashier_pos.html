@@ -1,0 +1,827 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Cashier POS — {{ patient.full_name|default:"Walk-in" }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── POS layout ── */
+  .pos-wrapper {
+    display: grid;
+    grid-template-columns: 1fr 440px;
+    gap: 1rem;
+    min-height: calc(100vh - 140px);
+  }
+
+  /* Patient card */
+  .patient-banner {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #dee2e6;
+    border-left: 4px solid #0d6efd;
+  }
+  .tier-badge-STANDARD   { background: #6c757d; }
+  .tier-badge-EXPRESS    { background: #0891b2; }
+  .tier-badge-FAST_TRACK { background: #d97706; }
+  .tier-badge-VIP        { background: #7c3aed; }
+
+  /* Left panel — catalog */
+  .catalog-panel {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #dee2e6;
+    padding: 1.25rem;
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+  }
+  .catalog-panel h6 { color: #6c757d; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
+
+  .service-btn {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    color: #212529;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all .15s;
+    text-align: left;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .service-btn:hover {
+    background: #0d6efd;
+    border-color: #0d6efd;
+    color: #fff;
+  }
+  .service-btn .price-tag {
+    font-size: 0.75rem;
+    color: #0d6efd;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .service-btn:hover .price-tag { color: #cfe2ff; }
+
+  .cat-section { margin-bottom: 0.75rem; }
+
+  /* Right billing panel */
+  .billing-panel {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #dee2e6;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+  }
+
+  /* Items table */
+  .items-table { width: 100%; font-size: 0.82rem; }
+  .items-table th { color: #6c757d; font-weight: 600; padding: 0.3rem 0.4rem; border-bottom: 2px solid #dee2e6; }
+  .items-table td { padding: 0.35rem 0.4rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  .items-table tbody tr:hover { background: #f8f9fa; }
+  .remove-item-btn {
+    background: none; border: none;
+    color: #dc3545; cursor: pointer;
+    padding: 0 4px; font-size: 1rem; line-height: 1;
+  }
+  .remove-item-btn:hover { color: #b02a37; }
+
+  /* Totals section */
+  .totals-block { border-top: 2px solid #dee2e6; padding-top: 0.6rem; font-size: 0.9rem; }
+  .totals-block .row-total { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .grand-total  { font-size: 1.2rem; font-weight: 700; color: #0d6efd; }
+  .balance-row  { font-size: 1rem; font-weight: 700; }
+  .balance-due-amount { color: #dc3545; }
+  .balance-paid { color: #198754; }
+
+  /* Payment section */
+  .payment-section { background: #f8f9fa; border-radius: 10px; padding: 1rem; border: 1px solid #dee2e6; }
+  .pay-method-btn {
+    background: #fff; border: 1px solid #dee2e6; color: #495057;
+    border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.8rem; cursor: pointer; transition: all .15s;
+  }
+  .pay-method-btn.active, .pay-method-btn:hover {
+    background: #0d6efd; border-color: #0d6efd; color: #fff;
+  }
+
+  /* Action buttons */
+  .btn-finalize {
+    background: linear-gradient(135deg, #16a34a, #15803d);
+    border: none; color: white; border-radius: 10px;
+    padding: 0.75rem 1.25rem; font-size: 0.95rem; font-weight: 700;
+    width: 100%; cursor: pointer; transition: all .2s;
+  }
+  .btn-finalize:hover:not(:disabled) { background: linear-gradient(135deg, #15803d, #14532d); transform: translateY(-1px); }
+  .btn-finalize:disabled { background: #adb5bd; color: #fff; cursor: not-allowed; transform: none; }
+
+  .btn-print {
+    background: #fff; border: 1px solid #dee2e6; color: #495057;
+    border-radius: 10px; padding: 0.6rem 1rem; font-size: 0.85rem;
+    width: 100%; cursor: pointer; transition: all .15s;
+  }
+  .btn-print:hover { background: #f8f9fa; color: #212529; }
+
+  /* Custom item row */
+  .custom-item-row { background: #f8f9fa; border-radius: 8px; padding: 0.75rem; border: 1px solid #dee2e6; }
+
+  /* Discount row */
+  .discount-row input { border-radius: 6px; font-size: 0.8rem; }
+
+  /* Payment history */
+  .payment-log { font-size: 0.78rem; }
+  .payment-log .pay-entry {
+    display: flex; justify-content: space-between;
+    padding: 3px 0; border-bottom: 1px solid #f0f0f0; color: #6c757d;
+  }
+  .payment-log .pay-entry:last-child { border-bottom: none; }
+
+  /* AI suggest */
+  .ai-btn {
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    border: none; color: white; border-radius: 8px;
+    padding: 0.5rem 1rem; font-size: 0.82rem; cursor: pointer; width: 100%;
+  }
+  .ai-btn:hover { background: linear-gradient(135deg, #6d28d9, #5b21b6); }
+
+  /* Modal override for light theme */
+  #priceModal .modal-content { background: #fff; color: #212529; border: 1px solid #dee2e6; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% load humanize %}
+
+{# ── CSRF Token ── #}
+<form id="csrf-holder">{% csrf_token %}</form>
+
+{# ── Patient Banner ── #}
+<div class="patient-banner p-3 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-3">
+    <div class="rounded-circle d-flex align-items-center justify-content-center"
+         style="width:48px;height:48px;background:#e7f1ff;font-size:1.4rem;font-weight:900;color:#0d6efd;">
+      {{ patient.first_name|first|upper|default:"?" }}
+    </div>
+    <div>
+      <div class="fw-bold fs-5 text-dark">{{ patient.full_name|default:"Walk-in Patient" }}</div>
+      <div class="d-flex align-items-center gap-2 mt-1">
+        <small class="text-primary">{{ patient.patient_id|default:"—" }}</small>
+        <span class="text-muted">·</span>
+        <small class="text-muted">Ticket: <span class="fw-semibold text-dark">{{ token.display_token_number }}</span></small>
+        {% if patient.age %}
+          <span class="text-muted">·</span>
+          <small class="text-muted">{{ patient.age_display }}</small>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge tier-badge-{{ token.service_tier }} text-white px-3 py-2">
+      {{ token.get_service_tier_display }}
+    </span>
+    {% if invoice %}
+      <span class="badge bg-secondary px-3 py-2">{{ invoice.invoice_number }}</span>
+      <span class="badge
+        {% if invoice.status == 'PAID' %}bg-success
+        {% elif invoice.status == 'PARTIAL' %}bg-warning text-dark
+        {% elif invoice.status == 'ISSUED' %}bg-info text-dark
+        {% else %}bg-secondary{% endif %} px-3 py-2">
+        {{ invoice.get_status_display }}
+      </span>
+    {% endif %}
+    <small class="text-muted">{{ today|date:"d M Y" }}</small>
+  </div>
+</div>
+
+{# ── Main POS Grid ── #}
+<div class="pos-wrapper">
+
+  {# ───── LEFT: Service Catalog ───── #}
+  <div class="catalog-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <span style="color:#0d6efd;font-weight:700;font-size:1rem;">
+        <i class="bi bi-grid-3x3-gap me-1"></i>Service Catalog
+      </span>
+      {% if invoice %}
+      <button class="ai-btn" id="aiSuggestBtn" onclick="aiSuggest()" style="width:auto;padding:0.35rem 0.85rem;font-size:0.78rem;">
+        <i class="bi bi-stars me-1"></i>AI Suggest
+      </button>
+      {% endif %}
+    </div>
+
+    {# Registration #}
+    <div class="cat-section">
+      <h6><i class="bi bi-person-plus me-1"></i>Registration</h6>
+      <div class="d-flex flex-column gap-1">
+        {% for svc in service_catalog %}{% if svc.category == 'REG' %}
+        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+        </button>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    {# Consultation #}
+    <div class="cat-section">
+      <h6><i class="bi bi-person-badge me-1"></i>Consultation</h6>
+      <div class="d-flex flex-column gap-1">
+        {% for svc in service_catalog %}{% if svc.category == 'CONSULT' %}
+        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+        </button>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    {# Investigations #}
+    <div class="cat-section">
+      <h6><i class="bi bi-eyeglasses me-1"></i>Investigations</h6>
+      <div class="d-flex flex-column gap-1">
+        {% for svc in service_catalog %}{% if svc.category == 'INVEST' %}
+        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+        </button>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    {# Laboratory #}
+    <div class="cat-section">
+      <h6><i class="bi bi-droplet me-1"></i>Laboratory</h6>
+      <div class="d-flex flex-column gap-1">
+        {% for svc in service_catalog %}{% if svc.category == 'LAB' %}
+        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+        </button>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    {# Pharmacy & Opticals #}
+    <div class="cat-section">
+      <h6><i class="bi bi-capsule me-1"></i>Pharmacy &amp; Opticals</h6>
+      <div class="d-flex flex-column gap-1">
+        {% for svc in service_catalog %}{% if svc.category == 'PHARMACY' or svc.category == 'OPTICAL' %}
+        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="price-tag">
+            {% if svc.price > 0 %}{{ svc.price|intcomma }} FCFA{% else %}Enter price{% endif %}
+          </span>
+        </button>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    {# Custom Item #}
+    {% if invoice %}
+    <div class="cat-section">
+      <h6><i class="bi bi-pencil me-1"></i>Custom Item</h6>
+      <div class="custom-item-row">
+        <div class="row g-2 mb-2">
+          <div class="col-12">
+            <input type="text" id="customDesc" class="form-control form-control-sm"
+                   placeholder="Description…" />
+          </div>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-5">
+            <select id="customCat" class="form-select form-select-sm">
+              {% for val, label in categories %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-3">
+            <input type="number" id="customQty" class="form-control form-control-sm"
+                   value="1" min="1" placeholder="Qty" />
+          </div>
+          <div class="col-4">
+            <input type="number" id="customPrice" class="form-control form-control-sm"
+                   placeholder="Price" min="0" />
+          </div>
+        </div>
+        <button class="service-btn" style="background:#1d4ed8;border-color:#3b82f6;"
+                onclick="addCustomItem()">
+          <span><i class="bi bi-plus-circle me-1"></i>Add to Bill</span>
+        </button>
+      </div>
+    </div>
+    {% endif %}
+
+    {# AI Suggestions placeholder #}
+    <div id="aiSuggestions" class="mt-2" style="display:none;">
+      <h6><i class="bi bi-stars me-1"></i>AI Suggestions</h6>
+      <div id="aiList" class="d-flex flex-column gap-1"></div>
+    </div>
+
+  </div>{# end catalog-panel #}
+
+
+  {# ───── RIGHT: Bill & Payment ───── #}
+  <div class="billing-panel" id="billingPanel">
+
+    {# Invoice header #}
+    <div class="d-flex justify-content: space-between align-items-center">
+      <span class="fw-bold text-primary">
+        <i class="bi bi-receipt me-1"></i>
+        {% if invoice %}{{ invoice.invoice_number }}{% else %}No Invoice{% endif %}
+      </span>
+      <small class="text-muted ms-auto">{{ today|date:"d/m/Y" }}</small>
+    </div>
+
+    {% if invoice %}
+
+    {# Items table #}
+    <div style="overflow-x:auto;">
+      <table class="items-table" id="itemsTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Description</th>
+            <th class="text-center">Qty</th>
+            <th class="text-end">Unit Price</th>
+            <th class="text-end">Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="itemsBody">
+          {% for item in items %}
+          <tr id="item-row-{{ item.id }}">
+            <td class="text-muted">{{ forloop.counter }}</td>
+            <td>
+              <div class="fw-medium">{{ item.description }}</div>
+              <small class="text-muted" style="font-size:0.7rem;">{{ item.get_category_display }}</small>
+            </td>
+            <td class="text-center">{{ item.quantity }}</td>
+            <td class="text-end text-muted" style="white-space:nowrap;">
+              {{ item.unit_price|floatformat:0|intcomma }}
+            </td>
+            <td class="text-end fw-semibold text-primary" style="white-space:nowrap;">
+              {{ item.line_total|floatformat:0|intcomma }}
+            </td>
+            <td>
+              <button class="remove-item-btn" onclick="removeItem('{{ item.id }}')" title="Remove">
+                &times;
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr id="emptyRow">
+            <td colspan="5" class="text-center text-muted py-3" style="font-size:0.8rem;">
+              <i class="bi bi-receipt me-1"></i>No items yet — select from catalog
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Totals #}
+    <div class="totals-block">
+      <div class="row-total text-muted" style="font-size:0.82rem;">
+        <span>Subtotal</span>
+        <span id="subtotalDisplay">{{ invoice.subtotal|floatformat:0|intcomma }} FCFA</span>
+      </div>
+
+      {# Discount row #}
+      <div class="row-total mt-1 discount-row align-items-center gap-1" style="font-size:0.82rem;">
+        <span style="color:#f59e0b;">Discount</span>
+        <div class="d-flex gap-1 align-items-center">
+          <input type="number" id="discountInput" class="form-control form-control-sm"
+                 style="width:90px;text-align:right;"
+                 value="{{ invoice.discount_amount|floatformat:0 }}"
+                 min="0" placeholder="0" />
+          <input type="text" id="discountReason" class="form-control form-control-sm"
+                 style="width:110px;"
+                 value="{{ invoice.discount_reason }}" placeholder="Reason…" />
+          <button class="btn btn-sm" style="background:#92400e;color:#fef3c7;border:none;font-size:0.75rem;"
+                  onclick="applyDiscount()">Apply</button>
+        </div>
+      </div>
+
+      <div class="row-total grand-total mt-2">
+        <span>TOTAL</span>
+        <span id="totalDisplay">{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
+      </div>
+    </div>
+
+    {# Payment log #}
+    {% if payments %}
+    <div>
+      <div style="color:#64748b;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">
+        Payments Received
+      </div>
+      <div class="payment-log" id="paymentLog">
+        {% for p in payments %}
+        <div class="pay-entry">
+          <span>{{ p.get_payment_method_display }}{% if p.reference %} · {{ p.reference }}{% endif %}</span>
+          <span style="color:#4ade80;">+{{ p.amount|floatformat:0|intcomma }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="payment-log" id="paymentLog"></div>
+    {% endif %}
+
+    <div class="row-total balance-row">
+      <span>Balance Due</span>
+      <span id="balanceDueDisplay"
+            class="{% if invoice.balance_due <= 0 %}balance-paid{% else %}balance-due-amount{% endif %}">
+        {{ invoice.balance_due|floatformat:0|intcomma }} FCFA
+      </span>
+    </div>
+
+    {# Payment form #}
+    <div class="payment-section">
+      <div style="color:#94a3b8;font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.5rem;">
+        Record Payment
+      </div>
+      <div class="d-flex flex-wrap gap-1 mb-2" id="methodButtons">
+        {% for val, label in payment_methods %}
+        <button class="pay-method-btn {% if val == 'CASH' %}active{% endif %}"
+                data-method="{{ val }}"
+                onclick="selectMethod(this, '{{ val }}')">
+          {% if val == 'CASH' %}<i class="bi bi-cash me-1"></i>
+          {% elif val == 'MOBILE' %}<i class="bi bi-phone me-1"></i>
+          {% elif val == 'CARD' %}<i class="bi bi-credit-card me-1"></i>
+          {% elif val == 'TRANSFER' %}<i class="bi bi-bank me-1"></i>
+          {% elif val == 'INSURANCE' %}<i class="bi bi-shield-check me-1"></i>
+          {% else %}<i class="bi bi-currency-exchange me-1"></i>
+          {% endif %}
+          {{ label }}
+        </button>
+        {% endfor %}
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-7">
+          <input type="number" id="payAmount" class="form-control form-control-sm"
+                 placeholder="Amount (FCFA)" min="0"
+                 value="{{ invoice.balance_due|floatformat:0 }}" />
+        </div>
+        <div class="col-5">
+          <input type="text" id="payRef" class="form-control form-control-sm"
+                 placeholder="Reference / Ref#" />
+        </div>
+      </div>
+      <button class="btn btn-warning w-100 fw-bold" style="border-radius:8px;" onclick="recordPayment()">
+        <i class="bi bi-check-circle me-1"></i>Record Payment
+      </button>
+    </div>
+
+    {# Finalize / Print buttons #}
+    <button class="btn-finalize" id="finalizeBtn"
+            {% if invoice.balance_due > 0 %}disabled{% endif %}
+            onclick="finalizeAndRoute()">
+      <i class="bi bi-send-check-fill me-2"></i>Confirm Payment &amp; Send to Triage
+    </button>
+
+    <button class="btn-print" onclick="openReceipt()">
+      <i class="bi bi-printer me-2"></i>Print Receipt
+    </button>
+
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-person-x-fill fs-2 mb-3 d-block text-danger"></i>
+      <div>No patient linked to this token.</div>
+      <div class="small mt-1">Please link a patient before billing.</div>
+    </div>
+    {% endif %}
+
+  </div>{# end billing-panel #}
+
+</div>{# end pos-wrapper #}
+
+{# ── Custom Item Price Modal (for 0-price catalog items) ── #}
+<div class="modal fade" id="priceModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-bottom pb-2">
+        <h6 class="modal-title" id="priceModalTitle">Enter Price</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="pendingName" />
+        <input type="hidden" id="pendingCat" />
+        <input type="number" id="pendingPrice" class="form-control"
+               placeholder="Price in FCFA" min="0" />
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-primary btn-sm" onclick="confirmPriceAndAdd()">Add to Bill</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+{% if invoice %}
+const INVOICE_ID = '{{ invoice.id }}';
+{% else %}
+const INVOICE_ID = null;
+{% endif %}
+const TOKEN_ID   = '{{ token.id }}';
+const FINALIZE_URL = "{% url 'billing:pos_finalize' token.id %}";
+{% if invoice %}
+const RECEIPT_URL  = "{% url 'billing:receipt' invoice.id %}";
+{% else %}
+const RECEIPT_URL  = null;
+{% endif %}
+
+let selectedMethod = 'CASH';
+let rowCounter = {{ items|length }};
+
+// ── Utility: format numbers with commas ──────────────────────────────────────
+function fmt(n) {
+  return Math.round(n).toLocaleString('fr-FR').replace(/\s/g, ',');
+}
+
+// ── Update totals display ────────────────────────────────────────────────────
+function updateTotals(data) {
+  if (data.subtotal !== undefined)
+    document.getElementById('subtotalDisplay').textContent = fmt(data.subtotal) + ' FCFA';
+  if (data.total !== undefined)
+    document.getElementById('totalDisplay').textContent = fmt(data.total) + ' FCFA';
+
+  const bdEl = document.getElementById('balanceDueDisplay');
+  if (bdEl && data.balance_due !== undefined) {
+    bdEl.textContent = fmt(data.balance_due) + ' FCFA';
+    bdEl.className = data.balance_due <= 0 ? 'balance-paid' : 'balance-due-amount';
+
+    // Update pay amount default
+    const pa = document.getElementById('payAmount');
+    if (pa && data.balance_due > 0) pa.value = Math.round(data.balance_due);
+
+    // Enable / disable finalize button
+    const fb = document.getElementById('finalizeBtn');
+    if (fb) fb.disabled = data.balance_due > 0;
+  }
+}
+
+// ── Remove empty row if it exists ────────────────────────────────────────────
+function removeEmptyRow() {
+  const er = document.getElementById('emptyRow');
+  if (er) er.remove();
+}
+
+// ── Add item from catalog ────────────────────────────────────────────────────
+function addCatalogItem(name, category, price) {
+  if (!INVOICE_ID) { alert('No invoice found. Please refresh.'); return; }
+  if (price === 0) {
+    // Show price modal
+    document.getElementById('pendingName').value  = name;
+    document.getElementById('pendingCat').value   = category;
+    document.getElementById('pendingPrice').value = '';
+    document.getElementById('priceModalTitle').textContent = name;
+    new bootstrap.Modal(document.getElementById('priceModal')).show();
+    return;
+  }
+  _doAddItem(name, category, 1, price);
+}
+
+function confirmPriceAndAdd() {
+  const name  = document.getElementById('pendingName').value;
+  const cat   = document.getElementById('pendingCat').value;
+  const price = parseFloat(document.getElementById('pendingPrice').value || '0');
+  bootstrap.Modal.getInstance(document.getElementById('priceModal')).hide();
+  _doAddItem(name, cat, 1, price);
+}
+
+// ── Add custom item ──────────────────────────────────────────────────────────
+function addCustomItem() {
+  if (!INVOICE_ID) { alert('No invoice found. Please refresh.'); return; }
+  const desc  = document.getElementById('customDesc').value.trim();
+  const cat   = document.getElementById('customCat').value;
+  const qty   = parseInt(document.getElementById('customQty').value) || 1;
+  const price = parseFloat(document.getElementById('customPrice').value || '0');
+  if (!desc) { alert('Please enter a description.'); return; }
+  _doAddItem(desc, cat, qty, price);
+  document.getElementById('customDesc').value = '';
+  document.getElementById('customPrice').value = '';
+  document.getElementById('customQty').value = '1';
+}
+
+function _doAddItem(description, category, quantity, unitPrice) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append('description', description);
+  fd.append('category', category);
+  fd.append('quantity', quantity);
+  fd.append('unit_price', unitPrice);
+
+  fetch(`/billing/invoice/${INVOICE_ID}/add-item/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { alert(data.error || 'Could not add item.'); return; }
+      removeEmptyRow();
+      rowCounter++;
+      const tbody = document.getElementById('itemsBody');
+      const tr = document.createElement('tr');
+      tr.id = `item-row-${data.item_id}`;
+      tr.innerHTML = `
+        <td class="text-muted">${rowCounter}</td>
+        <td>
+          <div class="fw-medium">${data.description}</div>
+          <small class="text-muted" style="font-size:0.7rem;">${category}</small>
+        </td>
+        <td class="text-center">${data.quantity}</td>
+        <td class="text-end text-muted" style="white-space:nowrap;">${fmt(unitPrice)}</td>
+        <td class="text-end fw-semibold text-primary" style="white-space:nowrap;">${fmt(data.line_total)}</td>
+        <td>
+          <button class="remove-item-btn" onclick="removeItem('${data.item_id}')" title="Remove">&times;</button>
+        </td>`;
+      tbody.appendChild(tr);
+      updateTotals(data);
+    })
+    .catch(() => alert('Network error. Please try again.'));
+}
+
+// ── Remove item ──────────────────────────────────────────────────────────────
+function removeItem(itemId) {
+  if (!confirm('Remove this item?')) return;
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+
+  fetch(`/billing/item/${itemId}/remove/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { alert(data.error || 'Could not remove item.'); return; }
+      const row = document.getElementById(`item-row-${itemId}`);
+      if (row) row.remove();
+      // Re-number rows
+      const rows = document.querySelectorAll('#itemsBody tr');
+      rows.forEach((r, i) => {
+        const firstTd = r.querySelector('td:first-child');
+        if (firstTd) firstTd.textContent = i + 1;
+      });
+      rowCounter = rows.length;
+      if (rowCounter === 0) {
+        document.getElementById('itemsBody').innerHTML = `
+          <tr id="emptyRow">
+            <td colspan="5" class="text-center text-muted py-3" style="font-size:0.8rem;">
+              <i class="bi bi-receipt me-1"></i>No items yet — select from catalog
+            </td>
+          </tr>`;
+      }
+      updateTotals(data);
+    })
+    .catch(() => alert('Network error.'));
+}
+
+// ── Apply discount ───────────────────────────────────────────────────────────
+function applyDiscount() {
+  if (!INVOICE_ID) return;
+  const amount = document.getElementById('discountInput').value || '0';
+  const reason = document.getElementById('discountReason').value;
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append('discount_amount', amount);
+  fd.append('discount_reason', reason);
+
+  fetch(`/billing/invoice/${INVOICE_ID}/discount/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { alert(data.error || 'Could not apply discount.'); return; }
+      updateTotals(data);
+    })
+    .catch(() => alert('Network error.'));
+}
+
+// ── Select payment method ────────────────────────────────────────────────────
+function selectMethod(btn, method) {
+  document.querySelectorAll('.pay-method-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  selectedMethod = method;
+}
+
+// ── Record payment ───────────────────────────────────────────────────────────
+function recordPayment() {
+  if (!INVOICE_ID) return;
+  const amount = document.getElementById('payAmount').value;
+  const ref    = document.getElementById('payRef').value;
+  if (!amount || parseFloat(amount) <= 0) { alert('Enter a valid amount.'); return; }
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append('payment_method', selectedMethod);
+  fd.append('amount', amount);
+  fd.append('reference', ref);
+
+  fetch(`/billing/invoice/${INVOICE_ID}/record-payment/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { alert(data.error || 'Could not record payment.'); return; }
+
+      // Append to payment log
+      const log = document.getElementById('paymentLog');
+      const entry = document.createElement('div');
+      entry.className = 'pay-entry';
+      entry.innerHTML = `<span>${selectedMethod}${ref ? ' · ' + ref : ''}</span>
+                         <span style="color:#4ade80;">+${fmt(amount)}</span>`;
+      log.appendChild(entry);
+
+      document.getElementById('payRef').value = '';
+      updateTotals(data);
+
+      if (data.is_paid) {
+        showToast('Invoice fully paid!', 'success');
+      }
+    })
+    .catch(() => alert('Network error.'));
+}
+
+// ── Finalize and route to triage ─────────────────────────────────────────────
+function finalizeAndRoute() {
+  if (!confirm('Confirm payment received?\nThis will send the patient to the Triage queue.')) return;
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+
+  fetch(FINALIZE_URL, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { alert(data.error || 'Could not finalize.'); return; }
+      window.location.href = data.redirect_url;
+    })
+    .catch(() => alert('Network error.'));
+}
+
+// ── Open receipt ─────────────────────────────────────────────────────────────
+function openReceipt() {
+  if (RECEIPT_URL) window.open(RECEIPT_URL, '_blank');
+}
+
+// ── AI Suggest ───────────────────────────────────────────────────────────────
+function aiSuggest() {
+  const btn = document.getElementById('aiSuggestBtn');
+  const container = document.getElementById('aiSuggestions');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Thinking…';
+
+  fetch('/ai/suggest-billing/', {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patient_id: '{{ patient.patient_id|default:"" }}', token_id: TOKEN_ID })
+  })
+  .then(r => {
+    if (!r.ok) throw new Error('unavailable');
+    return r.json();
+  })
+  .then(data => {
+    const suggestions = data.suggestions || [];
+    renderAiSuggestions(suggestions);
+  })
+  .catch(() => {
+    // Fallback static suggestions
+    renderAiSuggestions([
+      { name: 'Standard Consultation', category: 'CONSULT', price: 15000 },
+      { name: 'Tonometry (IOP)',        category: 'INVEST',  price: 3000  },
+    ]);
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-stars me-1"></i>AI Suggest';
+  });
+}
+
+function renderAiSuggestions(suggestions) {
+  const container = document.getElementById('aiSuggestions');
+  const list = document.getElementById('aiList');
+  list.innerHTML = '';
+  if (!suggestions.length) {
+    list.innerHTML = '<small class="text-muted">No suggestions available.</small>';
+  } else {
+    suggestions.forEach(svc => {
+      const btn = document.createElement('button');
+      btn.className = 'service-btn';
+      btn.style.background = '#1e1b4b';
+      btn.style.borderColor = '#4338ca';
+      btn.innerHTML = `<span>${svc.name}</span>
+                       <span class="price-tag">${fmt(svc.price)} FCFA</span>`;
+      btn.onclick = () => addCatalogItem(svc.name, svc.category, svc.price);
+      list.appendChild(btn);
+    });
+  }
+  container.style.display = 'block';
+}
+
+// ── Toast helper ─────────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  const t = document.createElement('div');
+  t.className = `alert alert-${type} position-fixed shadow-lg`;
+  t.style.cssText = 'top:1rem;right:1rem;z-index:9999;min-width:250px;';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+</script>
+{% endblock %}

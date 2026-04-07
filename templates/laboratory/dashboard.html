@@ -1,0 +1,215 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Laboratory Workstation{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-eyedropper text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Laboratory Workstation</h5>
+      <div class="text-muted small">{{ today|date:"l, d F Y" }} — Lab technician dashboard</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'laboratory:stats' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-graph-up me-1"></i>Stats
+    </a>
+    <a href="{% url 'laboratory:list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-list-ul me-1"></i>All Orders
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #0d6efd !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ pending_count }}</div>
+        <div class="small text-muted">Pending / In-Progress</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #198754 !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ completed_today }}</div>
+        <div class="small text-muted">Completed Today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #dc3545 !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold {% if critical_count %}text-danger{% else %}text-success{% endif %}">
+          {{ critical_count }}
+        </div>
+        <div class="small text-muted">Critical (Unverified)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #ffc107 !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ abnormal_count }}</div>
+        <div class="small text-muted">Abnormal (This Month)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Critical unverified results — urgent attention -->
+{% if critical_unverified %}
+<div class="alert alert-danger border-0 rounded-3 mb-4">
+  <div class="fw-bold mb-2"><i class="bi bi-exclamation-octagon-fill me-2"></i>CRITICAL RESULTS — Requires Immediate Verification</div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 small">
+      <thead><tr><th>Patient</th><th>Test</th><th>Result</th><th>By</th><th></th></tr></thead>
+      <tbody>
+        {% for r in critical_unverified %}
+        <tr>
+          <td class="fw-semibold">{{ r.order_item.order.patient.full_name }}</td>
+          <td>{{ r.order_item.test_type.name }}</td>
+          <td class="text-danger fw-bold">{{ r.result_value }} {{ r.result_unit }}</td>
+          <td>{{ r.performed_by.get_full_name }}</td>
+          <td>
+            <a href="{% url 'laboratory:verify_result' r.id %}"
+               class="btn btn-xs btn-danger" style="font-size:.7rem;padding:2px 6px;">Verify</a>
+            <a href="{% url 'laboratory:detail' r.order_item.order.pk %}"
+               class="btn btn-xs btn-outline-secondary ms-1" style="font-size:.7rem;padding:2px 6px;">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+
+  <!-- Pending work queue -->
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-clock-history text-primary me-2"></i>Pending Work Queue
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover small mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Patient</th>
+                <th>Tests</th>
+                <th>Urgency</th>
+                <th>Status</th>
+                <th>Ordered</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in pending_orders %}
+              <tr class="{% if order.urgency == 'EMERGENCY' %}table-danger{% elif order.urgency == 'URGENT' %}table-warning{% endif %}">
+                <td>
+                  <div class="fw-semibold">{{ order.patient.full_name }}</div>
+                  <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
+                </td>
+                <td>
+                  {% for item in order.items.all %}
+                  <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
+                  {% endfor %}
+                </td>
+                <td>
+                  {% if order.urgency == 'EMERGENCY' %}<span class="badge bg-danger">EMERGENCY</span>
+                  {% elif order.urgency == 'URGENT' %}<span class="badge bg-warning text-dark">URGENT</span>
+                  {% else %}<span class="badge bg-secondary">Routine</span>{% endif %}
+                </td>
+                <td>
+                  {% if order.status == 'ORDERED' %}<span class="badge bg-primary">Ordered</span>
+                  {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info">Sample ✓</span>
+                  {% elif order.status == 'PROCESSING' %}<span class="badge bg-warning text-dark">Processing</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted" style="font-size:.7rem;">{{ order.created_at|timesince }} ago</td>
+                <td>
+                  <div class="d-flex gap-1">
+                    {% if order.status == 'ORDERED' %}
+                    <a href="{% url 'laboratory:collect_sample' order.pk %}"
+                       class="btn btn-xs btn-outline-info" style="font-size:.7rem;padding:2px 6px;">Collect</a>
+                    {% endif %}
+                    {% if order.status == 'SAMPLE_COLLECTED' or order.status == 'PROCESSING' %}
+                    <a href="{% url 'laboratory:enter_results' order.pk %}"
+                       class="btn btn-xs btn-outline-success" style="font-size:.7rem;padding:2px 6px;">Results</a>
+                    {% endif %}
+                    <a href="{% url 'laboratory:detail' order.pk %}"
+                       class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:2px 6px;">View</a>
+                  </div>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">
+                  <i class="bi bi-check-circle-fill text-success fs-3 d-block mb-2"></i>
+                  No pending lab orders — All clear!
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Category stats sidebar -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-bar-chart text-primary me-2"></i>Tests by Category (Month)
+      </div>
+      <div class="card-body p-0">
+        {% if category_stats %}
+        <ul class="list-group list-group-flush small">
+          {% for c in category_stats %}
+          <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+            <span>{{ c.test_type__category }}</span>
+            <span class="badge bg-primary rounded-pill">{{ c.count }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="p-3 text-muted text-center small">No data this month</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-check-all text-success me-2"></i>Month Summary
+      </div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted">Orders this month</span>
+          <strong>{{ completed_this_month }}</strong>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted">Completed today</span>
+          <strong class="text-success">{{ completed_today }}</strong>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted">Abnormal results</span>
+          <strong class="text-warning">{{ abnormal_count }}</strong>
+        </div>
+        <div class="d-flex justify-content-between">
+          <span class="text-muted">Critical unverified</span>
+          <strong class="{% if critical_count %}text-danger{% endif %}">{{ critical_count }}</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

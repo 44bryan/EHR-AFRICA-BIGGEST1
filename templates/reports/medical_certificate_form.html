@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Medical Certificate — {{ patient.full_name }}{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:700px;">
+  <div class="card shadow-sm">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+      <h5 class="mb-0"><i class="bi bi-file-earmark-medical me-2"></i>Issue Medical Certificate</h5>
+      <a href="javascript:history.back()" class="btn btn-sm btn-light">Back</a>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info py-2 mb-3">
+        <strong>Patient:</strong> {{ patient.full_name }} &nbsp;|&nbsp;
+        <strong>ID:</strong> {{ patient.patient_id }} &nbsp;|&nbsp;
+        <strong>Date of Consult:</strong> {{ consult.consultation_date|date:"d M Y" }}
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Certificate Type</label>
+          <select name="cert_type" class="form-select" id="certType" onchange="toggleFields()">
+            <option value="SICK_NOTE">Sick Note / Medical Leave</option>
+            <option value="FITNESS">Certificate of Fitness (Return to Work/Activity)</option>
+            <option value="SCHOOL">School Absence Certificate</option>
+            <option value="GENERAL">General Medical Certificate</option>
+          </select>
+        </div>
+        <div class="mb-3" id="daysOffGroup">
+          <label class="form-label fw-semibold">Days of Rest Recommended</label>
+          <input type="number" name="days_off" class="form-control" placeholder="e.g. 3" min="1" max="365">
+        </div>
+        <div class="row mb-3">
+          <div class="col">
+            <label class="form-label fw-semibold">Rest From</label>
+            <input type="date" name="date_from" class="form-control">
+          </div>
+          <div class="col">
+            <label class="form-label fw-semibold">Rest To</label>
+            <input type="date" name="date_to" class="form-control">
+          </div>
+        </div>
+        <div class="mb-3" id="fitnessGroup" style="display:none;">
+          <label class="form-label fw-semibold">Fitness Note</label>
+          <input type="text" name="fitness_note" class="form-control" placeholder="e.g. Fit to resume normal duties / Fit for light duties only">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Diagnosis (for certificate)</label>
+          <input type="text" name="diagnosis_text" class="form-control"
+                 placeholder="e.g. Acute Conjunctivitis OD — leave blank to keep confidential">
+          <div class="form-text">Leave blank to omit diagnosis from the certificate.</div>
+        </div>
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-printer me-2"></i>Generate Certificate PDF
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+function toggleFields() {
+  const v = document.getElementById('certType').value;
+  document.getElementById('fitnessGroup').style.display = v === 'FITNESS' ? '' : 'none';
+  document.getElementById('daysOffGroup').style.display = v === 'FITNESS' ? 'none' : '';
+}
+</script>
+{% endblock %}

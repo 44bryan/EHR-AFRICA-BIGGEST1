@@ -1,0 +1,215 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Clinic Board — {{ today|date:"d F Y" }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-0">Clinic Board</h1>
+    <span class="text-muted small"><i class="bi bi-calendar3 me-1"></i>{{ today|date:"l, d F Y" }}</span>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'appointments:book' %}" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>Book Appointment
+    </a>
+    <a href="{% url 'appointments:list' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-list-ul me-1"></i>All Appointments
+    </a>
+  </div>
+</div>
+
+<!-- Stats Strip -->
+<div class="row g-3 mb-4">
+  <div class="col">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold mb-0">{{ stats.total }}</div>
+      <div class="text-muted small">Total Today</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-0 shadow-sm text-center py-3 border-start border-4 border-primary">
+      <div class="h3 fw-bold text-primary mb-0">{{ stats.scheduled }}</div>
+      <div class="text-muted small">Waiting / Scheduled</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-0 shadow-sm text-center py-3 border-start border-4 border-warning">
+      <div class="h3 fw-bold text-warning mb-0">{{ stats.checked_in }}</div>
+      <div class="text-muted small">Checked In</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-0 shadow-sm text-center py-3 border-start border-4 border-success">
+      <div class="h3 fw-bold text-success mb-0">{{ stats.completed }}</div>
+      <div class="text-muted small">Completed</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-0 shadow-sm text-center py-3 border-start border-4 border-danger">
+      <div class="h3 fw-bold text-danger mb-0">{{ stats.no_show }}</div>
+      <div class="text-muted small">No Show</div>
+    </div>
+  </div>
+</div>
+
+<!-- Department Filter -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
+      <span class="text-muted small fw-semibold me-1">Filter by Department:</span>
+      <a href="{% url 'appointments:clinic_board' %}" class="btn btn-sm {% if not dept_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+      {% for dept in departments %}
+      <a href="?dept={{ dept.id }}" class="btn btn-sm {% if dept_filter == dept.id|stringformat:'s' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        <i class="bi {{ dept.icon }} me-1"></i>{{ dept.name }}
+      </a>
+      {% endfor %}
+    </form>
+  </div>
+</div>
+
+{% if not dept_groups %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-calendar-x" style="font-size:3rem;"></i>
+  <p class="mt-2">No appointments scheduled for today.</p>
+  <a href="{% url 'appointments:book' %}" class="btn btn-primary mt-2">Book First Appointment</a>
+</div>
+{% else %}
+
+{% for dept_name, appts in dept_groups.items %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="rounded-circle d-flex align-items-center justify-content-center bg-primary bg-opacity-10" style="width:36px;height:36px;">
+        <i class="bi bi-building text-primary"></i>
+      </div>
+      <h6 class="mb-0 fw-bold">{{ dept_name }}</h6>
+    </div>
+    <span class="badge bg-secondary">{{ appts|length }} patient{{ appts|length|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th style="width:60px;">#</th>
+            <th>Patient</th>
+            <th>Time</th>
+            <th>Doctor</th>
+            <th>Type</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th style="width:200px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for appt in appts %}
+          <tr id="row-{{ appt.pk }}" class="{% if appt.status == 'COMPLETED' %}table-success{% elif appt.status == 'NO_SHOW' %}table-danger{% elif appt.status == 'CHECKED_IN' %}table-warning{% elif appt.status == 'CANCELLED' %}table-secondary{% endif %}">
+            <td class="text-muted small fw-semibold">{{ appt.appointment_number }}</td>
+            <td>
+              <div class="fw-semibold">{{ appt.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">{{ appt.patient.patient_id }}{% if appt.patient.age %} · {{ appt.patient.age }}yrs{% endif %}</div>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ appt.appointment_time|time:"H:i" }}</div>
+              <div class="text-muted small">{{ appt.duration_minutes }}min</div>
+            </td>
+            <td>{{ appt.doctor.full_name|default:"—" }}</td>
+            <td><span class="badge bg-light text-dark">{{ appt.get_appointment_type_display }}</span></td>
+            <td class="small text-muted" style="max-width:180px;">{{ appt.reason|truncatechars:50 }}</td>
+            <td>
+              <span class="badge status-badge-{{ appt.pk }}
+                {% if appt.status == 'SCHEDULED' %}bg-secondary
+                {% elif appt.status == 'CONFIRMED' %}bg-primary
+                {% elif appt.status == 'CHECKED_IN' %}bg-warning text-dark
+                {% elif appt.status == 'COMPLETED' %}bg-success
+                {% elif appt.status == 'CANCELLED' %}bg-dark
+                {% elif appt.status == 'NO_SHOW' %}bg-danger
+                {% endif %}">
+                {{ appt.get_status_display }}
+              </span>
+            </td>
+            <td>
+              <div class="d-flex gap-1 flex-wrap">
+                {% if appt.status == 'SCHEDULED' or appt.status == 'CONFIRMED' %}
+                <button class="btn btn-xs btn-warning" onclick="updateStatus('{{ appt.pk }}', 'CHECKED_IN')" title="Check In">
+                  <i class="bi bi-box-arrow-in-right"></i> Check In
+                </button>
+                {% endif %}
+                {% if appt.status == 'CHECKED_IN' %}
+                <button class="btn btn-xs btn-success" onclick="updateStatus('{{ appt.pk }}', 'COMPLETED')" title="Complete">
+                  <i class="bi bi-check-circle"></i> Done
+                </button>
+                {% endif %}
+                {% if appt.status not in 'COMPLETED,CANCELLED,NO_SHOW' %}
+                <button class="btn btn-xs btn-outline-danger" onclick="updateStatus('{{ appt.pk }}', 'NO_SHOW')" title="No Show">
+                  <i class="bi bi-person-x"></i>
+                </button>
+                {% endif %}
+                <a href="{% url 'appointments:detail' appt.pk %}" class="btn btn-xs btn-outline-secondary" title="View">
+                  <i class="bi bi-eye"></i>
+                </a>
+                <a href="{% url 'appointments:reschedule' appt.pk %}" class="btn btn-xs btn-outline-secondary" title="Reschedule">
+                  <i class="bi bi-calendar-event"></i>
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<style>
+.btn-xs { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+</style>
+
+<script>
+const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')
+  ? document.querySelector('[name=csrfmiddlewaretoken]').value
+  : '{{ csrf_token }}';
+
+async function updateStatus(pk, status) {
+  const labels = {
+    CHECKED_IN: 'Check in this patient?',
+    COMPLETED: 'Mark consultation as completed?',
+    NO_SHOW: 'Mark patient as no-show?',
+    CANCELLED: 'Cancel this appointment?',
+  };
+  if (!confirm(labels[status] || 'Update status?')) return;
+
+  const resp = await fetch(`/appointments/${pk}/status/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-CSRFToken': csrfToken,
+    },
+    body: `status=${status}`,
+  });
+  const data = await resp.json();
+  if (data.status) {
+    // Update badge
+    const badge = document.querySelector(`.status-badge-${pk}`);
+    if (badge) {
+      badge.className = 'badge status-badge-' + pk + ' ' + {
+        SCHEDULED: 'bg-secondary',
+        CONFIRMED: 'bg-primary',
+        CHECKED_IN: 'bg-warning text-dark',
+        COMPLETED: 'bg-success',
+        CANCELLED: 'bg-dark',
+        NO_SHOW: 'bg-danger',
+      }[data.status];
+      badge.textContent = data.display;
+    }
+    // Reload page to refresh action buttons
+    location.reload();
+  }
+}
+
+// Auto-refresh every 2 minutes
+setTimeout(() => location.reload(), 120000);
+</script>
+{% csrf_token %}
+{% endblock %}

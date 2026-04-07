@@ -1,0 +1,188 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Queue Management System{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-grid-3x3-gap-fill me-2 text-primary"></i>Queue Management</h4>
+    <small class="text-muted">{{ today|date:"l, d F Y" }} · Live</small>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'qms:gate_issue' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-door-open me-1"></i>Gate Issue
+    </a>
+    <a href="{% url 'qms:cashier_issue' %}" class="btn btn-success btn-sm">
+      <i class="bi bi-cash-stack me-1"></i>Cashier Issue
+    </a>
+    <a href="{% url 'qms:display_board' %}" class="btn btn-dark btn-sm" target="_blank">
+      <i class="bi bi-display me-1"></i>Display Board
+    </a>
+    <a href="{% url 'qms:daily_census' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-bar-chart-line me-1"></i>Census
+    </a>
+    {% with r=request.user.role %}
+    {% if r == 'super_admin' or r == 'medical_director' or r == 'admin' or r == 'admin_director' or r == 'ceo' %}
+    <a href="{% url 'qms:counter_assign' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-person-badge me-1"></i>Assign Counters
+    </a>
+    {% endif %}
+    {% endwith %}
+  </div>
+</div>
+
+<!-- KPI Strip -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-primary">{{ waiting_count }}</div>
+      <div class="small text-muted">Waiting</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-success">{{ serving_count }}</div>
+      <div class="small text-muted">Being Served</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-secondary">{{ counters|length }}</div>
+      <div class="small text-muted">Active Counters</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-info">{{ tokens|length }}</div>
+      <div class="small text-muted">In Building</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Department Queue Counts -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-hospital me-2"></i>Departments</h6>
+        <span class="badge bg-primary rounded-pill">Live</span>
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for code, info in dept_counts.items %}
+          {% if info.waiting > 0 %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <span class="small">{{ info.label }}</span>
+            <span class="badge bg-primary rounded-pill">{{ info.waiting }}</span>
+          </li>
+          {% endif %}
+          {% endfor %}
+          {% for code, info in dept_counts.items %}
+          {% if info.waiting == 0 %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2 text-muted">
+            <span class="small">{{ info.label }}</span>
+            <span class="badge bg-light text-muted rounded-pill">0</span>
+          </li>
+          {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Counters -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light">
+        <h6 class="mb-0"><i class="bi bi-person-badge me-2"></i>Active Counters</h6>
+      </div>
+      <div class="card-body p-0">
+        {% if counters %}
+        <ul class="list-group list-group-flush">
+          {% for counter in counters %}
+          <li class="list-group-item py-2">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <a href="{% url 'qms:counter' counter.id %}" class="fw-semibold text-decoration-none">
+                  {{ counter.name }}
+                </a>
+                <div class="small text-muted">{{ counter.get_service_type_display }}</div>
+              </div>
+              <div class="text-end">
+                {% if counter.current_serving %}
+                  <span class="badge bg-success">{{ counter.current_serving.display_token_number }}</span>
+                {% else %}
+                  <span class="badge bg-light text-muted">Idle</span>
+                {% endif %}
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-4 small">No active counters configured.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Token Queue -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-list-ol me-2"></i>Live Queue</h6>
+        <small class="text-muted" id="refreshCountdown">Refresh in 30s</small>
+      </div>
+      <div class="card-body p-0" style="max-height: 400px; overflow-y:auto;">
+        {% if tokens %}
+        <ul class="list-group list-group-flush">
+          {% for token in tokens|slice:":25" %}
+          <li class="list-group-item py-2 px-3">
+            <div class="d-flex align-items-center gap-2">
+              {% if token.service_tier == 'VIP' %}
+                <span class="badge rounded-pill" style="background:#7c3aed; font-size:.65rem;">V</span>
+              {% elif token.service_tier == 'FAST_TRACK' %}
+                <span class="badge bg-warning text-dark rounded-pill" style="font-size:.65rem;">FT</span>
+              {% elif token.service_tier == 'EXPRESS' %}
+                <span class="badge bg-info text-dark rounded-pill" style="font-size:.65rem;">E</span>
+              {% else %}
+                <span class="badge bg-secondary rounded-pill" style="font-size:.65rem;">S</span>
+              {% endif %}
+              <div class="flex-grow-1 min-w-0">
+                <div class="fw-semibold small">{{ token.display_token_number }}</div>
+                <div class="text-muted" style="font-size:.75rem;">{{ token.display_name|truncatechars:20 }}</div>
+              </div>
+              <div class="text-end">
+                {% if token.status == 'SERVING' %}
+                  <span class="badge bg-success" style="font-size:.65rem;">Serving</span>
+                {% elif token.status == 'CALLED' %}
+                  <span class="badge bg-warning text-dark" style="font-size:.65rem;">Called</span>
+                {% else %}
+                  <span class="badge bg-light text-muted" style="font-size:.65rem;">Waiting</span>
+                {% endif %}
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-5 small">
+          <i class="bi bi-inbox fs-2 d-block mb-2"></i>No active queue entries.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let countdown = 30;
+const el = document.getElementById('refreshCountdown');
+setInterval(() => {
+  countdown--;
+  if (el) el.textContent = `Refresh in ${countdown}s`;
+  if (countdown <= 0) location.reload();
+}, 1000);
+</script>
+{% endblock %}

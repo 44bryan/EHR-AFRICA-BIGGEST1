@@ -1,0 +1,126 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}AI Virtual Receptionist{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-primary text-white d-flex align-items-center">
+        <div class="rounded-circle bg-white d-flex align-items-center justify-content-center me-3" style="width:40px;height:40px;">
+          <i class="bi bi-robot text-primary fs-5"></i>
+        </div>
+        <div>
+          <h6 class="mb-0 fw-bold">EyeCare AI Receptionist</h6>
+          <small class="opacity-75">Ask me anything about our services</small>
+        </div>
+        <span class="ms-auto badge bg-light text-success">Online</span>
+      </div>
+
+      <div class="card-body p-0">
+        <!-- Chat window -->
+        <div id="chat-window" style="height: 450px; overflow-y: auto; padding: 20px;">
+          <div class="d-flex mb-3">
+            <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width:35px;height:35px;">
+              <i class="bi bi-robot text-white small"></i>
+            </div>
+            <div class="bg-light rounded-3 px-3 py-2" style="max-width: 80%;">
+              <p class="mb-0">Hello! Welcome to EyeCare Specialist Hospital. I'm your virtual receptionist. How can I help you today? You can ask me about our services, appointment booking, eye health information, or anything else about our hospital.</p>
+            </div>
+          </div>
+          <div id="messages"></div>
+        </div>
+
+        <!-- Typing indicator -->
+        <div id="typing" class="px-4 py-2 d-none">
+          <div class="d-flex align-items-center">
+            <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center me-2" style="width:30px;height:30px;">
+              <i class="bi bi-robot text-white" style="font-size:12px;"></i>
+            </div>
+            <div class="bg-light rounded-3 px-3 py-2">
+              <span class="text-muted small">Typing...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="card-footer bg-white border-top p-3">
+        <div class="d-flex gap-2">
+          <input type="text" id="user-input" class="form-control" placeholder="Type your question..." autocomplete="off">
+          <button class="btn btn-primary px-4" onclick="sendMessage()">
+            <i class="bi bi-send"></i>
+          </button>
+        </div>
+        <div class="mt-2 d-flex flex-wrap gap-1">
+          <button class="btn btn-sm btn-outline-secondary" onclick="quickAsk('What services do you offer?')">Services</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="quickAsk('How do I book an appointment?')">Appointments</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="quickAsk('What are your opening hours?')">Hours</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="quickAsk('What is a cataract?')">Eye Conditions</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="quickAsk('Do you accept insurance?')">Insurance</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const chatWindow = document.getElementById('chat-window');
+const messages = document.getElementById('messages');
+const typing = document.getElementById('typing');
+
+function scrollToBottom() {
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function addMessage(text, role) {
+  const isUser = role === 'user';
+  const div = document.createElement('div');
+  div.className = 'd-flex mb-3' + (isUser ? ' flex-row-reverse' : '');
+  div.innerHTML = `
+    <div class="rounded-circle ${isUser ? 'bg-secondary' : 'bg-primary'} d-flex align-items-center justify-content-center ${isUser ? 'ms-2' : 'me-2'} flex-shrink-0" style="width:35px;height:35px;">
+      <i class="bi ${isUser ? 'bi-person' : 'bi-robot'} text-white small"></i>
+    </div>
+    <div class="${isUser ? 'bg-primary text-white' : 'bg-light'} rounded-3 px-3 py-2" style="max-width:80%;">
+      <p class="mb-0">${text.replace(/\n/g, '<br>')}</p>
+    </div>
+  `;
+  messages.appendChild(div);
+  scrollToBottom();
+}
+
+function quickAsk(text) {
+  document.getElementById('user-input').value = text;
+  sendMessage();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('user-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMessage(text, 'user');
+  typing.classList.remove('d-none');
+  scrollToBottom();
+
+  try {
+    const resp = await fetch('{% url "ai_assistant:receptionist" %}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+      body: JSON.stringify({message: text}),
+    });
+    const data = await resp.json();
+    typing.classList.add('d-none');
+    addMessage(data.response || 'Sorry, I could not process your request.', 'assistant');
+  } catch (e) {
+    typing.classList.add('d-none');
+    addMessage('Sorry, I encountered a connection error. Please try again.', 'assistant');
+  }
+}
+
+document.getElementById('user-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+</script>
+{% endblock %}

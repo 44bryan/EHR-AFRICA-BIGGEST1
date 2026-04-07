@@ -1,0 +1,90 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Admit Patient from Surgical Booking{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-hospital-fill text-success fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">Admit Patient to IPD</h5>
+    <div class="text-muted small">{{ booking.patient.full_name }} — {{ booking.booking_number }}</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-7">
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">Surgical Booking Summary</div>
+  <div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-4 text-muted">Patient</dt>
+      <dd class="col-8 fw-semibold">{{ booking.patient.full_name }} ({{ booking.patient.patient_id }})</dd>
+      <dt class="col-4 text-muted">Procedure</dt>
+      <dd class="col-8">{{ booking.procedure }}</dd>
+      <dt class="col-4 text-muted">Category</dt>
+      <dd class="col-8">{{ booking.surgery_category|default:"—" }}</dd>
+      <dt class="col-4 text-muted">Eye</dt>
+      <dd class="col-8">{{ booking.get_eye_laterality_display|default:"—" }}</dd>
+      <dt class="col-4 text-muted">Surgeon</dt>
+      <dd class="col-8">{{ booking.surgeon.get_full_name|default:"TBD" }}</dd>
+      <dt class="col-4 text-muted">Surgery Date</dt>
+      <dd class="col-8">{{ booking.surgery_date|date:"d M Y H:i"|default:"Not set" }}</dd>
+      <dt class="col-4 text-muted">Payment</dt>
+      <dd class="col-8">
+        {% if booking.is_fully_deposited %}
+        <span class="badge bg-success">Fully Paid</span>
+        {% else %}
+        <span class="badge bg-warning text-dark">
+          Paid {{ booking.deposit_paid|floatformat:0 }} / {{ booking.deposit_required|floatformat:0 }} XAF
+        </span>
+        {% endif %}
+      </dd>
+    </dl>
+  </div>
+</div>
+
+<form method="post" class="card border-0 shadow-sm">
+  {% csrf_token %}
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-bed me-2"></i>Assign Bed
+  </div>
+  <div class="card-body">
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Select Bed <span class="text-danger">*</span></label>
+      <select name="bed_id" class="form-select" required>
+        <option value="">— Choose a bed —</option>
+        {% regroup available_beds by ward as ward_groups %}
+        {% for ward_group in ward_groups %}
+        <optgroup label="{{ ward_group.grouper.name }} ({{ ward_group.grouper.get_ward_type_display }}) — {{ ward_group.grouper.price_per_night|floatformat:0 }} XAF/night">
+          {% for bed in ward_group.list %}
+          <option value="{{ bed.id }}">
+            Bed {{ bed.bed_number }}
+            {% if bed.price_override %} — {{ bed.price_override|floatformat:0 }} XAF/night{% endif %}
+          </option>
+          {% endfor %}
+        </optgroup>
+        {% empty %}
+        <option disabled>No beds available</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Diagnosis on Admission</label>
+      <textarea name="diagnosis_on_admission" class="form-control" rows="2">{{ booking.procedure }}</textarea>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-hospital me-2"></i>Confirm Admission
+      </button>
+      <a href="{% url 'ipd:surgical_booking_detail' booking.id %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </div>
+</form>
+
+</div>
+</div>
+{% endblock %}

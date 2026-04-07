@@ -1,0 +1,913 @@
+{% extends 'layouts/base_authenticated.html' %}
+
+{% block title %}Consultation — {{ consultation.patient.full_name }} — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=consultation.patient %}
+
+<!-- Consultation Meta -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div class="d-flex flex-wrap gap-3">
+        <span class="text-muted small"><i class="bi bi-building me-1"></i>{{ consultation.department }}</span>
+        <span class="text-muted small"><i class="bi bi-person-badge me-1"></i>Dr. {{ consultation.consulting_doctor.full_name }}</span>
+        <span class="text-muted small"><i class="bi bi-calendar3 me-1"></i>{{ consultation.consultation_date|date:"d M Y, H:i" }}</span>
+        <span class="badge {% if consultation.status == 'COMPLETED' %}bg-success{% elif consultation.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+          {{ consultation.get_status_display }}
+        </span>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+        <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-pencil me-1"></i>Edit
+        </a>
+        {% endif %}
+        {% if consultation.status == 'IN_PROGRESS' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
+        <form method="post" action="{% url 'consultations:complete' pk=consultation.pk %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-success"
+                  onclick="return confirm('Mark this consultation as completed?')">
+            <i class="bi bi-check-circle me-1"></i>Complete
+          </button>
+        </form>
+        {% endif %}
+        <!-- Quick actions -->
+        {% if request.user.can_create_consultation %}
+        <a href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-capsule me-1"></i>Prescribe
+        </a>
+        <a href="{% url 'prescriptions:optical_new' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-eyeglasses me-1"></i>Optical Rx
+        </a>
+        <a href="{% url 'investigations:order' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-search me-1"></i>Investigations
+        </a>
+        <a href="{% url 'laboratory:order' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-droplet me-1"></i>Lab Tests
+        </a>
+        {% endif %}
+        {% if request.user.can_use_ai_assistant %}
+        <a href="{% url 'ai_assistant:new_conversation' %}?consultation={{ consultation.pk }}" class="btn btn-sm btn-primary">
+          <i class="bi bi-robot me-1"></i>AI Assist
+        </a>
+        {% endif %}
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-file-pdf me-1"></i>PDF
+          </button>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="{% url 'reports:consultation_pdf' pk=consultation.pk %}" target="_blank"><i class="bi bi-file-earmark-text me-2"></i>Consultation Report</a></li>
+            {% if request.user.is_doctor or request.user.is_super_admin or request.user.is_medical_director %}
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="{% url 'reports:medical_certificate' consultation_pk=consultation.pk %}"><i class="bi bi-file-earmark-medical me-2"></i>Medical Certificate</a></li>
+            <li><a class="dropdown-item" href="{% url 'reports:referral_letter' consultation_pk=consultation.pk %}"><i class="bi bi-envelope-paper me-2"></i>Referral Letter</a></li>
+            {% endif %}
+          </ul>
+        </div>
+        {% if consultation.visit and not consultation.visit.status == 'DISCHARGED' %}
+        <div class="dropdown">
+          <button class="btn btn-sm btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-signpost-split me-1"></i>Route
+          </button>
+          <div class="dropdown-menu p-2" style="min-width:280px;">
+            <form method="post" action="{% url 'qms:route_to_dept' %}">
+              {% csrf_token %}
+              <input type="hidden" name="visit_id" value="{{ consultation.visit.pk }}">
+              <input type="hidden" name="next" value="{{ request.path }}">
+              <div class="mb-2">
+                <label class="form-label small mb-1 fw-semibold">Route patient to:</label>
+                <select name="service_type" class="form-select form-select-sm" required>
+                  <option value="">— Select —</option>
+                  {% for code, label in service_types %}
+                  <option value="{{ code }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <button type="submit" class="btn btn-dark btn-sm w-100">
+                <i class="bi bi-arrow-right-circle me-1"></i>Send Patient
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Tier / Insurance banner ── #}
+{% with v=consultation.visit %}
+{% if v.service_tier == 'EXPRESS' %}
+<div class="alert alert-info d-flex align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-info">
+  <i class="bi bi-lightning-charge-fill text-info fs-5"></i>
+  <span class="fw-bold text-info">EXPRESS</span>
+  <span class="text-muted small">Priority patient — inserted 3 positions back when referred to specialist.</span>
+  <span class="badge bg-info ms-auto">E</span>
+</div>
+{% elif v.service_tier == 'FAST_TRACK' %}
+<div class="alert alert-warning d-flex align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-warning">
+  <i class="bi bi-skip-forward-fill text-warning fs-5"></i>
+  <span class="fw-bold text-warning">FAST TRACK</span>
+  <span class="text-muted small">Highest priority patient.</span>
+  <span class="badge bg-warning text-dark ms-auto">FT</span>
+</div>
+{% elif v.service_tier == 'VIP' %}
+<div class="alert alert-danger d-flex align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-danger">
+  <i class="bi bi-star-fill text-danger fs-5"></i>
+  <span class="fw-bold text-danger">VIP PATIENT</span>
+  <span class="text-muted small">VIP priority — dedicated consultation room.</span>
+  <span class="badge bg-danger ms-auto">V</span>
+</div>
+{% endif %}
+{% if v.billing_type == 'INSURANCE' or v.billing_type == 'HMO' %}
+<div class="alert alert-primary d-flex align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-primary">
+  <i class="bi bi-shield-check text-primary fs-5"></i>
+  <div>
+    <span class="fw-bold text-primary">INSURED</span>
+    {% if v.insurance_company %}<span class="ms-2">{{ v.insurance_company }}</span>{% endif %}
+    {% if v.insurance_policy_ref %}<span class="badge bg-primary-subtle text-primary ms-2">Policy: {{ v.insurance_policy_ref }}</span>{% endif %}
+    <div class="text-muted small mt-1"><i class="bi bi-info-circle me-1"></i>Verify ICD-10 code is complete for insurance claim.</div>
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+
+{# ── Triage Vitals Strip — always visible at top of consultation ── #}
+{% if consultation.visit and consultation.visit.vital_signs %}
+{% with v=consultation.visit.vital_signs %}
+<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #0d6efd !important;">
+  <div class="card-body py-2 px-3">
+    <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+      <span class="fw-bold small text-primary me-2"><i class="bi bi-heart-pulse me-1"></i>Triage Vitals</span>
+      {% if v.priority %}
+      <span class="badge {% if v.priority == 'EMERGENCY' %}bg-danger{% elif v.priority == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %} me-2">
+        {{ v.priority }}
+      </span>
+      {% endif %}
+      <span class="text-muted small">Recorded by nurse before consultation</span>
+    </div>
+    <div class="d-flex flex-wrap gap-3 small">
+      {% if v.va_re_unaided or v.va_le_unaided %}
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+        <span class="text-muted" style="font-size:.65rem;">VA (Unaided)</span>
+        <span class="fw-semibold">RE: {{ v.va_re_unaided|default:"—" }} &nbsp; LE: {{ v.va_le_unaided|default:"—" }}</span>
+      </div>
+      {% endif %}
+      {% if v.va_re_ph or v.va_le_ph %}
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+        <span class="text-muted" style="font-size:.65rem;">VA (Pinhole)</span>
+        <span class="fw-semibold">RE: {{ v.va_re_ph|default:"—" }} &nbsp; LE: {{ v.va_le_ph|default:"—" }}</span>
+      </div>
+      {% endif %}
+      {% if v.iop_re or v.iop_le %}
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if v.iop_re|add:0 > 21 or v.iop_le|add:0 > 21 %}bg-danger bg-opacity-10{% else %}bg-light{% endif %}">
+        <span class="text-muted" style="font-size:.65rem;">IOP (mmHg)</span>
+        <span class="fw-semibold {% if v.iop_re|add:0 > 21 or v.iop_le|add:0 > 21 %}text-danger{% endif %}">
+          RE: {{ v.iop_re|default:"—" }} &nbsp; LE: {{ v.iop_le|default:"—" }}
+        </span>
+      </div>
+      {% endif %}
+      {% if v.bp_systolic %}
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+        <span class="text-muted" style="font-size:.65rem;">Blood Pressure</span>
+        <span class="fw-semibold">{{ v.bp_systolic }}/{{ v.bp_diastolic }} mmHg</span>
+      </div>
+      {% endif %}
+      {% if v.pulse %}
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+        <span class="text-muted" style="font-size:.65rem;">Pulse</span>
+        <span class="fw-semibold">{{ v.pulse }} bpm</span>
+      </div>
+      {% endif %}
+      {% if v.temperature %}
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+        <span class="text-muted" style="font-size:.65rem;">Temp</span>
+        <span class="fw-semibold">{{ v.temperature }} &deg;C</span>
+      </div>
+      {% endif %}
+      {% if v.weight %}
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+        <span class="text-muted" style="font-size:.65rem;">Weight</span>
+        <span class="fw-semibold">{{ v.weight }} kg</span>
+      </div>
+      {% endif %}
+      {% if v.triage_notes %}
+      <div class="d-flex flex-column px-2 py-1 rounded bg-light" style="max-width:260px;">
+        <span class="text-muted" style="font-size:.65rem;">Nurse Notes</span>
+        <span class="small text-secondary">{{ v.triage_notes|truncatechars:100 }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endwith %}
+{% endif %}
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-4" id="consultationTabs">
+  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabHistory">History</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabExam">Examination</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabDiagnosis">Diagnosis &amp; Plan</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabPrescriptions">Prescriptions</a></li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tabInvestigations">
+      Investigations
+      {% for order in consultation.investigation_orders.all %}{% if order.status == 'COMPLETED' and order.result and not order.result.is_verified %}<span class="badge bg-success ms-1" style="font-size:.6rem;" title="Results ready">Ready</span>{% endif %}{% endfor %}
+    </a>
+  </li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabNotes">Notes</a></li>
+  {% if consultation.department.code != 'INVEST' and consultation.department.code != 'LAB' %}
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tabClinical">
+      <i class="bi bi-clipboard2-heart me-1 text-success"></i>{{ consultation.department.name }} Exam
+    </a>
+  </li>
+  {% endif %}
+  {% if other_consultations %}
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tabPatientRecord">
+      <i class="bi bi-journal-medical me-1 text-info"></i>Patient Record
+      <span class="badge bg-info ms-1">{{ other_consultations|length }}</span>
+    </a>
+  </li>
+  {% endif %}
+  {% if request.user.can_create_consultation %}
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabVoice"><i class="bi bi-mic me-1 text-danger"></i>Voice EMR</a></li>
+  {% endif %}
+</ul>
+
+<div class="tab-content">
+
+  <!-- History Tab -->
+  <div class="tab-pane fade show active" id="tabHistory">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <h6 class="fw-bold text-muted small text-uppercase">Chief Complaint</h6>
+            <p>{{ consultation.presenting_complaint }}</p>
+          </div>
+          {% if consultation.history_of_presenting_complaint %}
+          <div class="col-12">
+            <h6 class="fw-bold text-muted small text-uppercase">History of Presenting Complaint</h6>
+            <p>{{ consultation.history_of_presenting_complaint|linebreaksbr }}</p>
+          </div>
+          {% endif %}
+          {% if consultation.ocular_history %}
+          <div class="col-md-6">
+            <h6 class="fw-bold text-muted small text-uppercase">Ocular History</h6>
+            <p>{{ consultation.ocular_history|linebreaksbr }}</p>
+          </div>
+          {% endif %}
+          {% if consultation.systemic_history %}
+          <div class="col-md-6">
+            <h6 class="fw-bold text-muted small text-uppercase">Systemic History</h6>
+            <p>{{ consultation.systemic_history|linebreaksbr }}</p>
+          </div>
+          {% endif %}
+          {% if consultation.drug_history %}
+          <div class="col-md-6">
+            <h6 class="fw-bold text-muted small text-uppercase">Drug History</h6>
+            <p>{{ consultation.drug_history|linebreaksbr }}</p>
+          </div>
+          {% endif %}
+          {% if consultation.family_history %}
+          <div class="col-md-6">
+            <h6 class="fw-bold text-muted small text-uppercase">Family History</h6>
+            <p>{{ consultation.family_history|linebreaksbr }}</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Examination Tab -->
+  <div class="tab-pane fade" id="tabExam">
+    {% with exam=consultation.examination_findings %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-bold mb-0 small">Visual Acuity &amp; IOP</h6>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-bordered table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th class="small"></th>
+                <th class="small text-center">Unaided</th>
+                <th class="small text-center">Pinhole</th>
+                <th class="small text-center">Best Corrected</th>
+                <th class="small text-center">IOP (mmHg)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fw-medium small">Right Eye (OD)</td>
+                <td class="text-center small">{{ exam.visual_acuity.right_unaided|default:"—" }}</td>
+                <td class="text-center small">{{ exam.visual_acuity.right_pinhole|default:"—" }}</td>
+                <td class="text-center small">{{ exam.visual_acuity.right_best_corrected|default:"—" }}</td>
+                <td class="text-center small">{{ exam.intraocular_pressure.right|default:"—" }}</td>
+              </tr>
+              <tr>
+                <td class="fw-medium small">Left Eye (OS)</td>
+                <td class="text-center small">{{ exam.visual_acuity.left_unaided|default:"—" }}</td>
+                <td class="text-center small">{{ exam.visual_acuity.left_pinhole|default:"—" }}</td>
+                <td class="text-center small">{{ exam.visual_acuity.left_best_corrected|default:"—" }}</td>
+                <td class="text-center small">{{ exam.intraocular_pressure.left|default:"—" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-bold mb-0 small">Clinical Examination</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% if exam.pupils %}<div class="col-md-6"><div class="text-muted small fw-medium">Pupils</div><div class="small">{{ exam.pupils }}</div></div>{% endif %}
+          {% if exam.ocular_motility %}<div class="col-md-6"><div class="text-muted small fw-medium">Ocular Motility</div><div class="small">{{ exam.ocular_motility }}</div></div>{% endif %}
+          {% if exam.anterior_segment.right or exam.anterior_segment.left %}
+          <div class="col-12">
+            <div class="text-muted small fw-medium">Anterior Segment</div>
+            <div class="small">OD: {{ exam.anterior_segment.right|default:"—" }}</div>
+            <div class="small">OS: {{ exam.anterior_segment.left|default:"—" }}</div>
+          </div>
+          {% endif %}
+          {% if exam.posterior_segment.right or exam.posterior_segment.left %}
+          <div class="col-12">
+            <div class="text-muted small fw-medium">Posterior Segment / Fundus</div>
+            <div class="small">OD: {{ exam.posterior_segment.right|default:"—" }}</div>
+            <div class="small">OS: {{ exam.posterior_segment.left|default:"—" }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+  </div>
+
+  <!-- Diagnosis & Plan Tab -->
+  <div class="tab-pane fade" id="tabDiagnosis">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+            <h6 class="fw-bold mb-0 small">Diagnoses</h6>
+            <span class="badge bg-secondary">{{ consultation.consultation_diagnoses.count }}</span>
+          </div>
+          <div class="card-body p-0">
+            {# ── Existing diagnoses ── #}
+            <div id="diagnosisList">
+              {% for cd in consultation.consultation_diagnoses.all %}
+              <div class="d-flex align-items-start gap-2 px-3 py-2 border-bottom">
+                <div class="flex-grow-1">
+                  {% if cd.is_primary %}
+                  <span class="badge bg-primary" style="font-size:0.65rem;">Primary</span>
+                  {% else %}
+                  <span class="badge bg-secondary" style="font-size:0.65rem;">Secondary</span>
+                  {% endif %}
+                  {% if cd.laterality != 'NA' %}
+                  <span class="badge bg-light text-dark border" style="font-size:0.65rem;">{{ cd.get_laterality_display }}</span>
+                  {% endif %}
+                  <div class="small fw-semibold mt-1">{{ cd.diagnosis.description }}</div>
+                  <div class="text-muted" style="font-size:0.72rem;">ICD-10: {{ cd.diagnosis.icd10_code }}</div>
+                  {% if cd.notes %}<div class="text-muted small fst-italic">{{ cd.notes }}</div>{% endif %}
+                </div>
+                {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+                {% if consultation.consulting_doctor == request.user or request.user.is_medical_director %}
+                <form method="post" action="{% url 'consultations:diagnosis_remove' pk=consultation.pk cd_pk=cd.pk %}"
+                      class="d-inline" onsubmit="return confirm('Remove this diagnosis?')">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1 mt-1">
+                    <i class="bi bi-x-lg" style="font-size:0.7rem;"></i>
+                  </button>
+                </form>
+                {% endif %}
+                {% endif %}
+              </div>
+              {% empty %}
+              <div class="text-muted small text-center py-3 px-3" id="noDiagnosisMsg">
+                <i class="bi bi-clipboard-x d-block mb-1"></i>No diagnoses recorded yet.
+              </div>
+              {% endfor %}
+            </div>
+
+            {# ── Add diagnosis (doctor only, not completed) ── #}
+            {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+            {% if consultation.consulting_doctor == request.user or request.user.is_medical_director %}
+            <div class="px-3 py-2 border-top bg-light">
+              <div class="fw-semibold small mb-2"><i class="bi bi-plus-circle me-1 text-success"></i>Add Diagnosis</div>
+              {# ICD-10 live search #}
+              <div class="position-relative mb-2">
+                <input type="text" id="diagnosisSearch"
+                       class="form-control form-control-sm"
+                       placeholder="Search ICD-10 code or description…"
+                       autocomplete="off">
+                <div id="diagnosisResults"
+                     class="position-absolute w-100 bg-white border rounded shadow-sm mt-1 d-none"
+                     style="z-index:1050; max-height:220px; overflow-y:auto;"></div>
+              </div>
+              <form method="post" action="{% url 'consultations:diagnosis_add' pk=consultation.pk %}" id="diagnosisAddForm">
+                {% csrf_token %}
+                <input type="hidden" name="diagnosis_id" id="selectedDiagnosisId">
+                <div id="selectedDiagnosisPreview" class="d-none mb-2 p-2 bg-primary bg-opacity-10 rounded small">
+                  <span id="selectedDiagnosisText" class="fw-semibold"></span>
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <select name="laterality" class="form-select form-select-sm">
+                      <option value="NA">Both / N/A</option>
+                      <option value="RE">Right Eye (OD)</option>
+                      <option value="LE">Left Eye (OS)</option>
+                      <option value="BE">Both Eyes (OU)</option>
+                    </select>
+                  </div>
+                  <div class="col-6">
+                    <div class="form-check form-switch mt-1">
+                      <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="isPrimaryCheck">
+                      <label class="form-check-label small" for="isPrimaryCheck">Primary</label>
+                    </div>
+                  </div>
+                </div>
+                <input type="text" name="notes" class="form-control form-control-sm mb-2" placeholder="Notes (optional)">
+                <button type="submit" class="btn btn-success btn-sm w-100" id="addDiagnosisBtn" disabled>
+                  <i class="bi bi-plus-lg me-1"></i>Add Diagnosis
+                </button>
+              </form>
+            </div>
+            {% endif %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-7">
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-header bg-white border-bottom py-2"><h6 class="fw-bold mb-0 small">Management Plan</h6></div>
+          <div class="card-body small">
+            {{ consultation.management_plan|linebreaksbr|default:"No management plan recorded." }}
+          </div>
+        </div>
+        {% if consultation.follow_up_date %}
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-body py-2">
+            <span class="text-muted small"><i class="bi bi-calendar-check me-1"></i>Follow-up: </span>
+            <strong class="small">{{ consultation.follow_up_date|date:"d M Y" }}</strong>
+            {% if consultation.follow_up_instructions %}<div class="text-muted small mt-1">{{ consultation.follow_up_instructions }}</div>{% endif %}
+          </div>
+        </div>
+        {% endif %}
+        {% if consultation.referral_department %}
+        <div class="card border-0 shadow-sm mt-2 border-warning">
+          <div class="card-body py-2">
+            <div class="small"><i class="bi bi-arrow-right-circle me-1 text-warning"></i><strong>Referred to:</strong> {{ consultation.referral_department }}</div>
+            {% if consultation.referral_reason %}<div class="text-muted small">{{ consultation.referral_reason }}</div>{% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Prescriptions Tab -->
+  <div class="tab-pane fade" id="tabPrescriptions">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-capsule me-1 text-primary"></i>Drug Prescriptions</h6>
+            {% if request.user.can_create_consultation %}
+            <a href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;">+ Add</a>
+            {% endif %}
+          </div>
+          <div class="list-group list-group-flush">
+            {% for rx in consultation.drug_prescriptions.all %}
+            <div class="list-group-item py-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <div class="small">
+                  {% for item in rx.items.all %}
+                  <div class="fw-medium">{{ item.drug_name }} {{ item.concentration }}</div>
+                  <div class="text-muted" style="font-size:0.72rem;">{{ item.dose }} · {{ item.frequency }} · {{ item.duration }}{% if item.get_eye_display != 'N/A' %} · {{ item.get_eye_display }}{% endif %}</div>
+                  {% endfor %}
+                </div>
+                <a href="{% url 'reports:drug_prescription_pdf' pk=rx.pk %}" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-printer"></i></a>
+              </div>
+            </div>
+            {% empty %}
+            <div class="list-group-item text-muted small py-3 text-center">No drug prescriptions</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-eyeglasses me-1 text-purple"></i>Optical Prescriptions</h6>
+            {% if request.user.can_create_consultation %}
+            <a href="{% url 'prescriptions:optical_new' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;">+ Add</a>
+            {% endif %}
+          </div>
+          <div class="list-group list-group-flush">
+            {% for rx in consultation.optical_prescriptions.all %}
+            <div class="list-group-item py-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <div class="small">
+                  <div class="fw-medium">{{ rx.get_prescription_type_display }}</div>
+                  <div class="text-muted" style="font-size:0.72rem;">{{ rx.prescription_date|date:"d M Y" }}</div>
+                </div>
+                <a href="{% url 'reports:optical_prescription_pdf' pk=rx.pk %}" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-printer"></i></a>
+              </div>
+            </div>
+            {% empty %}
+            <div class="list-group-item text-muted small py-3 text-center">No optical prescriptions</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Investigations Tab -->
+  <div class="tab-pane fade" id="tabInvestigations">
+    <div class="row g-3">
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-search-heart me-1 text-primary"></i>Eye Investigations</h6>
+            {% if request.user.can_order_investigations %}
+            <a href="{% url 'investigations:order' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;">
+              <i class="bi bi-plus me-1"></i>Order Investigation
+            </a>
+            {% endif %}
+          </div>
+          {% if consultation.investigation_orders.exists %}
+          <div class="p-0">
+            {% for order in consultation.investigation_orders.all %}
+            <div class="border-bottom p-3">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                  <div class="fw-semibold small">{{ order.investigation_type.name }}</div>
+                  <div class="text-muted" style="font-size:.72rem;">
+                    {{ order.get_eye_display }} &bull;
+                    <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="font-size:.65rem;">{{ order.urgency }}</span>
+                    &bull; Ordered {{ order.created_at|date:"d M Y, H:i" }}
+                    {% if order.clinical_indication %} &bull; <span class="text-secondary fst-italic">{{ order.clinical_indication|truncatechars:60 }}</span>{% endif %}
+                  </div>
+                </div>
+                <div class="d-flex gap-2 align-items-center flex-shrink-0">
+                  <span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+                    {{ order.get_status_display }}
+                  </span>
+                  <a href="{% url 'investigations:detail' pk=order.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
+                    {% if order.status == 'COMPLETED' %}View Full{% else %}Track{% endif %}
+                  </a>
+                </div>
+              </div>
+
+              {# ── Inline result display ── #}
+              {% if order.status == 'COMPLETED' %}
+              {% with result=order.result %}
+              {% if result %}
+              <div class="rounded p-2 {% if result.is_normal %}bg-success bg-opacity-10{% else %}bg-danger bg-opacity-10{% endif %}">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="badge {% if result.is_normal %}bg-success{% elif result.is_normal == False %}bg-danger{% else %}bg-secondary{% endif %}" style="font-size:.68rem;">
+                    {% if result.is_normal %}Normal{% elif result.is_normal == False %}Abnormal{% else %}Recorded{% endif %}
+                  </span>
+                  {% if result.is_verified %}
+                  <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Verified by Dr. {{ result.verified_by.last_name|default:result.verified_by.full_name }}</span>
+                  {% else %}
+                  <span class="text-warning small"><i class="bi bi-clock me-1"></i>Awaiting verification</span>
+                  {% endif %}
+                </div>
+                {% if result.interpretation %}
+                <div class="small text-dark mb-2" style="white-space:pre-wrap;">{{ result.interpretation }}</div>
+                {% endif %}
+                {# ── File attachments — images shown inline, PDFs as download button ── #}
+                {% if result.files.exists %}
+                <div class="d-flex flex-wrap gap-2 mt-1">
+                  {% for f in result.files.all %}
+                  {% if f.file_type == 'IMAGE' %}
+                  <a href="{{ f.file.url }}" target="_blank" title="{{ f.description|default:'View image' }}">
+                    <img src="{{ f.file.url }}" alt="{{ f.description|default:'Investigation image' }}"
+                         class="border rounded shadow-sm"
+                         style="max-height:180px;max-width:260px;object-fit:contain;cursor:zoom-in;">
+                  </a>
+                  {% elif f.file_type == 'PDF' %}
+                  <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"Open PDF" }}
+                  </a>
+                  {% else %}
+                  <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"Download File" }}
+                  </a>
+                  {% endif %}
+                  {% endfor %}
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+              {% endwith %}
+              {% else %}
+              <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Waiting for investigation technician to enter results.</div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="card-body text-center text-muted py-4">
+            <i class="bi bi-search-heart fs-2 d-block mb-2"></i>
+            No investigations ordered for this consultation.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-droplet me-1 text-danger"></i>Laboratory Tests</h6>
+            {% if request.user.can_order_investigations %}
+            <a href="{% url 'laboratory:order' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;">+ Order</a>
+            {% endif %}
+          </div>
+          <div class="list-group list-group-flush">
+            {% for order in consultation.lab_orders.all %}
+            <a href="{% url 'laboratory:detail' pk=order.pk %}" class="list-group-item list-group-item-action py-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <div class="small">
+                  <div class="fw-medium">{{ order.items.count }} test(s)</div>
+                  <div class="text-muted" style="font-size:0.72rem;">{{ order.urgency }} · {{ order.created_at|date:"d M Y" }}</div>
+                </div>
+                <span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %} small">{{ order.status }}</span>
+              </div>
+            </a>
+            {% empty %}
+            <div class="list-group-item text-muted small py-3 text-center">No laboratory tests ordered</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notes Tab -->
+  <div class="tab-pane fade" id="tabNotes">
+    <!-- Add Note -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-bold mb-0 small">Add Note</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% url 'consultations:add_note' pk=consultation.pk %}">
+          {% csrf_token %}
+          <div class="row g-2">
+            <div class="col-md-3">
+              {{ note_form.note_type }}
+            </div>
+            <div class="col-md-7">
+              {{ note_form.content }}
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-primary w-100">Add Note</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    <!-- Existing Notes -->
+    {% for note in consultation.notes.all %}
+    <div class="card border-0 shadow-sm mb-2">
+      <div class="card-body py-2">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="flex-grow-1">
+            <span class="badge bg-secondary-subtle text-secondary small me-2">{{ note.get_note_type_display }}</span>
+            <span class="text-muted small">{{ note.created_by.full_name }} · {{ note.created_at|date:"d M Y, H:i" }}</span>
+            <div class="small mt-1">{{ note.content|linebreaksbr }}</div>
+          </div>
+          {% if note.is_locked %}<i class="bi bi-lock text-muted ms-2"></i>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="text-muted small text-center py-3">No notes yet</div>
+    {% endfor %}
+  </div>
+
+  <!-- Department-Specific Clinical Exam Tab -->
+  {% if consultation.department.code != 'INVEST' and consultation.department.code != 'LAB' %}
+  <div class="tab-pane fade" id="tabClinical">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+        <h6 class="fw-bold mb-0 small"><i class="bi bi-clipboard2-heart me-1 text-success"></i>{{ consultation.department.name }} — Specialist Examination</h6>
+        {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+        <button class="btn btn-sm btn-outline-success" onclick="document.getElementById('clinicalForm').classList.toggle('d-none')">
+          <i class="bi bi-pencil me-1"></i>Edit
+        </button>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <!-- View mode -->
+        <div id="clinicalView">
+          {% include 'consultations/clinical/_dispatcher.html' %}
+        </div>
+        <!-- Edit form (hidden by default) -->
+        {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+        <form method="post" action="{% url 'consultations:save_clinical' pk=consultation.pk %}" class="d-none mt-3 pt-3 border-top" id="clinicalForm">
+          {% csrf_token %}
+          {% include 'consultations/clinical/_dispatcher_form.html' %}
+          <div class="d-flex gap-2 justify-content-end mt-3">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('clinicalForm').classList.add('d-none')">Cancel</button>
+            <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-save me-1"></i>Save Clinical Data</button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Patient Record Tab — read-only view of all other consultations this visit -->
+  {% if other_consultations %}
+  <div class="tab-pane fade" id="tabPatientRecord">
+    <div class="alert alert-info d-flex gap-2 align-items-center mb-3 py-2">
+      <i class="bi bi-info-circle-fill fs-5"></i>
+      <div class="small">
+        This section shows records written by other doctors during the <strong>same visit</strong>.
+        They are <strong>read-only</strong> — you can view but not modify them.
+      </div>
+    </div>
+
+    {% for other in other_consultations %}
+    <div class="card border-0 shadow-sm mb-3" style="opacity:0.92;">
+      {# ── Header: doctor, department, date, status ── #}
+      <div class="card-header bg-light border-bottom py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+          <span class="fw-semibold small">
+            <i class="bi bi-building me-1 text-muted"></i>{{ other.department }}
+          </span>
+          <span class="text-muted small">
+            <i class="bi bi-person-badge me-1"></i>Dr. {{ other.consulting_doctor.full_name }}
+          </span>
+          <span class="text-muted small">
+            <i class="bi bi-calendar3 me-1"></i>{{ other.consultation_date|date:"d M Y, H:i" }}
+          </span>
+        </div>
+        <span class="badge {% if other.status == 'COMPLETED' %}bg-success{% elif other.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+          {{ other.get_status_display }}
+        </span>
+      </div>
+
+      <div class="card-body" style="pointer-events:none; user-select:text;">
+
+        {# ── History summary ── #}
+        {% if other.presenting_complaint %}
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold text-uppercase mb-1" style="font-size:.68rem;letter-spacing:.05em;">
+            Chief Complaint
+          </div>
+          <div class="small text-secondary">{{ other.presenting_complaint }}</div>
+        </div>
+        {% endif %}
+        {% if other.history_of_presenting_complaint %}
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold text-uppercase mb-1" style="font-size:.68rem;letter-spacing:.05em;">
+            History of Presenting Complaint
+          </div>
+          <div class="small text-secondary">{{ other.history_of_presenting_complaint|linebreaksbr }}</div>
+        </div>
+        {% endif %}
+
+        {# ── Diagnoses ── #}
+        {% with diags=other.consultation_diagnoses.all %}
+        {% if diags %}
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold text-uppercase mb-1" style="font-size:.68rem;letter-spacing:.05em;">
+            Diagnoses
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for cd in diags %}
+            <span class="badge {% if cd.is_primary %}bg-primary{% else %}bg-secondary{% endif %}">
+              {{ cd.diagnosis.icd10_code }} — {{ cd.diagnosis.description }}
+              {% if cd.laterality != 'NA' %}({{ cd.get_laterality_display }}){% endif %}
+            </span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {# ── Management plan ── #}
+        {% if other.management_plan %}
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold text-uppercase mb-1" style="font-size:.68rem;letter-spacing:.05em;">
+            Management Plan
+          </div>
+          <div class="small text-secondary">{{ other.management_plan|linebreaksbr }}</div>
+        </div>
+        {% endif %}
+
+        {# ── Department-specific clinical findings (read-only) ── #}
+        {% if other.department_specific_data %}
+        <div class="mt-3 pt-3 border-top">
+          <div class="text-muted small fw-semibold text-uppercase mb-2" style="font-size:.68rem;letter-spacing:.05em;">
+            <i class="bi bi-clipboard2-heart me-1 text-success"></i>{{ other.department.name }} — Clinical Findings
+          </div>
+          <div class="p-2 bg-light rounded" style="border:1px dashed #ccc;">
+            {% with consultation=other %}
+              {% include 'consultations/clinical/_dispatcher.html' %}
+            {% endwith %}
+          </div>
+        </div>
+        {% endif %}
+
+      </div>{# end card-body #}
+
+      {# ── Locked overlay label ── #}
+      <div class="card-footer bg-transparent border-top-0 py-1 text-end">
+        <span class="text-muted" style="font-size:0.68rem;">
+          <i class="bi bi-lock me-1"></i>Read-only — written by Dr. {{ other.consulting_doctor.full_name }}
+        </span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Voice EMR Tab -->
+  {% if request.user.can_create_consultation %}
+  <div class="tab-pane fade" id="tabVoice">
+    {% csrf_token %}
+    {% include 'ai_assistant/partials/voice_emr.html' with consultation_id=consultation.pk %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── ICD-10 Diagnosis live search ──────────────────────────────────────────────
+(function () {
+  const searchInput  = document.getElementById('diagnosisSearch');
+  const resultsBox   = document.getElementById('diagnosisResults');
+  const hiddenId     = document.getElementById('selectedDiagnosisId');
+  const preview      = document.getElementById('selectedDiagnosisPreview');
+  const previewText  = document.getElementById('selectedDiagnosisText');
+  const addBtn       = document.getElementById('addDiagnosisBtn');
+
+  if (!searchInput) return;   // not a doctor or consultation is completed
+
+  let debounceTimer;
+
+  searchInput.addEventListener('input', function () {
+    const q = this.value.trim();
+    // Reset selection when user types again
+    hiddenId.value = '';
+    addBtn.disabled = true;
+    preview.classList.add('d-none');
+    clearTimeout(debounceTimer);
+    if (q.length < 2) { resultsBox.classList.add('d-none'); return; }
+    debounceTimer = setTimeout(() => {
+      fetch(`{% url 'consultations:diagnosis_search' %}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          resultsBox.innerHTML = '';
+          if (!data.results.length) {
+            resultsBox.innerHTML = '<div class="px-3 py-2 text-muted small">No results found.</div>';
+          } else {
+            data.results.forEach(d => {
+              const item = document.createElement('div');
+              item.className = 'px-3 py-2 small diagnosis-result-item';
+              item.style.cssText = 'cursor:pointer; border-bottom:1px solid #f0f0f0;';
+              item.innerHTML = `<span class="fw-semibold text-primary">${d.icd10_code}</span> <span class="text-dark">&mdash; ${d.description}</span>`;
+              item.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                hiddenId.value = d.id;
+                searchInput.value = `${d.icd10_code} — ${d.description}`;
+                previewText.textContent = `${d.icd10_code} — ${d.description}`;
+                preview.classList.remove('d-none');
+                addBtn.disabled = false;
+                resultsBox.classList.add('d-none');
+              });
+              item.addEventListener('mouseover', function() { this.style.background = '#f0f4ff'; });
+              item.addEventListener('mouseout',  function() { this.style.background = ''; });
+              resultsBox.appendChild(item);
+            });
+          }
+          resultsBox.classList.remove('d-none');
+        });
+    }, 300);
+  });
+
+  searchInput.addEventListener('blur', function () {
+    setTimeout(() => resultsBox.classList.add('d-none'), 200);
+  });
+})();
+</script>
+{% endblock %}

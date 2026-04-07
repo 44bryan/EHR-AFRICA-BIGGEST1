@@ -1,0 +1,96 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}Lab &amp; Investigations Dashboard{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-search-heart me-2 text-primary"></i>Lab &amp; Investigations</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'investigations:list' %}" class="btn btn-outline-primary btn-sm">Eye Investigations</a>
+    <a href="{% url 'laboratory:list' %}" class="btn btn-outline-danger btn-sm">Lab Orders</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Stats #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ pending_inv_count }}</div>
+      <div class="text-muted small">Pending Investigations</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-danger">{{ pending_lab_count }}</div>
+      <div class="text-muted small">Pending Lab Tests</div>
+    </div>
+  </div>
+</div>
+
+{# Investigation Orders #}
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 d-flex justify-content-between">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-search-heart me-1 text-primary"></i>Eye Investigation Orders</h6>
+        <span class="badge bg-primary">{{ pending_inv_count }}</span>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for order in pending_investigations %}
+        <a href="{% url 'investigations:detail' pk=order.pk %}" class="list-group-item list-group-item-action py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <div class="small fw-semibold">{{ order.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:.72rem;">
+                {{ order.investigation_type.name }} &bull; {{ order.created_at|timesince }} ago
+              </div>
+            </div>
+            <div class="d-flex flex-column align-items-end gap-1">
+              <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span>
+              <a href="{% url 'investigations:add_result' pk=order.pk %}" class="btn btn-xs btn-sm btn-primary py-0 px-2" style="font-size:.7rem;">Enter Result</a>
+            </div>
+          </div>
+        </a>
+        {% empty %}
+        <div class="text-center py-4 text-muted small">No pending investigations</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 d-flex justify-content-between">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-droplet me-1 text-danger"></i>Lab Test Orders</h6>
+        <span class="badge bg-danger">{{ pending_lab_count }}</span>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for order in pending_labs %}
+        <a href="{% url 'laboratory:detail' pk=order.pk %}" class="list-group-item list-group-item-action py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <div class="small fw-semibold">{{ order.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:.72rem;">
+                {{ order.items.count }} test{{ order.items.count|pluralize }} &bull; {{ order.created_at|timesince }} ago
+              </div>
+            </div>
+            <div class="d-flex flex-column align-items-end gap-1">
+              <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span>
+              <span class="badge bg-{% if order.status == 'PROCESSING' %}warning text-dark{% elif order.status == 'SAMPLE_COLLECTED' %}info{% else %}secondary{% endif %}">{{ order.get_status_display }}</span>
+            </div>
+          </div>
+        </a>
+        {% empty %}
+        <div class="text-center py-4 text-muted small">No pending lab orders</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,184 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Laboratory Statistics — {{ month_start|date:"F Y" }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-graph-up-arrow text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Laboratory Statistics</h5>
+      <div class="text-muted small">{{ month_start|date:"F Y" }} — Monthly reporting for management</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Workstation
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Summary -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_orders }}</div>
+        <div class="small text-muted">Lab Requests</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info">{{ total_items }}</div>
+        <div class="small text-muted">Tests Performed</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ total_abnormal }}</div>
+        <div class="small text-muted">Abnormal Results</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-danger">{{ total_critical }}</div>
+        <div class="small text-muted">Critical Results</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Daily volume chart -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-bar-chart-line text-primary me-2"></i>Daily Test Volume (Last 14 Days)
+  </div>
+  <div class="card-body">
+    <canvas id="dailyChart" height="80"></canvas>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  <!-- Top tests ordered -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-list-ol text-primary me-2"></i>Top 15 Tests Ordered
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr><th>#</th><th>Test</th><th>Code</th><th class="text-end">Count</th></tr>
+            </thead>
+            <tbody>
+              {% for t in top_tests %}
+              <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td>{{ t.test_type__name }}</td>
+                <td><code>{{ t.test_type__code }}</code></td>
+                <td class="text-end fw-bold">{{ t.count }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Abnormal rate per test -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-exclamation-triangle text-warning me-2"></i>Abnormal / Critical Rate by Test
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr><th>Test</th><th class="text-end">Total</th><th class="text-end">Abnormal</th><th class="text-end">Critical</th></tr>
+            </thead>
+            <tbody>
+              {% for t in abnormal_by_test %}
+              <tr>
+                <td>{{ t.order_item__test_type__name }}</td>
+                <td class="text-end">{{ t.total }}</td>
+                <td class="text-end text-warning fw-semibold">{{ t.abnormal }}</td>
+                <td class="text-end text-danger fw-semibold">{{ t.critical }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Category breakdown -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-grid text-primary me-2"></i>Tests by Category — {{ month_start|date:"F Y" }}
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm small mb-0">
+        <thead class="table-light">
+          <tr><th>Category</th><th>Test Name</th><th class="text-end">Count</th></tr>
+        </thead>
+        <tbody>
+          {% for c in category_volume %}
+          <tr>
+            <td>
+              {% if c.test_type__category != prev_cat %}
+              <span class="badge bg-primary">{{ c.test_type__category }}</span>
+              {% endif %}
+              {% with prev_cat=c.test_type__category %}{% endwith %}
+            </td>
+            <td>{{ c.test_type__name }}</td>
+            <td class="text-end fw-bold">{{ c.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const dv = {{ daily_volume_json|safe }};
+new Chart(document.getElementById('dailyChart'), {
+  type: 'bar',
+  data: {
+    labels: dv.map(d => d.date),
+    datasets: [{
+      label: 'Lab Orders',
+      data: dv.map(d => d.count),
+      backgroundColor: 'rgba(99,102,241,0.6)',
+      borderColor: '#6366f1',
+      borderWidth: 1,
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+  }
+});
+</script>
+{% endblock %}

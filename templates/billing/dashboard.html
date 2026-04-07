@@ -1,0 +1,64 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Billing Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Billing</h1>
+  <a href="{% url 'billing:invoice_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>New Invoice</a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-success mb-0">{{ paid_today|floatformat:0 }} FCFA</div>
+      <div class="text-muted small">Revenue Today</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ outstanding }}</div>
+      <div class="text-muted small">Outstanding Invoices</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold mb-0">{{ total_invoices }}</div>
+      <div class="text-muted small">Total Invoices</div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">Recent Invoices</h6>
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Invoice #</th><th>Patient</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for inv in recent_invoices %}
+          <tr>
+            <td class="fw-semibold">{{ inv.invoice_number }}</td>
+            <td>{{ inv.patient.full_name }}</td>
+            <td>{{ inv.total|floatformat:0 }} FCFA</td>
+            <td class="text-success">{{ inv.amount_paid|floatformat:0 }} FCFA</td>
+            <td class="{% if inv.balance_due > 0 %}text-danger fw-bold{% endif %}">{{ inv.balance_due|floatformat:0 }} FCFA</td>
+            <td>
+              <span class="badge {% if inv.status == 'PAID' %}bg-success{% elif inv.status == 'PARTIAL' %}bg-warning text-dark{% elif inv.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %}">
+                {{ inv.get_status_display }}
+              </span>
+            </td>
+            <td><a href="{% url 'billing:invoice_detail' inv.id %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No invoices yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

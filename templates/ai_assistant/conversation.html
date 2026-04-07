@@ -1,0 +1,369 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load static %}
+
+{% block title %}AI Assistant — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.chat-container { height: calc(100vh - 280px); overflow-y: auto; scroll-behavior: smooth; }
+.chat-bubble { max-width: 80%; }
+.chat-bubble.user { margin-left: auto; background: #0891b2; color: white; }
+.chat-bubble.assistant { background: #f8f9fa; border: 1px solid #dee2e6; }
+.chat-bubble pre { background: rgba(0,0,0,0.05); border-radius: 6px; padding: 8px; font-size: 0.8rem; }
+.typing-indicator span { animation: blink 1.4s infinite; display: inline-block; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%,80%,100%{opacity:0} 40%{opacity:1} }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{% url 'ai_assistant:home' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div class="flex-grow-1">
+    <h5 class="fw-bold mb-0">
+      <i class="bi bi-robot text-primary me-2"></i>AI Clinical Assistant
+      <span class="badge bg-primary-subtle text-primary ms-2 small">BETA</span>
+    </h5>
+    {% if conversation.patient %}
+    <div class="text-muted small">Patient: {{ conversation.patient.full_name }} · {{ conversation.patient.patient_id }}</div>
+    {% endif %}
+  </div>
+  <div class="d-flex gap-2">
+    {% if conversation.consultation %}
+    <a href="{% url 'consultations:detail' pk=conversation.consultation.pk %}"
+       class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-clipboard2-pulse me-1"></i>Back to Consultation
+    </a>
+    {% endif %}
+    <form method="post" action="{% url 'ai_assistant:clear' pk=conversation.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm btn-outline-secondary"
+              onclick="return confirm('Clear this conversation?')">
+        <i class="bi bi-trash me-1"></i>Clear
+      </button>
+    </form>
+  </div>
+</div>
+<!-- Context status strip -->
+<div class="d-flex flex-wrap gap-2 mb-3 small">
+  {% if conversation.context_type == 'SYSTEM_KNOWLEDGE' %}
+  <span class="badge bg-info text-white py-1 px-2">
+    <i class="bi bi-book-half me-1"></i>Clinical AI Support — Hospital &amp; Guideline Knowledge Mode
+  </span>
+  <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle py-1 px-2">
+    <i class="bi bi-shield-check me-1"></i>No patient data injected — answers from guidelines &amp; protocols only
+  </span>
+  {% elif conversation.patient %}
+  <span class="badge bg-success py-1 px-2">
+    <i class="bi bi-person-check me-1"></i>Patient: {{ conversation.patient.full_name }}
+  </span>
+  <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle py-1 px-2">
+    <i class="bi bi-shield-check me-1"></i>Anti-hallucination grounding active — AI only states what is recorded in the patient's file
+  </span>
+  {% else %}
+  <span class="badge bg-warning text-dark py-1 px-2">
+    <i class="bi bi-person-x me-1"></i>No patient linked — general ophthalmology knowledge mode
+  </span>
+  {% endif %}
+  {% if conversation.consultation %}
+  <span class="badge bg-info text-dark py-1 px-2">
+    <i class="bi bi-clipboard2-pulse me-1"></i>Consultation: {{ conversation.consultation.department }}
+  </span>
+  {% endif %}
+  <span class="badge bg-secondary py-1 px-2">
+    <i class="bi bi-cpu me-1"></i>DeepSeek-R1 reasoning model
+  </span>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Disclaimer -->
+<div class="alert alert-warning py-2 small mb-3">
+  <i class="bi bi-shield-exclamation me-1"></i>
+  <strong>Clinical Decision Support Only.</strong> AI responses are for assistance only and must not replace clinical judgment.
+  Always verify recommendations with current guidelines.
+</div>
+
+<!-- Chat Messages -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body chat-container p-3" id="chatContainer">
+    <!-- Welcome message -->
+    <div class="d-flex mb-3">
+      <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center me-2 flex-shrink-0"
+           style="width:32px;height:32px;">
+        <i class="bi bi-robot text-white small"></i>
+      </div>
+      <div class="chat-bubble assistant rounded-3 p-3 small">
+        Hello, <strong>{{ request.user.first_name }}</strong>. I am your AI clinical assistant (DeepSeek-R1), specialised in ophthalmology.
+        {% if conversation.context_type == 'SYSTEM_KNOWLEDGE' %}
+        <br><br>I am running in <strong>Clinical AI Support</strong> mode — I answer from ophthalmology guidelines, hospital protocols, and clinical knowledge.
+        I am <strong>not</strong> linked to any individual patient record in this session.
+        {% elif conversation.patient %}
+        <br><br>I have loaded the live record for <strong>{{ conversation.patient.full_name }}</strong>.
+        I will only state patient-specific data (VA, IOP, diagnoses) that is actually documented in the file — I will not invent values.
+        {% else %}
+        <br><br>No patient is linked to this session. I can answer general ophthalmology questions, drug queries, and guidelines.
+        {% endif %}
+        <br><br>I can help with:
+        {% if conversation.context_type == 'SYSTEM_KNOWLEDGE' %}
+        <ul class="mb-0 mt-1" style="padding-left:1.2rem;">
+          <li>Ophthalmology clinical guidelines (AAO, NICE, ICO, WHO)</li>
+          <li>Drug information, dosing principles &amp; interaction checks</li>
+          <li>ICD-10 coding for ophthalmic diagnoses</li>
+          <li>Management protocols for common &amp; rare eye conditions</li>
+          <li>Surgical procedure overviews &amp; post-op care standards</li>
+          <li>Hospital workflow, audit, and performance questions</li>
+        </ul>
+        {% else %}
+        <ul class="mb-0 mt-1" style="padding-left:1.2rem;">
+          <li>Differential diagnoses based on this patient's findings</li>
+          <li>Clinical management &amp; evidence-based guidelines</li>
+          <li>Drug information &amp; interaction checks</li>
+          <li>Interpretation of OCT, VF, and other investigation results</li>
+          <li>ICD-10 coding for ophthalmic diagnoses</li>
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+
+    {% for message in chat_messages %}
+    <div class="d-flex mb-3 {% if message.role == 'user' %}justify-content-end{% endif %}">
+      {% if message.role == 'assistant' %}
+      <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center me-2 flex-shrink-0"
+           style="width:32px;height:32px;">
+        <i class="bi bi-robot text-white small"></i>
+      </div>
+      {% endif %}
+      <div class="chat-bubble {{ message.role }} rounded-3 p-3 small">
+        {{ message.content|linebreaksbr }}
+        {% if message.role == 'assistant' and message.tokens_used %}
+        <div class="text-muted mt-1" style="font-size:0.7rem;">
+          {{ message.tokens_used }} tokens · {{ message.response_time_ms }}ms
+        </div>
+        {% endif %}
+      </div>
+      {% if message.role == 'user' %}
+      <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center ms-2 flex-shrink-0"
+           style="width:32px;height:32px;">
+        <span class="text-white small">{{ request.user.first_name|first|upper }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <!-- Typing indicator (hidden by default) -->
+    <div id="typingIndicator" class="d-flex mb-3" style="display:none !important;">
+      <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center me-2 flex-shrink-0"
+           style="width:32px;height:32px;">
+        <i class="bi bi-robot text-white small"></i>
+      </div>
+      <div class="chat-bubble assistant rounded-3 p-3">
+        <div class="typing-indicator">
+          <span>●</span><span>●</span><span>●</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Message Input -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-3">
+    <div class="d-flex gap-2">
+      <textarea id="messageInput" class="form-control"
+                rows="2"
+                placeholder="Ask about diagnosis, drugs, investigation results, clinical guidelines..."
+                style="resize:none;"></textarea>
+      <button id="sendBtn" class="btn btn-primary px-4" onclick="sendMessage()">
+        <i class="bi bi-send-fill"></i>
+      </button>
+    </div>
+    <!-- Quick prompts -->
+    <div class="mt-2 d-flex flex-wrap gap-1">
+      {% if conversation.context_type == 'SYSTEM_KNOWLEDGE' %}
+      <!-- Knowledge-mode prompts — guideline / protocol questions -->
+      <button class="btn btn-outline-info btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What are the current AAO/NICE guidelines for ')">
+        <i class="bi bi-book me-1"></i>Guidelines
+      </button>
+      <button class="btn btn-outline-info btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What is the ICD-10 code for ')">
+        <i class="bi bi-hash me-1"></i>ICD-10
+      </button>
+      <button class="btn btn-outline-info btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('Check drug interactions between: ')">
+        <i class="bi bi-capsule me-1"></i>Drug Interactions
+      </button>
+      <button class="btn btn-outline-info btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What is the first-line management for ')">
+        <i class="bi bi-clipboard2-check me-1"></i>Management Protocol
+      </button>
+      <button class="btn btn-outline-info btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('How do I interpret an OCT showing ')">
+        <i class="bi bi-activity me-1"></i>Interpret OCT
+      </button>
+      <button class="btn btn-outline-info btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What are the indications and contraindications for ')">
+        <i class="bi bi-list-check me-1"></i>Indications
+      </button>
+      <button class="btn btn-outline-info btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('Explain the surgical steps and complications of ')">
+        <i class="bi bi-scissors me-1"></i>Surgical Procedure
+      </button>
+      {% else %}
+      {% if conversation.patient %}
+      <button class="btn btn-outline-primary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('Based on this patient\'s documented findings, what are the most likely differential diagnoses?')">
+        <i class="bi bi-list-check me-1"></i>Differentials
+      </button>
+      <button class="btn btn-outline-primary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What is the recommended management plan for this patient based on their current findings?')">
+        <i class="bi bi-clipboard2-check me-1"></i>Management Plan
+      </button>
+      <button class="btn btn-outline-primary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What does this patient\'s current IOP and optic disc suggest? Is there a glaucoma risk?')">
+        <i class="bi bi-eye me-1"></i>IOP / Glaucoma Risk
+      </button>
+      <button class="btn btn-outline-primary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('Summarise this patient\'s key clinical findings and suggest next steps.')">
+        <i class="bi bi-file-text me-1"></i>Summarise Case
+      </button>
+      {% endif %}
+      <button class="btn btn-outline-secondary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What is the ICD-10 code for ')">
+        <i class="bi bi-hash me-1"></i>ICD-10
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('Check drug interactions between: ')">
+        <i class="bi bi-capsule me-1"></i>Drug Interactions
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('What are the current NICE/AAO guidelines for ')">
+        <i class="bi bi-book me-1"></i>Guidelines
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" style="font-size:0.75rem;"
+              onclick="setPrompt('How do I interpret an OCT showing ')">
+        <i class="bi bi-activity me-1"></i>Interpret OCT
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const SEND_URL = "{% url 'ai_assistant:send_message' pk=conversation.pk %}";
+const CSRF_TOKEN = "{{ csrf_token }}";
+
+function scrollToBottom() {
+  const c = document.getElementById('chatContainer');
+  c.scrollTop = c.scrollHeight;
+}
+
+function setPrompt(text) {
+  document.getElementById('messageInput').value = text;
+  document.getElementById('messageInput').focus();
+}
+
+let _reasoningCounter = 0;
+
+function appendMessage(role, content, tokens, ms, reasoning) {
+  const container = document.getElementById('chatContainer');
+  const typingEl = document.getElementById('typingIndicator');
+
+  const wrapper = document.createElement('div');
+  wrapper.className = `d-flex mb-3 ${role === 'user' ? 'justify-content-end' : ''}`;
+
+  const iconHtml = role === 'assistant'
+    ? `<div class="rounded-circle bg-primary d-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width:32px;height:32px;"><i class="bi bi-robot text-white small"></i></div>`
+    : `<div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center ms-2 flex-shrink-0" style="width:32px;height:32px;"><span class="text-white small">{{ request.user.first_name|first|upper }}</span></div>`;
+
+  const metaHtml = (role === 'assistant' && tokens)
+    ? `<div class="text-muted mt-1" style="font-size:0.7rem;"><i class="bi bi-cpu me-1"></i>DeepSeek-R1 · ${tokens} tokens · ${ms}ms</div>`
+    : '';
+
+  const escaped = content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+
+  // Collapsible reasoning chain for doctors (R1 chain-of-thought)
+  let reasoningHtml = '';
+  if (reasoning && reasoning.trim()) {
+    const rid = `reasoning-${++_reasoningCounter}`;
+    const escapedR = reasoning.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    reasoningHtml = `
+      <div class="mt-2">
+        <button class="btn btn-link btn-sm p-0 text-muted" type="button"
+                data-bs-toggle="collapse" data-bs-target="#${rid}"
+                style="font-size:0.72rem; text-decoration:none;">
+          <i class="bi bi-lightbulb me-1 text-warning"></i>Show reasoning chain
+        </button>
+        <div class="collapse" id="${rid}">
+          <div class="mt-1 p-2 rounded small"
+               style="background:#f8fafc; border-left:3px solid #f59e0b; font-size:0.73rem; color:#64748b; white-space:pre-wrap; max-height:200px; overflow-y:auto;">
+            ${escapedR}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  wrapper.innerHTML = role === 'user'
+    ? `<div class="chat-bubble user rounded-3 p-3 small">${escaped}${metaHtml}</div>${iconHtml}`
+    : `${iconHtml}<div class="chat-bubble assistant rounded-3 p-3 small">${escaped}${reasoningHtml}${metaHtml}</div>`;
+
+  container.insertBefore(wrapper, typingEl);
+  scrollToBottom();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('messageInput');
+  const btn = document.getElementById('sendBtn');
+  const typing = document.getElementById('typingIndicator');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  input.value = '';
+  btn.disabled = true;
+  appendMessage('user', msg);
+
+  typing.style.display = 'flex';
+  scrollToBottom();
+
+  try {
+    const resp = await fetch(SEND_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': CSRF_TOKEN,
+      },
+      body: JSON.stringify({ message: msg }),
+    });
+    const data = await resp.json();
+    typing.style.display = 'none';
+    if (data.message) {
+      appendMessage('assistant', data.message, data.tokens_used, data.response_time_ms, data.reasoning || '');
+    } else if (data.error) {
+      appendMessage('assistant', `Error: ${data.error}`);
+    }
+  } catch (err) {
+    typing.style.display = 'none';
+    appendMessage('assistant', 'Network error. Please check your connection and try again.');
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
+// Enter to send (Shift+Enter for newline)
+document.getElementById('messageInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+scrollToBottom();
+</script>
+{% endblock %}

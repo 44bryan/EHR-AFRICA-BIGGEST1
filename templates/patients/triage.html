@@ -1,0 +1,544 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Triage — {{ patient.full_name }}{% endblock %}
+{% block page_header %}{% include 'components/patient_card.html' with patient=patient %}{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+  <div class="col-lg-4">
+
+    {# ── 1. ALLERGY / SAFETY ALERT ── #}
+    {% if med_history and med_history.known_allergies and med_history.known_allergies|lower != 'nkda' and med_history.known_allergies|lower != 'none' %}
+    <div class="alert alert-danger d-flex gap-2 align-items-start mb-3 py-2">
+      <i class="bi bi-exclamation-octagon-fill fs-4 flex-shrink-0 mt-1"></i>
+      <div>
+        <div class="fw-bold">KNOWN ALLERGIES</div>
+        <div class="small">{{ med_history.known_allergies }}</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── 2. CHRONIC CONDITIONS ── #}
+    {% if med_history and med_history.chronic_conditions %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-warning bg-opacity-10 border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">
+          <i class="bi bi-clipboard2-pulse me-1 text-warning"></i>Chronic Conditions
+        </h6>
+      </div>
+      <div class="card-body py-2 small">
+        {{ med_history.chronic_conditions }}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── 3. CURRENT MEDICATIONS ── #}
+    {% if med_history and med_history.current_medications %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">
+          <i class="bi bi-capsule me-1 text-primary"></i>Current Medications
+        </h6>
+      </div>
+      <div class="card-body py-2 small">{{ med_history.current_medications }}</div>
+    </div>
+    {% endif %}
+
+    {# ── 4. PREVIOUS VITALS (last visit) ── #}
+    {% if prev_visit and prev_visit.vital_signs %}
+    {% with pv=prev_visit.vital_signs %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold small">
+          <i class="bi bi-clock-history me-1 text-secondary"></i>Last Visit Vitals
+        </h6>
+        <span class="text-muted small">{{ prev_visit.visit_date|date:"d M Y" }}</span>
+      </div>
+      <div class="card-body py-2">
+        <div class="row g-1 small">
+          {% if pv.visual_acuity_right or pv.visual_acuity_left %}
+          <div class="col-6">
+            <span class="text-muted">VA OD:</span>
+            <strong>{{ pv.visual_acuity_right|default:"—" }}</strong>
+          </div>
+          <div class="col-6">
+            <span class="text-muted">VA OS:</span>
+            <strong>{{ pv.visual_acuity_left|default:"—" }}</strong>
+          </div>
+          {% endif %}
+          {% if pv.intraocular_pressure_right or pv.intraocular_pressure_left %}
+          <div class="col-6">
+            <span class="text-muted">IOP OD:</span>
+            <strong>{{ pv.intraocular_pressure_right|default:"—" }} mmHg</strong>
+          </div>
+          <div class="col-6">
+            <span class="text-muted">IOP OS:</span>
+            <strong>{{ pv.intraocular_pressure_left|default:"—" }} mmHg</strong>
+          </div>
+          {% endif %}
+          {% if pv.blood_pressure %}
+          <div class="col-6">
+            <span class="text-muted">BP:</span>
+            <strong>{{ pv.blood_pressure }}</strong>
+          </div>
+          {% endif %}
+          {% if pv.pulse %}
+          <div class="col-6">
+            <span class="text-muted">Pulse:</span>
+            <strong>{{ pv.pulse }} bpm</strong>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+    {% endif %}
+
+    {# ── 5. RECENT CONSULTATIONS ── #}
+    {% if recent_consultations %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">
+          <i class="bi bi-journal-medical me-1 text-info"></i>Recent Consultations
+        </h6>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for c in recent_consultations %}
+        <div class="list-group-item py-2 px-3">
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="small">
+              <div class="fw-semibold">{{ c.department.name }}</div>
+              <div class="text-muted" style="font-size:0.7rem;">
+                Dr. {{ c.consulting_doctor.full_name }} &bull; {{ c.consultation_date|date:"d M Y" }}
+              </div>
+              {% for cd in c.consultation_diagnoses.all %}
+              <div style="font-size:0.7rem;" class="{% if cd.is_primary %}fw-semibold{% else %}text-muted{% endif %}">
+                {{ cd.diagnosis.icd10_code }} — {{ cd.diagnosis.description }}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if not med_history and not prev_visit and not recent_consultations %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body text-center text-muted py-4 small">
+        <i class="bi bi-person-plus fs-3 d-block mb-2"></i>
+        New patient — no prior history on record.
+      </div>
+    </div>
+    {% endif %}
+
+  </div>{# /left col #}
+
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 fw-semibold">
+          <i class="bi bi-heart-pulse me-2 text-danger"></i>Triage &amp; Dispatch
+        </h5>
+        <div class="d-flex gap-2 align-items-center">
+          <span class="badge bg-warning text-dark">Step 3</span>
+          <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back
+          </a>
+        </div>
+      </div>
+      <div class="card-body">
+
+        {# ── Visit info bar ── #}
+        <div class="alert alert-info py-2 small mb-3">
+          <strong>{{ visit.visit_number }}</strong> &bull; {{ patient.full_name }} &bull;
+          {{ patient.age_display }} / {{ patient.get_gender_display }} &bull;
+          <em>{{ visit.chief_complaint }}</em>
+          {% if visit.service_tier != 'STANDARD' %}
+          &bull; <span class="fw-bold text-danger">{{ visit.get_service_tier_display }}</span>
+          {% endif %}
+        </div>
+
+        {# ── Quick vitals templates ── #}
+        <div class="mb-3">
+          <div class="fw-semibold text-uppercase text-muted mb-2" style="font-size:.68rem;letter-spacing:.06em;">
+            <i class="bi bi-lightning-charge me-1"></i>Quick Templates — click to pre-fill
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="applyTemplate('postop')">
+              <i class="bi bi-bandaid me-1"></i>Post-op Day 1
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="applyTemplate('glaucoma')">
+              <i class="bi bi-eye me-1"></i>Glaucoma Follow-up
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="applyTemplate('diabetic')">
+              <i class="bi bi-droplet me-1"></i>Diabetic Eye Check
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="applyTemplate('pediatric')">
+              <i class="bi bi-person-hearts me-1"></i>Paediatric
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="applyTemplate('emergency')">
+              <i class="bi bi-exclamation-triangle me-1"></i>Emergency / Trauma
+            </button>
+          </div>
+        </div>
+
+        {# ── Abnormal vitals alert banner (hidden by default, shown by JS) ── #}
+        <div id="vitalsAlertBanner" class="d-none mb-3"></div>
+
+        <form method="post" id="triageForm">
+          {% csrf_token %}
+
+          {# ── Section 1: Ophthalmic Vitals ── #}
+          <div class="fw-semibold text-uppercase text-muted mb-2" style="font-size:.7rem;letter-spacing:.06em;">
+            <i class="bi bi-eye me-1"></i>Ophthalmic Parameters
+          </div>
+          <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">VA Right Eye</label>
+              {{ form.visual_acuity_right }}
+              <div class="vital-alert-msg text-danger small d-none" id="alert_va_right"></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">VA Left Eye</label>
+              {{ form.visual_acuity_left }}
+              <div class="vital-alert-msg text-danger small d-none" id="alert_va_left"></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">IOP Right (mmHg)</label>
+              {{ form.intraocular_pressure_right }}
+              <div class="vital-alert-msg small d-none" id="alert_iop_right"></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">IOP Left (mmHg)</label>
+              {{ form.intraocular_pressure_left }}
+              <div class="vital-alert-msg small d-none" id="alert_iop_left"></div>
+            </div>
+          </div>
+
+          {# ── Section 2: General Vitals ── #}
+          <div class="fw-semibold text-uppercase text-muted mb-2" style="font-size:.7rem;letter-spacing:.06em;">
+            <i class="bi bi-activity me-1"></i>General Vitals
+          </div>
+          <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">Blood Pressure</label>
+              {{ form.blood_pressure }}
+              <div class="vital-alert-msg small d-none" id="alert_bp"></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">Pulse (bpm)</label>
+              {{ form.pulse }}
+              <div class="vital-alert-msg small d-none" id="alert_pulse"></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">Temperature (°C)</label>
+              {{ form.temperature }}
+              <div class="vital-alert-msg small d-none" id="alert_temp"></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">Weight (kg)</label>
+              {{ form.weight }}
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold small">Height (cm)</label>
+              {{ form.height }}
+            </div>
+          </div>
+
+          {# ── Section 3: Dispatch ── #}
+          <div class="fw-semibold text-uppercase text-muted mb-2" style="font-size:.7rem;letter-spacing:.06em;">
+            <i class="bi bi-signpost-split me-1"></i>Dispatch to Unit
+          </div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Send Patient To <span class="text-danger">*</span></label>
+              <select name="dispatch_department" class="form-select" required>
+                <option value="">— Select Department / Unit —</option>
+                {% for dept in departments %}
+                <option value="{{ dept.pk }}"
+                  {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>
+                  {{ dept.name }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Assign to correct clinic/unit after triage</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Urgency / Priority</label>
+              <div id="priorityButtons" class="d-flex gap-2 mt-1 flex-wrap">
+                <label class="btn btn-sm btn-outline-secondary priority-btn" id="lbl_normal">
+                  <input type="radio" name="priority" value="NORMAL" class="d-none" id="pri_normal" checked>
+                  <i class="bi bi-circle me-1"></i>Normal
+                </label>
+                <label class="btn btn-sm btn-outline-warning priority-btn" id="lbl_urgent">
+                  <input type="radio" name="priority" value="URGENT" class="d-none" id="pri_urgent">
+                  <i class="bi bi-exclamation-circle me-1"></i>Urgent
+                </label>
+                <label class="btn btn-sm btn-outline-danger priority-btn" id="lbl_emergency">
+                  <input type="radio" name="priority" value="EMERGENCY" class="d-none" id="pri_emergency">
+                  <i class="bi bi-exclamation-triangle me-1"></i>Emergency
+                </label>
+              </div>
+              <div id="prioritySuggestion" class="small text-muted mt-1 d-none">
+                <i class="bi bi-robot me-1"></i><span id="prioritySuggestionText"></span>
+              </div>
+            </div>
+          </div>
+
+          {# ── Triage notes ── #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">
+              <i class="bi bi-pencil me-1"></i>Triage Notes <span class="text-muted fw-normal">(optional)</span>
+            </label>
+            <textarea name="triage_notes" class="form-control" rows="2"
+                      placeholder="e.g. Patient complains of sudden loss of vision OD. Appears distressed.">{{ visit.vital_signs.triage_notes|default:'' }}</textarea>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end pt-2 border-top">
+            <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-secondary">
+              <i class="bi bi-x me-1"></i>Cancel
+            </a>
+            <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
+              <i class="bi bi-send me-1"></i>Save Vitals &amp; Dispatch
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>{# /right col #}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Quick vitals templates ────────────────────────────────────────────────────
+const templates = {
+  postop: {
+    va_r: '6/18', va_l: '6/6', iop_r: '16', iop_l: '14',
+    bp: '', pulse: '', temp: '', note: 'Post-operative day 1 review.'
+  },
+  glaucoma: {
+    va_r: '', va_l: '', iop_r: '', iop_l: '',
+    bp: '', pulse: '', temp: '', note: 'Glaucoma follow-up — IOP monitoring.'
+  },
+  diabetic: {
+    va_r: '', va_l: '', iop_r: '', iop_l: '',
+    bp: '', pulse: '', temp: '', note: 'Annual diabetic eye screening.'
+  },
+  pediatric: {
+    va_r: '', va_l: '', iop_r: '', iop_l: '',
+    bp: '', pulse: '', temp: '', note: 'Paediatric eye examination.'
+  },
+  emergency: {
+    va_r: 'HM', va_l: '', iop_r: '', iop_l: '',
+    bp: '', pulse: '', temp: '', note: 'EMERGENCY — urgent review required.',
+    priority: 'EMERGENCY'
+  }
+};
+
+function applyTemplate(key) {
+  const t = templates[key];
+  if (!t) return;
+  const f = id => document.getElementById(id);
+  if (t.va_r)    f('id_visual_acuity_right').value      = t.va_r;
+  if (t.va_l)    f('id_visual_acuity_left').value       = t.va_l;
+  if (t.iop_r)   f('id_intraocular_pressure_right').value = t.iop_r;
+  if (t.iop_l)   f('id_intraocular_pressure_left').value  = t.iop_l;
+  if (t.bp)      f('id_blood_pressure').value           = t.bp;
+  if (t.pulse)   f('id_pulse').value                    = t.pulse;
+  if (t.temp)    f('id_temperature').value              = t.temp;
+  if (t.note) {
+    const notes = document.querySelector('[name="triage_notes"]');
+    if (notes) notes.value = t.note;
+  }
+  if (t.priority) setPriority(t.priority);
+  checkAllVitals();
+}
+
+// ── Priority radio styling ────────────────────────────────────────────────────
+document.querySelectorAll('input[name="priority"]').forEach(radio => {
+  radio.addEventListener('change', () => highlightPriority(radio.value));
+});
+function setPriority(val) {
+  const radio = document.getElementById('pri_' + val.toLowerCase());
+  if (radio) { radio.checked = true; highlightPriority(val); }
+}
+function highlightPriority(val) {
+  document.querySelectorAll('.priority-btn').forEach(btn => {
+    btn.classList.remove('active', 'btn-secondary', 'btn-warning', 'btn-danger',
+                         'btn-outline-secondary', 'btn-outline-warning', 'btn-outline-danger');
+  });
+  const map = { NORMAL: ['btn-outline-secondary', 'btn-secondary'],
+                URGENT: ['btn-outline-warning', 'btn-warning'],
+                EMERGENCY: ['btn-outline-danger', 'btn-danger'] };
+  const lbl = document.getElementById('lbl_' + val.toLowerCase());
+  if (lbl && map[val]) { lbl.classList.add('active', map[val][1]); }
+}
+// Init
+highlightPriority('NORMAL');
+
+// ── Abnormal vitals detection ─────────────────────────────────────────────────
+// VA severity map — lower number = worse
+const VA_SEVERITY = {
+  'NPL': 0, 'PL': 1, 'HM': 2, 'CF': 3, 'CF 1M': 3, 'CF 2M': 3,
+  '6/60': 4, '3/60': 4, '1/60': 4,
+  '6/36': 5, '6/24': 6,
+  '6/18': 7, '6/12': 8, '6/9': 9, '6/6': 10,
+};
+
+function vaLevel(val) {
+  if (!val) return null;
+  const upper = val.trim().toUpperCase();
+  if (upper in VA_SEVERITY) return VA_SEVERITY[upper];
+  if (/^6\/\d+$/.test(upper)) {
+    const denom = parseInt(upper.split('/')[1]);
+    if (denom > 60)  return 2;
+    if (denom > 24)  return 5;
+    if (denom > 12)  return 7;
+    return 9;
+  }
+  return null;
+}
+
+function showAlert(elId, msg, level) {
+  // level: 'warning' | 'danger' | null
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const inp = el.previousElementSibling;
+  if (!msg) {
+    el.classList.add('d-none'); el.textContent = '';
+    if (inp) { inp.classList.remove('border-warning', 'border-danger'); }
+    return;
+  }
+  el.classList.remove('d-none');
+  el.textContent = msg;
+  el.className = `vital-alert-msg small ${level === 'danger' ? 'text-danger' : 'text-warning'}`;
+  if (inp) {
+    inp.classList.remove('border-warning', 'border-danger');
+    inp.classList.add(level === 'danger' ? 'border-danger' : 'border-warning');
+    inp.style.borderWidth = '2px';
+  }
+}
+
+function checkIOP(val, side) {
+  const n = parseFloat(val);
+  if (isNaN(n)) return;
+  const id = 'alert_iop_' + side;
+  if (n > 30) showAlert(id, `⚠ IOP ${n} mmHg — VERY HIGH (acute glaucoma risk)`, 'danger');
+  else if (n > 21) showAlert(id, `IOP ${n} mmHg — elevated (>21 mmHg)`, 'warning');
+  else showAlert(id, null);
+}
+
+function checkVA(val, side) {
+  const level = vaLevel(val);
+  const id = 'alert_va_' + side;
+  if (level === null) { showAlert(id, null); return; }
+  if (level <= 2) showAlert(id, `⚠ Severe vision loss (${val}) — flag for urgent review`, 'danger');
+  else if (level <= 4) showAlert(id, `Vision impairment (${val})`, 'warning');
+  else showAlert(id, null);
+}
+
+function checkBP(val) {
+  const m = val.match(/^(\d+)\s*\/\s*(\d+)/);
+  if (!m) return;
+  const sys = parseInt(m[1]), dia = parseInt(m[2]);
+  if (sys >= 180 || dia >= 110) showAlert('alert_bp', `⚠ Hypertensive urgency — BP ${val}`, 'danger');
+  else if (sys >= 160 || dia >= 100) showAlert('alert_bp', `High BP ${val} — note and monitor`, 'warning');
+  else if (sys < 90) showAlert('alert_bp', `Low BP ${val} — check patient`, 'warning');
+  else showAlert('alert_bp', null);
+}
+
+function checkPulse(val) {
+  const n = parseInt(val);
+  if (isNaN(n)) return;
+  if (n > 130 || n < 45) showAlert('alert_pulse', `Abnormal pulse ${n} bpm`, 'danger');
+  else if (n > 100 || n < 55) showAlert('alert_pulse', `Pulse ${n} bpm — outside normal range`, 'warning');
+  else showAlert('alert_pulse', null);
+}
+
+function checkTemp(val) {
+  const n = parseFloat(val);
+  if (isNaN(n)) return;
+  if (n >= 39.5) showAlert('alert_temp', `High fever ${n}°C`, 'danger');
+  else if (n >= 38.0) showAlert('alert_temp', `Fever ${n}°C`, 'warning');
+  else if (n < 35.5) showAlert('alert_temp', `Low temperature ${n}°C`, 'warning');
+  else showAlert('alert_temp', null);
+}
+
+// ── Auto-suggest priority based on vitals ────────────────────────────────────
+function checkAllVitals() {
+  checkIOP(document.getElementById('id_intraocular_pressure_right').value, 'right');
+  checkIOP(document.getElementById('id_intraocular_pressure_left').value,  'left');
+  checkVA(document.getElementById('id_visual_acuity_right').value, 'right');
+  checkVA(document.getElementById('id_visual_acuity_left').value,  'left');
+  checkBP(document.getElementById('id_blood_pressure').value);
+  checkPulse(document.getElementById('id_pulse').value);
+  checkTemp(document.getElementById('id_temperature').value);
+  autoSuggestPriority();
+}
+
+function autoSuggestPriority() {
+  const bannerEl  = document.getElementById('vitalsAlertBanner');
+  const suggestEl = document.getElementById('prioritySuggestion');
+  const suggestTx = document.getElementById('prioritySuggestionText');
+
+  // Gather all active alerts
+  let emergencyHints = [], urgentHints = [];
+
+  const iopR = parseFloat(document.getElementById('id_intraocular_pressure_right').value);
+  const iopL = parseFloat(document.getElementById('id_intraocular_pressure_left').value);
+  if (iopR > 30 || iopL > 30) emergencyHints.push('IOP >30 mmHg');
+  else if (iopR > 21 || iopL > 21) urgentHints.push('Elevated IOP');
+
+  const vaR = vaLevel(document.getElementById('id_visual_acuity_right').value);
+  const vaL = vaLevel(document.getElementById('id_visual_acuity_left').value);
+  if (vaR !== null && vaR <= 2) emergencyHints.push('Severe VA loss OD');
+  if (vaL !== null && vaL <= 2) emergencyHints.push('Severe VA loss OS');
+  if ((vaR !== null && vaR > 2 && vaR <= 4) || (vaL !== null && vaL > 2 && vaL <= 4)) urgentHints.push('VA impairment');
+
+  const bpVal = document.getElementById('id_blood_pressure').value;
+  const bpM = bpVal.match(/^(\d+)\s*\/\s*(\d+)/);
+  if (bpM) {
+    const sys = parseInt(bpM[1]), dia = parseInt(bpM[2]);
+    if (sys >= 180 || dia >= 110) emergencyHints.push('Hypertensive urgency');
+    else if (sys >= 160) urgentHints.push('High BP');
+  }
+
+  // Decide
+  if (emergencyHints.length > 0) {
+    bannerEl.className = 'alert alert-danger d-flex gap-2 align-items-start mb-3 py-2';
+    bannerEl.innerHTML = `<i class="bi bi-exclamation-octagon-fill fs-5 flex-shrink-0"></i><div><strong>Emergency indicators:</strong> ${emergencyHints.join(', ')}</div>`;
+    bannerEl.classList.remove('d-none');
+    suggestEl.classList.remove('d-none');
+    suggestTx.textContent = 'Auto-suggestion: set priority to EMERGENCY';
+    setPriority('EMERGENCY');
+  } else if (urgentHints.length > 0) {
+    bannerEl.className = 'alert alert-warning d-flex gap-2 align-items-start mb-3 py-2';
+    bannerEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i><div><strong>Urgent indicators:</strong> ${urgentHints.join(', ')}</div>`;
+    bannerEl.classList.remove('d-none');
+    suggestEl.classList.remove('d-none');
+    suggestTx.textContent = 'Auto-suggestion: consider setting priority to URGENT';
+    setPriority('URGENT');
+  } else {
+    bannerEl.classList.add('d-none');
+    suggestEl.classList.add('d-none');
+  }
+}
+
+// ── Wire up all vitals fields ─────────────────────────────────────────────────
+document.getElementById('id_intraocular_pressure_right').addEventListener('input', e => { checkIOP(e.target.value, 'right'); autoSuggestPriority(); });
+document.getElementById('id_intraocular_pressure_left').addEventListener('input',  e => { checkIOP(e.target.value, 'left');  autoSuggestPriority(); });
+document.getElementById('id_visual_acuity_right').addEventListener('change', e => { checkVA(e.target.value, 'right'); autoSuggestPriority(); });
+document.getElementById('id_visual_acuity_left').addEventListener('change',  e => { checkVA(e.target.value, 'left');  autoSuggestPriority(); });
+document.getElementById('id_blood_pressure').addEventListener('change', e => { checkBP(e.target.value); autoSuggestPriority(); });
+document.getElementById('id_pulse').addEventListener('input',       e => checkPulse(e.target.value));
+document.getElementById('id_temperature').addEventListener('input', e => checkTemp(e.target.value));
+
+// Run on load if form was pre-filled (re-submit after error)
+checkAllVitals();
+</script>
+{% endblock %}

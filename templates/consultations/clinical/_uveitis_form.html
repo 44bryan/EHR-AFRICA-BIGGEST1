@@ -1,0 +1,710 @@
+{% load ehr_tags %}
+{% with d=consultation.department_specific_data rd=refraction_data %}
+
+<!-- ══ REFRACTIONIST ZONE — Grey / Read-only ══ -->
+<div class="mb-4 rounded border border-secondary border-opacity-25" style="background:#f8f9fa;opacity:.92;">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top"
+       style="background:#e9ecef;border-bottom:1px dashed #adb5bd;">
+    <i class="bi bi-lock-fill text-secondary"></i>
+    <span class="fw-bold text-secondary small text-uppercase" style="letter-spacing:.06em;">
+      Refractionist / VA Section — Read Only
+    </span>
+    <span class="ms-auto small text-muted">
+      {% if refraction_consult %}
+        <i class="bi bi-check-circle-fill text-success me-1"></i>
+        {{ refraction_consult.consulting_doctor.full_name|default:"Refractionist" }}
+        — {{ refraction_consult.consultation_date|date:"d M Y" }}
+      {% else %}
+        <i class="bi bi-info-circle me-1"></i>Not yet completed by Refractionist
+      {% endif %}
+    </span>
+  </div>
+  <div class="p-3">
+    <div class="row g-2">
+      {% for lbl, key in "VA RE (sc),va_re_unaided|VA LE (sc),va_le_unaided|BCVA RE,va_re_bcva|BCVA LE,va_le_bcva"|split:"|" %}
+        {% with parts=lbl|add:","  %}{% endwith %}
+        {# inline expand #}
+      {% endfor %}
+      <div class="col-md-3">
+        <label class="form-label small text-muted">VA Right Eye (sc)</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_re_unaided|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">VA Left Eye (sc)</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_le_unaided|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">BCVA Right Eye</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_re_bcva|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">BCVA Left Eye</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_le_bcva|default:'' }}" placeholder="—">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ UVEITIS SPECIALIST ZONE — Active / Blue ══ -->
+<div class="mb-3 rounded border border-primary border-opacity-25" style="background:#fff;">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top"
+       style="background:linear-gradient(90deg,#6f42c1 0%,#7952b3 100%);border-bottom:1px solid #6f42c1;">
+    <i class="bi bi-droplet-half text-white"></i>
+    <span class="fw-bold text-white small text-uppercase" style="letter-spacing:.06em;">
+      Uveitis Specialist Examination
+    </span>
+  </div>
+  <div class="p-3">
+
+    <!-- 1. Classification -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#6f42c1;">
+        <i class="bi bi-diagram-3 me-1"></i>1. Uveitis Classification (SUN Working Group)
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label small">Anatomical Location</label>
+          <select name="dept_uveitis_type" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            <option value="Anterior" {% if d.uveitis_type == 'Anterior' %}selected{% endif %}>Anterior Uveitis (Iritis / Iridocyclitis)</option>
+            <option value="Intermediate" {% if d.uveitis_type == 'Intermediate' %}selected{% endif %}>Intermediate Uveitis (Pars Planitis)</option>
+            <option value="Posterior" {% if d.uveitis_type == 'Posterior' %}selected{% endif %}>Posterior Uveitis (Choroiditis / Retinitis)</option>
+            <option value="Panuveitis" {% if d.uveitis_type == 'Panuveitis' %}selected{% endif %}>Panuveitis</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Laterality</label>
+          <select name="dept_uveitis_laterality" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            <option value="Unilateral RE" {% if d.uveitis_laterality == 'Unilateral RE' %}selected{% endif %}>Unilateral — Right Eye</option>
+            <option value="Unilateral LE" {% if d.uveitis_laterality == 'Unilateral LE' %}selected{% endif %}>Unilateral — Left Eye</option>
+            <option value="Bilateral" {% if d.uveitis_laterality == 'Bilateral' %}selected{% endif %}>Bilateral</option>
+            <option value="Alternating" {% if d.uveitis_laterality == 'Alternating' %}selected{% endif %}>Alternating</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Onset</label>
+          <select name="dept_uveitis_onset" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            <option value="Acute" {% if d.uveitis_onset == 'Acute' %}selected{% endif %}>Acute (&lt; 3 months)</option>
+            <option value="Chronic" {% if d.uveitis_onset == 'Chronic' %}selected{% endif %}>Chronic (≥ 3 months)</option>
+            <option value="Recurrent" {% if d.uveitis_onset == 'Recurrent' %}selected{% endif %}>Recurrent</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Course</label>
+          <select name="dept_uveitis_course" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            <option value="Acute" {% if d.uveitis_course == 'Acute' %}selected{% endif %}>Acute</option>
+            <option value="Chronic" {% if d.uveitis_course == 'Chronic' %}selected{% endif %}>Chronic</option>
+            <option value="Remitting" {% if d.uveitis_course == 'Remitting' %}selected{% endif %}>Remitting</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small">Aetiology</label>
+          <select name="dept_uveitis_aetiology" class="form-select form-select-sm">
+            <option value="">— Select / Unknown —</option>
+            <optgroup label="Infectious">
+              <option value="Toxoplasmosis" {% if d.uveitis_aetiology == 'Toxoplasmosis' %}selected{% endif %}>Toxoplasmosis</option>
+              <option value="CMV Retinitis" {% if d.uveitis_aetiology == 'CMV Retinitis' %}selected{% endif %}>CMV Retinitis</option>
+              <option value="Herpetic (HSV/VZV)" {% if d.uveitis_aetiology == 'Herpetic (HSV/VZV)' %}selected{% endif %}>Herpetic (HSV / VZV)</option>
+              <option value="Tuberculosis" {% if d.uveitis_aetiology == 'Tuberculosis' %}selected{% endif %}>Tuberculosis</option>
+              <option value="Syphilis" {% if d.uveitis_aetiology == 'Syphilis' %}selected{% endif %}>Syphilis</option>
+              <option value="Onchocerciasis" {% if d.uveitis_aetiology == 'Onchocerciasis' %}selected{% endif %}>Onchocerciasis</option>
+              <option value="Toxocariasis" {% if d.uveitis_aetiology == 'Toxocariasis' %}selected{% endif %}>Toxocariasis</option>
+            </optgroup>
+            <optgroup label="Non-Infectious / Autoimmune">
+              <option value="HLA-B27 Associated" {% if d.uveitis_aetiology == 'HLA-B27 Associated' %}selected{% endif %}>HLA-B27 Associated</option>
+              <option value="Sarcoidosis" {% if d.uveitis_aetiology == 'Sarcoidosis' %}selected{% endif %}>Sarcoidosis</option>
+              <option value="Behçet Disease" {% if d.uveitis_aetiology == 'Behçet Disease' %}selected{% endif %}>Behçet Disease</option>
+              <option value="VKH Syndrome" {% if d.uveitis_aetiology == "VKH Syndrome" %}selected{% endif %}>Vogt-Koyanagi-Harada (VKH)</option>
+              <option value="Sympathetic Ophthalmia" {% if d.uveitis_aetiology == 'Sympathetic Ophthalmia' %}selected{% endif %}>Sympathetic Ophthalmia</option>
+              <option value="JIA-associated" {% if d.uveitis_aetiology == 'JIA-associated' %}selected{% endif %}>JIA-associated</option>
+              <option value="Multiple Sclerosis" {% if d.uveitis_aetiology == 'Multiple Sclerosis' %}selected{% endif %}>Multiple Sclerosis / Pars Planitis</option>
+              <option value="Fuchs Heterochromic Iridocyclitis" {% if d.uveitis_aetiology == 'Fuchs Heterochromic Iridocyclitis' %}selected{% endif %}>Fuchs Heterochromic Iridocyclitis</option>
+              <option value="Idiopathic" {% if d.uveitis_aetiology == 'Idiopathic' %}selected{% endif %}>Idiopathic</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small">Aetiology Detail / Notes</label>
+          <input type="text" name="dept_uveitis_aetiology_notes" class="form-control form-control-sm"
+                 value="{{ d.uveitis_aetiology_notes|default:'' }}" placeholder="e.g. PCR-confirmed toxo, HLA-B27 positive...">
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Anterior Segment Inflammation -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#6f42c1;">
+        <i class="bi bi-eye me-1"></i>2. Anterior Segment Inflammation (SUN Grading)
+      </div>
+
+      <div class="table-responsive mb-2">
+        <table class="table table-bordered table-sm align-middle">
+          <thead class="table-light">
+            <tr>
+              <th style="width:200px;">Finding</th>
+              <th class="text-center">Right Eye (RE)</th>
+              <th class="text-center">Left Eye (LE)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Aqueous Cells -->
+            <tr>
+              <td class="fw-semibold small">Aqueous Cells (SUN)</td>
+              <td>
+                <select name="dept_aq_cells_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "0,0.5+,1+,2+,3+,4+"|split:"," %}
+                    <option value="{{ g }}" {% if d.aq_cells_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_aq_cells_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "0,0.5+,1+,2+,3+,4+"|split:"," %}
+                    <option value="{{ g }}" {% if d.aq_cells_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Aqueous Flare -->
+            <tr>
+              <td class="fw-semibold small">Aqueous Flare (SUN)</td>
+              <td>
+                <select name="dept_aq_flare_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "0,1+,2+,3+,4+"|split:"," %}
+                    <option value="{{ g }}" {% if d.aq_flare_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_aq_flare_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "0,1+,2+,3+,4+"|split:"," %}
+                    <option value="{{ g }}" {% if d.aq_flare_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Keratic Precipitates -->
+            <tr>
+              <td class="fw-semibold small">Keratic Precipitates (KP)</td>
+              <td>
+                <select name="dept_kp_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Fine (non-granulomatous),Mutton-fat (granulomatous),Mixed"|split:"," %}
+                    <option value="{{ g }}" {% if d.kp_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_kp_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Fine (non-granulomatous),Mutton-fat (granulomatous),Mixed"|split:"," %}
+                    <option value="{{ g }}" {% if d.kp_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Posterior Synechiae -->
+            <tr>
+              <td class="fw-semibold small">Posterior Synechiae (PS)</td>
+              <td>
+                <select name="dept_ps_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Focal,Sectoral,360° (Seclusio)"|split:"," %}
+                    <option value="{{ g }}" {% if d.ps_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_ps_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Focal,Sectoral,360° (Seclusio)"|split:"," %}
+                    <option value="{{ g }}" {% if d.ps_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Iris Nodules -->
+            <tr>
+              <td class="fw-semibold small">Iris Nodules</td>
+              <td>
+                <select name="dept_iris_nodules_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Koeppe (pupil margin),Busacca (iris stroma)"|split:"," %}
+                    <option value="{{ g }}" {% if d.iris_nodules_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_iris_nodules_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Koeppe (pupil margin),Busacca (iris stroma)"|split:"," %}
+                    <option value="{{ g }}" {% if d.iris_nodules_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Hypopyon -->
+            <tr>
+              <td class="fw-semibold small">Hypopyon</td>
+              <td>
+                <select name="dept_hypopyon_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.hypopyon_re == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.hypopyon_re == 'Present' %}selected{% endif %}>Present</option>
+                </select>
+              </td>
+              <td>
+                <select name="dept_hypopyon_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.hypopyon_le == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.hypopyon_le == 'Present' %}selected{% endif %}>Present</option>
+                </select>
+              </td>
+            </tr>
+            <!-- Rubeosis -->
+            <tr>
+              <td class="fw-semibold small">Rubeosis Iridis (NVI)</td>
+              <td>
+                <select name="dept_rubeosis_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.rubeosis_re == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.rubeosis_re == 'Present' %}selected{% endif %}>Present</option>
+                </select>
+              </td>
+              <td>
+                <select name="dept_rubeosis_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.rubeosis_le == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.rubeosis_le == 'Present' %}selected{% endif %}>Present</option>
+                </select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label small">Anterior Segment — Additional Notes</label>
+          <textarea name="dept_anterior_notes" class="form-control form-control-sm" rows="2"
+                    placeholder="e.g. Band keratopathy, anterior chamber fibrin...">{{ d.anterior_notes|default:'' }}</textarea>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">IOP Right Eye (mmHg)</label>
+          <input type="number" name="dept_iop_re" class="form-control form-control-sm" min="0" max="80"
+                 value="{{ d.iop_re|default:'' }}" placeholder="mmHg">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">IOP Left Eye (mmHg)</label>
+          <input type="number" name="dept_iop_le" class="form-control form-control-sm" min="0" max="80"
+                 value="{{ d.iop_le|default:'' }}" placeholder="mmHg">
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Posterior Segment Inflammation -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#6f42c1;">
+        <i class="bi bi-circle-half me-1"></i>3. Posterior Segment Inflammation
+      </div>
+      <div class="table-responsive mb-2">
+        <table class="table table-bordered table-sm align-middle">
+          <thead class="table-light">
+            <tr>
+              <th style="width:200px;">Finding</th>
+              <th class="text-center">Right Eye (RE)</th>
+              <th class="text-center">Left Eye (LE)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Vitreous Haze -->
+            <tr>
+              <td class="fw-semibold small">Vitreous Haze (SUN)</td>
+              <td>
+                <select name="dept_vit_haze_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "0,0.5+,1+,2+,3+,4+"|split:"," %}
+                    <option value="{{ g }}" {% if d.vit_haze_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_vit_haze_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "0,0.5+,1+,2+,3+,4+"|split:"," %}
+                    <option value="{{ g }}" {% if d.vit_haze_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Retinal Vasculitis -->
+            <tr>
+              <td class="fw-semibold small">Retinal Vasculitis</td>
+              <td>
+                <select name="dept_ret_vasculitis_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "Absent,Periphlebitis,Arteritis,Both"|split:"," %}
+                    <option value="{{ g }}" {% if d.ret_vasculitis_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_ret_vasculitis_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "Absent,Periphlebitis,Arteritis,Both"|split:"," %}
+                    <option value="{{ g }}" {% if d.ret_vasculitis_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Macular Oedema -->
+            <tr>
+              <td class="fw-semibold small">Macular Oedema (CME)</td>
+              <td>
+                <select name="dept_cme_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.cme_re == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.cme_re == 'Present' %}selected{% endif %}>Present</option>
+                  <option value="Suspected — refer OCT" {% if d.cme_re == 'Suspected — refer OCT' %}selected{% endif %}>Suspected — refer OCT</option>
+                </select>
+              </td>
+              <td>
+                <select name="dept_cme_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.cme_le == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.cme_le == 'Present' %}selected{% endif %}>Present</option>
+                  <option value="Suspected — refer OCT" {% if d.cme_le == 'Suspected — refer OCT' %}selected{% endif %}>Suspected — refer OCT</option>
+                </select>
+              </td>
+            </tr>
+            <!-- Disc Oedema -->
+            <tr>
+              <td class="fw-semibold small">Disc Oedema / Papillitis</td>
+              <td>
+                <select name="dept_disc_oedema_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.disc_oedema_re == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.disc_oedema_re == 'Present' %}selected{% endif %}>Present</option>
+                </select>
+              </td>
+              <td>
+                <select name="dept_disc_oedema_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.disc_oedema_le == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Present" {% if d.disc_oedema_le == 'Present' %}selected{% endif %}>Present</option>
+                </select>
+              </td>
+            </tr>
+            <!-- Choroiditis / Chorioretinal Lesions -->
+            <tr>
+              <td class="fw-semibold small">Choroiditis / Focal Lesions</td>
+              <td>
+                <select name="dept_choroiditis_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Active (yellow-white),Inactive (atrophic scar),Reactivation"|split:"," %}
+                    <option value="{{ g }}" {% if d.choroiditis_re == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="dept_choroiditis_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for g in "None,Active (yellow-white),Inactive (atrophic scar),Reactivation"|split:"," %}
+                    <option value="{{ g }}" {% if d.choroiditis_le == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <!-- Snowbank / Snowball -->
+            <tr>
+              <td class="fw-semibold small">Snowballs / Snowbanking</td>
+              <td>
+                <select name="dept_snowball_re" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.snowball_re == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Snowballs" {% if d.snowball_re == 'Snowballs' %}selected{% endif %}>Snowballs (vitreous)</option>
+                  <option value="Snowbanking" {% if d.snowball_re == 'Snowbanking' %}selected{% endif %}>Snowbanking (pars plana)</option>
+                </select>
+              </td>
+              <td>
+                <select name="dept_snowball_le" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  <option value="Absent" {% if d.snowball_le == 'Absent' %}selected{% endif %}>Absent</option>
+                  <option value="Snowballs" {% if d.snowball_le == 'Snowballs' %}selected{% endif %}>Snowballs (vitreous)</option>
+                  <option value="Snowbanking" {% if d.snowball_le == 'Snowbanking' %}selected{% endif %}>Snowbanking (pars plana)</option>
+                </select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="row g-2">
+        <div class="col-12">
+          <label class="form-label small">Posterior Segment — Additional Description</label>
+          <textarea name="dept_posterior_notes" class="form-control form-control-sm" rows="2"
+                    placeholder="e.g. subretinal fluid, exudates, neovascularisation, haemorrhage, epiretinal membrane...">{{ d.posterior_notes|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Systemic Associations -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#6f42c1;">
+        <i class="bi bi-person-check me-1"></i>4. Systemic Associations / Workup
+      </div>
+      <div class="row g-2">
+        <div class="col-md-4">
+          <label class="form-label small">HLA-B27</label>
+          <select name="dept_hla_b27" class="form-select form-select-sm">
+            <option value="">— Not tested —</option>
+            <option value="Positive" {% if d.hla_b27 == 'Positive' %}selected{% endif %}>Positive</option>
+            <option value="Negative" {% if d.hla_b27 == 'Negative' %}selected{% endif %}>Negative</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">ACE Level (Sarcoidosis)</label>
+          <input type="text" name="dept_ace_level" class="form-control form-control-sm"
+                 value="{{ d.ace_level|default:'' }}" placeholder="e.g. 65 U/L (elevated)">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">VDRL / RPR (Syphilis)</label>
+          <select name="dept_vdrl" class="form-select form-select-sm">
+            <option value="">— Not tested —</option>
+            <option value="Reactive" {% if d.vdrl == 'Reactive' %}selected{% endif %}>Reactive</option>
+            <option value="Non-reactive" {% if d.vdrl == 'Non-reactive' %}selected{% endif %}>Non-reactive</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">TB (Mantoux / IGRA / Xpert)</label>
+          <select name="dept_tb_test" class="form-select form-select-sm">
+            <option value="">— Not tested —</option>
+            <option value="Positive" {% if d.tb_test == 'Positive' %}selected{% endif %}>Positive</option>
+            <option value="Negative" {% if d.tb_test == 'Negative' %}selected{% endif %}>Negative</option>
+            <option value="Indeterminate" {% if d.tb_test == 'Indeterminate' %}selected{% endif %}>Indeterminate</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Toxoplasma IgG / IgM</label>
+          <input type="text" name="dept_toxo_serology" class="form-control form-control-sm"
+                 value="{{ d.toxo_serology|default:'' }}" placeholder="e.g. IgG positive, IgM negative">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">ANA / RF / Other Autoimmune</label>
+          <input type="text" name="dept_autoimmune_markers" class="form-control form-control-sm"
+                 value="{{ d.autoimmune_markers|default:'' }}" placeholder="e.g. ANA 1:160 speckled, RF negative">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Chest X-Ray / CT</label>
+          <select name="dept_cxr" class="form-select form-select-sm">
+            <option value="">— Not done —</option>
+            <option value="Normal" {% if d.cxr == 'Normal' %}selected{% endif %}>Normal</option>
+            <option value="Hilar lymphadenopathy" {% if d.cxr == 'Hilar lymphadenopathy' %}selected{% endif %}>Hilar lymphadenopathy (Sarcoid)</option>
+            <option value="Pulmonary TB" {% if d.cxr == 'Pulmonary TB' %}selected{% endif %}>Pulmonary TB changes</option>
+            <option value="Abnormal — see notes" {% if d.cxr == 'Abnormal — see notes' %}selected{% endif %}>Abnormal — see notes</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">FBC / ESR / CRP</label>
+          <input type="text" name="dept_bloods" class="form-control form-control-sm"
+                 value="{{ d.bloods|default:'' }}" placeholder="e.g. ESR 45, CRP 12 mg/L">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Associated Systemic Disease</label>
+          <input type="text" name="dept_systemic_disease" class="form-control form-control-sm"
+                 value="{{ d.systemic_disease|default:'' }}" placeholder="e.g. Ankylosing Spondylitis, Crohn's...">
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Complications -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#6f42c1;">
+        <i class="bi bi-exclamation-triangle me-1"></i>5. Ocular Complications
+      </div>
+      <div class="row g-2">
+        {% for lbl, name in "Cataract (uveitic),comp_cataract|Band Keratopathy,comp_band_keratopathy|Glaucoma (uveitic),comp_glaucoma|Retinal Detachment,comp_rd|Phthisis Bulbi,comp_phthisis"|split:"|" %}
+          {% with parts=lbl|add:","  %}{% endwith %}
+          {# Can't use with for multiple vars in Django, so unroll #}
+        {% endfor %}
+        <div class="col-md-4">
+          <label class="form-label small">Cataract (Uveitic)</label>
+          <select name="dept_comp_cataract" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="None" {% if d.comp_cataract == 'None' %}selected{% endif %}>None</option>
+            <option value="Posterior subcapsular" {% if d.comp_cataract == 'Posterior subcapsular' %}selected{% endif %}>Posterior subcapsular</option>
+            <option value="Mature" {% if d.comp_cataract == 'Mature' %}selected{% endif %}>Mature</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Band Keratopathy</label>
+          <select name="dept_comp_band_kp" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="Absent" {% if d.comp_band_kp == 'Absent' %}selected{% endif %}>Absent</option>
+            <option value="Present" {% if d.comp_band_kp == 'Present' %}selected{% endif %}>Present</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Secondary Glaucoma</label>
+          <select name="dept_comp_glaucoma" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="No" {% if d.comp_glaucoma == 'No' %}selected{% endif %}>No</option>
+            <option value="Ocular hypertension" {% if d.comp_glaucoma == 'Ocular hypertension' %}selected{% endif %}>Ocular hypertension</option>
+            <option value="Glaucoma confirmed" {% if d.comp_glaucoma == 'Glaucoma confirmed' %}selected{% endif %}>Glaucoma confirmed</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Retinal Detachment</label>
+          <select name="dept_comp_rd" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="None" {% if d.comp_rd == 'None' %}selected{% endif %}>None</option>
+            <option value="Exudative RD" {% if d.comp_rd == 'Exudative RD' %}selected{% endif %}>Exudative RD</option>
+            <option value="Tractional RD" {% if d.comp_rd == 'Tractional RD' %}selected{% endif %}>Tractional RD</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Hypotony / Phthisis</label>
+          <select name="dept_comp_phthisis" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="No" {% if d.comp_phthisis == 'No' %}selected{% endif %}>No</option>
+            <option value="Hypotony" {% if d.comp_phthisis == 'Hypotony' %}selected{% endif %}>Hypotony</option>
+            <option value="Phthisis Bulbi" {% if d.comp_phthisis == 'Phthisis Bulbi' %}selected{% endif %}>Phthisis Bulbi</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Other Complications</label>
+          <input type="text" name="dept_comp_other" class="form-control form-control-sm"
+                 value="{{ d.comp_other|default:'' }}" placeholder="e.g. epiretinal membrane, NVD...">
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Treatment Plan -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#6f42c1;">
+        <i class="bi bi-capsule me-1"></i>6. Treatment Plan
+      </div>
+      <div class="row g-2">
+        <div class="col-md-4">
+          <label class="form-label small">Topical Steroids</label>
+          <input type="text" name="dept_tx_topical_steroid" class="form-control form-control-sm"
+                 value="{{ d.tx_topical_steroid|default:'' }}" placeholder="e.g. Pred Forte 1% q1h → taper">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Cycloplegic / Mydriatic</label>
+          <input type="text" name="dept_tx_cycloplegic" class="form-control form-control-sm"
+                 value="{{ d.tx_cycloplegic|default:'' }}" placeholder="e.g. Atropine 1% BD, Cyclopentolate 1%">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">IOP-Lowering Therapy</label>
+          <input type="text" name="dept_tx_iop" class="form-control form-control-sm"
+                 value="{{ d.tx_iop|default:'' }}" placeholder="e.g. Timolol 0.5% BD, Dorzolamide BD">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Systemic Steroids</label>
+          <input type="text" name="dept_tx_systemic_steroid" class="form-control form-control-sm"
+                 value="{{ d.tx_systemic_steroid|default:'' }}" placeholder="e.g. Prednisolone 1mg/kg/day PO">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Immunosuppressive Agent</label>
+          <select name="dept_tx_immunosuppressant" class="form-select form-select-sm">
+            <option value="">— None / Not indicated —</option>
+            {% for g in "Methotrexate,Mycophenolate Mofetil (MMF),Azathioprine,Cyclosporine,Tacrolimus,Infliximab (anti-TNF),Adalimumab (anti-TNF),Rituximab,Tocilizumab"|split:"," %}
+              <option value="{{ g }}" {% if d.tx_immunosuppressant == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Anti-VEGF Injection</label>
+          <select name="dept_tx_anti_vegf" class="form-select form-select-sm">
+            <option value="">— Not planned —</option>
+            {% for g in "Bevacizumab (Avastin),Ranibizumab (Lucentis),Aflibercept (Eylea)"|split:"," %}
+              <option value="{{ g }}" {% if d.tx_anti_vegf == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Intravitreal / Periocular Steroid</label>
+          <input type="text" name="dept_tx_intravitreal" class="form-control form-control-sm"
+                 value="{{ d.tx_intravitreal|default:'' }}" placeholder="e.g. IVTA 4mg, Ozurdex implant">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Antimicrobial (if Infectious)</label>
+          <input type="text" name="dept_tx_antimicrobial" class="form-control form-control-sm"
+                 value="{{ d.tx_antimicrobial|default:'' }}" placeholder="e.g. TMP-SMX DS BD (toxo), Acyclovir 400mg 5x/day">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Referral / Co-management</label>
+          <input type="text" name="dept_tx_referral" class="form-control form-control-sm"
+                 value="{{ d.tx_referral|default:'' }}" placeholder="e.g. Rheumatology, Infectious Disease, Dermatology">
+        </div>
+      </div>
+      <div class="row g-2 mt-1">
+        <div class="col-12">
+          <label class="form-label small">Management Plan — Full Notes</label>
+          <textarea name="dept_management_plan" class="form-control form-control-sm" rows="3"
+                    placeholder="Detailed management notes, tapering schedules, monitoring plan...">{{ d.management_plan|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Follow-up -->
+    <div class="mb-2">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#6f42c1;">
+        <i class="bi bi-calendar-check me-1"></i>7. Follow-up &amp; Monitoring
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label small">Review In</label>
+          <select name="dept_review_in" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            {% for g in "1 week,2 weeks,1 month,6 weeks,2 months,3 months,6 months,1 year,As needed"|split:"," %}
+              <option value="{{ g }}" {% if d.review_in == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Monitoring Parameters</label>
+          <input type="text" name="dept_monitoring" class="form-control form-control-sm"
+                 value="{{ d.monitoring|default:'' }}" placeholder="e.g. VA, IOP, cells/flare, OCT CMT">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Investigations Pending</label>
+          <input type="text" name="dept_investigations_pending" class="form-control form-control-sm"
+                 value="{{ d.investigations_pending|default:'' }}" placeholder="e.g. FFA, OCT, FBC, LFTs">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Patient Counselling</label>
+          <select name="dept_counselling_done" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="Yes" {% if d.counselling_done == 'Yes' %}selected{% endif %}>Done — patient educated</option>
+            <option value="Partial" {% if d.counselling_done == 'Partial' %}selected{% endif %}>Partial</option>
+            <option value="No" {% if d.counselling_done == 'No' %}selected{% endif %}>Not done</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label small">Follow-up Notes</label>
+          <textarea name="dept_followup_notes" class="form-control form-control-sm" rows="2"
+                    placeholder="Review targets, red flags to return early, steroid taper schedule...">{{ d.followup_notes|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /p-3 -->
+</div><!-- /active zone -->
+
+{% endwith %}

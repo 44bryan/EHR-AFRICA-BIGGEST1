@@ -1,0 +1,136 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Admission{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-hospital me-2 text-primary"></i>New Patient Admission</h4>
+    <p class="text-muted small mb-0">Admit a patient to a ward bed</p>
+  </div>
+  <a href="{% url 'ipd:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to IPD
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm border-primary border-top border-4">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-person-plus me-2 text-primary"></i>Admission Form</h5>
+      </div>
+      <div class="card-body">
+
+        {% if messages %}
+        {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags }} alert-dismissible" role="alert">
+          {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <form method="post">
+          {% csrf_token %}
+
+          {# Patient Search #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <input type="text" id="patientSearch" class="form-control"
+              placeholder="Search by name, ID or phone number…" autocomplete="off">
+            <input type="hidden" name="patient_id" id="patientIdField">
+            <div id="searchResults" class="list-group mt-1 position-absolute z-3 w-100" style="max-width:540px;display:none;"></div>
+            <div id="selectedPatient" class="alert alert-success py-2 mt-2 small d-none"></div>
+          </div>
+
+          {# Bed Selection #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Ward / Bed <span class="text-danger">*</span></label>
+            <select name="bed_id" class="form-select" required>
+              <option value="">— Select available bed —</option>
+              {% for bed in beds %}
+              <option value="{{ bed.id }}">{{ bed.ward.name }} — Bed {{ bed.bed_number }} ({{ bed.ward.get_ward_type_display }})</option>
+              {% empty %}
+              <option value="" disabled>No beds currently available</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Only available beds are listed.</div>
+          </div>
+
+          {# Diagnosis on Admission #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Diagnosis on Admission <span class="text-danger">*</span></label>
+            <textarea name="diagnosis_on_admission" class="form-control" rows="3" required
+              placeholder="Primary diagnosis and reason for admission…"></textarea>
+          </div>
+
+          {# Notes #}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Admission Notes</label>
+            <textarea name="notes" class="form-control" rows="2"
+              placeholder="Special instructions, allergies, surgical plan…"></textarea>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'ipd:dashboard' %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+              <i class="bi bi-hospital me-1"></i>Admit Patient
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const searchInput = document.getElementById('patientSearch');
+const resultsBox  = document.getElementById('searchResults');
+const patientId   = document.getElementById('patientIdField');
+const selectedDiv = document.getElementById('selectedPatient');
+const submitBtn   = document.getElementById('submitBtn');
+
+let debounceTimer;
+
+searchInput.addEventListener('input', function () {
+  clearTimeout(debounceTimer);
+  const q = this.value.trim();
+  if (q.length < 2) { resultsBox.style.display = 'none'; return; }
+
+  debounceTimer = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        resultsBox.innerHTML = '';
+        if (!data.results.length) {
+          resultsBox.innerHTML = '<div class="list-group-item text-muted small">No patients found.</div>';
+        }
+        data.results.forEach(p => {
+          const a = document.createElement('a');
+          a.href = '#';
+          a.className = 'list-group-item list-group-item-action';
+          a.innerHTML = `<strong>${p.name}</strong> <span class="text-muted small">${p.patient_id} &bull; ${p.age} yrs &bull; ${p.gender}</span>`;
+          a.addEventListener('click', e => {
+            e.preventDefault();
+            patientId.value = p.patient_id;
+            searchInput.value = `${p.name} (${p.patient_id})`;
+            selectedDiv.textContent = `Selected: ${p.name} — ${p.patient_id}`;
+            selectedDiv.classList.remove('d-none');
+            resultsBox.style.display = 'none';
+            submitBtn.disabled = false;
+          });
+          resultsBox.appendChild(a);
+        });
+        resultsBox.style.display = 'block';
+      });
+  }, 300);
+});
+
+document.addEventListener('click', e => {
+  if (!searchInput.contains(e.target)) resultsBox.style.display = 'none';
+});
+</script>
+{% endblock %}

@@ -1,0 +1,178 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Outreach Statistics {{ year }}{% endblock %}
+{% block content %}
+
+<!-- Print header -->
+<div class="print-header text-center mb-3">
+  <h4 class="fw-bold mb-0">{{ HOSPITAL_NAME }}</h4>
+  <p class="mb-0 small">Outreach Department — Annual Statistics Report {{ year }}</p>
+  <p class="mb-0 small text-muted">Printed: {{ today }}</p><hr>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mb-4 no-print">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-bar-chart me-2 text-success"></i>Outreach Annual Statistics</h5>
+    <p class="text-muted small mb-0">Full year summary for management reporting</p>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <form method="get" class="d-flex gap-2">
+      <input type="number" name="year" value="{{ year }}" class="form-control form-control-sm" style="width:90px;">
+      <button type="submit" class="btn btn-sm btn-primary">Go</button>
+    </form>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ activities_count }}</div>
+      <div class="small text-muted">Activities</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ totals.screened|default:0|intcomma }}</div>
+      <div class="small text-muted">Screened</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ totals.treated|default:0|intcomma }}</div>
+      <div class="small text-muted">Treated</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-warning">{{ totals.referred|default:0|intcomma }}</div>
+      <div class="small text-muted">Referred</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-danger">{{ totals.surgeries|default:0 }}</div>
+      <div class="small text-muted">Surgeries</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold">{{ totals.glasses|default:0 }}</div>
+      <div class="small text-muted">Glasses</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Demographics -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-primary bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-primary">Demographics</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+          <tr><td class="text-muted">Male Screened</td><td class="fw-bold text-end">{{ totals.male|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Female Screened</td><td class="fw-bold text-end">{{ totals.female|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Children (&lt;18)</td><td class="fw-bold text-end">{{ totals.children|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Elderly (60+)</td><td class="fw-bold text-end">{{ totals.elderly|default:0|intcomma }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pathology -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-danger bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-danger">Conditions Found</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+          <tr><td class="text-muted">Normal Vision</td><td class="fw-bold text-end">{{ path_totals.normal|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Refractive Errors</td><td class="fw-bold text-end">{{ path_totals.refractive|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Cataract</td><td class="fw-bold text-end">{{ path_totals.cataract|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Glaucoma Suspect</td><td class="fw-bold text-end">{{ path_totals.glaucoma|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Diabetic Retinopathy</td><td class="fw-bold text-end">{{ path_totals.dr|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Pterygium</td><td class="fw-bold text-end">{{ path_totals.pterygium|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Trachoma</td><td class="fw-bold text-end">{{ path_totals.trachoma|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Corneal Opacity</td><td class="fw-bold text-end">{{ path_totals.corneal|default:0|intcomma }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Referrals + By type -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-warning bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-warning">Referral Breakdown</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+          <tr><td class="text-muted">Cataract</td><td class="fw-bold text-end">{{ totals.ref_cataract|default:0 }}</td></tr>
+          <tr><td class="text-muted">Glaucoma</td><td class="fw-bold text-end">{{ totals.ref_glaucoma|default:0 }}</td></tr>
+          <tr><td class="text-muted">Retina</td><td class="fw-bold text-end">{{ totals.ref_retina|default:0 }}</td></tr>
+          <tr><td class="text-muted">Other</td><td class="fw-bold text-end">{{ totals.ref_other|default:0 }}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent py-2">
+        <h6 class="mb-0 fw-bold small">By Activity Type</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+          {% for t in by_type %}
+          <tr>
+            <td class="text-muted">{{ t.label }}</td>
+            <td class="fw-bold text-end">{{ t.s|default:0|intcomma }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Monthly Table -->
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-transparent py-2">
+    <h6 class="mb-0 fw-bold small">Monthly Breakdown — {{ year }}</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Month</th>
+          <th>Screened</th>
+          <th>Treated</th>
+          <th>Referred</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in monthly %}
+        {% if row.screened %}
+        <tr>
+          <td class="fw-semibold">
+            {% if row.month == 1 %}January{% elif row.month == 2 %}February
+            {% elif row.month == 3 %}March{% elif row.month == 4 %}April
+            {% elif row.month == 5 %}May{% elif row.month == 6 %}June
+            {% elif row.month == 7 %}July{% elif row.month == 8 %}August
+            {% elif row.month == 9 %}September{% elif row.month == 10 %}October
+            {% elif row.month == 11 %}November{% else %}December{% endif %}
+          </td>
+          <td class="text-primary fw-bold">{{ row.screened|intcomma }}</td>
+          <td class="text-success fw-bold">{{ row.treated|intcomma }}</td>
+          <td class="text-warning fw-bold">{{ row.referred|intcomma }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

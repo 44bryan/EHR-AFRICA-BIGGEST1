@@ -1,0 +1,172 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Record Result — {{ order.investigation_type.name }}{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center gap-3 mb-4">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-clipboard2-check me-2 text-primary"></i>Record Investigation Result</h5>
+    <div class="text-muted small">
+      {{ order.investigation_type.name }}
+      &bull; <strong>{{ order.patient.full_name }}</strong>
+      &bull; {{ order.patient.patient_id }}
+      &bull; Eye: <span class="badge bg-secondary">{{ order.eye }}</span>
+      &bull; Ordered by Dr. {{ order.ordered_by.get_full_name|default:order.ordered_by.username }}
+    </div>
+  </div>
+</div>
+
+{% if order.clinical_indication %}
+<div class="alert alert-info py-2 px-3 small mb-3">
+  <i class="bi bi-info-circle me-1"></i><strong>Clinical Indication:</strong> {{ order.clinical_indication }}
+</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data">
+{% csrf_token %}
+
+{% with cat=order.investigation_type.category %}
+
+<!-- ══ Visual Field ══ -->
+{% if cat == 'VISUAL_FIELD' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-primary bg-opacity-10 py-2"><h6 class="mb-0 fw-bold small text-uppercase text-primary"><i class="bi bi-bullseye me-1"></i>Visual Field Results</h6></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">VF Type</label>
+        <select name="vf_type" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for t in "Humphrey 24-2,Humphrey 30-2,Goldmann,FDT,Esterman"|split:"," %}
+          <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">MD OD (dB)</label><input type="text" name="vf_md_od" class="form-control form-control-sm" placeholder="-3.5"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">MD OS (dB)</label><input type="text" name="vf_md_os" class="form-control form-control-sm" placeholder="-3.5"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">PSD OD (dB)</label><input type="text" name="vf_psd_od" class="form-control form-control-sm" placeholder="2.1"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">PSD OS (dB)</label><input type="text" name="vf_psd_os" class="form-control form-control-sm" placeholder="2.1"></div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">GHT OD</label>
+        <select name="vf_ght_od" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for g in "Within Normal Limits,Outside Normal Limits,Borderline,General Reduction of Sensitivity,Abnormally High Sensitivity"|split:"," %}
+          <option value="{{ g }}">{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">GHT OS</label>
+        <select name="vf_ght_os" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for g in "Within Normal Limits,Outside Normal Limits,Borderline,General Reduction of Sensitivity,Abnormally High Sensitivity"|split:"," %}
+          <option value="{{ g }}">{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Progression</label>
+        <select name="vf_progression" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for p in "Stable,Progressing — Slow,Progressing — Fast,Improved,First test,Not assessed"|split:"," %}
+          <option value="{{ p }}">{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12"><label class="form-label small fw-semibold">Comments / Pattern</label><textarea name="vf_comments" class="form-control form-control-sm" rows="2" placeholder="Arcuate scotoma OD, paracentral loss OS..."></textarea></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OCT / Imaging ══ -->
+{% elif cat == 'IMAGING' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-primary bg-opacity-10 py-2"><h6 class="mb-0 fw-bold small text-uppercase text-primary"><i class="bi bi-layers me-1"></i>OCT — RNFL &amp; ONH</h6></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-3"><label class="form-label small fw-semibold">Avg RNFL OD (µm)</label><input type="number" name="rnfl_avg_od" class="form-control form-control-sm" placeholder="95"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Avg RNFL OS (µm)</label><input type="number" name="rnfl_avg_os" class="form-control form-control-sm" placeholder="95"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Inf RNFL OD (µm)</label><input type="number" name="rnfl_inf_od" class="form-control form-control-sm" placeholder="120"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Inf RNFL OS (µm)</label><input type="number" name="rnfl_inf_os" class="form-control form-control-sm" placeholder="120"></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">RNFL Interpretation</label><input type="text" name="rnfl_interp" class="form-control form-control-sm" placeholder="Within normal limits / Superior thinning OD"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Rim Area OD (mm²)</label><input type="text" name="rim_area_od" class="form-control form-control-sm"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Rim Area OS (mm²)</label><input type="text" name="rim_area_os" class="form-control form-control-sm"></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Fundus Photo OD</label><input type="text" name="fundus_photo_od" class="form-control form-control-sm" placeholder="Normal / Disc pallor / CNVM..."></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Fundus Photo OS</label><input type="text" name="fundus_photo_os" class="form-control form-control-sm" placeholder="Normal / Disc pallor / CNVM..."></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Biometry ══ -->
+{% elif cat == 'BIOMETRY' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-primary bg-opacity-10 py-2"><h6 class="mb-0 fw-bold small text-uppercase text-primary"><i class="bi bi-rulers me-1"></i>Biometry (IOL Calculation)</h6></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-3"><label class="form-label small fw-semibold">Axial Length OD (mm)</label><input type="text" name="axial_length_od" class="form-control form-control-sm" placeholder="23.5"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Axial Length OS (mm)</label><input type="text" name="axial_length_os" class="form-control form-control-sm" placeholder="23.5"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K1 OD</label><input type="text" name="k1_od" class="form-control form-control-sm" placeholder="43.5"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K1 OS</label><input type="text" name="k1_os" class="form-control form-control-sm" placeholder="43.5"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K2 OD</label><input type="text" name="k2_od" class="form-control form-control-sm" placeholder="44.0"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K2 OS</label><input type="text" name="k2_os" class="form-control form-control-sm" placeholder="44.0"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Recommended IOL OD (D)</label><input type="text" name="iol_od" class="form-control form-control-sm" placeholder="21.0"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Recommended IOL OS (D)</label><input type="text" name="iol_os" class="form-control form-control-sm" placeholder="21.0"></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Notes (formula, lens model)</label><textarea name="biometry_notes" class="form-control form-control-sm" rows="2"></textarea></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Pachymetry ══ -->
+{% elif cat == 'PACHYMETRY' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-primary bg-opacity-10 py-2"><h6 class="mb-0 fw-bold small text-uppercase text-primary"><i class="bi bi-layers-half me-1"></i>Pachymetry (Corneal Thickness)</h6></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4"><label class="form-label small fw-semibold">CCT OD (µm)</label><input type="number" name="pachymetry_od" class="form-control form-control-sm" placeholder="545"></div>
+      <div class="col-md-4"><label class="form-label small fw-semibold">CCT OS (µm)</label><input type="number" name="pachymetry_os" class="form-control form-control-sm" placeholder="545"></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Comments</label><input type="text" name="other_findings" class="form-control form-control-sm" placeholder="Normal corneal thickness bilaterally..."></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Other / Generic ══ -->
+{% else %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-primary bg-opacity-10 py-2"><h6 class="mb-0 fw-bold small text-uppercase text-primary"><i class="bi bi-clipboard-check me-1"></i>{{ order.investigation_type.name }} — Findings</h6></div>
+  <div class="card-body">
+    <label class="form-label small fw-semibold">Findings / Results</label>
+    <textarea name="other_findings" class="form-control" rows="4" placeholder="Enter findings..."></textarea>
+  </div>
+</div>
+{% endif %}
+
+{% endwith %}
+
+<!-- ══ Interpretation + File (all types) ══ -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom py-2"><h6 class="mb-0 fw-semibold small">Interpretation &amp; Report</h6></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label small fw-semibold">Overall Interpretation <span class="text-danger">*</span></label>
+        {{ form.interpretation }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Overall Finding</label>
+        {{ form.is_normal }}
+      </div>
+      <div class="col-md-8">
+        <label class="form-label small fw-semibold">Upload Report / Image (PDF or image)</label>
+        <input type="file" name="result_file" class="form-control form-control-sm" accept="image/*,.pdf">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex gap-2 justify-content-end">
+  <a href="{% url 'investigations:workstation' %}" class="btn btn-secondary">Cancel</a>
+  <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save &amp; Return to Queue</button>
+</div>
+
+</form>
+{% endblock %}

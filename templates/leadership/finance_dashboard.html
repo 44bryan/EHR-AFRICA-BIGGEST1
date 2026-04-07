@@ -1,0 +1,308 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Finance Dashboard{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-cash-coin me-2 text-success"></i>Finance Dashboard</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — Real-time financial overview</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-sm btn-outline-primary"><i class="bi bi-receipt me-1"></i>All Invoices</a>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-primary"><i class="bi bi-cash me-1"></i>Billing Desk</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Revenue KPI Strip ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Today's Collections</div>
+        <div class="fs-3 fw-bold text-success">{{ rev_today|floatformat:0 }}</div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA collected today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">This Week</div>
+        <div class="fs-3 fw-bold text-primary">{{ rev_week|floatformat:0 }}</div>
+        <div class="text-muted" style="font-size:.72rem;">Last 7 days</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-info">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">This Month</div>
+        <div class="fs-3 fw-bold text-info">{{ rev_month|floatformat:0 }}</div>
+        <div class="text-muted" style="font-size:.72rem;">{{ today|date:"F Y" }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Outstanding</div>
+        <div class="fs-3 fw-bold text-warning">{{ outstanding_total|floatformat:0 }}</div>
+        <div class="text-muted" style="font-size:.72rem;">{{ outstanding_count }} unpaid invoice{{ outstanding_count|pluralize }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Secondary KPIs ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-secondary">{{ invoices_today }}</div>
+      <div class="text-muted small">Invoices Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ invoices_month }}</div>
+      <div class="text-muted small">Invoices Month</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ paid_invoices }}</div>
+      <div class="text-muted small">Paid Invoices</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-warning">{{ outstanding_count }}</div>
+      <div class="text-muted small">Open Invoices</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-danger">{{ waiver_count }}</div>
+      <div class="text-muted small">Waivers Month</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-danger">{{ waiver_total|floatformat:0 }}</div>
+      <div class="text-muted small">Waiver Amount</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  {# ── Monthly Trend ── #}
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-graph-up me-1 text-success"></i>Monthly Revenue Trend (12 months)</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="monthlyChart" height="90"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# ── Collections by Payment Method ── #}
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-pie-chart me-1 text-primary"></i>Collections by Method (This Month)</h6>
+      </div>
+      <div class="card-body">
+        {% for m in by_method %}
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="small fw-semibold">
+            {% if m.payment_method == 'CASH' %}<i class="bi bi-cash me-1 text-success"></i>Cash
+            {% elif m.payment_method == 'CARD' %}<i class="bi bi-credit-card me-1 text-primary"></i>Card
+            {% elif m.payment_method == 'MOBILE_MONEY' %}<i class="bi bi-phone me-1 text-warning"></i>Mobile Money
+            {% elif m.payment_method == 'TRANSFER' %}<i class="bi bi-bank me-1 text-info"></i>Bank Transfer
+            {% elif m.payment_method == 'INSURANCE' %}<i class="bi bi-shield me-1 text-purple"></i>Insurance
+            {% elif m.payment_method == 'NHIS' %}<i class="bi bi-heart-pulse me-1 text-danger"></i>NHIS
+            {% elif m.payment_method == 'WAIVER' %}<i class="bi bi-gift me-1 text-secondary"></i>Waiver
+            {% else %}{{ m.payment_method }}{% endif %}
+          </span>
+          <div class="text-end">
+            <div class="fw-bold small">{{ m.total|floatformat:0 }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ m.count }} payment{{ m.count|pluralize }}</div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-muted text-center py-4 small">No payments this month</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  {# ── Daily Collections This Month ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-bar-chart me-1 text-info"></i>Daily Collections — {{ today|date:"F Y" }}</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="dailyChart" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# ── Revenue by Service Category ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-tags me-1 text-warning"></i>Revenue by Service Category (This Month)</h6>
+      </div>
+      <div class="card-body">
+        {% for cat in by_category %}
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="fw-semibold">{{ cat.category|title }}</span>
+            <span class="text-muted">{{ cat.total|floatformat:0 }} FCFA</span>
+          </div>
+          <div class="progress" style="height:6px;">
+            {% widthratio cat.total by_category.0.total 100 as pct %}
+            <div class="progress-bar bg-primary" style="width:{{ pct }}%"></div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-muted text-center py-4 small">No data</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  {# ── Top Outstanding Invoices ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Top Outstanding Invoices</h6>
+        <a href="{% url 'billing:invoice_list' %}?status=ISSUED" class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:2px 8px;">View All</a>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Invoice</th>
+              <th>Patient</th>
+              <th class="text-end">Balance (FCFA)</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in top_outstanding %}
+            <tr>
+              <td class="small fw-semibold">{{ inv.invoice_number }}</td>
+              <td class="small">{{ inv.patient.full_name|truncatechars:22 }}</td>
+              <td class="text-end fw-bold text-warning small">{{ inv.balance_due|floatformat:0 }}</td>
+              <td>
+                <span class="badge {% if inv.status == 'ISSUED' %}bg-secondary{% else %}bg-warning text-dark{% endif %}" style="font-size:.65rem;">
+                  {{ inv.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <a href="{% url 'billing:invoice_detail' pk=inv.pk %}" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:1px 6px;">View</a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted py-3 small">No outstanding invoices</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── Recent Payments ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-check-circle me-1 text-success"></i>Recent Payments</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Patient</th>
+              <th>Method</th>
+              <th class="text-end">Amount</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pmt in recent_payments %}
+            <tr>
+              <td class="small">{{ pmt.invoice.patient.full_name|truncatechars:20 }}</td>
+              <td>
+                <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ pmt.get_payment_method_display }}</span>
+              </td>
+              <td class="text-end fw-bold text-success small">{{ pmt.amount|floatformat:0 }}</td>
+              <td class="text-muted small">{{ pmt.payment_date|date:"d M, H:i" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3 small">No payments yet</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Monthly Trend
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'line',
+  data: {
+    labels: {{ monthly_labels|safe }},
+    datasets: [{
+      label: 'Revenue (FCFA)',
+      data: {{ monthly_values|safe }},
+      borderColor: '#198754',
+      backgroundColor: 'rgba(25,135,84,0.1)',
+      fill: true,
+      tension: 0.4,
+      pointRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } }
+  }
+});
+
+// Daily Collections
+new Chart(document.getElementById('dailyChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ daily_labels|safe }},
+    datasets: [{
+      label: 'FCFA',
+      data: {{ daily_values|safe }},
+      backgroundColor: 'rgba(13,110,253,0.7)',
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } }
+  }
+});
+</script>
+{% endblock %}

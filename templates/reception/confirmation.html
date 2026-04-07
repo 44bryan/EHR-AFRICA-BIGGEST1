@@ -1,0 +1,86 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Check-in Confirmed{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+
+    {# ── Success banner ── #}
+    <div class="text-center mb-4">
+      <div class="rounded-circle bg-success bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3" style="width:80px;height:80px;">
+        <i class="bi bi-check-circle-fill text-success" style="font-size:2.5rem;"></i>
+      </div>
+      <h2 class="fw-bold">Patient Checked In!</h2>
+      <p class="text-muted">Token issued and appointment created successfully.</p>
+    </div>
+
+    {# ── Token Slip ── #}
+    <div class="card border-2 border-primary mb-4 shadow">
+      <div class="card-body text-center py-4">
+        <div class="text-muted small text-uppercase fw-semibold mb-1">
+          {{ token.get_service_type_display }}
+        </div>
+        <div class="display-2 fw-bold text-primary lh-1 mb-2">{{ token.token_number }}</div>
+        <div class="fs-5 fw-semibold mb-1">{{ token.display_name }}</div>
+        <div class="text-muted small mb-3">{{ token.issued_at|date:"d M Y" }} at {{ token.issued_at|time:"H:i" }}</div>
+
+        {% if token.priority == 2 %}
+          <span class="badge bg-danger fs-6">EMERGENCY — Go directly to triage</span>
+        {% elif token.priority == 1 %}
+          <span class="badge bg-warning text-dark fs-6">PRIORITY</span>
+        {% else %}
+          <span class="badge bg-secondary fs-6">REGULAR QUEUE</span>
+        {% endif %}
+
+        {% if appt %}
+        <hr class="my-3">
+        <div class="row text-start small">
+          <div class="col-6">
+            <div class="text-muted">Appointment No.</div>
+            <div class="fw-semibold">{{ appt.appointment_number }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted">Department</div>
+            <div class="fw-semibold">{{ appt.department.name|default:"—" }}</div>
+          </div>
+          <div class="col-6 mt-2">
+            <div class="text-muted">Service Tier</div>
+            <div class="fw-semibold">
+              {% if appt.service_tier == 'VIP' %}<i class="bi bi-star-fill text-danger me-1"></i>VIP
+              {% elif appt.service_tier == 'FAST_TRACK' %}<i class="bi bi-lightning-charge text-warning me-1"></i>Fast Track
+              {% elif appt.service_tier == 'EXPRESS' %}<i class="bi bi-lightning text-info me-1"></i>Express
+              {% else %}Standard{% endif %}
+            </div>
+          </div>
+          {% if visit %}
+          <div class="col-6 mt-2">
+            <div class="text-muted">Visit No.</div>
+            <div class="fw-semibold">{{ visit.visit_number }}</div>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="mt-3 pt-2 border-top text-muted" style="font-size:0.72rem;">
+          Please wait for your number to be called &bull; {{ token.issued_by.full_name }}
+        </div>
+      </div>
+    </div>
+
+    {# ── Actions ── #}
+    <div class="d-flex gap-2 justify-content-center">
+      <a href="{% url 'reception:walk_in' %}" class="btn btn-primary">
+        <i class="bi bi-person-plus me-1"></i>Next Walk-in
+      </a>
+      {% if token.patient %}
+      <a href="{% url 'patients:detail' patient_id=token.patient.patient_id %}" class="btn btn-outline-secondary">
+        <i class="bi bi-person me-1"></i>Patient Record
+      </a>
+      {% endif %}
+      <a href="{% url 'reception:desk' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-house me-1"></i>Desk
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

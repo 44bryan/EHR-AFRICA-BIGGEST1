@@ -1,0 +1,116 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Dispensing{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-capsule-pill me-2 text-primary"></i>New Dispensing Record</h5>
+        <a href="{% url 'pharmacy:dispensing_list' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+      </div>
+      <div class="card-body">
+        <form method="post" id="dispense-form">
+          {% csrf_token %}
+
+          {% if patient %}
+          {# Coming from patient record — patient pre-filled #}
+          <div class="alert alert-info mb-3 d-flex align-items-center gap-2">
+            <i class="bi bi-person-check-fill fs-5"></i>
+            <div>
+              <strong>{{ patient.full_name }}</strong> &bull; {{ patient.patient_id }}
+              {% if patient.get_gender_display %} &bull; {{ patient.get_gender_display }}{% endif %}
+            </div>
+          </div>
+          <input type="hidden" name="patient_id" value="{{ patient.id }}">
+          {% if prescription %}
+          <div class="alert alert-success mb-3">
+            <i class="bi bi-file-medical me-1"></i>
+            Active prescription found from <strong>{{ prescription.created_at|date:"d M Y" }}</strong>
+            — drugs will be linked automatically.
+          </div>
+          <input type="hidden" name="prescription_id" value="{{ prescription.id }}">
+          {% endif %}
+          {% else %}
+          {# No patient — show search #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <div class="position-relative">
+              <input type="text" id="patient-search" class="form-control" placeholder="Search by name or patient ID…" autocomplete="off">
+              <div id="patient-results" class="dropdown-menu w-100" style="display:none;max-height:220px;overflow-y:auto;"></div>
+            </div>
+            <input type="hidden" name="patient_id" id="patient-id-hidden" required>
+            <div id="patient-selected" class="mt-2 alert alert-info d-none"></div>
+            <div class="form-text text-muted">Type at least 2 characters to search.</div>
+          </div>
+          {% endif %}
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Notes <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea name="notes" class="form-control" rows="2" placeholder="Allergy notes, special instructions…"></textarea>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary btn-lg" id="submit-btn" {% if not patient %}disabled{% endif %}>
+              <i class="bi bi-plus-circle me-1"></i>Create Dispensing Record
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if not patient %}
+<script>
+const searchInput = document.getElementById('patient-search');
+const results = document.getElementById('patient-results');
+const hiddenId = document.getElementById('patient-id-hidden');
+const selectedBadge = document.getElementById('patient-selected');
+const submitBtn = document.getElementById('submit-btn');
+let searchTimer;
+
+searchInput.addEventListener('input', function () {
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  if (q.length < 2) { results.style.display = 'none'; return; }
+  searchTimer = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        const list = data.results || [];
+        results.innerHTML = '';
+        if (!list.length) {
+          results.innerHTML = '<span class="dropdown-item text-muted">No patients found</span>';
+        } else {
+          list.forEach(p => {
+            const a = document.createElement('a');
+            a.className = 'dropdown-item';
+            a.href = '#';
+            a.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted small">${p.patient_id}</span>`;
+            a.addEventListener('click', e => {
+              e.preventDefault();
+              hiddenId.value = p.id;
+              searchInput.value = p.full_name;
+              selectedBadge.textContent = `✓ Selected: ${p.full_name} (${p.patient_id})`;
+              selectedBadge.classList.remove('d-none');
+              results.style.display = 'none';
+              submitBtn.disabled = false;
+            });
+            results.appendChild(a);
+          });
+        }
+        results.style.display = 'block';
+      });
+  }, 300);
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#patient-search') && !e.target.closest('#patient-results')) {
+    results.style.display = 'none';
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

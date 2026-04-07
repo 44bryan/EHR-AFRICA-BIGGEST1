@@ -1,0 +1,199 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}My Workstation — {{ request.user.get_role_display }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">
+      <i class="bi bi-hospital me-2 text-primary"></i>Clinical Workstation
+    </h4>
+    <div class="text-muted small">
+      Dr. {{ request.user.full_name }} &bull; {{ request.user.get_role_display }}
+      {% if dept %}&bull; {{ dept.name }}{% endif %}
+      &bull; {{ today|date:"l, d F Y" }}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'consultations:list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list-ul me-1"></i>All Consultations
+    </a>
+  </div>
+</div>
+
+{# ── Stat cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ waiting_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-hourglass-split me-1"></i>Waiting</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-primary mb-0">{{ in_progress_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-person-check me-1"></i>Calling / Serving</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-success mb-0">{{ completed_today }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Completed Today</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  {# ── Left column: patient queue ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <h6 class="mb-0 fw-semibold">
+          <i class="bi bi-people-fill me-2 text-warning"></i>Waiting Queue
+          {% if dept %}<span class="text-muted fw-normal small">&mdash; {{ dept.name }}</span>{% endif %}
+        </h6>
+        <span class="badge bg-warning text-dark">{{ waiting_tokens|length }}</span>
+      </div>
+
+      {% if waiting_tokens %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Token</th>
+              <th>Patient</th>
+              <th>Type</th>
+              <th>Tier</th>
+              <th>Since</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for tok in waiting_tokens %}
+            <tr>
+              <td>
+                <span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span>
+              </td>
+              <td class="fw-semibold">{{ tok.display_name }}</td>
+              <td>
+                {% if tok.visit_type_label == 'NEW' %}
+                  <span class="badge bg-primary" title="New Patient">NEW</span>
+                {% elif tok.visit_type_label == 'FOLLOW_UP' %}
+                  <span class="badge bg-outline-secondary text-secondary border" style="background:transparent;" title="Follow-up">F/U</span>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed">VIP</span>
+                {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
+                {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
+                {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+              </td>
+              <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
+              <td>
+                {% if tok.status == 'WAITING' %}<span class="badge bg-warning text-dark">Waiting</span>
+                {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark">Called</span>
+                {% elif tok.status == 'SERVING' %}<span class="badge bg-primary">Serving</span>{% endif %}
+              </td>
+              <td>
+                {% if tok.patient %}
+                  {% if tok.active_visit %}
+                    <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.active_visit.pk }}"
+                       class="btn btn-sm btn-success">
+                      <i class="bi bi-journal-plus me-1"></i>Consult
+                    </a>
+                  {% else %}
+                    <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}"
+                       class="btn btn-sm btn-outline-success">
+                      <i class="bi bi-journal-plus me-1"></i>Consult
+                    </a>
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted small">Walk-in</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+        No patients waiting in your queue.
+        {% if not dept_code %}
+        <div class="mt-2 small text-warning">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Your account is not mapped to a department. Ask the administrator.
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Right column: today's consultations ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <h6 class="mb-0 fw-semibold">
+          <i class="bi bi-journal-medical me-2 text-primary"></i>Today's Consultations
+        </h6>
+        <span class="badge bg-primary">{{ my_consultations|length }}</span>
+      </div>
+
+      {% if my_consultations %}
+      <div class="list-group list-group-flush">
+        {% for c in my_consultations %}
+        <a href="{% url 'consultations:detail' pk=c.pk %}"
+           class="list-group-item list-group-item-action py-2 px-3">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="fw-semibold small">{{ c.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">
+                {{ c.department.name }} &bull; {{ c.consultation_date|time:"H:i" }}
+              </div>
+              {% if c.presenting_complaint %}
+              <div class="text-secondary" style="font-size:0.72rem;">
+                {{ c.presenting_complaint|truncatechars:60 }}
+              </div>
+              {% endif %}
+            </div>
+            <span class="badge ms-2 flex-shrink-0
+              {% if c.status == 'COMPLETED' %}bg-success
+              {% elif c.status == 'IN_PROGRESS' %}bg-primary
+              {% elif c.status == 'REFERRED' %}bg-warning text-dark
+              {% else %}bg-secondary{% endif %}">
+              {{ c.get_status_display }}
+            </span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-journal fs-2 d-block mb-2"></i>
+        No consultations recorded today.
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── Route patient dropdown (quick QMS route) ── #}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">
+          <i class="bi bi-signpost-split me-1 text-dark"></i>Quick Patient Routing
+        </h6>
+      </div>
+      <div class="card-body py-2 small text-muted">
+        Open any consultation and use the <strong>Route</strong> button in the header
+        to send a patient to the next department (Pharmacy, Optical, Lab, etc.).
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

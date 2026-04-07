@@ -1,0 +1,164 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Cashier — Issue Entry Ticket{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-cash-stack me-2 text-success"></i>Cashier Entry Ticket</h4>
+    <small class="text-muted">Issue entry ticket for patients arriving via back entrance</small>
+  </div>
+  <a href="{% url 'qms:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to QMS
+  </a>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show">{{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+  {% endfor %}
+{% endif %}
+
+{% if existing_token %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  Patient already has entry ticket <strong>{{ existing_token.token_number }}</strong> today
+  ({{ existing_token.get_issuance_point_display }} · {{ existing_token.get_service_tier_display }}).
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-dark text-white">
+        <h6 class="mb-0"><i class="bi bi-layers me-2"></i>Service Tier</h6>
+      </div>
+      <div class="card-body p-3">
+        <div class="row g-2" id="tierButtons">
+          <div class="col-6">
+            <button type="button" class="btn btn-outline-secondary w-100 tier-btn" data-tier="STANDARD" data-prefix="S">
+              <i class="bi bi-person-fill d-block fs-3 mb-1"></i><strong>Standard</strong>
+            </button>
+          </div>
+          <div class="col-6">
+            <button type="button" class="btn btn-outline-info w-100 tier-btn active" data-tier="EXPRESS" data-prefix="E">
+              <i class="bi bi-lightning-fill d-block fs-3 mb-1"></i><strong>Express</strong>
+            </button>
+          </div>
+          <div class="col-6">
+            <button type="button" class="btn btn-outline-warning w-100 tier-btn" data-tier="FAST_TRACK" data-prefix="FT">
+              <i class="bi bi-rocket-fill d-block fs-3 mb-1"></i><strong>Fast Track</strong>
+            </button>
+          </div>
+          <div class="col-6">
+            <button type="button" class="btn btn-outline-danger w-100 tier-btn" data-tier="VIP" data-prefix="V">
+              <i class="bi bi-star-fill d-block fs-3 mb-1"></i><strong>VIP</strong>
+            </button>
+          </div>
+        </div>
+        <div class="mt-3 p-2 rounded bg-light small text-center text-muted">
+          <i class="bi bi-info-circle me-1"></i>
+          Gate &amp; cashier share the same sequence — no duplicate numbers.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-success text-white">
+        <h6 class="mb-0"><i class="bi bi-person-search me-2"></i>Patient Details</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% url 'qms:cashier_issue' %}">
+          {% csrf_token %}
+          <input type="hidden" name="service_tier" id="selectedTier" value="EXPRESS">
+          <input type="hidden" name="patient_id" id="selectedPatientId">
+
+          <div class="mb-3 position-relative">
+            <label class="form-label fw-semibold">Patient Search</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="text" class="form-control" id="patientSearch"
+                     placeholder="Search by name, ID or phone..." autocomplete="off">
+            </div>
+            <div id="patientResults" class="list-group mt-1 shadow" style="display:none; position:absolute; z-index:1050; width:100%; max-height:200px; overflow-y:auto;"></div>
+          </div>
+
+          <div id="selectedPatientCard" class="alert alert-success d-none mb-3 p-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-person-check-fill fs-4"></i>
+              <div>
+                <div class="fw-bold" id="selectedPatientName"></div>
+                <small class="text-muted" id="selectedPatientMeta"></small>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="clearPatient"><i class="bi bi-x"></i></button>
+            </div>
+          </div>
+
+          <div class="d-grid mt-3">
+            <button type="submit" class="btn btn-success btn-lg">
+              <i class="bi bi-ticket-perforated me-2"></i>Issue Entry Ticket
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.tier-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('selectedTier').value = btn.dataset.tier;
+  });
+});
+
+let t;
+const inp = document.getElementById('patientSearch');
+const res = document.getElementById('patientResults');
+
+inp.addEventListener('input', () => {
+  clearTimeout(t);
+  const q = inp.value.trim();
+  if (q.length < 2) { res.style.display = 'none'; return; }
+  t = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        res.innerHTML = '';
+        (data.patients || []).forEach(p => {
+          const a = document.createElement('a');
+          a.href = '#';
+          a.className = 'list-group-item list-group-item-action py-2';
+          a.innerHTML = `<strong>${p.full_name}</strong> <span class="badge bg-light text-dark ms-1">${p.patient_id}</span>`;
+          a.onclick = e => {
+            e.preventDefault();
+            document.getElementById('selectedPatientId').value = p.id || '';
+            document.getElementById('selectedPatientName').textContent = p.full_name;
+            document.getElementById('selectedPatientMeta').textContent = p.patient_id;
+            document.getElementById('selectedPatientCard').classList.remove('d-none');
+            res.style.display = 'none';
+            inp.value = p.full_name;
+          };
+          res.appendChild(a);
+        });
+        res.style.display = res.children.length ? 'block' : 'none';
+      });
+  }, 300);
+});
+
+document.getElementById('clearPatient').onclick = () => {
+  document.getElementById('selectedPatientId').value = '';
+  document.getElementById('selectedPatientCard').classList.add('d-none');
+  inp.value = '';
+};
+
+document.addEventListener('click', e => {
+  if (!inp.contains(e.target) && !res.contains(e.target)) res.style.display = 'none';
+});
+</script>
+{% endblock %}

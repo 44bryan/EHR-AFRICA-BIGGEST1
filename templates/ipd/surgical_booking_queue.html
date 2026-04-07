@@ -1,0 +1,128 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Surgical Booking — Admission{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <div class="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center flex-shrink-0" style="width:48px;height:48px;">
+    <i class="bi bi-calendar2-plus text-primary fs-4"></i>
+  </div>
+  <div>
+    <h4 class="fw-bold mb-0">Surgical Booking</h4>
+    <p class="text-muted small mb-0">Schedule surgery, confirm payment, and issue booking slip</p>
+  </div>
+  <div class="ms-auto">
+    <span class="badge bg-primary fs-6">{{ waiting.count }} Waiting</span>
+  </div>
+</div>
+
+<!-- Waiting patients -->
+{% if waiting %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-primary bg-opacity-10 py-2">
+    <h6 class="mb-0 fw-bold small text-primary">
+      <i class="bi bi-people me-1"></i>Patients Waiting for Surgical Booking
+    </h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Token</th>
+          <th>Patient</th>
+          <th>Tier</th>
+          <th>Notes (from Counseling)</th>
+          <th>Waiting</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for token in waiting %}
+        <tr>
+          <td><span class="badge bg-primary">{{ token.token_number }}</span></td>
+          <td>
+            <div class="fw-bold">{{ token.display_name }}</div>
+            {% if token.patient %}<div class="text-muted">{{ token.patient.patient_id }}</div>{% endif %}
+          </td>
+          <td>
+            {% if token.service_tier == 'VIP' %}<span class="badge bg-danger">VIP</span>
+            {% elif token.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">FT</span>
+            {% elif token.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">E</span>
+            {% else %}<span class="badge bg-secondary">S</span>{% endif %}
+          </td>
+          <td class="text-muted" style="max-width:250px;">{{ token.notes|truncatechars:80 }}</td>
+          <td class="text-muted">{{ token.issued_at|timesince }}</td>
+          <td>
+            {% if token.visit %}
+            <a href="{% url 'ipd:surgical_booking_create' visit_id=token.visit.pk %}"
+               class="btn btn-primary btn-sm">
+              <i class="bi bi-calendar2-plus me-1"></i>Book Surgery
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info mb-4">
+  <i class="bi bi-info-circle me-1"></i>No patients currently waiting for surgical booking.
+</div>
+{% endif %}
+
+<!-- Recent bookings -->
+{% if recent_bookings %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light py-2">
+    <h6 class="mb-0 fw-bold small text-muted text-uppercase">
+      <i class="bi bi-clock-history me-1"></i>Recent Surgical Bookings
+    </h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Booking #</th>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Surgeon</th>
+          <th>Surgery Date</th>
+          <th>Status</th>
+          <th>Deposit</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in recent_bookings %}
+        <tr>
+          <td><span class="badge bg-secondary">{{ b.booking_number }}</span></td>
+          <td class="fw-bold">{{ b.patient.full_name }}</td>
+          <td>{{ b.procedure }}</td>
+          <td>{% if b.surgeon %}Dr. {{ b.surgeon.last_name }}{% else %}<span class="text-muted">TBD</span>{% endif %}</td>
+          <td>{% if b.surgery_date %}{{ b.surgery_date|date:"d M Y H:i" }}{% else %}<span class="text-muted">Not scheduled</span>{% endif %}</td>
+          <td>
+            {% if b.status == 'CONFIRMED' %}<span class="badge bg-success">Confirmed</span>
+            {% elif b.status == 'PENDING_PAYMENT' %}<span class="badge bg-warning text-dark">Pending Payment</span>
+            {% elif b.status == 'COMPLETED' %}<span class="badge bg-primary">Completed</span>
+            {% elif b.status == 'CANCELLED' %}<span class="badge bg-danger">Cancelled</span>
+            {% else %}<span class="badge bg-secondary">{{ b.get_status_display }}</span>{% endif %}
+          </td>
+          <td>
+            {% if b.deposit_required %}
+            <div>{{ b.deposit_required|floatformat:0 }} XAF req.</div>
+            {% if b.deposit_paid %}<div class="text-success small">{{ b.deposit_paid|floatformat:0 }} paid</div>{% endif %}
+            {% if b.balance_due %}<div class="text-danger small">{{ b.balance_due|floatformat:0 }} balance</div>{% endif %}
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td>
+            <a href="{% url 'ipd:surgical_booking_detail' booking_id=b.pk %}"
+               class="btn btn-sm btn-outline-secondary">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

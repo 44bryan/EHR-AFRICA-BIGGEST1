@@ -1,0 +1,100 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Apply for Leave{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-calendar-x me-2 text-warning"></i>Apply for Leave</h4>
+  <a href="{% url 'hrms:my_leaves' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-list me-1"></i>My Leave History
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm border-warning border-top border-4">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-calendar-event me-2 text-warning"></i>Leave Application</h5>
+      </div>
+      <div class="card-body">
+
+        {% if messages %}
+        {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags }} alert-dismissible" role="alert">
+          {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Leave Type <span class="text-danger">*</span></label>
+            <select name="leave_type" class="form-select" required>
+              <option value="">— Select leave type —</option>
+              {% for lt in leave_types %}
+              <option value="{{ lt.id }}">{{ lt.name }} ({{ lt.days_allowed_per_year }} days/yr{% if not lt.is_paid %} — Unpaid{% endif %})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Start Date <span class="text-danger">*</span></label>
+              <input type="date" name="start_date" class="form-control" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">End Date <span class="text-danger">*</span></label>
+              <input type="date" name="end_date" class="form-control" required>
+            </div>
+          </div>
+
+          <div id="daysDisplay" class="alert alert-info py-2 small mb-3 d-none">
+            <i class="bi bi-calendar-check me-1"></i><span id="daysText"></span>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control" rows="3" required
+              placeholder="Please provide reason for your leave request…"></textarea>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'hrms:my_leaves' %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-warning fw-semibold">
+              <i class="bi bi-send me-1"></i>Submit Request
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const startInput = document.querySelector('[name="start_date"]');
+const endInput = document.querySelector('[name="end_date"]');
+const daysDisplay = document.getElementById('daysDisplay');
+const daysText = document.getElementById('daysText');
+
+function updateDays() {
+  const start = new Date(startInput.value);
+  const end = new Date(endInput.value);
+  if (startInput.value && endInput.value && end >= start) {
+    const diff = Math.round((end - start) / 86400000) + 1;
+    daysText.textContent = `Duration: ${diff} day${diff !== 1 ? 's' : ''}`;
+    daysDisplay.classList.remove('d-none');
+  } else {
+    daysDisplay.classList.add('d-none');
+  }
+}
+
+startInput.addEventListener('change', updateDays);
+endInput.addEventListener('change', updateDays);
+</script>
+{% endblock %}

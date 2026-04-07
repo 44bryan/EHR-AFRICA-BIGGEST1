@@ -1,0 +1,47 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Billing Workstation{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h3 mb-1">Billing &amp; Accounts</h1>
+    <div class="text-muted">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:invoice_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-receipt me-1"></i>New Invoice</a>
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">All Invoices</a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3 d-flex justify-content-between">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-warning"></i>Unpaid Invoices</h6>
+    <span class="badge bg-warning text-dark">{{ unpaid_count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Invoice No.</th><th>Patient</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for inv in unpaid_invoices %}
+        <tr>
+          <td><code>{{ inv.invoice_number }}</code></td>
+          <td class="fw-semibold">{{ inv.patient.full_name }}</td>
+          <td>{{ inv.total|floatformat:0 }} FCFA</td>
+          <td class="text-success">{{ inv.amount_paid|floatformat:0 }} FCFA</td>
+          <td class="text-danger fw-semibold">{{ inv.balance_due|floatformat:0 }} FCFA</td>
+          <td>
+            <span class="badge bg-{% if inv.status == 'PARTIAL' %}warning text-dark{% else %}secondary{% endif %}">
+              {{ inv.get_status_display }}
+            </span>
+          </td>
+          <td><a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-warning">Collect</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No unpaid invoices.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

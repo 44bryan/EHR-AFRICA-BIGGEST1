@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0;padding:0;box-sizing:border-box; }
+  body { font-family:"Helvetica Neue",Arial,sans-serif; font-size:10pt; color:#1a1a1a; }
+  .letterhead { border-bottom:3px solid #198754; padding-bottom:12px; margin-bottom:16px; }
+  .hospital-name { font-size:18pt; font-weight:bold; color:#198754; }
+  .report-title { background:#198754; color:white; padding:8px 12px; font-size:12pt; font-weight:bold; margin-bottom:16px; }
+  .patient-bar { background:#f8f9fa; border-left:4px solid #198754; padding:10px 12px; margin-bottom:16px; }
+  .rx-symbol { font-size:36pt; font-weight:bold; color:#198754; float:left; margin-right:16px; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  th { background:#e8f5e9; padding:6px 8px; text-align:left; font-size:9pt; border-bottom:2px solid #198754; }
+  td { padding:6px 8px; border-bottom:1px solid #f0f0f0; font-size:9pt; }
+  .footer { border-top:1px solid #dee2e6; margin-top:20px; padding-top:8px; font-size:8pt; color:#888; }
+  @page { margin:1.5cm 1.8cm; size:A4; }
+</style>
+</head>
+<body>
+<div class="letterhead">
+  <div style="display:flex;justify-content:space-between;">
+    <div>
+      <div class="hospital-name">{{ hospital_name }}</div>
+      <div style="font-size:8pt;color:#666;">{{ hospital_address }} · {{ hospital_phone }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#666;"><strong>DRUG PRESCRIPTION</strong></div>
+  </div>
+</div>
+
+<div class="report-title">PRESCRIPTION</div>
+
+<div class="patient-bar">
+  <div style="display:flex;gap:30px;flex-wrap:wrap;">
+    <div><strong>Patient:</strong> {{ patient.full_name }}</div>
+    <div><strong>ID:</strong> {{ patient.patient_id }}</div>
+    <div><strong>Age/Sex:</strong> {{ patient.age_display }} / {{ patient.get_gender_display }}</div>
+    <div><strong>Date:</strong> {{ prescription.prescription_date|date:"d M Y" }}</div>
+    <div><strong>Prescriber:</strong> Dr. {{ prescription.prescribed_by.full_name }}</div>
+  </div>
+</div>
+
+<div style="overflow:hidden;margin-bottom:16px;">
+  <span class="rx-symbol">℞</span>
+  <div style="font-size:8pt;color:#666;padding-top:20px;">Prescription items as listed below</div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Drug</th>
+      <th>Form</th>
+      <th>Dose</th>
+      <th>Frequency</th>
+      <th>Duration</th>
+      <th>Route</th>
+      <th>Eye</th>
+      <th>Qty</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in prescription.items.all %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td><strong>{{ item.drug_name }}</strong>{% if item.concentration %} {{ item.concentration }}{% endif %}</td>
+      <td>{{ item.get_drug_form_display }}</td>
+      <td>{{ item.dose }}</td>
+      <td>{{ item.frequency }}</td>
+      <td>{{ item.duration }}</td>
+      <td>{{ item.get_route_display }}</td>
+      <td>{{ item.get_eye_display }}</td>
+      <td>{{ item.quantity }}</td>
+    </tr>
+    {% if item.special_instructions %}
+    <tr>
+      <td></td>
+      <td colspan="8" style="color:#666;font-style:italic;font-size:8pt;">Note: {{ item.special_instructions }}</td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if prescription.notes %}
+<div style="margin-top:12px;padding:8px;background:#f8f9fa;border-radius:4px;font-size:9pt;">
+  <strong>Additional Notes:</strong> {{ prescription.notes }}
+</div>
+{% endif %}
+
+<div style="margin-top:30px;">
+  <div style="border-top:1px solid #1a1a1a;width:200px;padding-top:4px;font-size:8pt;">
+    Dr. {{ prescription.prescribed_by.full_name }}<br>
+    {{ prescription.prescribed_by.get_role_display }}<br>
+    Date: {{ prescription.prescription_date|date:"d M Y" }}
+  </div>
+</div>
+
+<div class="footer">
+  Generated: {{ prescription.prescription_date|date:"d M Y" }} · {{ hospital_name }} · Confidential Medical Document
+</div>
+</body>
+</html>

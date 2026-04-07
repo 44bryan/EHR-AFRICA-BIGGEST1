@@ -1,0 +1,94 @@
+{% extends 'layouts/base_authenticated.html' %}
+
+{% block title %}Patients — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">Patient Records</h4>
+    <p class="text-muted small mb-0">{{ total_count }} patient{{ total_count|pluralize }} found</p>
+  </div>
+  <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-person-plus me-1"></i>Register New Patient
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Search -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" class="d-flex gap-2">
+      <div class="flex-grow-1">
+        <input type="text" name="q" value="{{ query }}" class="form-control"
+               placeholder="Search by name, patient ID, or phone number...">
+      </div>
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-search me-1"></i>Search
+      </button>
+      {% if query %}
+      <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<!-- Patient List -->
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th class="small">Patient ID</th>
+          <th class="small">Name</th>
+          <th class="small">Age</th>
+          <th class="small">Gender</th>
+          <th class="small">Phone</th>
+          <th class="small">Blood Group</th>
+          <th class="small">Registered</th>
+          <th class="small">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for patient in patients %}
+        <tr>
+          <td><code class="small">{{ patient.patient_id }}</code></td>
+          <td>
+            <a href="{{ patient.get_absolute_url }}" class="text-decoration-none fw-medium">
+              {{ patient.full_name }}
+            </a>
+          </td>
+          <td class="small">{{ patient.age_display }}</td>
+          <td class="small">{{ patient.get_gender_display }}</td>
+          <td class="small">{{ patient.phone_number }}</td>
+          <td>
+            <span class="badge bg-danger-subtle text-danger small">{{ patient.blood_group }}</span>
+          </td>
+          <td class="small text-muted">{{ patient.registration_date|date:"d M Y" }}</td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{{ patient.get_absolute_url }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-folder2-open"></i>
+              </a>
+              {% if request.user.can_create_consultation %}
+              <a href="{% url 'consultations:create' patient_id=patient.patient_id %}"
+                 class="btn btn-sm btn-outline-success" title="New Consultation">
+                <i class="bi bi-clipboard2-plus"></i>
+              </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center py-5 text-muted">
+            <i class="bi bi-search fs-3 d-block mb-2 opacity-50"></i>
+            No patients found{% if query %} for "{{ query }}"{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

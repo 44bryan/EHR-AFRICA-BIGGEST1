@@ -1,0 +1,145 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Register OPD Visit{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{% url 'opd:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-person-plus me-2 text-primary"></i>Register OPD Visit</h5>
+    <div class="text-muted small">Add patient to today's triage queue</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="post" id="opdRegisterForm">
+          {% csrf_token %}
+
+          <!-- Patient Search -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <div class="position-relative">
+              <input type="text" id="patientSearchInput" class="form-control"
+                     placeholder="Search by name, ID or phone..." autocomplete="off">
+              <div id="patientSearchResults"
+                   class="position-absolute w-100 bg-white border rounded shadow-sm z-3"
+                   style="display:none; top:100%; max-height:260px; overflow-y:auto; z-index:1050;"></div>
+            </div>
+            <input type="hidden" name="patient_id" id="patientIdHidden">
+            <div id="selectedPatientBadge" class="mt-2" style="display:none;">
+              <span class="badge bg-success-subtle text-success py-2 px-3">
+                <i class="bi bi-check-circle me-1"></i>
+                <span id="selectedPatientName"></span>
+              </span>
+            </div>
+            <div class="form-text">Type at least 2 characters to search</div>
+          </div>
+
+          <!-- Department -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Send to Department</label>
+            <select name="department_id" class="form-select">
+              <option value="">— General / Triage Nurse Decides —</option>
+              {% for dept in departments %}
+              <option value="{{ dept.id }}">{{ dept.name }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Triage nurse can reassign department after vitals</div>
+          </div>
+
+          <!-- Chief Complaint -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Chief Complaint <span class="text-danger">*</span></label>
+            <textarea name="chief_complaint" class="form-control" rows="2"
+                      placeholder="e.g. Blurred vision, eye pain, red eye..." required></textarea>
+          </div>
+
+          <!-- Return visit -->
+          <div class="mb-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_return" id="isReturn">
+              <label class="form-check-label" for="isReturn">This is a follow-up / return visit</label>
+            </div>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn" disabled>
+              <i class="bi bi-person-check me-2"></i>Register &amp; Go to Triage
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const searchInput  = document.getElementById('patientSearchInput');
+const resultsDiv   = document.getElementById('patientSearchResults');
+const hiddenInput  = document.getElementById('patientIdHidden');
+const badge        = document.getElementById('selectedPatientBadge');
+const badgeName    = document.getElementById('selectedPatientName');
+const submitBtn    = document.getElementById('submitBtn');
+let searchTimer;
+
+searchInput.addEventListener('input', function () {
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  hiddenInput.value = '';
+  submitBtn.disabled = true;
+  badge.style.display = 'none';
+  if (q.length < 2) { resultsDiv.style.display = 'none'; return; }
+
+  searchTimer = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        const list = data.results || [];
+        if (list.length > 0) {
+          resultsDiv.innerHTML = list.map(p => `
+            <div class="dropdown-item py-2 px-3 cursor-pointer patient-result"
+                 data-id="${p.id}" data-name="${p.full_name || p.name}"
+                 style="cursor:pointer;">
+              <div class="fw-semibold" style="font-size:.85rem;">${p.full_name || p.name}</div>
+              <div class="text-muted" style="font-size:.72rem;">
+                ${p.patient_id} &middot; ${p.age || ''}yr &middot; ${p.gender || ''}
+                ${p.phone ? '&middot; ' + p.phone : ''}
+              </div>
+            </div>
+          `).join('');
+          resultsDiv.style.display = 'block';
+          resultsDiv.querySelectorAll('.patient-result').forEach(el => {
+            el.addEventListener('click', () => {
+              hiddenInput.value = el.dataset.id;
+              badgeName.textContent = el.dataset.name;
+              badge.style.display = 'block';
+              searchInput.value = el.dataset.name;
+              resultsDiv.style.display = 'none';
+              submitBtn.disabled = false;
+            });
+          });
+        } else {
+          resultsDiv.innerHTML = `
+            <div class="dropdown-item text-muted py-2 px-3" style="font-size:.8rem;">
+              No patients found — <a href="/patients/register/" class="text-primary">Register new patient</a>
+            </div>`;
+          resultsDiv.style.display = 'block';
+        }
+      });
+  }, 280);
+});
+
+document.addEventListener('click', function (e) {
+  if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+    resultsDiv.style.display = 'none';
+  }
+});
+</script>
+{% endblock %}

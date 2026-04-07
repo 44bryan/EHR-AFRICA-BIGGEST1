@@ -1,0 +1,106 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Appointments{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Appointments</h1>
+  <div class="d-flex gap-2">
+    <a href="{% url 'appointments:clinic_board' %}" class="btn btn-outline-primary">
+      <i class="bi bi-display me-1"></i>Today's Board
+    </a>
+    <a href="{% url 'appointments:book' %}" class="btn btn-primary">
+      <i class="bi bi-calendar-plus me-1"></i>Book Appointment
+    </a>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2">
+      <div class="col-md-3">
+        <input type="date" name="date" value="{{ date_filter }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-3">
+        <select name="department" class="form-select form-select-sm">
+          <option value="">All Departments</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}" {% if dept_filter == dept.id|stringformat:'s' %}selected{% endif %}>{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          {% for code, label in status_choices %}
+          <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Patient</th>
+            <th>Date & Time</th>
+            <th>Department</th>
+            <th>Doctor</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for appt in appointments %}
+          <tr>
+            <td class="text-muted small">{{ appt.appointment_number }}</td>
+            <td>
+              <div class="fw-semibold">{{ appt.patient.full_name }}</div>
+              <div class="text-muted small">{{ appt.patient.patient_id }}</div>
+            </td>
+            <td>
+              <div>{{ appt.appointment_date|date:"d M Y" }}</div>
+              <div class="text-muted small">{{ appt.appointment_time|time:"H:i" }}</div>
+            </td>
+            <td>{{ appt.department }}</td>
+            <td>{{ appt.doctor.full_name|default:"—" }}</td>
+            <td><span class="badge bg-light text-dark">{{ appt.get_appointment_type_display }}</span></td>
+            <td>
+              <span class="badge
+                {% if appt.status == 'SCHEDULED' %}bg-secondary
+                {% elif appt.status == 'CONFIRMED' %}bg-primary
+                {% elif appt.status == 'CHECKED_IN' %}bg-warning text-dark
+                {% elif appt.status == 'COMPLETED' %}bg-success
+                {% elif appt.status == 'CANCELLED' %}bg-dark
+                {% elif appt.status == 'NO_SHOW' %}bg-danger
+                {% endif %}">
+                {{ appt.get_status_display }}
+              </span>
+            </td>
+            <td>
+              <a href="{% url 'appointments:detail' appt.pk %}" class="btn btn-sm btn-outline-secondary">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-5">
+              <i class="bi bi-calendar-x" style="font-size:2rem;"></i>
+              <p class="mt-2 mb-0">No appointments found for this date.</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

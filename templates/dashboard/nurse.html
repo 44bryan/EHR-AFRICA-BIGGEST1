@@ -1,0 +1,81 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Triage Station{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h3 mb-1"><i class="bi bi-heart-pulse me-2 text-danger"></i>Triage / Parameters Station</h1>
+    <div class="text-muted small">{{ user.full_name }} &bull; OPD Nurse &bull; {{ today|date:"l, d F Y" }}</div>
+  </div>
+  <a href="{% url 'consultations:triage_workstation' %}" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-display me-1"></i>Full Workstation View
+  </a>
+</div>
+
+{# Stats #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ waiting_count }}</div>
+      <div class="text-muted small">Waiting for Triage</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ dispatched_today }}</div>
+      <div class="text-muted small">Dispatched to Doctor Today</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ today_count }}</div>
+      <div class="text-muted small">Total Visits Today</div>
+    </div>
+  </div>
+</div>
+
+{# ── Waiting for Triage ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3 d-flex justify-content-between">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-hourglass-split me-2 text-warning"></i>Waiting for Triage (Parameters)</h6>
+    <span class="badge bg-warning text-dark">{{ waiting_count }} patient{{ waiting_count|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>ID</th>
+          <th>Age / Sex</th>
+          <th>Chief Complaint</th>
+          <th>Waiting Since</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for visit in waiting %}
+        <tr>
+          <td class="fw-semibold">{{ visit.patient.full_name }}</td>
+          <td><code>{{ visit.patient.patient_id }}</code></td>
+          <td>{{ visit.patient.age_display }} / {{ visit.patient.get_gender_display }}</td>
+          <td class="text-muted">{{ visit.chief_complaint|truncatechars:50 }}</td>
+          <td class="text-muted">{{ visit.visit_date|timesince }} ago</td>
+          <td>
+            <a href="{% url 'patients:triage' visit_number=visit.visit_number %}"
+               class="btn btn-sm btn-warning fw-semibold">
+              <i class="bi bi-heart-pulse me-1"></i>Record Vitals
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-5">
+            <i class="bi bi-check-circle text-success fs-2 d-block mb-2 opacity-50"></i>
+            No patients waiting. Queue is clear.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

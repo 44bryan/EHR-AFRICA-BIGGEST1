@@ -1,0 +1,493 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Visit {{ visit.visit_number }} — Patient Journey{% endblock %}
+{% block page_header %}{% include 'components/patient_card.html' with patient=patient %}{% endblock %}
+{% block content %}
+
+{# ── Visit header ── #}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <span class="fw-bold">Visit:</span> <code>{{ visit.visit_number }}</code>
+    <span class="badge ms-2
+      {% if visit.status == 'WAITING' %}bg-warning text-dark
+      {% elif visit.status == 'TRIAGE' %}bg-info
+      {% elif visit.status == 'IN_CONSULTATION' %}bg-primary
+      {% elif visit.status == 'INVESTIGATION' %}bg-purple text-white
+      {% elif visit.status == 'DISCHARGED' %}bg-success
+      {% else %}bg-secondary{% endif %}">
+      {{ visit.get_status_display }}
+    </span>
+    <span class="text-muted small ms-2">{{ visit.visit_date|date:"d M Y, H:i" }}</span>
+    {% if visit.department %}<span class="badge bg-light text-dark border ms-1">{{ visit.department.name }}</span>{% endif %}
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'reports:visit_summary_pdf' pk=visit.pk %}" class="btn btn-sm btn-outline-danger" target="_blank">
+      <i class="bi bi-file-pdf me-1"></i>Print Summary
+    </a>
+    <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Patient Record
+    </a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-3">
+    <div class="d-flex align-items-center overflow-auto" style="gap:0;">
+      {% for step in steps %}
+      <div class="d-flex align-items-center flex-shrink-0">
+        {# Step node #}
+        <div class="text-center" style="min-width:90px;">
+          <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1
+            {% if step.done %}bg-success text-white
+            {% elif step.n == current_step %}bg-primary text-white
+            {% else %}bg-light text-muted border{% endif %}"
+            style="width:44px;height:44px;">
+            {% if step.done %}
+              <i class="bi bi-check-lg fs-5"></i>
+            {% else %}
+              <i class="bi {{ step.icon }}"></i>
+            {% endif %}
+          </div>
+          <div style="font-size:0.65rem;line-height:1.2;max-width:80px;margin:0 auto;"
+            class="{% if step.n == current_step %}fw-bold text-primary{% elif step.done %}text-success{% else %}text-muted{% endif %}">
+            <span class="d-none d-md-inline">{{ step.name }}</span>
+            <span class="d-md-none">{{ step.n }}</span>
+          </div>
+        </div>
+        {# Connector line (not after last) #}
+        {% if not forloop.last %}
+        <div class="flex-grow-1" style="height:2px;min-width:12px;background:{% if step.done %}#198754{% else %}#dee2e6{% endif %};"></div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ── Consultation Validity Banner ── #}
+{% if visit.consultation_valid_until %}
+<div class="alert py-2 mb-3 d-flex align-items-center gap-2
+  {% if visit.consultation_is_valid %}alert-success{% else %}alert-warning{% endif %}">
+  <i class="bi {% if visit.consultation_is_valid %}bi-calendar2-check text-success{% else %}bi-calendar2-x text-warning{% endif %} fs-5"></i>
+  <div>
+    {% if visit.consultation_is_valid %}
+      <strong>Consultation Valid</strong> — Open until
+      <strong>{{ visit.consultation_valid_until|date:"d M Y" }}</strong>
+      ({{ visit.consultation_days_remaining }} day{{ visit.consultation_days_remaining|pluralize }} remaining).
+      Patient may return as <strong>Follow-up</strong> without paying again.
+    {% else %}
+      <strong>Consultation Expired</strong> on {{ visit.consultation_valid_until|date:"d M Y" }}.
+      Patient must pay a <strong>new consultation fee</strong> to renew.
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if not is_discharged %}
+<div class="card border-0 shadow-sm mb-4" id="qmsRouteCard">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center"
+       style="background:#1e293b;color:#fff;">
+    <h6 class="mb-0 small fw-semibold">
+      <i class="bi bi-signpost-split me-2"></i>Route Patient to Next Service
+    </h6>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge
+        {% if visit.service_tier == 'VIP' %}bg-danger
+        {% elif visit.service_tier == 'FAST_TRACK' %}bg-warning text-dark
+        {% elif visit.service_tier == 'EXPRESS' %}bg-info text-dark
+        {% else %}bg-secondary{% endif %}">
+        {{ visit.get_service_tier_display }}
+      </span>
+      <span class="badge bg-light text-dark border">{{ visit.get_status_display }}</span>
+      <button class="btn btn-sm btn-outline-light py-0 px-2" style="font-size:.72rem;"
+              onclick="loadQueueStatus('{{ patient.patient_id }}')">
+        <i class="bi bi-arrow-clockwise me-1"></i>Tokens
+      </button>
+    </div>
+  </div>
+
+  {# Live queue token badge row #}
+  <div id="queueStatusBar" class="d-none px-3 py-2 bg-dark bg-opacity-10 border-bottom small"></div>
+
+  <div class="card-body py-2">
+    <form method="post" action="{% url 'qms:route_to_dept' %}" class="row g-2 align-items-center">
+      {% csrf_token %}
+      <input type="hidden" name="visit_id" value="{{ visit.pk }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="col-md-4">
+        <select name="service_type" class="form-select form-select-sm" required>
+          <option value="">— Select destination —</option>
+          {% for code, label in service_types %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-5">
+        <input type="text" name="notes" class="form-control form-control-sm"
+               placeholder="Routing note (optional)">
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-sm w-100"
+                style="background:#1e293b;color:#fff;">
+          <i class="bi bi-arrow-right-circle me-1"></i>Route
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function loadQueueStatus(patientId) {
+  fetch("{% url 'qms:patient_status' patient_id='__PID__' %}".replace('__PID__', patientId))
+    .then(r => r.json())
+    .then(data => {
+      var bar = document.getElementById('queueStatusBar');
+      if (!data.tokens || !data.tokens.length) {
+        bar.innerHTML = '<span class="text-muted">No queue tokens today.</span>';
+      } else {
+        bar.innerHTML = data.tokens.map(function(t) {
+          var cls = t.status === 'WAITING' ? 'warning text-dark' : t.status === 'SERVING' ? 'success' : 'secondary';
+          return '<span class="badge bg-' + cls + ' me-2">' +
+                 '<i class="bi bi-ticket-perforated me-1"></i>' +
+                 t.token_number + ' — ' + t.service_type_label +
+                 ' (' + t.status + ')</span>';
+        }).join('');
+      }
+      bar.classList.remove('d-none');
+    });
+}
+</script>
+{% endif %}
+
+{# Step 1: Reception & Orientation #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge bg-success rounded-circle me-2">1</span>
+      Reception &amp; Orientation
+      <i class="bi bi-check-circle-fill text-success ms-2"></i>
+    </h6>
+    <span class="text-muted small">{{ visit.visit_date|date:"d M Y, H:i" }}</span>
+  </div>
+  <div class="card-body py-2 small">
+    <div class="row g-2">
+      <div class="col-md-3"><span class="text-muted">Visit No.</span><br><strong>{{ visit.visit_number }}</strong></div>
+      <div class="col-md-3"><span class="text-muted">Type</span><br><strong>{{ visit.get_visit_type_display }}</strong></div>
+      <div class="col-md-3"><span class="text-muted">Department</span><br><strong>{{ visit.department.name|default:"—" }}</strong></div>
+      <div class="col-md-3"><span class="text-muted">Chief Complaint</span><br><strong>{{ visit.chief_complaint|default:"—" }}</strong></div>
+    </div>
+    {% if visit.appointment %}
+    <div class="mt-2 text-muted">
+      <i class="bi bi-calendar-check me-1"></i>Appointment: <code>{{ visit.appointment.appointment_number }}</code>
+      — <strong>{{ visit.appointment.get_service_tier_display }}</strong> tier
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Step 2: Registration & Identification ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge bg-success rounded-circle me-2">2</span>
+      Registration &amp; Identification
+      <i class="bi bi-check-circle-fill text-success ms-2"></i>
+    </h6>
+    <span class="text-muted small">Registered {{ patient.registration_date|date:"d M Y" }}</span>
+  </div>
+  <div class="card-body py-2 small">
+    <div class="row g-2">
+      <div class="col-md-3"><span class="text-muted">Patient ID</span><br><strong>{{ patient.patient_id }}</strong></div>
+      <div class="col-md-3"><span class="text-muted">Full Name</span><br><strong>{{ patient.full_name }}</strong></div>
+      <div class="col-md-3"><span class="text-muted">Age / Gender</span><br><strong>{{ patient.age_display }} / {{ patient.get_gender_display }}</strong></div>
+      <div class="col-md-3"><span class="text-muted">Blood Group</span><br><strong>{{ patient.blood_group }} / {{ patient.genotype }}</strong></div>
+    </div>
+  </div>
+</div>
+
+{# ── Step 3: Pre-consultation / Triage ── #}
+<div class="card border-0 shadow-sm mb-3 {% if current_step == 3 %}border-primary border-2{% endif %}">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge {% if has_vitals %}bg-success{% elif current_step == 3 %}bg-primary{% else %}bg-secondary{% endif %} rounded-circle me-2">3</span>
+      Pre-consultation / Triage
+      {% if has_vitals %}<i class="bi bi-check-circle-fill text-success ms-2"></i>{% endif %}
+    </h6>
+    {% if not is_discharged %}
+    <a href="{% url 'patients:triage' visit_number=visit.visit_number %}"
+       class="btn btn-sm {% if has_vitals %}btn-outline-secondary{% else %}btn-warning{% endif %}">
+      <i class="bi bi-heart-pulse me-1"></i>{% if has_vitals %}Update Vitals{% else %}Record Vitals{% endif %}
+    </a>
+    {% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    {% if has_vitals %}
+    <div class="row g-2">
+      {% if visit.vital_signs.visual_acuity_right or visit.vital_signs.visual_acuity_left %}
+      <div class="col-md-3"><span class="text-muted">Visual Acuity</span><br>
+        <strong>RE: {{ visit.vital_signs.visual_acuity_right|default:"N/R" }} &nbsp; LE: {{ visit.vital_signs.visual_acuity_left|default:"N/R" }}</strong></div>
+      {% endif %}
+      {% if visit.vital_signs.intraocular_pressure_right or visit.vital_signs.intraocular_pressure_left %}
+      <div class="col-md-3"><span class="text-muted">IOP</span><br>
+        <strong>RE: {{ visit.vital_signs.intraocular_pressure_right|default:"N/R" }} &nbsp; LE: {{ visit.vital_signs.intraocular_pressure_left|default:"N/R" }} mmHg</strong></div>
+      {% endif %}
+      {% if visit.vital_signs.blood_pressure %}
+      <div class="col-md-2"><span class="text-muted">BP</span><br><strong>{{ visit.vital_signs.blood_pressure }}</strong></div>
+      {% endif %}
+      {% if visit.vital_signs.pulse %}
+      <div class="col-md-2"><span class="text-muted">Pulse</span><br><strong>{{ visit.vital_signs.pulse }} bpm</strong></div>
+      {% endif %}
+      {% if visit.vital_signs.weight %}
+      <div class="col-md-2"><span class="text-muted">Weight</span><br><strong>{{ visit.vital_signs.weight }} kg</strong></div>
+      {% endif %}
+    </div>
+    {% if visit.triage_nurse %}
+    <div class="text-muted mt-1"><i class="bi bi-person-badge me-1"></i>Triaged by {{ visit.triage_nurse.full_name }}</div>
+    {% endif %}
+    {% else %}
+    <div class="text-muted py-2">
+      <i class="bi bi-exclamation-circle me-1 text-warning"></i>
+      Vital signs not yet recorded. Nurse should record triage before patient sees the doctor.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Step 4: Complementary Examinations ── #}
+<div class="card border-0 shadow-sm mb-3 {% if current_step == 4 %}border-primary border-2{% endif %}">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge {% if has_exam %}bg-success{% elif current_step == 4 %}bg-primary{% else %}bg-secondary{% endif %} rounded-circle me-2">4</span>
+      Complementary Examinations
+      {% if has_exam %}<i class="bi bi-check-circle-fill text-success ms-2"></i>{% endif %}
+    </h6>
+    {% if consultations and not is_discharged %}{% with c=consultations.0 %}
+    <div class="d-flex gap-1">
+      <a href="{% url 'investigations:order' consultation_pk=c.pk %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-search-heart me-1"></i>Eye Investigation
+      </a>
+      <a href="{% url 'laboratory:order' consultation_pk=c.pk %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-droplet-half me-1"></i>Lab Order
+      </a>
+    </div>
+    {% endwith %}{% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    {% for c in consultations %}
+      {# Eye investigations #}
+      {% for inv in c.investigation_orders.all %}
+      <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+        <div>
+          <i class="bi bi-search-heart text-info me-1"></i>
+          <strong>{{ inv.investigation_type }}</strong>
+          <span class="badge bg-{% if inv.status == 'RESULTED' %}success{% elif inv.status == 'IN_PROGRESS' %}warning text-dark{% else %}secondary{% endif %} ms-1">{{ inv.get_status_display }}</span>
+        </div>
+        <a href="{% url 'investigations:detail' pk=inv.pk %}" class="btn btn-xs btn-outline-secondary btn-sm">View</a>
+      </div>
+      {% endfor %}
+      {# Lab orders #}
+      {% for lab in c.lab_orders.all %}
+      <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+        <div>
+          <i class="bi bi-droplet-half text-danger me-1"></i>
+          <strong>Lab Order</strong>
+          <span class="badge bg-{% if lab.status == 'RESULTED' %}success{% elif lab.status == 'IN_PROGRESS' %}warning text-dark{% else %}secondary{% endif %} ms-1">{{ lab.get_status_display }}</span>
+        </div>
+        <a href="{% url 'laboratory:detail' pk=lab.pk %}" class="btn btn-xs btn-outline-secondary btn-sm">View</a>
+      </div>
+      {% endfor %}
+    {% empty %}
+    <div class="text-muted py-1">No complementary examinations ordered yet.</div>
+    {% endfor %}
+    {% if not has_exam and not consultations %}
+    <div class="text-muted py-1">Start a consultation first to order examinations.</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Step 5: Specialized Consultation ── #}
+<div class="card border-0 shadow-sm mb-3 {% if current_step == 5 %}border-primary border-2{% endif %}">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge {% if has_completed_consult %}bg-success{% elif current_step == 5 %}bg-primary{% else %}bg-secondary{% endif %} rounded-circle me-2">5</span>
+      Specialized Consultation
+      {% if has_completed_consult %}<i class="bi bi-check-circle-fill text-success ms-2"></i>{% endif %}
+    </h6>
+    {% if not is_discharged %}
+    <a href="{% url 'consultations:create' patient_id=patient.patient_id %}?visit_id={{ visit.pk }}"
+       class="btn btn-sm btn-primary">
+      <i class="bi bi-clipboard2-plus me-1"></i>New Consultation
+    </a>
+    {% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    {% for c in consultations %}
+    <div class="border rounded p-2 mb-2">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">{{ c.department.name|default:"General" }}
+            <span class="badge bg-{% if c.status == 'COMPLETED' %}success{% elif c.status == 'IN_PROGRESS' %}primary{% else %}secondary{% endif %} ms-1">{{ c.get_status_display }}</span>
+          </div>
+          <div class="text-muted">Dr. {{ c.consulting_doctor.full_name|default:"—" }} &bull; {{ c.consultation_date|date:"d M Y, H:i" }}</div>
+          {% if c.presenting_complaint %}<div class="mt-1"><em>{{ c.presenting_complaint|truncatechars:120 }}</em></div>{% endif %}
+          {% if c.primary_diagnosis %}<div class="mt-1"><i class="bi bi-tag-fill text-info me-1"></i>{{ c.primary_diagnosis }}</div>{% endif %}
+        </div>
+        <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-primary ms-2 flex-shrink-0">Open</a>
+      </div>
+    </div>
+    {% empty %}
+    <div class="text-muted py-1">
+      <i class="bi bi-info-circle me-1"></i>
+      No consultation started. Use the button above to begin.
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── Step 6: Therapeutic Management ── #}
+<div class="card border-0 shadow-sm mb-3 {% if current_step == 6 %}border-primary border-2{% endif %}">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge {% if has_prescriptions %}bg-success{% elif current_step == 6 %}bg-primary{% else %}bg-secondary{% endif %} rounded-circle me-2">6</span>
+      Therapeutic Management
+      {% if has_prescriptions %}<i class="bi bi-check-circle-fill text-success ms-2"></i>{% endif %}
+    </h6>
+    {% if consultations and not is_discharged %}{% with c=consultations.0 %}
+    <div class="d-flex gap-1">
+      <a href="{% url 'prescriptions:drug_new' consultation_pk=c.pk %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-capsule me-1"></i>Drug Rx
+      </a>
+      <a href="{% url 'prescriptions:optical_new' consultation_pk=c.pk %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-eyeglasses me-1"></i>Optical Rx
+      </a>
+    </div>
+    {% endwith %}{% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    {% for c in consultations %}
+      {% for rx in c.drug_prescriptions.all %}
+      <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+        <div>
+          <i class="bi bi-capsule text-success me-1"></i>
+          <strong>Drug Prescription</strong>
+          <span class="badge bg-secondary ms-1">{{ rx.get_status_display }}</span>
+          <span class="text-muted ms-1">{{ rx.prescribed_date|date:"d M Y" }}</span>
+        </div>
+        <a href="{% url 'prescriptions:drug_detail' pk=rx.pk %}" class="btn btn-xs btn-outline-secondary btn-sm">View</a>
+      </div>
+      {% endfor %}
+      {% for orx in c.optical_prescriptions.all %}
+      <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+        <div>
+          <i class="bi bi-eyeglasses text-primary me-1"></i>
+          <strong>Optical Prescription</strong>
+          <span class="text-muted ms-1">{{ orx.prescription_date|date:"d M Y" }}</span>
+        </div>
+        <a href="{% url 'prescriptions:optical_detail' pk=orx.pk %}" class="btn btn-xs btn-outline-secondary btn-sm">View</a>
+      </div>
+      {% endfor %}
+    {% empty %}
+    <div class="text-muted py-1">No prescriptions issued yet.</div>
+    {% endfor %}
+    {% if not has_prescriptions and not consultations %}
+    <div class="text-muted py-1">Start a consultation first to issue prescriptions.</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Step 7: Pharmacy / Optical Service ── #}
+<div class="card border-0 shadow-sm mb-3 {% if current_step == 7 %}border-primary border-2{% endif %}">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge bg-secondary rounded-circle me-2">7</span>
+      Pharmacy / Optical Service
+    </h6>
+    <div class="d-flex gap-1">
+      <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-capsule me-1"></i>Pharmacy
+      </a>
+      <a href="{% url 'opticals:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-eyeglasses me-1"></i>Opticals
+      </a>
+    </div>
+  </div>
+  <div class="card-body py-2 small text-muted">
+    Patient should proceed to pharmacy to collect medications and/or optical section for glasses/lenses.
+  </div>
+</div>
+
+{# ── Step 8: Billing & Payment ── #}
+<div class="card border-0 shadow-sm mb-3 {% if current_step == 8 %}border-primary border-2{% endif %}">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge {% if has_paid %}bg-success{% elif current_step == 8 %}bg-primary{% else %}bg-secondary{% endif %} rounded-circle me-2">8</span>
+      Billing &amp; Payment
+      {% if has_paid %}<i class="bi bi-check-circle-fill text-success ms-2"></i>{% endif %}
+    </h6>
+    {% if not is_discharged %}
+    <a href="{% url 'billing:invoice_create' %}?patient={{ patient.patient_id }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-receipt me-1"></i>Create Invoice
+    </a>
+    {% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    {% for inv in invoices %}
+    <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+      <div>
+        <i class="bi bi-receipt text-primary me-1"></i>
+        <strong>{{ inv.invoice_number }}</strong>
+        <span class="badge ms-1
+          {% if inv.status == 'PAID' or inv.status == 'WAIVED' %}bg-success
+          {% elif inv.status == 'PARTIAL' %}bg-warning text-dark
+          {% elif inv.status == 'CANCELLED' %}bg-danger
+          {% else %}bg-secondary{% endif %}">
+          {{ inv.get_status_display }}
+        </span>
+        <span class="ms-1">{{ inv.total|floatformat:0 }} FCFA</span>
+      </div>
+      <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-xs btn-outline-secondary btn-sm">View</a>
+    </div>
+    {% empty %}
+    <div class="text-muted py-1">No invoice created yet.</div>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── Step 9: Discharge & Follow-up ── #}
+<div class="card border-0 shadow-sm mb-3 {% if current_step == 9 %}border-success border-2{% endif %}">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <span class="badge {% if is_discharged %}bg-success{% else %}bg-secondary{% endif %} rounded-circle me-2">9</span>
+      Discharge &amp; Follow-up
+      {% if is_discharged %}<i class="bi bi-check-circle-fill text-success ms-2"></i>{% endif %}
+    </h6>
+    {% if not is_discharged %}
+    <a href="{% url 'patients:discharge' visit_number=visit.visit_number %}" class="btn btn-sm btn-success">
+      <i class="bi bi-box-arrow-right me-1"></i>Discharge Patient
+    </a>
+    {% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    {% if is_discharged %}
+    <div class="text-success fw-semibold">
+      <i class="bi bi-check-circle-fill me-1"></i>
+      Discharged {{ visit.discharge_date|date:"d M Y, H:i" }}
+    </div>
+    {% if visit.discharge_notes %}
+    <div class="mt-2 text-muted">{{ visit.discharge_notes }}</div>
+    {% endif %}
+    {# Follow-up appointments #}
+    {% for c in consultations %}
+      {% if c.follow_up_date %}
+      <div class="mt-2">
+        <i class="bi bi-calendar-event me-1 text-primary"></i>
+        Follow-up scheduled: <strong>{{ c.follow_up_date|date:"d M Y" }}</strong>
+        {% if c.follow_up_instructions %} — {{ c.follow_up_instructions }}{% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% else %}
+    <div class="text-muted py-1">Patient has not been discharged yet.</div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

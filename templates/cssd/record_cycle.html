@@ -1,0 +1,87 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Record Sterilization Cycle{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-shield-check me-2 text-primary"></i>Record Sterilization Cycle</h5>
+        <a href="{% url 'cssd:cycles' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+      </div>
+      <div class="card-body">
+        {% if messages %}{% for msg in messages %}
+        <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+        {% endfor %}{% endif %}
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Sterilization Method <span class="text-danger">*</span></label>
+              <select name="method" class="form-select" required>
+                <option value="">— Select Method —</option>
+                {% for code, label in methods %}
+                <option value="{{ code }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Temperature (°C)</label>
+              <input type="number" name="temperature" class="form-control" step="0.1" placeholder="e.g. 134">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Pressure (bar)</label>
+              <input type="number" name="pressure" class="form-control" step="0.01" placeholder="e.g. 2.1">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Duration (minutes)</label>
+              <input type="number" name="duration_minutes" class="form-control" min="1" placeholder="e.g. 18">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold small">Notes</label>
+              <input type="text" name="notes" class="form-control" placeholder="Optional notes about this cycle">
+            </div>
+
+            {% if instruments %}
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Instruments in this cycle</label>
+              <div class="border rounded p-2" style="max-height:200px;overflow-y:auto;">
+                {% for inst in instruments %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="instruments" value="{{ inst.id }}" id="inst-{{ inst.id }}">
+                  <label class="form-check-label small" for="inst-{{ inst.id }}">
+                    {{ inst.instrument_code }} — {{ inst.name }}
+                    <span class="badge bg-secondary ms-1">{{ inst.get_status_display }}</span>
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if instrument_sets %}
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Instrument Sets</label>
+              <div class="border rounded p-2" style="max-height:150px;overflow-y:auto;">
+                {% for s in instrument_sets %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="sets" value="{{ s.id }}" id="set-{{ s.id }}">
+                  <label class="form-check-label small" for="set-{{ s.id }}">{{ s.set_code }} — {{ s.name }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <hr class="my-4">
+          <button type="submit" class="btn btn-primary px-4">
+            <i class="bi bi-shield-plus me-1"></i>Record Cycle
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

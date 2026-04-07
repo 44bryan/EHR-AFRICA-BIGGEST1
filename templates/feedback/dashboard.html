@@ -1,0 +1,342 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Digital Px Meter — Patient Feedback{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-emoji-smile-fill text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Digital Px Meter</h5>
+      <div class="text-muted small">Patient Experience &amp; Service Recovery Dashboard</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'feedback:service_recovery' %}" class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-exclamation-triangle me-1"></i>Service Recovery
+      {% if overdue_complaints.count %}<span class="badge bg-danger ms-1">{{ overdue_complaints.count }}</span>{% endif %}
+    </a>
+    <a href="{% url 'feedback:list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-list-ul me-1"></i>All Feedback
+    </a>
+    <a href="{% url 'feedback:submit' %}" class="btn btn-sm btn-primary" target="_blank">
+      <i class="bi bi-box-arrow-up-right me-1"></i>Public Form
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── KPI Cards ─────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_feedback }}</div>
+        <div class="text-muted small">Total Responses</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold {% if nps_score >= 50 %}text-success{% elif nps_score >= 0 %}text-warning{% else %}text-danger{% endif %}">
+          {{ nps_score }}
+        </div>
+        <div class="text-muted small">Net Promoter Score</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-danger">{{ open_complaints }}</div>
+        <div class="text-muted small">Open Complaints</div>
+        {% if overdue_complaints.count %}
+        <div class="badge bg-danger mt-1">{{ overdue_complaints.count }} overdue (&gt;48h)</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ stats.avg_overall|floatformat:1|default:"--" }}<small class="fs-6 text-muted">/5</small></div>
+        <div class="text-muted small">Avg Overall Rating</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  <!-- ── NPS Gauge + Breakdown ──────────────────────────────────────────── -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-speedometer2 text-primary me-2"></i>NPS Breakdown
+      </div>
+      <div class="card-body text-center d-flex flex-column justify-content-center">
+        <div class="display-4 fw-bold mb-2
+          {% if nps_score >= 50 %}text-success{% elif nps_score >= 0 %}text-warning{% else %}text-danger{% endif %}">
+          {{ nps_score }}
+        </div>
+        <div class="text-muted small mb-3">Net Promoter Score</div>
+        <div class="d-flex justify-content-around">
+          <div class="text-center">
+            <div class="fw-bold text-success fs-4">{{ promoters }}</div>
+            <div class="small text-muted">Promoters<br><span class="text-muted" style="font-size:.7rem">Score 9–10</span></div>
+          </div>
+          <div class="text-center">
+            <div class="fw-bold text-warning fs-4">{{ passives }}</div>
+            <div class="small text-muted">Passives<br><span class="text-muted" style="font-size:.7rem">Score 7–8</span></div>
+          </div>
+          <div class="text-center">
+            <div class="fw-bold text-danger fs-4">{{ detractors }}</div>
+            <div class="small text-muted">Detractors<br><span class="text-muted" style="font-size:.7rem">Score 0–6</span></div>
+          </div>
+        </div>
+        <div class="mt-3" style="height:8px;border-radius:4px;background:#e9ecef;overflow:hidden;">
+          {% if promoters or passives or detractors %}
+          {% with total=promoters|add:passives|add:detractors %}
+          <div style="display:flex;height:100%;">
+            <div style="width:{% widthratio promoters total 100 %}%;background:#198754;"></div>
+            <div style="width:{% widthratio passives total 100 %}%;background:#ffc107;"></div>
+            <div style="width:{% widthratio detractors total 100 %}%;background:#dc3545;"></div>
+          </div>
+          {% endwith %}
+          {% endif %}
+        </div>
+        <div class="d-flex justify-content-between mt-1" style="font-size:.65rem;color:#6c757d;">
+          <span>Promoters</span><span>Passives</span><span>Detractors</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Average Ratings ───────────────────────────────────────────────── -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-star-fill text-warning me-2"></i>Average Ratings
+      </div>
+      <div class="card-body">
+        {% for label, val in ratings_data %}
+        <div class="mb-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span>{{ label }}</span>
+            <span class="fw-semibold">{{ val|floatformat:1|default:"—" }}{% if val %}/5{% endif %}</span>
+          </div>
+          <div class="progress" style="height:7px;">
+            <div class="progress-bar bg-success" style="width:{% if val %}{% widthratio val 5 100 %}%{% else %}0%{% endif %};"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Departmental NPS ──────────────────────────────────────────────── -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-building text-primary me-2"></i>Departmental NPS
+      </div>
+      <div class="card-body p-0">
+        {% if dept_nps %}
+        <ul class="list-group list-group-flush small">
+          {% for d in dept_nps %}
+          <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+            <div>
+              <div class="fw-semibold">{{ d.name }}</div>
+              <div class="text-muted" style="font-size:.7rem;">{{ d.total }} response{{ d.total|pluralize }}{% if d.avg_rating %} · ★ {{ d.avg_rating }}{% endif %}</div>
+            </div>
+            <span class="badge rounded-pill
+              {% if d.nps >= 50 %}bg-success{% elif d.nps >= 0 %}bg-warning text-dark{% else %}bg-danger{% endif %}"
+              style="min-width:42px;">
+              {{ d.nps }}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="p-3 text-muted small text-center">No departmental data yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Escalation Matrix ─────────────────────────────────────────────────── -->
+{% if pending_complaints %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center border-bottom py-2">
+    <div class="fw-semibold">
+      <i class="bi bi-ladder text-danger me-2"></i>Escalation Matrix
+      <span class="badge bg-danger ms-2">{{ pending_complaints.count }} open</span>
+    </div>
+    <a href="{% url 'feedback:service_recovery' %}" class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-clock-history me-1"></i>SLA View
+    </a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Patient</th>
+            <th>Department</th>
+            <th>Submitted</th>
+            <th>Age</th>
+            <th>Status</th>
+            <th>Escalated To</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fb in pending_complaints %}
+          {% now "U" as now_ts %}
+          <tr class="{% if fb.escalated %}table-warning{% endif %}">
+            <td>
+              <a href="{% url 'feedback:detail' fb.id %}" class="text-decoration-none fw-semibold">
+                {{ fb.submitter_name }}
+              </a>
+              <div class="text-muted" style="font-size:.7rem;">{{ fb.message|truncatechars:50 }}</div>
+            </td>
+            <td>{{ fb.department.name|default:"—" }}</td>
+            <td>{{ fb.created_at|date:"d M Y H:i" }}</td>
+            <td>
+              {% with age_h=fb.created_at|timesince %}
+              <span class="badge
+                {% if fb.status == 'NEW' %}bg-danger{% elif fb.status == 'ACK' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                {{ age_h }}
+              </span>
+              {% endwith %}
+            </td>
+            <td>
+              {% if fb.status == 'NEW' %}<span class="badge bg-primary">New</span>
+              {% elif fb.status == 'ACK' %}<span class="badge bg-warning text-dark">Acknowledged</span>
+              {% elif fb.status == 'INVEST' %}<span class="badge bg-info">Investigating</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if fb.escalated and fb.escalated_to %}
+                <span class="badge bg-warning text-dark">
+                  <i class="bi bi-person-up me-1"></i>{{ fb.escalated_to.get_full_name }}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="text-end">
+              <div class="d-flex gap-1 justify-content-end">
+                {% if fb.status == 'NEW' %}
+                <form method="post" action="{% url 'feedback:acknowledge' fb.id %}">
+                  {% csrf_token %}
+                  <button class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:2px 6px;">ACK</button>
+                </form>
+                {% endif %}
+                {% if not fb.escalated %}
+                <button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 6px;"
+                        data-bs-toggle="modal" data-bs-target="#escalateModal{{ forloop.counter }}">
+                  Escalate
+                </button>
+                {% endif %}
+                <a href="{% url 'feedback:detail' fb.id %}" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 6px;">View</a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Escalation modals -->
+{% for fb in pending_complaints %}
+{% if not fb.escalated %}
+<div class="modal fade" id="escalateModal{{ forloop.counter }}" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <form method="post" action="{% url 'feedback:escalate' fb.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <div class="modal-header py-2">
+          <h6 class="modal-title fw-semibold">Escalate Complaint</h6>
+          <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-2">{{ fb.submitter_name }} — {{ fb.created_at|date:"d M" }}</p>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Escalate To</label>
+            <select name="escalate_to" class="form-select form-select-sm">
+              <option value="">— Select manager —</option>
+              {% for u in manager_users %}
+              <option value="{{ u.pk }}">{{ u.get_full_name }} ({{ u.get_role_display }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Note (optional)</label>
+            <textarea name="note" class="form-control form-control-sm" rows="2" placeholder="Brief note…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-danger">Escalate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+<!-- ── Recent Feedback ───────────────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center border-bottom py-2">
+    <span class="fw-semibold"><i class="bi bi-chat-dots text-primary me-2"></i>Recent Feedback</span>
+    <a href="{% url 'feedback:list' %}" class="small text-primary text-decoration-none">View All</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 small">
+        <thead class="table-light">
+          <tr><th>Patient</th><th>Type</th><th>Rating</th><th>NPS</th><th>Status</th><th>Date</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for fb in recent %}
+          <tr>
+            <td>{{ fb.submitter_name }}</td>
+            <td><span class="badge bg-light text-dark border">{{ fb.get_feedback_type_display }}</span></td>
+            <td>
+              {% if fb.overall_rating %}
+              <span class="text-warning">{% for i in "12345" %}{% if forloop.counter <= fb.overall_rating %}&#9733;{% else %}&#9734;{% endif %}{% endfor %}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if fb.nps_score is not None %}
+              <span class="badge {% if fb.nps_score >= 9 %}bg-success{% elif fb.nps_score >= 7 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                {{ fb.nps_score }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if fb.status == 'NEW' %}<span class="badge bg-primary">New</span>
+              {% elif fb.status == 'RESOLVED' %}<span class="badge bg-success">Resolved</span>
+              {% elif fb.status == 'CLOSED' %}<span class="badge bg-secondary">Closed</span>
+              {% else %}<span class="badge bg-warning text-dark">{{ fb.get_status_display }}</span>{% endif %}
+            </td>
+            <td>{{ fb.created_at|date:"d M" }}</td>
+            <td><a href="{% url 'feedback:detail' fb.id %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-3">No feedback yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

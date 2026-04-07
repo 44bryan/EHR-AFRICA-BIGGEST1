@@ -1,0 +1,79 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Discharge — {{ patient.full_name }}{% endblock %}
+{% block page_header %}{% include 'components/patient_card.html' with patient=patient %}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm border-success border-top border-4">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 fw-semibold">
+          <i class="bi bi-box-arrow-right me-2 text-success"></i>Discharge &amp; Follow-up
+          <span class="badge bg-warning text-dark ms-2 small">Step 9</span>
+        </h5>
+        <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+      </div>
+      <div class="card-body">
+
+        {# Billing status check #}
+        {% if has_unpaid %}
+        <div class="alert alert-danger mb-3">
+          <h6 class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Outstanding Balance</h6>
+          <p class="mb-2">This patient has an unpaid balance of <strong>&#8358;{{ balance_due|floatformat:0 }}</strong>.</p>
+          {% for inv in invoices %}
+          {% if inv.balance_due > 0 %}
+          <div class="d-flex justify-content-between small">
+            <span>{{ inv.invoice_number }}</span>
+            <span class="badge bg-{% if inv.status == 'PARTIAL' %}warning text-dark{% else %}danger{% endif %}">{{ inv.get_status_display }}</span>
+            <span class="fw-bold">&#8358;{{ inv.balance_due|floatformat:0 }}</span>
+            <a href="{% url 'billing:invoice_detail' inv.id %}" class="btn btn-xs btn-sm btn-outline-primary py-0 px-2" style="font-size:.7rem;">Pay</a>
+          </div>
+          {% endif %}
+          {% endfor %}
+          {% if not can_force %}
+          <p class="mb-0 mt-2 small text-danger">Please settle billing before discharging this patient.</p>
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="alert alert-success py-2 mb-3">
+          <i class="bi bi-check-circle me-1"></i>Billing cleared — patient can be discharged.
+        </div>
+        {% endif %}
+
+        {% if not has_unpaid or can_force %}
+        <form method="post">
+          {% csrf_token %}
+          {% if has_unpaid and can_force %}
+          <input type="hidden" name="force_discharge" value="1">
+          <div class="alert alert-warning py-2 small mb-3">
+            <i class="bi bi-shield-exclamation me-1"></i>
+            You have director/admin override — discharging with unpaid balance will be logged.
+          </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Discharge Summary / Condition on Discharge</label>
+            <textarea name="discharge_notes" class="form-control" rows="4"
+              placeholder="Condition on discharge, patient education given, instructions…"></textarea>
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Follow-up Instructions</label>
+            <textarea name="follow_up" class="form-control" rows="2"
+              placeholder="e.g. Return in 2 weeks for review. Continue eye drops for 1 month."></textarea>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-success">
+              <i class="bi bi-box-arrow-right me-1"></i>Confirm Discharge
+            </button>
+          </div>
+        </form>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

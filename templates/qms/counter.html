@@ -1,0 +1,416 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Counter — {{ counter.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.now-serving-card {
+  background: linear-gradient(135deg, #1e293b, #334155);
+  color: white;
+  border-radius: 16px;
+}
+.token-mega { font-size: 5rem; font-weight: 900; letter-spacing: -2px; line-height: 1; }
+.tier-vip    { color: #a78bfa; }
+.tier-ft     { color: #fbbf24; }
+.tier-exp    { color: #22d3ee; }
+.tier-std    { color: #94a3b8; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">{{ counter.name }}</h4>
+    <small class="text-muted">
+      {% if counter.serves_tiers %}
+        {{ counter.get_tier_label }} {{ counter.get_service_type_display }}
+      {% else %}
+        {{ counter.get_service_type_display }}
+      {% endif %}
+    </small>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <span class="badge bg-primary fs-6">{{ waiting_count }} waiting</span>
+    {% if request.user.is_super_admin or request.user.is_medical_director or request.user.is_admin_staff %}
+    <a href="{% url 'qms:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-grid me-1"></i>All Counters
+    </a>
+    {% else %}
+    <a href="{% url 'dashboard:home' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-house me-1"></i>Home
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Now Serving -->
+<div class="now-serving-card p-4 mb-4 text-center shadow">
+  <div class="text-uppercase small opacity-75 mb-2 letter-spacing-wide">Now Serving</div>
+  {% if counter.current_serving %}
+    {% with t=counter.current_serving %}
+      {% if t.service_tier == 'VIP' %}
+        <div class="token-mega tier-vip">{{ t.display_token_number }}</div>
+      {% elif t.service_tier == 'FAST_TRACK' %}
+        <div class="token-mega tier-ft">{{ t.display_token_number }}</div>
+      {% elif t.service_tier == 'EXPRESS' %}
+        <div class="token-mega tier-exp">{{ t.display_token_number }}</div>
+      {% else %}
+        <div class="token-mega tier-std">{{ t.display_token_number }}</div>
+      {% endif %}
+      <div class="fs-4 mt-2">{{ t.display_name }}</div>
+      <div class="opacity-75 small">{{ t.get_service_type_display }}</div>
+      <div class="mt-1">
+        {% if t.service_tier == 'VIP' %}
+          <span class="badge" style="background:#7c3aed">VIP</span>
+        {% elif t.service_tier == 'FAST_TRACK' %}
+          <span class="badge bg-warning text-dark">Fast Track</span>
+        {% elif t.service_tier == 'EXPRESS' %}
+          <span class="badge bg-info text-dark">Express</span>
+        {% else %}
+          <span class="badge bg-secondary">Standard</span>
+        {% endif %}
+      </div>
+    {% endwith %}
+  {% else %}
+    <div class="token-mega opacity-25">---</div>
+    <div class="opacity-50 mt-2">No patient currently being served</div>
+  {% endif %}
+
+  <div class="mt-4 d-flex gap-2 justify-content-center flex-wrap">
+    <button class="btn btn-success btn-lg px-5" id="callNextBtn" onclick="callNext()">
+      <i class="bi bi-person-check-fill me-2"></i>
+      {% if counter.current_serving %}Call Next{% else %}Call First Patient{% endif %}
+    </button>
+    {% if counter.current_serving %}
+
+    {# ── RECEPTIONIST: Register new patient ── #}
+    {% if counter.service_type == 'RECEPTIONIST' %}
+      {% if counter.current_serving.patient %}
+        <a href="{% url 'patients:detail' counter.current_serving.patient.patient_id %}"
+           class="btn btn-primary btn-lg">
+          <i class="bi bi-person-lines-fill me-1"></i>Open Patient Record
+        </a>
+      {% else %}
+        <a href="{% url 'patients:register' %}?token={{ counter.current_serving.id }}&name={{ counter.current_serving.patient_name|urlencode }}"
+           class="btn btn-primary btn-lg">
+          <i class="bi bi-person-plus-fill me-1"></i>Register New Patient
+        </a>
+        <button class="btn btn-outline-info btn-lg"
+                data-bs-toggle="modal"
+                data-bs-target="#quickRegisterModal"
+                data-token="{{ counter.current_serving.id }}"
+                data-name="{{ counter.current_serving.patient_name }}">
+          <i class="bi bi-lightning-fill me-1"></i>Quick Register
+        </button>
+      {% endif %}
+    {% endif %}
+
+    {# ── CASHIER: Open POS to process payment → auto-routes to Triage ── #}
+    {% if counter.service_type == 'CASHIER' %}
+      {% with t=counter.current_serving %}
+      {% if t.patient %}
+        <a href="{% url 'billing:cashier_pos' t.id %}"
+           class="btn btn-success btn-lg">
+          <i class="bi bi-receipt me-1"></i>Open POS / Process Payment
+        </a>
+      {% endif %}
+      {% endwith %}
+    {% endif %}
+
+    {# ── PARAMETERS / PARAMS_VIP: Start triage form for this patient ── #}
+    {% if counter.service_type == 'PARAMETERS' or counter.service_type == 'PARAMS_VIP' %}
+      {% with t=counter.current_serving %}
+      {% if t.visit %}
+        <a href="{% url 'patients:triage' t.visit.visit_number %}"
+           class="btn btn-warning btn-lg text-dark">
+          <i class="bi bi-clipboard2-pulse-fill me-1"></i>Start Triage
+        </a>
+      {% elif t.patient %}
+        <a href="{% url 'patients:detail' t.patient.patient_id %}"
+           class="btn btn-outline-light btn-lg">
+          <i class="bi bi-person me-1"></i>View Patient
+        </a>
+      {% endif %}
+      {% endwith %}
+    {% endif %}
+
+    <button class="btn btn-outline-light btn-lg" onclick="skipToken('{{ counter.current_serving.id }}')">
+      <i class="bi bi-skip-forward me-1"></i>Skip
+    </button>
+    <button class="btn btn-outline-light btn-lg" onclick="noShow('{{ counter.current_serving.id }}')">
+      <i class="bi bi-person-x me-1"></i>No Show
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Quick Register Modal -->
+<div class="modal fade" id="quickRegisterModal" tabindex="-1" aria-labelledby="quickRegisterLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content shadow-lg" style="border-radius:14px;overflow:hidden;">
+      <div class="modal-header" style="background:linear-gradient(135deg,#1e293b,#334155);border-bottom:none;">
+        <h5 class="modal-title text-white" id="quickRegisterLabel">
+          <i class="bi bi-person-plus-fill me-2 text-info"></i>Quick Patient Registration
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="background:#f8fafc;">
+
+        <div id="qrSuccessAlert" class="alert alert-success d-none">
+          <strong><i class="bi bi-check-circle-fill me-1"></i>Registered!</strong>
+          <span id="qrSuccessMsg"></span>
+        </div>
+        <div id="qrErrorAlert" class="alert alert-danger d-none">
+          <span id="qrErrorMsg"></span>
+        </div>
+
+        <form id="quickRegForm" novalidate>
+          {% csrf_token %}
+          <input type="hidden" id="qrTokenId" name="qms_token_id" />
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">First Name <span class="text-danger">*</span></label>
+              <input type="text" name="first_name" id="qrFirstName" class="form-control form-control-sm"
+                     placeholder="First name" required />
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Last Name <span class="text-danger">*</span></label>
+              <input type="text" name="last_name" id="qrLastName" class="form-control form-control-sm"
+                     placeholder="Last name" required />
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Date of Birth <span class="text-danger">*</span></label>
+              <input type="date" name="date_of_birth" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Gender <span class="text-danger">*</span></label>
+              <select name="gender" class="form-select form-select-sm" required>
+                <option value="">— Select —</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-7">
+              <label class="form-label small fw-semibold">Phone <span class="text-danger">*</span></label>
+              <input type="tel" name="phone_number" class="form-control form-control-sm"
+                     placeholder="+237 6xx xxx xxx" required />
+            </div>
+            <div class="col-5">
+              <label class="form-label small fw-semibold">Patient Type</label>
+              <select name="patient_type" class="form-select form-select-sm">
+                <option value="new">New Patient</option>
+                <option value="returning">Returning</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Address</label>
+            <input type="text" name="address" class="form-control form-control-sm"
+                   placeholder="Address (optional)" />
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="background:#f1f5f9;border-top:1px solid #e2e8f0;">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm px-4" id="qrSubmitBtn" onclick="submitQuickReg()">
+          <i class="bi bi-person-check me-1"></i>Register &amp; Send to Cashier
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Waiting Queue -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="bi bi-list-ol me-2"></i>Waiting Queue</h6>
+    <small class="text-muted" id="countdown">Auto-refresh 15s</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th class="text-center" style="width:3rem;">#</th>
+            <th>Token</th>
+            <th>Patient</th>
+            <th>Tier</th>
+            <th>Waiting Since</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for token in waiting %}
+          <tr>
+            <td class="text-center text-muted small">{{ forloop.counter }}</td>
+            <td>
+              <span class="badge bg-primary fs-6">{{ token.display_token_number }}</span>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ token.display_name }}</div>
+              {% if token.patient %}
+                <small class="text-muted">{{ token.patient.patient_id }}</small>
+              {% endif %}
+            </td>
+            <td>
+              {% if token.service_tier == 'VIP' %}
+                <span class="badge" style="background:#7c3aed">VIP</span>
+              {% elif token.service_tier == 'FAST_TRACK' %}
+                <span class="badge bg-warning text-dark">Fast Track</span>
+              {% elif token.service_tier == 'EXPRESS' %}
+                <span class="badge bg-info text-dark">Express</span>
+              {% else %}
+                <span class="badge bg-secondary">Standard</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="small">{{ token.issued_at|time:"H:i" }}</span>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">
+              <i class="bi bi-check-circle-fill text-success me-2"></i>Queue is empty
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = '{{ csrf_token }}';
+const COUNTER_ID = '{{ counter.id }}';
+
+function callNext() {
+  document.getElementById('callNextBtn').disabled = true;
+  fetch("{% url 'qms:call_next' counter.id %}", {
+    method: 'POST',
+    headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/json'}
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      // Brief announcement then reload
+      const msg = `Calling: ${data.token} — ${data.patient}`;
+      if ('speechSynthesis' in window) {
+        const u = new SpeechSynthesisUtterance(`Token ${data.token}, ${data.patient}, please proceed to ${data.counter}`);
+        speechSynthesis.speak(u);
+        setTimeout(() => location.reload(), 2500);
+      } else {
+        location.reload();
+      }
+    } else {
+      alert(data.message || 'No waiting patients');
+      document.getElementById('callNextBtn').disabled = false;
+    }
+  })
+  .catch(() => { location.reload(); });
+}
+
+function skipToken(tokenId) {
+  if (!confirm('Skip this patient? They will be moved to the back of the queue.')) return;
+  fetch(`/qms/token/${tokenId}/skip/`, {
+    method: 'POST', headers: {'X-CSRFToken': CSRF}
+  }).then(() => location.reload());
+}
+
+function noShow(tokenId) {
+  if (!confirm('Mark as No Show?')) return;
+  fetch(`/qms/token/${tokenId}/no-show/`, {
+    method: 'POST', headers: {'X-CSRFToken': CSRF}
+  }).then(() => location.reload());
+}
+
+// Auto-refresh countdown
+let secs = 15;
+const cdEl = document.getElementById('countdown');
+setInterval(() => {
+  secs--;
+  if (cdEl) cdEl.textContent = `Auto-refresh ${secs}s`;
+  if (secs <= 0) location.reload();
+}, 1000);
+
+// ── Quick Register Modal ─────────────────────────────────────────────────────
+// Populate token ID when modal opens
+document.getElementById('quickRegisterModal').addEventListener('show.bs.modal', function (event) {
+  const btn = event.relatedTarget;
+  if (btn) {
+    document.getElementById('qrTokenId').value = btn.getAttribute('data-token') || '';
+    const name = (btn.getAttribute('data-name') || '').trim();
+    if (name) {
+      const parts = name.split(' ');
+      if (parts.length >= 2) {
+        document.getElementById('qrFirstName').value = parts[0];
+        document.getElementById('qrLastName').value  = parts.slice(1).join(' ');
+      } else {
+        document.getElementById('qrFirstName').value = name;
+      }
+    }
+  }
+  document.getElementById('qrSuccessAlert').classList.add('d-none');
+  document.getElementById('qrErrorAlert').classList.add('d-none');
+});
+
+function submitQuickReg() {
+  const form = document.getElementById('quickRegForm');
+  const btn  = document.getElementById('qrSubmitBtn');
+
+  // Basic client-side required check
+  const firstName = form.querySelector('[name=first_name]').value.trim();
+  const lastName  = form.querySelector('[name=last_name]').value.trim();
+  const dob       = form.querySelector('[name=date_of_birth]').value;
+  const gender    = form.querySelector('[name=gender]').value;
+  const phone     = form.querySelector('[name=phone_number]').value.trim();
+
+  if (!firstName || !lastName || !dob || !gender || !phone) {
+    document.getElementById('qrErrorMsg').textContent = 'Please fill in all required fields.';
+    document.getElementById('qrErrorAlert').classList.remove('d-none');
+    return;
+  }
+  document.getElementById('qrErrorAlert').classList.add('d-none');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Registering…';
+
+  const fd = new FormData(form);
+
+  fetch('/patients/register/ajax/', {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF },
+    body: fd,
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      document.getElementById('qrSuccessMsg').textContent =
+        ` ${data.patient_name} registered. ID: ${data.patient_id}. ${data.message || ''}`;
+      document.getElementById('qrSuccessAlert').classList.remove('d-none');
+      btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Registered!';
+      setTimeout(() => {
+        bootstrap.Modal.getInstance(document.getElementById('quickRegisterModal')).hide();
+        location.reload();
+      }, 2000);
+    } else {
+      document.getElementById('qrErrorMsg').textContent = data.message || 'Registration failed.';
+      document.getElementById('qrErrorAlert').classList.remove('d-none');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-person-check me-1"></i>Register & Send to Cashier';
+    }
+  })
+  .catch(() => {
+    document.getElementById('qrErrorMsg').textContent = 'Network error. Please try again.';
+    document.getElementById('qrErrorAlert').classList.remove('d-none');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-person-check me-1"></i>Register & Send to Cashier';
+  });
+}
+</script>
+{% endblock %}

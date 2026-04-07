@@ -1,0 +1,304 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Receipt — {{ invoice.invoice_number }}</title>
+  <style>
+    /* ── Print-clean styles ── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    /* Screen wrapper */
+    .receipt-wrapper {
+      background: #fff;
+      width: 340px;
+      padding: 24px 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      border-radius: 4px;
+    }
+
+    .header { text-align: center; margin-bottom: 12px; }
+    .header .hospital-name {
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .header .hospital-sub {
+      font-size: 11px;
+      color: #555;
+      margin-top: 2px;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px dashed #aaa;
+      margin: 10px 0;
+    }
+    .divider-solid {
+      border: none;
+      border-top: 2px solid #333;
+      margin: 10px 0;
+    }
+
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .meta-row .label { color: #555; }
+    .meta-row .value { font-weight: bold; }
+
+    .section-title {
+      text-align: center;
+      font-weight: bold;
+      letter-spacing: 1px;
+      font-size: 12px;
+      margin: 8px 0 4px;
+      text-transform: uppercase;
+    }
+
+    .item-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .item-row .item-name { flex: 1; padding-right: 8px; }
+    .item-row .item-amount { white-space: nowrap; text-align: right; min-width: 70px; }
+
+    .totals-section { margin-top: 4px; }
+    .totals-section .total-row {
+      display: flex; justify-content: space-between;
+      margin-bottom: 2px; font-size: 12px;
+    }
+    .grand-total-row {
+      display: flex; justify-content: space-between;
+      font-size: 14px; font-weight: bold;
+      border-top: 1px solid #333;
+      padding-top: 4px; margin-top: 4px;
+    }
+
+    .status-badge {
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      padding: 6px;
+      margin: 8px 0;
+    }
+    .status-paid    { color: #155724; background: #d4edda; border: 1px solid #c3e6cb; }
+    .status-partial { color: #856404; background: #fff3cd; border: 1px solid #ffc107; }
+    .status-unpaid  { color: #721c24; background: #f8d7da; border: 1px solid #f5c6cb; }
+
+    .footer { text-align: center; margin-top: 12px; font-size: 11px; color: #555; }
+    .footer .thank-you { font-size: 12px; font-weight: bold; color: #333; margin-bottom: 4px; }
+
+    .cashier-line { text-align: center; font-size: 11px; color: #666; margin-top: 8px; }
+
+    /* Action buttons — screen only */
+    .action-bar {
+      width: 340px;
+      margin-top: 16px;
+      display: flex;
+      gap: 8px;
+    }
+    .btn-print-receipt {
+      flex: 1;
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-print-receipt:hover { background: #1e40af; }
+
+    .btn-triage {
+      flex: 1;
+      background: #16a34a;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-triage:hover { background: #15803d; }
+    .btn-triage:disabled { background: #6b7280; cursor: default; }
+
+    /* ── Print styles ── */
+    @media print {
+      body { background: white; padding: 0; }
+      .receipt-wrapper {
+        box-shadow: none;
+        border-radius: 0;
+        width: 100%;
+        padding: 4mm 4mm;
+      }
+      .action-bar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+{% load humanize %}
+
+<div class="receipt-wrapper" id="receiptBody">
+
+  <!-- Header -->
+  <div class="header">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo"
+         style="width:56px;height:56px;border-radius:50%;margin-bottom:6px;" />
+    <div class="hospital-name">{{ HOSPITAL_NAME }}</div>
+    <div class="hospital-sub">Specialist Eye Hospital</div>
+    <div class="hospital-sub">Tel: +237 000 000 000</div>
+  </div>
+
+  <div class="divider-solid"></div>
+
+  <!-- Receipt meta -->
+  <div class="meta-row">
+    <span class="label">RECEIPT #:</span>
+    <span class="value">{{ invoice.invoice_number }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Date:</span>
+    <span class="value">{{ invoice.issue_date|date:"d/m/Y" }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Time:</span>
+    <span class="value">{{ invoice.created_at|time:"H:i" }}</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Patient info -->
+  <div class="meta-row">
+    <span class="label">Patient:</span>
+    <span class="value">{{ invoice.patient.full_name|upper }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Patient ID:</span>
+    <span class="value">{{ invoice.patient.patient_id }}</span>
+  </div>
+  {% with token=invoice.patient.queue_tokens.all|first %}
+  {% if token %}
+  <div class="meta-row">
+    <span class="label">Ticket #:</span>
+    <span class="value">{{ token.display_token_number }}</span>
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  <div class="divider"></div>
+
+  <!-- Services -->
+  <div class="section-title">Services Rendered</div>
+
+  {% for item in items %}
+  <div class="item-row">
+    <span class="item-name">{{ item.description }}{% if item.quantity > 1 %} x{{ item.quantity }}{% endif %}</span>
+    <span class="item-amount">{{ item.line_total|floatformat:0|intcomma }}</span>
+  </div>
+  {% empty %}
+  <div style="text-align:center;color:#999;font-size:11px;margin:4px 0;">No items</div>
+  {% endfor %}
+
+  <div class="divider"></div>
+
+  <!-- Totals -->
+  <div class="totals-section">
+    <div class="total-row">
+      <span>Subtotal</span>
+      <span>{{ invoice.subtotal|floatformat:0|intcomma }}</span>
+    </div>
+    {% if invoice.discount_amount > 0 %}
+    <div class="total-row">
+      <span>Discount{% if invoice.discount_reason %} ({{ invoice.discount_reason }}){% endif %}</span>
+      <span>-{{ invoice.discount_amount|floatformat:0|intcomma }}</span>
+    </div>
+    {% endif %}
+    <div class="grand-total-row">
+      <span>TOTAL (FCFA)</span>
+      <span>{{ invoice.total|floatformat:0|intcomma }}</span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Payments -->
+  {% if payments %}
+  <div class="section-title">Payment</div>
+  {% for payment in payments %}
+  <div class="item-row">
+    <span class="item-name">{{ payment.get_payment_method_display }}{% if payment.reference %} · {{ payment.reference }}{% endif %}</span>
+    <span class="item-amount">{{ payment.amount|floatformat:0|intcomma }}</span>
+  </div>
+  {% endfor %}
+  <div class="divider"></div>
+  {% endif %}
+
+  <!-- Balance -->
+  <div class="item-row" style="font-weight:bold;">
+    <span>Balance Due</span>
+    <span>{{ invoice.balance_due|floatformat:0|intcomma }}</span>
+  </div>
+
+  <!-- Status badge -->
+  <div class="status-badge
+    {% if invoice.status == 'PAID' %}status-paid
+    {% elif invoice.status == 'PARTIAL' %}status-partial
+    {% else %}status-unpaid{% endif %}">
+    {% if invoice.status == 'PAID' %}PAID ✓
+    {% elif invoice.status == 'PARTIAL' %}PARTIALLY PAID
+    {% elif invoice.status == 'WAIVED' %}WAIVED ✓
+    {% else %}OUTSTANDING{% endif %}
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Cashier -->
+  <div class="cashier-line">
+    Cashier: {{ invoice.created_by.get_full_name|default:invoice.created_by.username|default:"—" }}
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="thank-you">Thank you for choosing {{ HOSPITAL_NAME }}!</div>
+    <div>Please keep this receipt for your records.</div>
+    <div style="margin-top:6px;">Your vision is our priority.</div>
+  </div>
+
+</div>
+
+<!-- Action bar (screen only) -->
+<div class="action-bar" id="actionBar">
+  <button class="btn-print-receipt" onclick="window.print()">
+    &#128438; Print Receipt
+  </button>
+  {% with token=invoice.patient.queue_tokens.filter %}
+  <button class="btn-triage" id="triageBtn"
+          onclick="window.close()"
+          title="Close and return to counter">
+    &#10003; Done / Close
+  </button>
+  {% endwith %}
+</div>
+
+<script>
+  // Auto-print on load (slight delay to allow rendering)
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      window.print();
+    }, 500);
+  });
+</script>
+
+</body>
+</html>

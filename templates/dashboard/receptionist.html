@@ -1,0 +1,117 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}Reception Dashboard — {{ HOSPITAL_NAME }}{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="fw-bold mb-0">Reception Queue — {% now "l, F j, Y" %}</h4>
+  <div class="d-flex gap-2">
+    <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm"><i class="bi bi-person-plus me-1"></i>Register Patient</a>
+    <a href="{% url 'appointments:book' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-calendar-plus me-1"></i>Book Appointment</a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="h2 fw-bold text-primary">{{ waiting_count }}</div>
+      <div class="text-muted small">Waiting in Queue</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="h2 fw-bold text-warning">{{ scheduled_count }}</div>
+      <div class="text-muted small">Scheduled Today</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="h2 fw-bold text-success">{{ checked_in_count }}</div>
+      <div class="text-muted small">Checked In</div>
+    </div>
+  </div>
+</div>
+
+<!-- Today's Reception Queue (Primary) -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h6 class="fw-bold mb-0"><i class="bi bi-queue-fill me-2 text-primary"></i>Today's Reception Queue</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th class="small">Queue #</th>
+          <th class="small">Patient</th>
+          <th class="small">Type</th>
+          <th class="small">Time In</th>
+          <th class="small">Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for patient in queue_patients %}
+        <tr>
+          <td><span class="badge bg-primary fs-6">{{ patient.queue_number }}</span></td>
+          <td>
+            <div class="small fw-medium">{{ patient.name }}</div>
+            <div class="text-muted" style="font-size:0.72rem;">{{ patient.patient_id }}</div>
+          </td>
+          <td><span class="badge bg-secondary-subtle text-secondary small">{{ patient.visit_type }}</span></td>
+          <td class="small text-muted">{{ patient.arrival_time|time:"H:i" }}</td>
+          <td>
+            {% if patient.status == 'REGISTERED' %}<span class="badge bg-info">Registered</span>
+            {% elif patient.status == 'PROCESSING' %}<span class="badge bg-warning text-dark">Processing</span>
+            {% elif patient.status == 'COMPLETED' %}<span class="badge bg-success">Done</span>
+            {% else %}<span class="badge bg-light text-dark">{{ patient.status }}</span>{% endif %}
+          </td>
+          <td>
+            {% if patient.status == 'REGISTERED' %}
+            <a href="{% url 'qms:receptionist_complete' pk=patient.pk %}" class="btn btn-sm btn-primary">Next</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center py-4 text-muted small">No patients in queue</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Scheduled Appointments (Secondary) -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom py-3">
+    <h6 class="fw-bold mb-0"><i class="bi bi-calendar3 me-2"></i>Today's Appointments</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr><th class="small">Time</th><th class="small">Patient</th><th class="small">Dept</th><th class="small">Doctor</th><th class="small">Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for appt in today_appointments %}
+        <tr>
+          <td class="small fw-medium">{{ appt.appointment_time|time:"H:i" }}</td>
+          <td><div class="small fw-medium">{{ appt.patient.full_name }}</div><div class="text-muted" style="font-size:0.72rem;">{{ appt.patient.patient_id }}</div></td>
+          <td><span class="badge bg-secondary-subtle text-secondary small">{{ appt.department }}</span></td>
+          <td class="small text-muted">{% if appt.doctor %}Dr. {{ appt.doctor.last_name }}{% else %}—{% endif %}</td>
+          <td>
+            {% if appt.status == 'CHECKED_IN' %}<span class="badge bg-success">Checked In</span>
+            {% elif appt.status == 'SCHEDULED' %}<span class="badge bg-warning text-dark">Scheduled</span>
+            {% elif appt.status == 'COMPLETED' %}<span class="badge bg-secondary">Done</span>
+            {% else %}<span class="badge bg-light text-dark">{{ appt.get_status_display }}</span>{% endif %}
+          </td>
+          <td>
+            {% if appt.status == 'SCHEDULED' or appt.status == 'CONFIRMED' %}
+            <a href="{% url 'appointments:check_in' pk=appt.pk %}" class="btn btn-sm btn-success">Check In</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center py-4 text-muted small">No appointments today</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

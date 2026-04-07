@@ -1,0 +1,116 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Doctor Schedules{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">Doctor Schedules</h4>
+    <p class="text-muted small mb-0">Weekly clinic timetable — when each doctor sees patients</p>
+  </div>
+  {% if can_edit %}
+  <a href="{% url 'appointments:schedule_create' %}" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Add Schedule Slot
+  </a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter bar -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-auto">
+        <select name="doctor" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All Doctors</option>
+          {% for d in doctors %}
+          <option value="{{ d.pk }}" {% if doctor_filter == d.pk|stringformat:'s' %}selected{% endif %}>{{ d.full_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <select name="dept" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All Departments</option>
+          {% for dept in departments %}
+          <option value="{{ dept.pk }}" {% if dept_filter == dept.pk|stringformat:'s' %}selected{% endif %}>{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <a href="{% url 'appointments:schedule_list' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if not schedules %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-calendar-week" style="font-size:3rem;"></i>
+  <p class="mt-2">No doctor schedules configured yet.</p>
+  {% if can_edit %}
+  <a href="{% url 'appointments:schedule_create' %}" class="btn btn-primary mt-2">Add First Schedule</a>
+  {% endif %}
+</div>
+{% else %}
+
+<!-- Weekly grid view — group by day -->
+{% for day_num, day_name in weekdays %}
+{% with day_slots=schedules|dictsort:"doctor.last_name" %}
+{% if True %}{# always show all days #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2">
+    <div class="rounded-circle d-flex align-items-center justify-content-center"
+         style="width:32px;height:32px;background:#0891b220;">
+      <i class="bi bi-calendar-day text-primary" style="font-size:.85rem;"></i>
+    </div>
+    <h6 class="mb-0 fw-bold">{{ day_name }}</h6>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle small">
+        <thead class="table-light">
+          <tr>
+            <th>Doctor</th>
+            <th>Department</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Slot (min)</th>
+            <th>Max Pts</th>
+            {% if can_edit %}<th></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in schedules %}
+          {% if s.day_of_week == day_num %}
+          <tr>
+            <td class="fw-semibold">{{ s.doctor.full_name }}</td>
+            <td>{{ s.department.name }}</td>
+            <td>{{ s.start_time|time:"H:i" }}</td>
+            <td>{{ s.end_time|time:"H:i" }}</td>
+            <td>{{ s.slot_duration_minutes }}</td>
+            <td>{{ s.max_patients }}</td>
+            {% if can_edit %}
+            <td>
+              <form method="post" action="{% url 'appointments:schedule_delete' s.pk %}" onsubmit="return confirm('Remove this schedule slot?')">
+                {% csrf_token %}
+                <button class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+{% endfor %}
+
+{% endif %}
+
+<style>.btn-xs{padding:.2rem .5rem;font-size:.75rem;}</style>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Appointment {{ appointment.appointment_number }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-0">{{ appointment.appointment_number }}</h1>
+    <span class="badge
+      {% if appointment.status == 'SCHEDULED' %}bg-secondary
+      {% elif appointment.status == 'CONFIRMED' %}bg-primary
+      {% elif appointment.status == 'CHECKED_IN' %}bg-warning text-dark
+      {% elif appointment.status == 'COMPLETED' %}bg-success
+      {% elif appointment.status == 'CANCELLED' %}bg-dark
+      {% elif appointment.status == 'NO_SHOW' %}bg-danger
+      {% endif %} fs-6">
+      {{ appointment.get_status_display }}
+    </span>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if appointment.status == 'SCHEDULED' or appointment.status == 'CONFIRMED' %}
+    <form method="post" action="{% url 'appointments:check_in' appointment.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-warning"><i class="bi bi-box-arrow-in-right me-1"></i>Check In</button>
+    </form>
+    {% endif %}
+    <a href="{% url 'appointments:reschedule' appointment.pk %}" class="btn btn-outline-secondary">
+      <i class="bi bi-calendar-event me-1"></i>Reschedule
+    </a>
+    {% if appointment.status != 'CANCELLED' and appointment.status != 'COMPLETED' %}
+    <a href="{% url 'appointments:cancel' appointment.pk %}" class="btn btn-outline-danger">
+      <i class="bi bi-x-circle me-1"></i>Cancel
+    </a>
+    {% endif %}
+    <a href="{% url 'appointments:list' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Patient</h6></div>
+      <div class="card-body">
+        <div class="fw-bold fs-5">{{ appointment.patient.full_name }}</div>
+        <div class="text-muted">{{ appointment.patient.patient_id }}</div>
+        {% if appointment.patient.phone %}<div class="text-muted small"><i class="bi bi-telephone me-1"></i>{{ appointment.patient.phone }}</div>{% endif %}
+        {% if appointment.patient.date_of_birth %}<div class="text-muted small"><i class="bi bi-calendar3 me-1"></i>{{ appointment.patient.age }} years old</div>{% endif %}
+        <div class="mt-2">
+          <a href="{% url 'patients:detail' appointment.patient.patient_id %}" class="btn btn-sm btn-outline-primary">View Patient Record</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Appointment Details</h6></div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Date</dt>
+          <dd class="col-7 fw-semibold">{{ appointment.appointment_date|date:"l, d F Y" }}</dd>
+          <dt class="col-5 text-muted">Time</dt>
+          <dd class="col-7 fw-semibold">{{ appointment.appointment_time|time:"H:i" }}</dd>
+          <dt class="col-5 text-muted">Duration</dt>
+          <dd class="col-7">{{ appointment.duration_minutes }} minutes</dd>
+          <dt class="col-5 text-muted">Department</dt>
+          <dd class="col-7">{{ appointment.department }}</dd>
+          <dt class="col-5 text-muted">Doctor</dt>
+          <dd class="col-7">{{ appointment.doctor.full_name|default:"Not assigned" }}</dd>
+          <dt class="col-5 text-muted">Type</dt>
+          <dd class="col-7">{{ appointment.get_appointment_type_display }}</dd>
+          <dt class="col-5 text-muted">Booked By</dt>
+          <dd class="col-7">{{ appointment.booked_by.full_name|default:"—" }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Reason for Visit</h6></div>
+      <div class="card-body">
+        <p class="mb-0">{{ appointment.reason }}</p>
+      </div>
+    </div>
+    {% if appointment.notes %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Notes</h6></div>
+      <div class="card-body">
+        <p class="mb-0 small">{{ appointment.notes|linebreaksbr }}</p>
+      </div>
+    </div>
+    {% endif %}
+    {% if appointment.cancellation_reason %}
+    <div class="card border-0 shadow-sm border-danger">
+      <div class="card-header bg-danger bg-opacity-10 py-2"><h6 class="mb-0 fw-semibold text-danger">Cancellation Reason</h6></div>
+      <div class="card-body">
+        <p class="mb-0 small">{{ appointment.cancellation_reason }}</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

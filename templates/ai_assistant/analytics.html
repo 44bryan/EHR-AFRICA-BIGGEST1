@@ -1,0 +1,108 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}AI Analytics Assistant{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h1 class="h3 mb-0">AI Analytics Assistant</h1>
+        <p class="text-muted small mb-0">Ask questions about hospital performance, patient trends, and clinical outcomes</p>
+      </div>
+      <a href="{% url 'leadership:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-graph-up me-1"></i>Leadership Dashboard
+      </a>
+    </div>
+
+    <!-- Quick Questions -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-3">Suggested Questions</h6>
+        <div class="d-flex flex-wrap gap-2" id="suggestions">
+          <button class="btn btn-sm btn-outline-primary" onclick="askQuestion(this)">How many new patients did we register this month?</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="askQuestion(this)">What are the most common diagnoses in the last 30 days?</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="askQuestion(this)">How can we improve patient wait times?</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="askQuestion(this)">What benchmarks should we track for ophthalmology performance?</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="askQuestion(this)">Analyze appointment DNA (Did Not Attend) rate and suggest improvements</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="askQuestion(this)">How do we calculate and improve our NPS score?</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Q&A Interface -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center">
+        <div class="rounded-circle bg-success d-flex align-items-center justify-content-center me-2" style="width:35px;height:35px;">
+          <i class="bi bi-bar-chart text-white"></i>
+        </div>
+        <h6 class="mb-0 fw-semibold">Analytics AI</h6>
+      </div>
+
+      <div id="results" class="card-body">
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-bar-chart-line fs-1 opacity-50"></i>
+          <p class="mt-2">Ask a question about hospital performance or click a suggestion above</p>
+        </div>
+      </div>
+
+      <div class="card-footer bg-white border-top p-3">
+        <div class="d-flex gap-2">
+          <input type="text" id="question-input" class="form-control" placeholder="Ask about hospital KPIs, patient trends, clinical performance...">
+          <button class="btn btn-success px-4" onclick="submit()">
+            <i class="bi bi-send"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function askQuestion(btn) {
+  document.getElementById('question-input').value = btn.textContent;
+  submit();
+}
+
+async function submit() {
+  const input = document.getElementById('question-input');
+  const question = input.value.trim();
+  if (!question) return;
+
+  const results = document.getElementById('results');
+  results.innerHTML = `
+    <div class="text-center py-4">
+      <div class="spinner-border text-success" role="status"></div>
+      <p class="mt-2 text-muted">Analyzing...</p>
+    </div>
+  `;
+
+  try {
+    const resp = await fetch('{% url "ai_assistant:analytics" %}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+      body: JSON.stringify({question}),
+    });
+    const data = await resp.json();
+
+    results.innerHTML = `
+      <div class="mb-3">
+        <div class="badge bg-light text-dark mb-2">
+          <i class="bi bi-question-circle me-1"></i>${question}
+        </div>
+        <div class="border-start border-success border-3 ps-3">
+          <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit;">${data.response}</pre>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    results.innerHTML = '<div class="alert alert-danger">Failed to get analytics response. Please try again.</div>';
+  }
+}
+
+document.getElementById('question-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); submit(); }
+});
+</script>
+{% endblock %}

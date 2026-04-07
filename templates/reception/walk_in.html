@@ -1,0 +1,167 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Walk-in Check-in{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{% url 'reception:desk' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+  <div>
+    <h1 class="h3 mb-0">Walk-in Check-in</h1>
+    <div class="text-muted small">{{ today|date:"l, d F Y" }}</div>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  {# ── Left: Patient Search ── #}
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-search me-2 text-primary"></i>Find Patient</h6>
+      </div>
+      <div class="card-body">
+        <form method="get">
+          <div class="input-group mb-3">
+            <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Name, Patient ID or Phone…" autofocus>
+            <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i></button>
+          </div>
+        </form>
+
+        {% if q and not patients and not selected_patient %}
+        <div class="alert alert-warning py-2">
+          <i class="bi bi-exclamation-triangle me-2"></i>No patient found for "<strong>{{ q }}</strong>"
+        </div>
+        {% endif %}
+
+        {% if patients %}
+        <div class="list-group">
+          {% for p in patients %}
+          <a href="?patient={{ p.patient_id }}" class="list-group-item list-group-item-action py-2">
+            <div class="d-flex justify-content-between">
+              <div>
+                <div class="fw-semibold">{{ p.full_name }}</div>
+                <div class="text-muted small">{{ p.patient_id }} &middot; {{ p.age_display }} &middot; {{ p.get_gender_display }}</div>
+              </div>
+              <div class="text-muted small">{{ p.phone_number }}</div>
+            </div>
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if selected_patient %}
+        {# Selected patient card #}
+        <div class="alert alert-success py-2 d-flex align-items-center gap-3 mb-0">
+          <i class="bi bi-check-circle-fill fs-4 text-success"></i>
+          <div>
+            <div class="fw-bold">{{ selected_patient.full_name }}</div>
+            <div class="small">{{ selected_patient.patient_id }} &middot; {{ selected_patient.age_display }} &middot; {{ selected_patient.phone_number }}</div>
+          </div>
+          <a href="?" class="btn btn-sm btn-outline-secondary ms-auto">Change</a>
+        </div>
+        {# 15-day consultation window alert #}
+        {% if active_consult_visit %}
+        <div class="alert alert-info py-2 mb-0 mt-1 d-flex align-items-center gap-2 rounded-0 border-start border-4 border-info">
+          <i class="bi bi-calendar2-check text-info fs-5"></i>
+          <div class="small">
+            <strong>Active Consultation — No Payment Needed.</strong>
+            Valid until <strong>{{ active_consult_visit.consultation_valid_until|date:"d M Y" }}</strong>
+            ({{ active_consult_visit.consultation_days_remaining }} day{{ active_consult_visit.consultation_days_remaining|pluralize }} left).
+            Route as <strong>Follow-up</strong> — skip cashier.
+          </div>
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      {% if not selected_patient %}
+      <div class="card-footer bg-white border-top">
+        <div class="text-center text-muted small mb-2">Patient not in system?</div>
+        <a href="{% url 'patients:register' %}" class="btn btn-outline-primary w-100">
+          <i class="bi bi-person-plus me-2"></i>Register New Patient
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Right: Consultation Setup ── #}
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm {% if not selected_patient %}opacity-50{% endif %}">
+      <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-clipboard2-check me-2 text-success"></i>Consultation Details</h6>
+      </div>
+      <div class="card-body">
+        {% if not selected_patient %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-search-circle fs-1 mb-2 d-block"></i>
+          <strong>Search and select a patient</strong><br>
+          <small>or register a new walk-in patient first</small>
+        </div>
+        {% else %}
+        <form method="post" action="{% url 'reception:walk_in' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="checkin">
+          <input type="hidden" name="patient_id" value="{{ selected_patient.patient_id }}">
+
+          {# ── Service Tier ── #}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Consultation Type <span class="text-danger">*</span></label>
+            <div class="row g-2">
+              {% for value, label in tier_choices %}
+              <div class="col-6">
+                <input type="radio" class="btn-check" name="service_tier" id="tier_{{ value }}" value="{{ value }}"
+                  {% if value == 'STANDARD' %}checked{% endif %} required>
+                <label class="btn w-100 btn-outline-primary text-start" for="tier_{{ value }}" style="white-space: pre-wrap;">
+                  <div class="fw-bold">
+                    {% if value == 'VIP' %}<i class="bi bi-star-fill me-1 text-warning"></i>{% elif value == 'FAST_TRACK' %}<i class="bi bi-lightning-charge me-1 text-info"></i>{% elif value == 'EXPRESS' %}<i class="bi bi-lightning me-1"></i>{% else %}<i class="bi bi-person me-1"></i>{% endif %}{{ label }}
+                  </div>
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+            <small class="text-muted d-block mt-2">
+              <strong>STANDARD:</strong> Regular queue · <strong>EXPRESS:</strong> Faster · <strong>FAST_TRACK:</strong> Expedited · <strong>VIP:</strong> Priority
+            </small>
+          </div>
+
+          {# ── Department ── #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Department / Clinic <span class="text-danger">*</span></label>
+            <select name="department" class="form-select" required>
+              <option value="">— Select Department —</option>
+              {% for dept in departments %}
+              <option value="{{ dept.pk }}">{{ dept.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {# ── Visit Type ── #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Visit Type <span class="text-danger">*</span></label>
+            <select name="appointment_type" class="form-select" required>
+              <option value="NEW">New Patient</option>
+              <option value="FOLLOW_UP">Follow-up</option>
+              <option value="REVIEW">Review</option>
+              <option value="PROCEDURE">Procedure</option>
+              <option value="EMERGENCY">Emergency</option>
+            </select>
+          </div>
+
+          {# ── Chief Complaint ── #}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Chief Complaint / Reason</label>
+            <textarea name="chief_complaint" class="form-control" rows="2" placeholder="Brief reason for visit…"></textarea>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-success btn-lg">
+              <i class="bi bi-check2-circle me-2"></i>Check In &amp; Issue Token
+            </button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

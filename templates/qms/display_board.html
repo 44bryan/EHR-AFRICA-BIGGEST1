@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="8">
+  <title>{{ zone_label }} — Queue Display</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Bebas+Neue&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      background: #0f172a;
+      color: #f1f5f9;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* ── Tier colour palette ── */
+    .tier-standard  { color: #94a3b8; }
+    .tier-express   { color: #22d3ee; }
+    .tier-fast_track{ color: #fbbf24; }
+    .tier-vip       { color: #c084fc; }
+
+    .bg-standard   { background: #1e293b; }
+    .bg-express    { background: rgba(34,211,238,.12); border-left: 4px solid #22d3ee !important; }
+    .bg-fast_track { background: rgba(251,191,36,.10); border-left: 4px solid #fbbf24 !important; }
+    .bg-vip        { background: rgba(192,132,252,.12); border-left: 4px solid #c084fc !important; }
+
+    /* ═══════════════════════════════════════════════════════════
+       ZONE CALL-LOG LAYOUT
+       ═══════════════════════════════════════════════════════════ */
+    .dsp-wrap {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Priority banner (top of every zone screen) ── */
+    .priority-bar {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 1rem;
+      padding: .55rem 1.4rem;
+      font-size: 1.05rem; font-weight: 700;
+      letter-spacing: .04em;
+      animation: pulse-bar 2s ease-in-out infinite;
+    }
+    .priority-bar.tier-express   { background: rgba(34,211,238,.18); border-bottom: 2px solid #22d3ee; }
+    .priority-bar.tier-fast_track{ background: rgba(251,191,36,.15); border-bottom: 2px solid #fbbf24; }
+    .priority-bar.tier-vip       { background: rgba(192,132,252,.20); border-bottom: 2px solid #c084fc; }
+    @keyframes pulse-bar { 0%,100%{ opacity:1 } 50%{ opacity:.75 } }
+
+    /* ── Zone header ── */
+    .dsp-header {
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .9rem 1.6rem;
+      background: #1e293b;
+      border-bottom: 2px solid transparent;
+    }
+    .dsp-title {
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 900;
+      letter-spacing: .03em;
+      color: #f8fafc;
+    }
+    .dsp-title .zone-dot {
+      display: inline-block; width: 14px; height: 14px;
+      border-radius: 50%; margin-right: .5rem;
+      vertical-align: middle;
+    }
+    .dsp-meta {
+      display: flex; align-items: center; gap: 1.2rem;
+    }
+    .waiting-pill {
+      padding: .3rem .9rem;
+      border-radius: 999px;
+      background: #334155;
+      font-size: .95rem; font-weight: 600;
+      color: #94a3b8;
+    }
+    .waiting-pill span { color: #f8fafc; }
+    .dsp-clock {
+      font-family: 'Bebas Neue', monospace;
+      font-size: 2.2rem;
+      color: #64748b;
+      letter-spacing: .05em;
+    }
+
+    /* ── Column header ── */
+    .log-col-header {
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: 72px 130px 28px 1fr 1fr 86px;
+      gap: 0 .8rem;
+      padding: .45rem 1.4rem;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #475569;
+    }
+
+    /* ── Scrollable log body ── */
+    .dsp-log {
+      flex: 1;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
+    .dsp-log::-webkit-scrollbar { width: 4px; }
+    .dsp-log::-webkit-scrollbar-track { background: #0f172a; }
+    .dsp-log::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+    /* ── Log row ── */
+    .log-row {
+      display: grid;
+      grid-template-columns: 72px 130px 28px 1fr 1fr 86px;
+      gap: 0 .8rem;
+      align-items: center;
+      padding: .7rem 1.4rem;
+      border-bottom: 1px solid #1e293b;
+      border-left: 4px solid transparent;
+      transition: background .3s;
+    }
+    .log-row.is-done {
+      opacity: .55;
+    }
+    .log-row.is-now {
+      opacity: 1;
+      background: rgba(255,255,255,.04);
+      animation: row-glow 3s ease-in-out infinite;
+    }
+    .log-row.is-now.tier-standard  { border-left-color: #94a3b8; }
+    .log-row.is-now.tier-express   { border-left-color: #22d3ee; background: rgba(34,211,238,.07); }
+    .log-row.is-now.tier-fast_track{ border-left-color: #fbbf24; background: rgba(251,191,36,.07); }
+    .log-row.is-now.tier-vip       { border-left-color: #c084fc; background: rgba(192,132,252,.09); }
+
+    @keyframes row-glow {
+      0%,100%{ box-shadow: inset 0 0 0 rgba(255,255,255,0); }
+      50%{ box-shadow: inset 0 0 18px rgba(255,255,255,.03); }
+    }
+
+    /* Flash animation for newly-called rows */
+    .flash-new {
+      animation: flash-row .6s ease 3 !important;
+    }
+    @keyframes flash-row {
+      0%  { background: rgba(255,255,255,.18); }
+      100%{ background: transparent; }
+    }
+
+    .lr-time {
+      font-size: .9rem;
+      color: #475569;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .lr-num {
+      font-family: 'Bebas Neue', monospace;
+      font-size: 2.2rem;
+      line-height: 1;
+      letter-spacing: .04em;
+    }
+    .lr-arrow {
+      font-size: 1.4rem;
+      color: #334155;
+      text-align: center;
+    }
+    .lr-dest {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lr-patient {
+      font-size: .95rem;
+      color: #94a3b8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lr-badge {
+      text-align: center;
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      border-radius: 6px;
+      padding: .3rem .5rem;
+    }
+    .badge-now {
+      background: #16a34a;
+      color: #fff;
+      animation: badge-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes badge-pulse { 0%,100%{ opacity:1 } 50%{ opacity:.65 } }
+    .badge-done {
+      background: #1e293b;
+      color: #475569;
+    }
+
+    /* ── Empty state ── */
+    .log-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 50vh;
+      gap: 1rem;
+      color: #334155;
+    }
+    .log-empty i { font-size: 4rem; }
+    .log-empty p { font-size: 1.2rem; font-weight: 600; }
+
+    /* ── Zone nav footer ── */
+    .zone-nav {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+      padding: .5rem 1.2rem;
+      background: #0a1120;
+      border-top: 1px solid #1e293b;
+    }
+    .zone-nav a {
+      padding: .25rem .7rem;
+      border-radius: 6px;
+      font-size: .72rem; font-weight: 600;
+      text-decoration: none;
+      color: #64748b;
+      border: 1px solid #1e293b;
+      transition: .15s;
+    }
+    .zone-nav a:hover { color: #f8fafc; border-color: #475569; }
+    .zone-nav a.active { color: #f8fafc; background: #1e40af; border-color: #1e40af; }
+    .zone-nav .nav-label { font-size: .7rem; color: #334155; margin-right: .3rem; }
+
+    /* ═══════════════════════════════════════════════════════════
+       OVERVIEW CARD GRID
+       ═══════════════════════════════════════════════════════════ */
+    .ov-wrap {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .ov-header {
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .8rem 1.4rem;
+      background: #1e293b;
+      border-bottom: 2px solid #334155;
+    }
+    .ov-title {
+      font-size: clamp(1.1rem, 2.5vw, 1.6rem);
+      font-weight: 900;
+      color: #f8fafc;
+    }
+    .ov-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+    .ov-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: .75rem;
+    }
+    .ov-card {
+      background: #1e293b;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      padding: .7rem .8rem;
+      display: flex; flex-direction: column; align-items: center;
+      min-height: 160px; justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+    .ov-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--accent, #334155);
+    }
+    .ov-counter-name {
+      font-size: .78rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: #64748b;
+      text-align: center;
+      max-width: 100%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ov-number {
+      font-family: 'Bebas Neue', monospace;
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      line-height: 1;
+      color: #f8fafc;
+      text-align: center;
+    }
+    .ov-number.empty {
+      font-size: 1.8rem;
+      color: #334155;
+    }
+    .ov-status {
+      font-size: .7rem; font-weight: 700;
+      letter-spacing: .08em;
+      padding: .2rem .6rem;
+      border-radius: 4px;
+    }
+    .ov-status.serving { background: #16a34a22; color: #4ade80; }
+    .ov-status.idle    { background: #1e293b; color: #475569; }
+    .ov-waiting {
+      font-size: .72rem; color: #475569;
+    }
+    .ov-waiting strong { color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+{% if zone %}
+<div class="dsp-wrap">
+
+  {# Priority banner — always visible #}
+  {% if last_priority_call %}
+  <div class="priority-bar tier-{{ last_priority_call.service_tier|lower }}">
+    {% if last_priority_call.service_tier == 'VIP' %}
+    <i class="bi bi-star-fill"></i> VIP PRIORITY
+    {% elif last_priority_call.service_tier == 'FAST_TRACK' %}
+    <i class="bi bi-lightning-fill"></i> FAST TRACK
+    {% else %}
+    <i class="bi bi-arrow-right-circle-fill"></i> EXPRESS
+    {% endif %}
+    &nbsp;·&nbsp;
+    <strong>{{ last_priority_call.display_token_number }}</strong>
+    &nbsp;→&nbsp;
+    {{ last_priority_call.counter.name|default:"—" }}
+    &nbsp;·&nbsp;
+    {{ last_priority_call.display_name }}
+  </div>
+  {% endif %}
+
+  {# Zone header #}
+  <div class="dsp-header" style="border-bottom-color: {{ zone_color }};">
+    <div class="dsp-title">
+      <span class="zone-dot" style="background:{{ zone_color }};"></span>
+      {{ zone_label }}
+    </div>
+    <div class="dsp-meta">
+      <div class="waiting-pill"><span>{{ waiting_count }}</span> waiting</div>
+      <div class="dsp-clock" id="dspClock">--:--</div>
+    </div>
+  </div>
+
+  {# Column header #}
+  <div class="log-col-header">
+    <span>Time</span>
+    <span>Ticket</span>
+    <span></span>
+    <span>Counter / Destination</span>
+    <span>Patient</span>
+    <span style="text-align:center;">Status</span>
+  </div>
+
+  {# Call log body #}
+  <div class="dsp-log" id="dspLog">
+    {% for tok in call_log %}
+    <div class="log-row {% if tok.is_now %}is-now tier-{{ tok.service_tier|lower }}{% else %}is-done{% endif %}"
+         data-id="{{ tok.id }}"
+         data-num="{{ tok.display_token_number }}"
+         data-tier="{{ tok.service_tier }}"
+         data-isnow="{% if tok.is_now %}1{% else %}0{% endif %}">
+      <div class="lr-time">{{ tok.called_at|date:"H:i" }}</div>
+      <div class="lr-num tier-{{ tok.service_tier|lower }}">{{ tok.display_token_number }}</div>
+      <div class="lr-arrow">›</div>
+      <div class="lr-dest">{{ tok.counter.name|default:"—" }}</div>
+      <div class="lr-patient">{{ tok.display_name }}</div>
+      <div class="lr-badge {% if tok.is_now %}badge-now{% else %}badge-done{% endif %}">
+        {% if tok.is_now %}NOW{% else %}✓{% endif %}
+      </div>
+    </div>
+    {% empty %}
+    <div class="log-empty">
+      <i class="bi bi-broadcast"></i>
+      <p>Waiting for first call…</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# Zone navigation footer #}
+  <div class="zone-nav">
+    <span class="nav-label">TV ZONES:</span>
+    <a href="{% url 'qms:display_board' %}" class="{% if not zone %}active{% endif %}">Overview</a>
+    {% for z, lbl in all_zones.items %}
+    <a href="{% url 'qms:display_board' %}?zone={{ z }}" class="{% if z == zone %}active{% endif %}">{{ lbl }}</a>
+    {% endfor %}
+  </div>
+
+</div>
+
+{% else %}
+<div class="ov-wrap">
+
+  {% if last_priority_call %}
+  <div class="priority-bar tier-{{ last_priority_call.service_tier|lower }}">
+    {% if last_priority_call.service_tier == 'VIP' %}
+    <i class="bi bi-star-fill"></i> VIP PRIORITY
+    {% elif last_priority_call.service_tier == 'FAST_TRACK' %}
+    <i class="bi bi-lightning-fill"></i> FAST TRACK
+    {% else %}
+    <i class="bi bi-arrow-right-circle-fill"></i> EXPRESS
+    {% endif %}
+    &nbsp;·&nbsp;
+    <strong>{{ last_priority_call.display_token_number }}</strong>
+    &nbsp;→&nbsp;
+    {{ last_priority_call.counter.name|default:"—" }}
+    &nbsp;·&nbsp;
+    {{ last_priority_call.display_name }}
+  </div>
+  {% endif %}
+
+  <div class="ov-header">
+    <div class="ov-title"><i class="bi bi-layout-three-columns me-2"></i>GLUDD Specialist Eye Hospital — Queue Overview</div>
+    <div class="dsp-clock" id="dspClock">--:--</div>
+  </div>
+
+  <div class="ov-body">
+    <div class="ov-grid">
+      {% for counter in counters %}
+      {% with cs=counter.current_serving %}
+      <div class="ov-card" style="--accent:
+        {% if cs %}
+          {% if cs.service_tier == 'VIP' %}#c084fc
+          {% elif cs.service_tier == 'FAST_TRACK' %}#fbbf24
+          {% elif cs.service_tier == 'EXPRESS' %}#22d3ee
+          {% else %}#0ea5e9
+          {% endif %}
+        {% else %}#334155
+        {% endif %};">
+        <div class="ov-counter-name" title="{{ counter.name }}">{{ counter.name }}</div>
+        {% if cs %}
+          <div class="ov-number tier-{{ cs.service_tier|lower }}">{{ cs.display_token_number }}</div>
+          <div class="ov-status serving">SERVING</div>
+        {% else %}
+          <div class="ov-number empty">—</div>
+          <div class="ov-status idle">IDLE</div>
+        {% endif %}
+        <div class="ov-waiting">
+          <strong>{{ counter.waiting_count }}</strong> waiting
+        </div>
+      </div>
+      {% endwith %}
+      {% empty %}
+      <div style="grid-column:1/-1; text-align:center; color:#334155; padding:3rem;">
+        <i class="bi bi-display" style="font-size:3rem;"></i>
+        <p style="margin-top:1rem; font-weight:600;">No active counters</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="zone-nav">
+    <span class="nav-label">TV ZONES:</span>
+    <a href="{% url 'qms:display_board' %}" class="active">Overview</a>
+    {% for z, lbl in all_zones.items %}
+    <a href="{% url 'qms:display_board' %}?zone={{ z }}">{{ lbl }}</a>
+    {% endfor %}
+  </div>
+
+</div>
+{% endif %}
+
+<script>
+// ── Live clock ────────────────────────────────────────────────────
+(function () {
+  function tick() {
+    const el = document.getElementById('dspClock');
+    if (!el) return;
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    el.textContent = hh + ':' + mm;
+  }
+  tick();
+  setInterval(tick, 10000);
+})();
+
+{% if zone %}
+// ── Auto-scroll log to bottom ─────────────────────────────────────
+(function () {
+  const log = document.getElementById('dspLog');
+  if (log) log.scrollTop = log.scrollHeight;
+})();
+
+// ── Flash & voice announce for newly-called rows ──────────────────
+(function () {
+  const STORE_KEY = 'qms_now_{{ zone }}';
+  const prevJson  = sessionStorage.getItem(STORE_KEY) || '[]';
+  let prevIds;
+  try { prevIds = new Set(JSON.parse(prevJson)); } catch(e) { prevIds = new Set(); }
+
+  const nowRows = document.querySelectorAll('.log-row.is-now');
+  const currentIds = [];
+  const newNums    = [];
+
+  nowRows.forEach(function (row) {
+    const id  = row.dataset.id;
+    const num = row.dataset.num;
+    const dst = row.querySelector('.lr-dest')  ? row.querySelector('.lr-dest').textContent.trim()  : '';
+    const pat = row.querySelector('.lr-patient')? row.querySelector('.lr-patient').textContent.trim(): '';
+    currentIds.push(id);
+    if (!prevIds.has(id)) {
+      row.classList.add('flash-new');
+      newNums.push({ num, dst, pat });
+    }
+  });
+
+  sessionStorage.setItem(STORE_KEY, JSON.stringify(currentIds));
+
+  // Voice announcement
+  if (newNums.length > 0 && window.speechSynthesis) {
+    const utterances = newNums.map(function (x) {
+      const msg = new SpeechSynthesisUtterance(
+        'Number ' + x.num + ' please proceed to ' + x.dst + '. ' + x.pat + '.'
+      );
+      msg.lang = 'en-GB';
+      msg.rate = 0.88;
+      return msg;
+    });
+    function speakNext(i) {
+      if (i >= utterances.length) return;
+      utterances[i].onend = function () { speakNext(i + 1); };
+      window.speechSynthesis.speak(utterances[i]);
+    }
+    speakNext(0);
+  }
+})();
+{% endif %}
+</script>
+
+</body>
+</html>

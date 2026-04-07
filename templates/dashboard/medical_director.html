@@ -1,0 +1,659 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load static %}
+
+{% block title %}Executive Dashboard — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Hero band ─────────────────────────────────────────────────────── */
+.exec-hero {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  border-radius: 16px;
+  padding: 28px 32px 20px;
+  color: #fff;
+  margin-bottom: 24px;
+}
+.exec-hero .greeting { font-size: 1.05rem; opacity: .75; }
+.exec-hero .hospital  { font-size: 1.5rem; font-weight: 700; letter-spacing: -.3px; }
+.exec-hero .dateline  { font-size: .8rem; opacity: .55; margin-top: 2px; }
+
+/* ── KPI tiles ─────────────────────────────────────────────────────── */
+.kpi-tile {
+  border-radius: 14px;
+  padding: 20px 20px 16px;
+  border: none;
+  height: 100%;
+}
+.kpi-tile .kpi-val   { font-size: 2rem; font-weight: 800; line-height: 1; }
+.kpi-tile .kpi-label { font-size: .75rem; font-weight: 600; text-transform: uppercase;
+                        letter-spacing: .05em; opacity: .65; margin-top: 4px; }
+.kpi-tile .kpi-sub   { font-size: .72rem; margin-top: 6px; opacity: .8; }
+
+.kpi-primary  { background: #eff6ff; }
+.kpi-success  { background: #f0fdf4; }
+.kpi-warning  { background: #fffbeb; }
+.kpi-danger   { background: #fff1f2; }
+.kpi-purple   { background: #faf5ff; }
+.kpi-teal     { background: #f0fdfa; }
+
+.kpi-primary  .kpi-val { color: #1d4ed8; }
+.kpi-success  .kpi-val { color: #15803d; }
+.kpi-warning  .kpi-val { color: #b45309; }
+.kpi-danger   .kpi-val { color: #be123c; }
+.kpi-purple   .kpi-val { color: #7c3aed; }
+.kpi-teal     .kpi-val { color: #0f766e; }
+
+/* ── Section headers ─────────────────────────────────────────────── */
+.section-head {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .1em; color: #64748b; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-head::after {
+  content: ''; flex: 1; height: 1px; background: #e2e8f0;
+}
+
+/* ── Alert strip ─────────────────────────────────────────────────── */
+.alert-strip {
+  background: #fff7ed;
+  border-left: 4px solid #f97316;
+  border-radius: 0 8px 8px 0;
+  padding: 10px 16px;
+  font-size: .82rem;
+}
+.alert-strip.green {
+  background: #f0fdf4;
+  border-color: #22c55e;
+}
+
+/* ── Live queue dot ──────────────────────────────────────────────── */
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; margin-right: 6px;
+  animation: pulse-dot 1.6s infinite;
+}
+.live-dot.green  { background: #22c55e; }
+.live-dot.orange { background: #f97316; }
+.live-dot.blue   { background: #3b82f6; }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .3; }
+}
+
+/* ── Revenue category bar ────────────────────────────────────────── */
+.rev-bar { height: 8px; border-radius: 4px; background: #e2e8f0; overflow: hidden; }
+.rev-bar-fill { height: 100%; border-radius: 4px; }
+
+/* ── Rank badge ──────────────────────────────────────────────────── */
+.rank-1 { background: #fef9c3; color: #854d0e; }
+.rank-2 { background: #f1f5f9; color: #475569; }
+.rank-3 { background: #fef3c7; color: #92400e; }
+</style>
+{% endblock %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+
+<!-- ══ HERO BAND ══════════════════════════════════════════════════════════ -->
+<div class="exec-hero">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div>
+      <div class="greeting">
+        Good {% now "G" as h %}{% if h < 12 %}Morning{% elif h < 17 %}Afternoon{% else %}Evening{% endif %},
+        {{ request.user.get_role_display }} {{ request.user.last_name }}
+      </div>
+      <div class="hospital">{{ HOSPITAL_NAME }}</div>
+      <div class="dateline">{% now "l, F j, Y" %} &nbsp;·&nbsp; Executive Dashboard</div>
+    </div>
+    <div class="d-flex gap-2 mt-1">
+      <a href="{% url 'patients:register' %}" class="btn btn-sm btn-light">
+        <i class="bi bi-person-plus me-1"></i>New Patient
+      </a>
+      <a href="{% url 'opd:dashboard' %}" class="btn btn-sm btn-warning">
+        <i class="bi bi-heart-pulse me-1"></i>OPD Queue
+      </a>
+      <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-success">
+        <i class="bi bi-receipt me-1"></i>Billing
+      </a>
+    </div>
+  </div>
+
+  <!-- Alerts strip inside hero -->
+  {% if low_stock_count or pending_leaves or open_complaints or low_inventory_count %}
+  <div class="mt-3 d-flex flex-wrap gap-2" style="font-size:.76rem;">
+    {% if low_stock_count %}
+    <a href="{% url 'pharmacy:dashboard' %}" class="badge bg-danger text-white text-decoration-none py-2 px-3">
+      <i class="bi bi-exclamation-triangle me-1"></i>{{ low_stock_count }} drug{{ low_stock_count|pluralize }} low stock
+    </a>
+    {% endif %}
+    {% if pending_leaves %}
+    <a href="{% url 'hrms:leave_requests' %}" class="badge bg-warning text-dark text-decoration-none py-2 px-3">
+      <i class="bi bi-calendar-x me-1"></i>{{ pending_leaves }} leave request{{ pending_leaves|pluralize }} pending
+    </a>
+    {% endif %}
+    {% if open_complaints %}
+    <a href="{% url 'feedback:dashboard' %}" class="badge bg-orange text-white text-decoration-none py-2 px-3"
+       style="background:#f97316!important;">
+      <i class="bi bi-chat-square-text me-1"></i>{{ open_complaints }} open complaint{{ open_complaints|pluralize }}
+    </a>
+    {% endif %}
+    {% if low_inventory_count %}
+    <a href="{% url 'inventory:dashboard' %}" class="badge bg-secondary text-decoration-none py-2 px-3">
+      <i class="bi bi-box-seam me-1"></i>{{ low_inventory_count }} inventory item{{ low_inventory_count|pluralize }} low
+    </a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="mt-3" style="font-size:.76rem;opacity:.6;">
+    <i class="bi bi-shield-check me-1"></i>No alerts — all systems normal
+  </div>
+  {% endif %}
+</div>
+
+
+<!-- ══ ROW 1: TODAY'S PULSE ═══════════════════════════════════════════════ -->
+<div class="section-head"><span>Today's Pulse</span></div>
+<div class="row g-3 mb-4">
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-tile kpi-primary">
+      <div class="kpi-val">{{ today_visits }}</div>
+      <div class="kpi-label">Patients Today</div>
+      <div class="kpi-sub">{{ today_new_patients }} new · {{ today_no_shows }} no-show</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-tile kpi-warning">
+      <div class="kpi-val">{{ currently_inhouse }}</div>
+      <div class="kpi-label">In Building</div>
+      <div class="kpi-sub">
+        <span class="live-dot orange"></span>{{ waiting_triage }} waiting · {{ with_doctor }} with doctor
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-tile kpi-success">
+      <div class="kpi-val">{{ discharged_today }}</div>
+      <div class="kpi-label">Discharged</div>
+      <div class="kpi-sub">{{ pending_consultations }} consult in progress</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-tile kpi-teal">
+      <div class="kpi-val">&#8358;{{ revenue_today|floatformat:0 }}</div>
+      <div class="kpi-label">Revenue Today</div>
+      <div class="kpi-sub">Cash collected</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-tile kpi-danger">
+      <div class="kpi-val">&#8358;{{ outstanding|floatformat:0 }}</div>
+      <div class="kpi-label">Outstanding</div>
+      <div class="kpi-sub">Unpaid invoices</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-tile kpi-purple">
+      <div class="kpi-val">{{ current_admitted }}</div>
+      <div class="kpi-label">Inpatients</div>
+      <div class="kpi-sub">{{ staff_present }} staff present</div>
+    </div>
+  </div>
+
+</div>
+
+
+<!-- ══ ROW 2: FINANCIAL + CHARTS ════════════════════════════════════════ -->
+<div class="row g-3 mb-4">
+
+  <!-- Revenue trend chart -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="fw-bold mb-0">
+            <i class="bi bi-graph-up me-2 text-primary"></i>Revenue & Volume — 6 Months
+          </h6>
+          <div>
+            <span class="badge bg-primary-subtle text-primary me-1">&#8358;{{ revenue_month|floatformat:0 }} this month</span>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <canvas id="trendChart" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- NPS + satisfaction -->
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-star-fill me-2 text-warning"></i>Patient Satisfaction</h6>
+      </div>
+      <div class="card-body text-center">
+        <div style="font-size:3.5rem; font-weight:800; line-height:1;
+             color:{% if nps >= 50 %}#15803d{% elif nps >= 0 %}#b45309{% else %}#be123c{% endif %};">
+          {{ nps }}
+        </div>
+        <div class="text-muted small mb-3">NPS Score</div>
+        <canvas id="npsChart" height="120"></canvas>
+        <div class="row text-center mt-3 g-0">
+          <div class="col-4">
+            <div class="fw-bold text-success">{{ promoters }}</div>
+            <div style="font-size:.68rem;" class="text-muted">Promoters</div>
+          </div>
+          <div class="col-4">
+            <div class="fw-bold text-warning">{{ passives }}</div>
+            <div style="font-size:.68rem;" class="text-muted">Passives</div>
+          </div>
+          <div class="col-4">
+            <div class="fw-bold text-danger">{{ detractors }}</div>
+            <div style="font-size:.68rem;" class="text-muted">Detractors</div>
+          </div>
+        </div>
+        <div class="mt-3 pt-3 border-top">
+          <div class="d-flex justify-content-between small">
+            <span class="text-muted">Avg Rating</span>
+            <span class="fw-semibold">{{ avg_satisfaction }} / 5</span>
+          </div>
+          <div class="d-flex justify-content-between small mt-1">
+            <span class="text-muted">Open Complaints</span>
+            <span class="fw-semibold {% if open_complaints %}text-danger{% endif %}">{{ open_complaints }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Month KPIs -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-calendar-month me-2 text-success"></i>This Month Summary</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+
+          <div class="col-6">
+            <div class="rounded-3 p-3" style="background:#f0fdf4;">
+              <div class="h4 fw-bold mb-0 text-success">{{ new_this_month }}</div>
+              <div class="text-muted small">New Patients</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="rounded-3 p-3" style="background:#eff6ff;">
+              <div class="h4 fw-bold mb-0 text-primary">{{ total_patients }}</div>
+              <div class="text-muted small">Total Registered</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="rounded-3 p-3" style="background:#faf5ff;">
+              <div class="h4 fw-bold mb-0" style="color:#7c3aed;">{{ new_consults }}</div>
+              <div class="text-muted small">New Appts</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="rounded-3 p-3" style="background:#fff7ed;">
+              <div class="h4 fw-bold mb-0 text-warning">{{ followup_consults }}</div>
+              <div class="text-muted small">Follow-ups</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="rounded-3 p-3" style="background:#f0fdfa;">
+              <div class="h4 fw-bold mb-0 text-teal" style="color:#0f766e;">&#8358;{{ pharmacy_revenue|floatformat:0 }}</div>
+              <div class="text-muted small">Pharmacy Rev</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="rounded-3 p-3" style="background:#fef2f2;">
+              <div class="h4 fw-bold mb-0 text-danger">{{ dispensing_count }}</div>
+              <div class="text-muted small">Dispensings</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+<!-- ══ ROW 3: CLINICAL ANALYTICS ════════════════════════════════════════ -->
+<div class="section-head"><span>Clinical Intelligence — Last 30 Days</span></div>
+<div class="row g-3 mb-4">
+
+  <!-- Top diagnoses -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-eyeglasses me-2 text-info"></i>Top Ophthalmic Diagnoses</h6>
+      </div>
+      <div class="card-body p-0">
+        {% for d in top_diagnoses %}
+        {% if forloop.counter <= 8 %}
+        <div class="d-flex align-items-center px-3 py-2 {% if not forloop.last %}border-bottom{% endif %}">
+          <span class="badge rounded-pill me-2
+            {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}bg-light text-muted{% endif %}"
+            style="min-width:24px; font-size:.7rem;">{{ forloop.counter }}</span>
+          <span class="flex-grow-1 small">{{ d.diagnosis__description|truncatechars:40 }}</span>
+          <span class="badge bg-info-subtle text-info ms-2">{{ d.count }}</span>
+        </div>
+        {% endif %}
+        {% empty %}
+        <div class="text-center text-muted py-5 small">No diagnosis data yet</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Doctor performance -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-trophy me-2 text-warning"></i>Doctor Performance</h6>
+      </div>
+      <div class="card-body p-0">
+        {% for doc in doctor_stats %}
+        <div class="d-flex align-items-center px-3 py-2 {% if not forloop.last %}border-bottom{% endif %}">
+          <div class="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center me-2 flex-shrink-0"
+               style="width:30px;height:30px;font-size:.7rem;font-weight:700;color:#0891b2;">
+            {{ doc.consulting_doctor__first_name|first|upper }}{{ doc.consulting_doctor__last_name|first|upper }}
+          </div>
+          <div class="flex-grow-1">
+            <div class="small fw-semibold">
+              Dr. {{ doc.consulting_doctor__first_name }} {{ doc.consulting_doctor__last_name }}
+            </div>
+          </div>
+          <span class="badge bg-success-subtle text-success fw-bold">{{ doc.count }}</span>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted py-5 small">No consultation data yet</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Dept breakdown -->
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-building me-2 text-primary"></i>By Department</h6>
+      </div>
+      <div class="card-body">
+        {% for dept in dept_breakdown %}
+        {% with total=dept_breakdown.0.count %}
+        <div class="mb-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="fw-medium">{{ dept.department__name|default:"Unassigned"|truncatechars:20 }}</span>
+            <span class="text-muted">{{ dept.count }}</span>
+          </div>
+          <div class="rev-bar">
+            {% if total > 0 %}
+            <div class="rev-bar-fill bg-primary" style="width:{% widthratio dept.count total 100 %}%;"></div>
+            {% endif %}
+          </div>
+        </div>
+        {% endwith %}
+        {% empty %}
+        <div class="text-center text-muted py-5 small">No data yet</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+<!-- ══ ROW 4: LIVE QUEUE + QUICK ACCESS ═════════════════════════════════ -->
+<div class="row g-3">
+
+  <!-- Live patient queue -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0">
+          <span class="live-dot green"></span>Live Queue — Now
+        </h6>
+        <a href="{% url 'opd:dashboard' %}" class="btn btn-sm btn-outline-danger">
+          <i class="bi bi-heart-pulse me-1"></i>Full Triage Board
+        </a>
+      </div>
+      {% if live_queue %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Patient</th>
+              <th>Complaint</th>
+              <th>Dept</th>
+              <th>Status</th>
+              <th>Arrived</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for visit in live_queue %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ visit.patient.full_name }}</div>
+                <div class="text-muted" style="font-size:.68rem;">{{ visit.patient.patient_id }}</div>
+              </td>
+              <td class="text-muted">{{ visit.chief_complaint|truncatechars:30|default:"—" }}</td>
+              <td class="small">{{ visit.department.name|default:"—" }}</td>
+              <td>
+                {% if visit.status == 'WAITING' %}
+                  <span class="badge bg-warning text-dark"><span class="live-dot orange"></span>Waiting</span>
+                {% elif visit.status == 'TRIAGE' %}
+                  <span class="badge bg-info"><span class="live-dot blue"></span>Triage</span>
+                {% elif visit.status == 'IN_CONSULTATION' %}
+                  <span class="badge bg-primary"><span class="live-dot green"></span>With Doctor</span>
+                {% else %}
+                  <span class="badge bg-secondary">{{ visit.get_status_display }}</span>
+                {% endif %}
+              </td>
+              <td class="text-muted text-nowrap">{{ visit.visit_date|time:"H:i" }}</td>
+              <td>
+                <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}"
+                   class="btn btn-xs btn-sm btn-outline-secondary py-0">View</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-center py-5 text-muted small">
+        <i class="bi bi-people fs-2 d-block mb-2 opacity-40"></i>
+        No patients currently in queue
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Quick access panel -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-grid-3x3-gap me-2"></i>All Modules</h6>
+      </div>
+      <div class="card-body py-2">
+        <div class="row g-2">
+          {% for item in forloop.parentloop %}{% endfor %}
+          <div class="col-6">
+            <a href="{% url 'opd:dashboard' %}" class="btn btn-outline-danger btn-sm w-100 text-start py-2">
+              <i class="bi bi-heart-pulse d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">OPD / Triage</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'appointments:clinic_board' %}" class="btn btn-outline-primary btn-sm w-100 text-start py-2">
+              <i class="bi bi-calendar-week d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Clinic Board</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'consultations:list' %}" class="btn btn-outline-info btn-sm w-100 text-start py-2">
+              <i class="bi bi-clipboard2-pulse d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Consultations</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'ipd:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start py-2">
+              <i class="bi bi-buildings d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Inpatient (IPD)</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-warning btn-sm w-100 text-start py-2">
+              <i class="bi bi-capsule-pill d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Pharmacy</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-success btn-sm w-100 text-start py-2">
+              <i class="bi bi-receipt d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Billing</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'investigations:list' %}" class="btn btn-outline-primary btn-sm w-100 text-start py-2">
+              <i class="bi bi-search-heart d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Investigations</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start py-2">
+              <i class="bi bi-eyeglasses d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Opticals</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'hrms:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start py-2">
+              <i class="bi bi-people-fill d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">HRMS</span>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start py-2">
+              <i class="bi bi-box-seam d-block fs-5 mb-1"></i>
+              <span style="font-size:.72rem;">Inventory</span>
+            </a>
+          </div>
+          {% if request.user.can_use_ai_assistant %}
+          <div class="col-12">
+            <a href="{% url 'ai_assistant:analytics' %}" class="btn btn-primary btn-sm w-100 py-2">
+              <i class="bi bi-robot me-2"></i>Ask AI Analytics
+            </a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+/* ── Revenue + Patient volume dual axis chart ── */
+const trendRevenue = {{ revenue_trend|safe }};
+const trendVolume  = {{ monthly_trend|safe }};
+
+new Chart(document.getElementById('trendChart'), {
+  data: {
+    labels: trendRevenue.map(d => d.month),
+    datasets: [
+      {
+        type: 'bar',
+        label: 'Revenue (FCFA)',
+        data: trendRevenue.map(d => d.amount),
+        backgroundColor: 'rgba(8,145,178,.15)',
+        borderColor: '#0891b2',
+        borderWidth: 2,
+        borderRadius: 6,
+        yAxisID: 'yRev',
+      },
+      {
+        type: 'line',
+        label: 'Patient Visits',
+        data: trendVolume.map(d => d.count),
+        borderColor: '#f97316',
+        backgroundColor: 'transparent',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#f97316',
+        pointRadius: 4,
+        tension: 0.4,
+        yAxisID: 'yVol',
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          label: ctx => ctx.datasetIndex === 0
+            ? ` ${ctx.parsed.y.toLocaleString()} FCFA`
+            : ` ${ctx.parsed.y} visits`
+        }
+      }
+    },
+    scales: {
+      yRev: {
+        position: 'left',
+        ticks: { callback: v => (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) + ' F', font: { size: 10 } },
+        grid: { color: '#f1f5f9' },
+      },
+      yVol: {
+        position: 'right',
+        ticks: { precision: 0, font: { size: 10 } },
+        grid: { display: false },
+      }
+    }
+  }
+});
+
+/* ── NPS Doughnut ── */
+new Chart(document.getElementById('npsChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Promoters', 'Passives', 'Detractors'],
+    datasets: [{
+      data: [{{ promoters }}, {{ passives }}, {{ detractors }}],
+      backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'],
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    cutout: '72%',
+    responsive: true,
+    plugins: { legend: { display: false } }
+  }
+});
+
+/* ── Auto-refresh queue every 60s ── */
+let refreshSec = 60;
+const badge = document.createElement('div');
+badge.className = 'position-fixed bottom-0 end-0 m-3 badge bg-dark bg-opacity-50 text-white';
+badge.style.fontSize = '.68rem';
+document.body.appendChild(badge);
+setInterval(() => {
+  badge.textContent = `Live refresh in ${refreshSec--}s`;
+  if (refreshSec < 0) { refreshSec = 60; location.reload(); }
+}, 1000);
+</script>
+{% endblock %}

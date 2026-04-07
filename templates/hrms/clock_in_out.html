@@ -1,0 +1,121 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Clock In / Out{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-clock me-2 text-primary"></i>Attendance — Clock In / Out</h4>
+  <a href="{% url 'hrms:my_leaves' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-calendar-x me-1"></i>My Leave
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-5">
+
+    {% if messages %}
+    {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible mb-3" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div class="card border-0 shadow-sm border-primary border-top border-4">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-semibold">
+          <i class="bi bi-person-check me-2 text-primary"></i>{{ request.user.full_name }}
+        </h5>
+        <div class="text-muted small">{{ today|date:"l, d F Y" }} &bull; {{ request.user.get_role_display }}</div>
+      </div>
+      <div class="card-body text-center py-4">
+
+        {# Live clock #}
+        <div class="display-4 fw-bold text-primary mb-1" id="liveClock">{{ now_time|time:"H:i:s" }}</div>
+        <div class="text-muted small mb-4">Current time</div>
+
+        {# Status row #}
+        <div class="row g-3 mb-4">
+          <div class="col-6">
+            <div class="card border-0 bg-light">
+              <div class="card-body py-3">
+                <div class="small text-muted mb-1">Clock In</div>
+                {% if record.clock_in %}
+                <div class="fs-5 fw-bold text-success">{{ record.clock_in|time:"H:i" }}</div>
+                {% else %}
+                <div class="fs-5 fw-bold text-muted">—</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="card border-0 bg-light">
+              <div class="card-body py-3">
+                <div class="small text-muted mb-1">Clock Out</div>
+                {% if record.clock_out %}
+                <div class="fs-5 fw-bold text-danger">{{ record.clock_out|time:"H:i" }}</div>
+                {% else %}
+                <div class="fs-5 fw-bold text-muted">—</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Action buttons #}
+        <div class="d-flex gap-3 justify-content-center">
+          {% if not already_in %}
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="clock_in">
+            <button type="submit" class="btn btn-success btn-lg px-5 fw-bold">
+              <i class="bi bi-box-arrow-in-right me-2"></i>Clock In
+            </button>
+          </form>
+          {% elif not already_out %}
+          <div class="d-flex flex-column align-items-center gap-2">
+            <span class="badge bg-success py-2 px-3 fs-6"><i class="bi bi-check-circle me-1"></i>Clocked In at {{ record.clock_in|time:"H:i" }}</span>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="clock_out">
+              <button type="submit" class="btn btn-outline-danger btn-lg px-5 fw-bold">
+                <i class="bi bi-box-arrow-left me-2"></i>Clock Out
+              </button>
+            </form>
+          </div>
+          {% else %}
+          <div class="text-center">
+            <span class="badge bg-secondary py-2 px-3 fs-6">
+              <i class="bi bi-check-all me-1"></i>Attendance Complete
+            </span>
+            <div class="text-muted small mt-2">
+              In: {{ record.clock_in|time:"H:i" }} &bull; Out: {{ record.clock_out|time:"H:i" }}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+      </div>
+      <div class="card-footer bg-white text-muted small text-center py-2">
+        Status: <strong>{{ record.get_status_display }}</strong>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const s = String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('liveClock').textContent = `${h}:${m}:${s}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+</script>
+{% endblock %}

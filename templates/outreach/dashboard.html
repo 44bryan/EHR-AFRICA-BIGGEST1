@@ -1,0 +1,196 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Outreach Dashboard{% endblock %}
+{% block content %}
+
+<!-- Print header (only shows when printing) -->
+<div class="print-header text-center mb-3">
+  <h4 class="fw-bold mb-0">{{ HOSPITAL_NAME }}</h4>
+  <p class="mb-0 small text-muted">Outreach Department — Annual Report {{ year }}</p>
+  <hr>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mb-4 no-print">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-geo-alt text-success me-2"></i>Outreach Department</h4>
+    <p class="text-muted small mb-0">Community eye camps, school screenings, mobile clinics — {{ year }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'outreach:list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-list me-1"></i>All Activities
+    </a>
+    <a href="{% url 'outreach:stats' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-bar-chart me-1"></i>Annual Stats
+    </a>
+    <a href="{% url 'outreach:create' %}" class="btn btn-sm btn-success">
+      <i class="bi bi-plus-circle me-1"></i>New Activity
+    </a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-success">{{ yearly_agg.camps|default:0 }}</div>
+      <div class="small text-muted mt-1">Activities This Year</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-primary">{{ yearly_agg.screened|default:0|intcomma }}</div>
+      <div class="small text-muted mt-1">Total Screened</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-warning">{{ yearly_agg.referred|default:0|intcomma }}</div>
+      <div class="small text-muted mt-1">Referred to Hospital</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="display-6 fw-bold text-danger">{{ yearly_agg.surgeries|default:0 }}</div>
+      <div class="small text-muted mt-1">Surgeries Performed</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Monthly Chart -->
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent py-2 d-flex justify-content-between">
+        <span class="fw-semibold small">Monthly Screening Trend — {{ year }}</span>
+      </div>
+      <div class="card-body">
+        <canvas id="monthlyChart" height="100"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- By Type -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-transparent py-2">
+        <span class="fw-semibold small">Activities by Type</span>
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for t in by_type %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2 small">
+            {{ t.label }}
+            <span class="badge bg-success rounded-pill">{{ t.count }}</span>
+          </li>
+          {% empty %}
+          <li class="list-group-item text-muted small">No activities yet this year.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- In Progress -->
+{% if in_progress %}
+<div class="card border-0 shadow-sm mt-4 border-start border-4 border-warning">
+  <div class="card-header bg-warning bg-opacity-10 py-2">
+    <h6 class="mb-0 fw-bold small text-warning"><i class="bi bi-activity me-1"></i>Currently In Progress</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Activity</th><th>Type</th><th>Location</th><th>Date</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in in_progress %}
+        <tr>
+          <td class="fw-semibold">{{ a.title }}</td>
+          <td>{{ a.get_activity_type_display }}</td>
+          <td>{{ a.location_name }}, {{ a.region }}</td>
+          <td>{{ a.activity_date }}</td>
+          <td><a href="{% url 'outreach:detail' pk=a.pk %}" class="btn btn-sm btn-warning">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Upcoming -->
+{% if upcoming %}
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-transparent py-2">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-calendar-event me-1 text-primary"></i>Upcoming Activities</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Activity</th><th>Type</th><th>Location</th><th>Date</th><th>Team Leader</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in upcoming %}
+        <tr>
+          <td class="fw-semibold">{{ a.title }}</td>
+          <td>{{ a.get_activity_type_display }}</td>
+          <td>{{ a.location_name }}</td>
+          <td><span class="badge bg-primary">{{ a.activity_date }}</span></td>
+          <td>{% if a.team_leader %}{{ a.team_leader.get_full_name }}{% else %}<span class="text-muted">TBD</span>{% endif %}</td>
+          <td><a href="{% url 'outreach:detail' pk=a.pk %}" class="btn btn-sm btn-outline-primary">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Recent Completed -->
+{% if recent %}
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-transparent py-2">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-check-circle text-success me-1"></i>Recently Completed</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Activity</th><th>Location</th><th>Date</th><th>Screened</th><th>Referred</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in recent %}
+        <tr>
+          <td class="fw-semibold">{{ a.title }}</td>
+          <td>{{ a.location_name }}</td>
+          <td>{{ a.activity_date }}</td>
+          <td class="text-primary fw-bold">{{ a.total_screened }}</td>
+          <td class="text-warning fw-bold">{{ a.total_referred }}</td>
+          <td><a href="{% url 'outreach:detail' pk=a.pk %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ monthly_labels|safe }},
+    datasets: [{
+      label: 'Patients Screened',
+      data: {{ monthly_data|safe }},
+      backgroundColor: 'rgba(16,185,129,0.7)',
+      borderRadius: 4,
+    }]
+  },
+  options: { responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
+});
+</script>
+{% endblock %}

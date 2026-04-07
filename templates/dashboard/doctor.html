@@ -1,0 +1,139 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}My Clinic — {{ user.get_role_display }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h3 mb-1">Good {% now "G" as hour %}{% if hour < 12 %}morning{% elif hour < 17 %}afternoon{% else %}evening{% endif %}, Dr. {{ user.first_name }}</h1>
+    <div class="text-muted">{{ user.get_role_display }}{% if user.department %} &mdash; {{ user.department.name }}{% endif %} &bull; {{ today|date:"l, d F Y" }}</div>
+  </div>
+  <a href="{% url 'patients:list' %}" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-people me-1"></i>All Patients
+  </a>
+</div>
+
+{# Stats strip #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ queue_count }}</div>
+      <div class="text-muted small">Waiting for Me</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ my_consultations_today }}</div>
+      <div class="text-muted small">Seen Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ my_pending|length }}</div>
+      <div class="text-muted small">In Progress</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-info">{{ my_today_appointments|length }}</div>
+      <div class="text-muted small">Appointments</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# ── Patient Queue ── #}
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-people-fill me-2 text-primary"></i>Patient Queue — {{ user.department.name|default:"My Patients" }}</h6>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for visit in patient_queue %}
+        <div class="list-group-item d-flex justify-content-between align-items-center py-2
+          {% if visit.ai_priority == 'EMERGENCY' %}border-start border-danger border-3{% elif visit.ai_priority == 'URGENT' %}border-start border-warning border-3{% endif %}">
+          <div>
+            <div class="fw-semibold">{{ visit.patient.full_name }}
+              {# AI Triage Priority Badge #}
+              {% if visit.ai_priority == 'EMERGENCY' %}
+              <span class="badge bg-danger ms-1" title="{% if visit.ai_priority_reason %}{{ visit.ai_priority_reason }}{% endif %}">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>EMERGENCY
+              </span>
+              {% elif visit.ai_priority == 'URGENT' %}
+              <span class="badge bg-warning text-dark ms-1" title="{% if visit.ai_priority_reason %}{{ visit.ai_priority_reason }}{% endif %}">
+                <i class="bi bi-exclamation-circle me-1"></i>URGENT
+              </span>
+              {% else %}
+              <span class="badge bg-secondary ms-1">Routine</span>
+              {% endif %}
+              {% if visit.ai_priority_reason %}
+              <span class="text-muted small ms-1" style="font-size:.7rem;">({{ visit.ai_priority_reason }})</span>
+              {% endif %}
+            </div>
+            <div class="text-muted small">
+              {{ visit.patient.patient_id }} &bull; {{ visit.patient.age_display }}
+              {% if visit.vital_signs %}
+              &bull; VA RE: {{ visit.vital_signs.visual_acuity_right|default:"—" }} / LE: {{ visit.vital_signs.visual_acuity_left|default:"—" }}
+              {% if visit.vital_signs.intraocular_pressure_right or visit.vital_signs.intraocular_pressure_left %}
+              &bull; IOP: {{ visit.vital_signs.intraocular_pressure_right|default:"—" }}/{{ visit.vital_signs.intraocular_pressure_left|default:"—" }}
+              {% endif %}
+              {% endif %}
+            </div>
+            <div class="text-muted small fst-italic">{{ visit.chief_complaint|truncatechars:60 }}</div>
+          </div>
+          <div class="d-flex flex-column gap-1 ms-2">
+            <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-sm btn-outline-secondary">Journey</a>
+            <a href="{% url 'consultations:create' patient_id=visit.patient.patient_id %}?visit_id={{ visit.pk }}" class="btn btn-sm btn-primary">Consult</a>
+          </div>
+        </div>
+        {% empty %}
+        <div class="list-group-item text-center text-muted py-5">
+          <i class="bi bi-check-circle fs-2 d-block mb-2 text-success opacity-50"></i>
+          No patients waiting in your queue.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Right column ── #}
+  <div class="col-lg-5">
+    {# In-progress consultations #}
+    {% if my_pending %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-clipboard2-pulse me-2 text-warning"></i>In Progress</h6>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for c in my_pending %}
+        <a href="{% url 'consultations:detail' pk=c.pk %}" class="list-group-item list-group-item-action py-2">
+          <div class="fw-semibold small">{{ c.patient.full_name }}</div>
+          <div class="text-muted" style="font-size:.75rem;">{{ c.department.name|default:"—" }} &bull; {{ c.consultation_date|date:"d M, H:i" }}</div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# Today's appointments #}
+    {% if my_today_appointments %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-calendar-check me-2 text-success"></i>Today's Appointments</h6>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for appt in my_today_appointments %}
+        <div class="list-group-item py-2 d-flex justify-content-between align-items-center">
+          <div>
+            <div class="fw-semibold small">{{ appt.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.75rem;">{{ appt.appointment_time|time:"H:i" }} &bull; {{ appt.get_appointment_type_display }}</div>
+          </div>
+          <span class="badge bg-{% if appt.status == 'CHECKED_IN' %}success{% elif appt.status == 'COMPLETED' %}secondary{% else %}warning text-dark{% endif %}">
+            {{ appt.get_status_display }}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Order Lab Tests{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-droplet me-2 text-danger"></i>Order Lab Tests</h5>
+        <div class="text-muted small">Patient: <strong>{{ consultation.patient.full_name }}</strong></div>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3 mb-3">
+            <div class="col-md-6"><label class="form-label fw-semibold">Urgency</label>{{ form.urgency }}</div>
+            <div class="col-md-6"><label class="form-label fw-semibold">Specimen</label>{{ form.specimen }}</div>
+          </div>
+          <div class="mb-4"><label class="form-label fw-semibold">Clinical Notes</label>{{ form.clinical_notes }}</div>
+
+          <h6 class="fw-bold mb-3">Select Tests <span class="text-danger">*</span></h6>
+          <div class="row g-2">
+            {% regroup test_types by get_category_display as grouped_tests %}
+            {% for group in grouped_tests %}
+            <div class="col-md-6 mb-3">
+              <div class="fw-semibold small text-muted text-uppercase mb-2">{{ group.grouper }}</div>
+              {% for test in group.list %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="test_types" value="{{ test.id }}" id="test_{{ test.id }}">
+                <label class="form-check-label small" for="test_{{ test.id }}">{{ test.name }} <span class="text-muted">({{ test.code }})</span></label>
+              </div>
+              {% endfor %}
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end mt-3">
+            <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Submit Lab Order</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

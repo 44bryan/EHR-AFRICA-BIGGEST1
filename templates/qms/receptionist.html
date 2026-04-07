@@ -1,0 +1,232 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Receptionist — New Patient Registration Queue{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold">
+      <i class="bi bi-person-plus-fill me-2 text-primary"></i>Receptionist
+      <span class="badge bg-primary ms-2">New Patient Registration</span>
+    </h4>
+    <small class="text-muted">Register new patients then route them to the cashier queue at the correct position.</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'qms:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>QMS
+    </a>
+  </div>
+</div>
+
+<!-- Stats bar -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="fs-2 fw-bold text-primary">{{ waiting_count }}</div>
+      <div class="text-muted small">Waiting for Registration</div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0">
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="bi bi-people-fill me-2"></i>Registration Queue</h6>
+    <small class="opacity-75">Ordered by arrival time — call next to register</small>
+  </div>
+  <div class="card-body p-0">
+    {% if waiting %}
+    <div class="list-group list-group-flush">
+      {% for token in waiting %}
+      <div class="list-group-item px-4 py-3" id="token-{{ token.pk }}">
+        <div class="row align-items-center">
+          <div class="col-auto">
+            <div class="fw-bold fs-5 text-primary">{{ token.display_token_number }}</div>
+            <div class="small text-muted">{{ token.issued_at|time:"H:i" }}</div>
+          </div>
+          <div class="col">
+            <div class="fw-semibold">{{ token.display_name }}</div>
+            <div class="small text-muted">
+              <span class="badge bg-{{ token.tier_label.1 }}">{{ token.tier_label.0 }}</span>
+              {% if token.notes %}<span class="ms-2 text-warning"><i class="bi bi-info-circle"></i> {{ token.notes }}</span>{% endif %}
+            </div>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-primary open-registration-btn"
+                    data-token-id="{{ token.pk }}"
+                    data-token-number="{{ token.display_token_number }}"
+                    data-patient-name="{{ token.display_name }}">
+              <i class="bi bi-pencil-fill me-1"></i>Register
+            </button>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-inbox fs-1 d-block mb-2 opacity-25"></i>
+      No new patients waiting for registration.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Registration modal -->
+<div class="modal fade" id="registrationModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">
+          <i class="bi bi-person-plus-fill me-2"></i>
+          Register Patient — <span id="modalTokenNumber"></span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info py-2 small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Register the patient in the system, then click <strong>"Done — Send to Cashier"</strong>.
+          The patient will be inserted into the cashier queue at approximately position 4
+          (after the next 3 waiting patients — not sent to the back of the queue).
+        </div>
+
+        <!-- Quick patient search — in case they are already in the system -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Search existing records</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="modalPatientSearch" class="form-control"
+                   placeholder="Search by name or ID...">
+          </div>
+          <div id="modalPatientResults" class="list-group mt-1 shadow-sm"
+               style="display:none; max-height:180px; overflow-y:auto; position:absolute; z-index:1060; width:calc(100% - 3rem);"></div>
+        </div>
+
+        <div id="foundPatientAlert" class="alert alert-success d-none py-2 mb-3">
+          <i class="bi bi-check-circle me-1"></i>
+          Patient found: <strong id="foundPatientName"></strong>
+          (<span id="foundPatientId"></span>)
+        </div>
+
+        <div class="alert alert-warning py-2 small">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          If patient is not found, register them via
+          <a href="{% url 'patients:register' %}" target="_blank" class="alert-link">Patient Registration</a>
+          then return here and search again.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="sendToCashierBtn" disabled>
+          <i class="bi bi-arrow-right-circle-fill me-1"></i>Done — Send to Cashier
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentTokenId = null;
+let selectedPatientId = null;
+let selectedVisitId = null;
+
+document.querySelectorAll('.open-registration-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentTokenId = btn.dataset.tokenId;
+    document.getElementById('modalTokenNumber').textContent = btn.dataset.tokenNumber;
+    document.getElementById('modalPatientSearch').value = btn.dataset.patientName;
+    selectedPatientId = null;
+    selectedVisitId = null;
+    document.getElementById('foundPatientAlert').classList.add('d-none');
+    document.getElementById('sendToCashierBtn').disabled = true;
+    new bootstrap.Modal(document.getElementById('registrationModal')).show();
+  });
+});
+
+// Modal patient search
+let searchTimeout;
+const modalSearch = document.getElementById('modalPatientSearch');
+const modalResults = document.getElementById('modalPatientResults');
+
+modalSearch.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  const q = modalSearch.value.trim();
+  if (q.length < 2) { modalResults.style.display = 'none'; return; }
+  searchTimeout = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        modalResults.innerHTML = '';
+        const list = data.results || data.patients || [];
+        if (!list.length) {
+          modalResults.innerHTML = '<div class="list-group-item text-muted small">Not found — register as new patient</div>';
+        } else {
+          list.forEach(p => {
+            const item = document.createElement('a');
+            item.href = '#';
+            item.className = 'list-group-item list-group-item-action py-2';
+            item.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted ms-2 small">${p.patient_id}</span>`;
+            item.addEventListener('click', e => {
+              e.preventDefault();
+              selectedPatientId = p.patient_id;
+              document.getElementById('foundPatientName').textContent = p.full_name;
+              document.getElementById('foundPatientId').textContent = p.patient_id;
+              document.getElementById('foundPatientAlert').classList.remove('d-none');
+              document.getElementById('sendToCashierBtn').disabled = false;
+              modalResults.style.display = 'none';
+              modalSearch.value = p.full_name;
+            });
+            modalResults.appendChild(item);
+          });
+        }
+        modalResults.style.display = 'block';
+      });
+  }, 300);
+});
+
+document.addEventListener('click', e => {
+  if (!modalSearch.contains(e.target) && !modalResults.contains(e.target)) {
+    modalResults.style.display = 'none';
+  }
+});
+
+// Send to cashier
+document.getElementById('sendToCashierBtn').addEventListener('click', () => {
+  if (!currentTokenId) return;
+  const btn = document.getElementById('sendToCashierBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Routing...';
+
+  const formData = new FormData();
+  formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+  if (selectedPatientId) formData.append('patient_id', selectedPatientId);
+  if (selectedVisitId) formData.append('visit_id', selectedVisitId);
+
+  fetch(`/qms/receptionist/${currentTokenId}/complete/`, {
+    method: 'POST',
+    body: formData,
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      bootstrap.Modal.getInstance(document.getElementById('registrationModal')).hide();
+      // Remove the token row from the list
+      const row = document.getElementById(`token-${currentTokenId}`);
+      if (row) row.remove();
+      // Show success toast
+      alert(`✓ ${data.message}`);
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-right-circle-fill me-1"></i>Done — Send to Cashier';
+    }
+  })
+  .catch(() => {
+    alert('Network error. Please try again.');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-right-circle-fill me-1"></i>Done — Send to Cashier';
+  });
+});
+</script>
+{% endblock %}

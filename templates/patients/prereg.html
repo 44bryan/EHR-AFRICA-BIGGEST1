@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Online Pre-Registration — {{ hospital_name }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    body { background: #f0f9ff; }
+    .card { border-radius: 12px; }
+    .brand-bar { background: #0891b2; color: white; padding: 16px 24px; border-radius: 12px 12px 0 0; }
+    .section-title {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: #64748b; margin-bottom: .75rem; margin-top: 1.5rem;
+      padding-bottom: .4rem; border-bottom: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body class="py-4 px-2">
+<div class="container" style="max-width: 780px;">
+
+  <div class="card shadow-sm border-0">
+    <div class="brand-bar">
+      <h5 class="mb-0 fw-bold"><i class="bi bi-hospital me-2"></i>{{ hospital_name }}</h5>
+      <p class="mb-0 small opacity-75">Online Patient Pre-Registration — fill once, arrive faster</p>
+    </div>
+    <div class="card-body p-4">
+
+      <div class="alert alert-info py-2 small mb-4">
+        <i class="bi bi-info-circle me-1"></i>
+        Fill in this form completely before your visit. You will receive a <strong>printable slip with a QR code</strong>.
+        Show it at reception — the receptionist scans it and you are registered <strong>instantly</strong>.
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger py-2">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+        <div class="row g-3">
+
+          {# ── PERSONAL INFORMATION ── #}
+          <div class="col-12"><div class="section-title"><i class="bi bi-person me-1"></i>Personal Information</div></div>
+
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">First Name <span class="text-danger">*</span></label>
+            <input type="text" name="first_name" class="form-control" required
+                   placeholder="First Name"
+                   value="{{ form_data.first_name|default:'' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Middle Name</label>
+            <input type="text" name="middle_name" class="form-control"
+                   placeholder="Middle Name (optional)"
+                   value="{{ form_data.middle_name|default:'' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Last Name <span class="text-danger">*</span></label>
+            <input type="text" name="last_name" class="form-control" required
+                   placeholder="Last Name"
+                   value="{{ form_data.last_name|default:'' }}">
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Date of Birth <span class="text-danger">*</span></label>
+            <input type="date" name="date_of_birth" id="id_dob" class="form-control" required
+                   value="{{ form_data.date_of_birth|default:'' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Age</label>
+            <input type="text" id="age_display" class="form-control bg-light" readonly
+                   placeholder="Auto-calculated from Date of Birth">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Gender <span class="text-danger">*</span></label>
+            <select name="gender" class="form-select" required>
+              <option value="">— Select —</option>
+              <option value="M"     {% if form_data.gender == 'M'     %}selected{% endif %}>Male</option>
+              <option value="F"     {% if form_data.gender == 'F'     %}selected{% endif %}>Female</option>
+              <option value="Other" {% if form_data.gender == 'Other' %}selected{% endif %}>Other</option>
+            </select>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Marital Status</label>
+            <select name="marital_status" class="form-select">
+              <option value="">— Select —</option>
+              <option value="Single"   {% if form_data.marital_status == 'Single'   %}selected{% endif %}>Single</option>
+              <option value="Married"  {% if form_data.marital_status == 'Married'  %}selected{% endif %}>Married</option>
+              <option value="Divorced" {% if form_data.marital_status == 'Divorced' %}selected{% endif %}>Divorced</option>
+              <option value="Widowed"  {% if form_data.marital_status == 'Widowed'  %}selected{% endif %}>Widowed</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Nationality</label>
+            <input type="text" name="nationality" class="form-control"
+                   value="{{ form_data.nationality|default:'Cameroonian' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Occupation</label>
+            <input type="text" name="occupation" class="form-control"
+                   value="{{ form_data.occupation|default:'' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Religion</label>
+            <input type="text" name="religion" class="form-control"
+                   placeholder="e.g. Christianity, Islam"
+                   value="{{ form_data.religion|default:'' }}">
+          </div>
+
+          {# ── CONTACT DETAILS ── #}
+          <div class="col-12"><div class="section-title"><i class="bi bi-telephone me-1"></i>Contact Details</div></div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Cell Phone Number <span class="text-danger">*</span></label>
+            <input type="tel" name="phone_number" class="form-control" required
+                   placeholder="e.g. 6XXXXXXXX"
+                   value="{{ form_data.phone_number|default:'' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Email Address</label>
+            <input type="email" name="email" class="form-control"
+                   placeholder="patient@email.com"
+                   value="{{ form_data.email|default:'' }}">
+          </div>
+
+          {# ── ADDRESS ── #}
+          <div class="col-12"><div class="section-title"><i class="bi bi-geo-alt me-1"></i>Address</div></div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Postal Address</label>
+            <input type="text" name="post_address" class="form-control"
+                   placeholder="P.O. Box / Postal Address"
+                   value="{{ form_data.post_address|default:'' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Quarter / Neighbourhood</label>
+            <input type="text" name="quarter" class="form-control"
+                   placeholder="Quartier / Neighbourhood"
+                   value="{{ form_data.quarter|default:'' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Village / Town</label>
+            <input type="text" name="village_town" class="form-control"
+                   placeholder="Village or Town"
+                   value="{{ form_data.village_town|default:'' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Division</label>
+            <input type="text" name="division" class="form-control"
+                   placeholder="Division"
+                   value="{{ form_data.division|default:'' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Region</label>
+            <select name="region" class="form-select">
+              <option value="">— Select Region —</option>
+              {% for r in regions %}
+              <option value="{{ r.0 }}" {% if form_data.region == r.0 %}selected{% endif %}>{{ r.1 }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Country</label>
+            <input type="text" name="country" class="form-control"
+                   value="{{ form_data.country|default:'Cameroon' }}">
+          </div>
+
+          {# ── NATURE OF CONSULTATION ── #}
+          <div class="col-12"><div class="section-title"><i class="bi bi-clipboard2-pulse me-1"></i>Nature of Consultation</div></div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Consultation Type <span class="text-danger">*</span></label>
+            <select name="service_tier" class="form-select" id="id_service_tier">
+              <option value="STANDARD"   {% if form_data.service_tier == 'STANDARD'   or not form_data.service_tier %}selected{% endif %}>Standard</option>
+              <option value="FAST_TRACK" {% if form_data.service_tier == 'FAST_TRACK' %}selected{% endif %}>Fast Track</option>
+              <option value="VIP"        {% if form_data.service_tier == 'VIP'        %}selected{% endif %}>VIP</option>
+              <option value="EXPRESS"    {% if form_data.service_tier == 'EXPRESS'    %}selected{% endif %}>Express</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Payment / Billing Type <span class="text-danger">*</span></label>
+            <select name="billing_type" class="form-select" id="id_billing_type" onchange="onBillingChange(this.value)">
+              <option value="SELF_PAY"  {% if form_data.billing_type == 'SELF_PAY'  or not form_data.billing_type %}selected{% endif %}>Self Pay (Cash / Card)</option>
+              <option value="HMO"       {% if form_data.billing_type == 'HMO'       %}selected{% endif %}>HMO / Managed Care (Insured)</option>
+              <option value="INSURANCE" {% if form_data.billing_type == 'INSURANCE' %}selected{% endif %}>Insurance Company (Insured)</option>
+              <option value="WAIVER"    {% if form_data.billing_type == 'WAIVER'    %}selected{% endif %}>Waiver / Exempt</option>
+              <option value="FREE"      {% if form_data.billing_type == 'FREE'      %}selected{% endif %}>Free / Subsidised</option>
+            </select>
+          </div>
+          <div class="col-12" id="insurance_row" style="display:none;">
+            <label class="form-label fw-semibold small">Insurance Company / HMO Name</label>
+            <input type="text" name="insurance_company" class="form-control"
+                   placeholder="e.g. CNPS, Activa, Sanlam"
+                   value="{{ form_data.insurance_company|default:'' }}">
+          </div>
+
+          {# ── MEDICAL DETAILS ── #}
+          <div class="col-12"><div class="section-title"><i class="bi bi-droplet-half me-1"></i>Medical Details</div></div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Blood Group</label>
+            <select name="blood_group" class="form-select">
+              <option value="">— Select —</option>
+              {% for val, label in blood_group_choices %}
+              <option value="{{ val }}" {% if form_data.blood_group == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Genotype</label>
+            <select name="genotype" class="form-select">
+              <option value="">— Select —</option>
+              {% for val, label in genotype_choices %}
+              <option value="{{ val }}" {% if form_data.genotype == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {# ── VISIT QUESTIONS ── #}
+          <div class="col-12"><div class="section-title"><i class="bi bi-question-circle me-1"></i>Visit Questions</div></div>
+
+          <div class="col-12">
+            <label class="form-label fw-semibold small">Have you ever registered or consulted at this hospital? <span class="text-danger">*</span></label>
+            <div class="d-flex gap-4 mt-1">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="previously_registered"
+                       id="prev_yes" value="true"
+                       {% if form_data.previously_registered == 'true' %}checked{% endif %}>
+                <label class="form-check-label fw-medium" for="prev_yes">Yes</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="previously_registered"
+                       id="prev_no" value="false"
+                       {% if form_data.previously_registered != 'true' %}checked{% endif %}>
+                <label class="form-check-label fw-medium" for="prev_no">No</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 mt-2">
+            <label class="form-label fw-semibold small">Do you have a referral letter from another hospital or doctor? <span class="text-danger">*</span></label>
+            <div class="d-flex gap-4 mt-1">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="has_referral_letter"
+                       id="ref_yes" value="true"
+                       {% if form_data.has_referral_letter == 'true' %}checked{% endif %}
+                       onchange="document.getElementById('referral_upload').style.display='block'">
+                <label class="form-check-label fw-medium" for="ref_yes">Yes</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="has_referral_letter"
+                       id="ref_no" value="false"
+                       {% if form_data.has_referral_letter != 'true' %}checked{% endif %}
+                       onchange="document.getElementById('referral_upload').style.display='none'">
+                <label class="form-check-label fw-medium" for="ref_no">No</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12" id="referral_upload"
+               style="display:{% if form_data.has_referral_letter == 'true' %}block{% else %}none{% endif %};">
+            <label class="form-label fw-semibold small">Upload Referral Letter (scan / photo)</label>
+            <input type="file" name="referral_document" class="form-control"
+                   accept=".pdf,.jpg,.jpeg,.png">
+            <div class="form-text">Accepted: PDF, JPG, PNG. Max 5 MB. This will be added to your patient record once registered.</div>
+          </div>
+
+          <div class="col-12 mt-2">
+            <label class="form-label fw-semibold small">Main Eye Complaint / Reason for Visit</label>
+            <textarea name="chief_complaint" class="form-control" rows="3"
+                      placeholder="Briefly describe the eye problem or reason for visiting...">{{ form_data.chief_complaint|default:'' }}</textarea>
+          </div>
+
+          {# ── NEXT OF KIN ── #}
+          <div class="col-12"><div class="section-title"><i class="bi bi-people me-1"></i>Next of Kin</div></div>
+
+          <div class="col-md-5">
+            <label class="form-label fw-semibold small">Full Name</label>
+            <input type="text" name="nok_name" class="form-control"
+                   value="{{ form_data.nok_name|default:'' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Relationship</label>
+            <input type="text" name="nok_relationship" class="form-control"
+                   placeholder="e.g. Spouse, Parent"
+                   value="{{ form_data.nok_relationship|default:'' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Phone Number</label>
+            <input type="tel" name="nok_phone" class="form-control"
+                   value="{{ form_data.nok_phone|default:'' }}">
+          </div>
+
+          <div class="col-12 mt-3">
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+              <i class="bi bi-check-circle me-1"></i>Submit &amp; Get My QR Registration Slip
+            </button>
+          </div>
+
+        </div>
+      </form>
+    </div>
+    <div class="card-footer bg-transparent text-center small text-muted py-3">
+      {{ hospital_name }} &mdash; {{ hospital_address }} &mdash; {{ hospital_phone }}
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Age auto-calculation
+function calcAge() {
+  const dob = new Date(document.getElementById('id_dob')?.value);
+  if (isNaN(dob)) return;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  document.getElementById('age_display').value = age >= 0 ? age + ' year' + (age !== 1 ? 's' : '') : '';
+}
+document.getElementById('id_dob')?.addEventListener('change', calcAge);
+calcAge();
+
+// Show insurance field
+function onBillingChange(val) {
+  const row = document.getElementById('insurance_row');
+  if (row) row.style.display = (val === 'HMO' || val === 'INSURANCE') ? 'block' : 'none';
+}
+(function(){ const b = document.getElementById('id_billing_type'); if(b) onBillingChange(b.value); })();
+</script>
+</body>
+</html>

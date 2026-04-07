@@ -1,0 +1,87 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Consultations{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Consultations</h1>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2">
+      <div class="col-md-4">
+        <select name="department" class="form-select form-select-sm">
+          <option value="">All Departments</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}" {% if dept_filter == dept.id|stringformat:'s' %}selected{% endif %}>{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          {% for code, label in status_choices %}
+          <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Patient</th>
+            <th>Department</th>
+            <th>Doctor</th>
+            <th>Date</th>
+            <th>Complaint</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in consultations %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ c.patient.full_name }}</div>
+              <div class="text-muted small">{{ c.patient.patient_id }}</div>
+            </td>
+            <td>{{ c.department }}</td>
+            <td>{{ c.consulting_doctor.full_name|default:"—" }}</td>
+            <td class="small">{{ c.consultation_date|date:"d M Y, H:i" }}</td>
+            <td class="small text-muted">{{ c.presenting_complaint|truncatechars:60 }}</td>
+            <td>
+              <span class="badge
+                {% if c.status == 'COMPLETED' %}bg-success
+                {% elif c.status == 'IN_PROGRESS' %}bg-primary
+                {% elif c.status == 'REFERRED' %}bg-warning text-dark
+                {% else %}bg-secondary{% endif %}">
+                {{ c.get_status_display }}
+              </span>
+            </td>
+            <td>
+              <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-secondary">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-clipboard2-x" style="font-size:2rem;"></i>
+              <p class="mt-2 mb-0">No consultations found.</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

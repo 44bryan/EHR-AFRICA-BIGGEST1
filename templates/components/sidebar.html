@@ -1,0 +1,519 @@
+{% load static %}
+{% with u=request.user %}
+<nav id="sidebar">
+
+  <!-- Header / Brand -->
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <img src="{% static 'img/gludd_logo.svg' %}" alt="GLUDD Logo"
+           style="width:48px;height:48px;border-radius:50%;flex-shrink:0;">
+    </div>
+    <div style="overflow:hidden;">
+      <div class="sidebar-brand-name">{{ HOSPITAL_NAME }}</div>
+      <div class="sidebar-brand-role">{{ u.get_role_display }}</div>
+    </div>
+  </div>
+
+  <!-- Scrollable nav body -->
+  <div class="sidebar-body" id="sidebarBody">
+
+    {# ── Staff Hub — Super Admin ONLY ────────────────────────────────── #}
+    {% if u.is_super_admin %}
+    <a href="{% url 'accounts:staff_hub' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Management Hub">
+      <i class="bi bi-shield-lock" style="color:#fbbf24;"></i>
+      <span>Staff Hub</span>
+    </a>
+    {% endif %}
+
+    <a href="{% url 'dashboard:home' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Dashboard">
+      <i class="bi bi-speedometer2"></i>
+      <span>Dashboard</span>
+    </a>
+
+    {# ── Gate Security Staff ─────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.role == 'gatekeeper' %}
+    <div class="sidebar-label">Gate Entry</div>
+    <a href="{% url 'qms:gate_issue' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Issue Gate Entry Ticket (Standard)">
+      <i class="bi bi-door-open"></i><span>Gate Entry Ticket</span>
+    </a>
+    <a href="{% url 'qms:vip_reception' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="VIP Reception (Back Entrance)">
+      <i class="bi bi-star-fill" style="color:#a78bfa;"></i><span>VIP Reception</span>
+    </a>
+    <a href="{% url 'qms:express_desk' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Express / Fast Track Desk (Side Entrance)">
+      <i class="bi bi-lightning-fill" style="color:#fbbf24;"></i><span>Express Desk</span>
+    </a>
+    {% endif %}
+
+    {# ── Receptionist ────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_receptionist or u.is_medical_director %}
+    <div class="sidebar-label">Reception</div>
+    <a href="{% url 'reception:desk' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Reception Desk">
+      <i class="bi bi-building"></i><span>Reception Desk</span>
+    </a>
+    <a href="{% url 'reception:walk_in' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Walk-in / Check-in">
+      <i class="bi bi-person-walking"></i><span>Walk-in / Check-in</span>
+    </a>
+    <a href="{% url 'qms:receptionist' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="New Patient Registration Queue">
+      <i class="bi bi-people"></i><span>Registration Queue</span>
+    </a>
+    <a href="{% url 'qms:my_counter' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="My Counter — call next patient">
+      <i class="bi bi-person-check-fill text-success"></i><span>My Counter</span>
+    </a>
+    {% endif %}
+
+    {# ── Cashier ─────────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_cashier or u.is_medical_director %}
+    <div class="sidebar-label">Cashier</div>
+    <a href="{% url 'billing:pos_landing' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Point of Sale — open POS for current patient">
+      <i class="bi bi-cash-coin" style="color:#34d399;"></i><span>POS</span>
+    </a>
+    <a href="{% url 'qms:my_counter' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="My Counter — call next patient">
+      <i class="bi bi-person-check-fill text-success"></i><span>My Counter</span>
+    </a>
+    <a href="{% url 'qms:cashier_issue' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Issue Cashier Ticket (walk-in)">
+      <i class="bi bi-ticket-perforated"></i><span>Issue Ticket</span>
+    </a>
+    <a href="{% url 'patients:register' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Register New Patient">
+      <i class="bi bi-person-plus"></i><span>Register Patient</span>
+    </a>
+    <a href="{% url 'billing:invoice_list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-receipt"></i><span>All Invoices</span>
+    </a>
+    {% endif %}
+
+    {# ── QMS Board ───────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_medical_director or u.is_admin_staff or u.can_see_everything %}
+    <a href="{% url 'qms:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Queue Management Dashboard">
+      <i class="bi bi-display"></i><span>Queue Board (QMS)</span>
+    </a>
+    {% endif %}
+
+    {# ── Patients ─────────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_receptionist or u.is_opd_nurse or u.is_doctor or u.is_medical_director or u.is_admin_staff or u.role == 'medical_records' or u.can_see_everything %}
+    <div class="sidebar-label">Patients</div>
+    <a href="{% url 'patients:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Patients">
+      <i class="bi bi-people"></i><span>All Patients</span>
+    </a>
+    {% if u.is_super_admin or u.is_receptionist or u.is_opd_nurse or u.is_medical_director or u.is_admin_staff %}
+    <a href="{% url 'patients:register' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Register New Patient">
+      <i class="bi bi-person-plus"></i><span>Register Patient</span>
+    </a>
+    <a href="{% url 'patients:prereg_lookup' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Scan patient QR / type pre-registration code">
+      <i class="bi bi-qr-code-scan"></i><span>Pre-Reg Scan</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {# ── Parameters / Triage ──────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_opd_nurse or u.is_medical_director %}
+    <div class="sidebar-label">Parameters / Triage</div>
+    <a href="{% url 'consultations:triage_workstation' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Triage Workstation — see all patients waiting at Parameters">
+      <i class="bi bi-heart-pulse text-danger"></i><span>Triage Workstation</span>
+    </a>
+    <a href="{% url 'opd:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="OPD Dashboard">
+      <i class="bi bi-grid-1x2"></i><span>OPD Dashboard</span>
+    </a>
+    <a href="{% url 'qms:my_counter' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="My Counter — call next patient">
+      <i class="bi bi-person-check-fill text-success"></i><span>My Counter</span>
+    </a>
+    {% endif %}
+
+    {# ── Doctor Clinical Workstation ───────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_doctor %}
+    <div class="sidebar-label">Clinical</div>
+    <a href="{% url 'consultations:workstation' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="My Clinical Workstation — today's queue and consultations">
+      <i class="bi bi-hospital text-primary"></i><span>My Workstation</span>
+    </a>
+    <a href="{% url 'qms:doctor_queue' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="My Patient Queue (QMS)">
+      <i class="bi bi-clipboard2-pulse text-primary"></i><span>My Queue</span>
+    </a>
+    <a href="{% url 'consultations:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Consultations">
+      <i class="bi bi-clipboard2-pulse"></i><span>Consultations</span>
+    </a>
+    <a href="{% url 'investigations:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Order Investigations">
+      <i class="bi bi-search-heart"></i><span>Order Investigations</span>
+    </a>
+    {% elif u.can_see_everything %}
+    {# CEO/Admin Director can see consultations read-only without workstation #}
+    <div class="sidebar-label">Clinical Records</div>
+    <a href="{% url 'consultations:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Consultations">
+      <i class="bi bi-clipboard2-pulse"></i><span>Consultations</span>
+    </a>
+    {% elif u.role == 'medical_records' %}
+    <div class="sidebar-label">Clinical Records</div>
+    <a href="{% url 'consultations:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Consultations">
+      <i class="bi bi-clipboard2-pulse"></i><span>Consultations</span>
+    </a>
+    {% endif %}
+
+    {# ── Scheduling ───────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_receptionist or u.is_doctor or u.is_opd_nurse or u.is_medical_director or u.is_admin_staff or u.can_see_everything %}
+    <div class="sidebar-label">Scheduling</div>
+    <a href="{% url 'appointments:clinic_board' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Clinic Board — Today's Appointments">
+      <i class="bi bi-calendar-week"></i><span>Clinic Board</span>
+    </a>
+    <a href="{% url 'appointments:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Appointments">
+      <i class="bi bi-calendar3"></i><span>All Appointments</span>
+    </a>
+    {% if u.is_super_admin or u.is_receptionist or u.is_medical_director or u.is_admin_staff %}
+    <a href="{% url 'appointments:book' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Book Appointment">
+      <i class="bi bi-calendar-plus"></i><span>Book Appointment</span>
+    </a>
+    <a href="{% url 'appointments:schedule_list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Doctor Schedules — Weekly Timetable">
+      <i class="bi bi-clock-history"></i><span>Doctor Schedules</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {# ── Investigations & Lab ─────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_investigation_tech or u.is_lab_tech or u.is_medical_director or u.is_admin_staff or u.can_see_everything %}
+    <div class="sidebar-label">Investigations & Lab</div>
+    {% if u.is_investigation_tech or u.is_super_admin or u.is_medical_director %}
+    <a href="{% url 'investigations:workstation' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Investigation Workstation">
+      <i class="bi bi-display"></i><span>Investigation Workstation</span>
+    </a>
+    {% endif %}
+    <a href="{% url 'investigations:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Eye Investigations">
+      <i class="bi bi-search-heart"></i><span>Eye Investigations</span>
+    </a>
+    {% if u.is_lab_tech or u.is_super_admin or u.is_medical_director %}
+    <a href="{% url 'laboratory:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Lab Workstation">
+      <i class="bi bi-eyedropper"></i><span>Lab Workstation</span>
+    </a>
+    {% endif %}
+    <a href="{% url 'laboratory:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Lab Orders">
+      <i class="bi bi-droplet-half"></i><span>Lab Orders</span>
+    </a>
+    {% if u.is_super_admin or u.is_medical_director or u.can_see_everything %}
+    <a href="{% url 'laboratory:stats' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Lab Statistics">
+      <i class="bi bi-bar-chart"></i><span>Lab Statistics</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {# ── Pharmacy ─────────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_pharmacist or u.is_medical_director or u.is_admin_staff %}
+    <div class="sidebar-label">Pharmacy</div>
+    <a href="{% url 'pharmacy:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pharmacy">
+      <i class="bi bi-capsule-pill"></i><span>Pharmacy</span>
+    </a>
+    {% if u.is_super_admin or u.is_medical_director or u.is_admin_staff %}
+    <a href="{% url 'pharmacy:pilferage' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pilferage Protection">
+      <i class="bi bi-shield-exclamation"></i><span>Pilferage Protection</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {# ── Opticals ─────────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_optical_dispenser or u.role == 'optometrist' or u.is_medical_director %}
+    <div class="sidebar-label">Opticals</div>
+    <a href="{% url 'opticals:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Optical Dispensing">
+      <i class="bi bi-eyeglasses"></i><span>Optical Dispensing</span>
+    </a>
+    {% endif %}
+
+    {# ── Surgical Pathway ─────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_counseling_nurse or u.is_admission_officer or u.is_medical_director %}
+    <div class="sidebar-label">Surgical Pathway</div>
+    {% if u.is_super_admin or u.is_counseling_nurse or u.is_medical_director %}
+    <a href="{% url 'ipd:counseling_queue' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Surgical Counseling Queue">
+      <i class="bi bi-chat-square-heart"></i><span>Surgical Counseling</span>
+    </a>
+    {% endif %}
+    {% if u.is_super_admin or u.is_admission_officer or u.is_medical_director %}
+    <a href="{% url 'ipd:surgical_booking_queue' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Surgical Booking">
+      <i class="bi bi-calendar2-plus"></i><span>Surgical Booking</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {# ── Inpatient / Theatre ──────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_admission_officer or u.is_ward_nurse or u.is_theatre_nurse or u.is_doctor or u.is_medical_director or u.is_admin_staff or u.can_see_everything %}
+    <div class="sidebar-label">Inpatient / Theatre</div>
+    <a href="{% url 'ipd:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Inpatient (IPD)">
+      <i class="bi bi-buildings"></i><span>Inpatient (IPD)</span>
+    </a>
+    <a href="{% url 'ipd:ward_list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Wards & Beds">
+      <i class="bi bi-hospital"></i><span>Wards &amp; Beds</span>
+    </a>
+    <a href="{% url 'ipd:theatre_board' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Theatre Scheduling Board">
+      <i class="bi bi-lightning-charge text-danger"></i><span>Theatre Board</span>
+    </a>
+    {% if u.is_super_admin or u.is_medical_director or u.can_see_everything %}
+    <a href="{% url 'ipd:nursing_stats' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="IPD Surgical Statistics">
+      <i class="bi bi-clipboard-data"></i><span>IPD Surgical Stats</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {# ── Finance Director — dedicated finance-only section ─────────────── #}
+    {% if u.is_finance_director %}
+    <div class="sidebar-label">Finance</div>
+    <a href="{% url 'leadership:finance_dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard">
+      <i class="bi bi-cash-coin" style="color:#34d399;"></i><span>Finance Dashboard</span>
+    </a>
+    <a href="{% url 'billing:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Billing & Payments">
+      <i class="bi bi-receipt"></i><span>Billing &amp; Payments</span>
+    </a>
+    <a href="{% url 'billing:invoice_list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    </a>
+    <a href="{% url 'patients:list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patients (read-only)">
+      <i class="bi bi-people"></i><span>All Patients</span>
+    </a>
+    <a href="{% url 'inventory:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Inventory & Stock">
+      <i class="bi bi-box-seam"></i><span>Inventory</span>
+    </a>
+    <a href="{% url 'pharmacy:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pharmacy">
+      <i class="bi bi-capsule-pill"></i><span>Pharmacy</span>
+    </a>
+    {% endif %}
+
+    {# ── Billing (non-Finance-Director) ───────────────────────────────── #}
+    {% if not u.is_finance_director %}
+    {% if u.is_super_admin or u.is_cashier or u.is_billing_officer or u.is_medical_director or u.is_admin_staff or u.can_see_everything %}
+    <div class="sidebar-label">Billing</div>
+    {% if not u.is_cashier or u.is_billing_officer or u.is_medical_director or u.is_admin_staff or u.can_see_everything %}
+    <a href="{% url 'billing:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Billing & Payments">
+      <i class="bi bi-receipt"></i><span>Billing &amp; Payments</span>
+    </a>
+    {% endif %}
+    <a href="{% url 'billing:invoice_list' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {# ── Operations ───────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_medical_director or u.is_admin_staff or u.can_see_everything %}
+    <div class="sidebar-label">Operations</div>
+    <a href="{% url 'inventory:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Inventory">
+      <i class="bi bi-box-seam"></i><span>Inventory</span>
+    </a>
+    <a href="{% url 'cssd:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="CSSD">
+      <i class="bi bi-shield-check"></i><span>CSSD</span>
+    </a>
+    <a href="{% url 'leads:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Lead Management">
+      <i class="bi bi-funnel"></i><span>Lead Management</span>
+    </a>
+    <a href="{% url 'outreach:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Outreach Department">
+      <i class="bi bi-geo-alt"></i><span>Outreach</span>
+    </a>
+    <a href="{% url 'feedback:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Digital Px Meter">
+      <i class="bi bi-emoji-smile"></i><span>Digital Px Meter</span>
+    </a>
+    <a href="{% url 'feedback:service_recovery' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Recovery">
+      <i class="bi bi-clock-history"></i><span>Service Recovery</span>
+    </a>
+    {% endif %}
+
+    {# ── AI Tools ─────────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.can_use_ai_assistant %}
+    <div class="sidebar-label">AI Tools</div>
+    <a href="{% url 'ai_assistant:home' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Clinical AI">
+      <i class="bi bi-robot"></i><span>Clinical AI</span>
+    </a>
+    <a href="{% url 'ai_assistant:receptionist' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Virtual Receptionist">
+      <i class="bi bi-headset"></i><span>Virtual Receptionist</span>
+    </a>
+    <a href="{% url 'ai_assistant:analytics' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Analytics AI">
+      <i class="bi bi-bar-chart-line"></i><span>Analytics AI</span>
+    </a>
+    {% endif %}
+
+    {# ── Management ───────────────────────────────────────────────────── #}
+    {% if u.is_super_admin or u.is_medical_director or u.is_ceo or u.is_admin_director or u.is_finance_director or u.is_admin_staff %}
+    <div class="sidebar-label">Management</div>
+    {% if u.is_super_admin or u.is_medical_director or u.is_ceo or u.is_admin_director or u.is_admin_staff %}
+    <a href="{% url 'leadership:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Leadership Dashboard">
+      <i class="bi bi-graph-up-arrow"></i><span>Leadership Dashboard</span>
+    </a>
+    {% endif %}
+    {% if u.is_super_admin or u.is_ceo or u.is_finance_director or u.is_admin_director %}
+    <a href="{% url 'leadership:finance_dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard">
+      <i class="bi bi-cash-coin" style="color:#34d399;"></i><span>Finance Dashboard</span>
+    </a>
+    {% endif %}
+    {% if not u.is_finance_director %}
+    <a href="{% url 'leadership:monthly_stats' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Monthly Statistics Report">
+      <i class="bi bi-file-bar-graph"></i><span>Monthly Statistics</span>
+    </a>
+    {% endif %}
+    {% if u.is_ceo or u.is_retina_specialist or u.is_medical_director or u.is_super_admin %}
+    <a href="{% url 'leadership:retina_dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Retina Outcomes Dashboard">
+      <i class="bi bi-eye text-danger"></i><span>Retina Outcomes</span>
+    </a>
+    {% endif %}
+    {# Medical Director does NOT see HR/Staff in sidebar — managed by Super Admin #}
+    {% if u.is_super_admin or u.is_admin_staff and not u.is_medical_director %}
+    <a href="{% url 'hrms:dashboard' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="HR Management">
+      <i class="bi bi-people-fill"></i><span>HR Management</span>
+    </a>
+    <a href="{% url 'accounts:staff_hub' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Accounts">
+      <i class="bi bi-person-gear"></i><span>Staff Accounts</span>
+    </a>
+    {% endif %}
+    {% if u.is_super_admin %}
+    <a href="/admin/" target="_blank"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="System Admin (Super Admin only)">
+      <i class="bi bi-gear-wide-connected"></i><span>System Admin</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    <div class="sidebar-label" style="margin-top:8px; border-top:1px solid rgba(255,255,255,0.06); padding-top:12px;">Self-Service</div>
+    <a href="{% url 'accounts:profile' %}"
+       class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="My Profile">
+      <i class="bi bi-person-circle"></i><span>My Profile</span>
+    </a>
+    <a href="{% url 'accounts:logout' %}"
+       class="sidebar-link"
+       style="color:#f87171;"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Sign Out">
+      <i class="bi bi-box-arrow-left" style="color:#f87171;"></i><span>Sign Out</span>
+    </a>
+
+  </div><!-- /sidebar-body -->
+</nav>
+
+<!-- Mobile backdrop -->
+<div id="sidebar-backdrop"></div>
+{% endwith %}

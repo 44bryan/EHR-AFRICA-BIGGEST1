@@ -1,0 +1,165 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ dept_name }} — My Queue{% endblock %}
+
+{% block extra_css %}
+<style>
+.token-xl { font-size: 3rem; font-weight: 900; letter-spacing: -1px; line-height: 1; }
+.tier-vip    { color: #a78bfa; }
+.tier-ft     { color: #fbbf24; }
+.tier-exp    { color: #22d3ee; }
+.tier-std    { color: #0d6efd; }
+.patient-row { transition: background .15s; cursor: pointer; }
+.patient-row:hover { background: #f0f7ff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-clipboard2-pulse me-2 text-primary"></i>{{ dept_name }}</h4>
+    <small class="text-muted">{{ today|date:"l, d F Y" }} · <strong>{{ waiting_count }}</strong> patient(s) waiting</small>
+  </div>
+  <div class="d-flex gap-2">
+    {% if counter %}
+    <a href="{% url 'qms:counter' counter.id %}" class="btn btn-success">
+      <i class="bi bi-person-check-fill me-1"></i>Call Next
+    </a>
+    {% endif %}
+    <a href="{% url 'qms:display_board' %}" class="btn btn-dark btn-sm" target="_blank">
+      <i class="bi bi-display me-1"></i>Display
+    </a>
+    <a href="{% url 'qms:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>QMS
+    </a>
+  </div>
+</div>
+
+<!-- Queue table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-list-ol me-2 text-primary"></i>Waiting Queue — {{ dept_name }}</h6>
+    <small class="text-muted" id="countdown">Auto-refresh 20s</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th class="text-center" style="width:3rem;">#</th>
+            <th>Ticket</th>
+            <th>Patient</th>
+            <th>Tier</th>
+            <th>Chief Complaint</th>
+            <th>VA (RE/LE)</th>
+            <th>IOP (RE/LE)</th>
+            <th>Waiting Since</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for token in waiting %}
+          {% with is_vip_call=token.notes|slice:":8" %}
+          <tr class="patient-row {% if is_vip_call == 'VIP CALL' %}table-danger{% endif %}">
+            <td class="text-center text-muted">{{ forloop.counter }}</td>
+            <td>
+              {% if is_vip_call == 'VIP CALL' %}
+              <div class="d-flex flex-column align-items-center gap-1">
+                <span class="badge bg-danger py-2 px-3" style="font-size:1rem;">VIP CALL</span>
+                <span class="text-muted" style="font-size:.65rem;">{{ token.token_number }}</span>
+              </div>
+              {% else %}
+              <span class="token-xl
+                {% if token.service_tier == 'VIP' %}tier-vip
+                {% elif token.service_tier == 'FAST_TRACK' %}tier-ft
+                {% elif token.service_tier == 'EXPRESS' %}tier-exp
+                {% else %}tier-std{% endif %}">
+                {{ token.token_number }}
+              </span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="fw-semibold">{{ token.display_name }}</div>
+              {% if token.patient %}
+                <small class="text-muted">{{ token.patient.patient_id }} · {{ token.patient.age_display }}</small>
+              {% endif %}
+              {% if is_vip_call == 'VIP CALL' %}
+              <div class="mt-1">
+                <span class="badge bg-danger animate__animated">
+                  <i class="bi bi-geo-alt-fill me-1"></i>Patient is in VIP Room — please go to them
+                </span>
+              </div>
+              {% endif %}
+            </td>
+            <td>
+              {% if token.service_tier == 'VIP' %}
+                <span class="badge" style="background:#7c3aed">VIP</span>
+              {% elif token.service_tier == 'FAST_TRACK' %}
+                <span class="badge bg-warning text-dark">Fast Track</span>
+              {% elif token.service_tier == 'EXPRESS' %}
+                <span class="badge bg-info text-dark">Express</span>
+              {% else %}
+                <span class="badge bg-secondary">Standard</span>
+              {% endif %}
+            </td>
+            <td class="small">
+              {% if is_vip_call == 'VIP CALL' %}
+              <span class="text-danger fw-bold">Go to VIP Consultation Room</span>
+              {% elif token.visit %}{{ token.visit.chief_complaint|truncatechars:40|default:"—" }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="small text-nowrap">
+              {% if token.visit %}
+                {{ token.visit.va_right|default:"—" }} / {{ token.visit.va_left|default:"—" }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="small text-nowrap">
+              {% if token.visit %}
+                {{ token.visit.iop_right|default:"—" }} / {{ token.visit.iop_left|default:"—" }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="small text-nowrap">{{ token.issued_at|time:"H:i" }}</td>
+            <td class="text-nowrap">
+              {% if token.visit %}
+              <a href="{% url 'patients:visit_detail' visit_number=token.visit.visit_number %}"
+                 class="btn btn-sm {% if is_vip_call == 'VIP CALL' %}btn-danger{% else %}btn-primary{% endif %}">
+                {% if is_vip_call == 'VIP CALL' %}
+                <i class="bi bi-geo-alt me-1"></i>Go to VIP Room
+                {% else %}
+                <i class="bi bi-clipboard2-pulse me-1"></i>Consult
+                {% endif %}
+              </a>
+              {% elif token.patient %}
+              <a href="{% url 'patients:detail' patient_id=token.patient.patient_id %}"
+                 class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-person me-1"></i>Patient
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endwith %}
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-5">
+              <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
+              Queue is empty — no patients waiting
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let secs = 20;
+const el = document.getElementById('countdown');
+setInterval(() => {
+  secs--;
+  if (el) el.textContent = `Auto-refresh ${secs}s`;
+  if (secs <= 0) location.reload();
+}, 1000);
+</script>
+{% endblock %}

@@ -1,0 +1,166 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ invoice.invoice_number }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-0">{{ invoice.invoice_number }}</h1>
+    <span class="badge {% if invoice.status == 'PAID' %}bg-success{% elif invoice.status == 'PARTIAL' %}bg-warning text-dark{% elif invoice.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %} fs-6">
+      {{ invoice.get_status_display }}
+    </span>
+  </div>
+  <div class="d-flex gap-2">
+    {% if invoice.status != 'PAID' and invoice.status != 'CANCELLED' %}
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#payModal">
+      <i class="bi bi-cash-coin me-1"></i>Record Payment
+    </button>
+    <form method="post" action="{% url 'billing:cancel_invoice' invoice.id %}" class="d-inline" onsubmit="return confirm('Cancel this invoice?')">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger">Cancel Invoice</button>
+    </form>
+    {% endif %}
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Invoice Details -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Patient</h6></div>
+      <div class="card-body">
+        <div class="fw-bold">{{ invoice.patient.full_name }}</div>
+        <div class="text-muted small">{{ invoice.patient.patient_id }}</div>
+        <div class="text-muted small">{{ invoice.patient.phone }}</div>
+        {% if invoice.consultation %}
+        <div class="mt-2"><a href="{% url 'consultations:detail' pk=invoice.consultation.pk %}" class="small">View Consultation</a></div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Summary</h6></div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted">Subtotal</span>
+          <span>{{ invoice.subtotal|floatformat:0 }} FCFA</span>
+        </div>
+        {% if invoice.discount_amount %}
+        <div class="d-flex justify-content-between mb-2 text-success">
+          <span>Discount {% if invoice.discount_reason %}({{ invoice.discount_reason }}){% endif %}</span>
+          <span>- {{ invoice.discount_amount|floatformat:0 }} FCFA</span>
+        </div>
+        {% endif %}
+        <hr class="my-2">
+        <div class="d-flex justify-content-between fw-bold mb-2">
+          <span>Total</span>
+          <span>{{ invoice.total|floatformat:0 }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between text-success mb-2">
+          <span>Amount Paid</span>
+          <span>{{ invoice.amount_paid|floatformat:0 }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between fw-bold {% if invoice.balance_due > 0 %}text-danger{% else %}text-success{% endif %}">
+          <span>Balance Due</span>
+          <span>{{ invoice.balance_due|floatformat:0 }} FCFA</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Line Items -->
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Services Billed</h6></div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Description</th><th>Category</th><th class="text-center">Qty</th><th class="text-end">Unit Price</th><th class="text-end">Total</th></tr>
+          </thead>
+          <tbody>
+            {% for item in invoice.items.all %}
+            {% if not item.is_deleted %}
+            <tr>
+              <td>{{ item.description }}</td>
+              <td><span class="badge bg-light text-dark">{{ item.get_category_display }}</span></td>
+              <td class="text-center">{{ item.quantity }}</td>
+              <td class="text-end">{{ item.unit_price|floatformat:0 }} FCFA</td>
+              <td class="text-end fw-semibold">{{ item.line_total|floatformat:0 }} FCFA</td>
+            </tr>
+            {% endif %}
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted py-3">No items</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Payment History -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Payment History</h6></div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Date</th><th>Method</th><th>Reference</th><th class="text-end">Amount</th><th>Received By</th></tr>
+          </thead>
+          <tbody>
+            {% for pmt in invoice.payments.all %}
+            {% if not pmt.is_deleted %}
+            <tr>
+              <td>{{ pmt.payment_date|date:"d M Y H:i" }}</td>
+              <td>{{ pmt.get_payment_method_display }}</td>
+              <td>{{ pmt.reference|default:"-" }}</td>
+              <td class="text-end text-success fw-semibold">{{ pmt.amount|floatformat:0 }} FCFA</td>
+              <td>{{ pmt.received_by.full_name }}</td>
+            </tr>
+            {% endif %}
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted py-3">No payments yet</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Record Payment Modal -->
+<div class="modal fade" id="payModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'billing:add_payment' invoice.id %}">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title">Record Payment</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Amount (FCFA) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" class="form-control" step="0.01" min="0.01" value="{{ invoice.balance_due }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
+            <select name="payment_method" class="form-select" required>
+              {% for code, label in payment_methods %}
+              <option value="{{ code }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Transaction Reference</label>
+            <input type="text" name="reference" class="form-control" placeholder="Optional">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes</label>
+            <input type="text" name="notes" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">Confirm Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

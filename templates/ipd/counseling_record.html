@@ -1,0 +1,181 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Surgical Counseling — {{ patient.full_name }}{% endblock %}
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=patient %}
+{% endblock %}
+{% block content %}
+
+<!-- Tier banner -->
+{% if visit.service_tier == 'VIP' %}
+<div class="alert alert-danger d-flex align-items-center gap-2 py-2 mb-3">
+  <i class="bi bi-star-fill text-danger"></i><span class="fw-bold text-danger">VIP PATIENT</span>
+</div>
+{% elif visit.service_tier == 'EXPRESS' or visit.service_tier == 'FAST_TRACK' %}
+<div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-3">
+  <i class="bi bi-lightning-charge-fill text-info"></i>
+  <span class="fw-bold text-info">{{ visit.get_service_tier_display }} PATIENT</span>
+</div>
+{% endif %}
+
+<!-- Doctor's surgical plan (read-only) -->
+<div class="card border-0 shadow-sm mb-3 border-start border-4 border-danger">
+  <div class="card-header bg-danger bg-opacity-10 py-2">
+    <h6 class="mb-0 fw-bold small text-danger">
+      <i class="bi bi-scissors me-1"></i>Doctor's Surgical Plan
+    </h6>
+  </div>
+  <div class="card-body py-3">
+    <div class="row g-3 small">
+      <div class="col-md-4">
+        <div class="text-muted">Procedure</div>
+        <div class="fw-bold">{{ surgical_procedure|default:"—" }}</div>
+      </div>
+      <div class="col-md-2">
+        <div class="text-muted">Eye</div>
+        <div class="fw-bold">{{ surgery_eye|default:"—" }}</div>
+      </div>
+      <div class="col-md-3">
+        <div class="text-muted">Anaesthesia</div>
+        <div class="fw-bold">{{ anaesthesia_type|default:"—" }}</div>
+      </div>
+      <div class="col-md-3">
+        <div class="text-muted">Surgeon</div>
+        <div class="fw-bold">
+          {% if consultation and consultation.consulting_doctor %}
+            Dr. {{ consultation.consulting_doctor.full_name }}
+          {% else %}—{% endif %}
+        </div>
+      </div>
+      {% if surgical_notes %}
+      <div class="col-12">
+        <div class="text-muted">Pre-op Notes from Doctor</div>
+        <div class="fw-semibold">{{ surgical_notes }}</div>
+      </div>
+      {% endif %}
+      {% if consultation and consultation.management_plan %}
+      <div class="col-12">
+        <div class="text-muted">Management Plan</div>
+        <div class="fw-semibold">{{ consultation.management_plan }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Counseling form -->
+<form method="post">
+{% csrf_token %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-warning bg-opacity-10 py-2">
+    <h6 class="mb-0 fw-bold small text-warning">
+      <i class="bi bi-chat-square-heart me-1"></i>Surgical Counseling Record
+    </h6>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+
+      <!-- Procedure confirmation — dropdown -->
+      <div class="col-md-5">
+        <label class="form-label fw-semibold small">Procedure (confirm / update)</label>
+        <select name="procedure" class="form-select form-select-sm">
+          <option value="">— Select Procedure —</option>
+          {% for val, label in surgery_type_choices %}
+          <option value="{{ val }}"
+            {% if surgical_procedure == val or existing_booking.procedure == val %}selected{% endif %}>
+            {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold small">Eye</label>
+        <select name="eye" class="form-select form-select-sm">
+          <option value="">—</option>
+          <option value="RE" {% if surgery_eye == 'RE' %}selected{% endif %}>Right Eye (RE)</option>
+          <option value="LE" {% if surgery_eye == 'LE' %}selected{% endif %}>Left Eye (LE)</option>
+          <option value="BE" {% if surgery_eye == 'BE' %}selected{% endif %}>Both Eyes (BE)</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold small">Anaesthesia</label>
+        <select name="anaesthesia" class="form-select form-select-sm">
+          <option value="">—</option>
+          <option value="LOCAL" {% if anaesthesia_type == 'LOCAL' %}selected{% endif %}>Local (Peribulbar / Topical)</option>
+          <option value="GENERAL" {% if anaesthesia_type == 'GENERAL' %}selected{% endif %}>General Anaesthesia (GA)</option>
+          <option value="SEDATION" {% if anaesthesia_type == 'SEDATION' %}selected{% endif %}>Monitored Sedation</option>
+        </select>
+      </div>
+
+      <!-- Counseling topics checklist -->
+      <div class="col-12">
+        <label class="form-label fw-semibold small">Topics Covered During Counseling</label>
+        <div class="row g-2 small">
+          {% for topic in counseling_topics %}
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="topic_{{ forloop.counter }}"
+                     id="topic_{{ forloop.counter }}" checked>
+              <label class="form-check-label" for="topic_{{ forloop.counter }}">{{ topic }}</label>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Pre-op requirements -->
+      <div class="col-12">
+        <label class="form-label fw-semibold small">Pre-operative Requirements (communicate to patient)</label>
+        <textarea name="pre_op_requirements" class="form-control form-control-sm" rows="3"
+                  placeholder="e.g. CBC and RBG required before surgery. Stop Aspirin 5 days prior. Fast from midnight the night before. Bring someone to take you home after surgery...">{% if existing_booking %}{{ existing_booking.pre_op_requirements }}{% elif surgical_notes %}{{ surgical_notes }}{% endif %}</textarea>
+      </div>
+
+      <!-- Counseling notes -->
+      <div class="col-12">
+        <label class="form-label fw-semibold small">Counseling Notes</label>
+        <textarea name="counseling_notes" class="form-control form-control-sm" rows="4"
+                  placeholder="Document patient's questions, concerns, understanding, and any additional discussions...">{% if existing_booking %}{{ existing_booking.counseling_notes }}{% endif %}</textarea>
+      </div>
+
+      <!-- Consent -->
+      <div class="col-12">
+        <label class="form-label fw-semibold small">Patient Decision</label>
+        <div class="card border-0" style="background:#f8f9fa;">
+          <div class="card-body py-3">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="radio" name="consent_signed"
+                     id="consentYes" value="yes"
+                     {% if existing_booking and existing_booking.consent_signed %}checked{% endif %}>
+              <label class="form-check-label fw-bold text-success" for="consentYes">
+                <i class="bi bi-check-circle-fill me-1"></i>
+                Consent signed — patient agrees to proceed with surgery
+                <span class="text-muted fw-normal ms-1">(sends patient to Admission)</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="consent_signed"
+                     id="consentNo" value="no"
+                     {% if existing_booking and not existing_booking.consent_signed %}checked{% endif %}>
+              <label class="form-check-label fw-bold text-warning" for="consentNo">
+                <i class="bi bi-clock-fill me-1"></i>
+                Patient declines / needs more time — follow-up appointment required
+                <span class="text-muted fw-normal ms-1">(counseling saved, no admission today)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="card-footer bg-transparent border-top d-flex gap-2 justify-content-end">
+    <a href="{% url 'ipd:counseling_queue' %}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Queue
+    </a>
+    <button type="submit" class="btn btn-success btn-sm">
+      <i class="bi bi-check2-circle me-1"></i>Save Counseling Record
+    </button>
+  </div>
+</div>
+</form>
+{% endblock %}

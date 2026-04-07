@@ -1,0 +1,476 @@
+{% load ehr_tags %}
+{% with d=consultation.department_specific_data rd=refraction_data %}
+
+<!-- ══ REFRACTIONIST ZONE — Grey / Read-only ══ -->
+<div class="mb-4 rounded border border-secondary border-opacity-25" style="background:#f8f9fa;opacity:.92;">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top"
+       style="background:#e9ecef;border-bottom:1px dashed #adb5bd;">
+    <i class="bi bi-lock-fill text-secondary"></i>
+    <span class="fw-bold text-secondary small text-uppercase" style="letter-spacing:.06em;">
+      Refractionist / VA Section — Read Only
+    </span>
+    <span class="ms-auto small text-muted">
+      {% if refraction_consult %}
+        <i class="bi bi-check-circle-fill text-success me-1"></i>
+        {{ refraction_consult.consulting_doctor.full_name|default:"Refractionist" }}
+        — {{ refraction_consult.consultation_date|date:"d M Y" }}
+      {% else %}
+        <i class="bi bi-info-circle me-1"></i>Not yet completed by Refractionist
+      {% endif %}
+    </span>
+  </div>
+  <div class="p-3">
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label small text-muted">VA RE (sc)</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_re_unaided|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">VA LE (sc)</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_le_unaided|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">BCVA RE</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_re_bcva|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">BCVA LE</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_le_bcva|default:'' }}" placeholder="—">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RETINA SPECIALIST ZONE — Active ══ -->
+<div class="rounded border border-success border-opacity-25" style="background:#fff;">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top"
+       style="background:linear-gradient(90deg,#198754 0%,#157347 100%);border-bottom:1px solid #198754;">
+    <i class="bi bi-circle text-white"></i>
+    <span class="fw-bold text-white small text-uppercase" style="letter-spacing:.06em;">Retina Clinic — Specialist Examination</span>
+  </div>
+  <div class="p-3">
+
+    <!-- 1. VA & IOP -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-eye me-1"></i>1. Visual Acuity &amp; IOP
+      </div>
+      <div class="row g-2">
+        <div class="col-md-2"><label class="form-label small">VA OD (unaided)</label><input type="text" name="dept_va_od_un" class="form-control form-control-sm" placeholder="6/60" value="{{ d.va_od_un|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">VA OS (unaided)</label><input type="text" name="dept_va_os_un" class="form-control form-control-sm" placeholder="6/60" value="{{ d.va_os_un|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">BCVA OD</label><input type="text" name="dept_bcva_od" class="form-control form-control-sm" placeholder="6/6" value="{{ d.bcva_od|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">BCVA OS</label><input type="text" name="dept_bcva_os" class="form-control form-control-sm" placeholder="6/6" value="{{ d.bcva_os|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">IOP OD (mmHg)</label><input type="number" name="dept_iop_od" class="form-control form-control-sm" step="0.5" value="{{ d.iop_od|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">IOP OS (mmHg)</label><input type="number" name="dept_iop_os" class="form-control form-control-sm" step="0.5" value="{{ d.iop_os|default:'' }}"></div>
+      </div>
+    </div>
+
+    <!-- 2. Anterior Segment (Brief) -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-eye-fill me-1"></i>2. Anterior Segment (Relevant Findings)
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Lens OD</label>
+          <select name="dept_lens_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Clear,PSC,Nuclear sclerosis,Cortical,Pseudophakic (IOL in situ),Aphakic"|split:"," %}
+              <option value="{{ v }}" {% if d.lens_od == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Lens OS</label>
+          <select name="dept_lens_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Clear,PSC,Nuclear sclerosis,Cortical,Pseudophakic (IOL in situ),Aphakic"|split:"," %}
+              <option value="{{ v }}" {% if d.lens_os == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label small">Anterior Segment Notes</label>
+          <input type="text" name="dept_ant_seg_notes" class="form-control form-control-sm"
+                 value="{{ d.ant_seg_notes|default:'' }}" placeholder="e.g. NVI OD, cornea clear OU, no rubeosis">
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Vitreous & Posterior Pole -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-circle-half me-1"></i>3. Vitreous &amp; Posterior Pole
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Vitreous OD</label>
+          <select name="dept_vitreous_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Clear,Floaters,Haemorrhage (mild),Haemorrhage (dense),Cells/Haze,Posterior Vitreous Detachment (PVD),Vitreomacular traction"|split:"," %}
+              <option value="{{ v }}" {% if d.vitreous_od == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Vitreous OS</label>
+          <select name="dept_vitreous_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Clear,Floaters,Haemorrhage (mild),Haemorrhage (dense),Cells/Haze,Posterior Vitreous Detachment (PVD),Vitreomacular traction"|split:"," %}
+              <option value="{{ v }}" {% if d.vitreous_os == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Optic Disc OD</label>
+          <input type="text" name="dept_disc_od" class="form-control form-control-sm"
+                 value="{{ d.disc_od|default:'' }}" placeholder="e.g. Healthy, C:D 0.3, pink rim">
+        </div>
+        <div class="col-md-3"><label class="form-label small">Optic Disc OS</label>
+          <input type="text" name="dept_disc_os" class="form-control form-control-sm"
+                 value="{{ d.disc_os|default:'' }}" placeholder="e.g. Healthy, C:D 0.3, pink rim">
+        </div>
+        <div class="col-md-6"><label class="form-label small">Macula OD</label>
+          <input type="text" name="dept_macula_od" class="form-control form-control-sm"
+                 value="{{ d.macula_od|default:'' }}" placeholder="e.g. Flat, foveal reflex present, drusen present">
+        </div>
+        <div class="col-md-6"><label class="form-label small">Macula OS</label>
+          <input type="text" name="dept_macula_os" class="form-control form-control-sm"
+                 value="{{ d.macula_os|default:'' }}" placeholder="e.g. Flat, foveal reflex present">
+        </div>
+        <div class="col-md-6"><label class="form-label small">Peripheral Retina OD</label>
+          <input type="text" name="dept_peripheral_od" class="form-control form-control-sm"
+                 value="{{ d.peripheral_od|default:'' }}" placeholder="e.g. Flat, no breaks, lattice degeneration present">
+        </div>
+        <div class="col-md-6"><label class="form-label small">Peripheral Retina OS</label>
+          <input type="text" name="dept_peripheral_os" class="form-control form-control-sm"
+                 value="{{ d.peripheral_os|default:'' }}" placeholder="e.g. Flat, no breaks">
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Diabetic Retinopathy -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-activity me-1"></i>4. Diabetic Retinopathy
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">DR Grade OD</label>
+          <select name="dept_dr_grade_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for g in "No DR,Mild NPDR,Moderate NPDR,Severe NPDR,PDR,Advanced PDR"|split:"," %}
+              <option value="{{ g }}" {% if d.dr_grade_od == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">DR Grade OS</label>
+          <select name="dept_dr_grade_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for g in "No DR,Mild NPDR,Moderate NPDR,Severe NPDR,PDR,Advanced PDR"|split:"," %}
+              <option value="{{ g }}" {% if d.dr_grade_os == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">DME OD</label>
+          <select name="dept_dme_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Centre-involving DME,Non-centre-involving DME,CSME,Resolved"|split:"," %}
+              <option value="{{ v }}" {% if d.dme_od == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">DME OS</label>
+          <select name="dept_dme_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Centre-involving DME,Non-centre-involving DME,CSME,Resolved"|split:"," %}
+              <option value="{{ v }}" {% if d.dme_os == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">NVD (neovascularisation disc)</label>
+          <select name="dept_nvd" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Absent OU,OD only,OS only,OU"|split:"," %}
+              <option value="{{ v }}" {% if d.nvd == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">NVE (neovascularisation elsewhere)</label>
+          <select name="dept_nve" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Absent OU,OD only,OS only,OU"|split:"," %}
+              <option value="{{ v }}" {% if d.nve == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">Pre-retinal / Vitreous Haemorrhage</label>
+          <select name="dept_vrh" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Pre-retinal haemorrhage,Vitreous haemorrhage (mild),Vitreous haemorrhage (dense)"|split:"," %}
+              <option value="{{ v }}" {% if d.vrh == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. AMD (Age-related Macular Degeneration) -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-zoom-in me-1"></i>5. AMD / Macular Disease
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">AMD Category OD (AREDS2)</label>
+          <select name="dept_amd_od" class="form-select form-select-sm">
+            <option value="">— Not AMD —</option>
+            {% for g in "Category 1 (No AMD),Category 2 (Early AMD — small drusen),Category 3 (Intermediate — medium drusen / pigment changes),Category 4 (Advanced — GA or nAMD)"|split:"," %}
+              <option value="{{ g }}" {% if d.amd_od == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">AMD Category OS (AREDS2)</label>
+          <select name="dept_amd_os" class="form-select form-select-sm">
+            <option value="">— Not AMD —</option>
+            {% for g in "Category 1 (No AMD),Category 2 (Early AMD — small drusen),Category 3 (Intermediate — medium drusen / pigment changes),Category 4 (Advanced — GA or nAMD)"|split:"," %}
+              <option value="{{ g }}" {% if d.amd_os == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">CNVM Type OD</label>
+          <select name="dept_cnvm_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Classic CNVM,Occult CNVM,RAP (Retinal Angiomatous Proliferation),Geographic Atrophy,Fibrotic scar"|split:"," %}
+              <option value="{{ v }}" {% if d.cnvm_od == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">CNVM Type OS</label>
+          <select name="dept_cnvm_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Classic CNVM,Occult CNVM,RAP (Retinal Angiomatous Proliferation),Geographic Atrophy,Fibrotic scar"|split:"," %}
+              <option value="{{ v }}" {% if d.cnvm_os == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Retinal Vascular Disease -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-droplet me-1"></i>6. Retinal Vascular Disease (RVO / CRAO / BRAO)
+      </div>
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label small">Vascular Event OD</label>
+          <select name="dept_vasc_event_od" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            {% for v in "CRVO (Central RVO),BRVO (Branch RVO),CRAO (Central RAO),BRAO (Branch RAO),Hemi-CRVO,OIS (Ocular Ischaemic Syndrome)"|split:"," %}
+              <option value="{{ v }}" {% if d.vasc_event_od == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">Vascular Event OS</label>
+          <select name="dept_vasc_event_os" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            {% for v in "CRVO (Central RVO),BRVO (Branch RVO),CRAO (Central RAO),BRAO (Branch RAO),Hemi-CRVO,OIS (Ocular Ischaemic Syndrome)"|split:"," %}
+              <option value="{{ v }}" {% if d.vasc_event_os == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">Ischaemic / Non-ischaemic</label>
+          <select name="dept_vasc_ischaemic" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Non-ischaemic,Ischaemic,Not yet classified"|split:"," %}
+              <option value="{{ v }}" {% if d.vasc_ischaemic == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Retinal Detachment -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-layers me-1"></i>7. Retinal Detachment
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">RD Type OD</label>
+          <select name="dept_rd_type_od" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            {% for v in "Rhegmatogenous (RRD),Tractional (TRD),Exudative / Serous,Combined TRD+RRD"|split:"," %}
+              <option value="{{ v }}" {% if d.rd_type_od == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">RD Type OS</label>
+          <select name="dept_rd_type_os" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            {% for v in "Rhegmatogenous (RRD),Tractional (TRD),Exudative / Serous,Combined TRD+RRD"|split:"," %}
+              <option value="{{ v }}" {% if d.rd_type_os == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Macula Status OD</label>
+          <select name="dept_rd_mac_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Macula ON,Macula OFF,Fovea threatened"|split:"," %}
+              <option value="{{ v }}" {% if d.rd_mac_od == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Macula Status OS</label>
+          <select name="dept_rd_mac_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Macula ON,Macula OFF,Fovea threatened"|split:"," %}
+              <option value="{{ v }}" {% if d.rd_mac_os == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">Break / Tear Description</label>
+          <input type="text" name="dept_rd_break" class="form-control form-control-sm"
+                 value="{{ d.rd_break|default:'' }}" placeholder="e.g. Superotemporal horseshoe tear OD, 1 o'clock">
+        </div>
+        <div class="col-md-4"><label class="form-label small">PVR Grade</label>
+          <select name="dept_pvr" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None (Grade A),Grade B,Grade C (C1/C2/C3),Grade D (D1/D2/D3 — massive)"|split:"," %}
+              <option value="{{ v }}" {% if d.pvr == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">RD Surgery Planned</label>
+          <select name="dept_rd_surgery" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Scleral buckle,Pars plana vitrectomy (PPV),PPV + encirclement,Pneumatic retinopexy,Cryotherapy/Laser (prophylactic)"|split:"," %}
+              <option value="{{ v }}" {% if d.rd_surgery == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. OCT Results -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-search me-1"></i>8. OCT Results
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">CMT OD (µm)</label><input type="number" name="dept_cmt_od" class="form-control form-control-sm" placeholder="250" value="{{ d.cmt_od|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">CMT OS (µm)</label><input type="number" name="dept_cmt_os" class="form-control form-control-sm" placeholder="250" value="{{ d.cmt_os|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">OCT Pattern OD</label>
+          <select name="dept_oct_pattern_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for p in "Normal,CME,ERM,VMT,Macular Hole,Geographic Atrophy,Subretinal Fluid,CNVM,Schisis,Atrophic change,Epiretinal membrane + CME"|split:"," %}
+              <option value="{{ p }}" {% if d.oct_pattern_od == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">OCT Pattern OS</label>
+          <select name="dept_oct_pattern_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for p in "Normal,CME,ERM,VMT,Macular Hole,Geographic Atrophy,Subretinal Fluid,CNVM,Schisis,Atrophic change,Epiretinal membrane + CME"|split:"," %}
+              <option value="{{ p }}" {% if d.oct_pattern_os == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">SRF OD</label>
+          <select name="dept_srf_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Present,Absent,Resolving"|split:"," %}<option value="{{ v }}" {% if d.srf_od == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">SRF OS</label>
+          <select name="dept_srf_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Present,Absent,Resolving"|split:"," %}<option value="{{ v }}" {% if d.srf_os == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label small">OCT Additional Notes</label>
+          <textarea name="dept_oct_findings" class="form-control form-control-sm" rows="2"
+                    placeholder="e.g. ERM OD mild, foveal contour preserved, IS/OS disruption OS...">{{ d.oct_findings|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9. FFA / ICGA -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-camera me-1"></i>9. FFA / ICGA Results
+      </div>
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label small">FFA Pattern OD</label>
+          <select name="dept_ffa_pattern_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for p in "Normal,Classic CNVM,Occult CNVM,RAP lesion,NVD,NVE,Microaneurysms & leakage,IRMA,Non-perfusion area,BRVO changes,CRVO changes,Disc leakage,Staining"|split:"," %}
+              <option value="{{ p }}" {% if d.ffa_pattern_od == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">FFA Pattern OS</label>
+          <select name="dept_ffa_pattern_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for p in "Normal,Classic CNVM,Occult CNVM,RAP lesion,NVD,NVE,Microaneurysms & leakage,IRMA,Non-perfusion area,BRVO changes,CRVO changes,Disc leakage,Staining"|split:"," %}
+              <option value="{{ p }}" {% if d.ffa_pattern_os == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">FFA Notes</label>
+          <textarea name="dept_ffa_findings" class="form-control form-control-sm" rows="2">{{ d.ffa_findings|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10. Treatment -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#198754;">
+        <i class="bi bi-capsule me-1"></i>10. Treatment Plan
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Anti-VEGF Agent</label>
+          <select name="dept_ivt_agent" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for a in "Bevacizumab (Avastin),Ranibizumab (Lucentis),Aflibercept (Eylea),Brolucizumab (Beovu),Dexamethasone implant (Ozurdex),Triamcinolone,None given this visit"|split:"," %}
+              <option value="{{ a }}" {% if d.ivt_agent == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2"><label class="form-label small">Eye Injected</label>
+          <select name="dept_ivt_eye" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="OD" {% if d.ivt_eye == 'OD' %}selected{% endif %}>OD</option>
+            <option value="OS" {% if d.ivt_eye == 'OS' %}selected{% endif %}>OS</option>
+            <option value="OU" {% if d.ivt_eye == 'OU' %}selected{% endif %}>OU</option>
+          </select>
+        </div>
+        <div class="col-md-2"><label class="form-label small">Injection # (this eye)</label>
+          <input type="number" name="dept_ivt_number" class="form-control form-control-sm" min="1" placeholder="3" value="{{ d.ivt_number|default:'' }}">
+        </div>
+        <div class="col-md-2"><label class="form-label small">Treatment Phase</label>
+          <select name="dept_ivt_phase" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for ph in "Loading (3×),PRN,Treat & Extend,Fixed interval,Maintenance"|split:"," %}
+              <option value="{{ ph }}" {% if d.ivt_phase == ph %}selected{% endif %}>{{ ph }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Laser Treatment</label>
+          <select name="dept_laser_tx" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            {% for l in "Panretinal photocoagulation (PRP) — full,PRP — partial/sectoral,Focal macular laser,Grid laser (DME),Cryotherapy (lattice / RD),Laser retinopexy"|split:"," %}
+              <option value="{{ l }}" {% if d.laser_tx == l %}selected{% endif %}>{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-12"><label class="form-label small">Management Plan &amp; Treatment Notes</label>
+          <textarea name="dept_treatment_given" class="form-control form-control-sm" rows="3"
+                    placeholder="e.g. IVT Bevacizumab 1.25mg OD given today. No immediate complications. Continue loading phase (1 of 3). Review CMT at next visit. Refer for MFC...">{{ d.treatment_given|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /p-3 -->
+</div><!-- /retina zone -->
+
+{% endwith %}

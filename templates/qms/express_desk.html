@@ -1,0 +1,240 @@
+{% extends "layouts/base_gatekeeper.html" %}
+{% block title %}Express / Fast Track Desk{% endblock %}
+{% block tab_express %}active{% endblock %}
+
+{% block gk_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold">
+      <i class="bi bi-lightning-fill me-2 text-warning"></i>Express / Fast Track Desk
+      <span class="badge bg-warning text-dark ms-2">Side Entrance</span>
+    </h4>
+    <small class="text-muted">Express and Fast Track patients. Ticket optional. Insured patients → Insurance Consultation Room.</small>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Left panel: tier + insurance -->
+  <div class="col-lg-5">
+
+    <!-- Tier selection -->
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-header bg-dark text-white">
+        <h6 class="mb-0"><i class="bi bi-layers me-2"></i>Service Tier</h6>
+      </div>
+      <div class="card-body p-3">
+        <div class="row g-2">
+          <div class="col-6">
+            <button type="button" class="btn btn-outline-info w-100 tier-btn active py-3" data-tier="EXPRESS">
+              <i class="bi bi-lightning-fill d-block fs-3 mb-1"></i>
+              <strong>Express</strong>
+              <div class="small text-muted">E-001 · Priority 10</div>
+            </button>
+          </div>
+          <div class="col-6">
+            <button type="button" class="btn btn-outline-warning w-100 tier-btn py-3" data-tier="FAST_TRACK">
+              <i class="bi bi-rocket-fill d-block fs-3 mb-1"></i>
+              <strong>Fast Track</strong>
+              <div class="small text-muted">FT-001 · Priority 20</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Insurance section -->
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-success text-white">
+        <h6 class="mb-0"><i class="bi bi-shield-check me-2"></i>Insurance / HMO</h6>
+      </div>
+      <div class="card-body p-3">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="isInsuredToggle">
+          <label class="form-check-label fw-semibold" for="isInsuredToggle">
+            Patient is insured
+          </label>
+        </div>
+        <div id="insuranceFields" class="d-none">
+          <div class="alert alert-success py-2 small mb-3">
+            <i class="bi bi-arrow-right-circle-fill me-1"></i>
+            Insured patients are routed directly to the <strong>Insurance Consultation Room</strong>.
+            Billing handled by insurer — no cashier stop required.
+          </div>
+          <label class="form-label small fw-semibold">Insurance Company</label>
+          <input type="text" id="insuranceCompanyInput" class="form-control form-control-sm"
+                 placeholder="e.g. CNPS, Activa, Sanlam, Prudential..." list="insuranceList">
+          <datalist id="insuranceList">
+            <option value="CNPS">
+            <option value="Activa Assurances">
+            <option value="Sanlam">
+            <option value="Prudential Life">
+            <option value="Allianz Cameroon">
+            <option value="AXA Assurances">
+            <option value="Société Générale Insurance">
+            <option value="GIC Group">
+          </datalist>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right panel: patient + form -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-warning text-dark">
+        <h6 class="mb-0"><i class="bi bi-person-search me-2"></i>Patient Details</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% url 'qms:express_desk' %}" id="expressForm">
+          {% csrf_token %}
+          <input type="hidden" name="service_tier" id="selectedTier" value="EXPRESS">
+          <input type="hidden" name="patient_id" id="selectedPatientId">
+          <input type="hidden" name="visit_id" id="selectedVisitId">
+          <input type="hidden" name="is_insured" id="isInsuredHidden" value="0">
+          <input type="hidden" name="insurance_company" id="insuranceCompanyHidden" value="">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient Search</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="text" class="form-control" id="patientSearch"
+                     placeholder="Search by name, ID or phone..." autocomplete="off">
+            </div>
+            <div id="patientResults" class="list-group mt-1 shadow-sm"
+                 style="display:none; max-height:220px; overflow-y:auto; position:absolute; z-index:1050; width:calc(100% - 2rem);"></div>
+          </div>
+
+          <div id="selectedPatientCard" class="alert alert-warning d-none mb-3 p-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-person-check-fill fs-4"></i>
+              <div>
+                <div class="fw-bold" id="selectedPatientName"></div>
+                <small id="selectedPatientMeta" class="text-muted"></small>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="clearPatient">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-3" id="walkinSection">
+            <label class="form-label text-muted">Walk-in name (if not yet registered)</label>
+            <input type="text" name="patient_name" class="form-control" placeholder="Patient full name">
+          </div>
+
+          <!-- Summary: tier + destination -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Routing Summary</label>
+            <div class="p-2 rounded border bg-light d-flex align-items-center gap-3">
+              <span class="badge bg-info px-3 py-2" id="tierBadge">Express</span>
+              <span class="text-muted small">→ Destination: <strong id="destinationLabel">Cashier</strong></span>
+            </div>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-warning btn-lg text-dark" id="issueBtn">
+              <i class="bi bi-lightning-fill me-2"></i>Issue Express Ticket
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const tierMeta = {
+  'EXPRESS':    {label: 'Express',    color: 'info'},
+  'FAST_TRACK': {label: 'Fast Track', color: 'warning'},
+};
+
+// Tier selection
+document.querySelectorAll('.tier-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tier = btn.dataset.tier;
+    document.getElementById('selectedTier').value = tier;
+    const meta = tierMeta[tier];
+    const badge = document.getElementById('tierBadge');
+    badge.textContent = meta.label;
+    badge.className = `badge bg-${meta.color} px-3 py-2`;
+    document.getElementById('issueBtn').innerHTML = `<i class="bi bi-lightning-fill me-2"></i>Issue ${meta.label} Ticket`;
+  });
+});
+
+// Insurance toggle
+const insuranceToggle = document.getElementById('isInsuredToggle');
+const insuranceFields = document.getElementById('insuranceFields');
+const destinationLabel = document.getElementById('destinationLabel');
+
+insuranceToggle.addEventListener('change', () => {
+  const checked = insuranceToggle.checked;
+  insuranceFields.classList.toggle('d-none', !checked);
+  document.getElementById('isInsuredHidden').value = checked ? '1' : '0';
+  destinationLabel.textContent = checked ? 'Insurance Consultation Room' : 'Cashier';
+  destinationLabel.className = checked ? 'text-success fw-bold' : '';
+});
+
+document.getElementById('insuranceCompanyInput').addEventListener('input', function() {
+  document.getElementById('insuranceCompanyHidden').value = this.value;
+});
+
+// Patient search
+let searchTimeout;
+const searchInput = document.getElementById('patientSearch');
+const resultsDiv  = document.getElementById('patientResults');
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  const q = searchInput.value.trim();
+  if (q.length < 2) { resultsDiv.style.display = 'none'; return; }
+  searchTimeout = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        resultsDiv.innerHTML = '';
+        const list = data.results || data.patients || [];
+        if (!list.length) {
+          resultsDiv.innerHTML = '<div class="list-group-item text-muted small">No patients found</div>';
+        } else {
+          list.forEach(p => {
+            const item = document.createElement('a');
+            item.href = '#';
+            item.className = 'list-group-item list-group-item-action py-2';
+            item.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted small ms-2">${p.patient_id}</span>`;
+            item.addEventListener('click', e => { e.preventDefault(); selectPatient(p); });
+            resultsDiv.appendChild(item);
+          });
+        }
+        resultsDiv.style.display = 'block';
+      });
+  }, 300);
+});
+
+function selectPatient(p) {
+  document.getElementById('selectedPatientId').value = p.id || '';
+  document.getElementById('selectedPatientName').textContent = p.full_name;
+  document.getElementById('selectedPatientMeta').textContent = `${p.patient_id}`;
+  document.getElementById('selectedPatientCard').classList.remove('d-none');
+  document.getElementById('walkinSection').style.display = 'none';
+  resultsDiv.style.display = 'none';
+  searchInput.value = p.full_name;
+}
+
+document.getElementById('clearPatient').addEventListener('click', () => {
+  document.getElementById('selectedPatientId').value = '';
+  document.getElementById('selectedPatientCard').classList.add('d-none');
+  document.getElementById('walkinSection').style.display = '';
+  searchInput.value = '';
+});
+
+document.addEventListener('click', e => {
+  if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+    resultsDiv.style.display = 'none';
+  }
+});
+</script>
+{% endblock %}

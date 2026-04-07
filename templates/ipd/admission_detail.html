@@ -1,0 +1,151 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Admission {{ admission.admission_number }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">{{ admission.admission_number }} — {{ admission.patient.full_name }}</h1>
+  <div>
+    {% if admission.status == 'ADMITTED' %}
+    <a href="{% url 'ipd:add_nursing_note' admission.id %}" class="btn btn-outline-primary me-2">Add Note</a>
+    <a href="{% url 'ipd:discharge' admission.id %}" class="btn btn-warning">Discharge</a>
+    {% endif %}
+  </div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-4"><div class="card border-0 shadow-sm"><div class="card-body"><dl class="mb-0"><dt>Patient</dt><dd>{{ admission.patient.full_name }}</dd><dt>Ward / Bed</dt><dd>{{ admission.bed.ward.name }} - Bed {{ admission.bed.bed_number }}</dd><dt>Admitting Doctor</dt><dd>{{ admission.admitting_doctor.get_full_name }}</dd><dt>Admission Date</dt><dd>{{ admission.admission_date|date:"d M Y H:i" }}</dd><dt>Length of Stay</dt><dd>{{ admission.los_days }} day{{ admission.los_days|pluralize }}</dd><dt>Status</dt><dd><span class="badge {% if admission.status == 'ADMITTED' %}bg-primary{% else %}bg-success{% endif %}">{{ admission.get_status_display }}</span></dd><dt>Diagnosis on Admission</dt><dd>{{ admission.diagnosis_on_admission }}</dd></dl></div></div></div>
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Nursing Notes</h6></div>
+      <div class="card-body p-0">
+        <div class="table-responsive"><table class="table table-hover mb-0 small"><thead class="table-light"><tr><th>Time</th><th>Type</th><th>Note</th><th>Nurse</th></tr></thead><tbody>{% for note in nursing_notes %}<tr><td>{{ note.note_time|date:"d M H:i" }}</td><td>{{ note.get_note_type_display }}</td><td>{{ note.content|truncatechars:80 }}</td><td>{{ note.nurse.get_full_name }}</td></tr>{% empty %}<tr><td colspan="4" class="text-center text-muted py-3">No nursing notes yet</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-capsule me-2 text-danger"></i>Medication Administration Record (MAR)</h6>
+        <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#marAddForm">
+          <i class="bi bi-plus me-1"></i>Add Medication
+        </button>
+      </div>
+
+      {# Add medication form #}
+      <div class="collapse" id="marAddForm">
+        <div class="card-body border-bottom bg-light py-3">
+          <form method="post" action="{% url 'ipd:mar_add' admission_id=admission.id %}">
+            {% csrf_token %}
+            <div class="row g-2">
+              <div class="col-md-3">
+                <label class="form-label small fw-semibold">Drug Name</label>
+                <input type="text" name="drug_name" class="form-control form-control-sm" placeholder="e.g. Levofloxacin 0.5%" required>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-semibold">Dose</label>
+                <input type="text" name="dose" class="form-control form-control-sm" placeholder="e.g. 1 drop" required>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-semibold">Route</label>
+                <select name="route" class="form-select form-select-sm">
+                  <option value="OD">Ocular — OD (Right)</option>
+                  <option value="OS">Ocular — OS (Left)</option>
+                  <option value="OU">Ocular — OU (Both)</option>
+                  <option value="Oral">Oral (PO)</option>
+                  <option value="IV">Intravenous (IV)</option>
+                  <option value="IM">Intramuscular (IM)</option>
+                  <option value="SC">Subcutaneous (SC)</option>
+                  <option value="Topical">Topical</option>
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-semibold">Frequency</label>
+                <select name="frequency" class="form-select form-select-sm">
+                  <option value="OD">Once daily (OD)</option>
+                  <option value="BD">Twice daily (BD)</option>
+                  <option value="TDS">Three times daily (TDS)</option>
+                  <option value="QID">Four times daily (QID)</option>
+                  <option value="Hourly">Hourly</option>
+                  <option value="PRN">As needed (PRN)</option>
+                  <option value="STAT">Single dose (STAT)</option>
+                  <option value="Nocte">At night (Nocte)</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-semibold">First Scheduled Time</label>
+                <input type="datetime-local" name="scheduled_time" class="form-control form-control-sm" required>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-semibold">Notes / Instructions</label>
+                <input type="text" name="notes" class="form-control form-control-sm" placeholder="e.g. Shake well before use, avoid contact lens">
+              </div>
+              <div class="col-12 text-end">
+                <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-plus me-1"></i>Add to MAR</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {# MAR table #}
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 small align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Drug</th>
+                <th>Dose / Route</th>
+                <th>Frequency</th>
+                <th>Scheduled</th>
+                <th>Status</th>
+                <th>Given By</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in mar_entries %}
+              <tr class="{% if m.status == 'MISSED' %}table-danger{% elif m.status == 'GIVEN' %}table-success{% elif m.status == 'HELD' %}table-warning{% endif %}">
+                <td class="fw-semibold">{{ m.drug_name }}</td>
+                <td>{{ m.dose }} — {{ m.route }}</td>
+                <td>{{ m.frequency }}</td>
+                <td>{{ m.scheduled_time|date:"d M Y H:i" }}</td>
+                <td>
+                  <span class="badge bg-{% if m.status == 'GIVEN' %}success{% elif m.status == 'MISSED' %}danger{% elif m.status == 'REFUSED' %}warning text-dark{% elif m.status == 'HELD' %}secondary{% else %}primary{% endif %}">
+                    {{ m.get_status_display }}
+                  </span>
+                  {% if m.administered_time %}<br><small class="text-muted">{{ m.administered_time|date:"H:i" }}</small>{% endif %}
+                </td>
+                <td>{% if m.administered_by %}{{ m.administered_by.get_full_name|default:m.administered_by.username }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td>
+                  {% if m.status == 'SCHEDULED' %}
+                  <div class="btn-group btn-group-sm">
+                    <form method="post" action="{% url 'ipd:mar_administer' mar_id=m.id %}" class="d-inline">
+                      {% csrf_token %}<input type="hidden" name="status" value="GIVEN">
+                      <button class="btn btn-success btn-sm py-0" title="Mark Given"><i class="bi bi-check2"></i> Given</button>
+                    </form>
+                    <button class="btn btn-outline-secondary btn-sm py-0" data-bs-toggle="collapse" data-bs-target="#marNote{{ m.id }}" title="Record outcome">Other</button>
+                  </div>
+                  <div class="collapse mt-1" id="marNote{{ m.id }}">
+                    <form method="post" action="{% url 'ipd:mar_administer' mar_id=m.id %}">
+                      {% csrf_token %}
+                      <select name="status" class="form-select form-select-sm mb-1">
+                        <option value="MISSED">Missed</option>
+                        <option value="REFUSED">Refused by patient</option>
+                        <option value="HELD">Held — doctor order</option>
+                      </select>
+                      <input type="text" name="notes" class="form-control form-control-sm mb-1" placeholder="Reason">
+                      <button class="btn btn-sm btn-secondary w-100">Save</button>
+                    </form>
+                  </div>
+                  {% else %}
+                  <span class="text-muted small">Done</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="7" class="text-center text-muted py-3">No medications scheduled yet. Click "Add Medication" above.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

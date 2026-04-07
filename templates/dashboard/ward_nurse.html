@@ -1,0 +1,127 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Ward — IPD Nursing{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-hospital me-2 text-primary"></i>Ward — Inpatient Nursing</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — IPD Nursing Station</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'ipd:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-building me-1"></i>Full IPD
+    </a>
+    <a href="{% url 'ipd:ward_list' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-grid me-1"></i>Ward Map
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Stats #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ admissions_count }}</div>
+      <div class="text-muted small">Admitted Patients</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      {% with mar_due=admissions|length %}
+      <div class="fs-2 fw-bold text-warning">—</div>
+      {% endwith %}
+      <div class="text-muted small">MAR Due</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <a href="{% url 'ipd:dashboard' %}" class="text-decoration-none">
+        <div class="fs-3 text-success"><i class="bi bi-pencil-square"></i></div>
+        <div class="text-muted small">Nursing Notes</div>
+      </a>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <a href="{% url 'ipd:dashboard' %}" class="text-decoration-none">
+        <div class="fs-3 text-info"><i class="bi bi-building"></i></div>
+        <div class="text-muted small">Full IPD View</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+{# Admitted Patients Table #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="fw-semibold mb-0">
+      <i class="bi bi-person-lines-fill me-1 text-primary"></i>Admitted Patients
+    </h6>
+    <span class="badge bg-primary">{{ admissions_count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Ward / Bed</th>
+          <th>Diagnosis</th>
+          <th>Admitted</th>
+          <th>LOS</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for adm in admissions %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ adm.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ adm.patient.patient_id }} &bull; {{ adm.patient.age_display }}</div>
+          </td>
+          <td class="text-nowrap">
+            {{ adm.bed.ward.name }}<br>
+            <span class="text-muted">Bed {{ adm.bed.bed_number }}</span>
+          </td>
+          <td>{{ adm.diagnosis_on_admission|truncatechars:55 }}</td>
+          <td class="text-nowrap text-muted">{{ adm.admission_date|date:"d M Y" }}</td>
+          <td>
+            <span class="badge {% if adm.los_days > 7 %}bg-warning text-dark{% else %}bg-info{% endif %}">
+              {{ adm.los_days }}d
+            </span>
+          </td>
+          <td>
+            {% if adm.status == 'POST_OP' %}
+            <span class="badge bg-success">Post-Op</span>
+            {% elif adm.status == 'ADMITTED' %}
+            <span class="badge bg-primary">Admitted</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ adm.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td class="text-nowrap">
+            <a href="{% url 'ipd:admission_detail' adm.id %}" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-clipboard2-pulse me-1"></i>View
+            </a>
+            <a href="{% url 'ipd:add_nursing_note' adm.id %}" class="btn btn-sm btn-outline-success ms-1">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-check-circle fs-2 d-block mb-2 text-success opacity-50"></i>
+            No admitted patients at this time
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

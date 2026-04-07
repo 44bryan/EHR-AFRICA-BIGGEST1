@@ -1,0 +1,81 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}My Leave Requests{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-calendar-x me-2 text-warning"></i>My Leave Requests</h4>
+  <div class="d-flex gap-2">
+    <a href="{% url 'hrms:clock_in_out' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-clock me-1"></i>Clock In/Out
+    </a>
+    <a href="{% url 'hrms:apply_leave' %}" class="btn btn-sm btn-warning">
+      <i class="bi bi-plus-lg me-1"></i>Apply for Leave
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if messages %}
+{% for msg in messages %}
+<div class="alert alert-{{ msg.tags }} alert-dismissible mb-3" role="alert">
+  {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2">
+    <h6 class="fw-semibold mb-0">Leave History — {{ request.user.full_name }}</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Leave Type</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Days</th>
+          <th>Applied On</th>
+          <th>Status</th>
+          <th>Approved By</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leave in leaves %}
+        <tr>
+          <td class="fw-semibold">{{ leave.leave_type.name }}</td>
+          <td>{{ leave.start_date|date:"d M Y" }}</td>
+          <td>{{ leave.end_date|date:"d M Y" }}</td>
+          <td><span class="badge bg-light text-dark border">{{ leave.days_requested }}d</span></td>
+          <td class="text-muted">{{ leave.applied_on|date:"d M Y" }}</td>
+          <td>
+            {% if leave.status == 'PENDING' %}
+            <span class="badge bg-warning text-dark">Pending</span>
+            {% elif leave.status == 'APPROVED' %}
+            <span class="badge bg-success">Approved</span>
+            {% elif leave.status == 'REJECTED' %}
+            <span class="badge bg-danger">Rejected</span>
+            {% elif leave.status == 'CANCELLED' %}
+            <span class="badge bg-secondary">Cancelled</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ leave.approved_by.full_name|default:"—" }}</td>
+          <td class="text-muted">{{ leave.approval_notes|default:"—"|truncatechars:40 }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-5">
+            <i class="bi bi-calendar-x fs-2 d-block mb-2 opacity-50"></i>
+            No leave requests submitted yet.
+            <a href="{% url 'hrms:apply_leave' %}" class="d-block mt-2 btn btn-sm btn-outline-warning">Apply for Leave</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

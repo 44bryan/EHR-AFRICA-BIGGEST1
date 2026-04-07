@@ -1,0 +1,126 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Cashier Workstation{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">Cashier Workstation</h4>
+    <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list-ul me-1"></i>All Invoices
+    </a>
+  </div>
+</div>
+
+{# ── No counter assigned warning ── #}
+<div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <div>
+    <strong>No counter assigned.</strong>
+    Ask the administrator to assign you to a cashier counter so you can use the full POS system.
+  </div>
+</div>
+
+{# ── Today's revenue ── #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-success mb-0">{{ revenue_today|floatformat:0|intcomma }} FCFA</div>
+      <div class="text-muted small mt-1">Collected Today</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-warning mb-0">{{ cashier_queue|length }}</div>
+      <div class="text-muted small mt-1">Waiting at Cashier</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-danger mb-0">{{ unpaid_count }}</div>
+      <div class="text-muted small mt-1">Unpaid Invoices</div>
+    </div>
+  </div>
+</div>
+
+{# ── Cashier queue ── #}
+{% if cashier_queue %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-people-fill me-2 text-primary"></i>Waiting at Cashier</h6>
+    <span class="badge bg-primary">{{ cashier_queue|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Token</th><th>Patient</th><th>Tier</th><th>Waiting Since</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tok in cashier_queue %}
+        <tr>
+          <td><span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span></td>
+          <td class="fw-semibold">{{ tok.display_name }}</td>
+          <td>
+            {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed">VIP</span>
+            {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
+            {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
+            {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
+          <td>
+            {% if tok.patient %}
+            <a href="{% url 'billing:cashier_pos' tok.id %}" class="btn btn-sm btn-success">
+              <i class="bi bi-receipt me-1"></i>Open POS
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Unpaid invoices ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-warning"></i>Unpaid Invoices</h6>
+    <span class="badge bg-warning text-dark">{{ unpaid_count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Invoice No.</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for inv in unpaid_invoices %}
+        <tr>
+          <td><code>{{ inv.invoice_number }}</code></td>
+          <td class="fw-semibold">{{ inv.patient.full_name }}</td>
+          <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
+          <td class="text-danger fw-semibold">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
+          <td>
+            <span class="badge bg-{% if inv.status == 'PARTIAL' %}warning text-dark{% else %}secondary{% endif %}">
+              {{ inv.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-warning">
+              Collect
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4">No unpaid invoices.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

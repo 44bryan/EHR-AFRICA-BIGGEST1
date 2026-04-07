@@ -1,0 +1,320 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Monthly Statistics — {{ period_start|date:"F Y" }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-file-bar-graph-fill text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Monthly Statistics Report</h5>
+      <div class="text-muted small">{{ period_start|date:"F Y" }} — For Medical Director &amp; CEO</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <!-- Month/Year selector -->
+    <form method="get" class="d-flex gap-1 align-items-center">
+      <select name="month" class="form-select form-select-sm" style="width:130px;">
+        {% for m in months %}
+        <option value="{{ m.value }}" {% if m.value == month %}selected{% endif %}>{{ m.label }}</option>
+        {% endfor %}
+      </select>
+      <select name="year" class="form-select form-select-sm" style="width:90px;">
+        {% for y in years %}
+        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary">Go</button>
+    </form>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="text-center mb-4 d-none d-print-block">
+  <h4 class="fw-bold">Monthly Clinical &amp; Operational Statistics</h4>
+  <div class="text-muted">{{ period_start|date:"d F" }} – {{ period_end|date:"d F Y" }}</div>
+</div>
+
+<!-- ── Section 1: Patient Volume ─────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-primary text-white fw-semibold py-2">
+    <i class="bi bi-people-fill me-2"></i>1. Patient Volume
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold text-primary">{{ total_visits }}</div>
+        <div class="small text-muted">Total Visits</div>
+      </div>
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold text-success">{{ new_patients }}</div>
+        <div class="small text-muted">New Patients</div>
+      </div>
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold text-info">{{ returning }}</div>
+        <div class="small text-muted">Returning / Follow-Up</div>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-2">
+      <div class="col-md-6">
+        <div class="fw-semibold small mb-2">By Service Tier</div>
+        <table class="table table-sm small mb-0">
+          <thead class="table-light"><tr><th>Tier</th><th class="text-end">Count</th></tr></thead>
+          <tbody>
+            {% for t in tier_breakdown %}
+            <tr>
+              <td>{{ t.service_tier }}</td>
+              <td class="text-end fw-bold">{{ t.count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <div class="fw-semibold small mb-2">By Billing Type</div>
+        <table class="table table-sm small mb-0">
+          <thead class="table-light"><tr><th>Type</th><th class="text-end">Count</th></tr></thead>
+          <tbody>
+            {% for b in billing_breakdown %}
+            <tr>
+              <td>{{ b.billing_type }}</td>
+              <td class="text-end fw-bold">{{ b.count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Section 2: Consultations ──────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-success text-white fw-semibold py-2">
+    <i class="bi bi-clipboard2-pulse me-2"></i>2. Consultations
+  </div>
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-12 text-center">
+        <div class="h3 fw-bold text-success">{{ total_consults }}</div>
+        <div class="small text-muted">Total Consultations</div>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="fw-semibold small mb-2">By Department / Clinic</div>
+        <table class="table table-sm small mb-0">
+          <thead class="table-light"><tr><th>Department</th><th class="text-end">Count</th></tr></thead>
+          <tbody>
+            {% for d in dept_consults %}
+            <tr>
+              <td>{{ d.department__name|default:"General OPD" }}</td>
+              <td class="text-end fw-bold">{{ d.count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <div class="fw-semibold small mb-2">Doctor Throughput (Top 10)</div>
+        <table class="table table-sm small mb-0">
+          <thead class="table-light"><tr><th>Doctor</th><th class="text-end">Consults</th></tr></thead>
+          <tbody>
+            {% for d in doctor_consults %}
+            <tr>
+              <td>Dr. {{ d.consulting_doctor__first_name }} {{ d.consulting_doctor__last_name }}</td>
+              <td class="text-end fw-bold">{{ d.count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Section 3: Surgeries ──────────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-danger text-white fw-semibold py-2">
+    <i class="bi bi-scissors me-2"></i>3. Surgical Activity
+  </div>
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold">{{ total_surgery_prescribed }}</div>
+        <div class="small text-muted">Prescribed (Referred)</div>
+      </div>
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold text-success">{{ total_surgery_paid }}</div>
+        <div class="small text-muted">Paid &amp; Confirmed</div>
+      </div>
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold text-primary">{{ total_surgery_done }}</div>
+        <div class="small text-muted">Completed Surgeries</div>
+      </div>
+    </div>
+    {% if surgery_by_category %}
+    <div class="fw-semibold small mb-2">By Surgery Category</div>
+    <div class="row g-2">
+      {% for s in surgery_by_category %}
+      <div class="col-6 col-md-4">
+        <div class="d-flex justify-content-between bg-light rounded p-2 small">
+          <span>{{ s.surgery_category }}</span>
+          <span class="fw-bold badge bg-danger">{{ s.count }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Section 4: IPD / Admissions ──────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-info text-white fw-semibold py-2">
+    <i class="bi bi-hospital me-2"></i>4. Inpatient Admissions
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-6 text-center">
+        <div class="h3 fw-bold text-info">{{ total_admissions }}</div>
+        <div class="small text-muted">Total Admissions</div>
+      </div>
+      <div class="col-6 text-center">
+        <div class="h3 fw-bold text-success">{{ discharged }}</div>
+        <div class="small text-muted">Discharged</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Section 5: Laboratory ─────────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-warning text-dark fw-semibold py-2">
+    <i class="bi bi-eyedropper me-2"></i>5. Laboratory
+  </div>
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold text-warning">{{ total_lab_orders }}</div>
+        <div class="small text-muted">Lab Requests</div>
+      </div>
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold">{{ total_lab_tests }}</div>
+        <div class="small text-muted">Tests Performed</div>
+      </div>
+      <div class="col-4 text-center">
+        <div class="h3 fw-bold text-danger">{{ abnormal_results }}</div>
+        <div class="small text-muted">Abnormal Results</div>
+      </div>
+    </div>
+    {% if lab_by_category %}
+    <div class="fw-semibold small mb-2">Tests by Category</div>
+    <div class="row g-2">
+      {% for c in lab_by_category %}
+      <div class="col-6 col-md-3">
+        <div class="d-flex justify-content-between bg-light rounded p-2 small">
+          <span>{{ c.test_type__category }}</span>
+          <span class="fw-bold badge bg-warning text-dark">{{ c.count }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Section 6: Financial ──────────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-dark text-white fw-semibold py-2">
+    <i class="bi bi-cash-stack me-2"></i>6. Financial Summary
+  </div>
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-6 text-center">
+        <div class="h3 fw-bold text-success">FCFA {{ revenue|floatformat:0 }}</div>
+        <div class="small text-muted">Revenue Collected</div>
+      </div>
+      <div class="col-6 text-center">
+        <div class="h3 fw-bold text-danger">FCFA {{ outstanding|floatformat:0 }}</div>
+        <div class="small text-muted">Outstanding</div>
+      </div>
+    </div>
+    {% if by_method %}
+    <div class="fw-semibold small mb-2">Revenue by Payment Method</div>
+    <table class="table table-sm small mb-0">
+      <thead class="table-light"><tr><th>Method</th><th class="text-end">Amount (FCFA)</th></tr></thead>
+      <tbody>
+        {% for m in by_method %}
+        <tr>
+          <td>{{ m.payment_method }}</td>
+          <td class="text-end fw-bold">{{ m.total|floatformat:0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Section 7: Patient Satisfaction ──────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header fw-semibold py-2" style="background:#6366f1;color:#fff;">
+    <i class="bi bi-emoji-smile me-2"></i>7. Patient Satisfaction (NPS)
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-3 text-center">
+        <div class="h3 fw-bold {% if nps >= 50 %}text-success{% elif nps >= 0 %}text-warning{% else %}text-danger{% endif %}">
+          {{ nps }}
+        </div>
+        <div class="small text-muted">NPS Score</div>
+      </div>
+      <div class="col-3 text-center">
+        <div class="h3 fw-bold text-success">{{ fb_promo }}</div>
+        <div class="small text-muted">Promoters</div>
+      </div>
+      <div class="col-3 text-center">
+        <div class="h3 fw-bold text-danger">{{ fb_detra }}</div>
+        <div class="small text-muted">Detractors</div>
+      </div>
+      <div class="col-3 text-center">
+        <div class="h3 fw-bold text-primary">{{ avg_rating }}/5</div>
+        <div class="small text-muted">Avg Rating</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Section 8: Appointments ──────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-secondary text-white fw-semibold py-2">
+    <i class="bi bi-calendar-check me-2"></i>8. Appointments
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-6 text-center">
+        <div class="h3 fw-bold">{{ total_appts }}</div>
+        <div class="small text-muted">Total Appointments</div>
+      </div>
+      <div class="col-6 text-center">
+        <div class="h3 fw-bold text-danger">{{ appt_dna }}</div>
+        <div class="small text-muted">Did Not Attend (DNA)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="text-center text-muted small mt-2 d-none d-print-block">
+  Generated by EHR System · {{ today|date:"d F Y" }}
+</div>
+
+{% endblock %}

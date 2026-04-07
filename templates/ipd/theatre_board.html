@@ -1,0 +1,137 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Theatre Board — {{ board_date|date:"d M Y" }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-hospital me-2 text-danger"></i>Operating Theatre Board</h4>
+    <div class="text-muted small">Live surgical schedule — {{ board_date|date:"l, d F Y" }}</div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <a href="?date={{ prev_date|date:'Y-m-d' }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></a>
+    <input type="date" id="boardDatePicker" value="{{ board_date|date:'Y-m-d' }}"
+           class="form-control form-control-sm" style="width:150px;"
+           onchange="window.location='?date='+this.value">
+    <a href="?date={{ next_date|date:'Y-m-d' }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></a>
+    <a href="?date={% now 'Y-m-d' %}" class="btn btn-primary btn-sm">Today</a>
+  </div>
+</div>
+
+<!-- Summary strip -->
+<div class="row g-2 mb-3">
+  <div class="col-auto">
+    <div class="card border-0 bg-primary bg-opacity-10 px-3 py-2 text-center">
+      <div class="fs-4 fw-bold text-primary">{{ total_cases }}</div>
+      <div class="small text-muted">Total Cases</div>
+    </div>
+  </div>
+  {% for theatre, cases in theatre_groups.items %}
+  <div class="col-auto">
+    <div class="card border-0 bg-light px-3 py-2 text-center">
+      <div class="fs-5 fw-bold">{{ cases|length }}</div>
+      <div class="small text-muted">{{ theatre }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if theatre_groups %}
+{% for theatre, cases in theatre_groups.items %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-bold"><i class="bi bi-lightning-charge me-2"></i>{{ theatre }}</h6>
+    <span class="badge bg-light text-dark">{{ cases|length }} case{{ cases|length|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th style="width:80px">Time</th>
+            <th>Patient</th>
+            <th>Procedure</th>
+            <th>Eye</th>
+            <th>Anaesthesia</th>
+            <th>Surgeon</th>
+            <th style="width:160px">Status</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in cases %}
+          <tr id="row-{{ b.id }}">
+            <td class="fw-bold text-primary">
+              {{ b.surgery_date|date:"H:i" }}
+            </td>
+            <td>
+              <div class="fw-semibold">{{ b.patient.full_name }}</div>
+              <div class="small text-muted">{{ b.patient.patient_id }} · Age {{ b.patient.age }}</div>
+            </td>
+            <td>
+              <div class="fw-medium small">{{ b.get_procedure_display }}</div>
+              {% if b.procedure_notes %}<div class="text-muted small">{{ b.procedure_notes }}</div>{% endif %}
+            </td>
+            <td><span class="badge bg-info-subtle text-info border border-info-subtle">{{ b.eye_laterality|default:"—" }}</span></td>
+            <td><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small">{{ b.get_anaesthesia_type_display|default:"—" }}</span></td>
+            <td class="small">
+              {% if b.surgeon %}
+                <i class="bi bi-person-badge me-1 text-muted"></i>{{ b.surgeon.get_full_name|default:b.surgeon.username }}
+              {% else %}<span class="text-muted">TBC</span>{% endif %}
+            </td>
+            <td>
+              <select class="form-select form-select-sm status-select"
+                      data-booking="{{ b.id }}"
+                      style="font-size:0.78rem;">
+                {% for val, label in booking_statuses %}
+                <option value="{{ val }}" {% if b.status == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="small text-muted">{{ b.pre_op_requirements|truncatechars:60|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-calendar-x fs-2 d-block mb-2 opacity-40"></i>
+    <div class="fw-semibold">No surgeries scheduled for {{ board_date|date:"d M Y" }}</div>
+    <div class="small mt-1">Surgical bookings confirmed for this date will appear here.</div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+// Live status update via AJAX
+document.querySelectorAll('.status-select').forEach(function(sel) {
+  sel.addEventListener('change', function() {
+    var bookingId = this.dataset.booking;
+    var newStatus = this.value;
+    var row = document.getElementById('row-' + bookingId);
+    var fd = new FormData();
+    fd.append('booking_id', bookingId);
+    fd.append('status', newStatus);
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch('{% url "ipd:theatre_update_status" %}', {method:'POST', body:fd})
+      .then(r => r.json())
+      .then(function(data) {
+        if (data.success) {
+          // Brief green flash
+          row.style.transition = 'background 0.3s';
+          row.style.background = '#d1fae5';
+          setTimeout(function() { row.style.background = ''; }, 1200);
+        }
+      });
+  });
+});
+
+// Auto-refresh every 60 seconds (theatre board is live)
+setTimeout(function(){ location.reload(); }, 60000);
+</script>
+{% endblock %}

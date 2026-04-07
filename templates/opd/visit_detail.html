@@ -1,0 +1,18 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}OPD Visit {{ visit.visit_number }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">{{ visit.visit_number }} — {{ visit.patient.full_name }}</h1>
+  <div>
+    <a href="{% url 'opd:update_status' visit.id %}" class="btn btn-outline-primary me-2">Update Status</a>
+    <a href="{% url 'opd:visit_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-md-4"><div class="card border-0 shadow-sm"><div class="card-body"><dl class="mb-0"><dt>Patient</dt><dd><a href="{% url 'patients:detail' visit.patient.patient_id %}">{{ visit.patient.full_name }}</a></dd><dt>Date</dt><dd>{{ visit.visit_date|date:"d M Y" }}</dd><dt>Department</dt><dd>{{ visit.department.name|default:"-" }}</dd><dt>Doctor</dt><dd>{{ visit.attending_doctor.get_full_name|default:"Not assigned" }}</dd><dt>Status</dt><dd><span class="badge bg-secondary fs-6">{{ visit.get_status_display }}</span></dd><dt>Registration Time</dt><dd>{{ visit.registration_time|time:"H:i" }}</dd>{% if visit.doctor_seen_time %}<dt>Doctor Seen</dt><dd>{{ visit.doctor_seen_time|time:"H:i" }}</dd>{% endif %}{% if visit.total_wait_minutes is not None %}<dt>Wait Time</dt><dd>{{ visit.total_wait_minutes }} minutes</dd>{% endif %}<dt>Return Visit</dt><dd>{% if visit.is_return_visit %}Yes{% else %}No (New){% endif %}</dd><dt>Chief Complaint</dt><dd>{{ visit.chief_complaint|default:"-" }}</dd></dl></div></div></div>
+  <div class="col-md-8">
+    {% if visit.triage_notes %}<div class="card border-0 shadow-sm mb-3"><div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Triage Notes</h6></div><div class="card-body"><p class="mb-0">{{ visit.triage_notes }}</p></div></div>{% endif %}
+    {% if visit.vital_signs %}<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Vital Signs</h6></div><div class="card-body"><div class="row g-2">{% for key, val in visit.vital_signs.items %}{% if val %}<div class="col-md-4"><div class="bg-light rounded p-2 text-center"><div class="fw-bold">{{ val }}</div><div class="text-muted small">{{ key|title }}</div></div></div>{% endif %}{% endfor %}</div></div></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

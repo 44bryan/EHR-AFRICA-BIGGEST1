@@ -1,0 +1,475 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}New Consultation — {{ patient.full_name }}{% endblock %}
+
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=patient %}
+{% endblock %}
+
+{% block content %}
+
+{% with dept_code=request.user.role_department_code %}
+
+<form method="post" id="consultationForm">
+{% csrf_token %}
+
+{% if referring_consult %}
+<!-- ── Referring Doctor's Consultation (same visit) ── -->
+<div class="alert alert-primary border-start border-4 border-primary py-2 px-3 mb-3 small">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <i class="bi bi-person-check-fill me-1 text-primary"></i>
+      <strong>Referred from:</strong>
+      Dr. {{ referring_consult.consulting_doctor.get_full_name|default:referring_consult.consulting_doctor.username }}
+      — {{ referring_consult.department.name|default:"General" }}
+      <span class="text-muted ms-2">{{ referring_consult.consultation_date|date:"d M Y, H:i" }}</span>
+    </div>
+    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">History pre-filled below</span>
+  </div>
+  {% if referring_consult.presenting_complaint %}
+  <div class="mt-1"><span class="text-muted">Chief Complaint:</span> {{ referring_consult.presenting_complaint }}</div>
+  {% endif %}
+  {% if referring_consult.management_plan %}
+  <div class="mt-1 border-top pt-1">
+    <span class="text-muted">Referring Doctor's Management Plan:</span>
+    <div class="text-dark">{{ referring_consult.management_plan }}</div>
+  </div>
+  {% endif %}
+  {% with diags=referring_consult.consultation_diagnoses.all %}
+  {% if diags %}
+  <div class="mt-1">
+    <span class="text-muted">Referring Diagnosis:</span>
+    {% for cd in diags %}
+    <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1">{{ cd.diagnosis.description|truncatechars:60 }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+</div>
+{% endif %}
+
+{% if prev_consultations %}
+<!-- ── Previous Consultations History Panel ── -->
+<div class="card border-0 shadow-sm mb-3" id="prevHistoryPanel">
+  <div class="card-header bg-secondary bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-bold small text-uppercase text-secondary">
+      <i class="bi bi-clock-history me-1"></i>Previous Consultations — {{ patient.full_name }}
+    </h6>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+            onclick="document.getElementById('prevHistoryBody').classList.toggle('d-none');this.innerHTML=this.innerHTML.includes('Hide')?'<i class=\'bi bi-chevron-down\'></i> Show History':'<i class=\'bi bi-chevron-up\'></i> Hide History';"
+            style="font-size:.72rem;">
+      <i class="bi bi-chevron-up"></i> Hide History
+    </button>
+  </div>
+  <div id="prevHistoryBody">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Dept</th>
+            <th>Doctor</th>
+            <th>VA RE</th>
+            <th>VA LE</th>
+            <th>IOP RE</th>
+            <th>IOP LE</th>
+            <th>Diagnosis</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pc in prev_consultations %}
+          {% with d=pc.department_specific_data %}
+          <tr>
+            <td class="text-muted">{{ pc.consultation_date|date:"d M Y" }}</td>
+            <td>
+              <span class="badge bg-secondary">{{ pc.department.code|default:pc.department.name }}</span>
+            </td>
+            <td class="fw-semibold">Dr. {{ pc.consulting_doctor.last_name|default:pc.consulting_doctor.full_name }}</td>
+            <td>
+              {% if d.va_re_bcva %}
+                <span class="fw-semibold">{{ d.va_re_bcva }}</span>
+              {% elif d.va_re_unaided %}
+                {{ d.va_re_unaided }}
+              {% else %}&mdash;{% endif %}
+            </td>
+            <td>
+              {% if d.va_le_bcva %}
+                <span class="fw-semibold">{{ d.va_le_bcva }}</span>
+              {% elif d.va_le_unaided %}
+                {{ d.va_le_unaided }}
+              {% else %}&mdash;{% endif %}
+            </td>
+            <td>
+              {% if d.iop_re %}
+                <span class="{% if d.iop_re|add:0 > 21 %}text-danger fw-bold{% endif %}">{{ d.iop_re }}</span>
+              {% else %}&mdash;{% endif %}
+            </td>
+            <td>
+              {% if d.iop_le %}
+                <span class="{% if d.iop_le|add:0 > 21 %}text-danger fw-bold{% endif %}">{{ d.iop_le }}</span>
+              {% else %}&mdash;{% endif %}
+            </td>
+            <td>
+              {% if d.diagnosis_summary %}
+                <span class="text-secondary" style="font-size:.72rem;">{{ d.diagnosis_summary|truncatechars:60 }}</span>
+              {% elif d.diagnosis_re or d.diagnosis_le %}
+                <span class="text-secondary" style="font-size:.72rem;">
+                  {% if d.diagnosis_re %}RE: {{ d.diagnosis_re|truncatechars:30 }}{% endif %}
+                  {% if d.diagnosis_le %} LE: {{ d.diagnosis_le|truncatechars:30 }}{% endif %}
+                </span>
+              {% elif pc.presenting_complaint %}
+                <span class="text-muted" style="font-size:.72rem;">{{ pc.presenting_complaint|truncatechars:50 }}</span>
+              {% else %}&mdash;{% endif %}
+            </td>
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Tier / Insurance banner ── shown for non-Standard patients ──────── -->
+{% if visit.service_tier == 'EXPRESS' %}
+<div class="alert alert-info d-flex align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-info">
+  <i class="bi bi-lightning-charge-fill text-info fs-5"></i>
+  <div>
+    <span class="fw-bold text-info">EXPRESS PATIENT</span>
+    <span class="ms-2 text-muted small">Priority queue — this patient bypasses the standard queue and will be inserted 3 positions back when referred to any specialist.</span>
+  </div>
+  <span class="badge bg-info ms-auto">E</span>
+</div>
+{% elif visit.service_tier == 'FAST_TRACK' %}
+<div class="alert alert-warning d-flex align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-warning">
+  <i class="bi bi-skip-forward-fill text-warning fs-5"></i>
+  <div>
+    <span class="fw-bold text-warning">FAST TRACK PATIENT</span>
+    <span class="ms-2 text-muted small">Highest priority — inserted 3 positions back in any specialist queue.</span>
+  </div>
+  <span class="badge bg-warning text-dark ms-auto">FT</span>
+</div>
+{% elif visit.service_tier == 'VIP' %}
+<div class="alert alert-danger d-flex align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-danger">
+  <i class="bi bi-star-fill text-danger fs-5"></i>
+  <div>
+    <span class="fw-bold text-danger">VIP PATIENT</span>
+    <span class="ms-2 text-muted small">VIP priority — dedicated consultation room, inserted 3 positions back in any specialist queue.</span>
+  </div>
+  <span class="badge bg-danger ms-auto">V</span>
+</div>
+{% endif %}
+{% if visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' %}
+<div class="alert alert-primary d-flex flex-wrap align-items-center gap-3 py-2 px-3 mb-3 border-start border-4 border-primary">
+  <i class="bi bi-shield-check text-primary fs-5"></i>
+  <div class="flex-grow-1">
+    <span class="fw-bold text-primary">INSURED PATIENT</span>
+    {% if visit.insurance_company %}
+    <span class="ms-2">{{ visit.insurance_company }}</span>
+    {% endif %}
+    {% if visit.insurance_policy_ref %}
+    <span class="badge bg-primary-subtle text-primary ms-2">Policy: {{ visit.insurance_policy_ref }}</span>
+    {% endif %}
+    <div class="text-muted small mt-1">
+      <i class="bi bi-info-circle me-1"></i>Ensure the correct ICD-10 diagnosis code is entered — the insurer requires it for claim processing.
+    </div>
+  </div>
+  {% if patient.insurance.exists %}
+  {% with ins=patient.insurance.all|first %}
+  {% if ins %}
+  <div class="text-end small">
+    <div class="fw-semibold">{{ ins.provider }}</div>
+    <div class="text-muted">{{ ins.policy_number }}</div>
+    {% if ins.expiry_date %}<div class="text-muted">Exp: {{ ins.expiry_date|date:"M Y" }}</div>{% endif %}
+  </div>
+  {% endif %}
+  {% endwith %}
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Triage vitals bar -->
+{% if visit.vital_signs %}
+{% with v=visit.vital_signs %}
+<div class="alert alert-info py-2 px-3 mb-3 d-flex flex-wrap gap-3 align-items-center small">
+  <i class="bi bi-heart-pulse me-1"></i><strong>Triage Vitals:</strong>
+  {% if v.visual_acuity_right %}<span>VA RE: {{ v.visual_acuity_right }}</span>{% endif %}
+  {% if v.visual_acuity_left %}<span>VA LE: {{ v.visual_acuity_left }}</span>{% endif %}
+  {% if v.intraocular_pressure_right %}<span>IOP RE: {{ v.intraocular_pressure_right }} mmHg</span>{% endif %}
+  {% if v.intraocular_pressure_left %}<span>IOP LE: {{ v.intraocular_pressure_left }} mmHg</span>{% endif %}
+  {% if v.blood_pressure %}<span>BP: {{ v.blood_pressure }}</span>{% endif %}
+  {% if v.pulse %}<span>Pulse: {{ v.pulse }} bpm</span>{% endif %}
+  {% if v.temperature %}<span>Temp: {{ v.temperature }}°C</span>{% endif %}
+  {% if v.weight %}<span>Wt: {{ v.weight }} kg</span>{% endif %}
+</div>
+{% endwith %}
+{% endif %}
+
+<!-- Department (hidden — pre-filled from doctor's department) -->
+<div style="display:none;">{{ form.department }}</div>
+
+<!-- ── AI Voice EMR Workstation ──────────────────────────────────── -->
+{% if request.user.can_use_ai_assistant %}
+{% include 'ai_assistant/partials/voice_emr.html' %}
+{% endif %}
+
+<div class="row g-3">
+
+  <!-- ═══════ SECTION 1: HISTORY ═══════ -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-uppercase text-primary">
+          <i class="bi bi-journal-text me-1"></i>History
+        </h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Chief Complaint <span class="text-danger">*</span></label>
+            {{ form.presenting_complaint }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">History of Presenting Complaint</label>
+            {{ form.history_of_presenting_complaint }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Ocular History</label>
+            {{ form.ocular_history }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small">Systemic History</label>
+            {{ form.systemic_history }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Drug History</label>
+            {{ form.drug_history }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Family History</label>
+            {{ form.family_history }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small">Social History</label>
+            {{ form.social_history }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ SECTION 2: CLINICAL EXAMINATION ═══════ -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-success bg-opacity-10 border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-uppercase text-success">
+          <i class="bi bi-clipboard2-heart me-1"></i>Clinical Examination — {{ request.user.get_role_display }}
+        </h6>
+      </div>
+      <div class="card-body">
+        {% if dept_code == 'GEN_OPH' %}
+          {% include 'consultations/clinical/_gen_oph_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
+        {% elif dept_code == 'RETINA' %}
+          {% include 'consultations/clinical/_retina_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
+        {% elif dept_code == 'GLAUC' or dept_code == 'GLAUCOMA' %}
+          {% include 'consultations/clinical/_glaucoma_form.html' with consultation=consultation_stub investigation_data=investigation_data investigation_consult=investigation_consult %}
+        {% elif dept_code == 'UVEITIS' %}
+          {% include 'consultations/clinical/_uveitis_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
+        {% elif dept_code == 'REFRAC' %}
+          {% include 'consultations/clinical/_refraction_form.html' with consultation=consultation_stub %}
+        {% elif dept_code == 'PEDS' or dept_code == 'PEDS_OPH' %}
+          {% include 'consultations/clinical/_pediatric_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
+        {% elif dept_code == 'PEDS_REFRAC' %}
+          {% include 'consultations/clinical/_pediatric_refraction_form.html' with consultation=consultation_stub %}
+        {% elif dept_code == 'CORNEA' %}
+          {% include 'consultations/clinical/_cornea_form.html' with consultation=consultation_stub %}
+        {% elif dept_code == 'OCULOPLASTY' %}
+          {% include 'consultations/clinical/_oculoplastics_form.html' with consultation=consultation_stub %}
+        {% elif dept_code == 'NEURO_OPH' %}
+          {% include 'consultations/clinical/_neuro_oph_form.html' with consultation=consultation_stub %}
+        {% elif dept_code == 'CATARACT' %}
+          {% include 'consultations/clinical/_cataract_form.html' with consultation=consultation_stub %}
+        {% elif dept_code == 'LOW_VIS' %}
+          {% include 'consultations/clinical/_low_vision_form.html' with consultation=consultation_stub %}
+        {% elif dept_code == 'INVEST' %}
+          <div class="alert alert-warning d-flex align-items-center gap-3 mb-0">
+            <i class="bi bi-exclamation-triangle-fill fs-4"></i>
+            <div>
+              <div class="fw-bold">Investigation Technicians — Use the Investigations Workstation</div>
+              <div class="small">Eye investigation results (Visual Field, OCT, Biometry, etc.) are recorded in
+                <a href="{% url 'investigations:workstation' %}" class="alert-link">Investigations &rarr; Workstation</a>,
+                not via the Consultation form.
+              </div>
+            </div>
+          </div>
+        {% else %}
+          {% include 'consultations/clinical/_gen_oph_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ SECTION 3: MANAGEMENT ═══════ -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-warning bg-opacity-10 border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-uppercase text-warning">
+          <i class="bi bi-clipboard2-check me-1"></i>Management &amp; Plan
+        </h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold small">Management Plan</label>
+            {{ form.management_plan }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Follow-up Date</label>
+            {{ form.follow_up_date }}
+          </div>
+          <div class="col-md-5">
+            <label class="form-label fw-semibold small">Follow-up Instructions</label>
+            {{ form.follow_up_instructions }}
+          </div>
+          <div class="col-md-4"></div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Refer to Department</label>
+            {{ form.referral_department }}
+          </div>
+          <div class="col-md-5">
+            <label class="form-label fw-semibold small">Referral Reason</label>
+            {{ form.referral_reason }}
+          </div>
+
+          <!-- ── Surgical Plan ── visible when surgery_recommended is checked ── -->
+          <div class="col-12 mt-2">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch"
+                     id="surgeryRecommendedSwitch" name="dept_surgery_recommended"
+                     value="yes"
+                     onchange="document.getElementById('surgicalPlanPanel').style.display=this.checked?'block':'none'">
+              <label class="form-check-label fw-semibold text-danger small" for="surgeryRecommendedSwitch">
+                <i class="bi bi-scissors me-1"></i>Surgery Recommended for this patient
+              </label>
+            </div>
+          </div>
+
+          <div id="surgicalPlanPanel" style="display:none;" class="col-12">
+            <div class="card border-danger border-opacity-25">
+              <div class="card-header bg-danger bg-opacity-10 py-2">
+                <h6 class="mb-0 small fw-bold text-danger">
+                  <i class="bi bi-hospital me-1"></i>Surgical Plan
+                </h6>
+              </div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-5">
+                    <label class="form-label fw-semibold small">Procedure</label>
+                    <select name="dept_surgical_procedure" class="form-select form-select-sm">
+                      <option value="">— Select Procedure —</option>
+                      <optgroup label="Cataract">
+                        <option value="PHACO">Phacoemulsification (Phaco) + IOL</option>
+                        <option value="ECCE">ECCE (Extracapsular Cataract Extraction)</option>
+                        <option value="ICCE">ICCE (Intracapsular Cataract Extraction)</option>
+                        <option value="SICS">SICS (Small-Incision Cataract Surgery)</option>
+                        <option value="IOL_EXCHANGE">IOL Exchange / Repositioning</option>
+                      </optgroup>
+                      <optgroup label="Glaucoma">
+                        <option value="TRABECULECTOMY">Trabeculectomy</option>
+                        <option value="TUBE_SHUNT">Tube Shunt / Drainage Implant</option>
+                        <option value="CYCLOPHOTOCOAG">Cyclo-photocoagulation (CPC)</option>
+                        <option value="LASER_TRABECULO">Selective Laser Trabeculoplasty (SLT)</option>
+                        <option value="PI">Peripheral Iridotomy (PI)</option>
+                      </optgroup>
+                      <optgroup label="Retina / Vitreoretinal">
+                        <option value="VITRECTOMY">Pars Plana Vitrectomy (PPV)</option>
+                        <option value="BUCKLE">Scleral Buckle / Encirclement</option>
+                        <option value="ANTI_VEGF">Intravitreal Anti-VEGF Injection</option>
+                        <option value="LASER_RETINA">Laser Photocoagulation (Retina)</option>
+                      </optgroup>
+                      <optgroup label="Cornea / External">
+                        <option value="PKP">Penetrating Keratoplasty (PKP)</option>
+                        <option value="DSAEK">DSAEK / DMEK (Endothelial Keratoplasty)</option>
+                        <option value="PTERYGIUM_EXC">Pterygium Excision + Graft</option>
+                        <option value="KERATOCONUS">Corneal Collagen Cross-Linking (CXL)</option>
+                      </optgroup>
+                      <optgroup label="Oculoplastics">
+                        <option value="ENTROPION_REPAIR">Entropion Repair</option>
+                        <option value="ECTROPION_REPAIR">Ectropion Repair</option>
+                        <option value="PTOSIS_REPAIR">Ptosis Repair</option>
+                        <option value="DCR">Dacryocystorhinostomy (DCR)</option>
+                        <option value="ENUCLEATION">Enucleation / Evisceration</option>
+                        <option value="EXENTERATION">Orbital Exenteration</option>
+                        <option value="CHALAZION_EXC">Chalazion Excision</option>
+                        <option value="LID_TUMOUR">Eyelid Tumour Excision</option>
+                      </optgroup>
+                      <optgroup label="Squint / Paediatric">
+                        <option value="STRABISMUS">Strabismus Surgery (Squint Correction)</option>
+                        <option value="PROBING">Nasolacrimal Duct Probing</option>
+                      </optgroup>
+                      <optgroup label="Other">
+                        <option value="FB_REMOVAL">Intraocular Foreign Body Removal</option>
+                        <option value="EUA">Examination Under Anaesthesia (EUA)</option>
+                        <option value="OTHER">Other (specify in notes)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label fw-semibold small">Eye</label>
+                    <select name="dept_surgery_eye" class="form-select form-select-sm">
+                      <option value="">—</option>
+                      <option value="RE">Right Eye (RE)</option>
+                      <option value="LE">Left Eye (LE)</option>
+                      <option value="BE">Both Eyes (BE)</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fw-semibold small">Anaesthesia</label>
+                    <select name="dept_anaesthesia_type" class="form-select form-select-sm">
+                      <option value="">—</option>
+                      <option value="LOCAL">Local (Peribulbar / Topical)</option>
+                      <option value="GENERAL">General Anaesthesia (GA)</option>
+                      <option value="SEDATION">Monitored Sedation</option>
+                    </select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label fw-semibold small">Pre-op Requirements &amp; Surgical Notes</label>
+                    <textarea name="dept_surgical_notes" class="form-control form-control-sm" rows="3"
+                              placeholder="e.g. CBC + RBG required, stop aspirin 5 days before, biometry done, IOL power: +21.0D..."></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {% if form.errors %}
+        <div class="alert alert-danger mt-3">
+          {% for field, errors in form.errors.items %}{% for error in errors %}<div>{{ field }}: {{ error }}</div>{% endfor %}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2 justify-content-end mt-3 pt-3 border-top">
+          <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Cancel
+          </a>
+          {% if request.user.can_use_ai_assistant %}
+          <a href="{% url 'ai_assistant:new_conversation' %}?patient={{ patient.patient_id }}&context_type=GENERAL"
+             class="btn btn-outline-primary" target="_blank">
+            <i class="bi bi-robot me-1"></i>AI Assistant
+          </a>
+          {% endif %}
+          <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-save me-1"></i>Save Consultation
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /row -->
+</form>
+
+{% endwith %}
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Investigation — {{ order.investigation_type.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">{{ order.investigation_type.name }}</h1>
+  <div class="d-flex gap-2">
+    {% if not result %}
+    <a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i>Enter Result</a>
+    {% elif not result.is_verified %}
+    <form method="post" action="{% url 'investigations:verify' order.pk %}">{% csrf_token %}<button type="submit" class="btn btn-success"><i class="bi bi-check-circle me-1"></i>Verify</button></form>
+    {% endif %}
+    <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Order Details</h6></div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Patient</dt><dd class="col-7 fw-semibold">{{ order.patient.full_name }}</dd>
+          <dt class="col-5 text-muted">Eye</dt><dd class="col-7">{{ order.eye }}</dd>
+          <dt class="col-5 text-muted">Urgency</dt><dd class="col-7"><span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span></dd>
+          <dt class="col-5 text-muted">Ordered By</dt><dd class="col-7">{{ order.ordered_by.full_name }}</dd>
+          <dt class="col-5 text-muted">Date</dt><dd class="col-7">{{ order.created_at|date:"d M Y, H:i" }}</dd>
+          <dt class="col-5 text-muted">Status</dt><dd class="col-7"><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">{{ order.status }}</span></dd>
+        </dl>
+        {% if order.clinical_indication %}<div class="mt-2 pt-2 border-top"><div class="text-muted small fw-medium">Clinical Indication</div><div class="small">{{ order.clinical_indication }}</div></div>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    {% if result %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2 d-flex justify-content-between">
+        <h6 class="mb-0 fw-semibold">Result</h6>
+        {% if result.is_verified %}<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Verified by {{ result.verified_by.full_name }}</span>{% endif %}
+      </div>
+      <div class="card-body">
+        <div class="mb-2"><span class="badge {% if result.is_normal %}bg-success{% else %}bg-danger{% endif %} mb-2">{% if result.is_normal %}Normal{% else %}Abnormal{% endif %}</span></div>
+        <div class="p-3 bg-light rounded small">{{ result.interpretation|linebreaksbr }}</div>
+        {% if result.files.exists %}
+        <div class="mt-3"><h6 class="small fw-semibold">Uploaded Files</h6>
+          {% for f in result.files.all %}<a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-file-earmark me-1"></i>{{ f.file_type }}</a>{% endfor %}
+        </div>{% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center text-muted py-5"><i class="bi bi-hourglass-split" style="font-size:2.5rem;"></i><p class="mt-2">No result entered yet.</p><a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary">Enter Result</a></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

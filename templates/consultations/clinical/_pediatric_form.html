@@ -1,0 +1,308 @@
+{% load ehr_tags %}
+{% with d=consultation.department_specific_data rd=refraction_data %}
+
+<!-- ══ REFRACTIONIST ZONE — Grey / Read-only ══ -->
+<div class="mb-4 rounded border border-secondary border-opacity-25" style="background:#f8f9fa;opacity:.92;">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top"
+       style="background:#e9ecef;border-bottom:1px dashed #adb5bd;">
+    <i class="bi bi-lock-fill text-secondary"></i>
+    <span class="fw-bold text-secondary small text-uppercase" style="letter-spacing:.06em;">
+      Refractionist / VA Section — Read Only
+    </span>
+    <span class="ms-auto small text-muted">
+      {% if refraction_consult %}
+        <i class="bi bi-check-circle-fill text-success me-1"></i>
+        {{ refraction_consult.consulting_doctor.full_name|default:"Refractionist" }}
+        — {{ refraction_consult.consultation_date|date:"d M Y" }}
+      {% else %}
+        <i class="bi bi-info-circle me-1"></i>Not yet completed by Refractionist / Paed Refraction
+      {% endif %}
+    </span>
+  </div>
+  <div class="p-3">
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label small text-muted">VA RE (sc)</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_re_unaided|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">VA LE (sc)</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.va_le_unaided|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">Cycloplegic Rx RE</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.cyclo_re|default:'' }}" placeholder="—">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">Cycloplegic Rx LE</label>
+        <input type="text" class="form-control form-control-sm" readonly
+               style="background:#e9ecef;color:#6c757d;cursor:not-allowed;"
+               value="{{ rd.cyclo_le|default:'' }}" placeholder="—">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PEDIATRIC OPHTHALMOLOGIST ZONE — Active ══ -->
+<div class="rounded border border-info border-opacity-25" style="background:#fff;">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top"
+       style="background:linear-gradient(90deg,#0dcaf0 0%,#0aa2c0 100%);border-bottom:1px solid #0dcaf0;">
+    <i class="bi bi-person-hearts text-white"></i>
+    <span class="fw-bold text-white small text-uppercase" style="letter-spacing:.06em;">Pediatric Ophthalmology — Specialist Examination</span>
+  </div>
+  <div class="p-3">
+
+    <!-- 1. Visual Acuity (Specialist) -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#0aa2c0;">
+        <i class="bi bi-eye me-1"></i>1. Visual Acuity
+      </div>
+      <div class="row g-2">
+        <div class="col-md-2"><label class="form-label small">VA OD</label><input type="text" name="dept_va_od" class="form-control form-control-sm" placeholder="6/6 / Fixes/Follows" value="{{ d.va_od|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">VA OS</label><input type="text" name="dept_va_os" class="form-control form-control-sm" value="{{ d.va_os|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">Near VA OD</label><input type="text" name="dept_near_va_od" class="form-control form-control-sm" placeholder="N5" value="{{ d.near_va_od|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">Near VA OS</label><input type="text" name="dept_near_va_os" class="form-control form-control-sm" placeholder="N5" value="{{ d.near_va_os|default:'' }}"></div>
+        <div class="col-md-2"><label class="form-label small">VA Method</label>
+          <select name="dept_va_method" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for m in "Snellen 6m,LogMAR,Kay Pictures,Cardiff Cards,LEA Symbols,Teller Acuity,PL (Preferential Looking),Fixes & Follows,Blinks to light"|split:"," %}
+              <option value="{{ m }}" {% if d.va_method == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small">IOP OD / OS</label>
+          <div class="input-group input-group-sm">
+            <input type="number" name="dept_iop_od" class="form-control form-control-sm" placeholder="OD" value="{{ d.iop_od|default:'' }}">
+            <input type="number" name="dept_iop_os" class="form-control form-control-sm" placeholder="OS" value="{{ d.iop_os|default:'' }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Fixation & Red Reflex -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#0aa2c0;">
+        <i class="bi bi-bullseye me-1"></i>2. Fixation &amp; Red Reflex
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Fixation OD</label>
+          <select name="dept_fixation_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for f in "Central Steady Maintained (CSM),Central Steady Unmaintained,Central Unsteady,Eccentric,Wandering/Nystagmus"|split:"," %}
+              <option value="{{ f }}" {% if d.fixation_od == f %}selected{% endif %}>{{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Fixation OS</label>
+          <select name="dept_fixation_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for f in "Central Steady Maintained (CSM),Central Steady Unmaintained,Central Unsteady,Eccentric,Wandering/Nystagmus"|split:"," %}
+              <option value="{{ f }}" {% if d.fixation_os == f %}selected{% endif %}>{{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Red Reflex OD</label>
+          <select name="dept_red_reflex_od" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for r in "Normal (present, symmetric),Absent,Diminished,White reflex (leukocoria),Asymmetric"|split:"," %}
+              <option value="{{ r }}" {% if d.red_reflex_od == r %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Red Reflex OS</label>
+          <select name="dept_red_reflex_os" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for r in "Normal (present, symmetric),Absent,Diminished,White reflex (leukocoria),Asymmetric"|split:"," %}
+              <option value="{{ r }}" {% if d.red_reflex_os == r %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Cycloplegic Refraction -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#0aa2c0;">
+        <i class="bi bi-eyeglasses me-1"></i>3. Cycloplegic Refraction (Specialist-performed)
+      </div>
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label small">Cycloplegic Rx OD</label><input type="text" name="dept_cyclo_od" class="form-control form-control-sm" placeholder="+2.00/-1.00×90" value="{{ d.cyclo_od|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Cycloplegic Rx OS</label><input type="text" name="dept_cyclo_os" class="form-control form-control-sm" value="{{ d.cyclo_os|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Cycloplegic Agent Used</label><input type="text" name="dept_cyclo_agent" class="form-control form-control-sm" placeholder="Cyclopentolate 1%" value="{{ d.cyclo_agent|default:'' }}"></div>
+      </div>
+    </div>
+
+    <!-- 4. Alignment & Motility -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#0aa2c0;">
+        <i class="bi bi-arrows-move me-1"></i>4. Alignment &amp; Motility
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Cover Test (Distance)</label><input type="text" name="dept_cover_test_dist" class="form-control form-control-sm" placeholder="Orthotropic/ET/XT" value="{{ d.cover_test_dist|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Cover Test (Near)</label><input type="text" name="dept_cover_test_near" class="form-control form-control-sm" value="{{ d.cover_test_near|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Hirschberg Test</label><input type="text" name="dept_hirschberg" class="form-control form-control-sm" placeholder="Symmetric/Asymmetric" value="{{ d.hirschberg|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Prism Cover Test</label><input type="text" name="dept_prism_cover" class="form-control form-control-sm" value="{{ d.prism_cover|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Deviation (Prism Dioptres)</label><input type="text" name="dept_deviation_pd" class="form-control form-control-sm" placeholder="20PD ET" value="{{ d.deviation_pd|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Strabismus Type</label><input type="text" name="dept_strabismus_type" class="form-control form-control-sm" placeholder="Esotropia / Exotropia / Hypertropia" value="{{ d.strabismus_type|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">EOM (Extraocular Motility)</label><input type="text" name="dept_eom" class="form-control form-control-sm" placeholder="Full OU / Limited elevation OD" value="{{ d.eom|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Binocular Single Vision</label>
+          <select name="dept_bsv" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Grade I (Simultaneous perception),Grade II (Fusion),Grade III (Stereopsis),Absent"|split:"," %}
+              <option value="{{ v }}" {% if d.bsv == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Stereoacuity Test</label>
+          <select name="dept_stereo_test" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for t in "Titmus Fly,Lang I,Lang II,Randot,TNO,Frisby,Not tested"|split:"," %}
+              <option value="{{ t }}" {% if d.stereo_test == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Stereoacuity Result (arcsec)</label><input type="text" name="dept_stereo_result" class="form-control form-control-sm" placeholder="e.g. 40 arcsec / Fly seen" value="{{ d.stereo_result|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Nystagmus</label>
+          <select name="dept_nystagmus" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for n in "Absent,Pendular (congenital),Jerk,Latent,Manifest-latent,Gaze-evoked"|split:"," %}
+              <option value="{{ n }}" {% if d.nystagmus == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Amblyopia Treatment -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#0aa2c0;">
+        <i class="bi bi-bandaid me-1"></i>5. Amblyopia &amp; Patching Tracker
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Amblyopia Type</label>
+          <select name="dept_amblyopia_type" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for a in "None,Refractive (unilateral),Anisometropic (bilateral),Strabismic,Deprivation,Mixed"|split:"," %}
+              <option value="{{ a }}" {% if d.amblyopia_type == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Amblyopic Eye</label>
+          <select name="dept_amblyopia_eye" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for e in "Right eye (OD),Left eye (OS),Both eyes"|split:"," %}
+              <option value="{{ e }}" {% if d.amblyopia_eye == e %}selected{% endif %}>{{ e }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Patching Regimen</label><input type="text" name="dept_patching" class="form-control form-control-sm" placeholder="e.g. 6hrs/day OD patch" value="{{ d.patching|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Patching Duration</label>
+          <select name="dept_patching_duration" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for dur in "1 hour/day,2 hours/day,4 hours/day,6 hours/day,Full time,Atropine penalisation,Discontinued,N/A"|split:"," %}
+              <option value="{{ dur }}" {% if d.patching_duration == dur %}selected{% endif %}>{{ dur }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">VA Improvement (amblyopic eye)</label><input type="text" name="dept_amblyopia_response" class="form-control form-control-sm" placeholder="e.g. 6/36 → 6/18 this visit" value="{{ d.amblyopia_response|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Orthoptic Exercises</label><input type="text" name="dept_ortho_exercises" class="form-control form-control-sm" placeholder="e.g. Pencil push-up, convergence exercises" value="{{ d.ortho_exercises|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Myopia Control Plan</label>
+          <select name="dept_myopia_control" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for m in "None (monitoring),Spectacles only,Atropine 0.01%,Atropine 0.05%,Orthokeratology (Ortho-K),MiSight contact lens,Bifocal/Progressive spectacles"|split:"," %}
+              <option value="{{ m }}" {% if d.myopia_control == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Congenital / Pediatric-Specific Conditions -->
+    <div class="mb-4">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#0aa2c0;">
+        <i class="bi bi-person-hearts me-1"></i>6. Congenital &amp; Paediatric Conditions
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Congenital Cataract</label>
+          <select name="dept_cong_cataract" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Unilateral,Bilateral,Post-op aphakia OD,Post-op aphakia OS,Post-op aphakia OU"|split:"," %}
+              <option value="{{ v }}" {% if d.cong_cataract == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Congenital Glaucoma</label>
+          <select name="dept_cong_glaucoma" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Suspected,Primary congenital (PCG),Secondary congenital,Post-surgical"|split:"," %}
+              <option value="{{ v }}" {% if d.cong_glaucoma == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Corneal Diameter OD (mm)</label>
+          <input type="number" name="dept_corneal_diam_od" class="form-control form-control-sm" step="0.1" min="8" max="16"
+                 value="{{ d.corneal_diam_od|default:'' }}" placeholder="12.0">
+        </div>
+        <div class="col-md-3"><label class="form-label small">Corneal Diameter OS (mm)</label>
+          <input type="number" name="dept_corneal_diam_os" class="form-control form-control-sm" step="0.1" min="8" max="16"
+                 value="{{ d.corneal_diam_os|default:'' }}" placeholder="12.0">
+        </div>
+        <div class="col-md-3"><label class="form-label small">ROP Stage (if premature)</label>
+          <select name="dept_rop_stage" class="form-select form-select-sm">
+            <option value="">— N/A —</option>
+            {% for v in "Stage 1 (demarcation line),Stage 2 (ridge),Stage 3 (extraretinal proliferation),Stage 4A (sub-total — fovea spared),Stage 4B (sub-total — fovea involved),Stage 5 (total RD),Plus disease,Regressed"|split:"," %}
+              <option value="{{ v }}" {% if d.rop_stage == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Ptosis</label>
+          <select name="dept_ptosis" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "None,Unilateral OD (mild),Unilateral OD (moderate),Unilateral OD (severe),Unilateral OS (mild),Unilateral OS (moderate),Unilateral OS (severe),Bilateral"|split:"," %}
+              <option value="{{ v }}" {% if d.ptosis == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Retinoblastoma (if applicable)</label>
+          <select name="dept_retinoblastoma" class="form-select form-select-sm">
+            <option value="">— N/A —</option>
+            {% for v in "Suspected — refer urgently,Group A (focal),Group B (macular/juxtapapillary),Group C (subretinal seeds),Group D (diffuse seeds),Group E (extensive — enucleation risk)"|split:"," %}
+              <option value="{{ v }}" {% if d.retinoblastoma == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Other Congenital Anomaly</label>
+          <input type="text" name="dept_cong_anomaly" class="form-control form-control-sm"
+                 value="{{ d.cong_anomaly|default:'' }}" placeholder="e.g. coloboma, microphthalmos, aniridia...">
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Management Plan -->
+    <div class="mb-2">
+      <div class="fw-bold text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.07em;color:#0aa2c0;">
+        <i class="bi bi-clipboard2-check me-1"></i>7. Management &amp; Follow-up
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3"><label class="form-label small">Glasses / CL Prescribed</label><input type="text" name="dept_glasses" class="form-control form-control-sm" placeholder="Spectacles / CL / None" value="{{ d.glasses|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Surgery Planned</label><input type="text" name="dept_surgery_plan" class="form-control form-control-sm" placeholder="Recession/Resection OD" value="{{ d.surgery_plan|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Next Review</label><input type="date" name="dept_next_review" class="form-control form-control-sm" value="{{ d.next_review|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Systemic Referral</label><input type="text" name="dept_systemic_referral" class="form-control form-control-sm" placeholder="e.g. Paediatrics for JIA workup" value="{{ d.systemic_referral|default:'' }}"></div>
+        <div class="col-12"><label class="form-label small">Management Notes</label>
+          <textarea name="dept_management_notes" class="form-control form-control-sm" rows="3"
+                    placeholder="Detailed treatment plan, counselling provided to parents, follow-up instructions...">{{ d.management_notes|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /p-3 -->
+</div><!-- /pediatric zone -->
+
+{% endwith %}

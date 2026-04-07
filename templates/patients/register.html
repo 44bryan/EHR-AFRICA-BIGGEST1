@@ -1,0 +1,361 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load widget_tweaks %}
+
+{% block title %}Register Patient — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{% url 'patients:list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="fw-bold mb-0">Register New Patient</h4>
+    <p class="text-muted small mb-0">Complete all required fields marked with *</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  {% if qms_token_id %}<input type="hidden" name="qms_token_id" value="{{ qms_token_id }}">{% endif %}
+
+  <div class="row g-4">
+    <!-- ── LEFT COLUMN ── -->
+    <div class="col-lg-8">
+
+      <!-- PERSONAL INFORMATION -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-person me-2 text-primary"></i>Personal Information</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">First Name *</label>
+              {% render_field form.first_name class="form-control" placeholder="First Name" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Middle Name</label>
+              {% render_field form.middle_name class="form-control" placeholder="Middle Name (optional)" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Last Name *</label>
+              {% render_field form.last_name class="form-control" placeholder="Last Name" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Date of Birth *</label>
+              {% render_field form.date_of_birth class="form-control" type="date" id="id_dob" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Age</label>
+              <input type="text" id="age_display" class="form-control bg-light" readonly
+                     placeholder="Auto-calculated from Date of Birth">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Gender *</label>
+              {% render_field form.gender class="form-select" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Marital Status</label>
+              {% render_field form.marital_status class="form-select" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Nationality</label>
+              {% render_field form.nationality class="form-control" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Occupation</label>
+              {% render_field form.occupation class="form-control" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Religion</label>
+              {% render_field form.religion class="form-control" placeholder="e.g. Christianity, Islam" %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTACT DETAILS -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-telephone me-2 text-success"></i>Contact Details</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Cell Phone Number *</label>
+              {% render_field form.phone_number class="form-control" placeholder="e.g. 6XXXXXXXX" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Email Address</label>
+              {% render_field form.email class="form-control" placeholder="patient@email.com" %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADDRESS -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-geo-alt me-2 text-warning"></i>Address</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Postal Address</label>
+              {% render_field form.post_address class="form-control" placeholder="P.O. Box / Postal Address" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Quarter / Neighbourhood</label>
+              {% render_field form.quarter class="form-control" placeholder="Quartier / Neighbourhood" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Village / Town</label>
+              {% render_field form.village_town class="form-control" placeholder="Village or Town" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Division</label>
+              {% render_field form.division class="form-control" placeholder="Division" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Region</label>
+              {% render_field form.region class="form-select" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Country</label>
+              {% render_field form.country class="form-control" %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NATURE OF CONSULTATION -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-clipboard2-pulse me-2 text-info"></i>Nature of Consultation</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Consultation Type *</label>
+              <select name="service_tier" class="form-select" id="id_service_tier" onchange="onTierChange(this.value)">
+                <option value="STANDARD"   {% if init_service_tier == 'STANDARD'   or not init_service_tier %}selected{% endif %}>Standard</option>
+                <option value="FAST_TRACK" {% if init_service_tier == 'FAST_TRACK' %}selected{% endif %}>Fast Track</option>
+                <option value="VIP"        {% if init_service_tier == 'VIP'        %}selected{% endif %}>VIP</option>
+                <option value="EXPRESS"    {% if init_service_tier == 'EXPRESS'    %}selected{% endif %}>Express</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Payment / Billing Type *</label>
+              <select name="billing_type" class="form-select" id="id_billing_type" onchange="onBillingChange(this.value)">
+                <option value="SELF_PAY"  {% if init_billing_type == 'SELF_PAY'  or not init_billing_type %}selected{% endif %}>Self Pay (Cash / Card)</option>
+                <option value="HMO"       {% if init_billing_type == 'HMO'       %}selected{% endif %}>HMO / Managed Care (Insured)</option>
+                <option value="INSURANCE" {% if init_billing_type == 'INSURANCE' %}selected{% endif %}>Insurance Company (Insured)</option>
+                <option value="WAIVER"    {% if init_billing_type == 'WAIVER'    %}selected{% endif %}>Waiver / Exempt</option>
+                <option value="FREE"      {% if init_billing_type == 'FREE'      %}selected{% endif %}>Free / Subsidised</option>
+              </select>
+            </div>
+            <div class="col-12" id="insurance_row" style="display:none;">
+              <label class="form-label small fw-medium">Insurance Company / HMO Name</label>
+              <input type="text" name="insurance_company" class="form-control"
+                     placeholder="e.g. CNPS, Activa, Sanlam"
+                     value="{{ init_insurance_company }}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISIT QUESTIONS -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-question-circle me-2 text-danger"></i>Visit Questions</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label small fw-medium">Have you ever registered or consulted at this hospital? *</label>
+              <div class="d-flex gap-4 mt-1">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="previously_registered"
+                         id="prev_yes" value="true"
+                         {% if init_prev_registered == 'true' %}checked{% endif %}>
+                  <label class="form-check-label fw-medium" for="prev_yes">Yes</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="previously_registered"
+                         id="prev_no" value="false"
+                         {% if init_prev_registered != 'true' %}checked{% endif %}>
+                  <label class="form-check-label fw-medium" for="prev_no">No</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 mt-2">
+              <label class="form-label small fw-medium">Do you have a referral letter from another hospital or doctor? *</label>
+              <div class="d-flex gap-4 mt-1">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="has_referral_letter"
+                         id="ref_yes" value="true"
+                         {% if init_has_referral == 'true' %}checked{% endif %}
+                         onchange="document.getElementById('referral_upload').style.display='block'">
+                  <label class="form-check-label fw-medium" for="ref_yes">Yes</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="has_referral_letter"
+                         id="ref_no" value="false"
+                         {% if init_has_referral != 'true' %}checked{% endif %}
+                         onchange="document.getElementById('referral_upload').style.display='none'">
+                  <label class="form-check-label fw-medium" for="ref_no">No</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12" id="referral_upload"
+                 style="display:{% if init_has_referral == 'true' %}block{% else %}none{% endif %};">
+              <label class="form-label small fw-medium">Upload Referral Letter (scan / photo)</label>
+              <input type="file" name="referral_document" class="form-control"
+                     accept=".pdf,.jpg,.jpeg,.png">
+              <div class="form-text">Accepted: PDF, JPG, PNG. Max 5 MB.</div>
+            </div>
+
+            <div class="col-12 mt-2">
+              <label class="form-label small fw-medium">Main Eye Complaint / Reason for Visit</label>
+              <textarea name="chief_complaint" class="form-control" rows="3"
+                        placeholder="Briefly describe the eye problem or reason for visiting...">{{ init_chief_complaint }}</textarea>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- NEXT OF KIN -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-people me-2 text-secondary"></i>Next of Kin</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Full Name</label>
+              {% render_field nok_form.full_name class="form-control" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Relationship</label>
+              {% render_field nok_form.relationship class="form-control" placeholder="e.g. Spouse, Parent, Sibling" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Phone Number</label>
+              {% render_field nok_form.phone_number class="form-control" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Email</label>
+              {% render_field nok_form.email class="form-control" %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT COLUMN ── -->
+    <div class="col-lg-4">
+
+      <!-- Photo -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-camera me-2 text-secondary"></i>Patient Photo</h6>
+        </div>
+        <div class="card-body text-center">
+          <div id="photoPreview" class="rounded-circle bg-light d-flex align-items-center justify-content-center mx-auto mb-3"
+               style="width:100px;height:100px;overflow:hidden;">
+            <i class="bi bi-person text-muted" style="font-size:2.5rem;"></i>
+          </div>
+          {% render_field form.photo class="form-control form-control-sm" %}
+        </div>
+      </div>
+
+      <!-- Medical Details -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-droplet-half me-2 text-danger"></i>Medical Details</h6>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label small fw-medium">Blood Group</label>
+            {% render_field form.blood_group class="form-select" %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-medium">Genotype</label>
+            {% render_field form.genotype class="form-select" %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tier badge -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body text-center py-3">
+          <div class="small text-muted mb-1">Consultation Type Selected</div>
+          <span id="tier_badge" class="badge fs-6 px-4 py-2 bg-secondary">Standard</span>
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-primary btn-lg">
+          <i class="bi bi-person-check me-2"></i>Register Patient
+        </button>
+        <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Photo preview
+document.querySelector('input[type=file][name="photo"]')?.addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById('photoPreview').innerHTML =
+        `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
+    };
+    reader.readAsDataURL(file);
+  }
+});
+
+// Age auto-calculation
+function calcAge() {
+  const dob = new Date(document.getElementById('id_dob')?.value);
+  if (isNaN(dob)) return;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  document.getElementById('age_display').value = age >= 0 ? age + ' year' + (age !== 1 ? 's' : '') : '';
+}
+document.getElementById('id_dob')?.addEventListener('change', calcAge);
+calcAge();
+
+// Tier badge colours
+const TIER_LABELS = {STANDARD:'Standard', FAST_TRACK:'Fast Track', VIP:'VIP', EXPRESS:'Express'};
+const TIER_COLORS = {STANDARD:'bg-secondary', FAST_TRACK:'bg-warning text-dark', VIP:'bg-dark', EXPRESS:'bg-primary'};
+function onTierChange(val) {
+  const badge = document.getElementById('tier_badge');
+  if (!badge) return;
+  badge.textContent = TIER_LABELS[val] || val;
+  badge.className = 'badge fs-6 px-4 py-2 ' + (TIER_COLORS[val] || 'bg-secondary');
+}
+(function(){ const s = document.getElementById('id_service_tier'); if(s) onTierChange(s.value); })();
+
+// Show insurance field
+function onBillingChange(val) {
+  const row = document.getElementById('insurance_row');
+  if (row) row.style.display = (val === 'HMO' || val === 'INSURANCE') ? 'block' : 'none';
+}
+(function(){ const b = document.getElementById('id_billing_type'); if(b) onBillingChange(b.value); })();
+</script>
+{% endblock %}

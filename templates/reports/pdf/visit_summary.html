@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 9.5pt; color: #1a1a1a; }
+  .letterhead { border-bottom: 3px solid #0d6efd; padding-bottom: 10px; margin-bottom: 14px; }
+  .hospital-name { font-size: 17pt; font-weight: bold; color: #0d6efd; }
+  .hospital-info { font-size: 8pt; color: #666; }
+  .report-title { background: #0d6efd; color: white; padding: 7px 12px; font-size: 11pt; font-weight: bold; margin-bottom: 14px; }
+  .patient-bar { background: #f8f9fa; border-left: 4px solid #0d6efd; padding: 9px 12px; margin-bottom: 12px; }
+  .meta-grid { display: flex; gap: 25px; flex-wrap: wrap; }
+  .meta-item { font-size: 8.5pt; }
+  .meta-label { font-weight: 600; color: #555; margin-right: 3px; }
+  .section { margin-bottom: 12px; }
+  .section-title { font-size: 8.5pt; font-weight: bold; text-transform: uppercase; color: #0d6efd; border-bottom: 1px solid #dee2e6; padding-bottom: 3px; margin-bottom: 7px; letter-spacing: .3px; }
+  .field-row { display: flex; margin-bottom: 3px; font-size: 9pt; }
+  .field-label { font-weight: 600; width: 160px; flex-shrink: 0; color: #444; }
+  .consult-block { border: 1px solid #dee2e6; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px; }
+  .consult-header { background: #e9ecef; margin: -10px -12px 8px; padding: 5px 12px; font-weight: 600; font-size: 9pt; border-radius: 3px 3px 0 0; }
+  .badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 7.5pt; font-weight: 600; }
+  .badge-success { background: #d4edda; color: #155724; }
+  .badge-warning { background: #fff3cd; color: #856404; }
+  .badge-secondary { background: #e9ecef; color: #495057; }
+  .badge-danger { background: #f8d7da; color: #721c24; }
+  .dx-box { background: #e8f4f8; border: 1px solid #bee5eb; border-radius: 3px; padding: 6px 8px; margin-top: 5px; }
+  .billing-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  .billing-table th { background: #e9ecef; padding: 4px 8px; text-align: left; font-weight: 600; }
+  .billing-table td { padding: 4px 8px; border-bottom: 1px solid #f0f0f0; }
+  .billing-table tr:last-child td { border-bottom: none; }
+  .total-row { font-weight: bold; background: #f8f9fa; }
+  .vitals-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .vital-item { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 4px 8px; font-size: 8pt; }
+  .vital-label { color: #666; font-size: 7.5pt; display: block; }
+  .step-badge { display: inline-block; background: #0d6efd; color: white; border-radius: 50%; width: 18px; height: 18px; line-height: 18px; text-align: center; font-size: 7.5pt; font-weight: bold; margin-right: 4px; }
+  .footer { border-top: 1px solid #dee2e6; margin-top: 16px; padding-top: 7px; font-size: 7.5pt; color: #888; }
+  .paid-stamp { display: inline-block; border: 3px solid #198754; color: #198754; padding: 4px 12px; border-radius: 4px; font-size: 12pt; font-weight: bold; transform: rotate(-5deg); }
+  @page { margin: 1.2cm 1.5cm; size: A4; }
+  .page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<!-- Letterhead -->
+<div class="letterhead">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div class="hospital-name">{{ hospital_name }}</div>
+      <div class="hospital-info">{{ hospital_address }}</div>
+      <div class="hospital-info">Tel: {{ hospital_phone }}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="hospital-info"><strong>Eye Specialist Hospital</strong></div>
+      <div class="hospital-info">Confidential Medical Record</div>
+    </div>
+  </div>
+</div>
+
+<div class="report-title">VISIT SUMMARY — {{ visit.visit_number }}</div>
+
+<!-- Patient Bar -->
+<div class="patient-bar">
+  <div class="meta-grid">
+    <div class="meta-item"><span class="meta-label">Patient:</span>{{ patient.full_name }}</div>
+    <div class="meta-item"><span class="meta-label">ID:</span>{{ patient.patient_id }}</div>
+    <div class="meta-item"><span class="meta-label">Age / Sex:</span>{{ patient.age_display }} / {{ patient.get_gender_display }}</div>
+    <div class="meta-item"><span class="meta-label">Visit Date:</span>{{ visit.visit_date|date:"d M Y" }}</div>
+    <div class="meta-item"><span class="meta-label">Visit Type:</span>{{ visit.get_visit_type_display }}</div>
+    {% if visit.department %}<div class="meta-item"><span class="meta-label">Department:</span>{{ visit.department.name }}</div>{% endif %}
+    <div class="meta-item"><span class="meta-label">Status:</span>
+      <span class="badge {% if visit.status == 'DISCHARGED' %}badge-success{% elif visit.status == 'IN_CONSULTATION' %}badge-warning{% else %}badge-secondary{% endif %}">{{ visit.get_status_display }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- Visit Info -->
+<div class="section">
+  <div class="section-title">Visit Details</div>
+  <div class="field-row"><span class="field-label">Chief Complaint:</span><span>{{ visit.chief_complaint|default:"—" }}</span></div>
+  {% if visit.attending_doctor %}<div class="field-row"><span class="field-label">Attending Doctor:</span><span>Dr. {{ visit.attending_doctor.full_name }}</span></div>{% endif %}
+  {% if visit.triage_nurse %}<div class="field-row"><span class="field-label">Triage Nurse:</span><span>{{ visit.triage_nurse.full_name }}</span></div>{% endif %}
+  {% if visit.discharge_date %}<div class="field-row"><span class="field-label">Discharged:</span><span>{{ visit.discharge_date|date:"d M Y H:i" }}</span></div>{% endif %}
+  {% if visit.discharge_notes %}<div class="field-row"><span class="field-label">Discharge Notes:</span><span>{{ visit.discharge_notes }}</span></div>{% endif %}
+</div>
+
+<!-- Vitals -->
+{% if visit.vital_signs %}
+<div class="section">
+  <div class="section-title">Vital Signs / Triage</div>
+  <div class="vitals-grid">
+    {% if visit.vital_signs.blood_pressure %}<div class="vital-item"><span class="vital-label">BP</span>{{ visit.vital_signs.blood_pressure }}</div>{% endif %}
+    {% if visit.vital_signs.pulse %}<div class="vital-item"><span class="vital-label">Pulse</span>{{ visit.vital_signs.pulse }} bpm</div>{% endif %}
+    {% if visit.vital_signs.temperature %}<div class="vital-item"><span class="vital-label">Temp</span>{{ visit.vital_signs.temperature }}°C</div>{% endif %}
+    {% if visit.vital_signs.spo2 %}<div class="vital-item"><span class="vital-label">SpO₂</span>{{ visit.vital_signs.spo2 }}%</div>{% endif %}
+    {% if visit.vital_signs.visual_acuity_right %}<div class="vital-item"><span class="vital-label">VA — RE</span>{{ visit.vital_signs.visual_acuity_right }}</div>{% endif %}
+    {% if visit.vital_signs.visual_acuity_left %}<div class="vital-item"><span class="vital-label">VA — LE</span>{{ visit.vital_signs.visual_acuity_left }}</div>{% endif %}
+    {% if visit.vital_signs.intraocular_pressure_right %}<div class="vital-item"><span class="vital-label">IOP — RE</span>{{ visit.vital_signs.intraocular_pressure_right }} mmHg</div>{% endif %}
+    {% if visit.vital_signs.intraocular_pressure_left %}<div class="vital-item"><span class="vital-label">IOP — LE</span>{{ visit.vital_signs.intraocular_pressure_left }} mmHg</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Consultations -->
+{% if visit.consultations.all %}
+<div class="section">
+  <div class="section-title">Consultations ({{ visit.consultations.count }})</div>
+  {% for consult in visit.consultations.all %}
+  <div class="consult-block">
+    <div class="consult-header">
+      {{ consult.department }} &bull; Dr. {{ consult.consulting_doctor.full_name }}
+      &bull; {{ consult.consultation_date|date:"d M Y H:i" }}
+      <span class="badge {% if consult.status == 'COMPLETED' %}badge-success{% else %}badge-warning{% endif %}" style="float:right;">{{ consult.get_status_display }}</span>
+    </div>
+
+    {% if consult.presenting_complaint %}
+    <div class="field-row"><span class="field-label">Complaint:</span><span>{{ consult.presenting_complaint }}</span></div>
+    {% endif %}
+
+    {# Diagnoses #}
+    {% if consult.consultation_diagnoses.all %}
+    <div class="dx-box" style="margin-top:6px;">
+      <strong>Diagnoses:</strong>
+      {% for cd in consult.consultation_diagnoses.all %}
+      <div>{% if cd.is_primary %}[P] {% endif %}{{ cd.diagnosis.icd10_code }} — {{ cd.diagnosis.description }}{% if cd.laterality != 'NA' %} ({{ cd.laterality }}){% endif %}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if consult.management_plan %}
+    <div class="field-row" style="margin-top:5px;"><span class="field-label">Management:</span><span>{{ consult.management_plan|truncatechars:200 }}</span></div>
+    {% endif %}
+
+    {# Drug prescriptions #}
+    {% if consult.drug_prescriptions.all %}
+    <div style="margin-top:5px;font-size:8.5pt;">
+      <strong>Medications:</strong>
+      {% for rx in consult.drug_prescriptions.all %}
+      {% for item in rx.items.all %}
+      <div style="margin-left:8px;">&bull; {{ item.drug_name }} {{ item.dose }} — {{ item.frequency }} × {{ item.duration_days }}d</div>
+      {% endfor %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Optical prescriptions #}
+    {% if consult.optical_prescriptions.all %}
+    <div style="margin-top:5px;font-size:8.5pt;">
+      <strong>Optical Prescriptions:</strong>
+      {% for rx in consult.optical_prescriptions.all %}
+      <div style="margin-left:8px;">
+        &bull; OD: Sph {{ rx.od_sphere|default:"plano" }} Cyl {{ rx.od_cylinder|default:"—" }} Ax {{ rx.od_axis|default:"—" }} Add {{ rx.od_add|default:"—" }} |
+           OS: Sph {{ rx.os_sphere|default:"plano" }} Cyl {{ rx.os_cylinder|default:"—" }} Ax {{ rx.os_axis|default:"—" }} Add {{ rx.os_add|default:"—" }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Billing -->
+{% if invoices %}
+<div class="section">
+  <div class="section-title">Billing Summary</div>
+  {% for inv in invoices %}
+  <div style="margin-bottom:10px;">
+    <div style="font-weight:600;margin-bottom:4px;">Invoice {{ inv.invoice_number }}
+      <span class="badge {% if inv.status == 'PAID' %}badge-success{% elif inv.status == 'PARTIAL' %}badge-warning{% elif inv.status == 'CANCELLED' %}badge-secondary{% else %}badge-danger{% endif %}">{{ inv.get_status_display }}</span>
+      {% if inv.status == 'PAID' %}<span class="paid-stamp" style="font-size:8pt;padding:1px 6px;">PAID</span>{% endif %}
+    </div>
+    <table class="billing-table">
+      <thead><tr><th>Description</th><th>Category</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th></tr></thead>
+      <tbody>
+        {% for item in inv.items.all %}
+        <tr><td>{{ item.description }}</td><td>{{ item.get_category_display }}</td><td style="text-align:right;">{{ item.quantity }}</td><td style="text-align:right;">{{ item.unit_price|floatformat:0 }} FCFA</td><td style="text-align:right;">{{ item.line_total|floatformat:0 }} FCFA</td></tr>
+        {% endfor %}
+        {% if inv.discount_amount > 0 %}
+        <tr><td colspan="4" style="text-align:right;color:#856404;">Discount ({{ inv.discount_reason }}):</td><td style="text-align:right;color:#856404;">-{{ inv.discount_amount|floatformat:0 }} FCFA</td></tr>
+        {% endif %}
+        <tr class="total-row"><td colspan="4" style="text-align:right;">Total:</td><td style="text-align:right;">{{ inv.total|floatformat:0 }} FCFA</td></tr>
+        <tr><td colspan="4" style="text-align:right;color:#198754;">Amount Paid:</td><td style="text-align:right;color:#198754;">{{ inv.amount_paid|floatformat:0 }} FCFA</td></tr>
+        <tr><td colspan="4" style="text-align:right;font-weight:bold;color:{% if inv.balance_due > 0 %}#dc3545{% else %}#198754{% endif %};">Balance Due:</td><td style="text-align:right;font-weight:bold;color:{% if inv.balance_due > 0 %}#dc3545{% else %}#198754{% endif %};">{{ inv.balance_due|floatformat:0 }} FCFA</td></tr>
+      </tbody>
+    </table>
+    {% if inv.payments.all %}
+    <div style="margin-top:5px;font-size:8pt;color:#444;">
+      <strong>Payments:</strong>
+      {% for pay in inv.payments.all %}{{ pay.get_payment_method_display }} {{ pay.amount|floatformat:0 }} FCFA ({{ pay.payment_date|date:"d M Y H:i" }}){% if not forloop.last %}, {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="footer">
+  Generated: {% now "d M Y H:i" %} &middot; {{ hospital_name }} &middot; This is a confidential medical summary document.
+</div>
+
+</body>
+</html>

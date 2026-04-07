@@ -1,0 +1,187 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{{ act.title }}{% endblock %}
+{% block content %}
+
+<!-- Print header -->
+<div class="print-header text-center mb-3">
+  <h4 class="fw-bold mb-0">{{ HOSPITAL_NAME }}</h4>
+  <p class="mb-0 small">Outreach Activity Report</p><hr>
+</div>
+
+<div class="d-flex align-items-center gap-3 mb-3 no-print">
+  <a href="{% url 'outreach:list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="fw-bold mb-0">{{ act.title }}</h5>
+  <div class="ms-auto d-flex gap-2">
+    {% if can_manage %}
+    <a href="{% url 'outreach:edit' pk=act.pk %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    <a href="{% url 'outreach:record_add' pk=act.pk %}" class="btn btn-sm btn-success">
+      <i class="bi bi-plus-circle me-1"></i>Add Statistics
+    </a>
+    {% endif %}
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">
+      <i class="bi bi-printer me-1"></i>Print Report
+    </button>
+  </div>
+</div>
+
+<!-- Status banner -->
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="row g-3 small">
+          <div class="col-md-4">
+            <div class="text-muted">Type</div>
+            <div class="fw-bold">{{ act.get_activity_type_display }}</div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-muted">Date</div>
+            <div class="fw-bold">{{ act.activity_date }}{% if act.end_date %} → {{ act.end_date }}{% endif %}</div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-muted">Status</div>
+            <div>
+              {% if act.status == 'COMPLETED' %}<span class="badge bg-success">Completed</span>
+              {% elif act.status == 'IN_PROGRESS' %}<span class="badge bg-warning text-dark">In Progress</span>
+              {% elif act.status == 'PLANNED' %}<span class="badge bg-primary">Planned</span>
+              {% else %}<span class="badge bg-secondary">{{ act.get_status_display }}</span>{% endif %}
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-muted">Location</div>
+            <div class="fw-bold">{{ act.location_name }}</div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-muted">Region / Town</div>
+            <div class="fw-bold">{{ act.region }}{% if act.town %}, {{ act.town }}{% endif %}</div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-muted">Team Leader</div>
+            <div class="fw-bold">{% if act.team_leader %}{{ act.team_leader.get_full_name }}{% else %}—{% endif %}</div>
+          </div>
+          {% if act.partner_org %}
+          <div class="col-md-4">
+            <div class="text-muted">Partner</div>
+            <div class="fw-bold">{{ act.partner_org }}</div>
+          </div>
+          {% endif %}
+          {% if act.sponsor %}
+          <div class="col-md-4">
+            <div class="text-muted">Sponsor</div>
+            <div class="fw-bold">{{ act.sponsor }} — {{ act.sponsor_amount|intcomma }} FCFA</div>
+          </div>
+          {% endif %}
+          {% if act.objectives %}
+          <div class="col-12">
+            <div class="text-muted">Objectives</div>
+            <div>{{ act.objectives }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Totals summary -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-success bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-semibold small text-success">Activity Totals</h6>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm mb-0 small">
+          <tr><td class="text-muted">Total Screened</td><td class="fw-bold text-primary">{{ totals.screened|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Treated / Managed</td><td class="fw-bold text-success">{{ totals.treated|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Referred to Hospital</td><td class="fw-bold text-warning">{{ totals.referred|default:0|intcomma }}</td></tr>
+          <tr><td class="text-muted">Surgeries Performed</td><td class="fw-bold text-danger">{{ totals.surgeries|default:0 }}</td></tr>
+          <tr><td class="text-muted">Glasses Dispensed</td><td class="fw-bold">{{ totals.glasses|default:0 }}</td></tr>
+          <tr class="table-light"><td class="text-muted">Total Cost (FCFA)</td><td class="fw-bold">{{ totals.cost|default:0|intcomma }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Daily Records -->
+{% if records %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-transparent py-2">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-table me-1"></i>Daily Statistics Records</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Screened</th>
+          <th>M/F/Child</th>
+          <th>Cataract</th>
+          <th>Glaucoma</th>
+          <th>Refractive</th>
+          <th>Treated</th>
+          <th>Referred</th>
+          <th>Glasses</th>
+          <th>Surgeries</th>
+          <th>Recorded By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr>
+          <td class="fw-semibold">{{ r.record_date }}</td>
+          <td class="text-primary fw-bold">{{ r.total_screened }}</td>
+          <td class="text-muted">{{ r.male_screened }}/{{ r.female_screened }}/{{ r.children_screened }}</td>
+          <td>{{ r.cataract }}</td>
+          <td>{{ r.glaucoma_suspects }}</td>
+          <td>{{ r.refractive_errors }}</td>
+          <td class="text-success fw-bold">{{ r.total_treated }}</td>
+          <td class="text-warning fw-bold">{{ r.total_referred }}</td>
+          <td>{{ r.glasses_dispensed }}</td>
+          <td class="text-danger fw-bold">{{ r.surgeries_performed }}</td>
+          <td class="text-muted">{% if r.recorded_by %}{{ r.recorded_by.get_full_name }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info mt-3">
+  <i class="bi bi-info-circle me-1"></i>
+  No statistics recorded yet.
+  {% if can_manage %}
+  <a href="{% url 'outreach:record_add' pk=act.pk %}" class="alert-link">Add statistics now</a>.
+  {% endif %}
+</div>
+{% endif %}
+
+{% if act.challenges or act.recommendations %}
+<div class="row g-3 mt-2">
+  {% if act.challenges %}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body small">
+        <div class="fw-bold text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Challenges</div>
+        {{ act.challenges }}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if act.recommendations %}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body small">
+        <div class="fw-bold text-success mb-1"><i class="bi bi-lightbulb me-1"></i>Recommendations</div>
+        {{ act.recommendations }}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

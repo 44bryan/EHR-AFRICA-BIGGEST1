@@ -1,0 +1,228 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}IPD Surgical Statistics{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-graph-up text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">IPD Surgical Statistics</h5>
+      <div class="text-muted small">{{ month_start|date:"F Y" }} — Surgical bookings, payment status, admissions</div>
+    </div>
+  </div>
+  <a href="{% url 'ipd:surgical_booking_queue' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Admission Queue
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_prescribed }}</div>
+        <div class="small text-muted">Prescribed (Surgery)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ paid }}</div>
+        <div class="small text-muted">Paid Deposit</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info">{{ admitted_this_month }}</div>
+        <div class="small text-muted">Admitted (Returned)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-secondary">{{ completed }}</div>
+        <div class="small text-muted">Surgery Done</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ confirmed }}</div>
+        <div class="small text-muted">Confirmed</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-danger">{{ cancelled }}</div>
+        <div class="small text-muted">Cancelled</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <!-- Surgery type breakdown -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-pie-chart text-primary me-2"></i>Surgery by Category
+      </div>
+      <div class="card-body p-0">
+        {% if category_breakdown %}
+        <ul class="list-group list-group-flush small">
+          {% for c in category_breakdown %}
+          <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+            <span>{{ c.surgery_category }}</span>
+            <span class="badge bg-primary rounded-pill">{{ c.count }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="p-3 text-muted text-center small">No category data yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Current IPD census -->
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-hospital text-success me-2"></i>Current Inpatients
+        <span class="badge bg-success ms-2">{{ current_admissions|length }}</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover small mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Admission #</th>
+                <th>Patient</th>
+                <th>Ward / Bed</th>
+                <th>Surgery</th>
+                <th>Doctor</th>
+                <th>Days</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in current_admissions %}
+              <tr>
+                <td class="fw-semibold">{{ a.admission_number }}</td>
+                <td>{{ a.patient.full_name }}</td>
+                <td>{{ a.bed.ward.name }} / {{ a.bed.bed_number }}</td>
+                <td>
+                  {% if a.surgical_booking %}
+                    {{ a.surgical_booking.procedure|truncatechars:30 }}
+                  {% else %}—{% endif %}
+                </td>
+                <td>{{ a.admitting_doctor.get_full_name }}</td>
+                <td>{{ a.los_days }}d</td>
+                <td>
+                  <a href="{% url 'ipd:admission_detail' a.id %}"
+                     class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 6px;">View</a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="7" class="text-center text-muted py-3">No current inpatients</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- All surgical bookings this month -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-calendar-check text-primary me-2"></i>
+    Surgical Bookings — {{ month_start|date:"F Y" }}
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover small mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Booking #</th>
+            <th>MRN / Patient</th>
+            <th>Procedure / Category</th>
+            <th>Consultation</th>
+            <th>Surgeon</th>
+            <th>Surgery Date</th>
+            <th>Paid</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in bookings %}
+          <tr>
+            <td>
+              <a href="{% url 'ipd:surgical_booking_detail' b.id %}" class="text-decoration-none fw-semibold">
+                {{ b.booking_number }}
+              </a>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ b.patient.patient_id }}</div>
+              <div class="text-muted">{{ b.patient.full_name }}</div>
+            </td>
+            <td>
+              {{ b.procedure|truncatechars:30 }}
+              {% if b.surgery_category %}
+              <div class="badge bg-light text-dark border" style="font-size:.65rem;">{{ b.surgery_category }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if b.consultation %}
+              <span class="text-muted" style="font-size:.75rem;">
+                {{ b.consultation.department.name|default:"General" }}<br>
+                {{ b.consultation.consultation_date|date:"d M" }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ b.surgeon.get_full_name|default:"TBD" }}</td>
+            <td>{{ b.surgery_date|date:"d M Y"|default:"Not set" }}</td>
+            <td>
+              {% if b.deposit_required > 0 %}
+                {% if b.is_fully_deposited %}
+                <span class="badge bg-success">Paid</span>
+                {% else %}
+                <span class="badge bg-warning text-dark">Partial</span>
+                <div class="text-muted" style="font-size:.65rem;">
+                  {{ b.deposit_paid|floatformat:0 }} / {{ b.deposit_required|floatformat:0 }}
+                </div>
+                {% endif %}
+              {% else %}
+              <span class="badge bg-secondary">Not set</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if b.status == 'PENDING_PAYMENT' %}<span class="badge bg-warning text-dark">Pending</span>
+              {% elif b.status == 'CONFIRMED' %}<span class="badge bg-primary">Confirmed</span>
+              {% elif b.status == 'SCHEDULED' %}<span class="badge bg-info">Scheduled</span>
+              {% elif b.status == 'COMPLETED' %}<span class="badge bg-success">Done</span>
+              {% elif b.status == 'CANCELLED' %}<span class="badge bg-danger">Cancelled</span>
+              {% else %}<span class="badge bg-secondary">{{ b.get_status_display }}</span>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="text-center text-muted py-3">No surgical bookings this month</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

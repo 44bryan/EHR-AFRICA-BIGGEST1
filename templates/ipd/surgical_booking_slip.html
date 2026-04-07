@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; }
+  .page { width: 148mm; min-height: 210mm; padding: 10mm; margin: 0 auto; }
+  .hospital-header { text-align: center; border-bottom: 2px solid #d32f2f; padding-bottom: 8px; margin-bottom: 12px; }
+  .hospital-name { font-size: 16px; font-weight: 700; color: #d32f2f; }
+  .hospital-sub { font-size: 10px; color: #555; margin-top: 2px; }
+  .slip-title { text-align: center; font-size: 14px; font-weight: 700; margin: 10px 0; text-transform: uppercase; letter-spacing: 1px; }
+  .booking-number { text-align: center; font-size: 20px; font-weight: 700; color: #d32f2f; margin-bottom: 12px; }
+  .section-title { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 3px; margin-bottom: 8px; margin-top: 12px; }
+  .row { display: flex; gap: 8px; margin-bottom: 6px; }
+  .col { flex: 1; }
+  .label { font-size: 10px; color: #666; }
+  .value { font-weight: 600; font-size: 12px; }
+  .amount-box { border: 2px solid #d32f2f; border-radius: 6px; padding: 10px; text-align: center; margin-top: 12px; }
+  .amount-label { font-size: 11px; color: #555; }
+  .amount-value { font-size: 20px; font-weight: 700; color: #d32f2f; }
+  .preop { background: #fff8e1; border-left: 3px solid #f9a825; padding: 8px; margin-top: 10px; font-size: 11px; }
+  .footer { text-align: center; margin-top: 16px; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 8px; }
+  .important { background: #ffebee; border: 1px solid #ef9a9a; border-radius: 4px; padding: 8px; margin-top: 10px; font-size: 11px; }
+  @media print { .page { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hospital-header">
+    <div class="hospital-name">{{ hospital_name }}</div>
+    <div class="hospital-sub">{{ hospital_address }} | {{ hospital_phone }}</div>
+  </div>
+
+  <div class="slip-title">Surgical Booking Confirmation Slip</div>
+  <div class="booking-number">{{ booking.booking_number }}</div>
+
+  <div class="section-title">Patient Details</div>
+  <div class="row">
+    <div class="col"><div class="label">Full Name</div><div class="value">{{ booking.patient.full_name }}</div></div>
+    <div class="col"><div class="label">Patient ID</div><div class="value">{{ booking.patient.patient_id }}</div></div>
+  </div>
+  <div class="row">
+    <div class="col"><div class="label">Date of Birth</div><div class="value">{{ booking.patient.date_of_birth|date:"d M Y"|default:"—" }}</div></div>
+    <div class="col"><div class="label">Phone</div><div class="value">{{ booking.patient.phone_number|default:"—" }}</div></div>
+  </div>
+
+  <div class="section-title">Procedure</div>
+  <div class="row">
+    <div class="col"><div class="label">Procedure</div><div class="value">{{ booking.procedure }}</div></div>
+    <div class="col" style="flex:0 0 40px;"><div class="label">Eye</div><div class="value">{{ booking.eye_laterality|default:"—" }}</div></div>
+  </div>
+  <div class="row">
+    <div class="col"><div class="label">Surgeon</div><div class="value">{% if booking.surgeon %}Dr. {{ booking.surgeon.full_name }}{% else %}To be assigned{% endif %}</div></div>
+    <div class="col"><div class="label">Anaesthesia</div><div class="value">{{ booking.get_anaesthesia_type_display|default:"—" }}</div></div>
+  </div>
+
+  {% if booking.surgery_date %}
+  <div class="section-title">Surgery Schedule</div>
+  <div class="row">
+    <div class="col"><div class="label">Date</div><div class="value">{{ booking.surgery_date|date:"l, d F Y" }}</div></div>
+    <div class="col"><div class="label">Time</div><div class="value">{{ booking.surgery_date|time:"H:i" }}</div></div>
+    <div class="col"><div class="label">Theatre</div><div class="value">{{ booking.theatre|default:"To be confirmed" }}</div></div>
+  </div>
+  {% else %}
+  <div class="section-title">Surgery Schedule</div>
+  <div class="value" style="color:#f57c00;">Surgery date will be communicated after deposit payment.</div>
+  {% endif %}
+
+  <div class="amount-box">
+    <div class="amount-label">Deposit Required to Confirm Booking</div>
+    <div class="amount-value">{{ booking.deposit_required|floatformat:0 }} XAF</div>
+    {% if booking.total_amount %}<div class="amount-label" style="margin-top:4px;">Total Surgery Cost: {{ booking.total_amount|floatformat:0 }} XAF</div>{% endif %}
+    {% if booking.payment_notes %}<div class="amount-label" style="margin-top:4px;">{{ booking.payment_notes }}</div>{% endif %}
+  </div>
+
+  {% if booking.pre_op_requirements %}
+  <div class="section-title">Pre-operative Instructions</div>
+  <div class="preop">{{ booking.pre_op_requirements }}</div>
+  {% endif %}
+
+  <div class="important">
+    <strong>IMPORTANT:</strong> Please pay the deposit at the Cashier Desk and keep your receipt.
+    Bring this slip, your payment receipt, and all previous eye records on the day of surgery.
+    If you need to cancel or reschedule, please call us at least 48 hours in advance.
+  </div>
+
+  <div class="footer">
+    Issued {{ booking.created_at|date:"d M Y" }}
+    {% if booking.admission_officer %}by {{ booking.admission_officer.full_name }}{% endif %}
+    · {{ hospital_name }} · {{ hospital_phone }}
+  </div>
+</div>
+</body>
+</html>

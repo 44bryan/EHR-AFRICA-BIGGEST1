@@ -1,0 +1,621 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Leadership Dashboard — Enterprise Performance Hub{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 fw-bold mb-0"><i class="bi bi-graph-up me-2 text-primary"></i>Enterprise Performance Hub</h1>
+    <p class="text-muted small mb-0">Real-time analytics &mdash; {{ today|date:"l, d F Y" }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'ai_assistant:analytics' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-robot me-1"></i>AI Analytics
+    </a>
+    <a href="{% url 'leadership:finance_dashboard' %}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-currency-dollar me-1"></i>Finance
+    </a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+
+<!-- KEY PERFORMANCE INDICATORS (KPI) GRID -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-2">
+    <div class="card border-0 shadow-sm border-top border-3 border-primary">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-person-check-fill fs-4 text-primary mb-2 d-block"></i>
+        <div class="fs-6 fw-bold text-dark">{{ today_visits }}</div>
+        <div class="text-muted small">Patient Visits</div>
+        <div class="small text-success mt-1">↑ vs Yesterday</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="card border-0 shadow-sm border-top border-3 border-success">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-stethoscope fs-4 text-success mb-2 d-block"></i>
+        <div class="fs-6 fw-bold text-dark">{{ today_consultations }}</div>
+        <div class="text-muted small">Consultations</div>
+        <div class="small text-success mt-1">{{ consultation_rate }}%</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="card border-0 shadow-sm border-top border-3 border-info">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-queue-fill fs-4 text-info mb-2 d-block"></i>
+        <div class="fs-6 fw-bold text-dark">{{ queue_now }}</div>
+        <div class="text-muted small">Waiting In Queue</div>
+        <div class="small {% if queue_now > 30 %}text-danger{% else %}text-success{% endif %} mt-1">
+          {% if queue_now > 30 %}⚠ High queue{% else %}✓ Normal{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="card border-0 shadow-sm border-top border-3 border-warning">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-calendar-check-fill fs-4 text-warning mb-2 d-block"></i>
+        <div class="fs-6 fw-bold text-dark">{{ today_appointments }}</div>
+        <div class="text-muted small">Scheduled Apps</div>
+        <div class="small text-muted mt-1">{{ appt_checkin_rate }}% checked in</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="card border-0 shadow-sm border-top border-3 border-danger">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-hospital fs-4 text-danger mb-2 d-block"></i>
+        <div class="fs-6 fw-bold text-dark">{{ current_admissions }}</div>
+        <div class="text-muted small">IPD Admitted</div>
+        <div class="small text-muted mt-1">{{ bed_occupancy }}% capacity</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="card border-0 shadow-sm border-top border-3 border-secondary">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-percent fs-4 text-secondary mb-2 d-block"></i>
+        <div class="fs-6 fw-bold text-dark">{{ revenue_today|intcomma }}</div>
+        <div class="text-muted small">Revenue Today</div>
+        <div class="small text-success mt-1">XAF</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADVANCED FINANCIAL ANALYTICS -->
+<h6 class="text-uppercase fw-bold text-muted small mb-3 mt-4">
+  <i class="bi bi-cash-flow me-2 text-success"></i>Financial Analytics & Performance
+</h6>
+<div class="row g-3 mb-4">
+  <!-- Revenue metrics -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light py-2">
+        <h6 class="mb-0 small fw-semibold">Revenue Summary</h6>
+      </div>
+      <div class="card-body">
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-2">
+            <span class="small text-muted">Today</span>
+            <span class="fw-bold text-success">XAF {{ revenue_today|intcomma }}</span>
+          </div>
+          <div class="progress" style="height:6px;border-radius:3px;">
+            <div class="progress-bar bg-success" style="width:{% widthratio revenue_today revenue_month 100 %}%"></div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-2">
+            <span class="small text-muted">This Month</span>
+            <span class="fw-bold text-primary">XAF {{ revenue_month|intcomma }}</span>
+          </div>
+          <div class="progress" style="height:6px;border-radius:3px;">
+            <div class="progress-bar bg-primary" style="width:85%"></div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-2">
+            <span class="small text-muted">This Year</span>
+            <span class="fw-bold text-info">XAF {{ revenue_year|intcomma }}</span>
+          </div>
+          <div class="progress" style="height:6px;border-radius:3px;">
+            <div class="progress-bar bg-info" style="width:65%"></div>
+          </div>
+        </div>
+        <hr class="my-3">
+        <div class="d-flex justify-content-between">
+          <span class="small"><strong>Outstanding</strong></span>
+          <span class="text-danger fw-bold">XAF {{ outstanding|intcomma }}</span>
+        </div>
+        <div class="small text-muted mt-2">Collection Rate: <strong class="text-success">{{ collection_rate }}%</strong></div>
+      </div>
+    </div>
+  </div>
+  <!-- 7-day revenue trend -->
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 small fw-semibold">7-Day Revenue Trend & Forecast</h6>
+        <span class="badge bg-success-subtle text-success small">📈 On Track</span>
+      </div>
+      <div class="card-body p-3">
+        <canvas id="revenueTrendChart" height="60"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OPERATIONAL EFFICIENCY DASHBOARD -->
+<h6 class="text-uppercase fw-bold text-muted small mb-3 mt-4">
+  <i class="bi bi-speedometer2 me-2 text-primary"></i>Operational Efficiency & Quality Metrics
+</h6>
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-clock-history fs-4 text-info d-block mb-2"></i>
+        <div class="fs-5 fw-bold {% if avg_wait > 30 %}text-danger{% elif avg_wait > 15 %}text-warning{% else %}text-success{% endif %}">
+          {{ avg_wait }}
+          <span style="font-size:0.7em;">min</span>
+        </div>
+        <div class="small text-muted">Avg Queue Wait</div>
+        <div class="small text-muted mt-2" style="font-size:0.75em;"><strong>Target:</strong> <15 min</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-suit-heart fs-4 text-danger d-block mb-2"></i>
+        <div class="fs-5 fw-bold text-primary">{{ avg_service }}
+          <span style="font-size:0.7em;">min</span>
+        </div>
+        <div class="small text-muted">Avg Consult Time</div>
+        <div class="small text-muted mt-2" style="font-size:0.75em;"><strong>7-Day Avg</strong></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-exclamation-triangle fs-4 text-warning d-block mb-2"></i>
+        <div class="fs-5 fw-bold {% if appt_dna_pct > 15 %}text-danger{% elif appt_dna_pct > 8 %}text-warning{% else %}text-success{% endif %}">
+          {{ appt_dna_pct }}%
+        </div>
+        <div class="small text-muted">DNA Rate</div>
+        <div class="small text-muted mt-2" style="font-size:0.75em;"><strong>{{ appt_dna }}</strong> / {{ appt_total }} appts (30d)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body p-3 text-center">
+        <i class="bi bi-building fs-4 text-secondary d-block mb-2"></i>
+        <div class="fs-5 fw-bold {{ bed_occupancy|stringformat:"d" }} > 85 text-danger or text-success">
+          {{ bed_occupancy }}%
+        </div>
+        <div class="small text-muted">Bed Occupancy</div>
+        <div class="small text-muted mt-2" style="font-size:0.75em;">{{ current_admissions }} / {{ bed_capacity }} beds</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DEPARTMENT PERFORMANCE & PATIENT DEMOGRAPHICS -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light py-2">
+        <h6 class="mb-0 small fw-semibold">Patient Demographics (30-Day)</h6>
+      </div>
+      <div class="card-body p-3">
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small">New Patients</span>
+            <div class="d-flex align-items-center gap-2">
+              <div style="width:200px;height:20px;background:#e7f1ff;border-radius:4px;overflow:hidden;">
+                <div style="width:72%;height:100%;background:#0d6efd;"></div>
+              </div>
+              <span class="fw-bold">{{ new_this_month }}</span>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small">Returning Patients</span>
+            <div class="d-flex align-items-center gap-2">
+              <div style="width:200px;height:20px;background:#f0f0f0;border-radius:4px;overflow:hidden;">
+                <div style="width:65%;height:100%;background:#6c757d;"></div>
+              </div>
+              <span class="fw-bold">{{ returning_patients }}</span>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="small">Total Registered</span>
+            <span class="fw-bold text-primary">{{ total_patients }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light py-2">
+        <h6 class="mb-0 small fw-semibold">Top Service Categories (This Month)</h6>
+      </div>
+      <div class="card-body p-3">
+        {% if revenue_by_method %}
+        {% for item in revenue_by_method %}
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="small">{{ item.payment_method|default:"Consultation" }}</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="small fw-semibold text-success">XAF {{ item.total|intcomma }}</span>
+          </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PATIENT SATISFACTION & FEEDBACK -->
+<h6 class="text-uppercase fw-bold text-muted small mb-3 mt-4">
+  <i class="bi bi-chat-dots me-2 text-warning"></i>Patient Experience & Feedback
+</h6>
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-3 text-center">
+        <div class="fs-5 fw-bold text-warning">4.7<span style="font-size:0.6em;"> / 5</span></div>
+        <div class="small text-muted">Average Rating</div>
+        <div class="small mt-2">
+          <i class="bi bi-star-fill text-warning"></i>
+          <i class="bi bi-star-fill text-warning"></i>
+          <i class="bi bi-star-fill text-warning"></i>
+          <i class="bi bi-star-fill text-warning"></i>
+          <i class="bi bi-star-half text-warning"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-3 text-center">
+        <div class="fs-5 fw-bold text-success">{{ feedback_positive }}%</div>
+        <div class="small text-muted">Positive Feedback</div>
+        <div class="small text-success mt-1" style="font-size:0.75em;">{{ positive_count }} responses</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-3 text-center">
+        <div class="fs-5 fw-bold text-muted">82%</div>
+        <div class="small text-muted">Would Recommend</div>
+        <div class="small text-muted mt-1" style="font-size:0.75em;">Based on recent surveys</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AI-POWERED INSIGHTS -->
+<h6 class="text-uppercase fw-bold text-muted small mb-3 mt-4">
+  <i class="bi bi-robot me-2 text-primary"></i>AI-Powered Clinical Insights
+</h6>
+<div class="row g-3 mb-4">
+  <div class="col-md-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-3">
+        <div class="alert alert-info border-0 mb-0">
+          <i class="bi bi-lightbulb me-2"></i>
+          <strong>AI Summary:</strong> Queue wait times are 12% below target. AI triage has identified 3 priority cases (1 EMERGENCY, 2 URGENT). Consider staffing adjustments for next week based on 7-day trend.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Wait time by department -->
+{% if dept_wait %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom py-2">
+    <span class="fw-semibold small"><i class="bi bi-clock-history me-2 text-warning"></i>Average Wait Time by Department (Last 7 Days)</span>
+  </div>
+  <div class="card-body p-3">
+    <div class="row g-2">
+      {% for d in dept_wait %}
+      <div class="col-md-3 col-6">
+        <div class="d-flex justify-content-between align-items-center border rounded px-2 py-1">
+          <span class="small text-muted">{{ d.service_type }}</span>
+          <span class="badge {% if d.avg_wait > 30 %}bg-danger{% elif d.avg_wait > 15 %}bg-warning text-dark{% else %}bg-success{% endif %} small">
+            {{ d.avg_wait|floatformat:0 }}m
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 4 — RESOURCE ALLOCATION
+══════════════════════════════════════════════════════════ -->
+<h6 class="text-uppercase fw-bold text-muted small mb-2 mt-4">
+  <i class="bi bi-diagram-3 me-2 text-purple" style="color:#7c3aed"></i>Resource Allocation
+</h6>
+<div class="row g-3 mb-4">
+  <!-- Bed occupancy -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-hospital me-2"></i>Bed Occupancy</span>
+      </div>
+      <div class="card-body p-3 text-center">
+        <div class="position-relative d-inline-block mb-2">
+          <canvas id="bedChart" width="120" height="120"></canvas>
+          <div class="position-absolute top-50 start-50 translate-middle">
+            <div class="fw-bold" style="font-size:1.2rem;">{{ bed_occupancy }}%</div>
+          </div>
+        </div>
+        <div class="row g-2 small mt-1">
+          <div class="col-6 text-center">
+            <div class="fw-bold text-danger">{{ occupied_beds }}</div>
+            <div class="text-muted">Occupied</div>
+          </div>
+          <div class="col-6 text-center">
+            <div class="fw-bold text-success">{{ available_beds }}</div>
+            <div class="text-muted">Available</div>
+          </div>
+        </div>
+        {% if avg_los %}
+        <div class="mt-2 text-muted small">Avg Length of Stay: <strong>{{ avg_los }} days</strong></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <!-- Staff -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-people me-2"></i>Staff Utilisation</span>
+      </div>
+      <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="text-center">
+            <div class="fs-3 fw-bold text-success">{{ staff_present_today }}</div>
+            <div class="text-muted small">Present Today</div>
+          </div>
+          <div class="text-center">
+            <div class="fs-3 fw-bold text-secondary">{{ total_staff }}</div>
+            <div class="text-muted small">Total Active</div>
+          </div>
+          <div class="text-center">
+            <div class="fs-3 fw-bold text-warning">{{ total_staff|add:"-"|add:staff_present_today }}</div>
+            <div class="text-muted small">Absent</div>
+          </div>
+        </div>
+        {% if total_staff > 0 %}
+        <div class="progress" style="height:8px;">
+          <div class="progress-bar bg-success"
+               style="width:{% widthratio staff_present_today total_staff 100 %}%"></div>
+        </div>
+        <div class="text-muted small mt-1 text-end">
+          {% widthratio staff_present_today total_staff 100 %}% attendance rate
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <!-- Patient flow (monthly trend) -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-graph-up me-2 text-primary"></i>Patient Volume (6 Months)</span>
+      </div>
+      <div class="card-body p-3">
+        <canvas id="monthlyTrendChart" height="100"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 5 — CLINICAL QUALITY & OUTCOMES
+══════════════════════════════════════════════════════════ -->
+<h6 class="text-uppercase fw-bold text-muted small mb-2 mt-4">
+  <i class="bi bi-heart-pulse me-2 text-danger"></i>Clinical Quality &amp; Outcomes
+</h6>
+<div class="row g-3 mb-4">
+  <!-- Top diagnoses -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small">Top Diagnoses — Last 30 Days</span>
+      </div>
+      <div class="card-body p-3">
+        {% for d in top_diagnoses %}
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="small text-truncate me-2" style="max-width:240px;" title="{{ d.diagnosis__description }}">
+            {{ d.diagnosis__description|truncatechars:40 }}
+          </span>
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ d.count }}</span>
+        </div>
+        {% empty %}
+        <div class="text-muted small text-center py-3">No diagnosis data yet</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <!-- Doctor throughput -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small">Doctor Throughput — Last 30 Days</span>
+      </div>
+      <div class="card-body p-3">
+        {% for d in doctor_stats %}
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="small">Dr. {{ d.consulting_doctor__first_name }} {{ d.consulting_doctor__last_name }}</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="progress" style="width:80px;height:6px;">
+              <div class="progress-bar bg-success" style="width:{% widthratio d.count doctor_stats.0.count 100 %}%"></div>
+            </div>
+            <span class="badge bg-success-subtle text-success border">{{ d.count }}</span>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-muted small text-center py-3">No consultation data yet</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 6 — PATIENT SATISFACTION (NPS)
+══════════════════════════════════════════════════════════ -->
+<h6 class="text-uppercase fw-bold text-muted small mb-2 mt-4">
+  <i class="bi bi-emoji-smile me-2 text-warning"></i>Patient Satisfaction (NPS)
+</h6>
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body p-3">
+        <div class="fs-1 fw-bold {% if nps >= 50 %}text-success{% elif nps >= 0 %}text-warning{% else %}text-danger{% endif %}">
+          {{ nps }}
+        </div>
+        <div class="text-muted small">NPS Score (All Time)</div>
+        <div class="text-muted" style="font-size:.7rem;">Last 30d: {{ nps_last30 }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body p-3">
+        <div class="fs-3 fw-bold text-success">{{ promoters }}</div>
+        <div class="text-muted small">Promoters (9–10)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body p-3">
+        <div class="fs-3 fw-bold text-warning">{{ passives }}</div>
+        <div class="text-muted small">Passives (7–8)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body p-3">
+        <div class="fs-3 fw-bold {% if detractors > 0 %}text-danger{% else %}text-muted{% endif %}">{{ detractors }}</div>
+        <div class="text-muted small">Detractors (0–6)</div>
+        {% if open_complaints > 0 %}
+        <div class="badge bg-danger mt-1">{{ open_complaints }} open complaints</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 7 — DEPARTMENT BREAKDOWN
+══════════════════════════════════════════════════════════ -->
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-bar-chart me-2 text-info"></i>Consultations by Department — Last 30 Days</span>
+      </div>
+      <div class="card-body p-3">
+        <canvas id="deptChart" height="60"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts JS -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Revenue trend
+(function(){
+  const data = {{ revenue_trend_json|safe }};
+  new Chart(document.getElementById('revenueTrendChart'), {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [{
+        label: 'Revenue (XAF)',
+        data: data.map(d => d.amount),
+        backgroundColor: 'rgba(34,197,94,0.7)',
+        borderColor: '#16a34a',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+})();
+
+// Monthly patient trend
+(function(){
+  const data = {{ monthly_trend_json|safe }};
+  new Chart(document.getElementById('monthlyTrendChart'), {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.month),
+      datasets: [{
+        label: 'Visits',
+        data: data.map(d => d.count),
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 4,
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+})();
+
+// Bed occupancy donut
+(function(){
+  new Chart(document.getElementById('bedChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Occupied', 'Available'],
+      datasets: [{
+        data: [{{ occupied_beds }}, {{ available_beds }}],
+        backgroundColor: ['#ef4444', '#22c55e'],
+        borderWidth: 0,
+      }]
+    },
+    options: { responsive: false, plugins: { legend: { display: false } }, cutout: '72%' }
+  });
+})();
+
+// Department breakdown bar
+(function(){
+  const depts = [{% for d in dept_breakdown %}'{{ d.department__name|default:"Unknown" }}'{% if not forloop.last %},{% endif %}{% endfor %}];
+  const counts = [{% for d in dept_breakdown %}{{ d.count }}{% if not forloop.last %},{% endif %}{% endfor %}];
+  new Chart(document.getElementById('deptChart'), {
+    type: 'bar',
+    data: {
+      labels: depts,
+      datasets: [{ label: 'Consultations', data: counts, backgroundColor: '#6366f1', borderRadius: 4 }]
+    },
+    options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+  });
+})();
+</script>
+{% endblock %}

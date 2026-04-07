@@ -1,0 +1,150 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Reception Desk{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-0">Reception Desk</h1>
+    <div class="text-muted small">{{ today|date:"l, d F Y" }}</div>
+  </div>
+  <a href="{% url 'reception:walk_in' %}" class="btn btn-primary btn-lg">
+    <i class="bi bi-person-plus-fill me-2"></i>New Walk-in
+  </a>
+</div>
+
+{# ── Stats ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ stats.total }}</div>
+      <div class="text-muted small">Today's Appointments</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ stats.waiting }}</div>
+      <div class="text-muted small">Waiting</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-info">{{ stats.checked_in }}</div>
+      <div class="text-muted small">Checked In</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ stats.completed }}</div>
+      <div class="text-muted small">Completed</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# ── Today's Appointments ── #}
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-calendar-check me-2 text-primary"></i>Today's Appointments</h6>
+        <a href="{% url 'appointments:list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Time</th>
+              <th>Patient</th>
+              <th>Department</th>
+              <th>Tier</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for appt in appointments %}
+            <tr>
+              <td class="fw-semibold">{{ appt.appointment_time|time:"H:i" }}</td>
+              <td>
+                <div class="fw-semibold">{{ appt.patient.full_name }}</div>
+                <div class="text-muted" style="font-size:0.75rem;">{{ appt.patient.patient_id }}</div>
+              </td>
+              <td class="text-muted">{{ appt.department.name|default:"—" }}</td>
+              <td>
+                {% with meta=tier_meta|default:appt.service_tier %}
+                <span class="badge bg-{{ appt.service_tier|lower|cut:'_' }}-subtle text-dark border">
+                  {% if appt.service_tier == 'VIP' %}<i class="bi bi-star-fill text-danger me-1"></i>VIP
+                  {% elif appt.service_tier == 'FAST_TRACK' %}<i class="bi bi-lightning-charge text-warning me-1"></i>Fast Track
+                  {% elif appt.service_tier == 'EXPRESS' %}<i class="bi bi-lightning text-info me-1"></i>Express
+                  {% else %}Standard{% endif %}
+                </span>
+                {% endwith %}
+              </td>
+              <td>
+                {% if appt.status == 'SCHEDULED' or appt.status == 'CONFIRMED' %}
+                  <span class="badge bg-secondary">Waiting</span>
+                {% elif appt.status == 'CHECKED_IN' %}
+                  <span class="badge bg-info">Checked In</span>
+                {% elif appt.status == 'COMPLETED' %}
+                  <span class="badge bg-success">Done</span>
+                {% elif appt.status == 'NO_SHOW' %}
+                  <span class="badge bg-danger">No Show</span>
+                {% else %}
+                  <span class="badge bg-light text-dark">{{ appt.get_status_display }}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if appt.status == 'SCHEDULED' or appt.status == 'CONFIRMED' %}
+                <a href="{% url 'reception:quick_checkin' pk=appt.pk %}" class="btn btn-sm btn-success">
+                  <i class="bi bi-box-arrow-in-right me-1"></i>Check In
+                </a>
+                {% elif appt.status == 'CHECKED_IN' %}
+                <a href="{% url 'patients:detail' patient_id=appt.patient.patient_id %}" class="btn btn-sm btn-outline-secondary">
+                  <i class="bi bi-eye"></i>
+                </a>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No appointments scheduled for today.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── QMS Queue ── #}
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-ticket-perforated me-2 text-warning"></i>Active Queue</h6>
+        <a href="{% url 'qms:dashboard' %}" class="btn btn-sm btn-outline-secondary">QMS Board</a>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for token in queue %}
+        <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+          <div class="d-flex align-items-center gap-3">
+            <div class="fs-4 fw-bold text-primary" style="min-width:60px;">{{ token.token_number }}</div>
+            <div>
+              <div class="fw-semibold small">{{ token.display_name }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">{{ token.get_service_type_display }} — {{ token.issued_at|time:"H:i" }}</div>
+            </div>
+          </div>
+          <div>
+            {% if token.priority == 2 %}
+              <span class="badge bg-danger">Emergency</span>
+            {% elif token.priority == 1 %}
+              <span class="badge bg-warning text-dark">Priority</span>
+            {% else %}
+              <span class="badge bg-secondary">Regular</span>
+            {% endif %}
+            <span class="badge bg-light text-dark border ms-1">{{ token.get_status_display }}</span>
+          </div>
+        </div>
+        {% empty %}
+        <div class="list-group-item text-center text-muted py-4">Queue is empty.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
