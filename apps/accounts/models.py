@@ -258,8 +258,9 @@ class User(AbstractUser):
 
     @property
     def is_admin_staff(self):
+        """Administrative / management roles — excludes clinical leadership."""
         return self.role in (
-            UserRole.ADMIN, UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN,
+            UserRole.ADMIN, UserRole.SUPER_ADMIN,
             UserRole.CEO, UserRole.ADMIN_DIRECTOR,
         )
 

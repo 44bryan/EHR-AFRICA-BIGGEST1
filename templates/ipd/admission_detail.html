@@ -3,11 +3,13 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h3 mb-0">{{ admission.admission_number }} — {{ admission.patient.full_name }}</h1>
-  <div>
+  <div class="d-flex gap-2 flex-wrap">
     {% if admission.status == 'ADMITTED' %}
-    <a href="{% url 'ipd:add_nursing_note' admission.id %}" class="btn btn-outline-primary me-2">Add Note</a>
-    <a href="{% url 'ipd:discharge' admission.id %}" class="btn btn-warning">Discharge</a>
+    <a href="{% url 'ipd:ward_round_add' admission.pk %}" class="btn btn-primary"><i class="bi bi-clipboard2-pulse me-1"></i>Ward Round</a>
+    <a href="{% url 'ipd:add_nursing_note' admission.id %}" class="btn btn-outline-primary"><i class="bi bi-journal-plus me-1"></i>Nursing Note</a>
+    <a href="{% url 'ipd:discharge' admission.id %}" class="btn btn-warning"><i class="bi bi-box-arrow-right me-1"></i>Discharge</a>
     {% endif %}
+    <a href="{% url 'ipd:discharge_summary_pdf' admission.pk %}" class="btn btn-outline-danger" target="_blank"><i class="bi bi-file-pdf me-1"></i>Discharge PDF</a>
   </div>
 </div>
 <div class="row g-3 mb-4">
@@ -148,4 +150,34 @@
     </div>
   </div>
 </div>
+
+<!-- Ward Rounds Section -->
+{% with ward_rounds=admission.ward_rounds.all %}
+{% if ward_rounds %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-primary bg-opacity-10 border-bottom d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold text-primary"><i class="bi bi-clipboard2-pulse me-2"></i>Ward Round Notes ({{ ward_rounds|length }})</h6>
+    {% if admission.status == 'ADMITTED' %}
+    <a href="{% url 'ipd:ward_round_add' admission.pk %}" class="btn btn-sm btn-primary"><i class="bi bi-plus me-1"></i>Add Round</a>
+    {% endif %}
+  </div>
+  <div class="card-body p-0">
+    {% for r in ward_rounds %}
+    <div class="px-3 py-2 border-bottom {% if r.is_discharge_ready %}bg-success bg-opacity-10{% endif %}">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold small">{{ r.round_date|date:"D, d M Y" }} {% if r.round_time %}{{ r.round_time|time:"H:i" }}{% endif %} — Dr. {{ r.doctor.get_full_name }}</div>
+          {% if r.va_re or r.va_le %}<div class="text-muted" style="font-size:.75rem;"><strong>VA:</strong> RE {{ r.va_re|default:"—" }} · LE {{ r.va_le|default:"—" }} &nbsp;|&nbsp; <strong>IOP:</strong> RE {{ r.iop_re|default:"—" }} · LE {{ r.iop_le|default:"—" }}</div>{% endif %}
+          {% if r.vital_signs.bp %}<div class="text-muted" style="font-size:.75rem;"><strong>BP:</strong> {{ r.vital_signs.bp }} &nbsp;|&nbsp; <strong>Pulse:</strong> {{ r.vital_signs.pulse|default:"—" }} &nbsp;|&nbsp; <strong>Temp:</strong> {{ r.vital_signs.temp|default:"—" }}°C &nbsp;|&nbsp; <strong>SpO₂:</strong> {{ r.vital_signs.spo2|default:"—" }}%</div>{% endif %}
+          <div class="mt-1 small"><strong>Plan:</strong> {{ r.plan|truncatechars:120 }}</div>
+          {% if r.is_discharge_ready %}<span class="badge bg-success mt-1"><i class="bi bi-check-circle me-1"></i>Cleared for Discharge</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+
 {% endblock %}

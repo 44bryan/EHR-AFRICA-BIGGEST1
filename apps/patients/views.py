@@ -165,35 +165,90 @@ def patient_register_view(request):
             'phone_number':  g.get('nok_phone', ''),
         })
 
-    g = request.GET
+    # For re-rendering after a POST error, preserve submitted values; for GET, use query params
+    src = request.POST if request.method == 'POST' else request.GET
     return render(request, 'patients/register.html', {
         'form': form,
         'nok_form': nok_form,
         'qms_token_id': qms_token_id,
-        # Visit-level pre-fills from pre-registration QR scan
-        'init_service_tier':       g.get('service_tier', 'STANDARD'),
-        'init_billing_type':       g.get('billing_type', 'SELF_PAY'),
-        'init_insurance_company':  g.get('insurance_company', ''),
-        'init_chief_complaint':    g.get('chief_complaint', ''),
-        'init_prev_registered':    g.get('previously_registered', ''),
-        'init_has_referral':       g.get('has_referral_letter', ''),
-        'init_nok_name':           g.get('nok_name', ''),
-        'init_nok_relationship':   g.get('nok_relationship', ''),
-        'init_nok_phone':          g.get('nok_phone', ''),
+        'init_service_tier':       src.get('service_tier', 'STANDARD'),
+        'init_billing_type':       src.get('billing_type', 'SELF_PAY'),
+        'init_insurance_company':  src.get('insurance_company', ''),
+        'init_chief_complaint':    src.get('chief_complaint', ''),
+        'init_prev_registered':    src.get('previously_registered', ''),
+        'init_has_referral':       src.get('has_referral_letter', ''),
+        'init_nok_name':           src.get('nok_name', ''),
+        'init_nok_relationship':   src.get('nok_relationship', ''),
+        'init_nok_phone':          src.get('nok_phone', ''),
     })
 
 
 @login_required
 @clinical_staff_required
 def patient_detail_view(request, patient_id):
+    from collections import defaultdict
     patient = get_object_or_404(Patient, patient_id=patient_id)
     visits = patient.visits.select_related('department', 'attending_doctor').order_by('-visit_date')[:20]
     medical_history = getattr(patient, 'medical_history', None)
     consultations = patient.consultations.filter(is_deleted=False).select_related(
         'department', 'consulting_doctor', 'visit'
     ).prefetch_related(
-        'consultation_diagnoses__diagnosis'
+        'consultation_diagnoses__diagnosis',
+        'optical_prescriptions',
+        'drug_prescriptions__items',
     ).order_by('-consultation_date')
+
+    # Group consultations by department for tabbed display
+    dept_order = [
+        'General Ophthalmology', 'Retina Clinic', 'Glaucoma Clinic',
+        'Cataract / Surgical', 'Refraction / Optometry', 'Pediatric Ophthalmology',
+        'Cornea Clinic', 'Uveitis Clinic', 'Neuro-ophthalmology', 'Oculoplastics',
+        'Eye Investigations', 'Surgical Counseling', 'VIP Consultation Room',
+    ]
+    dept_groups = defaultdict(list)
+    for c in consultations:
+        dept_name = c.department.name if c.department else 'General'
+        dept_groups[dept_name].append(c)
+
+    # Sort departments: known order first, then alphabetical remainder
+    def dept_sort_key(name):
+        try:
+            return dept_order.index(name)
+        except ValueError:
+            return len(dept_order)
+
+    consultations_by_dept = sorted(dept_groups.items(), key=lambda x: dept_sort_key(x[0]))
+
+    # Latest optical prescription for the summary banner
+    try:
+        from apps.prescriptions.models import OpticalPrescription
+        latest_rx = OpticalPrescription.objects.filter(
+            consultation__patient=patient, is_deleted=False
+        ).order_by('-prescription_date').first()
+    except Exception:
+        latest_rx = None
+
+    # Surgical history
+    try:
+        from apps.ipd.models import SurgicalBooking, TheatreProcedure
+        surgical_bookings = SurgicalBooking.objects.filter(
+            patient=patient, is_deleted=False
+        ).select_related('surgeon', 'consultation').order_by('-created_at')
+        theatre_procedures = TheatreProcedure.objects.filter(
+            patient=patient, is_deleted=False
+        ).select_related('session', 'surgeon').order_by('-session__session_date')
+    except Exception:
+        surgical_bookings = []
+        theatre_procedures = []
+
+    # Admissions
+    try:
+        from apps.ipd.models import Admission
+        admissions = Admission.objects.filter(
+            patient=patient, is_deleted=False
+        ).select_related('bed__ward', 'admitting_doctor').order_by('-admission_date')
+    except Exception:
+        admissions = []
 
     return render(request, 'patients/detail.html', {
         'patient': patient,
@@ -202,6 +257,11 @@ def patient_detail_view(request, patient_id):
         'next_of_kin': patient.next_of_kin.all(),
         'insurance': patient.insurance.filter(is_active=True).first(),
         'consultations': consultations,
+        'consultations_by_dept': consultations_by_dept,
+        'latest_rx': latest_rx,
+        'surgical_bookings': surgical_bookings,
+        'theatre_procedures': theatre_procedures,
+        'admissions': admissions,
     })
 
 

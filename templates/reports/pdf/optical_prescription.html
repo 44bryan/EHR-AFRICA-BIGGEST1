@@ -2,57 +2,44 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
 <style>
-  * { margin:0;padding:0;box-sizing:border-box; }
-  body { font-family:"Helvetica Neue",Arial,sans-serif; font-size:10pt; color:#1a1a1a; }
-  .hospital-name { font-size:18pt; font-weight:bold; color:#6f42c1; }
-  .report-title { background:#6f42c1; color:white; padding:8px 12px; font-size:12pt; font-weight:bold; margin-bottom:16px; }
-  .patient-bar { background:#f8f9fa; border-left:4px solid #6f42c1; padding:10px 12px; margin-bottom:16px; }
-  table { width:100%; border-collapse:collapse; margin:12px 0; }
-  th { background:#f3f0ff; padding:8px; text-align:center; font-size:9pt; border:1px solid #dee2e6; }
-  td { padding:8px; text-align:center; border:1px solid #dee2e6; font-size:10pt; }
-  td.label { text-align:left; font-weight:bold; background:#fafafa; }
-  .footer { border-top:1px solid #dee2e6; margin-top:20px; padding-top:8px; font-size:8pt; color:#888; }
-  @page { margin:1.5cm 1.8cm; size:A4; }
+  .rx-table { width:100%;border-collapse:collapse;margin:12px 0; }
+  .rx-table th { background:#f3f0ff;padding:7px;text-align:center;font-size:9pt;border:1px solid #dee2e6; }
+  .rx-table td { padding:7px;text-align:center;border:1px solid #dee2e6;font-size:10pt; }
+  .rx-table td.label { text-align:left;font-weight:700;background:#fafafa; }
 </style>
 </head>
 <body>
-<div style="border-bottom:3px solid #6f42c1;padding-bottom:12px;margin-bottom:16px;display:flex;justify-content:space-between;">
-  <div>
-    <div class="hospital-name">{{ hospital_name }}</div>
-    <div style="font-size:8pt;color:#666;">{{ hospital_address }} · {{ hospital_phone }}</div>
-  </div>
-  <div style="text-align:right;font-size:8pt;color:#666;"><strong>OPTICAL PRESCRIPTION</strong></div>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>{{ rx.get_prescription_type_display|upper }} Prescription</span>
+  <span>{{ rx.prescription_date|date:"d M Y" }} &nbsp;|&nbsp; Valid 12 months</span>
 </div>
 
-<div class="report-title">{{ rx.get_prescription_type_display|upper }} PRESCRIPTION</div>
-
 <div class="patient-bar">
-  <div style="display:flex;gap:30px;flex-wrap:wrap;">
+  <div style="display:flex;gap:28px;flex-wrap:wrap;">
     <div><strong>Patient:</strong> {{ patient.full_name }}</div>
     <div><strong>ID:</strong> {{ patient.patient_id }}</div>
     <div><strong>Age/Sex:</strong> {{ patient.age_display }} / {{ patient.get_gender_display }}</div>
-    <div><strong>Date:</strong> {{ rx.prescription_date|date:"d M Y" }}</div>
     <div><strong>Prescriber:</strong> Dr. {{ rx.prescribed_by.full_name }}</div>
   </div>
 </div>
 
-<table>
+<table class="rx-table">
   <thead>
     <tr>
       <th style="text-align:left;">Eye</th>
-      <th>Sphere (DS)</th>
-      <th>Cylinder (DC)</th>
-      <th>Axis (°)</th>
-      <th>Add</th>
-      <th>Prism</th>
-      <th>VA</th>
+      <th>Sphere (DS)</th><th>Cylinder (DC)</th><th>Axis (°)</th>
+      <th>Add</th><th>Prism</th><th>VA</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <td class="label">Right Eye (OD)</td>
-      <td>{{ rx.format_sphere rx.re_sphere }}</td>
+      <td>{% if rx.re_sphere is None %}Plano{% elif rx.re_sphere > 0 %}+{{ rx.re_sphere|floatformat:2 }}{% else %}{{ rx.re_sphere|floatformat:2 }}{% endif %}</td>
       <td>{% if rx.re_cylinder %}{{ rx.re_cylinder|floatformat:2 }}{% else %}—{% endif %}</td>
       <td>{% if rx.re_axis %}{{ rx.re_axis }}°{% else %}—{% endif %}</td>
       <td>{% if rx.re_add %}+{{ rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
@@ -61,7 +48,7 @@
     </tr>
     <tr>
       <td class="label">Left Eye (OS)</td>
-      <td>{{ rx.format_sphere rx.le_sphere }}</td>
+      <td>{% if rx.le_sphere is None %}Plano{% elif rx.le_sphere > 0 %}+{{ rx.le_sphere|floatformat:2 }}{% else %}{{ rx.le_sphere|floatformat:2 }}{% endif %}</td>
       <td>{% if rx.le_cylinder %}{{ rx.le_cylinder|floatformat:2 }}{% else %}—{% endif %}</td>
       <td>{% if rx.le_axis %}{{ rx.le_axis }}°{% else %}—{% endif %}</td>
       <td>{% if rx.le_add %}+{{ rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
@@ -71,23 +58,26 @@
   </tbody>
 </table>
 
-<div style="display:flex;gap:30px;margin-top:12px;">
+<div style="display:flex;gap:28px;margin-top:12px;font-size:9.5pt;">
   {% if rx.interpupillary_distance %}<div><strong>IPD (Distance):</strong> {{ rx.interpupillary_distance }} mm</div>{% endif %}
   {% if rx.near_ipd %}<div><strong>IPD (Near):</strong> {{ rx.near_ipd }} mm</div>{% endif %}
   {% if rx.lens_type %}<div><strong>Lens Type:</strong> {{ rx.lens_type }}</div>{% endif %}
 </div>
 
-{% if rx.frame_advice %}<div style="margin-top:12px;"><strong>Frame Advice:</strong> {{ rx.frame_advice }}</div>{% endif %}
-{% if rx.notes %}<div style="margin-top:8px;font-style:italic;color:#555;">Notes: {{ rx.notes }}</div>{% endif %}
+{% if rx.frame_advice %}<div style="margin-top:10px;font-size:9.5pt;"><strong>Frame Advice:</strong> {{ rx.frame_advice }}</div>{% endif %}
+{% if rx.notes %}<div style="margin-top:8px;font-style:italic;color:#555;font-size:9pt;">Notes: {{ rx.notes }}</div>{% endif %}
 
-<div style="margin-top:30px;">
-  <div style="border-top:1px solid #1a1a1a;width:220px;padding-top:4px;font-size:8pt;">
+<div class="signature-block">
+  <div class="signature-line">
     Dr. {{ rx.prescribed_by.full_name }}<br>
     {{ rx.prescribed_by.get_role_display }}<br>
-    Date: {{ rx.prescription_date|date:"d M Y" }}
+    {{ rx.prescription_date|date:"d M Y" }}
   </div>
 </div>
 
-<div class="footer">{{ hospital_name }} · Valid for 12 months from date of issue · This is a confidential medical document</div>
+<div class="pdf-footer">
+  <span>{{ hospital_name }} &nbsp;|&nbsp; {{ hospital_address }}</span>
+  <span>Valid 12 months from date of issue &nbsp;|&nbsp; Confidential</span>
+</div>
 </body>
 </html>

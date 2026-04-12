@@ -3,20 +3,31 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseForbidden
 from django.utils import timezone
-from .models import Ward, Bed, Admission, NursingNote, MAREntry, BedStatus, AdmissionStatus, SurgicalBooking, SurgicalBookingStatus, SurgeryType
+from .models import (
+    Ward, Bed, Admission, NursingNote, MAREntry, BedStatus, AdmissionStatus,
+    SurgicalBooking, SurgicalBookingStatus, SurgeryType,
+    TheatreSession, TheatreSessionStatus, TheatreProcedure, ProcedureOutcome, WardRound,
+)
 
 
 @login_required
 def ipd_dashboard(request):
+    today = timezone.localdate()
     current_admissions = Admission.objects.filter(
         status=AdmissionStatus.ADMITTED, is_deleted=False
     ).select_related('patient', 'bed__ward', 'admitting_doctor')
+
+    today_sessions = TheatreSession.objects.filter(
+        session_date=today, is_deleted=False
+    ).select_related('lead_surgeon').prefetch_related('procedures')
 
     context = {
         'current_admissions': current_admissions,
         'total_admitted': current_admissions.count(),
         'available_beds': Bed.objects.filter(status=BedStatus.AVAILABLE, is_deleted=False).count(),
         'wards': Ward.objects.filter(is_active=True, is_deleted=False),
+        'today_sessions': today_sessions,
+        'today': today,
     }
     return render(request, 'ipd/dashboard.html', context)
 
@@ -29,13 +40,20 @@ def ward_list(request):
 
 @login_required
 def admission_detail(request, admission_id):
-    admission = get_object_or_404(Admission, id=admission_id, is_deleted=False)
+    admission = get_object_or_404(
+        Admission.objects.select_related(
+            'patient', 'bed__ward', 'admitting_doctor', 'surgical_booking'
+        ),
+        id=admission_id, is_deleted=False
+    )
     nursing_notes = admission.nursing_notes.order_by('-note_time')[:20]
     mar_entries = admission.mar_entries.order_by('scheduled_time')
+    ward_rounds = admission.ward_rounds.select_related('doctor').order_by('-round_date', '-round_time')
     return render(request, 'ipd/admission_detail.html', {
         'admission': admission,
         'nursing_notes': nursing_notes,
         'mar_entries': mar_entries,
+        'ward_rounds': ward_rounds,
     })
 
 
@@ -538,9 +556,15 @@ def surgical_booking_detail(request, booking_id):
         messages.success(request, 'Pre-op checklist saved.')
         return redirect('ipd:surgical_booking_detail', booking_id=booking.pk)
 
+    checklist = booking.pre_op_checklist or {}
+    # Enrich with checked state so template avoids unsupported 'contains' filter
+    preop_items_with_state = [
+        (item, label, bool(checklist.get(item, False)))
+        for item, label in preop_items
+    ]
     return render(request, 'ipd/surgical_booking_detail.html', {
         'booking': booking,
-        'preop_items': preop_items,
+        'preop_items': preop_items_with_state,
     })
 
 
@@ -562,12 +586,70 @@ def surgical_booking_slip_pdf(request, booking_id):
 
 @login_required
 def discharge_patient(request, admission_id):
+    from apps.appointments.models import Appointment
+    from apps.departments.models import Department
     admission = get_object_or_404(Admission, id=admission_id, is_deleted=False)
+
     if request.method == 'POST':
+        # Discharge the patient
         admission.discharge(summary=request.POST.get('discharge_summary', ''))
-        messages.success(request, f'{admission.patient.full_name} discharged successfully.')
+
+        # Gap 1: Auto follow-up appointment booking
+        followup_date = request.POST.get('followup_date', '').strip()
+        followup_time = request.POST.get('followup_time', '').strip()
+        followup_doctor_id = request.POST.get('followup_doctor', '').strip()
+        followup_dept_id = request.POST.get('followup_department', '').strip()
+        followup_reason = request.POST.get('followup_reason', '').strip()
+
+        if followup_date and followup_time:
+            from apps.accounts.models import User
+            followup_doctor = None
+            if followup_doctor_id:
+                try:
+                    followup_doctor = User.objects.get(pk=followup_doctor_id)
+                except User.DoesNotExist:
+                    pass
+
+            followup_dept = None
+            if followup_dept_id:
+                try:
+                    followup_dept = Department.objects.get(pk=followup_dept_id)
+                except Department.DoesNotExist:
+                    pass
+
+            appt = Appointment.objects.create(
+                patient=admission.patient,
+                department=followup_dept,
+                doctor=followup_doctor,
+                appointment_date=followup_date,
+                appointment_time=followup_time,
+                appointment_type=Appointment.AppointmentType.FOLLOW_UP,
+                service_tier=Appointment.ServiceTier.STANDARD,
+                reason=followup_reason or f'Post-operative follow-up after {admission.diagnosis_on_admission}',
+                booked_by=request.user,
+                notes=f'Auto-booked at discharge from admission {admission.admission_number}.',
+                created_by=request.user,
+            )
+            messages.success(
+                request,
+                f'{admission.patient.full_name} discharged and follow-up appointment {appt.appointment_number} booked for {followup_date}.'
+            )
+        else:
+            messages.success(request, f'{admission.patient.full_name} discharged successfully.')
+
         return redirect('ipd:dashboard')
-    return render(request, 'ipd/discharge.html', {'admission': admission})
+
+    # Doctors for follow-up dropdown
+    from apps.accounts.models import User as AccountUser
+    from apps.departments.models import Department
+    doctors = AccountUser.objects.filter(role__in=AccountUser.DOCTOR_ROLES, is_active=True, is_deleted=False).order_by('first_name')
+    departments = Department.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    return render(request, 'ipd/discharge.html', {
+        'admission': admission,
+        'doctors': doctors,
+        'departments': departments,
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -834,3 +916,345 @@ def theatre_update_status(request):
         booking.save(update_fields=['status', 'updated_at'])
         return JsonResponse({'success': True, 'status': new_status, 'label': booking.get_status_display()})
     return JsonResponse({'error': 'Invalid status'}, status=400)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# THEATRE SESSION VIEWS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def theatre_session_list(request):
+    """All theatre sessions — filterable by date and status."""
+    from django.db.models import Count
+    date_filter = request.GET.get('date', '')
+    status_filter = request.GET.get('status', '')
+
+    qs = TheatreSession.objects.select_related(
+        'lead_surgeon', 'scrub_nurse'
+    ).prefetch_related('procedures__patient').order_by('-session_date', 'start_time')
+
+    if date_filter:
+        qs = qs.filter(session_date=date_filter)
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+
+    today = timezone.localdate()
+    return render(request, 'ipd/theatre_session_list.html', {
+        'sessions': qs[:100],
+        'status_choices': TheatreSessionStatus.choices,
+        'date_filter': date_filter,
+        'status_filter': status_filter,
+        'today': today,
+    })
+
+
+@login_required
+def theatre_session_create(request):
+    """Create a new theatre session for a given date."""
+    from apps.accounts.models import User, UserRole
+    doctors = User.objects.filter(is_active=True, role__in=[
+        UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST,
+        UserRole.GLAUCOMA_SPECIALIST, UserRole.PEDIATRIC_OPHTHALMOLOGIST,
+        UserRole.CATARACT_SURGEON, UserRole.CORNEA_SPECIALIST,
+        UserRole.OCULOPLASTICS_SURGEON, UserRole.NEURO_OPHTHALMOLOGIST,
+        UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN,
+        UserRole.EXPRESS_OPHTHALMOLOGIST, UserRole.INSURANCE_OPHTHALMOLOGIST,
+    ]).order_by('last_name')
+    nurses = User.objects.filter(is_active=True, role__in=[
+        UserRole.NURSE, UserRole.THEATRE_NURSE, UserRole.WARD_NURSE,
+    ]).order_by('last_name')
+
+    if request.method == 'POST':
+        p = request.POST
+        session = TheatreSession.objects.create(
+            session_date=p.get('session_date') or timezone.localdate(),
+            theatre_name=p.get('theatre_name', 'Main Theatre').strip(),
+            start_time=p.get('start_time') or None,
+            end_time=p.get('end_time') or None,
+            lead_surgeon_id=p.get('lead_surgeon') or None,
+            anaesthetist_name=p.get('anaesthetist_name', '').strip(),
+            scrub_nurse_id=p.get('scrub_nurse') or None,
+            circulating_nurse_id=p.get('circulating_nurse') or None,
+            notes=p.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        # Add booked surgeries to this session
+        booking_ids = request.POST.getlist('bookings')
+        for bid in booking_ids:
+            try:
+                booking = SurgicalBooking.objects.get(pk=bid)
+                TheatreProcedure.objects.create(
+                    session=session,
+                    surgical_booking=booking,
+                    patient=booking.patient,
+                    surgeon=booking.surgeon,
+                    procedure=booking.procedure,
+                    procedure_notes=booking.procedure_notes,
+                    eye_laterality=booking.eye_laterality,
+                    anaesthesia_type=booking.anaesthesia_type,
+                    position_on_list=TheatreProcedure.objects.filter(session=session).count() + 1,
+                    created_by=request.user,
+                )
+                booking.status = SurgicalBookingStatus.SCHEDULED
+                booking.save(update_fields=['status', 'updated_at'])
+            except SurgicalBooking.DoesNotExist:
+                pass
+
+        messages.success(request, f'Theatre session {session.session_number} created.')
+        return redirect('ipd:theatre_session_detail', session_id=session.pk)
+
+    # Available confirmed bookings (not yet in a session)
+    confirmed_bookings = SurgicalBooking.objects.filter(
+        status=SurgicalBookingStatus.CONFIRMED, is_deleted=False
+    ).select_related('patient', 'surgeon').order_by('surgery_date')
+
+    return render(request, 'ipd/theatre_session_create.html', {
+        'doctors': doctors,
+        'nurses': nurses,
+        'confirmed_bookings': confirmed_bookings,
+        'today': timezone.localdate(),
+        'theatre_choices': ['Main Theatre', 'Minor Theatre', 'Laser Suite', 'EUA Room'],
+    })
+
+
+@login_required
+def theatre_session_detail(request, session_id):
+    """Detail view for one theatre session — shows all procedures."""
+    session = get_object_or_404(
+        TheatreSession.objects.select_related(
+            'lead_surgeon', 'scrub_nurse', 'circulating_nurse'
+        ).prefetch_related('procedures__patient', 'procedures__surgeon'),
+        pk=session_id
+    )
+    from apps.accounts.models import User, UserRole
+    doctors = User.objects.filter(is_active=True, role__in=[
+        UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST, UserRole.GLAUCOMA_SPECIALIST,
+        UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.CATARACT_SURGEON, UserRole.CORNEA_SPECIALIST,
+        UserRole.OCULOPLASTICS_SURGEON, UserRole.NEURO_OPHTHALMOLOGIST, UserRole.MEDICAL_DIRECTOR,
+        UserRole.EXPRESS_OPHTHALMOLOGIST, UserRole.SUPER_ADMIN,
+    ]).order_by('last_name')
+
+    # Available confirmed bookings to add ad-hoc
+    confirmed_bookings = SurgicalBooking.objects.filter(
+        status=SurgicalBookingStatus.CONFIRMED, is_deleted=False
+    ).exclude(theatre_procedures__session=session).select_related('patient')
+
+    return render(request, 'ipd/theatre_session_detail.html', {
+        'session': session,
+        'procedures': session.procedures.order_by('position_on_list'),
+        'doctors': doctors,
+        'confirmed_bookings': confirmed_bookings,
+        'outcome_choices': ProcedureOutcome.choices,
+        'surgery_type_choices': SurgeryType.choices,
+    })
+
+
+@login_required
+def theatre_session_update_status(request, session_id):
+    """Update a theatre session status (AJAX or form)."""
+    from django.http import JsonResponse
+    session = get_object_or_404(TheatreSession, pk=session_id)
+    if request.method == 'POST':
+        new_status = request.POST.get('status')
+        if new_status in dict(TheatreSessionStatus.choices):
+            session.status = new_status
+            session.save(update_fields=['status', 'updated_at'])
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': True})
+            messages.success(request, f'Session status updated to {session.get_status_display()}.')
+    return redirect('ipd:theatre_session_detail', session_id=session_id)
+
+
+@login_required
+def theatre_procedure_record(request, procedure_id):
+    """
+    Record intraoperative details for one procedure:
+    WHO checklist, IOL data, findings, complications, outcome.
+    """
+    proc = get_object_or_404(
+        TheatreProcedure.objects.select_related('session', 'patient', 'surgeon'),
+        pk=procedure_id
+    )
+
+    if request.method == 'POST':
+        p = request.POST
+
+        # WHO Sign In
+        proc.sign_in_done              = 'sign_in_done' in p
+        proc.sign_in_time              = p.get('sign_in_time') or None
+        proc.sign_in_identity_confirmed= 'sign_in_identity_confirmed' in p
+        proc.sign_in_site_marked       = 'sign_in_site_marked' in p
+        proc.sign_in_anaesthesia_safe  = 'sign_in_anaesthesia_safe' in p
+        proc.sign_in_pulse_oximeter    = 'sign_in_pulse_oximeter' in p
+        proc.sign_in_allergies         = 'sign_in_allergies' in p
+
+        # WHO Time Out
+        proc.time_out_done             = 'time_out_done' in p
+        proc.time_out_time             = p.get('time_out_time') or None
+        proc.time_out_team_introduced  = 'time_out_team_introduced' in p
+        proc.time_out_site_confirmed   = 'time_out_site_confirmed' in p
+        proc.time_out_antibiotics      = 'time_out_antibiotics' in p
+        proc.time_out_imaging_displayed= 'time_out_imaging_displayed' in p
+
+        # WHO Sign Out
+        proc.sign_out_done                      = 'sign_out_done' in p
+        proc.sign_out_time                      = p.get('sign_out_time') or None
+        proc.sign_out_instrument_count_correct  = 'sign_out_instrument_count_correct' in p
+        proc.sign_out_specimen_labelled         = 'sign_out_specimen_labelled' in p
+        proc.sign_out_equipment_issues          = 'sign_out_equipment_issues' in p
+        proc.sign_out_recovery_plan             = 'sign_out_recovery_plan' in p
+
+        # IOL
+        proc.iol_model      = p.get('iol_model', '').strip()
+        proc.iol_power      = p.get('iol_power', '').strip()
+        proc.iol_lot_number = p.get('iol_lot_number', '').strip()
+        proc.iol_type       = p.get('iol_type', '').strip()
+
+        # Timing
+        proc.knife_time   = p.get('knife_time') or None
+        proc.closure_time = p.get('closure_time') or None
+
+        # Surgeon
+        surgeon_id = p.get('surgeon')
+        if surgeon_id:
+            from apps.accounts.models import User
+            proc.surgeon = User.objects.filter(pk=surgeon_id).first()
+
+        # Intraop & Outcome
+        proc.intraop_findings      = p.get('intraop_findings', '').strip()
+        proc.complications         = p.get('complications', '').strip()
+        proc.outcome               = p.get('outcome', '')
+        proc.post_op_notes         = p.get('post_op_notes', '').strip()
+        proc.post_op_medications   = p.get('post_op_medications', '').strip()
+        proc.save()
+
+        # Mark surgical booking as completed if outcome is set
+        if proc.outcome and proc.surgical_booking:
+            proc.surgical_booking.status = SurgicalBookingStatus.COMPLETED
+            proc.surgical_booking.save(update_fields=['status', 'updated_at'])
+
+        messages.success(request, f'Procedure record saved for {proc.patient.full_name}.')
+        return redirect('ipd:theatre_session_detail', session_id=proc.session.pk)
+
+    from apps.accounts.models import User, UserRole
+    doctors = User.objects.filter(is_active=True, role__in=[
+        UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST, UserRole.GLAUCOMA_SPECIALIST,
+        UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.CATARACT_SURGEON, UserRole.CORNEA_SPECIALIST,
+        UserRole.OCULOPLASTICS_SURGEON, UserRole.NEURO_OPHTHALMOLOGIST,
+        UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN, UserRole.EXPRESS_OPHTHALMOLOGIST,
+    ]).order_by('last_name')
+
+    return render(request, 'ipd/theatre_procedure_form.html', {
+        'proc': proc,
+        'session': proc.session,
+        'outcome_choices': ProcedureOutcome.choices,
+        'surgery_types': SurgeryType.choices,
+        'doctors': doctors,
+        'iol_types': ['Monofocal', 'Toric', 'Multifocal', 'Multifocal Toric',
+                      'PMMA', 'Hydrophilic Acrylic', 'Hydrophobic Acrylic', 'Phakic IOL'],
+    })
+
+
+@login_required
+def theatre_add_procedure(request, session_id):
+    """Add an ad-hoc procedure to an existing session."""
+    session = get_object_or_404(TheatreSession, pk=session_id)
+    if request.method == 'POST':
+        p = request.POST
+        from apps.patients.models import Patient
+        patient_id = p.get('patient_id')
+        patient = get_object_or_404(Patient, patient_id=patient_id)
+
+        booking_id = p.get('booking_id')
+        booking = SurgicalBooking.objects.filter(pk=booking_id).first() if booking_id else None
+
+        pos = session.procedures.count() + 1
+        proc = TheatreProcedure.objects.create(
+            session=session,
+            surgical_booking=booking,
+            patient=patient,
+            procedure=p.get('procedure', 'OTHER'),
+            procedure_notes=p.get('procedure_notes', '').strip(),
+            eye_laterality=p.get('eye_laterality', ''),
+            anaesthesia_type=p.get('anaesthesia_type', ''),
+            position_on_list=pos,
+            created_by=request.user,
+        )
+        messages.success(request, f'Procedure added for {patient.full_name}.')
+    return redirect('ipd:theatre_session_detail', session_id=session_id)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WARD ROUND VIEWS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def ward_round_add(request, admission_id):
+    """Add a ward round note (SOAP) for an admitted patient."""
+    admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
+
+    if request.method == 'POST':
+        p = request.POST
+        WardRound.objects.create(
+            admission=admission,
+            round_date=p.get('round_date') or timezone.localdate(),
+            round_time=p.get('round_time') or timezone.localtime().time(),
+            doctor=request.user,
+            subjective=p.get('subjective', '').strip(),
+            objective=p.get('objective', '').strip(),
+            assessment=p.get('assessment', '').strip(),
+            plan=p.get('plan', '').strip(),
+            va_re=p.get('va_re', '').strip(),
+            va_le=p.get('va_le', '').strip(),
+            iop_re=p.get('iop_re', '').strip(),
+            iop_le=p.get('iop_le', '').strip(),
+            vital_signs={
+                'bp': p.get('bp', '').strip(),
+                'pulse': p.get('pulse', '').strip(),
+                'temp': p.get('temp', '').strip(),
+                'spo2': p.get('spo2', '').strip(),
+                'rr': p.get('rr', '').strip(),
+            },
+            is_discharge_ready='is_discharge_ready' in p,
+            discharge_plan=p.get('discharge_plan', '').strip(),
+            created_by=request.user,
+        )
+        messages.success(request, 'Ward round note saved.')
+        return redirect('ipd:admission_detail', admission_id=admission_id)
+
+    return render(request, 'ipd/ward_round_form.html', {
+        'admission': admission,
+        'today': timezone.localdate(),
+        'now_time': timezone.localtime().strftime('%H:%M'),
+    })
+
+
+@login_required
+def discharge_summary_pdf(request, admission_id):
+    """Generate a discharge summary PDF for a completed admission."""
+    from apps.reports.views import render_pdf
+    from django.conf import settings
+    admission = get_object_or_404(
+        Admission.objects.select_related(
+            'patient', 'bed__ward', 'admitting_doctor'
+        ).prefetch_related(
+            'ward_rounds__doctor',
+            'nursing_notes',
+            'mar_entries',
+        ),
+        pk=admission_id
+    )
+    ward_rounds = admission.ward_rounds.order_by('round_date', 'round_time')
+    last_round = ward_rounds.last()
+
+    context = {
+        'admission': admission,
+        'patient': admission.patient,
+        'ward_rounds': ward_rounds,
+        'last_round': last_round,
+        'hospital_name': settings.HOSPITAL_NAME,
+        'hospital_address': settings.HOSPITAL_ADDRESS,
+        'hospital_phone': settings.HOSPITAL_PHONE,
+        'pdf_filename': f'discharge_summary_{admission.patient.patient_id}_{admission.admission_number}.pdf',
+    }
+    return render_pdf('reports/pdf/discharge_summary.html', context)

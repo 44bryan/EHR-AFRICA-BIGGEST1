@@ -2,46 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 9.5pt; color: #1a1a1a; }
-  .letterhead { border-bottom: 3px solid #0d6efd; padding-bottom: 10px; margin-bottom: 14px; }
-  .hospital-name { font-size: 16pt; font-weight: bold; color: #0d6efd; }
-  .hospital-info { font-size: 8pt; color: #666; }
-  .report-title { background: #0d6efd; color: white; padding: 7px 12px; font-size: 11pt; font-weight: bold; margin-bottom: 14px; }
-  .patient-card { background: #f0f4ff; border: 1px solid #c5d3f0; border-radius: 6px; padding: 12px; margin-bottom: 14px; }
-  .patient-card h4 { font-size: 13pt; font-weight: bold; color: #0d3a85; margin-bottom: 6px; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 20px; font-size: 9pt; }
-  .info-item { display: flex; flex-direction: column; }
-  .info-label { font-size: 7.5pt; text-transform: uppercase; color: #888; font-weight: 600; }
-  .info-value { font-weight: 500; }
-  .section { margin-bottom: 12px; }
-  .section-title { font-size: 9pt; font-weight: bold; text-transform: uppercase; color: #0d6efd;
-                   border-bottom: 1px solid #dee2e6; padding-bottom: 3px; margin-bottom: 7px; }
-  .consult-item { border-left: 3px solid #0d6efd; padding-left: 10px; margin-bottom: 8px; }
-  .consult-date { font-size: 8pt; color: #888; }
-  .dx-badge { display: inline-block; background: #e8f4f8; border: 1px solid #bee5eb;
-              border-radius: 3px; padding: 1px 6px; font-size: 8pt; margin: 1px; }
-  .inv-row { display: flex; gap: 12px; border-bottom: 1px solid #f0f0f0; padding: 4px 0; font-size: 9pt; }
-  .inv-date { color: #888; min-width: 75px; }
-  .mhx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; }
-  .mhx-item { border: 1px solid #e0e0e0; border-radius: 4px; padding: 6px 10px; }
-  .mhx-label { font-size: 7.5pt; text-transform: uppercase; color: #888; font-weight: 600; margin-bottom: 2px; }
-  .allergy-badge { background: #f8d7da; color: #842029; border-radius: 3px;
-                   padding: 2px 8px; font-size: 8.5pt; font-weight: bold; display: inline-block; margin: 1px; }
-  .no-data { color: #aaa; font-style: italic; font-size: 9pt; }
-  .footer { border-top: 1px solid #dee2e6; margin-top: 16px; padding-top: 6px;
-            font-size: 7.5pt; color: #888; display: flex; justify-content: space-between; }
-  @page { margin: 1.5cm 1.8cm; size: A4; }
-</style>
+{% include 'reports/pdf/_base_styles.html' %}
 </head>
 <body>
 
-<!-- Letterhead -->
-<div class="letterhead">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <div>
-      <div class="hospital-name">{{ hospital_name }}</div>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Patient Summary</span>
+  <span>{% now "d M Y" %}</span>
+</div>
       <div class="hospital-info">{{ hospital_address }} &nbsp;|&nbsp; Tel: {{ hospital_phone }}</div>
     </div>
     <div style="text-align:right;">
@@ -118,7 +89,7 @@
 
 <!-- Recent Consultations -->
 <div class="section">
-  <div class="section-title">Recent Consultations (Last 3)</div>
+  <div class="section-title">Recent Consultations (Last 5)</div>
   {% for consult in recent_consults %}
   <div class="consult-item">
     <div style="display:flex;justify-content:space-between;">
@@ -133,6 +104,7 @@
       <strong>Complaint:</strong> {{ consult.presenting_complaint|truncatechars:120 }}
     </div>
     {% endif %}
+    <!-- Diagnoses -->
     <div style="margin-top:4px;">
       {% for cd in consult.consultation_diagnoses.all %}
       <span class="dx-badge">{{ cd.diagnosis.icd10_code }} {{ cd.diagnosis.description|truncatechars:40 }}</span>
@@ -140,6 +112,29 @@
       <span class="no-data">No diagnosis recorded</span>
       {% endfor %}
     </div>
+    <!-- Drug Prescriptions -->
+    {% for drug_rx in consult.drug_prescriptions.all %}
+    {% if drug_rx.items.all %}
+    <div style="margin-top:5px;font-size:8.5pt;">
+      <strong>Rx (Drugs):</strong>
+      {% for item in drug_rx.items.all %}
+      {{ item.drug_name|default:item.drug }} {{ item.dose|default:"" }} {{ item.frequency|default:"" }}{% if not forloop.last %};{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+    <!-- Optical Prescriptions -->
+    {% for optical in consult.optical_prescriptions.all %}
+    <div style="margin-top:5px;font-size:8pt;">
+      <strong>Optical Rx</strong> ({{ optical.prescription_date|date:"d M Y" }}):
+      RE — Sph: {{ optical.re_sphere|default:"Plano" }}
+      {% if optical.re_cylinder %} / Cyl: {{ optical.re_cylinder }} x {{ optical.re_axis }}°{% endif %}
+      &nbsp;|&nbsp;
+      LE — Sph: {{ optical.le_sphere|default:"Plano" }}
+      {% if optical.le_cylinder %} / Cyl: {{ optical.le_cylinder }} x {{ optical.le_axis }}°{% endif %}
+      {% if optical.add_power %} / Add: +{{ optical.add_power }}{% endif %}
+    </div>
+    {% endfor %}
   </div>
   {% empty %}
   <div class="no-data">No consultation records found.</div>
@@ -161,7 +156,7 @@
 </div>
 
 <!-- Footer -->
-<div class="footer">
+<div class="pdf-footer" style="display:flex;justify-content:space-between;">
   <span>Generated: {% now "d M Y H:i" %} &nbsp;·&nbsp; {{ hospital_name }}</span>
   <span>Patient: {{ patient.patient_id }} &nbsp;·&nbsp; <strong>CONFIDENTIAL MEDICAL DOCUMENT</strong></span>
 </div>

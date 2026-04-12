@@ -1,1 +1,124 @@
-{% extends "layouts/base_authenticated.html" %}{% block title %}CSSD{% endblock %}{% block content %}<div class="d-flex justify-content-between align-items-center mb-4"><h1 class="h3 mb-0">Central Sterile Services</h1><div><a href="{% url 'cssd:instrument_list' %}" class="btn btn-outline-secondary me-2">Instruments</a><a href="{% url 'cssd:cycles' %}" class="btn btn-outline-secondary me-2">Cycles</a><a href="{% url 'cssd:dispatch_list' %}" class="btn btn-outline-secondary">Dispatch</a></div></div><div class="row g-3 mb-4"><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-primary">{{ total_instruments }}</div><div class="text-muted small">Total Instruments</div></div></div></div><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-success">{{ available_sterile }}</div><div class="text-muted small">Available (Sterile)</div></div></div></div><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-danger">{{ dirty_count }}</div><div class="text-muted small">Returned / Dirty</div></div></div></div><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-warning">{{ in_use }}</div><div class="text-muted small">In Use</div></div></div></div></div><div class="card border-0 shadow-sm"><div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Recent Sterilization Cycles</h6></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0 small"><thead class="table-light"><tr><th>Cycle No.</th><th>Method</th><th>Start Time</th><th>BI Test</th><th>Operator</th></tr></thead><tbody>{% for cycle in recent_cycles %}<tr><td>{{ cycle.cycle_number }}</td><td>{{ cycle.get_method_display }}</td><td>{{ cycle.start_time|date:"d M Y H:i" }}</td><td><span class="badge {% if cycle.bi_test_result == 'PASS' %}bg-success{% elif cycle.bi_test_result == 'FAIL' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ cycle.bi_test_result }}</span></td><td>{{ cycle.operator.get_full_name }}</td></tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-3">No cycles recorded yet</td></tr>{% endfor %}</tbody></table></div></div></div>{% endblock %}
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}CSSD — Sterilization{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-shield-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Central Sterile Services (CSSD)</h5>
+      <div class="text-muted small">Instrument tracking & sterilization cycles</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'cssd:record_cycle' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>New Cycle</a>
+    <a href="{% url 'cssd:add_instrument' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-tools me-1"></i>Add Instrument</a>
+    <a href="{% url 'cssd:instrument_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list-ul me-1"></i>Instruments</a>
+    <a href="{% url 'cssd:dispatch_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-truck me-1"></i>Dispatches</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-primary mb-0">{{ total_instruments }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-tools me-1"></i>Total Instruments</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-success mb-0">{{ available_sterile }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-shield-check me-1"></i>Sterile & Available</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ in_use }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-person-badge me-1"></i>Currently In Use</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-danger mb-0">{{ dirty_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Returned / Dirty</div>
+    </div>
+  </div>
+</div>
+
+{% if dirty_count > 0 %}
+<div class="alert alert-danger border-0 d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <strong>{{ dirty_count }} instrument{{ dirty_count|pluralize }} returned and awaiting decontamination.</strong>
+  <a href="{% url 'cssd:instrument_list' %}" class="ms-2 alert-link">Process now →</a>
+</div>
+{% endif %}
+
+<!-- Instrument Status Pipeline -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom fw-semibold">
+    <i class="bi bi-arrow-right-circle me-2 text-primary"></i>Decontamination Pipeline
+  </div>
+  <div class="card-body">
+    <div class="row g-2 text-center">
+      {% for status, label, color, icon in status_pipeline %}
+      <div class="col">
+        <div class="rounded p-2" style="background:{{ color }}15;border:1px solid {{ color }}30;">
+          <i class="bi {{ icon }} mb-1 d-block" style="color:{{ color }};font-size:1.2rem;"></i>
+          <div class="fw-bold" style="color:{{ color }};">{{ status }}</div>
+          <div class="text-muted" style="font-size:.7rem;">{{ label }}</div>
+        </div>
+        {% if not forloop.last %}<div class="d-none d-md-block" style="position:absolute;right:-8px;top:50%;transform:translateY(-50%);color:#ccc;">→</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Recent Cycles -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+    <span class="fw-semibold"><i class="bi bi-arrow-repeat me-2 text-primary"></i>Recent Sterilization Cycles</span>
+    <a href="{% url 'cssd:cycles' %}" class="btn btn-sm btn-outline-secondary">All Cycles</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Cycle No.</th>
+            <th>Method</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>BI Test</th>
+            <th>Items</th>
+            <th>Operator</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cycle in recent_cycles %}
+          <tr>
+            <td><code class="small">{{ cycle.cycle_number }}</code></td>
+            <td>{{ cycle.get_method_display }}</td>
+            <td>{{ cycle.start_time|date:"d M Y H:i" }}</td>
+            <td>{% if cycle.end_time %}{{ cycle.end_time|date:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>
+              <span class="badge {% if cycle.bi_test_result == 'PASS' %}bg-success{% elif cycle.bi_test_result == 'FAIL' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                {{ cycle.bi_test_result|default:"Pending" }}
+              </span>
+            </td>
+            <td>{{ cycle.items.count|default:"—" }}</td>
+            <td>{{ cycle.operator.get_full_name }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No sterilization cycles recorded. <a href="{% url 'cssd:record_cycle' %}">Record first cycle</a></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

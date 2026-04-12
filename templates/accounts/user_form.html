@@ -6,7 +6,7 @@
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
         <h5 class="mb-0 fw-semibold"><i class="bi bi-person-badge me-2 text-primary"></i>{{ title }}</h5>
-        <a href="{% url 'accounts:user_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+        <a href="{% url 'accounts:staff_hub' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
       </div>
       <div class="card-body">
         {% if edit_user %}
@@ -20,11 +20,23 @@
           </div>
         </div>
         {% endif %}
+
+        {% if form.errors %}
+        <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+          <strong><i class="bi bi-exclamation-circle me-1"></i>Please fix the following errors:</strong>
+          <ul class="mb-0 mt-1 small">
+            {% for field in form %}{% for error in field.errors %}<li><strong>{{ field.label }}:</strong> {{ error }}</li>{% endfor %}{% endfor %}
+            {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+          </ul>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+
         <form method="post" enctype="multipart/form-data">
           {% csrf_token %}
           <div class="row g-3">
             {% for field in form %}
-            <div class="col-md-{% if field.name in 'first_name,last_name,email,role' %}6{% else %}6{% endif %}">
+            <div class="col-md-6{% if field.name == 'cashier_station' %} d-none" id="cashier_station_row{% endif %}">
               <label class="form-label fw-semibold small">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
               {{ field }}
               {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors.0 }}</div>{% endif %}
@@ -33,12 +45,29 @@
             {% endfor %}
           </div>
           <div class="d-flex gap-2 justify-content-end mt-4">
-            <a href="{% url 'accounts:user_list' %}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>{{ title }}</button>
+            <a href="{% url 'accounts:staff_hub' %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Account</button>
           </div>
         </form>
       </div>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Show cashier_station row only when role is cashier or billing_officer
+const roleSelect = document.getElementById('id_role');
+const stationRow = document.getElementById('cashier_station_row');
+function toggleStation() {
+  if (!roleSelect || !stationRow) return;
+  const val = roleSelect.value;
+  stationRow.classList.toggle('d-none', val !== 'cashier' && val !== 'billing_officer');
+}
+if (roleSelect) {
+  roleSelect.addEventListener('change', toggleStation);
+  toggleStation();
+}
+</script>
 {% endblock %}

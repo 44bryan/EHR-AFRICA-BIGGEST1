@@ -76,23 +76,69 @@ def appointment_detail_view(request, pk):
 
 @login_required
 def appointment_check_in_view(request, pk):
+    from apps.patients.models import Visit
+    from apps.qms.models import QueueToken, DailyTokenSequence, ServiceType, TokenStatus
+
     appt = get_object_or_404(Appointment, pk=pk)
+    patient = appt.patient
+
     appt.status = Appointment.Status.CHECKED_IN
     appt.save(update_fields=['status'])
-    # Create a visit for this appointment
-    from apps.patients.models import Visit
+
+    # ── 15-day consultation validity check ────────────────────────────────────
+    active_visit = patient.active_consultation_visit  # None if expired / never paid
+    consultation_valid = active_visit is not None
+
+    if consultation_valid:
+        # Within window — route directly to department
+        service_type = ServiceType.GENERAL
+        visit_type = 'FOLLOW_UP'
+        messages.success(
+            request,
+            f"Checked in — consultation valid until "
+            f"{active_visit.consultation_valid_until.strftime('%d %b %Y')}. "
+            f"Patient directed to {appt.department.name if appt.department else 'department'} (no payment required)."
+        )
+    else:
+        # Expired or first visit — cashier first
+        service_type = ServiceType.CASHIER
+        visit_type = 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW'
+        messages.warning(
+            request,
+            "Consultation period has expired or no prior payment found. Patient directed to cashier."
+        )
+
+    # Issue QMS token
+    from apps.appointments.models import Appointment as Appt
+    tier = appt.service_tier or 'STANDARD'
+    TIER_PRIORITY = {'STANDARD': 0, 'EXPRESS': 1, 'FAST_TRACK': 1, 'VIP': 2}
+    priority = TIER_PRIORITY.get(tier, 0)
+
+    token_number = DailyTokenSequence.next_token(service_type)
+    token = QueueToken.objects.create(
+        token_number=token_number,
+        patient=patient,
+        patient_name=patient.full_name,
+        service_type=service_type,
+        priority=priority,
+        issued_by=request.user,
+    )
+
+    # Create visit
     visit, created = Visit.objects.get_or_create(
         appointment=appt,
         defaults={
-            'patient': appt.patient,
+            'patient': patient,
             'department': appt.department,
-            'visit_type': 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW',
+            'visit_type': visit_type,
             'chief_complaint': appt.reason,
+            'status': 'WAITING',
             'created_by': request.user,
         }
     )
-    messages.success(request, f'Patient checked in. Visit: {visit.visit_number}')
-    return redirect('patients:detail', patient_id=appt.patient.patient_id)
+
+    messages.success(request, f'Patient checked in. Token: {token.token_number} | Visit: {visit.visit_number}')
+    return redirect('reception:confirmation', token_pk=token.pk)
 
 
 @login_required

@@ -219,12 +219,108 @@ Rules:
 """
 
 
-def transcribe_voice_to_consultation(text_transcription: str) -> dict:
+VOICE_EMR_REFRACTION_PROMPT = """You are an expert optometry AI assistant at GLUDD Eye Hospital.
+The refractionist has just dictated their findings. Extract ALL refraction data and return ONLY valid JSON.
+The input may be in French, English, or both. Always return JSON in English.
+
+Return ONLY valid JSON matching this exact schema:
+
+{
+  "chief_complaint": "",
+  "history": "",
+  "refraction": {
+    "auto_sph_od": "", "auto_cyl_od": "", "auto_axis_od": "",
+    "auto_sph_os": "", "auto_cyl_os": "", "auto_axis_os": "",
+    "va_unaided_od": "", "va_unaided_os": "",
+    "va_corrected_od": "", "va_corrected_os": "",
+    "final_sph_od": "", "final_cyl_od": "", "final_axis_od": "",
+    "final_sph_os": "", "final_cyl_os": "", "final_axis_os": "",
+    "add_od": "", "add_os": "",
+    "bcva_od": "", "bcva_os": "",
+    "rx_sph_od": "", "rx_cyl_od": "", "rx_axis_od": "", "rx_add_od": "", "rx_prism_od": "", "rx_bcva_od": "",
+    "rx_sph_os": "", "rx_cyl_os": "", "rx_axis_os": "", "rx_add_os": "", "rx_prism_os": "", "rx_bcva_os": "",
+    "near_vision": "",
+    "pd_dist_od": "", "pd_dist_os": "",
+    "pd_near_od": "", "pd_near_os": "",
+    "lens_type": "",
+    "refraction_type": "",
+    "rx_wear_schedule": "",
+    "rx_frame": "",
+    "rx_dispensing": "",
+    "rx_remarks": ""
+  },
+  "management_plan": "",
+  "follow_up_days": null,
+  "follow_up_instructions": "",
+  "confidence": 0.0,
+  "missing_fields": []
+}
+
+Rules:
+- VA: use notation like 6/6, 6/9, 6/18, CF, HM, PL, NPL or N5, N8 for near
+- Sphere/Cyl: include sign, e.g. +1.50 or -2.25
+- Axis: numeric only, 1-180
+- Add power: e.g. +2.50
+- Prism: e.g. 2Δ BI
+- If doctor says "final prescription" or "Rx" fill rx_sph_od etc.; if "auto-ref" or "objective" fill auto_sph_od etc.
+- If only one set of values mentioned, fill both auto AND rx with same values.
+- lens_type: "Single Vision (Distance)" / "Single Vision (Near)" / "Bifocal" / "Progressive (PAL)" / "Contact Lens Rx"
+- refraction_type: "Dry Refraction" / "Cycloplegic Refraction" / "Post-Cycloplegic"
+- rx_wear_schedule: "Full-time wear" / "Distance only" / "Near / reading only" / "As needed"
+- confidence: 0.0-1.0 based on completeness
+"""
+
+VOICE_EMR_TRIAGE_PROMPT = """You are a clinical triage AI at GLUDD Eye Hospital.
+A triage nurse has dictated patient vitals and visual acuity. Extract ALL data and return ONLY valid JSON.
+The input may be in French, English, or both. Always return JSON in English.
+
+Return ONLY valid JSON matching this exact schema:
+
+{
+  "chief_complaint": "",
+  "triage": {
+    "va_re_unaided": "", "va_le_unaided": "",
+    "va_re_ph": "", "va_le_ph": "",
+    "va_re_near": "", "va_le_near": "",
+    "iop_re": "", "iop_le": "",
+    "blood_pressure_systolic": "", "blood_pressure_diastolic": "",
+    "pulse": "", "temperature": "", "weight": "", "height": "",
+    "blood_sugar": "", "spo2": "",
+    "pain_score": ""
+  },
+  "triage_notes": "",
+  "priority": "",
+  "dispatch_department": "",
+  "confidence": 0.0,
+  "missing_fields": []
+}
+
+Rules:
+- VA: 6/6, 6/9, CF, HM, PL, NPL, etc.
+- IOP: mmHg numerics only
+- BP: separate systolic and diastolic
+- priority: "NORMAL" / "URGENT" / "EMERGENCY"
+- dispatch_department: use the name as spoken (e.g. "General Ophthalmology", "Refraction", "Glaucoma")
+- confidence: 0.0-1.0 based on completeness
+"""
+
+
+def get_prompt_for_dept(dept_code: str) -> str:
+    """Return the correct AI system prompt for the given department code."""
+    if dept_code in ('REFRAC', 'PEDS_REFRAC'):
+        return VOICE_EMR_REFRACTION_PROMPT
+    if dept_code == 'TRIAGE':
+        return VOICE_EMR_TRIAGE_PROMPT
+    return VOICE_EMR_SYSTEM_PROMPT
+
+
+def transcribe_voice_to_consultation(text_transcription: str, dept_code: str = '') -> dict:
     """
     Takes a text transcription and extracts ALL consultation data using Groq.
     Returns structured JSON ready to fill every form field.
     """
     from .groq_client import groq_json
+    prompt = get_prompt_for_dept(dept_code)
     result = groq_json(
         messages=[
             {
@@ -236,7 +332,7 @@ def transcribe_voice_to_consultation(text_transcription: str) -> dict:
                 )
             }
         ],
-        system=VOICE_EMR_SYSTEM_PROMPT,
+        system=prompt,
         max_tokens=4096,
     )
     if not result.get('success'):

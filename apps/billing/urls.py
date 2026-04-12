@@ -20,4 +20,10 @@ urlpatterns = [
     path('item/<uuid:item_id>/remove/', views.pos_remove_item, name='pos_remove_item'),
     path('invoice/<uuid:invoice_id>/record-payment/', views.pos_record_payment, name='pos_record_payment'),
     path('receipt/<uuid:invoice_id>/', views.receipt_view, name='receipt'),
+
+    # Surgical deposit
+    path('surgical-deposit/<uuid:booking_id>/', views.surgical_deposit, name='surgical_deposit'),
+
+    # SLA breach API
+    path('api/waiting-sla/', views.waiting_sla_json, name='waiting_sla_json'),
 ]

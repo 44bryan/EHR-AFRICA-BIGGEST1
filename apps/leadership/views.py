@@ -53,7 +53,7 @@ def leadership_dashboard(request):
     total_patients   = Patient.objects.filter(is_deleted=False).count()
     new_this_month   = Patient.objects.filter(created_at__date__gte=month_start, is_deleted=False).count()
     new_this_year    = Patient.objects.filter(created_at__date__gte=year_start, is_deleted=False).count()
-    today_visits     = Visit.objects.filter(visit_date=today, is_deleted=False).count()
+    today_visits     = Visit.objects.filter(visit_date__date=today, is_deleted=False).count()
     today_consults   = Consultation.objects.filter(created_at__date=today, is_deleted=False).count()
     today_appts      = Appointment.objects.filter(appointment_date=today, is_deleted=False).count()
 
@@ -78,15 +78,15 @@ def leadership_dashboard(request):
 
         # Revenue collected (payments received)
         revenue_today = Payment.objects.filter(
-            payment_date=today, is_deleted=False
+            payment_date__date=today, is_deleted=False
         ).aggregate(total=Sum('amount'))['total'] or 0
 
         revenue_month = Payment.objects.filter(
-            payment_date__gte=month_start, is_deleted=False
+            payment_date__date__gte=month_start, is_deleted=False
         ).aggregate(total=Sum('amount'))['total'] or 0
 
         revenue_year = Payment.objects.filter(
-            payment_date__gte=year_start, is_deleted=False
+            payment_date__date__gte=year_start, is_deleted=False
         ).aggregate(total=Sum('amount'))['total'] or 0
 
         # Outstanding (unpaid invoices)
@@ -100,7 +100,7 @@ def leadership_dashboard(request):
         # Revenue by payment method (this month)
         revenue_by_method = list(
             Payment.objects.filter(
-                payment_date__gte=month_start, is_deleted=False
+                payment_date__date__gte=month_start, is_deleted=False
             ).values('payment_method').annotate(total=Sum('amount')).order_by('-total')
         )
 
@@ -109,7 +109,7 @@ def leadership_dashboard(request):
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
             amt = Payment.objects.filter(
-                payment_date=d, is_deleted=False
+                payment_date__date=d, is_deleted=False
             ).aggregate(total=Sum('amount'))['total'] or 0
             revenue_trend.append({'date': d.strftime('%d %b'), 'amount': float(amt)})
 
@@ -258,9 +258,41 @@ def leadership_dashboard(request):
         month_date = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
         next_month = (month_date.replace(day=28) + timedelta(days=4)).replace(day=1)
         count = Visit.objects.filter(
-            visit_date__gte=month_date, visit_date__lt=next_month, is_deleted=False
+            visit_date__date__gte=month_date, visit_date__date__lt=next_month, is_deleted=False
         ).count()
         monthly_trend.append({'month': month_date.strftime('%b %Y'), 'count': count})
+
+    # ── Month-over-Month Growth ───────────────────────────────────────────────
+    last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+    last_month_end   = month_start - timedelta(days=1)
+
+    visits_this_month = Visit.objects.filter(
+        visit_date__date__gte=month_start, visit_date__date__lte=today, is_deleted=False
+    ).count()
+    visits_last_month = Visit.objects.filter(
+        visit_date__date__gte=last_month_start, visit_date__date__lte=last_month_end, is_deleted=False
+    ).count()
+    visit_growth = round(((visits_this_month - visits_last_month) / visits_last_month * 100), 1) if visits_last_month else 0
+
+    patients_this_month = Patient.objects.filter(
+        created_at__date__gte=month_start, is_deleted=False
+    ).count()
+    patients_last_month = Patient.objects.filter(
+        created_at__date__gte=last_month_start, created_at__date__lte=last_month_end, is_deleted=False
+    ).count()
+    patient_growth = round(((patients_this_month - patients_last_month) / patients_last_month * 100), 1) if patients_last_month else 0
+
+    try:
+        from apps.billing.models import Payment as _Payment
+        rev_last_month = _Payment.objects.filter(
+            payment_date__date__gte=last_month_start,
+            payment_date__date__lte=last_month_end,
+            is_deleted=False,
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        revenue_growth = round(((float(revenue_month) - float(rev_last_month)) / float(rev_last_month) * 100), 1) if rev_last_month else 0
+    except Exception:
+        rev_last_month = 0
+        revenue_growth = 0
 
     # ── Patient Satisfaction ──────────────────────────────────────────────────
     try:
@@ -356,6 +388,15 @@ def leadership_dashboard(request):
         'positive_count': positive_count,
         'feedback_positive': feedback_positive,
         'today': today,
+        # Growth indicators
+        'visit_growth': visit_growth,
+        'visits_this_month': visits_this_month,
+        'visits_last_month': visits_last_month,
+        'patient_growth': patient_growth,
+        'patients_this_month': patients_this_month,
+        'patients_last_month': patients_last_month,
+        'revenue_growth': revenue_growth,
+        'rev_last_month': rev_last_month,
     }
     return render(request, 'leadership/dashboard.html', context)
 
@@ -373,7 +414,7 @@ def kpi_json(request):
 
     visits_per_day, revenue_per_day, queue_per_day = [], [], []
     for d in last_7:
-        visits_per_day.append({'date': d.isoformat(), 'visits': Visit.objects.filter(visit_date=d, is_deleted=False).count()})
+        visits_per_day.append({'date': d.isoformat(), 'visits': Visit.objects.filter(visit_date__date=d, is_deleted=False).count()})
         queue_per_day.append({'date': d.isoformat(), 'served': QueueToken.objects.filter(token_date=d, status=TokenStatus.COMPLETED, is_deleted=False).count()})
 
     return JsonResponse({
@@ -413,7 +454,7 @@ def monthly_stats(request):
 
     # ── Patient counts ────────────────────────────────────────────────────────
     visits = Visit.objects.filter(
-        visit_date__gte=period_start, visit_date__lte=period_end, is_deleted=False
+        visit_date__date__gte=period_start, visit_date__date__lte=period_end, is_deleted=False
     )
     new_patients = visits.filter(visit_type='NEW').count()
     returning    = visits.filter(visit_type__in=['FOLLOW_UP', 'REVIEW', 'PROCEDURE']).count()
@@ -812,8 +853,8 @@ def finance_dashboard(request):
     # ── Waiver / Discount Summary ─────────────────────────────────────────────
     waivers_month = Invoice.objects.filter(
         created_at__date__gte=month_start,
-        discount__gt=0, is_deleted=False
-    ).aggregate(count=Count('id'), total=Sum('discount'))
+        discount_amount__gt=0, is_deleted=False
+    ).aggregate(count=Count('id'), total=Sum('discount_amount'))
     waiver_count = waivers_month['count'] or 0
     waiver_total = waivers_month['total'] or 0
 

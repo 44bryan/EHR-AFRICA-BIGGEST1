@@ -158,11 +158,27 @@ def gate_issue(request):
 
         patient = None
         visit = None
+        patient_uuid = request.POST.get('patient_uuid', '').strip()
+        # Fallback: the search box text (submitted via name="patient_search_text")
+        search_text = request.POST.get('patient_search_text', '').strip()
 
-        if patient_id:
-            patient = Patient.objects.filter(patient_id=patient_id, is_deleted=False).first()
-            if patient:
-                patient_name = patient.full_name
+        # Try UUID first, then readable patient_id
+        if patient_uuid:
+            try:
+                patient = Patient.objects.filter(id=patient_uuid, is_deleted=False).first()
+            except Exception:
+                pass  # invalid UUID format — fall through to patient_id lookup
+        if not patient and patient_id:
+            try:
+                patient = Patient.objects.filter(patient_id=patient_id, is_deleted=False).first()
+            except Exception:
+                pass
+        if patient:
+            patient_name = patient.full_name  # always use the real name from DB
+
+        # patient_name is the walk-in field value — already populated in JS via walkinInput
+        # when the user selected a patient from the dropdown. If it's non-empty here,
+        # the ticket will issue (either linked to patient record or as a named walk-in).
 
         if visit_id:
             visit = Visit.objects.filter(id=visit_id).first()
@@ -224,17 +240,23 @@ def vip_reception_issue(request):
     They enter here and are fast-tracked with highest priority.
     """
     if request.method == 'POST':
-        patient_id = request.POST.get('patient_id', '').strip()
+        patient_id   = request.POST.get('patient_id', '').strip()
+        patient_uuid = request.POST.get('patient_uuid', '').strip()
         patient_name = request.POST.get('patient_name', '').strip()
-        visit_id = request.POST.get('visit_id', '').strip()
+        visit_id     = request.POST.get('visit_id', '').strip()
 
         patient = None
         visit = None
 
-        if patient_id:
+        if patient_uuid:
+            try:
+                patient = Patient.objects.filter(id=patient_uuid, is_deleted=False).first()
+            except Exception:
+                pass
+        if not patient and patient_id:
             patient = Patient.objects.filter(patient_id=patient_id, is_deleted=False).first()
-            if patient:
-                patient_name = patient.full_name
+        if patient:
+            patient_name = patient.full_name
 
         if visit_id:
             visit = Visit.objects.filter(id=visit_id).first()
@@ -309,11 +331,17 @@ def express_desk_issue(request):
 
         patient = None
         visit = None
+        patient_uuid = request.POST.get('patient_uuid', '').strip()
 
-        if patient_id:
+        if patient_uuid:
+            try:
+                patient = Patient.objects.filter(id=patient_uuid, is_deleted=False).first()
+            except Exception:
+                pass
+        if not patient and patient_id:
             patient = Patient.objects.filter(patient_id=patient_id, is_deleted=False).first()
-            if patient:
-                patient_name = patient.full_name
+        if patient:
+            patient_name = patient.full_name
 
         if visit_id:
             visit = Visit.objects.filter(id=visit_id).first()
@@ -787,6 +815,8 @@ def call_next(request, counter_id):
             TokenStatus.CALLED, TokenStatus.SERVING
         ):
             counter.current_serving.complete()
+            counter.current_serving = None
+            counter.save(update_fields=['current_serving', 'updated_at'])
 
         next_token = QueueToken.objects.select_for_update().filter(
             service_type=counter.service_type,
@@ -824,6 +854,20 @@ def complete_token(request, token_id):
     if token.counter:
         token.counter.current_serving = None
         token.counter.save(update_fields=['current_serving', 'updated_at'])
+    return JsonResponse({'success': True})
+
+
+@login_required
+@require_POST
+def clear_counter(request, counter_id):
+    """Manually clear current_serving from a counter (staff resets their desk)."""
+    counter = get_object_or_404(ServiceCounter, id=counter_id, is_active=True)
+    if counter.current_serving and counter.current_serving.status in (
+        TokenStatus.CALLED, TokenStatus.SERVING
+    ):
+        counter.current_serving.complete()
+    counter.current_serving = None
+    counter.save(update_fields=['current_serving', 'updated_at'])
     return JsonResponse({'success': True})
 
 

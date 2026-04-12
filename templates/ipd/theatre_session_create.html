@@ -1,0 +1,141 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Theatre Session{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <a href="{% url 'ipd:theatre_session_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+  <div>
+    <h5 class="mb-0 fw-bold">New Theatre Session</h5>
+    <div class="text-muted small">Schedule surgeries for a theatre list</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+  <div class="row g-3">
+
+    <!-- Session Details -->
+    <div class="col-lg-8">
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-danger text-white fw-semibold">
+          <i class="bi bi-scissors me-2"></i>Session Details
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Session Date <span class="text-danger">*</span></label>
+              <input type="date" name="session_date" class="form-control" value="{{ today }}" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Theatre Room</label>
+              <select name="theatre_name" class="form-select">
+                {% for tc in theatre_choices %}
+                <option value="{{ tc }}">{{ tc }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-semibold">Start Time</label>
+              <input type="time" name="start_time" class="form-control" value="08:00">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-semibold">End Time</label>
+              <input type="time" name="end_time" class="form-control">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Surgical Team -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-people me-2 text-primary"></i>Surgical Team
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Lead Surgeon</label>
+              <select name="lead_surgeon" class="form-select">
+                <option value="">— Select —</option>
+                {% for d in doctors %}
+                <option value="{{ d.pk }}">Dr. {{ d.full_name }} ({{ d.get_role_display }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Anaesthetist</label>
+              <input type="text" name="anaesthetist_name" class="form-control" placeholder="Anaesthetist name">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Scrub Nurse</label>
+              <select name="scrub_nurse" class="form-select">
+                <option value="">— Select —</option>
+                {% for n in nurses %}
+                <option value="{{ n.pk }}">{{ n.full_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Circulating Nurse</label>
+              <select name="circulating_nurse" class="form-select">
+                <option value="">— Select —</option>
+                {% for n in nurses %}
+                <option value="{{ n.pk }}">{{ n.full_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <label class="form-label fw-semibold">Session Notes</label>
+          <textarea name="notes" class="form-control" rows="2" placeholder="Special equipment needed, anaesthesia concerns, etc."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Add Bookings -->
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-clipboard-check me-2 text-success"></i>Add Confirmed Bookings
+          <span class="badge bg-secondary ms-1">{{ confirmed_bookings|length }}</span>
+        </div>
+        <div class="card-body p-0" style="max-height:500px;overflow-y:auto;">
+          {% for b in confirmed_bookings %}
+          <label class="d-block px-3 py-2 border-bottom" style="cursor:pointer;">
+            <div class="d-flex align-items-start gap-2">
+              <input type="checkbox" name="bookings" value="{{ b.pk }}" class="form-check-input mt-1">
+              <div>
+                <div class="fw-semibold small">{{ b.patient.full_name }}</div>
+                <div class="text-muted" style="font-size:.75rem;">
+                  {{ b.get_procedure_display }}
+                  {% if b.eye_laterality %}· {{ b.eye_laterality }}{% endif %}
+                </div>
+                <div class="text-muted" style="font-size:.72rem;">
+                  SB-{{ b.booking_number }}
+                  {% if b.surgeon %}· Dr. {{ b.surgeon.get_full_name }}{% endif %}
+                </div>
+              </div>
+            </div>
+          </label>
+          {% empty %}
+          <div class="text-muted text-center py-4 small">No confirmed bookings available</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-danger w-100 fw-semibold">
+        <i class="bi bi-plus-circle me-2"></i>Create Theatre Session
+      </button>
+      <a href="{% url 'ipd:theatre_session_list' %}" class="btn btn-outline-secondary w-100 mt-2">Cancel</a>
+    </div>
+
+  </div>
+</form>
+{% endblock %}

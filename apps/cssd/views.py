@@ -6,20 +6,26 @@ from .models import Instrument, InstrumentSet, SterilizationCycle, DispatchRecor
 
 @login_required
 def cssd_dashboard(request):
+    def ic(status):
+        return Instrument.objects.filter(status=status, is_deleted=False).count()
+
+    status_pipeline = [
+        (ic(InstrumentStatus.IN_USE),       'In Use',        '#2563eb', 'bi-person-badge'),
+        (ic(InstrumentStatus.DIRTY),        'Returned/Dirty','#dc2626', 'bi-exclamation-triangle'),
+        (ic(InstrumentStatus.MAINTENANCE),  'Decon/Washing', '#d97706', 'bi-droplet'),
+        (ic(InstrumentStatus.PACKING if hasattr(InstrumentStatus, 'PACKING') else InstrumentStatus.MAINTENANCE), 'Packing', '#7c3aed', 'bi-box'),
+        (ic(InstrumentStatus.AVAILABLE),    'Sterile/Ready', '#059669', 'bi-shield-check'),
+    ]
+
     context = {
-        'total_instruments': Instrument.objects.filter(is_active=True, is_deleted=False).count(),
-        'available_sterile': Instrument.objects.filter(
-            status=InstrumentStatus.AVAILABLE, is_deleted=False
-        ).count(),
-        'dirty_count': Instrument.objects.filter(
-            status=InstrumentStatus.DIRTY, is_deleted=False
-        ).count(),
-        'in_use': Instrument.objects.filter(
-            status=InstrumentStatus.IN_USE, is_deleted=False
-        ).count(),
+        'total_instruments': Instrument.objects.filter(is_deleted=False).count(),
+        'available_sterile': ic(InstrumentStatus.AVAILABLE),
+        'dirty_count': ic(InstrumentStatus.DIRTY),
+        'in_use': ic(InstrumentStatus.IN_USE),
         'recent_cycles': SterilizationCycle.objects.filter(
             is_deleted=False
-        ).order_by('-start_time')[:5],
+        ).select_related('operator').prefetch_related('items').order_by('-start_time')[:10],
+        'status_pipeline': status_pipeline,
     }
     return render(request, 'cssd/dashboard.html', context)
 

@@ -216,32 +216,23 @@ def voice_extract_view(request):
         try:
             body = json.loads(request.body)
             transcription = body.get('transcription', '').strip()
+            dept_code_from_body = body.get('dept_code', '').strip()
         except json.JSONDecodeError:
             transcription = request.POST.get('transcription', '').strip()
+            dept_code_from_body = request.POST.get('dept_code', '').strip()
 
     if not transcription:
         return JsonResponse({'error': 'No audio or transcription provided.'}, status=400)
 
-    result = transcribe_voice_to_consultation(transcription)
+    # Determine dept_code: prefer what frontend sends, fallback to user's dept
+    dept_code = dept_code_from_body or request.user.role_department_code or ''
+
+    result = transcribe_voice_to_consultation(transcription, dept_code=dept_code)
     if not result['success']:
         return JsonResponse({'error': result['error']}, status=500)
 
     data = result['data']
-
-    # Filter missing_fields to only show fields relevant for this doctor's role
-    dept_code = getattr(request.user.department, 'code', '') if request.user.department else ''
-    if dept_code in ('REFRAC', 'PEDS_REFRAC'):
-        # Refractionist only does VA + refraction. Strip Gen Oph exam fields.
-        _not_refrac = {
-            'anterior segment', 'posterior segment', 'iop', 'intraocular pressure',
-            'cover test', 'rapd', 'colour vision', 'color vision',
-            'slit lamp', 'fundus', 'fundoscopy', 'adnexa',
-        }
-        filtered_missing = [
-            f for f in data.get('missing_fields', [])
-            if not any(kw in f.lower() for kw in _not_refrac)
-        ]
-        data['missing_fields'] = filtered_missing
+    data['_dept_code'] = dept_code  # echo back so JS knows which schema was used
 
     response_data = {
         'success': True,
@@ -566,31 +557,55 @@ def drug_interaction_view(request):
     if not isinstance(drugs, list) or len(drugs) < 2:
         return JsonResponse({'success': True, 'data': {'interactions': [], 'cautions': [], 'safe': True}})
 
-    # Use Groq for drug interaction checking (Claude key not configured)
     from .groq_client import groq_chat
     drug_list = ', '.join(drugs)
     msg = [{
         'role': 'user',
         'content': (
-            f'Check ophthalmic drug interactions for: {drug_list}.\n'
-            'Return JSON only: {{"interactions": [...], "cautions": [...], "safe": true/false}}'
+            f'You are an ophthalmic clinical pharmacist. Check for interactions between these drugs: {drug_list}.\n\n'
+            'Respond with ONLY valid JSON in this exact format, no other text:\n'
+            '{"safe": true, "interactions": [], "cautions": []}\n\n'
+            'Rules:\n'
+            '- "safe": boolean — false if any significant interaction exists\n'
+            '- "interactions": array of objects, each with keys: "drugs" (array of 2 drug names), "severity" ("major"|"moderate"|"minor"), "description" (string), "recommendation" (string)\n'
+            '- "cautions": array of plain strings (general warnings, monitoring tips)\n'
+            '- If no interactions found: {"safe": true, "interactions": [], "cautions": []}\n'
         )
     }]
-    gr = groq_chat(msg, max_tokens=512)
+    gr = groq_chat(msg, max_tokens=800)
     if gr['success']:
         import re as _re
         raw = gr['text']
         json_match = _re.search(r'\{.*\}', raw, _re.DOTALL)
         try:
             parsed = json.loads(json_match.group()) if json_match else {}
+            interactions = parsed.get('interactions', [])
+            # Normalise: if AI returned strings instead of objects, wrap them
+            normalised = []
+            for ix in interactions:
+                if isinstance(ix, str):
+                    normalised.append({
+                        'drugs': drugs[:2],
+                        'severity': 'moderate',
+                        'description': ix,
+                        'recommendation': 'Monitor closely.',
+                    })
+                elif isinstance(ix, dict):
+                    if 'drugs' not in ix or not isinstance(ix.get('drugs'), list):
+                        ix['drugs'] = drugs[:2]
+                    normalised.append(ix)
             return JsonResponse({'success': True, 'data': {
-                'interactions': parsed.get('interactions', []),
+                'interactions': normalised,
                 'cautions': parsed.get('cautions', []),
-                'safe': parsed.get('safe', True),
+                'safe': parsed.get('safe', len(normalised) == 0),
             }})
         except (json.JSONDecodeError, AttributeError):
-            return JsonResponse({'success': True, 'data': {'interactions': [], 'cautions': [raw], 'safe': True}})
-    return JsonResponse({'success': False, 'error': gr.get('error', 'AI error')}, status=500)
+            return JsonResponse({'success': True, 'data': {
+                'interactions': [],
+                'cautions': [raw[:500]] if raw else [],
+                'safe': True,
+            }})
+    return JsonResponse({'success': False, 'error': gr.get('error', 'AI unavailable')}, status=500)
 
 
 @login_required

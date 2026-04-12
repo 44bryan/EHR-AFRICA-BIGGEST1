@@ -42,7 +42,7 @@ class UserCreateForm(forms.ModelForm):
         model = User
         fields = [
             'first_name', 'last_name', 'email', 'username',
-            'employee_id', 'role', 'department', 'phone_number', 'profile_photo',
+            'employee_id', 'role', 'cashier_station', 'department', 'phone_number', 'profile_photo',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -50,10 +50,16 @@ class UserCreateForm(forms.ModelForm):
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
             'username': forms.TextInput(attrs={'class': 'form-control'}),
             'employee_id': forms.TextInput(attrs={'class': 'form-control'}),
-            'role': forms.Select(attrs={'class': 'form-select'}),
+            'role': forms.Select(attrs={'class': 'form-select', 'id': 'id_role'}),
+            'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
             'department': forms.Select(attrs={'class': 'form-select'}),
             'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
         }
+
+    def clean_cashier_station(self):
+        # Always return a valid non-empty value — default to 'ALL' for non-cashier roles
+        val = self.cleaned_data.get('cashier_station')
+        return val if val else 'ALL'
 
     def clean_password2(self):
         p1 = self.cleaned_data.get('password1')
@@ -66,6 +72,9 @@ class UserCreateForm(forms.ModelForm):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data['password1'])
         user.must_change_password = True
+        # Guarantee cashier_station is never empty — the DB column is NOT NULL
+        if not user.cashier_station:
+            user.cashier_station = 'ALL'
         if commit:
             user.save()
         return user
@@ -76,16 +85,21 @@ class UserEditForm(forms.ModelForm):
         model = User
         fields = [
             'first_name', 'last_name', 'email',
-            'role', 'department', 'phone_number', 'profile_photo', 'is_active',
+            'role', 'cashier_station', 'department', 'phone_number', 'profile_photo', 'is_active',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
             'last_name': forms.TextInput(attrs={'class': 'form-control'}),
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
-            'role': forms.Select(attrs={'class': 'form-select'}),
+            'role': forms.Select(attrs={'class': 'form-select', 'id': 'id_role'}),
+            'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
             'department': forms.Select(attrs={'class': 'form-select'}),
             'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
         }
+
+    def clean_cashier_station(self):
+        val = self.cleaned_data.get('cashier_station')
+        return val if val else 'ALL'
 
 
 class ProfileForm(forms.ModelForm):

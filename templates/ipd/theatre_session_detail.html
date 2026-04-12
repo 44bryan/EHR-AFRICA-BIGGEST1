@@ -1,0 +1,155 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Theatre Session — {{ session.session_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{% url 'ipd:theatre_session_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ session.theatre_name }} — {{ session.session_date|date:"D, d M Y" }}</h5>
+      <div class="text-muted small">Session #{{ session.session_number }}</div>
+    </div>
+    <span class="badge bg-{% if session.status == 'COMPLETED' %}success{% elif session.status == 'IN_PROGRESS' %}warning text-dark{% elif session.status == 'CANCELLED' %}secondary{% else %}primary{% endif %} ms-2">
+      {{ session.get_status_display }}
+    </span>
+  </div>
+  <div class="d-flex gap-2">
+    <!-- Status update buttons -->
+    {% if session.status == 'SCHEDULED' %}
+    <form method="post" action="{% url 'ipd:theatre_session_update_status' session.pk %}" class="d-inline">
+      {% csrf_token %}<input type="hidden" name="status" value="IN_PROGRESS">
+      <button type="submit" class="btn btn-sm btn-warning">Start Session</button>
+    </form>
+    {% elif session.status == 'IN_PROGRESS' %}
+    <form method="post" action="{% url 'ipd:theatre_session_update_status' session.pk %}" class="d-inline">
+      {% csrf_token %}<input type="hidden" name="status" value="COMPLETED">
+      <button type="submit" class="btn btn-sm btn-success">Complete Session</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Session Info -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-danger text-white fw-semibold"><i class="bi bi-info-circle me-2"></i>Session Info</div>
+      <div class="card-body small">
+        <div class="mb-2"><span class="text-muted">Theatre:</span> <strong>{{ session.theatre_name }}</strong></div>
+        <div class="mb-2"><span class="text-muted">Date:</span> {{ session.session_date|date:"d M Y" }}</div>
+        {% if session.start_time %}<div class="mb-2"><span class="text-muted">Time:</span> {{ session.start_time|time:"H:i" }}{% if session.end_time %} – {{ session.end_time|time:"H:i" }}{% endif %}</div>{% endif %}
+        <hr class="my-2">
+        <div class="mb-1"><span class="text-muted">Lead Surgeon:</span> {% if session.lead_surgeon %}Dr. {{ session.lead_surgeon.full_name }}{% else %}—{% endif %}</div>
+        <div class="mb-1"><span class="text-muted">Anaesthetist:</span> {{ session.anaesthetist_name|default:"—" }}</div>
+        <div class="mb-1"><span class="text-muted">Scrub Nurse:</span> {% if session.scrub_nurse %}{{ session.scrub_nurse.full_name }}{% else %}—{% endif %}</div>
+        <div class="mb-1"><span class="text-muted">Circulating:</span> {% if session.circulating_nurse %}{{ session.circulating_nurse.full_name }}{% else %}—{% endif %}</div>
+        {% if session.notes %}<hr class="my-2"><div class="text-muted">{{ session.notes }}</div>{% endif %}
+      </div>
+    </div>
+
+    <!-- Add Procedure from Booking -->
+    {% if session.status != 'COMPLETED' %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom fw-semibold small"><i class="bi bi-plus-circle text-success me-2"></i>Add Procedure</div>
+      <div class="card-body">
+        <form method="post" action="{% url 'ipd:theatre_add_procedure' session.pk %}">
+          {% csrf_token %}
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Patient ID</label>
+            <input type="text" name="patient_id" class="form-control form-control-sm" placeholder="Patient ID" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Procedure</label>
+            <select name="procedure" class="form-select form-select-sm">
+              {% for val, label in surgery_types %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row g-1 mb-2">
+            <div class="col">
+              <select name="eye_laterality" class="form-select form-select-sm">
+                <option value="">Eye</option>
+                <option value="RE">RE</option>
+                <option value="LE">LE</option>
+                <option value="BE">BE</option>
+              </select>
+            </div>
+            <div class="col">
+              <select name="anaesthesia_type" class="form-select form-select-sm">
+                <option value="LOCAL">Local</option>
+                <option value="GENERAL">General</option>
+                <option value="SEDATION">Sedation</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-sm btn-success w-100">Add to List</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Surgical List -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+        <span class="fw-semibold"><i class="bi bi-list-ol me-2 text-danger"></i>Surgical List ({{ procedures|length }} procedures)</span>
+      </div>
+      <div class="card-body p-0">
+        {% for proc in procedures %}
+        <div class="p-3 border-bottom {% if proc.outcome == 'SUCCESS' %}bg-success bg-opacity-10{% elif proc.outcome == 'COMPLICATION' %}bg-warning bg-opacity-10{% elif proc.outcome == 'ABANDONED' %}bg-danger bg-opacity-10{% endif %}">
+          <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+            <div class="d-flex align-items-start gap-2">
+              <div class="bg-dark text-white rounded d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                   style="width:30px;height:30px;font-size:.85rem;">{{ proc.position_on_list }}</div>
+              <div>
+                <div class="fw-semibold">{{ proc.patient.full_name }}</div>
+                <div class="small text-muted">
+                  {{ proc.get_procedure_display }}
+                  {% if proc.eye_laterality %} · <strong>{{ proc.eye_laterality }}</strong>{% endif %}
+                  {% if proc.anaesthesia_type %} · {{ proc.get_anaesthesia_type_display }}{% endif %}
+                </div>
+                {% if proc.surgeon %}
+                <div class="small text-muted">Surgeon: Dr. {{ proc.surgeon.full_name }}</div>
+                {% endif %}
+
+                <!-- WHO Checklist Status -->
+                <div class="d-flex gap-2 mt-1">
+                  <span class="badge rounded-pill {% if proc.sign_in_done %}bg-success{% else %}bg-light text-secondary border{% endif %}" style="font-size:.65rem;">Sign In</span>
+                  <span class="badge rounded-pill {% if proc.time_out_done %}bg-success{% else %}bg-light text-secondary border{% endif %}" style="font-size:.65rem;">Time Out</span>
+                  <span class="badge rounded-pill {% if proc.sign_out_done %}bg-success{% else %}bg-light text-secondary border{% endif %}" style="font-size:.65rem;">Sign Out</span>
+                  {% if proc.outcome %}
+                  <span class="badge rounded-pill {% if proc.outcome == 'SUCCESS' %}bg-success{% elif proc.outcome == 'COMPLICATION' %}bg-warning text-dark{% else %}bg-danger{% endif %}" style="font-size:.65rem;">
+                    {{ proc.get_outcome_display }}
+                  </span>
+                  {% endif %}
+                </div>
+
+                <!-- IOL info -->
+                {% if proc.iol_model %}
+                <div class="small text-muted mt-1"><i class="bi bi-eye me-1"></i>IOL: {{ proc.iol_model }} {{ proc.iol_power }}</div>
+                {% endif %}
+              </div>
+            </div>
+            <a href="{% url 'ipd:theatre_procedure_record' proc.pk %}" class="btn btn-sm {% if proc.outcome %}btn-outline-success{% else %}btn-outline-danger{% endif %}">
+              <i class="bi bi-{% if proc.outcome %}check-circle{% else %}pencil{% endif %} me-1"></i>
+              {% if proc.outcome %}View / Edit{% else %}Record{% endif %}
+            </a>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-list-ol fs-2 d-block mb-2 opacity-25"></i>
+          No procedures on this list yet. Add from the panel on the left.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

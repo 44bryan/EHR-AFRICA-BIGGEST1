@@ -2,7 +2,9 @@
    EHR Africa — Main JavaScript v2
    ============================================================ */
 
-document.addEventListener('DOMContentLoaded', function () {
+// ── Bootstrap / sidebar initializer ─────────────────────────────────────────
+// Called on fresh DOMContentLoaded AND after every HTMX page swap.
+function ehrInit() {
 
   /* ── Sidebar Toggle ───────────────────────────────────────── */
   const toggleBtn  = document.getElementById('sidebarToggle');
@@ -83,6 +85,20 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   setActiveSidebarLink();
+
+  // Scroll active sidebar link into view so you never lose your place
+  const activeLink = document.querySelector('#sidebar .sidebar-link.active');
+  const sidebarBody = document.getElementById('sidebarBody');
+  if (activeLink && sidebarBody) {
+    const linkTop = activeLink.offsetTop;
+    const linkBot = linkTop + activeLink.offsetHeight;
+    const viewTop = sidebarBody.scrollTop;
+    const viewBot = viewTop + sidebarBody.clientHeight;
+    if (linkTop < viewTop || linkBot > viewBot) {
+      // Scroll so active link is roughly centered in the sidebar
+      sidebarBody.scrollTop = linkTop - (sidebarBody.clientHeight / 2) + (activeLink.offsetHeight / 2);
+    }
+  }
 
 
   /* ── Global Patient Search ────────────────────────────────── */
@@ -180,4 +196,20 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
+} // end ehrInit
+
+// Run on normal page load
+document.addEventListener('DOMContentLoaded', ehrInit);
+
+// Re-run after every HTMX swap (sidebar navigation, boost links)
+document.addEventListener('htmx:afterSwap', function(evt) {
+  ehrInit();
+});
+
+// Show a subtle loading indicator on HTMX navigation start
+document.addEventListener('htmx:beforeRequest', function() {
+  document.body.style.cursor = 'wait';
+});
+document.addEventListener('htmx:afterOnLoad', function() {
+  document.body.style.cursor = '';
 });

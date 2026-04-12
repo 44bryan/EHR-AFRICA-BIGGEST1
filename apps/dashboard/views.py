@@ -1,6 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
 from django.utils import timezone
+from django.db import models
 from django.db.models import Count, Q, Sum, Avg
 from datetime import timedelta
 import json
@@ -71,6 +72,196 @@ def _compute_ai_triage(visit):
     return 'ROUTINE', ''
 
 
+def _ceo_dashboard(request, user, today, ctx):
+    """
+    CEO / Admin Director executive dashboard.
+    Top-level KPIs only — no clinical detail. Click-through to Leadership tabs.
+    """
+    from apps.patients.models import Patient, Visit
+    from apps.appointments.models import Appointment
+
+    month_start = today.replace(day=1)
+    year_start  = today.replace(month=1, day=1)
+    last_30     = today - timedelta(days=30)
+
+    total_patients  = Patient.objects.filter(is_deleted=False).count()
+    new_month       = Patient.objects.filter(created_at__date__gte=month_start, is_deleted=False).count()
+    today_visits    = Visit.objects.filter(visit_date__date=today, is_deleted=False).count()
+    today_appts     = Appointment.objects.filter(appointment_date=today, is_deleted=False).count()
+
+    try:
+        from apps.billing.models import Payment, Invoice, InvoiceStatus
+        rev_today = Payment.objects.filter(payment_date__date=today, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+        rev_month = Payment.objects.filter(payment_date__date__gte=month_start, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+        rev_year  = Payment.objects.filter(payment_date__date__gte=year_start, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+        outstanding = sum(
+            inv.balance_due for inv in
+            Invoice.objects.filter(status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID], is_deleted=False)
+            .prefetch_related('items', 'payments')
+        )
+        # 7-day revenue spark
+        rev_7d = []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            amt = Payment.objects.filter(payment_date__date=d, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+            rev_7d.append({'date': d.strftime('%d %b'), 'amount': float(amt)})
+    except Exception:
+        rev_today = rev_month = rev_year = outstanding = 0
+        rev_7d = [{'date': '', 'amount': 0}]
+
+    try:
+        from apps.qms.models import QueueToken, TokenStatus
+        queue_now = QueueToken.objects.filter(token_date=today, status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING], is_deleted=False).count()
+        served_today = QueueToken.objects.filter(token_date=today, status=TokenStatus.COMPLETED, is_deleted=False).count()
+    except Exception:
+        queue_now = served_today = 0
+
+    try:
+        from apps.ipd.models import Bed, Admission, AdmissionStatus
+        total_beds    = Bed.objects.filter(is_deleted=False).count()
+        occupied_beds = Bed.objects.filter(status='OCCUPIED', is_deleted=False).count()
+        bed_occupancy = round((occupied_beds / total_beds * 100), 1) if total_beds else 0
+        admissions    = Admission.objects.filter(status=AdmissionStatus.ADMITTED, is_deleted=False).count()
+    except Exception:
+        total_beds = occupied_beds = bed_occupancy = admissions = 0
+
+    from apps.accounts.models import User as StaffUser
+    total_staff = StaffUser.objects.filter(is_active=True).count()
+
+    try:
+        from apps.feedback.models import PatientFeedback
+        fb = PatientFeedback.objects.filter(nps_score__isnull=False, is_deleted=False)
+        total_fb = fb.count()
+        promo = fb.filter(nps_score__gte=9).count()
+        detr  = fb.filter(nps_score__lte=6).count()
+        nps   = round(((promo - detr) / total_fb) * 100) if total_fb else 0
+        open_complaints = PatientFeedback.objects.filter(
+            status__in=['NEW', 'ACKNOWLEDGED', 'INVESTIGATING'], is_deleted=False
+        ).count()
+    except Exception:
+        nps = open_complaints = 0
+
+    ctx.update({
+        'total_patients': total_patients,
+        'new_month': new_month,
+        'today_visits': today_visits,
+        'today_appts': today_appts,
+        'rev_today': rev_today,
+        'rev_month': rev_month,
+        'rev_year': rev_year,
+        'outstanding': outstanding,
+        'rev_7d_json': json.dumps(rev_7d),
+        'queue_now': queue_now,
+        'served_today': served_today,
+        'bed_occupancy': bed_occupancy,
+        'occupied_beds': occupied_beds,
+        'total_beds': total_beds,
+        'admissions': admissions,
+        'total_staff': total_staff,
+        'nps': nps,
+        'open_complaints': open_complaints,
+    })
+    return render(request, 'dashboard/ceo.html', ctx)
+
+
+def _admin_director_dashboard(request, user, today, ctx):
+    """
+    Admin Director — operations & administration dashboard.
+    Focuses on staff, scheduling, inventory, patient flow, complaints.
+    No clinical detail, no financial deep-dive.
+    """
+    from apps.patients.models import Patient, Visit
+    from apps.appointments.models import Appointment
+
+    month_start = today.replace(day=1)
+
+    # Patient registrations
+    new_today  = Patient.objects.filter(created_at__date=today, is_deleted=False).count()
+    new_month  = Patient.objects.filter(created_at__date__gte=month_start, is_deleted=False).count()
+    total_pts  = Patient.objects.filter(is_deleted=False).count()
+
+    # Appointments
+    today_appts   = Appointment.objects.filter(appointment_date=today, is_deleted=False).count()
+    pending_appts = Appointment.objects.filter(
+        appointment_date=today, status__in=['SCHEDULED', 'CONFIRMED'], is_deleted=False
+    ).count()
+
+    # Queue
+    try:
+        from apps.qms.models import QueueToken, TokenStatus
+        queue_waiting = QueueToken.objects.filter(
+            token_date=today, status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+            is_deleted=False
+        ).count()
+        served_today  = QueueToken.objects.filter(
+            token_date=today, status=TokenStatus.COMPLETED, is_deleted=False
+        ).count()
+    except Exception:
+        queue_waiting = served_today = 0
+
+    # Beds / IPD
+    try:
+        from apps.ipd.models import Bed, Admission, AdmissionStatus
+        total_beds    = Bed.objects.filter(is_deleted=False).count()
+        occupied_beds = Bed.objects.filter(status='OCCUPIED', is_deleted=False).count()
+        bed_occupancy = round((occupied_beds / total_beds * 100), 1) if total_beds else 0
+    except Exception:
+        total_beds = occupied_beds = bed_occupancy = 0
+
+    # Staff
+    from apps.accounts.models import User as StaffUser
+    total_staff  = StaffUser.objects.filter(is_active=True).count()
+
+    # Inventory alerts
+    try:
+        from apps.inventory.models import InventoryItem
+        low_stock = InventoryItem.objects.filter(
+            quantity__lte=models.F('reorder_level'), is_deleted=False
+        ).count()
+    except Exception:
+        low_stock = 0
+
+    # Service recovery / complaints
+    try:
+        from apps.feedback.models import PatientFeedback
+        open_complaints = PatientFeedback.objects.filter(
+            status__in=['NEW', 'ACKNOWLEDGED', 'INVESTIGATING'], is_deleted=False
+        ).count()
+        nps_data = PatientFeedback.objects.filter(nps_score__isnull=False, is_deleted=False)
+        total_fb = nps_data.count()
+        promo    = nps_data.filter(nps_score__gte=9).count()
+        detr     = nps_data.filter(nps_score__lte=6).count()
+        nps      = round(((promo - detr) / total_fb) * 100) if total_fb else 0
+    except Exception:
+        open_complaints = nps = 0
+
+    # Leads
+    try:
+        from apps.leads.models import Lead
+        new_leads = Lead.objects.filter(created_at__date=today, is_deleted=False).count()
+    except Exception:
+        new_leads = 0
+
+    ctx.update({
+        'new_today': new_today,
+        'new_month': new_month,
+        'total_pts': total_pts,
+        'today_appts': today_appts,
+        'pending_appts': pending_appts,
+        'queue_waiting': queue_waiting,
+        'served_today': served_today,
+        'total_beds': total_beds,
+        'occupied_beds': occupied_beds,
+        'bed_occupancy': bed_occupancy,
+        'total_staff': total_staff,
+        'low_stock': low_stock,
+        'open_complaints': open_complaints,
+        'nps': nps,
+        'new_leads': new_leads,
+    })
+    return render(request, 'dashboard/admin_director.html', ctx)
+
+
 @login_required
 def home_view(request):
     """Route each user to their role-specific work dashboard."""
@@ -99,12 +290,18 @@ def home_view(request):
     if user.is_finance_director:
         return redirect('leadership:finance_dashboard')
 
-    # ── CEO / Admin Director → Leadership Dashboard ───────────────────────
-    if user.is_ceo or user.is_admin_director:
-        return redirect('leadership:dashboard')
+    # ── CEO → Full Executive Dashboard ───────────────────────────────────
+    if user.is_ceo:
+        return _ceo_dashboard(request, user, today, ctx)
 
-    # ── Medical Director / Admin ──────────────────────────────────────────
-    if user.is_medical_director or user.is_admin_staff:
+    # ── Admin Director → Operations & Administration Dashboard ───────────
+    if user.is_admin_director:
+        return _admin_director_dashboard(request, user, today, ctx)
+
+    # ── Medical Director ──────────────────────────────────────────────────
+    # If assigned to a department, they practice as a specialist → doctor queue.
+    # If no department assigned, show the clinical oversight dashboard.
+    if user.is_medical_director and not user.department:
         month_start = today.replace(day=1)
         last_30    = today - timedelta(days=30)
 
@@ -129,54 +326,6 @@ def home_view(request):
         today_new_patients  = today_appts_qs.filter(
             appointment_type='NEW'
         ).count()
-
-        # ── TODAY: revenue collected ──────────────────────────────────────
-        try:
-            from apps.billing.models import Payment, Invoice, InvoiceStatus, InvoiceItem
-            revenue_today = Payment.objects.filter(
-                payment_date__date=today, is_deleted=False
-            ).aggregate(total=Sum('amount'))['total'] or 0
-
-            revenue_month = Payment.objects.filter(
-                payment_date__date__gte=month_start, is_deleted=False
-            ).aggregate(total=Sum('amount'))['total'] or 0
-
-            # Outstanding (issued + partial invoices)
-            outstanding = sum(
-                inv.balance_due
-                for inv in Invoice.objects.filter(
-                    status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
-                    is_deleted=False
-                ).prefetch_related('items', 'payments')
-            )
-
-            # Revenue by category this month
-            from django.db.models import F
-            rev_by_category = list(
-                InvoiceItem.objects.filter(
-                    invoice__payments__payment_date__date__gte=month_start,
-                    is_deleted=False
-                ).values('category').annotate(
-                    total=Sum(F('quantity') * F('unit_price'))
-                ).order_by('-total')
-            )
-
-            # Revenue trend – 6 months
-            revenue_trend = []
-            for i in range(5, -1, -1):
-                m_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
-                m_end   = (m_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-                amt = Payment.objects.filter(
-                    payment_date__date__gte=m_start,
-                    payment_date__date__lt=m_end,
-                    is_deleted=False
-                ).aggregate(total=Sum('amount'))['total'] or 0
-                revenue_trend.append({'month': m_start.strftime('%b'), 'amount': float(amt)})
-
-        except Exception:
-            revenue_today = revenue_month = outstanding = 0
-            rev_by_category = []
-            revenue_trend = [{'month': '', 'amount': 0}] * 6
 
         # ── PHARMACY ──────────────────────────────────────────────────────
         try:
@@ -284,15 +433,6 @@ def home_view(request):
             nps = promoters = passives = detractors = open_complaints = 0
             avg_satisfaction = 0
 
-        # ── INVENTORY ALERTS ─────────────────────────────────────────────
-        try:
-            from apps.inventory.models import InventoryItem
-            low_inventory_count = InventoryItem.objects.filter(
-                quantity__lte=5, is_deleted=False
-            ).count()
-        except Exception:
-            low_inventory_count = 0
-
         ctx.update({
             # Today's pulse
             'today_visits':       today_visits,
@@ -303,14 +443,8 @@ def home_view(request):
             'today_appointments': today_appointments,
             'today_no_shows':     today_no_shows,
             'today_new_patients': today_new_patients,
-            # Revenue
-            'revenue_today':      revenue_today,
-            'revenue_month':      revenue_month,
-            'outstanding':        outstanding,
-            'pharmacy_revenue':   pharmacy_revenue,
+            # Pharmacy (clinical only — no revenue)
             'dispensing_count':   dispensing_count,
-            'rev_by_category':    rev_by_category,
-            'revenue_trend':      json.dumps(revenue_trend),
             # Patients
             'total_patients':     total_patients,
             'new_this_month':     new_this_month,
@@ -333,9 +467,8 @@ def home_view(request):
             'passives':           passives,
             'detractors':         detractors,
             'open_complaints':    open_complaints,
-            # Alerts
+            # Alerts (pharmacy drug stock only — clinical concern)
             'low_stock_count':    low_stock_count,
-            'low_inventory_count': low_inventory_count,
             # Live queue for quick view
             'live_queue': Visit.objects.select_related(
                 'patient', 'department', 'attending_doctor'
@@ -363,13 +496,16 @@ def home_view(request):
             ],
         ).order_by('visit_date')
 
-        # Specialist doctors see ONLY their department's queue
-        if user.is_specialist and user.department:
-            queue_qs = queue_qs.filter(department=user.department)
-        elif user.department and not user.is_medical_director:
-            queue_qs = queue_qs.filter(
-                Q(department=user.department) | Q(department__isnull=True)
-            )
+        # Filter queue by department:
+        # - Specialists and Medical Director (who has a dept) → their dept only
+        # - General ophthalmologist with no dept → sees all unassigned + general
+        if user.department:
+            if user.is_specialist or user.is_medical_director:
+                queue_qs = queue_qs.filter(department=user.department)
+            else:
+                queue_qs = queue_qs.filter(
+                    Q(department=user.department) | Q(department__isnull=True)
+                )
 
         # Annotate each queued visit with AI triage priority
         queue_list = list(queue_qs)
@@ -513,7 +649,7 @@ def home_view(request):
         from apps.prescriptions.models import DrugPrescription
         pending_rx = DrugPrescription.objects.select_related(
             'patient', 'consultation'
-        ).filter(status='ACTIVE').order_by('-prescribed_date')[:20]
+        ).filter(is_dispensed=False, is_deleted=False).order_by('-prescription_date')[:20]
         ctx.update({'pending_rx': pending_rx, 'pending_count': pending_rx.count()})
         return render(request, 'dashboard/pharmacist.html', ctx)
 
@@ -579,14 +715,15 @@ def home_view(request):
 
     # ── Receptionist ──────────────────────────────────────────────────────
     if user.is_receptionist:
-        from apps.qms.models import QueueToken, TokenStatus
-        
-        # Get queue patients waiting to be registered
+        from apps.qms.models import QueueToken, TokenStatus, ServiceType
+
+        # Get patients waiting at RECEPTIONIST counter (new patient registrations)
         queue_patients = QueueToken.objects.filter(
             issued_at__date=today,
-            status=TokenStatus.PENDING,
+            service_type=ServiceType.RECEPTIONIST,
+            status__in=[TokenStatus.WAITING, TokenStatus.CALLED],
             is_deleted=False
-        ).select_related('patient').order_by('issued_at')[:30]
+        ).select_related('patient').order_by('priority', 'issued_at')[:30]
         
         # Format queue data
         queue_data = []

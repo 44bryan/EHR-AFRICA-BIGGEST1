@@ -1,0 +1,230 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Surgical Deposit — {{ booking.booking_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">
+      <i class="bi bi-cash-coin text-success me-2"></i>Surgical Deposit Collection
+    </h4>
+    <div class="text-muted small mt-1">Booking {{ booking.booking_number }} &bull; {{ patient.full_name }}</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{% url 'ipd:surgical_booking_detail' booking_id=booking.pk %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Booking
+    </a>
+  </div>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+  <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show py-2" role="alert">
+    {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+{% endif %}
+
+<div class="row g-4">
+
+  <!-- Left: Booking & Payment summary -->
+  <div class="col-md-5">
+
+    <!-- Booking Info -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-danger bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-danger"><i class="bi bi-scissors me-1"></i>Surgical Booking</h6>
+      </div>
+      <div class="card-body small">
+        <div class="row g-2">
+          <div class="col-6"><div class="text-muted">Patient</div><div class="fw-bold">{{ patient.full_name }}</div></div>
+          <div class="col-6"><div class="text-muted">Patient ID</div><div class="fw-bold">{{ patient.patient_id }}</div></div>
+          <div class="col-12"><div class="text-muted">Procedure</div><div class="fw-bold fs-6">{{ booking.get_procedure_display }}</div></div>
+          <div class="col-6"><div class="text-muted">Eye</div><div class="fw-bold">{{ booking.get_eye_laterality_display|default:"—" }}</div></div>
+          <div class="col-6"><div class="text-muted">Surgery Date</div>
+            <div class="fw-bold">
+              {% if booking.surgery_date %}{{ booking.surgery_date|date:"d M Y" }}{% else %}<span class="text-warning">TBD</span>{% endif %}
+            </div>
+          </div>
+          <div class="col-6"><div class="text-muted">Surgeon</div>
+            <div class="fw-bold">{% if booking.surgeon %}Dr. {{ booking.surgeon.full_name }}{% else %}TBD{% endif %}</div>
+          </div>
+          <div class="col-6"><div class="text-muted">Booking Status</div>
+            <span class="badge {% if booking.status == 'CONFIRMED' %}bg-success{% elif booking.status == 'PENDING_PAYMENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+              {{ booking.get_status_display }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deposit Summary -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-success bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-success"><i class="bi bi-wallet2 me-1"></i>Deposit Summary</h6>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm mb-0 small">
+          <tr>
+            <td class="text-muted">Total Surgery Cost</td>
+            <td class="text-end fw-bold">{{ booking.total_amount|floatformat:0|intcomma }} XAF</td>
+          </tr>
+          <tr>
+            <td class="text-muted">Deposit Required</td>
+            <td class="text-end fw-bold text-warning">{{ booking.deposit_required|floatformat:0|intcomma }} XAF</td>
+          </tr>
+          <tr>
+            <td class="text-muted">Deposit Paid</td>
+            <td class="text-end fw-bold text-success">{{ booking.deposit_paid|floatformat:0|intcomma }} XAF</td>
+          </tr>
+          <tr class="table-{% if booking.is_fully_deposited %}success{% else %}danger{% endif %}">
+            <td class="fw-bold">Balance Due</td>
+            <td class="text-end fw-bold fs-6">{{ balance_due|floatformat:0|intcomma }} XAF</td>
+          </tr>
+        </table>
+
+        {% if booking.is_fully_deposited %}
+        <div class="alert alert-success py-2 mt-3 mb-0 small">
+          <i class="bi bi-check-circle-fill me-1"></i><strong>Deposit fully collected.</strong> Patient may proceed to surgery.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right: Invoice & payment actions -->
+  <div class="col-md-7">
+
+    {% if not deposit_invoice %}
+    <!-- No invoice yet -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-receipt text-muted" style="font-size:3rem;"></i>
+        <p class="text-muted mt-3 mb-4">No deposit invoice exists yet. Create one to start collecting the deposit.</p>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_invoice">
+          <button type="submit" class="btn btn-success px-5">
+            <i class="bi bi-plus-circle me-1"></i>Create Deposit Invoice
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {% else %}
+
+    <!-- Invoice header -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold small text-muted text-uppercase"><i class="bi bi-receipt me-1"></i>Invoice {{ deposit_invoice.invoice_number }}</h6>
+        <span class="badge
+          {% if deposit_invoice.status == 'PAID' %}bg-success
+          {% elif deposit_invoice.status == 'PARTIAL' %}bg-warning text-dark
+          {% else %}bg-secondary{% endif %}">
+          {{ deposit_invoice.get_status_display }}
+        </span>
+      </div>
+      <div class="card-body small p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Description</th><th class="text-end">Amount (XAF)</th></tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>{{ item.description }}</td>
+              <td class="text-end fw-bold">{{ item.total_price|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Payment history -->
+    {% if payments %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-light py-2">
+        <h6 class="mb-0 fw-bold small text-muted text-uppercase"><i class="bi bi-clock-history me-1"></i>Payment History</h6>
+      </div>
+      <div class="card-body small p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Date</th><th>Method</th><th>Ref</th><th class="text-end">Amount (XAF)</th></tr>
+          </thead>
+          <tbody>
+            {% for pmt in payments %}
+            <tr>
+              <td>{{ pmt.payment_date|date:"d M Y H:i" }}</td>
+              <td>{{ pmt.get_payment_method_display }}</td>
+              <td class="text-muted">{{ pmt.reference|default:"—" }}</td>
+              <td class="text-end fw-bold text-success">{{ pmt.amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light">
+            <tr>
+              <td colspan="3" class="fw-bold text-end">Balance Remaining</td>
+              <td class="text-end fw-bold {% if balance_due <= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ balance_due|floatformat:0|intcomma }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Record payment form -->
+    {% if balance_due > 0 %}
+    <div class="card border-0 shadow-sm border-success">
+      <div class="card-header bg-success bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-success"><i class="bi bi-cash me-1"></i>Record Deposit Payment</h6>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="record_payment">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Amount (XAF)</label>
+              <input type="number" name="amount" class="form-control" min="1"
+                     value="{{ balance_due|floatformat:0 }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Payment Method</label>
+              <select name="payment_method" class="form-select">
+                {% for val, label in payment_methods %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Reference / Receipt No. <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="text" name="reference" class="form-control" placeholder="e.g. mobile money transaction ID">
+            </div>
+            <div class="col-12">
+              <button type="submit" class="btn btn-success w-100 fw-bold">
+                <i class="bi bi-check-circle me-1"></i>Confirm Payment
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-success">
+      <i class="bi bi-check-circle-fill me-2"></i>
+      <strong>Deposit fully paid.</strong> No further collection needed.
+      <a href="{% url 'ipd:surgical_booking_detail' booking_id=booking.pk %}" class="alert-link ms-2">
+        Return to booking &rarr;
+      </a>
+    </div>
+    {% endif %}
+
+    {% endif %}{# end deposit_invoice #}
+
+  </div>
+</div>
+{% endblock %}

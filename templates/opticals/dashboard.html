@@ -1,1 +1,130 @@
-{% extends "layouts/base_authenticated.html" %}{% block title %}Opticals{% endblock %}{% block content %}<div class="d-flex justify-content-between align-items-center mb-4"><h1 class="h3 mb-0">Opticals</h1><div><a href="{% url 'opticals:create_order' %}" class="btn btn-primary me-2"><i class="bi bi-plus-circle me-1"></i>New Order</a><a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary me-2">Orders</a><a href="{% url 'opticals:frame_list' %}" class="btn btn-outline-secondary me-2">Frames</a><a href="{% url 'opticals:lens_list' %}" class="btn btn-outline-secondary">Lenses</a></div></div><div class="row g-3 mb-4"><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-primary">{{ total_frames }}</div><div class="text-muted small">Frame Types</div></div></div></div><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-info">{{ total_lenses }}</div><div class="text-muted small">Lens Types</div></div></div></div><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-warning">{{ pending_orders }}</div><div class="text-muted small">In Progress</div></div></div></div><div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-success">{{ ready_orders }}</div><div class="text-muted small">Ready for Collection</div></div></div></div></div><div class="card border-0 shadow-sm"><div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Recent Orders</h6></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0 small"><thead class="table-light"><tr><th>Order No.</th><th>Patient</th><th>Frame</th><th>Status</th><th>Date</th></tr></thead><tbody>{% for order in recent_orders %}<tr><td>{{ order.order_number }}</td><td>{{ order.patient.full_name }}</td><td>{{ order.frame|default:"-" }}</td><td><span class="badge bg-secondary">{{ order.get_status_display }}</span></td><td>{{ order.ordered_date|date:"d M Y" }}</td></tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-3">No orders yet</td></tr>{% endfor %}</tbody></table></div></div></div>{% endblock %}
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Optical Dispensing{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-eyeglasses text-info fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Optical Dispensing</h5>
+      <div class="text-muted small">Frame & lens orders, prescription fulfilment</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:create_order' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>New Order</a>
+    <a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list-ul me-1"></i>All Orders</a>
+    <a href="{% url 'opticals:frame_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-collection me-1"></i>Frames</a>
+    <a href="{% url 'opticals:lens_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-circle me-1"></i>Lenses</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-primary mb-0">{{ total_frames }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-collection me-1"></i>Frame Types in Stock</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-info mb-0">{{ total_lenses }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-circle me-1"></i>Lens Types</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ pending_orders }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-hourglass-split me-1"></i>Orders In Progress</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-success mb-0">{{ ready_orders }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Ready for Collection</div>
+    </div>
+  </div>
+</div>
+
+<!-- Ready for Collection Alert -->
+{% if ready_orders > 0 %}
+<div class="alert alert-success border-0 d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-bell-fill"></i>
+  <strong>{{ ready_orders }} order{{ ready_orders|pluralize }} ready for collection.</strong>
+  <a href="{% url 'opticals:order_list' %}?status=READY" class="ms-2 alert-link">View →</a>
+</div>
+{% endif %}
+
+<!-- Order Pipeline -->
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom fw-semibold">
+        <i class="bi bi-kanban me-2 text-info"></i>Order Pipeline
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% for status, label, color in pipeline_stages %}
+          <div class="col text-center">
+            <div class="rounded p-3" style="background:{{ color }}20;border:1px solid {{ color }}40;">
+              <div class="fw-bold fs-4" style="color:{{ color }};">{{ status }}</div>
+              <div class="small text-muted">{{ label }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Orders -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+    <span class="fw-semibold"><i class="bi bi-eyeglasses me-2 text-info"></i>Recent Orders</span>
+    <a href="{% url 'opticals:order_list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Order No.</th>
+            <th>Patient</th>
+            <th>Frame</th>
+            <th>Lens</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in recent_orders %}
+          <tr>
+            <td><code class="small">{{ order.order_number }}</code></td>
+            <td class="fw-semibold">{{ order.patient.full_name }}</td>
+            <td>{{ order.frame|default:"—" }}</td>
+            <td>{{ order.lens|default:"—" }}</td>
+            <td>
+              <span class="badge {% if order.status == 'DELIVERED' %}bg-success{% elif order.status == 'READY' %}bg-success bg-opacity-75{% elif order.status == 'LAB' %}bg-warning text-dark{% elif order.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %}">
+                {{ order.get_status_display }}
+              </span>
+            </td>
+            <td class="text-muted">{{ order.ordered_date|date:"d M Y" }}</td>
+            <td>
+              <a href="{% url 'opticals:order_detail' order.pk %}" class="btn btn-sm btn-outline-info py-0">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No optical orders yet. <a href="{% url 'opticals:create_order' %}">Create first order</a></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

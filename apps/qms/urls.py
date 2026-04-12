@@ -37,6 +37,7 @@ urlpatterns = [
     # Counter staff
     path('counter/<uuid:counter_id>/', views.counter_view, name='counter'),
     path('counter/<uuid:counter_id>/call-next/', views.call_next, name='call_next'),
+    path('counter/<uuid:counter_id>/clear/', views.clear_counter, name='clear_counter'),
 
     # Token actions
     path('token/<uuid:token_id>/complete/', views.complete_token, name='complete_token'),

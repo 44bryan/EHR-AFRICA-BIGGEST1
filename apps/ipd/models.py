@@ -344,3 +344,247 @@ class MAREntry(TimeStampedModel):
 
     class Meta:
         ordering = ['scheduled_time']
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# THEATRE / OPERATING ROOM MODULE
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TheatreSessionStatus(models.TextChoices):
+    SCHEDULED   = 'SCHEDULED',   'Scheduled'
+    IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
+    COMPLETED   = 'COMPLETED',   'Completed'
+    CANCELLED   = 'CANCELLED',   'Cancelled'
+
+
+class ProcedureOutcome(models.TextChoices):
+    SUCCESS       = 'SUCCESS',     'Successful'
+    COMPLICATION  = 'COMPLICATION','Complication (documented)'
+    ABANDONED     = 'ABANDONED',   'Procedure Abandoned'
+    CONVERTED     = 'CONVERTED',   'Converted to GA'
+
+
+class TheatreSession(AuditModel):
+    """
+    A Theatre/OR list for one day — may contain multiple procedures.
+    Created by the Admission Officer or Theatre Nurse.
+    """
+    session_number = models.CharField(max_length=30, unique=True, editable=False)
+    session_date   = models.DateField(default=timezone.localdate)
+    theatre_name   = models.CharField(
+        max_length=100, default='Main Theatre',
+        help_text='e.g. Main Theatre, Minor Theatre, Laser Suite'
+    )
+    start_time = models.TimeField(null=True, blank=True)
+    end_time   = models.TimeField(null=True, blank=True)
+    status     = models.CharField(
+        max_length=20, choices=TheatreSessionStatus.choices,
+        default=TheatreSessionStatus.SCHEDULED
+    )
+
+    # Theatre team
+    lead_surgeon       = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='theatre_sessions_led'
+    )
+    anaesthetist_name  = models.CharField(max_length=200, blank=True,
+        help_text='Anaesthetist or anaesthesia provider name')
+    scrub_nurse        = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='theatre_sessions_scrub'
+    )
+    circulating_nurse  = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='theatre_sessions_circulating'
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-session_date', 'start_time']
+        verbose_name = 'Theatre Session'
+        verbose_name_plural = 'Theatre Sessions'
+
+    def __str__(self):
+        return f"TS-{self.session_number} | {self.theatre_name} | {self.session_date}"
+
+    def save(self, *args, **kwargs):
+        if not self.session_number:
+            today = timezone.localdate()
+            count = TheatreSession.objects.filter(
+                session_date__year=today.year
+            ).count() + 1
+            self.session_number = f"{today.strftime('%Y%m%d')}-{count:03d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def total_procedures(self):
+        return self.procedures.count()
+
+    @property
+    def completed_procedures(self):
+        return self.procedures.filter(outcome__isnull=False).exclude(outcome='').count()
+
+
+class TheatreProcedure(AuditModel):
+    """
+    Individual surgical procedure performed on one patient during a theatre session.
+    Records WHO Safety Checklist, IOL details (cataract), intraop findings, outcome.
+    """
+    session         = models.ForeignKey(
+        TheatreSession, on_delete=models.CASCADE, related_name='procedures'
+    )
+    surgical_booking = models.ForeignKey(
+        SurgicalBooking, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='theatre_procedures'
+    )
+    patient = models.ForeignKey(
+        'patients.Patient', on_delete=models.PROTECT, related_name='theatre_procedures'
+    )
+    surgeon = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='procedures_performed'
+    )
+    # Procedure
+    procedure     = models.CharField(max_length=50, choices=SurgeryType.choices)
+    procedure_notes = models.CharField(max_length=300, blank=True)
+    eye_laterality  = models.CharField(max_length=20, choices=[
+        ('RE', 'Right Eye (RE)'),
+        ('LE', 'Left Eye (LE)'),
+        ('BE', 'Both Eyes (BE)'),
+    ], blank=True)
+    anaesthesia_type = models.CharField(max_length=30, choices=[
+        ('LOCAL',    'Local (Peribulbar / Topical)'),
+        ('GENERAL',  'General Anaesthesia (GA)'),
+        ('SEDATION', 'Monitored Sedation'),
+    ], blank=True)
+    position_on_list = models.PositiveSmallIntegerField(default=1,
+        help_text='Order on the surgical list for this session')
+
+    # Timing
+    knife_time  = models.TimeField(null=True, blank=True, help_text='Incision start time')
+    closure_time= models.TimeField(null=True, blank=True, help_text='Wound closure time')
+
+    # ── IOL Tracking (Cataract) ───────────────────────────────────────────────
+    iol_model      = models.CharField(max_length=200, blank=True)
+    iol_power      = models.CharField(max_length=50, blank=True, help_text='e.g. +22.50 D')
+    iol_lot_number = models.CharField(max_length=100, blank=True)
+    iol_type       = models.CharField(max_length=100, blank=True,
+        help_text='e.g. Monofocal, Toric, Multifocal, PMMA, Acrylic')
+
+    # ── WHO Surgical Safety Checklist ─────────────────────────────────────────
+    # Sign In (before anaesthesia)
+    sign_in_done            = models.BooleanField(default=False)
+    sign_in_time            = models.TimeField(null=True, blank=True)
+    sign_in_identity_confirmed = models.BooleanField(default=False)
+    sign_in_site_marked     = models.BooleanField(default=False)
+    sign_in_anaesthesia_safe= models.BooleanField(default=False)
+    sign_in_pulse_oximeter  = models.BooleanField(default=False)
+    sign_in_allergies       = models.BooleanField(default=False)
+
+    # Time Out (before skin incision)
+    time_out_done           = models.BooleanField(default=False)
+    time_out_time           = models.TimeField(null=True, blank=True)
+    time_out_team_introduced= models.BooleanField(default=False)
+    time_out_site_confirmed = models.BooleanField(default=False)
+    time_out_antibiotics    = models.BooleanField(default=False)
+    time_out_imaging_displayed = models.BooleanField(default=False)
+
+    # Sign Out (before patient leaves theatre)
+    sign_out_done           = models.BooleanField(default=False)
+    sign_out_time           = models.TimeField(null=True, blank=True)
+    sign_out_instrument_count_correct = models.BooleanField(default=False)
+    sign_out_specimen_labelled = models.BooleanField(default=False)
+    sign_out_equipment_issues  = models.BooleanField(default=False)
+    sign_out_recovery_plan     = models.BooleanField(default=False)
+
+    # ── Intraoperative ────────────────────────────────────────────────────────
+    intraop_findings = models.TextField(blank=True,
+        help_text='Intraoperative findings, observations')
+    complications    = models.TextField(blank=True,
+        help_text='Any complications encountered and management')
+
+    # ── Outcome ───────────────────────────────────────────────────────────────
+    outcome    = models.CharField(
+        max_length=20, choices=ProcedureOutcome.choices, blank=True
+    )
+    post_op_notes = models.TextField(blank=True,
+        help_text='Post-operative instructions and notes')
+    post_op_medications = models.TextField(blank=True,
+        help_text='Post-op medications prescribed (eye drops, systemic)')
+
+    class Meta:
+        ordering = ['session', 'position_on_list']
+        verbose_name = 'Theatre Procedure'
+
+    def __str__(self):
+        return (f"{self.patient.full_name} — {self.get_procedure_display()} "
+                f"({self.session.session_date})")
+
+    @property
+    def who_complete(self):
+        return self.sign_in_done and self.time_out_done and self.sign_out_done
+
+    @property
+    def duration_minutes(self):
+        if self.knife_time and self.closure_time:
+            from datetime import datetime, date
+            d = date.today()
+            dt_start = datetime.combine(d, self.knife_time)
+            dt_end   = datetime.combine(d, self.closure_time)
+            delta    = dt_end - dt_start
+            return int(delta.total_seconds() / 60)
+        return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WARD ROUNDS
+# ══════════════════════════════════════════════════════════════════════════════
+
+class WardRound(AuditModel):
+    """
+    Daily ward round note (SOAP format) written by a doctor for an admitted patient.
+    """
+    admission  = models.ForeignKey(
+        Admission, on_delete=models.CASCADE, related_name='ward_rounds'
+    )
+    round_date = models.DateField(default=timezone.localdate)
+    round_time = models.TimeField(null=True, blank=True)
+    doctor     = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='ward_rounds_written'
+    )
+
+    # SOAP Notes
+    subjective = models.TextField(blank=True,
+        help_text='Patient complaints, how patient feels today')
+    objective  = models.TextField(blank=True,
+        help_text='Examination findings, vital signs review')
+    assessment = models.TextField(blank=True,
+        help_text='Clinical assessment, diagnosis, progress')
+    plan       = models.TextField(
+        help_text='Treatment plan, investigations ordered, medication changes, next steps'
+    )
+
+    # Quick vitals for today
+    vital_signs = models.JSONField(default=dict, blank=True,
+        help_text='{"bp_systolic":120,"bp_diastolic":80,"pulse":72,"temp":36.8,"spo2":98}')
+
+    # Ocular vitals (ward rounds often check operated eye)
+    va_re  = models.CharField(max_length=20, blank=True, help_text='Visual Acuity RE post-op')
+    va_le  = models.CharField(max_length=20, blank=True, help_text='Visual Acuity LE post-op')
+    iop_re = models.CharField(max_length=20, blank=True, help_text='IOP RE post-op')
+    iop_le = models.CharField(max_length=20, blank=True, help_text='IOP LE post-op')
+
+    # Discharge readiness
+    is_discharge_ready = models.BooleanField(default=False,
+        help_text='Mark true when patient is ready for discharge')
+    discharge_plan     = models.TextField(blank=True,
+        help_text='Discharge instructions, follow-up date, medications to take home')
+
+    class Meta:
+        ordering = ['-round_date', '-round_time']
+        verbose_name = 'Ward Round'
+        verbose_name_plural = 'Ward Rounds'
+
+    def __str__(self):
+        return (f"Ward Round — {self.admission.patient.full_name} "
+                f"— {self.round_date} by Dr. {self.doctor.full_name}")

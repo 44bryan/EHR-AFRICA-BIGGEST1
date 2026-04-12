@@ -1,19 +1,116 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}Inventory{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Inventory Management</h1>
-  <div>
-    <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary me-2"><i class="bi bi-list-ul me-1"></i>Items</a>
-    <a href="{% url 'inventory:vendor_list' %}" class="btn btn-outline-secondary me-2"><i class="bi bi-truck me-1"></i>Vendors</a>
-    <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary"><i class="bi bi-file-text me-1"></i>Purchase Orders</a>
+{% block title %}Inventory Management{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-boxes text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Inventory Management</h5>
+      <div class="text-muted small">Stock control, purchase orders & vendors</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'inventory:item_list' %}" class="btn btn-primary btn-sm"><i class="bi bi-list-ul me-1"></i>All Items</a>
+    <a href="{% url 'inventory:vendor_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-truck me-1"></i>Vendors</a>
+    <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-text me-1"></i>Purchase Orders</a>
   </div>
 </div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Cards -->
 <div class="row g-3 mb-4">
-  <div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-primary">{{ total_items }}</div><div class="text-muted small">Total Items</div></div></div></div>
-  <div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-danger">{{ low_stock_count }}</div><div class="text-muted small">Low Stock</div></div></div></div>
-  <div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-warning">{{ pending_pos }}</div><div class="text-muted small">Pending POs</div></div></div></div>
-  <div class="col-md-3"><div class="card border-0 shadow-sm text-center"><div class="card-body py-3"><div class="h2 fw-bold text-success">{{ vendors_count }}</div><div class="text-muted small">Active Vendors</div></div></div></div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-primary mb-0">{{ total_items }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-boxes me-1"></i>Total Item Types</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold {% if low_stock_count > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ low_stock_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Low / Out of Stock</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ pending_pos }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-file-earmark-text me-1"></i>Pending POs</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-info mb-0">{{ vendors_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-building me-1"></i>Active Vendors</div>
+    </div>
+  </div>
 </div>
-<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h6 class="mb-0 fw-semibold text-danger">Low Stock Items</h6></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0 small"><thead class="table-light"><tr><th>Code</th><th>Item</th><th>Category</th><th>Stock</th><th>Reorder Level</th><th></th></tr></thead><tbody>{% for item in low_stock_items %}<tr><td>{{ item.item_code }}</td><td>{{ item.name }}</td><td>{{ item.get_category_display }}</td><td><span class="badge bg-danger">{{ item.current_stock }}</span></td><td>{{ item.reorder_level }}</td><td><a href="{% url 'inventory:item_detail' item.id %}" class="btn btn-sm btn-outline-primary">View</a></td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-3">No low stock items</td></tr>{% endfor %}</tbody></table></div></div></div>
+
+{% if low_stock_count > 0 %}
+<div class="alert alert-danger border-0 d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <strong>{{ low_stock_count }} item{{ low_stock_count|pluralize }} below reorder level.</strong>
+  <a href="{% url 'inventory:item_list' %}" class="ms-2 alert-link">View all items →</a>
+</div>
+{% endif %}
+
+<!-- Low Stock Items -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+    <span class="fw-semibold"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Low Stock Alerts</span>
+    <a href="{% url 'inventory:item_list' %}" class="btn btn-sm btn-outline-secondary">All Items</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Code</th>
+            <th>Item Name</th>
+            <th>Category</th>
+            <th>Current Stock</th>
+            <th>Reorder Level</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in low_stock_items %}
+          <tr>
+            <td><code class="small">{{ item.item_code }}</code></td>
+            <td class="fw-semibold">{{ item.name }}</td>
+            <td><span class="badge bg-light text-dark border">{{ item.get_category_display }}</span></td>
+            <td>
+              <span class="badge {% if item.current_stock == 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                {{ item.current_stock }}
+              </span>
+            </td>
+            <td class="text-muted">{{ item.reorder_level }}</td>
+            <td>
+              {% if item.current_stock == 0 %}
+                <span class="badge bg-danger">Out of Stock</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Low Stock</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'inventory:item_detail' item.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-check-circle-fill text-success fs-3 d-block mb-2"></i>
+              All stock levels are adequate — no alerts.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 {% endblock %}

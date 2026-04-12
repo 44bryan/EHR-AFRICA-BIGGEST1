@@ -24,29 +24,29 @@
             <button type="button" class="btn btn-dark w-100 tier-btn active py-3" data-tier="STANDARD">
               <i class="bi bi-person-fill d-block fs-2 mb-1"></i>
               <strong class="fs-5">Standard</strong>
-              <div class="small opacity-75">S-001  &middot;  Main Gate</div>
+              <div class="small opacity-75">S-001 &middot; Main Gate</div>
             </button>
           </div>
           <div class="col-12">
             <p class="text-muted small mb-1 mt-1">
-              <i class="bi bi-exclamation-triangle me-1"></i>
-              Non-standard patients have dedicated entry points. Override below only if the patient insists on entering here.
+              <i class="bi bi-info-circle me-1"></i>
+              Non-standard patients have dedicated entry points. Override below only if necessary.
             </p>
           </div>
           <div class="col-4">
-            <button type="button" class="btn btn-outline-secondary w-100 tier-btn py-2" data-tier="EXPRESS">
+            <button type="button" class="btn btn-outline-dark w-100 tier-btn py-2" data-tier="EXPRESS">
               <i class="bi bi-lightning-fill d-block mb-1"></i>
               <small><strong>Express</strong></small>
             </button>
           </div>
           <div class="col-4">
-            <button type="button" class="btn btn-outline-secondary w-100 tier-btn py-2" data-tier="FAST_TRACK">
+            <button type="button" class="btn btn-outline-dark w-100 tier-btn py-2" data-tier="FAST_TRACK">
               <i class="bi bi-rocket-fill d-block mb-1"></i>
               <small><strong>Fast Track</strong></small>
             </button>
           </div>
           <div class="col-4">
-            <button type="button" class="btn btn-outline-secondary w-100 tier-btn py-2" data-tier="VIP">
+            <button type="button" class="btn btn-outline-dark w-100 tier-btn py-2" data-tier="VIP">
               <i class="bi bi-star-fill d-block mb-1"></i>
               <small><strong>VIP</strong></small>
             </button>
@@ -88,6 +88,7 @@
           {% csrf_token %}
           <input type="hidden" name="service_tier" id="selectedTier" value="STANDARD">
           <input type="hidden" name="patient_id" id="selectedPatientId">
+          <input type="hidden" name="patient_uuid" id="selectedPatientUuid">
           <input type="hidden" name="visit_id" id="selectedVisitId">
           <input type="hidden" name="patient_type" id="patientType" value="RETURNING">
 
@@ -96,10 +97,10 @@
             <label class="form-label fw-semibold">Patient Type <span class="text-danger">*</span></label>
             <div class="row g-2">
               <div class="col-6">
-                <button type="button" class="btn btn-outline-dark w-100 py-3 patient-type-btn active" data-type="RETURNING">
+                <button type="button" class="btn btn-dark w-100 py-3 patient-type-btn active" data-type="RETURNING">
                   <i class="bi bi-person-check-fill d-block fs-3 mb-1"></i>
                   <strong>Returning</strong>
-                  <div class="small text-muted">Has a patient file</div>
+                  <div class="small opacity-75">Has a patient file</div>
                 </button>
               </div>
               <div class="col-6">
@@ -122,6 +123,7 @@
             <div class="input-group">
               <span class="input-group-text"><i class="bi bi-search"></i></span>
               <input type="text" class="form-control" id="patientSearch"
+                     name="patient_search_text"
                      placeholder="Search by name, ID or phone..."
                      autocomplete="off">
             </div>
@@ -237,8 +239,12 @@ function applyPatientType(type) {
 
 document.querySelectorAll('.patient-type-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.patient-type-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    document.querySelectorAll('.patient-type-btn').forEach(b => {
+      b.classList.remove('active', 'btn-dark');
+      b.classList.add('btn-outline-dark');
+    });
+    btn.classList.remove('btn-outline-dark');
+    btn.classList.add('active', 'btn-dark');
     applyPatientType(btn.dataset.type);
   });
 });
@@ -248,9 +254,9 @@ document.querySelectorAll('.tier-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tier-btn').forEach(b => {
       b.classList.remove('active', 'btn-dark');
-      b.classList.add('btn-outline-secondary');
+      b.classList.add('btn-outline-dark');
     });
-    btn.classList.remove('btn-outline-secondary');
+    btn.classList.remove('btn-outline-dark');
     btn.classList.add('active', 'btn-dark');
 
     const tier = btn.dataset.tier;
@@ -292,7 +298,7 @@ searchInput.addEventListener('input', () => {
             const item = document.createElement('a');
             item.href = '#';
             item.className = 'list-group-item list-group-item-action py-2';
-            item.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted small ms-2">${p.patient_id}</span><br><small class="text-muted">${p.phone_number || ''}</small>`;
+            item.innerHTML = `<div class="d-flex align-items-center gap-2"><i class="bi bi-person-check text-primary"></i><div><strong>${p.full_name}</strong> <span class="badge bg-secondary ms-1" style="font-size:.7rem;">${p.patient_id}</span><br><small class="text-muted">${p.phone || ''}</small></div><small class="text-primary ms-auto fw-semibold">Tap to select</small></div>`;
             item.addEventListener('click', e => {
               e.preventDefault();
               selectPatient(p);
@@ -306,14 +312,20 @@ searchInput.addEventListener('input', () => {
 });
 
 function selectPatient(p) {
-  document.getElementById('selectedPatientId').value = p.id || '';
-  document.getElementById('selectedPatientName').textContent = p.full_name;
-  document.getElementById('selectedPatientMeta').textContent = `${p.patient_id} · ${p.phone_number || ''}`;
+  const name = p.full_name || p.name || '';
+  document.getElementById('selectedPatientId').value = p.patient_id || '';
+  document.getElementById('selectedPatientUuid').value = p.id || '';
+  document.getElementById('selectedPatientName').textContent = name;
+  document.getElementById('selectedPatientMeta').textContent = `${p.patient_id} · ${p.phone || ''}`;
   document.getElementById('selectedPatientCard').classList.remove('d-none');
-  // Always hide walk-in when a patient is selected
+  // Always hide walk-in section when a patient is selected
   document.getElementById('walkinSection').classList.add('d-none');
+  // ── KEY FIX: always write name into the walk-in field so it is submitted
+  //    with the form even if the UUID/patient_id server lookup fails
+  const walkinInput = document.getElementById('walkinName');
+  if (walkinInput) walkinInput.value = name;
   resultsDiv.style.display = 'none';
-  searchInput.value = p.full_name;
+  searchInput.value = name;
 
   if (p.today_visit_id) {
     document.getElementById('selectedVisitId').value = p.today_visit_id;
@@ -322,6 +334,7 @@ function selectPatient(p) {
 
 document.getElementById('clearPatient').addEventListener('click', () => {
   document.getElementById('selectedPatientId').value = '';
+  document.getElementById('selectedPatientUuid').value = '';
   document.getElementById('selectedVisitId').value = '';
   document.getElementById('selectedPatientCard').classList.add('d-none');
   searchInput.value = '';
@@ -335,6 +348,42 @@ document.getElementById('clearPatient').addEventListener('click', () => {
 document.addEventListener('click', e => {
   if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
     resultsDiv.style.display = 'none';
+  }
+});
+
+// ── Form submit guard ─────────────────────────────────────────────────────────
+document.getElementById('gateForm').addEventListener('submit', function(e) {
+  const patientUuid = document.getElementById('selectedPatientUuid').value.trim();
+  const patientId   = document.getElementById('selectedPatientId').value.trim();
+  const searchText  = searchInput.value.trim();
+  const walkinInput = document.querySelector('input[name="patient_name"]');
+  const walkinText  = walkinInput ? walkinInput.value.trim() : '';
+
+  // If no patient was properly selected from dropdown AND no walk-in name typed
+  if (!patientUuid && !patientId && !walkinText) {
+    if (searchText) {
+      // Gatekeeper typed a name but didn't click to select → use it as walk-in name
+      if (walkinInput) {
+        walkinInput.value = searchText;
+      }
+      // Show a brief warning but still allow submit
+      const warn = document.createElement('div');
+      warn.className = 'alert alert-warning alert-sm py-1 px-2 mt-2 small';
+      warn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Patient not linked to file — issuing as walk-in name. Select from dropdown next time to link to their file.';
+      document.getElementById('issueBtn').insertAdjacentElement('afterend', warn);
+    } else {
+      // Nothing at all entered
+      e.preventDefault();
+      const err = document.getElementById('submitError');
+      if (err) err.classList.remove('d-none');
+      else {
+        const el = document.createElement('div');
+        el.id = 'submitError';
+        el.className = 'alert alert-danger py-2 px-3 mt-2 small';
+        el.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i>Please search for and <strong>select a patient</strong>, or enter a walk-in name.';
+        document.getElementById('issueBtn').insertAdjacentElement('afterend', el);
+      }
+    }
   }
 });
 

@@ -7,6 +7,16 @@ from .models import Frame, Lens, OpticalOrder, OpticalOrderStatus
 
 @login_required
 def dashboard(request):
+    def count(status):
+        return OpticalOrder.objects.filter(status=status, is_deleted=False).count()
+
+    pipeline_stages = [
+        (count(OpticalOrderStatus.ORDERED),        'New Orders',        '#2563eb'),
+        (count(OpticalOrderStatus.LAB_PROCESSING), 'At Lab',            '#d97706'),
+        (count(OpticalOrderStatus.READY),          'Ready to Collect',  '#059669'),
+        (count(OpticalOrderStatus.DELIVERED),      'Delivered',         '#6b7280'),
+    ]
+
     context = {
         'total_frames': Frame.objects.filter(is_active=True, is_deleted=False).count(),
         'total_lenses': Lens.objects.filter(is_active=True, is_deleted=False).count(),
@@ -14,12 +24,11 @@ def dashboard(request):
             status__in=[OpticalOrderStatus.ORDERED, OpticalOrderStatus.LAB_PROCESSING],
             is_deleted=False
         ).count(),
-        'ready_orders': OpticalOrder.objects.filter(
-            status=OpticalOrderStatus.READY, is_deleted=False
-        ).count(),
+        'ready_orders': count(OpticalOrderStatus.READY),
         'recent_orders': OpticalOrder.objects.filter(is_deleted=False).select_related(
             'patient', 'frame', 'lens'
-        ).order_by('-ordered_date')[:10],
+        ).order_by('-ordered_date')[:15],
+        'pipeline_stages': pipeline_stages,
     }
     return render(request, 'opticals/dashboard.html', context)
 

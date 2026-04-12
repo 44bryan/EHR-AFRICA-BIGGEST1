@@ -1,0 +1,111 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Theatre Sessions{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-scissors text-danger fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Operating Theatre</h5>
+      <div class="text-muted small">Surgical session management &amp; OR scheduling</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'ipd:theatre_board' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-calendar3 me-1"></i>Booking Board
+    </a>
+    <a href="{% url 'ipd:theatre_session_create' %}" class="btn btn-sm btn-danger">
+      <i class="bi bi-plus-circle me-1"></i>New Session
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+      <input type="date" name="date" value="{{ date_filter }}" class="form-control form-control-sm" style="width:160px;">
+      <select name="status" class="form-select form-select-sm" style="width:160px;">
+        <option value="">All Statuses</option>
+        {% for val, label in status_choices %}
+        <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+      <a href="{% url 'ipd:theatre_session_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  {% for session in sessions %}
+  {% with done=session.completed_procedures total=session.total_procedures %}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="badge bg-{% if session.status == 'COMPLETED' %}success{% elif session.status == 'IN_PROGRESS' %}warning text-dark{% elif session.status == 'CANCELLED' %}secondary{% else %}primary{% endif %}">
+                {{ session.get_status_display }}
+              </span>
+              <strong>{{ session.theatre_name }}</strong>
+              <span class="text-muted">·</span>
+              <span class="fw-semibold">{{ session.session_date|date:"D, d M Y" }}</span>
+              {% if session.start_time %}<span class="text-muted small">{{ session.start_time|time:"H:i" }}{% if session.end_time %} – {{ session.end_time|time:"H:i" }}{% endif %}</span>{% endif %}
+            </div>
+            <div class="small text-muted">
+              <span class="me-3"><i class="bi bi-person-badge me-1"></i>Lead: {% if session.lead_surgeon %}Dr. {{ session.lead_surgeon.full_name }}{% else %}—{% endif %}</span>
+              <span class="me-3"><i class="bi bi-person-heart me-1"></i>Scrub: {% if session.scrub_nurse %}{{ session.scrub_nurse.full_name }}{% else %}—{% endif %}</span>
+              <span><i class="bi bi-list-ol me-1"></i>{{ total }} procedure{{ total|pluralize }}</span>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            {% if total > 0 %}
+            <div class="text-center me-2">
+              <div class="fw-bold text-success">{{ done }}/{{ total }}</div>
+              <div class="text-muted" style="font-size:.7rem;">Done</div>
+            </div>
+            <div style="width:80px;">
+              <div class="progress" style="height:6px;">
+                <div class="progress-bar bg-success" style="width:{% if total %}{% widthratio done total 100 %}{% else %}0{% endif %}%"></div>
+              </div>
+            </div>
+            {% endif %}
+            <a href="{% url 'ipd:theatre_session_detail' session.pk %}" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-eye me-1"></i>Open Session
+            </a>
+          </div>
+        </div>
+
+        {% if session.procedures.all %}
+        <div class="mt-2 pt-2 border-top">
+          <div class="d-flex flex-wrap gap-2">
+            {% for proc in session.procedures.all %}
+            <span class="badge rounded-pill fw-normal {% if proc.outcome == 'SUCCESS' %}bg-success{% elif proc.outcome == 'COMPLICATION' %}bg-warning text-dark{% elif proc.outcome %}bg-danger{% else %}bg-light text-dark border{% endif %}" style="font-size:.75rem;">
+              <i class="bi bi-person me-1"></i>{{ proc.patient.full_name|truncatechars:20 }}
+              — {{ proc.get_procedure_display|truncatechars:25 }}
+              {% if proc.eye_laterality %}({{ proc.eye_laterality }}){% endif %}
+            </span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endwith %}
+  {% empty %}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-scissors fs-1 d-block mb-2 opacity-25"></i>
+        No theatre sessions found. <a href="{% url 'ipd:theatre_session_create' %}">Create one</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

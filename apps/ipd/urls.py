@@ -25,7 +25,19 @@ urlpatterns = [
     path('admissions/<uuid:admission_id>/mar/add/', views.mar_add, name='mar_add'),
     path('mar/<uuid:mar_id>/administer/', views.mar_administer, name='mar_administer'),
 
-    # ── Theatre scheduling board ──────────────────────────────────────────────
+    # ── Theatre scheduling board (legacy booking board) ──────────────────────
     path('theatre/', views.theatre_board, name='theatre_board'),
     path('theatre/update-status/', views.theatre_update_status, name='theatre_update_status'),
+
+    # ── Theatre Sessions (full OR management) ────────────────────────────────
+    path('theatre/sessions/', views.theatre_session_list, name='theatre_session_list'),
+    path('theatre/sessions/new/', views.theatre_session_create, name='theatre_session_create'),
+    path('theatre/sessions/<uuid:session_id>/', views.theatre_session_detail, name='theatre_session_detail'),
+    path('theatre/sessions/<uuid:session_id>/status/', views.theatre_session_update_status, name='theatre_session_update_status'),
+    path('theatre/sessions/<uuid:session_id>/add-procedure/', views.theatre_add_procedure, name='theatre_add_procedure'),
+    path('theatre/procedures/<uuid:procedure_id>/record/', views.theatre_procedure_record, name='theatre_procedure_record'),
+
+    # ── Ward Rounds ───────────────────────────────────────────────────────────
+    path('admissions/<uuid:admission_id>/ward-round/', views.ward_round_add, name='ward_round_add'),
+    path('admissions/<uuid:admission_id>/discharge-pdf/', views.discharge_summary_pdf, name='discharge_summary_pdf'),
 ]

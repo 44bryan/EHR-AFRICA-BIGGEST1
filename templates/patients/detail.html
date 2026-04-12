@@ -1,371 +1,918 @@
 {% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
 
-{% block title %}{{ patient.full_name }} — {{ HOSPITAL_NAME }}{% endblock %}
+{% block title %}{{ patient.full_name }} — Patient Record{% endblock %}
 
-{% block page_header %}
-{% include 'components/patient_card.html' with patient=patient %}
-<!-- Quick Actions -->
-<div class="d-flex flex-wrap gap-2 mb-4">
-  {% if request.user.can_create_consultation %}
-  <a href="{% url 'consultations:create' patient_id=patient.patient_id %}"
-     class="btn btn-primary btn-sm">
-    <i class="bi bi-clipboard2-plus me-1"></i>New Consultation
-  </a>
-  {% endif %}
-  <a href="{% url 'appointments:book' %}?patient={{ patient.patient_id }}"
-     class="btn btn-outline-primary btn-sm">
-    <i class="bi bi-calendar-plus me-1"></i>Book Appointment
-  </a>
-  {% if request.user.can_use_ai_assistant %}
-  <a href="{% url 'ai_assistant:new_conversation' %}?patient={{ patient.patient_id }}"
-     class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-robot me-1"></i>AI Assist
-  </a>
-  {% endif %}
-  <a href="{% url 'patients:edit' patient_id=patient.patient_id %}"
-     class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-pencil me-1"></i>Edit Record
-  </a>
-  <a href="{% url 'patients:history' patient_id=patient.patient_id %}"
-     class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-clock-history me-1"></i>Medical History
-  </a>
-  <a href="{% url 'patients:qr_generate' patient_id=patient.patient_id %}"
-     class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-qr-code me-1"></i>QR Check-In
-  </a>
-  <a href="{% url 'reports:patient_summary_pdf' patient_id=patient.patient_id %}" target="_blank"
-     class="btn btn-outline-danger btn-sm">
-    <i class="bi bi-file-person me-1"></i>Patient Summary PDF
-  </a>
-</div>
+{% block extra_css %}
+<style>
+/* ── Patient Banner ──────────────────────────────────────────────────── */
+.pt-banner {
+  background: linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);
+  border-radius: 14px; color:#fff; padding:20px 24px 16px; margin-bottom:20px;
+}
+.pt-banner .pt-name   { font-size:1.3rem; font-weight:800; letter-spacing:-.3px; }
+.pt-banner .pt-id     { font-size:.72rem; opacity:.6; font-family:monospace; }
+.pt-banner .pt-pill   { background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18);
+                         border-radius:20px; padding:3px 10px; font-size:.72rem; }
+.pt-banner .pt-pill.danger { background:rgba(239,68,68,.25); border-color:rgba(239,68,68,.4); color:#fca5a5; }
+
+/* ── Sidebar cards ───────────────────────────────────────────────────── */
+.info-card { border-radius:12px; border:1px solid #e2e8f0; margin-bottom:12px; }
+.info-card .ic-head { font-size:.62rem; font-weight:700; text-transform:uppercase;
+                       letter-spacing:.08em; color:#64748b; padding:10px 14px 6px; }
+.info-card .ic-body { padding:0 14px 12px; }
+.info-row  { display:flex; justify-content:space-between; align-items:baseline;
+              padding:4px 0; border-bottom:1px solid #f1f5f9; font-size:.8rem; }
+.info-row:last-child { border-bottom:none; }
+.info-row .lbl { color:#64748b; }
+.info-row .val { font-weight:600; text-align:right; }
+
+/* ── Nav tabs ────────────────────────────────────────────────────────── */
+.ehr-tabs .nav-link { font-size:.8rem; font-weight:600; color:#64748b; padding:8px 14px;
+                       border-radius:8px 8px 0 0; }
+.ehr-tabs .nav-link.active { color:#1d4ed8; background:#fff; border-bottom:2px solid #1d4ed8; }
+.ehr-tabs .nav-link:hover:not(.active) { color:#334155; background:#f8fafc; }
+
+/* ── Consultation card ───────────────────────────────────────────────── */
+.consult-card { border-radius:12px; border:1px solid #e2e8f0; margin-bottom:14px;
+                 overflow:hidden; transition:box-shadow .15s; }
+.consult-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); }
+.consult-card .cc-head { background:#f8fafc; padding:10px 16px;
+                           display:flex; justify-content:space-between; align-items:center;
+                           border-bottom:1px solid #e2e8f0; flex-wrap:wrap; gap:8px; }
+.consult-card .cc-body { padding:14px 16px; }
+.consult-card .cc-foot { background:#f8fafc; padding:6px 16px; border-top:1px solid #e2e8f0;
+                           display:flex; gap:16px; font-size:.72rem; color:#94a3b8; }
+
+/* ── Examination grid ────────────────────────────────────────────────── */
+.exam-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px; }
+.exam-grid .eg-box { background:#f8fafc; border-radius:8px; padding:10px 12px; }
+.exam-grid .eg-label { font-size:.62rem; font-weight:700; text-transform:uppercase;
+                         letter-spacing:.06em; color:#64748b; margin-bottom:6px; }
+
+/* ── VA/IOP mini table ───────────────────────────────────────────────── */
+.va-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+.va-table th { background:#e2e8f0; padding:4px 8px; font-weight:600; font-size:.68rem; text-align:center; }
+.va-table td { padding:4px 8px; text-align:center; border-bottom:1px solid #f1f5f9; }
+.va-table tr:last-child td { border-bottom:none; }
+.va-table .eye-re { color:#2563eb; font-weight:700; }
+.va-table .eye-le { color:#dc2626; font-weight:700; }
+
+/* ── Diagnosis badge ─────────────────────────────────────────────────── */
+.diag-badge { background:#fff1f2; color:#be123c; border:1px solid #fecdd3;
+               border-radius:6px; padding:3px 8px; font-size:.72rem; margin:2px; display:inline-block; }
+
+/* ── Rx table ────────────────────────────────────────────────────────── */
+.rx-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+.rx-table th { background:#eff6ff; padding:5px 8px; font-weight:600; font-size:.68rem; }
+.rx-table td { padding:5px 8px; border-bottom:1px solid #f1f5f9; text-align:center; }
+.rx-table .eye-re { color:#2563eb; font-weight:700; }
+.rx-table .eye-le { color:#dc2626; font-weight:700; }
+
+/* ── Section head ────────────────────────────────────────────────────── */
+.sec-head { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
+             color:#64748b; margin:16px 0 8px; display:flex; align-items:center; gap:8px; }
+.sec-head::after { content:''; flex:1; height:1px; background:#e2e8f0; }
+
+/* ── Dept color dots ─────────────────────────────────────────────────── */
+.dept-dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;flex-shrink:0; }
+
+/* ── Tab scroll fix ──────────────────────────────────────────────────── */
+@media(max-width:768px) {
+  .ehr-tabs { overflow-x:auto; flex-wrap:nowrap !important; }
+}
+</style>
 {% endblock %}
 
+{% block page_header %}{% endblock %}
+
 {% block content %}
+{% load ehr_tags %}
 
-{# ── Consultation Validity Status ── #}
-{% with active_visit=patient.active_consultation_visit %}
-{% if active_visit %}
-<div class="alert alert-success py-2 mb-3 d-flex align-items-center gap-2">
-  <i class="bi bi-calendar2-check fs-5 text-success"></i>
-  <div>
-    <strong>Active Consultation — No Payment Required</strong><br>
-    <span class="small">
-      Valid until <strong>{{ active_visit.consultation_valid_until|date:"d M Y" }}</strong>
-      ({{ active_visit.consultation_days_remaining }} day{{ active_visit.consultation_days_remaining|pluralize }} left).
-      This patient can return as a <strong>Follow-up</strong> — no new registration fee needed.
-      <a href="{% url 'patients:visit_detail' visit_number=active_visit.visit_number %}" class="ms-2">
-        View Visit →
-      </a>
-    </span>
-  </div>
-</div>
-{% endif %}
-{% endwith %}
-
-{% if request.user.can_use_ai_assistant %}
-{# AI Clinical Risk Summary — loads on demand #}
-<div class="mb-3">
-  <button class="btn btn-sm btn-outline-primary" type="button" id="aiRiskBtn" onclick="loadPatientRiskSummary()">
-    <i class="bi bi-stars me-1"></i>AI Clinical Risk Summary
-  </button>
-  <div id="aiRiskPanel" class="d-none mt-2">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center py-2">
-        <span class="fw-semibold small"><i class="bi bi-stars me-1 text-primary"></i>AI Clinical Risk Summary</span>
-        <button type="button" class="btn-close btn-close-sm" onclick="document.getElementById('aiRiskPanel').classList.add('d-none')"></button>
+{# ═══ PATIENT BANNER ══════════════════════════════════════════════════ #}
+<div class="pt-banner mb-3">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div>
+      <div class="pt-name">{{ patient.full_name }}</div>
+      <div class="pt-id mt-1">{{ patient.patient_id }}</div>
+      <div class="d-flex flex-wrap gap-2 mt-2">
+        <span class="pt-pill"><i class="bi bi-person me-1"></i>{{ patient.age_display }}</span>
+        <span class="pt-pill"><i class="bi bi-gender-ambiguous me-1"></i>{{ patient.get_gender_display }}</span>
+        {% if patient.blood_group %}<span class="pt-pill"><i class="bi bi-droplet me-1"></i>{{ patient.blood_group }}</span>{% endif %}
+        {% if insurance %}<span class="pt-pill"><i class="bi bi-shield-check me-1"></i>{{ insurance.provider }}</span>{% endif %}
+        {% if patient.allergies %}<span class="pt-pill danger"><i class="bi bi-exclamation-triangle me-1"></i>ALLERGY: {{ patient.allergies|truncatechars:40 }}</span>{% endif %}
       </div>
-      <div id="aiRiskContent" class="card-body small">
-        <div class="text-center py-3">
-          <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-          <span class="ms-2 text-muted">Generating clinical risk summary...</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      {% if request.user.can_create_consultation %}
+      <a href="{% url 'consultations:create' patient_id=patient.patient_id %}" class="btn btn-sm btn-light">
+        <i class="bi bi-clipboard2-plus me-1"></i>New Consultation
+      </a>
+      {% endif %}
+      <a href="{% url 'appointments:book' %}?patient={{ patient.patient_id }}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);">
+        <i class="bi bi-calendar-plus me-1"></i>Book Appointment
+      </a>
+      <a href="{% url 'reports:patient_summary_pdf' patient_id=patient.patient_id %}" target="_blank" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);">
+        <i class="bi bi-file-pdf me-1"></i>PDF Summary
+      </a>
+      <a href="{% url 'patients:edit' patient_id=patient.patient_id %}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);">
+        <i class="bi bi-pencil me-1"></i>Edit
+      </a>
+    </div>
+  </div>
+
+  {# Active visit alert #}
+  {% with active_visit=patient.active_consultation_visit %}
+  {% if active_visit %}
+  <div class="mt-3 p-2 rounded d-flex align-items-center gap-2"
+       style="background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);font-size:.78rem;">
+    <i class="bi bi-calendar2-check text-success"></i>
+    <span><strong>Active visit</strong> — Follow-up valid until <strong>{{ active_visit.consultation_valid_until|date:"d M Y" }}</strong>
+    ({{ active_visit.consultation_days_remaining }} day{{ active_visit.consultation_days_remaining|pluralize }} remaining)</span>
+    <a href="{% url 'patients:visit_detail' visit_number=active_visit.visit_number %}" class="ms-auto" style="color:#86efac;">View →</a>
+  </div>
+  {% endif %}
+  {% endwith %}
+</div>
+
+{# ═══ TWO-COLUMN LAYOUT ═══════════════════════════════════════════════ #}
+<div class="row g-3 align-items-start">
+
+  {# ── LEFT SIDEBAR ─────────────────────────────────────────────────── #}
+  <div class="col-lg-3">
+
+    {# Patient info card #}
+    <div class="info-card">
+      <div class="ic-head"><i class="bi bi-person-vcard me-1"></i>Patient Details</div>
+      <div class="ic-body">
+        <div class="info-row"><span class="lbl">Date of Birth</span><span class="val">{{ patient.date_of_birth|date:"d M Y"|default:"—" }}</span></div>
+        <div class="info-row"><span class="lbl">Phone</span><span class="val">{{ patient.phone_number|default:"—" }}</span></div>
+        <div class="info-row"><span class="lbl">Occupation</span><span class="val">{{ patient.occupation|default:"—" }}</span></div>
+        <div class="info-row"><span class="lbl">Nationality</span><span class="val">{{ patient.nationality|default:"—" }}</span></div>
+        <div class="info-row"><span class="lbl">Genotype</span><span class="val">{{ patient.genotype|default:"—" }}</span></div>
+        <div class="info-row"><span class="lbl">Registered</span><span class="val">{{ patient.registration_date|date:"d M Y" }}</span></div>
+        <div class="info-row"><span class="lbl">Total Visits</span><span class="val">{{ visits|length }}</span></div>
+      </div>
+    </div>
+
+    {# Latest optical Rx card #}
+    {% if latest_rx %}
+    <div class="info-card">
+      <div class="ic-head"><i class="bi bi-eyeglasses me-1"></i>Latest Optical Rx
+        <span class="float-end" style="font-size:.6rem;font-weight:400;">{{ latest_rx.prescription_date|date:"d M Y" }}</span>
+      </div>
+      <div class="ic-body">
+        <table class="rx-table">
+          <thead><tr><th>Eye</th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="eye-re">OD</td>
+              <td>{% if latest_rx.re_sphere is None %}Plano{% elif latest_rx.re_sphere > 0 %}+{{ latest_rx.re_sphere|floatformat:2 }}{% else %}{{ latest_rx.re_sphere|floatformat:2 }}{% endif %}</td>
+              <td>{{ latest_rx.re_cylinder|floatformat:2|default:"—" }}</td>
+              <td>{% if latest_rx.re_axis %}{{ latest_rx.re_axis }}&deg;{% else %}—{% endif %}</td>
+              <td>{% if latest_rx.re_add %}+{{ latest_rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
+            </tr>
+            <tr>
+              <td class="eye-le">OS</td>
+              <td>{% if latest_rx.le_sphere is None %}Plano{% elif latest_rx.le_sphere > 0 %}+{{ latest_rx.le_sphere|floatformat:2 }}{% else %}{{ latest_rx.le_sphere|floatformat:2 }}{% endif %}</td>
+              <td>{{ latest_rx.le_cylinder|floatformat:2|default:"—" }}</td>
+              <td>{% if latest_rx.le_axis %}{{ latest_rx.le_axis }}&deg;{% else %}—{% endif %}</td>
+              <td>{% if latest_rx.le_add %}+{{ latest_rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
+            </tr>
+          </tbody>
+        </table>
+        {% if latest_rx.lens_type %}<div class="mt-2 small text-muted">Lens: {{ latest_rx.lens_type }}</div>{% endif %}
+        <a href="{% url 'prescriptions:optical_detail' pk=latest_rx.pk %}" class="btn btn-outline-primary btn-sm w-100 mt-2">
+          <i class="bi bi-printer me-1"></i>Print Prescription
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Medical history summary #}
+    {% if medical_history %}
+    {% with mh=medical_history %}
+    {% if mh.systemic_conditions or mh.known_allergies or mh.current_medications %}
+    <div class="info-card">
+      <div class="ic-head"><i class="bi bi-heart-pulse me-1"></i>Medical Alerts</div>
+      <div class="ic-body">
+        {% if mh.known_allergies %}
+        <div class="mb-2">
+          <div style="font-size:.65rem;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:.06em;">Allergies</div>
+          <div class="small text-danger mt-1">{{ mh.known_allergies }}</div>
+        </div>
+        {% endif %}
+        {% if mh.systemic_conditions %}
+        <div class="mb-2">
+          <div style="font-size:.65rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">Systemic Conditions</div>
+          <div class="small mt-1">{{ mh.systemic_conditions }}</div>
+        </div>
+        {% endif %}
+        {% if mh.current_medications %}
+        <div>
+          <div style="font-size:.65rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">Current Medications</div>
+          <div class="small mt-1">{{ mh.current_medications }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% endwith %}
+    {% endif %}
+
+    {# AI clinical risk — compact version #}
+    {% if request.user.can_use_ai_assistant %}
+    <div class="info-card">
+      <div class="ic-head"><i class="bi bi-stars me-1"></i>AI Risk Summary</div>
+      <div class="ic-body">
+        <div id="aiRiskContent" class="small text-muted">
+          <button class="btn btn-sm btn-outline-primary w-100" onclick="loadAIRisk()" id="aiRiskBtn">
+            <i class="bi bi-robot me-1"></i>Generate
+          </button>
         </div>
       </div>
     </div>
-  </div>
-</div>
-<script>
-var _riskLoaded = false;
-function loadPatientRiskSummary() {
-  var panel = document.getElementById('aiRiskPanel');
-  var content = document.getElementById('aiRiskContent');
-  panel.classList.remove('d-none');
-  if (_riskLoaded) return;
-  content.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary" role="status"></div><span class="ms-2 text-muted">Generating clinical risk summary...</span></div>';
+    {% endif %}
 
-  fetch('{% url "ai_assistant:patient_risk" patient_id=patient.patient_id %}', {
-    headers: {'X-Requested-With': 'XMLHttpRequest'},
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(resp) {
+    <a href="{% url 'patients:qr_generate' patient_id=patient.patient_id %}" class="btn btn-outline-secondary btn-sm w-100 mb-2">
+      <i class="bi bi-qr-code me-1"></i>QR Check-In Card
+    </a>
+    <a href="{% url 'patients:history' patient_id=patient.patient_id %}" class="btn btn-outline-secondary btn-sm w-100">
+      <i class="bi bi-clock-history me-1"></i>Full Medical History
+    </a>
+  </div>
+
+  {# ── MAIN CONTENT ─────────────────────────────────────────────────── #}
+  <div class="col-lg-9">
+
+    {# ── TAB NAVIGATION ── #}
+    <ul class="nav ehr-tabs border-bottom mb-3" id="patientTabs" role="tablist">
+      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-timeline"><i class="bi bi-clock-history me-1"></i>Timeline</a></li>
+      {% for dept_name, dept_consults in consultations_by_dept %}
+      {% with dept_id=dept_name|slugify %}
+      <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#dept-{{ dept_id }}">
+          {% if "retina" in dept_name|lower %}<span class="dept-dot" style="background:#ef4444;"></span>
+          {% elif "glaucom" in dept_name|lower %}<span class="dept-dot" style="background:#22c55e;"></span>
+          {% elif "refract" in dept_name|lower or "optom" in dept_name|lower %}<span class="dept-dot" style="background:#3b82f6;"></span>
+          {% elif "cataract" in dept_name|lower or "surg" in dept_name|lower %}<span class="dept-dot" style="background:#f59e0b;"></span>
+          {% elif "pediatric" in dept_name|lower %}<span class="dept-dot" style="background:#ec4899;"></span>
+          {% elif "cornea" in dept_name|lower %}<span class="dept-dot" style="background:#06b6d4;"></span>
+          {% else %}<span class="dept-dot" style="background:#8b5cf6;"></span>{% endif %}
+          {{ dept_name|truncatechars:18 }}
+          <span class="badge bg-secondary ms-1" style="font-size:.6rem;">{{ dept_consults|length }}</span>
+        </a>
+      </li>
+      {% endwith %}
+      {% endfor %}
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-prescriptions"><i class="bi bi-eyeglasses me-1"></i>Prescriptions</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-surgical"><i class="bi bi-scissors me-1"></i>Surgical</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-admissions"><i class="bi bi-hospital me-1"></i>IPD</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-visits"><i class="bi bi-map me-1"></i>Visits</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-demographics"><i class="bi bi-person-lines-fill me-1"></i>Demographics</a></li>
+    </ul>
+
+    <div class="tab-content">
+
+      {# ══ TIMELINE TAB ══════════════════════════════════════════════ #}
+      <div class="tab-pane fade show active" id="tab-timeline">
+        {% if consultations %}
+        {% for consult in consultations %}
+        {% with dd=consult.department_specific_data vs=consult.visit.vital_signs %}
+        <div class="consult-card">
+          <div class="cc-head">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              {# Dept color indicator #}
+              {% with dn=consult.department.name|default:"" %}
+              {% if "retina" in dn|lower %}<span class="dept-dot" style="background:#ef4444;"></span>
+              {% elif "glaucom" in dn|lower %}<span class="dept-dot" style="background:#22c55e;"></span>
+              {% elif "refract" in dn|lower or "optom" in dn|lower %}<span class="dept-dot" style="background:#3b82f6;"></span>
+              {% elif "cataract" in dn|lower or "surg" in dn|lower %}<span class="dept-dot" style="background:#f59e0b;"></span>
+              {% elif "pediatric" in dn|lower %}<span class="dept-dot" style="background:#ec4899;"></span>
+              {% else %}<span class="dept-dot" style="background:#8b5cf6;"></span>{% endif %}
+              {% endwith %}
+              <strong class="small">{{ consult.department.name|default:"General" }}</strong>
+              <span class="text-muted small">— Dr. {{ consult.consulting_doctor.get_full_name|default:consult.consulting_doctor.username }}</span>
+              {% if consult.status == 'COMPLETED' %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.62rem;">Completed</span>
+              {% elif consult.status == 'IN_PROGRESS' %}
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:.62rem;">In Progress</span>
+              {% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted small">{{ consult.consultation_date|date:"d M Y, H:i" }}</span>
+              <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary py-0" style="font-size:.72rem;">
+                <i class="bi bi-file-medical me-1"></i>Full Record
+              </a>
+            </div>
+          </div>
+
+          <div class="cc-body">
+            {% if consult.presenting_complaint %}
+            <div class="mb-3 small"><span class="text-muted fw-semibold">Chief Complaint: </span>{{ consult.presenting_complaint }}</div>
+            {% endif %}
+
+            {# ── VA / IOP EXAMINATION TABLE ── #}
+            {% comment %}
+              VA priority: department_specific_data first (doctor measured in clinic),
+              fall back to visit.vital_signs (triage measured)
+            {% endcomment %}
+            {# Safe VA/IOP: dd (dept_specific_data) takes priority; fall back to vs (visit vital_signs dict) #}
+            {% if dd.va_re_unaided or dd.va_le_unaided or dd.iop_re or dd.iop_le or vs %}
+            <div class="exam-grid mb-3">
+              <div class="eg-box">
+                <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+                <table class="va-table">
+                  <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>BCVA</th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td class="eye-re">OD</td>
+                      <td>{% if dd.va_re_unaided %}{{ dd.va_re_unaided }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+                      <td>{{ dd.va_re_ph|default:"—" }}</td>
+                      <td>{{ dd.va_re_bcva|default:"—" }}</td>
+                    </tr>
+                    <tr>
+                      <td class="eye-le">OS</td>
+                      <td>{% if dd.va_le_unaided %}{{ dd.va_le_unaided }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+                      <td>{{ dd.va_le_ph|default:"—" }}</td>
+                      <td>{{ dd.va_le_bcva|default:"—" }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="eg-box">
+                <div class="eg-label"><i class="bi bi-speedometer2 me-1"></i>IOP</div>
+                <div class="d-flex justify-content-around align-items-center" style="height:60px;">
+                  <div class="text-center">
+                    <div class="eye-re fw-bold" style="font-size:1.3rem;">
+                      {% if dd.iop_re %}{{ dd.iop_re }}{% elif vs.intraocular_pressure_right %}{{ vs.intraocular_pressure_right }}{% else %}—{% endif %}
+                    </div>
+                    <div style="font-size:.65rem;color:#64748b;">OD mmHg</div>
+                  </div>
+                  <div style="width:1px;height:40px;background:#e2e8f0;"></div>
+                  <div class="text-center">
+                    <div class="eye-le fw-bold" style="font-size:1.3rem;">
+                      {% if dd.iop_le %}{{ dd.iop_le }}{% elif vs.intraocular_pressure_left %}{{ vs.intraocular_pressure_left }}{% else %}—{% endif %}
+                    </div>
+                    <div style="font-size:.65rem;color:#64748b;">OS mmHg</div>
+                  </div>
+                </div>
+                {% if dd.iop_method %}<div class="text-muted text-center" style="font-size:.65rem;">{{ dd.iop_method }}</div>{% endif %}
+              </div>
+            </div>
+            {% endif %}
+
+            {# ── Refraction / Rx (from dept_specific_data) ── #}
+            {% if dd.rx_re_sphere or dd.rx_le_sphere or dd.final_sph_od or dd.rx_sph_od %}
+            <div class="mb-3">
+              <div class="eg-label mb-1"><i class="bi bi-eyeglasses me-1"></i>Refraction / Spectacle Rx</div>
+              <table class="rx-table">
+                <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>VA with Rx</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td class="eye-re">OD</td>
+                    <td>{{ dd.rx_re_sphere|default:dd.rx_sph_od|default:dd.final_sph_od|default:"—" }}</td>
+                    <td>{{ dd.rx_re_cyl|default:dd.rx_cyl_od|default:dd.final_cyl_od|default:"—" }}</td>
+                    <td>{% with ax=dd.rx_re_axis|default:dd.rx_axis_od|default:dd.final_axis_od %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+                    <td>{{ dd.rx_re_add|default:dd.rx_add_od|default:"—" }}</td>
+                    <td>{{ dd.rx_re_va|default:dd.rx_bcva_od|default:"—" }}</td>
+                  </tr>
+                  <tr>
+                    <td class="eye-le">OS</td>
+                    <td>{{ dd.rx_le_sphere|default:dd.rx_sph_os|default:dd.final_sph_os|default:"—" }}</td>
+                    <td>{{ dd.rx_le_cyl|default:dd.rx_cyl_os|default:dd.final_cyl_os|default:"—" }}</td>
+                    <td>{% with ax=dd.rx_le_axis|default:dd.rx_axis_os|default:dd.final_axis_os %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+                    <td>{{ dd.rx_le_add|default:dd.rx_add_os|default:"—" }}</td>
+                    <td>{{ dd.rx_le_va|default:dd.rx_bcva_os|default:"—" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              {% if dd.rx_lens_type or dd.lens_type %}<div class="text-muted small mt-1">Lens: {{ dd.rx_lens_type|default:dd.lens_type }}</div>{% endif %}
+            </div>
+            {% endif %}
+
+            {# ── Optical prescriptions (from OpticalPrescription model) ── #}
+            {% for optical_rx in consult.optical_prescriptions.all %}
+            <div class="mb-3 p-2 rounded" style="background:#eff6ff;border:1px solid #bfdbfe;">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-bold text-primary"><i class="bi bi-eyeglasses me-1"></i>Optical Prescription — {{ optical_rx.get_prescription_type_display }}</span>
+                <div class="d-flex gap-2 align-items-center">
+                  <span class="text-muted small">{{ optical_rx.prescription_date|date:"d M Y" }}</span>
+                  <a href="{% url 'prescriptions:optical_detail' pk=optical_rx.pk %}" class="btn btn-xs btn-outline-primary py-0" style="font-size:.65rem;">
+                    <i class="bi bi-printer me-1"></i>Print
+                  </a>
+                </div>
+              </div>
+              <table class="rx-table">
+                <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>Prism</th><th>VA</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td class="eye-re">OD</td>
+                    <td>{% if optical_rx.re_sphere is None %}Plano{% elif optical_rx.re_sphere > 0 %}+{{ optical_rx.re_sphere|floatformat:2 }}{% else %}{{ optical_rx.re_sphere|floatformat:2 }}{% endif %}</td>
+                    <td>{{ optical_rx.re_cylinder|floatformat:2|default:"—" }}</td>
+                    <td>{% if optical_rx.re_axis %}{{ optical_rx.re_axis }}&deg;{% else %}—{% endif %}</td>
+                    <td>{% if optical_rx.re_add %}+{{ optical_rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                    <td>{% if optical_rx.re_prism %}{{ optical_rx.re_prism }}{% else %}—{% endif %}</td>
+                    <td>{{ optical_rx.re_visual_acuity|default:"—" }}</td>
+                  </tr>
+                  <tr>
+                    <td class="eye-le">OS</td>
+                    <td>{% if optical_rx.le_sphere is None %}Plano{% elif optical_rx.le_sphere > 0 %}+{{ optical_rx.le_sphere|floatformat:2 }}{% else %}{{ optical_rx.le_sphere|floatformat:2 }}{% endif %}</td>
+                    <td>{{ optical_rx.le_cylinder|floatformat:2|default:"—" }}</td>
+                    <td>{% if optical_rx.le_axis %}{{ optical_rx.le_axis }}&deg;{% else %}—{% endif %}</td>
+                    <td>{% if optical_rx.le_add %}+{{ optical_rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                    <td>{% if optical_rx.le_prism %}{{ optical_rx.le_prism }}{% else %}—{% endif %}</td>
+                    <td>{{ optical_rx.le_visual_acuity|default:"—" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              {% if optical_rx.lens_type %}<div class="mt-1 small text-muted">Lens: {{ optical_rx.lens_type }}{% if optical_rx.interpupillary_distance %} · IPD: {{ optical_rx.interpupillary_distance }}mm{% endif %}</div>{% endif %}
+            </div>
+            {% endfor %}
+
+            {# ── Drug prescriptions ── #}
+            {% for drug_rx in consult.drug_prescriptions.all %}
+            {% if drug_rx.items.all %}
+            <div class="mb-2 p-2 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+              <div class="small fw-bold text-success mb-1"><i class="bi bi-capsule-pill me-1"></i>Drug Prescription</div>
+              {% for item in drug_rx.items.all %}
+              <div class="small text-muted">• {{ item.drug_name }} — {{ item.dosage|default:"" }} {{ item.frequency|default:"" }} × {{ item.duration|default:"" }}</div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% endfor %}
+
+            {# ── Diagnoses ── #}
+            {% with diags=consult.consultation_diagnoses.all %}
+            {% if diags %}
+            <div class="mb-2">
+              <span class="text-muted small fw-semibold">Diagnosis: </span>
+              {% for cd in diags %}<span class="diag-badge">{{ cd.diagnosis.description|truncatechars:60 }}</span>{% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+
+            {# ── Management & Follow-up ── #}
+            {% if consult.management_plan %}
+            <div class="small mt-2"><span class="text-muted fw-semibold">Plan: </span>{{ consult.management_plan|truncatechars:200 }}</div>
+            {% endif %}
+            {% if consult.follow_up_date %}
+            <div class="small mt-1">
+              <i class="bi bi-calendar-check text-primary me-1"></i>
+              <span class="text-muted">Follow-up:</span> <strong>{{ consult.follow_up_date|date:"d M Y" }}</strong>
+              {% if consult.follow_up_instructions %} — {{ consult.follow_up_instructions|truncatechars:80 }}{% endif %}
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="cc-foot">
+            <span>Visit: <code>{{ consult.visit.visit_number }}</code></span>
+            <span>{{ consult.visit.visit_date|date:"d M Y" }}</span>
+            {% if consult.optical_prescriptions.all %}<span class="text-primary"><i class="bi bi-eyeglasses me-1"></i>Rx issued</span>{% endif %}
+            {% if consult.drug_prescriptions.all %}<span class="text-success"><i class="bi bi-capsule-pill me-1"></i>Drugs prescribed</span>{% endif %}
+          </div>
+        </div>
+        {% endwith %}
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+          <i class="bi bi-file-medical fs-2 d-block mb-2 opacity-40"></i>
+          No consultation records yet.
+        </div>
+        {% endif %}
+      </div>
+
+      {# ══ DEPARTMENT TABS ══════════════════════════════════════════ #}
+      {% for dept_name, dept_consults in consultations_by_dept %}
+      {% with dept_id=dept_name|slugify %}
+      <div class="tab-pane fade" id="dept-{{ dept_id }}">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="fw-bold mb-0">{{ dept_name }}</h6>
+          <span class="badge bg-secondary">{{ dept_consults|length }} record{{ dept_consults|length|pluralize }}</span>
+        </div>
+        {% for consult in dept_consults %}
+        {% with dd=consult.department_specific_data vs=consult.visit.vital_signs %}
+        <div class="consult-card">
+          <div class="cc-head">
+            <div>
+              <strong class="small">Dr. {{ consult.consulting_doctor.get_full_name|default:consult.consulting_doctor.username }}</strong>
+              {% if consult.status == 'COMPLETED' %}<span class="badge bg-success-subtle text-success border border-success-subtle ms-2" style="font-size:.62rem;">Completed</span>
+              {% elif consult.status == 'IN_PROGRESS' %}<span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-2" style="font-size:.62rem;">In Progress</span>
+              {% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted small">{{ consult.consultation_date|date:"d M Y, H:i" }}</span>
+              <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary py-0" style="font-size:.72rem;">Full Record</a>
+            </div>
+          </div>
+          <div class="cc-body">
+            {% if consult.presenting_complaint %}
+            <div class="mb-3 small"><span class="text-muted fw-semibold">Complaint: </span>{{ consult.presenting_complaint }}</div>
+            {% endif %}
+
+            {# VA/IOP — dept-specific data takes priority over triage vital_signs #}
+            {% if dd.va_re_unaided or dd.va_le_unaided or dd.iop_re or dd.iop_le or vs %}
+            <div class="exam-grid mb-3">
+              <div class="eg-box">
+                <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+                <table class="va-table">
+                  <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>BCVA</th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td class="eye-re">OD</td>
+                      <td>{% if dd.va_re_unaided %}{{ dd.va_re_unaided }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+                      <td>{{ dd.va_re_ph|default:"—" }}</td>
+                      <td>{{ dd.va_re_bcva|default:"—" }}</td>
+                    </tr>
+                    <tr>
+                      <td class="eye-le">OS</td>
+                      <td>{% if dd.va_le_unaided %}{{ dd.va_le_unaided }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+                      <td>{{ dd.va_le_ph|default:"—" }}</td>
+                      <td>{{ dd.va_le_bcva|default:"—" }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="eg-box">
+                <div class="eg-label"><i class="bi bi-speedometer2 me-1"></i>IOP</div>
+                <div class="d-flex justify-content-around align-items-center" style="height:60px;">
+                  <div class="text-center">
+                    <div class="eye-re fw-bold" style="font-size:1.3rem;">
+                      {% if dd.iop_re %}{{ dd.iop_re }}{% elif vs.intraocular_pressure_right %}{{ vs.intraocular_pressure_right }}{% else %}—{% endif %}
+                    </div>
+                    <div style="font-size:.65rem;color:#64748b;">OD mmHg</div>
+                  </div>
+                  <div style="width:1px;height:40px;background:#e2e8f0;"></div>
+                  <div class="text-center">
+                    <div class="eye-le fw-bold" style="font-size:1.3rem;">
+                      {% if dd.iop_le %}{{ dd.iop_le }}{% elif vs.intraocular_pressure_left %}{{ vs.intraocular_pressure_left }}{% else %}—{% endif %}
+                    </div>
+                    <div style="font-size:.65rem;color:#64748b;">OS mmHg</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+            {# Optical prescriptions #}
+            {% for optical_rx in consult.optical_prescriptions.all %}
+            <div class="mb-2 p-2 rounded" style="background:#eff6ff;border:1px solid #bfdbfe;">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="small fw-bold text-primary"><i class="bi bi-eyeglasses me-1"></i>{{ optical_rx.get_prescription_type_display }}</span>
+                <a href="{% url 'prescriptions:optical_detail' pk=optical_rx.pk %}" class="btn btn-xs btn-outline-primary py-0" style="font-size:.65rem;"><i class="bi bi-printer"></i> Print</a>
+              </div>
+              <table class="rx-table">
+                <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>VA</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td class="eye-re">OD</td>
+                    <td>{% if optical_rx.re_sphere is None %}Plano{% elif optical_rx.re_sphere > 0 %}+{{ optical_rx.re_sphere|floatformat:2 }}{% else %}{{ optical_rx.re_sphere|floatformat:2 }}{% endif %}</td>
+                    <td>{{ optical_rx.re_cylinder|floatformat:2|default:"—" }}</td>
+                    <td>{% if optical_rx.re_axis %}{{ optical_rx.re_axis }}&deg;{% else %}—{% endif %}</td>
+                    <td>{% if optical_rx.re_add %}+{{ optical_rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                    <td>{{ optical_rx.re_visual_acuity|default:"—" }}</td>
+                  </tr>
+                  <tr>
+                    <td class="eye-le">OS</td>
+                    <td>{% if optical_rx.le_sphere is None %}Plano{% elif optical_rx.le_sphere > 0 %}+{{ optical_rx.le_sphere|floatformat:2 }}{% else %}{{ optical_rx.le_sphere|floatformat:2 }}{% endif %}</td>
+                    <td>{{ optical_rx.le_cylinder|floatformat:2|default:"—" }}</td>
+                    <td>{% if optical_rx.le_axis %}{{ optical_rx.le_axis }}&deg;{% else %}—{% endif %}</td>
+                    <td>{% if optical_rx.le_add %}+{{ optical_rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                    <td>{{ optical_rx.le_visual_acuity|default:"—" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {% endfor %}
+
+            {# Diagnoses + Plan #}
+            {% with diags=consult.consultation_diagnoses.all %}
+            {% if diags %}
+            <div class="mb-2">
+              <span class="text-muted small fw-semibold">Diagnosis: </span>
+              {% for cd in diags %}<span class="diag-badge">{{ cd.diagnosis.description|truncatechars:60 }}</span>{% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+            {% if consult.management_plan %}
+            <div class="small mt-2"><span class="text-muted fw-semibold">Plan: </span>{{ consult.management_plan|truncatechars:200 }}</div>
+            {% endif %}
+            {% if consult.follow_up_date %}
+            <div class="small mt-1"><i class="bi bi-calendar-check text-primary me-1"></i><span class="text-muted">Follow-up:</span> <strong>{{ consult.follow_up_date|date:"d M Y" }}</strong></div>
+            {% endif %}
+          </div>
+        </div>
+        {% endwith %}
+        {% empty %}
+        <div class="text-center py-4 text-muted small">No records in this department</div>
+        {% endfor %}
+      </div>
+      {% endwith %}
+      {% endfor %}
+
+      {# ══ PRESCRIPTIONS TAB ════════════════════════════════════════ #}
+      <div class="tab-pane fade" id="tab-prescriptions">
+        <div class="sec-head"><i class="bi bi-eyeglasses me-1"></i>Optical Prescriptions</div>
+        {% with has_optical=False %}
+        {% for consult in consultations %}
+        {% for optical_rx in consult.optical_prescriptions.all %}
+        <div class="consult-card mb-3">
+          <div class="cc-head">
+            <div>
+              <strong class="small text-primary"><i class="bi bi-eyeglasses me-1"></i>{{ optical_rx.get_prescription_type_display }}</strong>
+              <span class="text-muted small ms-2">— Dr. {{ optical_rx.prescribed_by.get_full_name }}</span>
+              <span class="text-muted small ms-2">{{ consult.department.name|default:"" }}</span>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+              <span class="text-muted small">{{ optical_rx.prescription_date|date:"d M Y" }}</span>
+              {% if optical_rx.is_dispensed %}<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.62rem;">Dispensed</span>{% endif %}
+              <a href="{% url 'prescriptions:optical_detail' pk=optical_rx.pk %}" class="btn btn-sm btn-outline-primary py-0" style="font-size:.72rem;">
+                <i class="bi bi-printer me-1"></i>Print
+              </a>
+            </div>
+          </div>
+          <div class="cc-body">
+            <table class="rx-table">
+              <thead>
+                <tr><th>Eye</th><th>Sphere (DS)</th><th>Cylinder (DC)</th><th>Axis (°)</th><th>Add</th><th>Prism</th><th>VA</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="eye-re">Right (OD)</td>
+                  <td>{% if optical_rx.re_sphere is None %}Plano{% elif optical_rx.re_sphere > 0 %}+{{ optical_rx.re_sphere|floatformat:2 }}{% else %}{{ optical_rx.re_sphere|floatformat:2 }}{% endif %}</td>
+                  <td>{{ optical_rx.re_cylinder|floatformat:2|default:"—" }}</td>
+                  <td>{% if optical_rx.re_axis %}{{ optical_rx.re_axis }}&deg;{% else %}—{% endif %}</td>
+                  <td>{% if optical_rx.re_add %}+{{ optical_rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                  <td>{% if optical_rx.re_prism %}{{ optical_rx.re_prism }} {{ optical_rx.re_prism_base }}{% else %}—{% endif %}</td>
+                  <td>{{ optical_rx.re_visual_acuity|default:"—" }}</td>
+                </tr>
+                <tr>
+                  <td class="eye-le">Left (OS)</td>
+                  <td>{% if optical_rx.le_sphere is None %}Plano{% elif optical_rx.le_sphere > 0 %}+{{ optical_rx.le_sphere|floatformat:2 }}{% else %}{{ optical_rx.le_sphere|floatformat:2 }}{% endif %}</td>
+                  <td>{{ optical_rx.le_cylinder|floatformat:2|default:"—" }}</td>
+                  <td>{% if optical_rx.le_axis %}{{ optical_rx.le_axis }}&deg;{% else %}—{% endif %}</td>
+                  <td>{% if optical_rx.le_add %}+{{ optical_rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                  <td>{% if optical_rx.le_prism %}{{ optical_rx.le_prism }} {{ optical_rx.le_prism_base }}{% else %}—{% endif %}</td>
+                  <td>{{ optical_rx.le_visual_acuity|default:"—" }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="row g-2 mt-1 small text-muted">
+              {% if optical_rx.interpupillary_distance %}<div class="col-auto">IPD (Dist): {{ optical_rx.interpupillary_distance }}mm</div>{% endif %}
+              {% if optical_rx.near_ipd %}<div class="col-auto">IPD (Near): {{ optical_rx.near_ipd }}mm</div>{% endif %}
+              {% if optical_rx.lens_type %}<div class="col-auto">Lens: {{ optical_rx.lens_type }}</div>{% endif %}
+              {% if optical_rx.frame_advice %}<div class="col-auto">Frame: {{ optical_rx.frame_advice }}</div>{% endif %}
+            </div>
+            {% if optical_rx.notes %}<div class="small text-muted mt-1 fst-italic">{{ optical_rx.notes }}</div>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        {% endfor %}
+        {% endwith %}
+
+        <div class="sec-head mt-3"><i class="bi bi-capsule-pill me-1"></i>Drug Prescriptions</div>
+        {% for consult in consultations %}
+        {% for drug_rx in consult.drug_prescriptions.all %}
+        {% if drug_rx.items.all %}
+        <div class="consult-card mb-3">
+          <div class="cc-head">
+            <div>
+              <strong class="small text-success"><i class="bi bi-capsule-pill me-1"></i>Drug Prescription</strong>
+              <span class="text-muted small ms-2">— {{ consult.department.name|default:"General" }}</span>
+            </div>
+            <span class="text-muted small">{{ consult.consultation_date|date:"d M Y" }}</span>
+          </div>
+          <div class="cc-body">
+            {% for item in drug_rx.items.all %}
+            <div class="d-flex align-items-baseline gap-2 py-1 border-bottom">
+              <span class="fw-semibold small">{{ item.drug_name }}</span>
+              <span class="text-muted small">{{ item.dosage|default:"" }}</span>
+              <span class="badge bg-secondary-subtle text-secondary" style="font-size:.65rem;">{{ item.frequency|default:"" }}</span>
+              <span class="text-muted small ms-auto">{{ item.duration|default:"" }}</span>
+            </div>
+            {% endfor %}
+            {% if drug_rx.notes %}<div class="small text-muted mt-2 fst-italic">{{ drug_rx.notes }}</div>{% endif %}
+          </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+      </div>
+
+      {# ══ SURGICAL HISTORY TAB ════════════════════════════════════ #}
+      <div class="tab-pane fade" id="tab-surgical">
+        <div class="sec-head"><i class="bi bi-scissors me-1"></i>Surgical Bookings</div>
+        {% if surgical_bookings %}
+        {% for sb in surgical_bookings %}
+        <div class="consult-card mb-2">
+          <div class="cc-head">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="badge bg-secondary">{{ sb.booking_number }}</span>
+              <strong>{{ sb.get_procedure_display }}</strong>
+              {% if sb.eye_laterality %}<span class="badge bg-info">{{ sb.eye_laterality }}</span>{% endif %}
+              <span class="badge bg-{% if sb.status == 'COMPLETED' %}success{% elif sb.status == 'CONFIRMED' %}primary{% elif sb.status == 'CANCELLED' %}secondary{% else %}warning text-dark{% endif %}">{{ sb.get_status_display }}</span>
+            </div>
+            <div class="text-muted small">{% if sb.surgery_date %}{{ sb.surgery_date|date:"d M Y" }}{% else %}Date TBD{% endif %}</div>
+          </div>
+          <div class="cc-body">
+            <div class="row g-2 small">
+              <div class="col-md-3"><span class="text-muted">Surgeon:</span> {% if sb.surgeon %}Dr. {{ sb.surgeon.full_name }}{% else %}—{% endif %}</div>
+              <div class="col-md-3"><span class="text-muted">Anaesthesia:</span> {{ sb.get_anaesthesia_type_display|default:"—" }}</div>
+              <div class="col-md-3"><span class="text-muted">Category:</span> {{ sb.surgery_category|default:"—" }}</div>
+              <div class="col-md-3"><span class="text-muted">Consent:</span> {% if sb.consent_signed %}Yes{% else %}Pending{% endif %}</div>
+            </div>
+            {% if sb.procedure_notes %}<div class="small mt-1"><span class="text-muted">Notes:</span> {{ sb.procedure_notes }}</div>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-muted text-center py-4">No surgical bookings recorded.</div>
+        {% endif %}
+
+        {% if theatre_procedures %}
+        <div class="sec-head mt-3"><i class="bi bi-check2-circle me-1"></i>Procedures Performed</div>
+        {% for tp in theatre_procedures %}
+        <div class="consult-card mb-2">
+          <div class="cc-head">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <strong>{{ tp.get_procedure_display }}</strong>
+              {% if tp.eye_laterality %}<span class="badge bg-info">{{ tp.eye_laterality }}</span>{% endif %}
+              {% if tp.outcome %}<span class="badge bg-{% if tp.outcome == 'SUCCESS' %}success{% elif tp.outcome == 'COMPLICATION' %}warning text-dark{% else %}danger{% endif %}">{{ tp.get_outcome_display }}</span>{% endif %}
+            </div>
+            <div class="text-muted small">{{ tp.session.session_date|date:"d M Y" }}</div>
+          </div>
+          <div class="cc-body small">
+            <div class="row g-2">
+              <div class="col-md-4"><span class="text-muted">Surgeon:</span> {% if tp.surgeon %}Dr. {{ tp.surgeon.full_name }}{% else %}—{% endif %}</div>
+              <div class="col-md-4"><span class="text-muted">Theatre:</span> {{ tp.session.theatre_name }}</div>
+              {% if tp.iol_model %}<div class="col-md-4"><span class="text-muted">IOL:</span> {{ tp.iol_model }} {{ tp.iol_power }}</div>{% endif %}
+            </div>
+            {% if tp.complications %}<div class="mt-1 text-danger small"><strong>Complications:</strong> {{ tp.complications }}</div>{% endif %}
+            {% if tp.post_op_notes %}<div class="mt-1 small"><strong>Post-op:</strong> {{ tp.post_op_notes }}</div>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+      </div>
+
+      {# ══ IPD / ADMISSIONS TAB ════════════════════════════════════ #}
+      <div class="tab-pane fade" id="tab-admissions">
+        <div class="sec-head"><i class="bi bi-hospital me-1"></i>Inpatient Admissions</div>
+        {% if admissions %}
+        {% for adm in admissions %}
+        <div class="consult-card mb-2">
+          <div class="cc-head">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-secondary">{{ adm.admission_number }}</span>
+              <strong>{{ adm.bed.ward.name }} — Bed {{ adm.bed.bed_number }}</strong>
+              <span class="badge bg-{% if adm.status == 'ADMITTED' %}primary{% elif adm.status == 'DISCHARGED' %}success{% else %}secondary{% endif %}">{{ adm.get_status_display }}</span>
+            </div>
+            <div class="text-muted small">{{ adm.admission_date|date:"d M Y" }}{% if adm.discharge_date %} → {{ adm.discharge_date|date:"d M Y" }} ({{ adm.los_days }}d){% endif %}</div>
+          </div>
+          <div class="cc-body small">
+            <div class="row g-2">
+              <div class="col-md-6"><span class="text-muted">Admitting Dr:</span> {{ adm.admitting_doctor.full_name }}</div>
+              <div class="col-md-6"><span class="text-muted">LOS:</span> {{ adm.los_days }} day{{ adm.los_days|pluralize }}</div>
+              <div class="col-12"><span class="text-muted">Dx on Admission:</span> {{ adm.diagnosis_on_admission }}</div>
+            </div>
+            {% if adm.discharge_summary %}<div class="mt-1"><span class="text-muted">Discharge Summary:</span> {{ adm.discharge_summary|truncatechars:200 }}</div>{% endif %}
+          </div>
+          <div class="cc-foot">
+            <a href="{% url 'ipd:admission_detail' adm.pk %}" class="btn btn-xs btn-outline-primary">View Admission</a>
+            <a href="{% url 'ipd:discharge_summary_pdf' adm.pk %}" class="btn btn-xs btn-outline-danger" target="_blank"><i class="bi bi-file-pdf me-1"></i>Discharge PDF</a>
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-muted text-center py-4">No inpatient admissions recorded.</div>
+        {% endif %}
+      </div>
+
+      {# ══ VISITS TAB ═══════════════════════════════════════════════ #}
+      <div class="tab-pane fade" id="tab-visits">
+        {% for visit in visits %}
+        <div class="consult-card">
+          <div class="cc-head">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <code class="small">{{ visit.visit_number }}</code>
+              {% if visit.department %}<span class="badge bg-secondary-subtle text-secondary small">{{ visit.department.name }}</span>{% endif %}
+              <span class="badge {% if visit.status == 'IN_CONSULTATION' %}bg-primary{% elif visit.status == 'WAITING' %}bg-warning text-dark{% elif visit.status == 'TRIAGE' %}bg-info{% elif visit.status == 'DISCHARGED' %}bg-success{% else %}bg-secondary{% endif %} small">{{ visit.get_status_display }}</span>
+              <span class="text-muted small">{{ visit.get_visit_type_display }}</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted small">{{ visit.visit_date|date:"d M Y, H:i" }}</span>
+              <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-sm btn-primary py-0" style="font-size:.72rem;">
+                <i class="bi bi-map me-1"></i>View Journey
+              </a>
+            </div>
+          </div>
+          <div class="cc-body">
+            <div class="row g-2 small">
+              <div class="col-md-6"><span class="text-muted">Chief Complaint:</span> {{ visit.chief_complaint|default:"—" }}</div>
+              {% if visit.vital_signs %}
+              <div class="col-md-3"><span class="text-muted">VA:</span> OD {{ visit.va_right|default:"N/R" }} / OS {{ visit.va_left|default:"N/R" }}</div>
+              <div class="col-md-3"><span class="text-muted">IOP:</span> OD {{ visit.iop_right|default:"N/R" }} / OS {{ visit.iop_left|default:"N/R" }} mmHg</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-center py-5 text-muted"><i class="bi bi-folder-x fs-3 d-block mb-2 opacity-50"></i>No visits recorded</div>
+        {% endfor %}
+      </div>
+
+      {# ══ DEMOGRAPHICS TAB ════════════════════════════════════════ #}
+      <div class="tab-pane fade" id="tab-demographics">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="card border-0 shadow-sm">
+              <div class="card-header bg-white border-bottom py-2"><h6 class="small fw-bold mb-0">Personal Information</h6></div>
+              <div class="card-body p-0">
+                {% for label, val in patient.get_demographics_display %}
+                <div class="info-row px-3"><span class="lbl">{{ label }}</span><span class="val">{{ val|default:"—" }}</span></div>
+                {% empty %}
+                <div class="px-3 py-3 small text-muted">
+                  <div class="info-row"><span class="lbl">Blood Group</span><span class="val">{{ patient.blood_group|default:"—" }}</span></div>
+                  <div class="info-row"><span class="lbl">Genotype</span><span class="val">{{ patient.genotype|default:"—" }}</span></div>
+                  <div class="info-row"><span class="lbl">Nationality</span><span class="val">{{ patient.nationality|default:"—" }}</span></div>
+                  <div class="info-row"><span class="lbl">Occupation</span><span class="val">{{ patient.occupation|default:"—" }}</span></div>
+                  <div class="info-row"><span class="lbl">Region</span><span class="val">{{ patient.region|default:"—" }}</span></div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card border-0 shadow-sm">
+              <div class="card-header bg-white border-bottom py-2"><h6 class="small fw-bold mb-0">Address</h6></div>
+              <div class="card-body">
+                <div class="info-row"><span class="lbl">Quarter</span><span class="val">{{ patient.quarter|default:"—" }}</span></div>
+                <div class="info-row"><span class="lbl">Village / Town</span><span class="val">{{ patient.village_town|default:"—" }}</span></div>
+                <div class="info-row"><span class="lbl">Division</span><span class="val">{{ patient.division|default:"—" }}</span></div>
+                <div class="info-row"><span class="lbl">Region</span><span class="val">{{ patient.region|default:"—" }}</span></div>
+                <div class="info-row"><span class="lbl">Country</span><span class="val">{{ patient.country|default:"Cameroon" }}</span></div>
+              </div>
+            </div>
+            <div class="card border-0 shadow-sm mt-3">
+              <div class="card-header bg-white border-bottom py-2"><h6 class="small fw-bold mb-0">Next of Kin</h6></div>
+              <div class="card-body p-0">
+                {% for nok in next_of_kin %}
+                <div class="px-3 py-2 border-bottom">
+                  <div class="fw-semibold small">{{ nok.full_name }} <span class="text-muted fw-normal">({{ nok.relationship }})</span></div>
+                  <div class="text-muted small">{{ nok.phone_number }}{% if nok.email %} · {{ nok.email }}{% endif %}</div>
+                </div>
+                {% empty %}
+                <div class="px-3 py-3 text-muted small">No next of kin recorded</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>{# /tab-content #}
+  </div>{# /col-lg-9 #}
+</div>{# /row #}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ── Prevent tab scroll ── */
+(function() {
+  var savedY = 0;
+  document.addEventListener('show.bs.tab', function() { savedY = window.scrollY; });
+  document.addEventListener('shown.bs.tab', function() { window.scrollTo(0, savedY); });
+})();
+
+/* ── AI Risk Summary ── */
+{% if request.user.can_use_ai_assistant %}
+var _riskLoaded = false;
+function loadAIRisk() {
+  if (_riskLoaded) return;
+  var btn = document.getElementById('aiRiskBtn');
+  var content = document.getElementById('aiRiskContent');
+  content.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
+  fetch('{% url "ai_assistant:patient_risk" patient_id=patient.patient_id %}', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+  .then(r => r.json())
+  .then(resp => {
     _riskLoaded = true;
-    if (!resp.success) {
-      content.innerHTML = '<div class="alert alert-warning mb-0 py-1 small">Could not generate summary: ' + (resp.error || 'Unknown error') + '</div>';
-      return;
-    }
+    if (!resp.success) { content.innerHTML = '<div class="small text-danger">Could not load</div>'; return; }
     var d = resp.data;
-    var prioColor = d.follow_up_priority === 'urgent' ? 'danger' : d.follow_up_priority === '1 month' ? 'warning' : 'success';
-    var html = '<div class="mb-2">' + (d.summary || '') + '</div>';
+    var html = '<div class="small mb-2">' + (d.summary || '') + '</div>';
     if (d.risk_flags && d.risk_flags.length) {
-      html += '<div class="mb-2"><strong>Risk Flags:</strong><div class="d-flex flex-wrap gap-1 mt-1">';
-      d.risk_flags.forEach(function(f) {
-        html += '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">' + f + '</span>';
-      });
-      html += '</div></div>';
+      html += '<div class="d-flex flex-wrap gap-1">';
+      d.risk_flags.forEach(f => { html += '<span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size:.6rem;">' + f + '</span>'; });
+      html += '</div>';
     }
     if (d.follow_up_priority) {
-      html += '<div><strong>Recommended Follow-up:</strong> <span class="badge bg-' + prioColor + '">' + d.follow_up_priority + '</span></div>';
+      var c = d.follow_up_priority === 'urgent' ? 'danger' : d.follow_up_priority === '1 month' ? 'warning' : 'success';
+      html += '<div class="mt-2 small"><strong>Follow-up:</strong> <span class="badge bg-' + c + '">' + d.follow_up_priority + '</span></div>';
     }
     content.innerHTML = html;
   })
-  .catch(function(err) {
-    content.innerHTML = '<div class="alert alert-danger mb-0 py-1 small">Request failed: ' + err.message + '</div>';
-  });
+  .catch(() => { content.innerHTML = '<div class="small text-danger">Request failed</div>'; });
 }
-</script>
 {% endif %}
-
-<!-- Tabs -->
-<ul class="nav nav-tabs mb-4" id="patientTabs" role="tablist">
-  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#visits">Visits</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#medical-records">Medical Records</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#history">Medical History</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#demographics">Demographics</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#nok">Next of Kin</a></li>
-</ul>
-
-<div class="tab-content">
-  <!-- Visits Tab -->
-  <div class="tab-pane fade show active" id="visits">
-    {% for visit in visits %}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <code class="small">{{ visit.visit_number }}</code>
-          {% if visit.department %}<span class="badge bg-secondary-subtle text-secondary small">{{ visit.department.name }}</span>{% endif %}
-          <span class="badge {% if visit.status == 'IN_CONSULTATION' %}bg-primary{% elif visit.status == 'WAITING' %}bg-warning text-dark{% elif visit.status == 'TRIAGE' %}bg-info{% elif visit.status == 'DISCHARGED' %}bg-success{% else %}bg-secondary{% endif %} small">
-            {{ visit.get_status_display }}
-          </span>
-          <span class="text-muted small">{{ visit.get_visit_type_display }}</span>
-          {% if visit.appointment and visit.appointment.service_tier != 'STANDARD' %}
-          <span class="badge bg-{% if visit.appointment.service_tier == 'VIP' %}danger{% elif visit.appointment.service_tier == 'FAST_TRACK' %}warning text-dark{% else %}info{% endif %} small">
-            {{ visit.appointment.get_service_tier_display }}
-          </span>
-          {% endif %}
-        </div>
-        <div class="d-flex align-items-center gap-2">
-          <span class="text-muted small">{{ visit.visit_date|date:"d M Y, H:i" }}</span>
-          <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}"
-             class="btn btn-sm btn-primary">
-            <i class="bi bi-map me-1"></i>View Journey
-          </a>
-        </div>
-      </div>
-      <div class="card-body py-2">
-        {# Mini pathway bar #}
-        <div class="d-flex gap-1 mb-2 align-items-center flex-wrap">
-          <span class="small text-muted me-1">Pathway:</span>
-          <span class="badge bg-success-subtle text-success border border-success-subtle">1 Reception</span>
-          <span class="badge bg-success-subtle text-success border border-success-subtle">2 Registration</span>
-          <span class="badge {% if visit.vital_signs %}bg-success-subtle text-success border border-success-subtle{% else %}bg-light text-muted border{% endif %}">3 Triage</span>
-          <span class="badge {% if visit.consultations.exists %}bg-success-subtle text-success border border-success-subtle{% else %}bg-light text-muted border{% endif %}">4 Exams</span>
-          <span class="badge {% if visit.consultations.filter %}bg-light text-muted border{% endif %}">5 Consult</span>
-          <span class="badge {% if visit.status == 'DISCHARGED' %}bg-success-subtle text-success border border-success-subtle{% else %}bg-light text-muted border{% endif %}">9 Discharge</span>
-        </div>
-        <div class="row g-2 small">
-          <div class="col-md-6">
-            <span class="text-muted">Chief Complaint:</span> {{ visit.chief_complaint|default:"—" }}
-          </div>
-          {% if visit.vital_signs %}
-          <div class="col-md-3">
-            <span class="text-muted">VA:</span> RE {{ visit.va_right }} / LE {{ visit.va_left }}
-          </div>
-          <div class="col-md-3">
-            <span class="text-muted">IOP:</span> RE {{ visit.iop_right }} / LE {{ visit.iop_left }}
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    {% empty %}
-    <div class="text-center py-5 text-muted">
-      <i class="bi bi-folder-x fs-3 d-block mb-2 opacity-50"></i>
-      No visits recorded yet
-    </div>
-    {% endfor %}
-  </div>
-
-  <!-- Medical Records Tab -->
-  <div class="tab-pane fade" id="medical-records">
-    {% if consultations %}
-    {% for consult in consultations %}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <span class="fw-semibold small">{{ consult.department.name|default:"General" }}</span>
-          <span class="text-muted small">—</span>
-          <span class="small text-muted">Dr. {{ consult.consulting_doctor.get_full_name|default:consult.consulting_doctor.username }}</span>
-          {% if consult.status == 'COMPLETED' %}
-          <span class="badge bg-success-subtle text-success border border-success-subtle small">Completed</span>
-          {% elif consult.status == 'IN_PROGRESS' %}
-          <span class="badge bg-warning-subtle text-warning border border-warning-subtle small">In Progress</span>
-          {% else %}
-          <span class="badge bg-secondary-subtle text-secondary small">{{ consult.get_status_display }}</span>
-          {% endif %}
-        </div>
-        <div class="d-flex align-items-center gap-2">
-          <span class="text-muted small">{{ consult.consultation_date|date:"d M Y, H:i" }}</span>
-          <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary">
-            <i class="bi bi-file-medical me-1"></i>Full Record
-          </a>
-        </div>
-      </div>
-      <div class="card-body py-2">
-        <div class="row g-2 small">
-          {% if consult.presenting_complaint %}
-          <div class="col-12">
-            <span class="text-muted">Chief Complaint:</span> {{ consult.presenting_complaint|truncatechars:120 }}
-          </div>
-          {% endif %}
-          {# Triage vitals (nurse) — shown if available #}
-          {% with vs=consult.visit.vital_signs %}
-          {% if vs %}
-          <div class="col-md-6">
-            <span class="text-muted">Triage VA (RE/LE):</span>
-            <span class="text-success fw-medium">{{ vs.visual_acuity_right|default:"N/R" }} / {{ vs.visual_acuity_left|default:"N/R" }}</span>
-          </div>
-          <div class="col-md-6">
-            <span class="text-muted">Triage IOP (RE/LE):</span>
-            <span class="text-success fw-medium">{{ vs.intraocular_pressure_right|default:"N/R" }} / {{ vs.intraocular_pressure_left|default:"N/R" }} mmHg</span>
-          </div>
-          {% endif %}
-          {% endwith %}
-          {# Doctor's examination findings #}
-          {% with dd=consult.department_specific_data %}
-          {% if dd %}
-          <div class="col-md-6">
-            <span class="text-muted">Exam VA (RE/LE):</span>
-            {{ dd.dept_va_unaided_re|default:"—" }} / {{ dd.dept_va_unaided_le|default:"—" }}
-          </div>
-          <div class="col-md-6">
-            <span class="text-muted">Exam IOP (RE/LE):</span>
-            {{ dd.dept_iop_re|default:"—" }} / {{ dd.dept_iop_le|default:"—" }} mmHg
-          </div>
-          {% endif %}
-          {% endwith %}
-          {% with diags=consult.consultation_diagnoses.all %}
-          {% if diags %}
-          <div class="col-12">
-            <span class="text-muted">Diagnosis:</span>
-            {% for cd in diags %}
-              <span class="badge bg-danger-subtle text-danger border border-danger-subtle">{{ cd.diagnosis.description|truncatechars:50 }}</span>
-            {% endfor %}
-          </div>
-          {% endif %}
-          {% endwith %}
-          {% if consult.management_plan %}
-          <div class="col-12">
-            <span class="text-muted">Management:</span> {{ consult.management_plan|truncatechars:150 }}
-          </div>
-          {% endif %}
-          {% if consult.follow_up_date %}
-          <div class="col-12">
-            <span class="text-muted">Follow-up:</span> {{ consult.follow_up_date|date:"d M Y" }}
-            {% if consult.follow_up_instructions %} — {{ consult.follow_up_instructions|truncatechars:80 }}{% endif %}
-          </div>
-          {% endif %}
-        </div>
-      </div>
-      <div class="card-footer bg-white border-top py-1">
-        <span class="small text-muted">Visit: <code>{{ consult.visit.visit_number }}</code></span>
-        <span class="ms-2 small text-muted">{{ consult.visit.visit_date|date:"d M Y" }}</span>
-      </div>
-    </div>
-    {% endfor %}
-    {% else %}
-    <div class="text-center py-5 text-muted">
-      <i class="bi bi-file-medical fs-3 d-block mb-2 opacity-50"></i>
-      No consultation records found
-    </div>
-    {% endif %}
-  </div>
-
-  <!-- Medical History Tab -->
-  <div class="tab-pane fade" id="history">
-    {% if medical_history %}
-    <div class="row g-3">
-      {% with mh=medical_history %}
-      <div class="col-md-6">
-        <div class="card border-0 shadow-sm h-100">
-          <div class="card-header bg-white border-bottom py-2"><h6 class="small fw-bold mb-0">Ocular History</h6></div>
-          <div class="card-body">
-            <div class="mb-2"><div class="text-muted small">Previous Eye Surgeries</div><div class="small">{{ mh.previous_eye_surgeries|default:"None recorded" }}</div></div>
-            <div class="mb-2"><div class="text-muted small">Previous Eye Conditions</div><div class="small">{{ mh.previous_eye_conditions|default:"None recorded" }}</div></div>
-            <div class="mb-2"><div class="text-muted small">Spectacle History</div><div class="small">{{ mh.spectacle_history|default:"None recorded" }}</div></div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <div class="card border-0 shadow-sm h-100">
-          <div class="card-header bg-white border-bottom py-2"><h6 class="small fw-bold mb-0">Systemic History</h6></div>
-          <div class="card-body">
-            <div class="mb-2"><div class="text-muted small">Known Allergies</div><div class="small {% if mh.known_allergies %}text-danger fw-medium{% endif %}">{{ mh.known_allergies|default:"NKDA" }}</div></div>
-            <div class="mb-2"><div class="text-muted small">Chronic Conditions</div><div class="small">{{ mh.chronic_conditions|default:"None" }}</div></div>
-            <div class="mb-2"><div class="text-muted small">Current Medications</div><div class="small">{{ mh.current_medications|default:"None" }}</div></div>
-            <div class="mb-2"><div class="text-muted small">Family Ocular History</div><div class="small">{{ mh.family_ocular_history|default:"None recorded" }}</div></div>
-          </div>
-        </div>
-      </div>
-      {% endwith %}
-    </div>
-    <div class="mt-3">
-      <a href="{% url 'patients:history' patient_id=patient.patient_id %}" class="btn btn-sm btn-outline-primary">
-        <i class="bi bi-pencil me-1"></i>Edit Medical History
-      </a>
-    </div>
-    {% else %}
-    <div class="text-center py-4 text-muted">No medical history recorded yet.</div>
-    {% endif %}
-  </div>
-
-  <!-- Demographics Tab -->
-  <div class="tab-pane fade" id="demographics">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-3"><div class="small text-muted">Blood Group</div><div class="fw-medium">{{ patient.blood_group|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Genotype</div><div class="fw-medium">{{ patient.genotype|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Nationality</div><div class="fw-medium">{{ patient.nationality|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Occupation</div><div class="fw-medium">{{ patient.occupation|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Registered</div><div class="fw-medium">{{ patient.registration_date|date:"d M Y" }}</div></div>
-          <div class="col-12 mt-2 mb-1"><div class="small fw-semibold text-uppercase text-muted">Address</div></div>
-          <div class="col-md-3"><div class="small text-muted">Postal Address</div><div class="fw-medium">{{ patient.post_address|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Quarter / Neighbourhood</div><div class="fw-medium">{{ patient.quarter|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Village / Town</div><div class="fw-medium">{{ patient.village_town|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Division</div><div class="fw-medium">{{ patient.division|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Region</div><div class="fw-medium">{{ patient.region|default:"—" }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Country</div><div class="fw-medium">{{ patient.country|default:"Cameroon" }}</div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Next of Kin Tab -->
-  <div class="tab-pane fade" id="nok">
-    {% for nok in next_of_kin %}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-body">
-        <div class="row g-2">
-          <div class="col-md-3"><div class="small text-muted">Name</div><div class="fw-medium">{{ nok.full_name }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Relationship</div><div class="fw-medium">{{ nok.relationship }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Phone</div><div class="fw-medium">{{ nok.phone_number }}</div></div>
-          <div class="col-md-3"><div class="small text-muted">Email</div><div class="fw-medium">{{ nok.email|default:"—" }}</div></div>
-        </div>
-      </div>
-    </div>
-    {% empty %}
-    <div class="text-muted small">No next of kin recorded.</div>
-    {% endfor %}
-  </div>
-</div>
+</script>
 {% endblock %}

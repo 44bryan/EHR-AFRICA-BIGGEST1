@@ -195,6 +195,40 @@
   </div>
 </div>
 
+{# ── 15-day Consultation Window Warning ── #}
+{% if active_consultation %}
+<div class="alert alert-warning py-2 mb-3 d-flex align-items-center gap-2" role="alert">
+  <i class="bi bi-clock-history fs-5 flex-shrink-0"></i>
+  <div>
+    <strong>Active consultation window:</strong>
+    {{ patient.full_name }} already paid for a consultation valid until
+    <strong>{{ active_consultation.consultation_valid_until|date:"d M Y" }}</strong>.
+    Adding a new consultation fee may be a <span class="text-danger fw-bold">duplicate charge</span>.
+    Verify before proceeding.
+  </div>
+</div>
+{% endif %}
+
+{# ── Prior Unpaid Invoices Warning ── #}
+{% if prior_unpaid_invoices %}
+<div class="alert alert-danger py-2 mb-3" role="alert">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+    <strong>Outstanding balance — {{ prior_unpaid_invoices|length }} unpaid invoice{{ prior_unpaid_invoices|length|pluralize }}</strong>
+  </div>
+  <ul class="mb-0 small ps-3">
+    {% for inv in prior_unpaid_invoices %}
+    <li>
+      <a href="{% url 'billing:invoice_detail' inv.id %}" class="alert-link">{{ inv.invoice_number }}</a>
+      — {{ inv.get_status_display }} —
+      <strong>{{ inv.balance_due|floatformat:0|intcomma }} XAF</strong>
+      <span class="text-muted">({{ inv.created_at|date:"d M Y" }})</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {# ── Main POS Grid ── #}
 <div class="pos-wrapper">
 

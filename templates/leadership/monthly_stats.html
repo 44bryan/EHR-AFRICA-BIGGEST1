@@ -1,5 +1,71 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Monthly Statistics — {{ period_start|date:"F Y" }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Compact two-column grid layout ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .stats-grid .span-2 { grid-column: span 2; }
+
+  .stat-section {
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+  }
+  .stat-section-header {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 7px 14px;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stat-section-header .num {
+    width: 19px; height: 19px; border-radius: 50%;
+    font-size: .65rem; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; color: #fff;
+  }
+  .sec-patients { background: #eff6ff; color: #1d4ed8; border-color: #dbeafe; }
+  .sec-patients .num { background: #2563eb; }
+  .sec-consults { background: #f0fdf4; color: #15803d; border-color: #dcfce7; }
+  .sec-consults .num { background: #16a34a; }
+  .sec-surgery  { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+  .sec-surgery  .num { background: #ea580c; }
+  .sec-ipd      { background: #fdf4ff; color: #7e22ce; border-color: #f3e8ff; }
+  .sec-ipd      .num { background: #9333ea; }
+  .sec-lab      { background: #ecfeff; color: #0e7490; border-color: #cffafe; }
+  .sec-lab      .num { background: #0891b2; }
+  .sec-finance  { background: #f0fdf4; color: #065f46; border-color: #a7f3d0; }
+  .sec-finance  .num { background: #059669; }
+  .sec-nps      { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+  .sec-nps      .num { background: #d97706; }
+  .sec-appts    { background: #f8fafc; color: #334155; border-color: #e2e8f0; }
+  .sec-appts    .num { background: #475569; }
+
+  .stat-section-body { padding: 12px 14px; }
+  .big-num   { font-size: 1.7rem; font-weight: 800; color: #0f172a; line-height: 1; }
+  .big-label { font-size: .68rem; color: #64748b; margin-top: 3px; }
+  .stat-table { font-size: .79rem; }
+  .stat-table thead th { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+  .stat-table td, .stat-table th { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; }
+  .stat-table tbody tr:last-child td { border-bottom: none; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: .68rem; font-weight: 600; background: #f1f5f9; color: #334155; }
+
+  @media (max-width: 768px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .stats-grid .span-2 { grid-column: span 1; }
+  }
+</style>
+{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -7,11 +73,10 @@
     <i class="bi bi-file-bar-graph-fill text-primary fs-4"></i>
     <div>
       <h5 class="mb-0 fw-bold">Monthly Statistics Report</h5>
-      <div class="text-muted small">{{ period_start|date:"F Y" }} — For Medical Director &amp; CEO</div>
+      <div class="text-muted small">{{ period_start|date:"F Y" }} — Medical Director &amp; CEO</div>
     </div>
   </div>
   <div class="d-flex gap-2 align-items-center">
-    <!-- Month/Year selector -->
     <form method="get" class="d-flex gap-1 align-items-center">
       <select name="month" class="form-select form-select-sm" style="width:130px;">
         {% for m in months %}
@@ -29,7 +94,7 @@
       <i class="bi bi-printer me-1"></i>Print
     </button>
     <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Dashboard
+      <i class="bi bi-arrow-left me-1"></i>Back
     </a>
   </div>
 </div>
@@ -37,57 +102,57 @@
 
 {% block content %}
 
-<div class="text-center mb-4 d-none d-print-block">
+<div class="text-center mb-3 d-none d-print-block">
   <h4 class="fw-bold">Monthly Clinical &amp; Operational Statistics</h4>
   <div class="text-muted">{{ period_start|date:"d F" }} – {{ period_end|date:"d F Y" }}</div>
 </div>
 
-<!-- ── Section 1: Patient Volume ─────────────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-primary text-white fw-semibold py-2">
-    <i class="bi bi-people-fill me-2"></i>1. Patient Volume
+<div class="stats-grid">
+
+<!-- 1. Patient Volume -->
+<div class="stat-section span-2">
+  <div class="stat-section-header sec-patients">
+    <span class="num">1</span>
+    <i class="bi bi-people"></i> Patient Volume
   </div>
-  <div class="card-body">
-    <div class="row g-3">
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold text-primary">{{ total_visits }}</div>
-        <div class="small text-muted">Total Visits</div>
+  <div class="stat-section-body">
+    <div class="row g-3 mb-3 text-center">
+      <div class="col-4">
+        <div class="big-num">{{ total_visits }}</div>
+        <div class="big-label">Total Visits</div>
       </div>
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold text-success">{{ new_patients }}</div>
-        <div class="small text-muted">New Patients</div>
+      <div class="col-4">
+        <div class="big-num">{{ new_patients }}</div>
+        <div class="big-label">New Patients</div>
       </div>
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold text-info">{{ returning }}</div>
-        <div class="small text-muted">Returning / Follow-Up</div>
+      <div class="col-4">
+        <div class="big-num">{{ returning }}</div>
+        <div class="big-label">Returning / Follow-Up</div>
       </div>
     </div>
-
-    <div class="row g-3 mt-2">
+    <div class="row g-3">
       <div class="col-md-6">
-        <div class="fw-semibold small mb-2">By Service Tier</div>
-        <table class="table table-sm small mb-0">
-          <thead class="table-light"><tr><th>Tier</th><th class="text-end">Count</th></tr></thead>
+        <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.06em;">By Service Tier</div>
+        <table class="stat-table table mb-0">
+          <thead><tr><th>Tier</th><th class="text-end">Count</th></tr></thead>
           <tbody>
             {% for t in tier_breakdown %}
-            <tr>
-              <td>{{ t.service_tier }}</td>
-              <td class="text-end fw-bold">{{ t.count }}</td>
-            </tr>
+            <tr><td>{{ t.service_tier }}</td><td class="text-end fw-semibold">{{ t.count }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-muted text-center">No data</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
       <div class="col-md-6">
-        <div class="fw-semibold small mb-2">By Billing Type</div>
-        <table class="table table-sm small mb-0">
-          <thead class="table-light"><tr><th>Type</th><th class="text-end">Count</th></tr></thead>
+        <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.06em;">By Billing Type</div>
+        <table class="stat-table table mb-0">
+          <thead><tr><th>Type</th><th class="text-end">Count</th></tr></thead>
           <tbody>
             {% for b in billing_breakdown %}
-            <tr>
-              <td>{{ b.billing_type }}</td>
-              <td class="text-end fw-bold">{{ b.count }}</td>
-            </tr>
+            <tr><td>{{ b.billing_type }}</td><td class="text-end fw-semibold">{{ b.count }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-muted text-center">No data</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -96,43 +161,40 @@
   </div>
 </div>
 
-<!-- ── Section 2: Consultations ──────────────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-success text-white fw-semibold py-2">
-    <i class="bi bi-clipboard2-pulse me-2"></i>2. Consultations
+<!-- 2. Consultations -->
+<div class="stat-section span-2">
+  <div class="stat-section-header sec-consults">
+    <span class="num">2</span>
+    <i class="bi bi-clipboard2-pulse"></i> Consultations
   </div>
-  <div class="card-body">
-    <div class="row g-3 mb-3">
-      <div class="col-12 text-center">
-        <div class="h3 fw-bold text-success">{{ total_consults }}</div>
-        <div class="small text-muted">Total Consultations</div>
-      </div>
+  <div class="stat-section-body">
+    <div class="text-center mb-3">
+      <div class="big-num">{{ total_consults }}</div>
+      <div class="big-label">Total Consultations</div>
     </div>
     <div class="row g-3">
       <div class="col-md-6">
-        <div class="fw-semibold small mb-2">By Department / Clinic</div>
-        <table class="table table-sm small mb-0">
-          <thead class="table-light"><tr><th>Department</th><th class="text-end">Count</th></tr></thead>
+        <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.06em;">By Department</div>
+        <table class="stat-table table mb-0">
+          <thead><tr><th>Department</th><th class="text-end">Count</th></tr></thead>
           <tbody>
             {% for d in dept_consults %}
-            <tr>
-              <td>{{ d.department__name|default:"General OPD" }}</td>
-              <td class="text-end fw-bold">{{ d.count }}</td>
-            </tr>
+            <tr><td>{{ d.department__name|default:"General OPD" }}</td><td class="text-end fw-semibold">{{ d.count }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-muted text-center">No data</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
       <div class="col-md-6">
-        <div class="fw-semibold small mb-2">Doctor Throughput (Top 10)</div>
-        <table class="table table-sm small mb-0">
-          <thead class="table-light"><tr><th>Doctor</th><th class="text-end">Consults</th></tr></thead>
+        <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.06em;">Doctor Throughput (Top 10)</div>
+        <table class="stat-table table mb-0">
+          <thead><tr><th>Doctor</th><th class="text-end">Consults</th></tr></thead>
           <tbody>
             {% for d in doctor_consults %}
-            <tr>
-              <td>Dr. {{ d.consulting_doctor__first_name }} {{ d.consulting_doctor__last_name }}</td>
-              <td class="text-end fw-bold">{{ d.count }}</td>
-            </tr>
+            <tr><td>Dr. {{ d.consulting_doctor__first_name }} {{ d.consulting_doctor__last_name }}</td><td class="text-end fw-semibold">{{ d.count }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-muted text-center">No data</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -141,123 +203,114 @@
   </div>
 </div>
 
-<!-- ── Section 3: Surgeries ──────────────────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-danger text-white fw-semibold py-2">
-    <i class="bi bi-scissors me-2"></i>3. Surgical Activity
+<!-- 3. Surgical Activity (left col) -->
+<div class="stat-section">
+  <div class="stat-section-header sec-surgery">
+    <span class="num">3</span>
+    <i class="bi bi-scissors"></i> Surgical Activity
   </div>
-  <div class="card-body">
-    <div class="row g-3 mb-3">
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold">{{ total_surgery_prescribed }}</div>
-        <div class="small text-muted">Prescribed (Referred)</div>
+  <div class="stat-section-body">
+    <div class="row g-3 mb-3 text-center">
+      <div class="col-4">
+        <div class="big-num">{{ total_surgery_prescribed }}</div>
+        <div class="big-label">Prescribed / Referred</div>
       </div>
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold text-success">{{ total_surgery_paid }}</div>
-        <div class="small text-muted">Paid &amp; Confirmed</div>
+      <div class="col-4">
+        <div class="big-num">{{ total_surgery_paid }}</div>
+        <div class="big-label">Paid &amp; Confirmed</div>
       </div>
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold text-primary">{{ total_surgery_done }}</div>
-        <div class="small text-muted">Completed Surgeries</div>
+      <div class="col-4">
+        <div class="big-num">{{ total_surgery_done }}</div>
+        <div class="big-label">Completed</div>
       </div>
     </div>
     {% if surgery_by_category %}
-    <div class="fw-semibold small mb-2">By Surgery Category</div>
-    <div class="row g-2">
+    <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.06em;">By Category</div>
+    <div class="d-flex flex-wrap gap-2">
       {% for s in surgery_by_category %}
-      <div class="col-6 col-md-4">
-        <div class="d-flex justify-content-between bg-light rounded p-2 small">
-          <span>{{ s.surgery_category }}</span>
-          <span class="fw-bold badge bg-danger">{{ s.count }}</span>
-        </div>
-      </div>
+      <span class="pill">{{ s.surgery_category }} &nbsp; <strong>{{ s.count }}</strong></span>
       {% endfor %}
     </div>
     {% endif %}
   </div>
 </div>
 
-<!-- ── Section 4: IPD / Admissions ──────────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-info text-white fw-semibold py-2">
-    <i class="bi bi-hospital me-2"></i>4. Inpatient Admissions
+<!-- 4. IPD Admissions -->
+<div class="stat-section">
+  <div class="stat-section-header sec-ipd">
+    <span class="num">4</span>
+    <i class="bi bi-hospital"></i> Inpatient Admissions
   </div>
-  <div class="card-body">
-    <div class="row g-3">
-      <div class="col-6 text-center">
-        <div class="h3 fw-bold text-info">{{ total_admissions }}</div>
-        <div class="small text-muted">Total Admissions</div>
+  <div class="stat-section-body">
+    <div class="row g-3 text-center">
+      <div class="col-6">
+        <div class="big-num">{{ total_admissions }}</div>
+        <div class="big-label">Total Admissions</div>
       </div>
-      <div class="col-6 text-center">
-        <div class="h3 fw-bold text-success">{{ discharged }}</div>
-        <div class="small text-muted">Discharged</div>
+      <div class="col-6">
+        <div class="big-num">{{ discharged }}</div>
+        <div class="big-label">Discharged</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ── Section 5: Laboratory ─────────────────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-warning text-dark fw-semibold py-2">
-    <i class="bi bi-eyedropper me-2"></i>5. Laboratory
+<!-- 5. Laboratory (left col) -->
+<div class="stat-section">
+  <div class="stat-section-header sec-lab">
+    <span class="num">5</span>
+    <i class="bi bi-eyedropper"></i> Laboratory
   </div>
-  <div class="card-body">
-    <div class="row g-3 mb-3">
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold text-warning">{{ total_lab_orders }}</div>
-        <div class="small text-muted">Lab Requests</div>
+  <div class="stat-section-body">
+    <div class="row g-3 mb-3 text-center">
+      <div class="col-4">
+        <div class="big-num">{{ total_lab_orders }}</div>
+        <div class="big-label">Lab Requests</div>
       </div>
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold">{{ total_lab_tests }}</div>
-        <div class="small text-muted">Tests Performed</div>
+      <div class="col-4">
+        <div class="big-num">{{ total_lab_tests }}</div>
+        <div class="big-label">Tests Performed</div>
       </div>
-      <div class="col-4 text-center">
-        <div class="h3 fw-bold text-danger">{{ abnormal_results }}</div>
-        <div class="small text-muted">Abnormal Results</div>
+      <div class="col-4">
+        <div class="big-num">{{ abnormal_results }}</div>
+        <div class="big-label">Abnormal Results</div>
       </div>
     </div>
     {% if lab_by_category %}
-    <div class="fw-semibold small mb-2">Tests by Category</div>
-    <div class="row g-2">
+    <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.06em;">Tests by Category</div>
+    <div class="d-flex flex-wrap gap-2">
       {% for c in lab_by_category %}
-      <div class="col-6 col-md-3">
-        <div class="d-flex justify-content-between bg-light rounded p-2 small">
-          <span>{{ c.test_type__category }}</span>
-          <span class="fw-bold badge bg-warning text-dark">{{ c.count }}</span>
-        </div>
-      </div>
+      <span class="pill">{{ c.test_type__category }} &nbsp; <strong>{{ c.count }}</strong></span>
       {% endfor %}
     </div>
     {% endif %}
   </div>
 </div>
 
-<!-- ── Section 6: Financial ──────────────────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-dark text-white fw-semibold py-2">
-    <i class="bi bi-cash-stack me-2"></i>6. Financial Summary
+<!-- 6. Financial Summary (right col) -->
+<div class="stat-section">
+  <div class="stat-section-header sec-finance">
+    <span class="num">6</span>
+    <i class="bi bi-cash-stack"></i> Financial Summary
   </div>
-  <div class="card-body">
-    <div class="row g-3 mb-3">
-      <div class="col-6 text-center">
-        <div class="h3 fw-bold text-success">FCFA {{ revenue|floatformat:0 }}</div>
-        <div class="small text-muted">Revenue Collected</div>
+  <div class="stat-section-body">
+    <div class="row g-3 mb-3 text-center">
+      <div class="col-6">
+        <div class="big-num">FCFA {{ revenue|floatformat:0|intcomma }}</div>
+        <div class="big-label">Revenue Collected</div>
       </div>
-      <div class="col-6 text-center">
-        <div class="h3 fw-bold text-danger">FCFA {{ outstanding|floatformat:0 }}</div>
-        <div class="small text-muted">Outstanding</div>
+      <div class="col-6">
+        <div class="big-num">FCFA {{ outstanding|floatformat:0|intcomma }}</div>
+        <div class="big-label">Outstanding</div>
       </div>
     </div>
     {% if by_method %}
-    <div class="fw-semibold small mb-2">Revenue by Payment Method</div>
-    <table class="table table-sm small mb-0">
-      <thead class="table-light"><tr><th>Method</th><th class="text-end">Amount (FCFA)</th></tr></thead>
+    <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:.7rem;letter-spacing:.06em;">Revenue by Payment Method</div>
+    <table class="stat-table table mb-0">
+      <thead><tr><th>Method</th><th class="text-end">Amount (FCFA)</th></tr></thead>
       <tbody>
         {% for m in by_method %}
-        <tr>
-          <td>{{ m.payment_method }}</td>
-          <td class="text-end fw-bold">{{ m.total|floatformat:0 }}</td>
-        </tr>
+        <tr><td>{{ m.payment_method }}</td><td class="text-end fw-semibold">{{ m.total|floatformat:0|intcomma }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -265,55 +318,57 @@
   </div>
 </div>
 
-<!-- ── Section 7: Patient Satisfaction ──────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header fw-semibold py-2" style="background:#6366f1;color:#fff;">
-    <i class="bi bi-emoji-smile me-2"></i>7. Patient Satisfaction (NPS)
+<!-- 7. Patient Satisfaction (left col) -->
+<div class="stat-section">
+  <div class="stat-section-header sec-nps">
+    <span class="num">7</span>
+    <i class="bi bi-emoji-smile"></i> Patient Satisfaction (NPS)
   </div>
-  <div class="card-body">
-    <div class="row g-3">
-      <div class="col-3 text-center">
-        <div class="h3 fw-bold {% if nps >= 50 %}text-success{% elif nps >= 0 %}text-warning{% else %}text-danger{% endif %}">
-          {{ nps }}
-        </div>
-        <div class="small text-muted">NPS Score</div>
+  <div class="stat-section-body">
+    <div class="row g-3 text-center">
+      <div class="col-3">
+        <div class="big-num">{{ nps }}</div>
+        <div class="big-label">NPS Score</div>
       </div>
-      <div class="col-3 text-center">
-        <div class="h3 fw-bold text-success">{{ fb_promo }}</div>
-        <div class="small text-muted">Promoters</div>
+      <div class="col-3">
+        <div class="big-num">{{ fb_promo }}</div>
+        <div class="big-label">Promoters</div>
       </div>
-      <div class="col-3 text-center">
-        <div class="h3 fw-bold text-danger">{{ fb_detra }}</div>
-        <div class="small text-muted">Detractors</div>
+      <div class="col-3">
+        <div class="big-num">{{ fb_detra }}</div>
+        <div class="big-label">Detractors</div>
       </div>
-      <div class="col-3 text-center">
-        <div class="h3 fw-bold text-primary">{{ avg_rating }}/5</div>
-        <div class="small text-muted">Avg Rating</div>
+      <div class="col-3">
+        <div class="big-num">{{ avg_rating }}/5</div>
+        <div class="big-label">Avg Rating</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ── Section 8: Appointments ──────────────────────────────────────────── -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-secondary text-white fw-semibold py-2">
-    <i class="bi bi-calendar-check me-2"></i>8. Appointments
+<!-- 8. Appointments (right col) -->
+<div class="stat-section">
+  <div class="stat-section-header sec-appts">
+    <span class="num">8</span>
+    <i class="bi bi-calendar-check"></i> Appointments
   </div>
-  <div class="card-body">
-    <div class="row g-3">
-      <div class="col-6 text-center">
-        <div class="h3 fw-bold">{{ total_appts }}</div>
-        <div class="small text-muted">Total Appointments</div>
+  <div class="stat-section-body">
+    <div class="row g-3 text-center">
+      <div class="col-6">
+        <div class="big-num">{{ total_appts }}</div>
+        <div class="big-label">Total Appointments</div>
       </div>
-      <div class="col-6 text-center">
-        <div class="h3 fw-bold text-danger">{{ appt_dna }}</div>
-        <div class="small text-muted">Did Not Attend (DNA)</div>
+      <div class="col-6">
+        <div class="big-num">{{ appt_dna }}</div>
+        <div class="big-label">Did Not Attend (DNA)</div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="text-center text-muted small mt-2 d-none d-print-block">
+</div>{# end stats-grid #}
+
+<div class="text-center text-muted small mt-2 mb-4 d-none d-print-block">
   Generated by EHR System · {{ today|date:"d F Y" }}
 </div>
 

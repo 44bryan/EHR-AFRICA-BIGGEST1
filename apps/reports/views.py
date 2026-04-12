@@ -15,7 +15,33 @@ def render_pdf(template_name, context):
     Render an HTML template to PDF using WeasyPrint.
     Falls back to a browser-printable HTML page (with auto-print JS) if
     WeasyPrint is not installed — so the print button always works.
+
+    Injects `pdf_logo_url` (base64 data URI) and shared hospital context into
+    every PDF template so the letterhead can embed the logo without file-path issues.
     """
+    import os, base64 as _b64
+
+    # ── Embed logo as base64 so it works in both WeasyPrint and browser-print ──
+    if 'pdf_logo_url' not in context:
+        logo_data = ''
+        static_dirs = getattr(settings, 'STATICFILES_DIRS', [])
+        if static_dirs:
+            logo_path = os.path.join(str(static_dirs[0]), 'img', 'gludd_logo.svg')
+            if os.path.exists(logo_path):
+                try:
+                    with open(logo_path, 'rb') as _f:
+                        logo_data = 'data:image/svg+xml;base64,' + _b64.b64encode(_f.read()).decode()
+                except OSError:
+                    pass
+        context['pdf_logo_url'] = logo_data
+
+    # ── Shared hospital fields ────────────────────────────────────────────────
+    context.setdefault('hospital_name', settings.HOSPITAL_NAME)
+    context.setdefault('hospital_address', getattr(settings, 'HOSPITAL_ADDRESS', ''))
+    context.setdefault('hospital_phone', getattr(settings, 'HOSPITAL_PHONE', ''))
+    context.setdefault('hospital_email', getattr(settings, 'HOSPITAL_EMAIL', ''))
+    context.setdefault('hospital_tagline', getattr(settings, 'HOSPITAL_TAGLINE', 'Specialist Eye Hospital'))
+
     html_string = render_to_string(template_name, context)
 
     try:
@@ -279,9 +305,11 @@ def patient_summary_pdf_view(request, patient_id):
 
     recent_consults = Consultation.objects.filter(
         patient=patient, is_deleted=False
-    ).select_related('department', 'consulting_doctor').prefetch_related(
-        'consultation_diagnoses__diagnosis'
-    ).order_by('-created_at')[:3]
+    ).select_related('department', 'consulting_doctor', 'visit').prefetch_related(
+        'consultation_diagnoses__diagnosis',
+        'optical_prescriptions',
+        'drug_prescriptions__items',
+    ).order_by('-consultation_date')[:5]
 
     recent_investigations = InvestigationOrder.objects.filter(
         patient=patient

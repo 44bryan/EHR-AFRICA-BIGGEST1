@@ -2,11 +2,22 @@
 {% block title %}IPD - Inpatient{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
   <h1 class="h3 mb-0">Inpatient Department (IPD)</h1>
-  <a href="{% url 'ipd:ward_list' %}" class="btn btn-outline-secondary">
-    <i class="bi bi-building me-1"></i>Ward Management
-  </a>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'ipd:theatre_session_list' %}" class="btn btn-danger btn-sm">
+      <i class="bi bi-scissors me-1"></i>OR Sessions
+    </a>
+    <a href="{% url 'ipd:theatre_session_create' %}" class="btn btn-outline-danger btn-sm">
+      <i class="bi bi-plus me-1"></i>New OR Session
+    </a>
+    <a href="{% url 'ipd:theatre_board' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-calendar3 me-1"></i>Booking Board
+    </a>
+    <a href="{% url 'ipd:ward_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-building me-1"></i>Wards
+    </a>
+  </div>
 </div>
 
 <!-- Stats -->
@@ -36,6 +47,34 @@
     </div>
   </div>
 </div>
+
+<!-- Today's Theatre Sessions -->
+{% if today_sessions %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+    <span class="fw-semibold"><i class="bi bi-scissors me-2"></i>Today's Theatre Sessions — {{ today|date:"d M Y" }}</span>
+    <a href="{% url 'ipd:theatre_session_list' %}" class="btn btn-sm btn-light text-danger">View All</a>
+  </div>
+  <div class="card-body p-0">
+    {% for s in today_sessions %}
+    <div class="px-3 py-2 border-bottom d-flex align-items-center justify-content-between">
+      <div>
+        <div class="fw-semibold small">{{ s.theatre_name }} {% if s.start_time %}· {{ s.start_time|time:"H:i" }}{% endif %}</div>
+        <div class="text-muted" style="font-size:.75rem;">
+          {% if s.lead_surgeon %}Dr. {{ s.lead_surgeon.full_name }}{% endif %}
+          · {{ s.total_procedures }} procedure{{ s.total_procedures|pluralize }}
+          · {{ s.completed_procedures }} done
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-{% if s.status == 'COMPLETED' %}success{% elif s.status == 'IN_PROGRESS' %}warning text-dark{% else %}primary{% endif %}">{{ s.get_status_display }}</span>
+        <a href="{% url 'ipd:theatre_session_detail' s.pk %}" class="btn btn-sm btn-outline-danger">Open</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 <!-- Current Admissions -->
 <div class="card border-0 shadow-sm">

@@ -126,14 +126,33 @@ def walk_in(request):
 
         department = get_object_or_404(Department, pk=dept_id) if dept_id else None
 
-        # Determine QMS service type from department code
-        dept_code = department.code if department else 'GEN_OPH'
-        service_map = {
-            'LAB': ServiceType.LABORATORY,
-            'INVEST': ServiceType.INVESTIGATION,
-            'REFRAC': ServiceType.OPTICAL,
-        }
-        service_type = service_map.get(dept_code, ServiceType.GENERAL)
+        # ── 15-day consultation validity check ────────────────────────────────
+        active_visit = patient.active_consultation_visit  # None if expired / never paid
+        consultation_valid = active_visit is not None
+
+        # Determine QMS service type
+        if consultation_valid:
+            # Within 15-day window — skip cashier, route to department directly
+            dept_code = department.code if department else 'GEN_OPH'
+            service_map = {
+                'LAB': ServiceType.LABORATORY,
+                'INVEST': ServiceType.INVESTIGATION,
+                'REFRAC': ServiceType.OPTICAL,
+            }
+            service_type = service_map.get(dept_code, ServiceType.GENERAL)
+            messages.success(
+                request,
+                f"Walk-in check-in — consultation valid until "
+                f"{active_visit.consultation_valid_until.strftime('%d %b %Y')}. "
+                f"Patient directed to {department.name if department else 'department'} (no payment required)."
+            )
+        else:
+            # No valid consultation — must pay first
+            service_type = ServiceType.CASHIER
+            messages.warning(
+                request,
+                "No active consultation found. Patient directed to cashier for payment."
+            )
 
         # QMS priority from tier
         priority = TIER_META.get(tier, {}).get('priority', 0)
@@ -206,18 +225,53 @@ def confirmation(request, token_pk):
 
 @login_required
 def quick_checkin(request, pk):
-    """Check in an existing appointment from the reception desk."""
+    """
+    Check in an existing appointment from the reception desk.
+
+    Consultation validity rule (15-day window):
+    - If patient has an active, paid consultation within 15 days → follow-up,
+      issue DEPARTMENT token directly (no cashier stop).
+    - If consultation has expired or this is a new episode → route through
+      CASHIER first so payment is collected.
+    """
+    from apps.billing.models import ServiceType as BillingServiceType
     appt = get_object_or_404(Appointment, pk=pk, is_deleted=False)
+    patient = appt.patient
     tier = appt.service_tier
     priority = TIER_META.get(tier, {}).get('priority', 0)
 
+    # ── Check 15-day consultation validity ───────────────────────────────────
+    active_visit = patient.active_consultation_visit  # None if expired / never paid
+    consultation_valid = active_visit is not None
+
+    if consultation_valid:
+        # Patient is within valid consultation window — no payment needed.
+        # Route directly to the department that booked the appointment.
+        service_type = ServiceType.GENERAL          # standard QMS token
+        visit_type   = 'FOLLOW_UP'
+        visit_status = 'WAITING'
+        messages.success(
+            request,
+            f"Follow-up check-in — consultation valid until "
+            f"{active_visit.consultation_valid_until.strftime('%d %b %Y')}. "
+            f"Patient directed to {appt.department.name if appt.department else 'department'}."
+        )
+    else:
+        # Consultation expired or first visit — must pay before proceeding.
+        service_type = ServiceType.CASHIER
+        visit_type   = 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW'
+        visit_status = 'WAITING'
+        messages.warning(
+            request,
+            "Consultation period has expired. Patient directed to cashier for payment."
+        )
+
     # Issue QMS token
-    service_type = ServiceType.GENERAL
     token_number = DailyTokenSequence.next_token(service_type)
     token = QueueToken.objects.create(
         token_number=token_number,
-        patient=appt.patient,
-        patient_name=appt.patient.full_name,
+        patient=patient,
+        patient_name=patient.full_name,
         service_type=service_type,
         priority=priority,
         issued_by=request.user,
@@ -230,11 +284,11 @@ def quick_checkin(request, pk):
     Visit.objects.get_or_create(
         appointment=appt,
         defaults={
-            'patient': appt.patient,
+            'patient': patient,
             'department': appt.department,
-            'visit_type': 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW',
+            'visit_type': visit_type,
             'chief_complaint': appt.reason,
-            'status': 'WAITING',
+            'status': visit_status,
             'created_by': request.user,
         }
     )

@@ -275,6 +275,8 @@ Include in create.html. Requires: CSRF token in page, form field names per Djang
 (function() {
   const EXTRACT_URL = "{% url 'ai_assistant:voice_extract' %}";
   const CSRF = () => document.querySelector('[name=csrfmiddlewaretoken]').value;
+  // Department code — injected from template context
+  const VEMR_DEPT = "{{ dept_code|default:'' }}";
 
   // ── Recording ────────────────────────────────────────────────────────
   let _recognition = null;
@@ -404,7 +406,7 @@ Include in create.html. Requires: CSRF token in page, form field names per Djang
       const resp = await fetch(EXTRACT_URL, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF()},
-        body: JSON.stringify({transcription}),
+        body: JSON.stringify({transcription, dept_code: VEMR_DEPT}),
       });
       const data = await resp.json();
       if (data.success) {
@@ -441,25 +443,38 @@ Include in create.html. Requires: CSRF token in page, form field names per Djang
     _set('vr_family_history', d.family_history);
     _set('vr_allergies', d.allergies);
 
-    // Clinical
-    _set('vr_va_re_unaided', exam.va_re_unaided);
-    _set('vr_va_le_unaided', exam.va_le_unaided);
-    _set('vr_va_re_bcva', exam.va_re_bcva);
-    _set('vr_va_le_bcva', exam.va_le_bcva);
-    _set('vr_iop_re', exam.iop_re);
-    _set('vr_iop_le', exam.iop_le);
-    // Anterior segment — join structured sub-fields for review display
-    const ant = exam.anterior_segment || {};
-    const antReParts = [ant.conjunctiva_re, ant.cornea_re, ant.anterior_chamber_re, ant.iris_re, ant.pupil_re, ant.lens_re].filter(Boolean);
-    const antLeParts = [ant.conjunctiva_le, ant.cornea_le, ant.anterior_chamber_le, ant.iris_le, ant.pupil_le, ant.lens_le].filter(Boolean);
-    _set('vr_anterior_re', antReParts.join('; ') || exam.anterior_segment_re);
-    _set('vr_anterior_le', antLeParts.join('; ') || exam.anterior_segment_le);
-    // Posterior segment — join structured sub-fields for review display
-    const post = exam.posterior_segment || {};
-    const postReParts = [post.disc_re, post.macula_re, post.periphery_re, post.vitreous_re].filter(Boolean);
-    const postLeParts = [post.disc_le, post.macula_le, post.periphery_le, post.vitreous_le].filter(Boolean);
-    _set('vr_posterior_re', postReParts.join('; ') || exam.posterior_segment_re);
-    _set('vr_posterior_le', postLeParts.join('; ') || exam.posterior_segment_le);
+    // Clinical — refraction vs general ophthalmology
+    if (VEMR_DEPT === 'REFRAC' || VEMR_DEPT === 'PEDS_REFRAC') {
+      const rx = d.refraction || {};
+      _set('vr_va_re_unaided', rx.va_unaided_od);
+      _set('vr_va_le_unaided', rx.va_unaided_os);
+      _set('vr_va_re_bcva', rx.bcva_od);
+      _set('vr_va_le_bcva', rx.bcva_os);
+      // Show refraction summary in anterior/posterior fields for review only
+      const rxSummOD = [rx.final_sph_od, rx.final_cyl_od, rx.final_axis_od ? '×'+rx.final_axis_od : ''].filter(Boolean).join(' / ');
+      const rxSummOS = [rx.final_sph_os, rx.final_cyl_os, rx.final_axis_os ? '×'+rx.final_axis_os : ''].filter(Boolean).join(' / ');
+      if (rxSummOD) _set('vr_anterior_re', 'OD: ' + rxSummOD + (rx.add_od ? '  Add: ' + rx.add_od : ''));
+      if (rxSummOS) _set('vr_anterior_le', 'OS: ' + rxSummOS + (rx.add_os ? '  Add: ' + rx.add_os : ''));
+      if (rx.lens_type) _set('vr_posterior_re', 'Lens: ' + rx.lens_type);
+      if (rx.rx_remarks) _set('vr_assessment', rx.rx_remarks);
+    } else {
+      _set('vr_va_re_unaided', exam.va_re_unaided);
+      _set('vr_va_le_unaided', exam.va_le_unaided);
+      _set('vr_va_re_bcva', exam.va_re_bcva);
+      _set('vr_va_le_bcva', exam.va_le_bcva);
+      _set('vr_iop_re', exam.iop_re);
+      _set('vr_iop_le', exam.iop_le);
+      const ant = exam.anterior_segment || {};
+      const antReParts = [ant.conjunctiva_re, ant.cornea_re, ant.anterior_chamber_re, ant.iris_re, ant.pupil_re, ant.lens_re].filter(Boolean);
+      const antLeParts = [ant.conjunctiva_le, ant.cornea_le, ant.anterior_chamber_le, ant.iris_le, ant.pupil_le, ant.lens_le].filter(Boolean);
+      _set('vr_anterior_re', antReParts.join('; ') || exam.anterior_segment_re);
+      _set('vr_anterior_le', antLeParts.join('; ') || exam.anterior_segment_le);
+      const post = exam.posterior_segment || {};
+      const postReParts = [post.disc_re, post.macula_re, post.periphery_re, post.vitreous_re].filter(Boolean);
+      const postLeParts = [post.disc_le, post.macula_le, post.periphery_le, post.vitreous_le].filter(Boolean);
+      _set('vr_posterior_re', postReParts.join('; ') || exam.posterior_segment_re);
+      _set('vr_posterior_le', postLeParts.join('; ') || exam.posterior_segment_le);
+    }
 
     // Management
     _set('vr_assessment', d.overall_diagnosis_summary);
@@ -532,110 +547,154 @@ Include in create.html. Requires: CSRF token in page, form field names per Djang
     return false;
   }
 
-  window.vemrApplyAll = function() {
-    // History
-    _fillFormField('presenting_complaint', document.getElementById('vr_chief_complaint').value);
-    _fillFormField('history_of_presenting_complaint', document.getElementById('vr_hpc').value);
-    _fillFormField('ocular_history', document.getElementById('vr_ocular_history').value);
-    _fillFormField('systemic_history', document.getElementById('vr_systemic_history').value);
-    _fillFormField('drug_history', document.getElementById('vr_drug_history').value);
-    _fillFormField('family_history', document.getElementById('vr_family_history').value);
-    _fillFormField('management_plan', document.getElementById('vr_management_plan').value);
-    _fillFormField('follow_up_instructions', document.getElementById('vr_follow_up_instructions').value);
-
-    // Follow-up date
-    const followDays = parseInt(document.getElementById('vr_follow_up_days').value);
-    if (followDays > 0) {
-      const d = new Date(); d.setDate(d.getDate() + followDays);
-      const iso = d.toISOString().split('T')[0];
-      _fillFormField('follow_up_date', iso);
-    }
-
-    // Referral
-    const refDept = document.getElementById('vr_referral_department').value;
-    if (refDept) {
-      // Try dropdown first, fallback to text
-      const sel = document.getElementById('id_referral_department');
-      if (sel && sel.tagName === 'SELECT') {
-        for (const opt of sel.options) {
-          if (opt.text.toLowerCase().includes(refDept.toLowerCase())) {
-            sel.value = opt.value; break;
-          }
+  function _fillSelect(name, val) {
+    if (!val) return;
+    const el = document.querySelector(`[name="dept_${name}"]`);
+    if (!el) return;
+    if (el.tagName === 'SELECT') {
+      for (const opt of el.options) {
+        if (opt.value.toLowerCase() === val.toLowerCase() || opt.text.toLowerCase().includes(val.toLowerCase())) {
+          el.value = opt.value; return;
         }
-      } else { _fillFormField('referral_department', refDept); }
-    }
+      }
+    } else { el.value = val; }
+  }
 
-    // Department-specific exam fields — use stored _vemrData from last extraction
-    const exam = (window._vemrData && window._vemrData.examination) ? window._vemrData.examination : {};
+  function _applyRefraction(d) {
+    // d = the full AI response data object (with d.refraction sub-object)
+    const rx = d.refraction || {};
+    // Auto-refraction (objective)
+    _fillDeptField('auto_sph_od',  rx.auto_sph_od);  _fillDeptField('auto_sph_os',  rx.auto_sph_os);
+    _fillDeptField('auto_cyl_od',  rx.auto_cyl_od);  _fillDeptField('auto_cyl_os',  rx.auto_cyl_os);
+    _fillDeptField('auto_axis_od', rx.auto_axis_od); _fillDeptField('auto_axis_os', rx.auto_axis_os);
+    // VA
+    _fillDeptField('va_unaided_od',  rx.va_unaided_od);  _fillDeptField('va_unaided_os',  rx.va_unaided_os);
+    _fillDeptField('va_corrected_od',rx.va_corrected_od); _fillDeptField('va_corrected_os',rx.va_corrected_os);
+    // Subjective / final prescription
+    _fillDeptField('final_sph_od',  rx.final_sph_od);  _fillDeptField('final_sph_os',  rx.final_sph_os);
+    _fillDeptField('final_cyl_od',  rx.final_cyl_od);  _fillDeptField('final_cyl_os',  rx.final_cyl_os);
+    _fillDeptField('final_axis_od', rx.final_axis_od); _fillDeptField('final_axis_os', rx.final_axis_os);
+    _fillDeptField('add_od', rx.add_od); _fillDeptField('add_os', rx.add_os);
+    _fillDeptField('bcva_od', rx.bcva_od); _fillDeptField('bcva_os', rx.bcva_os);
+    // Optical prescription table (final Rx for optical shop)
+    _fillDeptField('rx_sph_od',   rx.rx_sph_od   || rx.final_sph_od);
+    _fillDeptField('rx_sph_os',   rx.rx_sph_os   || rx.final_sph_os);
+    _fillDeptField('rx_cyl_od',   rx.rx_cyl_od   || rx.final_cyl_od);
+    _fillDeptField('rx_cyl_os',   rx.rx_cyl_os   || rx.final_cyl_os);
+    _fillDeptField('rx_axis_od',  rx.rx_axis_od  || rx.final_axis_od);
+    _fillDeptField('rx_axis_os',  rx.rx_axis_os  || rx.final_axis_os);
+    _fillDeptField('rx_add_od',   rx.rx_add_od   || rx.add_od);
+    _fillDeptField('rx_add_os',   rx.rx_add_os   || rx.add_os);
+    _fillDeptField('rx_prism_od', rx.rx_prism_od);
+    _fillDeptField('rx_prism_os', rx.rx_prism_os);
+    _fillDeptField('rx_bcva_od',  rx.rx_bcva_od  || rx.bcva_od);
+    _fillDeptField('rx_bcva_os',  rx.rx_bcva_os  || rx.bcva_os);
+    // PD
+    _fillDeptField('pd_dist_od', rx.pd_dist_od); _fillDeptField('pd_dist_os', rx.pd_dist_os);
+    _fillDeptField('pd_near_od', rx.pd_near_od); _fillDeptField('pd_near_os', rx.pd_near_os);
+    // Near vision
+    _fillDeptField('near_vision', rx.near_vision);
+    // Selects
+    _fillSelect('lens_type',       rx.lens_type);
+    _fillSelect('refraction_type', rx.refraction_type);
+    _fillSelect('rx_lens_type',    rx.lens_type);
+    _fillSelect('rx_wear_schedule',rx.rx_wear_schedule);
+    // Text extras
+    _fillDeptField('rx_frame',      rx.rx_frame);
+    _fillDeptField('rx_dispensing', rx.rx_dispensing);
+    _fillDeptField('rx_remarks',    rx.rx_remarks);
+  }
+
+  function _applyGenOph(d) {
+    const exam = d.examination || {};
     const ant  = exam.anterior_segment  || {};
     const post = exam.posterior_segment || {};
-
-    // VA (in refractionist grey zone — fill if fields exist and writable)
+    // VA
     _fillDeptField('va_re_unaided', exam.va_re_unaided || document.getElementById('vr_va_re_unaided')?.value);
     _fillDeptField('va_le_unaided', exam.va_le_unaided || document.getElementById('vr_va_le_unaided')?.value);
     _fillDeptField('va_re_bcva',    exam.va_re_bcva    || document.getElementById('vr_va_re_bcva')?.value);
     _fillDeptField('va_le_bcva',    exam.va_le_bcva    || document.getElementById('vr_va_le_bcva')?.value);
-
+    _fillDeptField('va_re_ph', exam.va_re_ph); _fillDeptField('va_le_ph', exam.va_le_ph);
+    _fillDeptField('va_re_near', exam.va_re_near); _fillDeptField('va_le_near', exam.va_le_near);
     // IOP
     _fillDeptField('iop_re', exam.iop_re || document.getElementById('vr_iop_re')?.value);
     _fillDeptField('iop_le', exam.iop_le || document.getElementById('vr_iop_le')?.value);
-
-    // Cover test / RAPD / Colour vision (selects — match by text)
-    function _fillSelect(name, val) {
-      if (!val) return;
-      const el = document.querySelector(`[name="dept_${name}"]`);
-      if (!el) return;
-      if (el.tagName === 'SELECT') {
-        for (const opt of el.options) {
-          if (opt.value.toLowerCase() === val.toLowerCase() || opt.text.toLowerCase().includes(val.toLowerCase())) {
-            el.value = opt.value; return;
-          }
-        }
-      } else { el.value = val; }
-    }
+    // Selects
     _fillSelect('cover_test',    exam.cover_test);
     _fillSelect('rapd',          exam.rapd);
     _fillSelect('color_vision',  exam.colour_vision);
     _fillSelect('colour_vision', exam.colour_vision);
-    _fillSelect('motility',      exam.motility);
-
-    // Anterior segment — individual slit lamp fields
+    // Anterior segment
     const slMap = {
       'sl_conjunctiva_re': ant.conjunctiva_re, 'sl_conjunctiva_le': ant.conjunctiva_le,
-      'sl_cornea_re':      ant.cornea_re,      'sl_cornea_le':      ant.cornea_le,
+      'sl_cornea_re': ant.cornea_re, 'sl_cornea_le': ant.cornea_le,
       'sl_anterior_chamber_re': ant.anterior_chamber_re, 'sl_anterior_chamber_le': ant.anterior_chamber_le,
-      'sl_iris_re':        ant.iris_re,        'sl_iris_le':        ant.iris_le,
-      'sl_pupil_re':       ant.pupil_re,       'sl_pupil_le':       ant.pupil_le,
-      'sl_lens_re':        ant.lens_re,        'sl_lens_le':        ant.lens_le,
+      'sl_iris_re': ant.iris_re, 'sl_iris_le': ant.iris_le,
+      'sl_pupil_re': ant.pupil_re, 'sl_pupil_le': ant.pupil_le,
+      'sl_lens_re': ant.lens_re, 'sl_lens_le': ant.lens_le,
     };
-    for (const [field, val] of Object.entries(slMap)) { if (val) _fillDeptField(field, val); }
-
-    // Posterior segment — individual fundus fields
+    for (const [f, v] of Object.entries(slMap)) { if (v) _fillDeptField(f, v); }
+    // Posterior segment
     const fundusMap = {
-      'disc_re':      post.disc_re,      'disc_le':      post.disc_le,
-      'macula_re':    post.macula_re,    'macula_le':    post.macula_le,
+      'disc_re': post.disc_re, 'disc_le': post.disc_le,
+      'macula_re': post.macula_re, 'macula_le': post.macula_le,
       'periphery_re': post.periphery_re, 'periphery_le': post.periphery_le,
-      'vitreous_re':  post.vitreous_re,  'vitreous_le':  post.vitreous_le,
+      'vitreous_re': post.vitreous_re, 'vitreous_le': post.vitreous_le,
     };
-    for (const [field, val] of Object.entries(fundusMap)) { if (val) _fillDeptField(field, val); }
-
-    // Refraction fields
+    for (const [f, v] of Object.entries(fundusMap)) { if (v) _fillDeptField(f, v); }
+    // Refraction component within gen oph (autoref)
     _fillDeptField('auto_sph_od', exam.refraction_re_sphere); _fillDeptField('auto_sph_os', exam.refraction_le_sphere);
     _fillDeptField('auto_cyl_od', exam.refraction_re_cyl);    _fillDeptField('auto_cyl_os', exam.refraction_le_cyl);
     _fillDeptField('auto_axis_od', exam.refraction_re_axis);  _fillDeptField('auto_axis_os', exam.refraction_le_axis);
-
-    // Summary diagnosis
-    const assessment = document.getElementById('vr_assessment').value;
+    // Assessment
+    const assessment = document.getElementById('vr_assessment')?.value;
     if (assessment) {
       _fillDeptField('diagnosis_summary', assessment);
       _fillDeptField('diagnosis_re', assessment);
+    }
+  }
+
+  window.vemrApplyAll = function() {
+    const d = window._vemrData || {};
+
+    // Common history fields (all dept types)
+    _fillFormField('presenting_complaint', document.getElementById('vr_chief_complaint')?.value || d.chief_complaint);
+    _fillFormField('history_of_presenting_complaint', document.getElementById('vr_hpc')?.value || d.history);
+    _fillFormField('ocular_history',   document.getElementById('vr_ocular_history')?.value);
+    _fillFormField('systemic_history', document.getElementById('vr_systemic_history')?.value);
+    _fillFormField('drug_history',     document.getElementById('vr_drug_history')?.value);
+    _fillFormField('family_history',   document.getElementById('vr_family_history')?.value);
+    _fillFormField('management_plan',  document.getElementById('vr_management_plan')?.value || d.management_plan);
+    _fillFormField('follow_up_instructions', document.getElementById('vr_follow_up_instructions')?.value);
+
+    // Follow-up date
+    const followDays = parseInt(document.getElementById('vr_follow_up_days')?.value || 0);
+    if (followDays > 0) {
+      const fd = new Date(); fd.setDate(fd.getDate() + followDays);
+      _fillFormField('follow_up_date', fd.toISOString().split('T')[0]);
+    }
+
+    // Referral
+    const refDept = document.getElementById('vr_referral_department')?.value;
+    if (refDept) {
+      const sel = document.getElementById('id_referral_department');
+      if (sel && sel.tagName === 'SELECT') {
+        for (const opt of sel.options) {
+          if (opt.text.toLowerCase().includes(refDept.toLowerCase())) { sel.value = opt.value; break; }
+        }
+      } else { _fillFormField('referral_department', refDept); }
+    }
+
+    // Dept-specific field filling
+    if (VEMR_DEPT === 'REFRAC' || VEMR_DEPT === 'PEDS_REFRAC') {
+      _applyRefraction(d);
+    } else {
+      _applyGenOph(d);
     }
 
     // Flash success
     document.getElementById('vemrApplySuccess').classList.remove('d-none');
     document.getElementById('vemrApplySuccess').classList.add('d-flex');
-
-    // Scroll down to save button
     setTimeout(() => {
       const saveBtn = document.querySelector('button[type="submit"]');
       if (saveBtn) saveBtn.scrollIntoView({behavior:'smooth', block:'center'});

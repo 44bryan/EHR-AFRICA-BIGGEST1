@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+</head>
+<body>
+
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Discharge Summary</span>
+  <span>{% now "d M Y" %}</span>
+</div>
+      <div class="hospital-info">{{ hospital_address }} &nbsp;|&nbsp; Tel: {{ hospital_phone }}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="hospital-info" style="font-weight:bold;">Eye Specialist Hospital</div>
+      <div class="hospital-info">Inpatient Discharge Summary</div>
+    </div>
+  </div>
+</div>
+
+<div class="report-title">DISCHARGE SUMMARY</div>
+
+<!-- Patient Card -->
+<div class="patient-card">
+  <h4>{{ patient.full_name }}</h4>
+  <div class="info-grid">
+    <div class="info-item"><span class="info-label">Patient ID</span><span class="info-value">{{ patient.patient_id }}</span></div>
+    <div class="info-item"><span class="info-label">Admission No.</span><span class="info-value">{{ admission.admission_number }}</span></div>
+    <div class="info-item"><span class="info-label">Date of Birth</span><span class="info-value">{{ patient.date_of_birth|date:"d M Y"|default:"—" }}</span></div>
+    <div class="info-item"><span class="info-label">Gender</span><span class="info-value">{{ patient.get_gender_display }}</span></div>
+    <div class="info-item"><span class="info-label">Ward / Bed</span><span class="info-value">{{ admission.bed.ward.name }} — Bed {{ admission.bed.bed_number }}</span></div>
+    <div class="info-item"><span class="info-label">Admitting Doctor</span><span class="info-value">Dr. {{ admission.admitting_doctor.full_name }}</span></div>
+    <div class="info-item"><span class="info-label">Admission Date</span><span class="info-value">{{ admission.admission_date|date:"d M Y H:i" }}</span></div>
+    <div class="info-item"><span class="info-label">Discharge Date</span><span class="info-value">{% if admission.discharge_date %}{{ admission.discharge_date|date:"d M Y H:i" }}{% else %}—{% endif %}</span></div>
+    <div class="info-item"><span class="info-label">Length of Stay</span><span class="info-value">{{ admission.los_days }} day{{ admission.los_days|pluralize }}</span></div>
+  </div>
+</div>
+
+<!-- Diagnosis on Admission -->
+<div class="section">
+  <div class="section-title">Diagnosis on Admission</div>
+  <div>{{ admission.diagnosis_on_admission }}</div>
+</div>
+
+<!-- Surgical Procedure (if any) -->
+{% if admission.surgical_booking %}
+<div class="section">
+  <div class="section-title">Surgical Procedure</div>
+  {% with sb=admission.surgical_booking %}
+  <div class="info-grid">
+    <div class="info-item"><span class="info-label">Procedure</span><span class="info-value">{{ sb.get_procedure_display }}</span></div>
+    <div class="info-item"><span class="info-label">Laterality</span><span class="info-value">{{ sb.eye_laterality|default:"—" }}</span></div>
+    <div class="info-item"><span class="info-label">Surgeon</span><span class="info-value">{% if sb.surgeon %}Dr. {{ sb.surgeon.full_name }}{% else %}—{% endif %}</span></div>
+    <div class="info-item"><span class="info-label">Date</span><span class="info-value">{% if sb.surgery_date %}{{ sb.surgery_date|date:"d M Y" }}{% else %}—{% endif %}</span></div>
+    <div class="info-item"><span class="info-label">Anaesthesia</span><span class="info-value">{{ sb.get_anaesthesia_type_display|default:"—" }}</span></div>
+    <div class="info-item"><span class="info-label">Status</span><span class="info-value">{{ sb.get_status_display }}</span></div>
+  </div>
+  {% if sb.theatre_procedures.exists %}
+  {% with tp=sb.theatre_procedures.first %}
+  {% if tp.iol_model %}
+  <div style="margin-top:6px;font-size:8.5pt;"><strong>IOL:</strong> {{ tp.iol_model }} {{ tp.iol_power }} {% if tp.iol_lot_number %}(Lot: {{ tp.iol_lot_number }}){% endif %}</div>
+  {% endif %}
+  {% if tp.complications %}
+  <div class="alert-red" style="margin-top:6px;"><strong>Complications:</strong> {{ tp.complications }}</div>
+  {% endif %}
+  {% if tp.post_op_notes %}
+  <div style="margin-top:6px;font-size:8.5pt;"><strong>Post-Op Notes:</strong> {{ tp.post_op_notes }}</div>
+  {% endif %}
+  {% endwith %}
+  {% endif %}
+  {% endwith %}
+</div>
+{% endif %}
+
+<!-- Ward Round Summary -->
+{% if ward_rounds %}
+<div class="section">
+  <div class="section-title">Ward Round Summary ({{ ward_rounds|length }} rounds)</div>
+  {% for r in ward_rounds %}
+  <div class="round-item">
+    <div class="round-date">{{ r.round_date|date:"d M Y" }} {% if r.round_time %}{{ r.round_time|time:"H:i" }}{% endif %} — Dr. {{ r.doctor.full_name }}</div>
+    {% if r.vital_signs %}
+    <div class="vitals-grid" style="margin-bottom:5px;">
+      {% if r.vital_signs.bp %}<div class="vital-cell"><div class="vital-val">{{ r.vital_signs.bp }}</div><div class="vital-lab">BP</div></div>{% endif %}
+      {% if r.vital_signs.pulse %}<div class="vital-cell"><div class="vital-val">{{ r.vital_signs.pulse }}</div><div class="vital-lab">Pulse</div></div>{% endif %}
+      {% if r.vital_signs.temp %}<div class="vital-cell"><div class="vital-val">{{ r.vital_signs.temp }}</div><div class="vital-lab">Temp °C</div></div>{% endif %}
+      {% if r.vital_signs.spo2 %}<div class="vital-cell"><div class="vital-val">{{ r.vital_signs.spo2 }}%</div><div class="vital-lab">SpO₂</div></div>{% endif %}
+    </div>
+    {% endif %}
+    {% if r.va_re or r.va_le %}<div style="font-size:8pt;margin-bottom:4px;"><strong>VA:</strong> RE {{ r.va_re|default:"—" }} · LE {{ r.va_le|default:"—" }} {% if r.iop_re or r.iop_le %}&nbsp;|&nbsp;<strong>IOP:</strong> RE {{ r.iop_re|default:"—" }} · LE {{ r.iop_le|default:"—" }}{% endif %}</div>{% endif %}
+    {% if r.assessment %}<div class="soap-block"><div class="soap-label">Assessment</div><div>{{ r.assessment }}</div></div>{% endif %}
+    {% if r.plan %}<div class="soap-block"><div class="soap-label">Plan</div><div>{{ r.plan }}</div></div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Discharge Summary -->
+{% if admission.discharge_summary or last_round %}
+<div class="discharge-box">
+  <h4>Discharge Summary &amp; Instructions</h4>
+  {% if admission.discharge_summary %}
+  <div style="margin-bottom:8px;">{{ admission.discharge_summary }}</div>
+  {% endif %}
+  {% if last_round and last_round.discharge_plan %}
+  <div><strong>Discharge Plan:</strong> {{ last_round.discharge_plan }}</div>
+  {% endif %}
+  {% if last_round and last_round.is_discharge_ready %}
+  <div style="margin-top:6px;color:#166534;font-weight:bold;">&#10003; Cleared for discharge by Dr. {{ last_round.doctor.full_name }}</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Footer -->
+<div class="pdf-footer" style="display:flex;justify-content:space-between;">
+  <span>Generated: {% now "d M Y H:i" %} &nbsp;·&nbsp; {{ hospital_name }}</span>
+  <span>Patient: {{ patient.patient_id }} · Admission: {{ admission.admission_number }} &nbsp;·&nbsp; <strong>CONFIDENTIAL</strong></span>
+</div>
+
+</body>
+</html>

@@ -1,80 +1,121 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}HRMS{% endblock %}
+{% block title %}HRMS — Human Resources{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-people text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Human Resources</h5>
+      <div class="text-muted small">Staff management, leave & attendance</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'hrms:leave_requests' %}" class="btn btn-warning btn-sm"><i class="bi bi-calendar-x me-1"></i>Leave Requests</a>
+    <a href="{% url 'hrms:staff_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-people me-1"></i>Staff List</a>
+    <a href="{% url 'hrms:attendance' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-calendar-check me-1"></i>Attendance</a>
+    <a href="{% url 'hrms:clock_in_out' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-clock me-1"></i>Clock In/Out</a>
+  </div>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Human Resources</h1>
-  <div>
-    <a href="{% url 'hrms:staff_list' %}" class="btn btn-outline-secondary me-2">
-      <i class="bi bi-people me-1"></i>Staff List
-    </a>
-    <a href="{% url 'hrms:attendance' %}" class="btn btn-outline-secondary">
-      <i class="bi bi-calendar-check me-1"></i>Attendance
-    </a>
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #2563eb !important;">
+      <div class="h2 fw-bold text-primary mb-0">{{ total_staff }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-people me-1"></i>Total Active Staff</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #059669 !important;">
+      <div class="h2 fw-bold text-success mb-0">{{ present_today }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-person-check me-1"></i>Present Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #0891b2 !important;">
+      <div class="h2 fw-bold text-info mb-0">{{ on_leave_today }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-airplane me-1"></i>On Leave Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #d97706 !important;">
+      <div class="h2 fw-bold text-warning mb-0">{{ pending_leaves }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-hourglass-split me-1"></i>Pending Leave Requests</div>
+    </div>
   </div>
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3"><div class="h2 fw-bold text-primary">{{ total_staff }}</div><div class="text-muted small">Total Staff</div></div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3"><div class="h2 fw-bold text-success">{{ present_today }}</div><div class="text-muted small">Present Today</div></div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3"><div class="h2 fw-bold text-info">{{ on_leave_today }}</div><div class="text-muted small">On Leave</div></div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3"><div class="h2 fw-bold text-warning">{{ pending_leaves }}</div><div class="text-muted small">Leave Requests Pending</div></div>
-    </div>
-  </div>
+{% if pending_leaves > 0 %}
+<div class="alert alert-warning border-0 d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-bell-fill"></i>
+  <strong>{{ pending_leaves }} leave request{{ pending_leaves|pluralize }} awaiting your review.</strong>
+  <a href="{% url 'hrms:leave_requests' %}" class="ms-2 alert-link">Review now →</a>
 </div>
+{% endif %}
 
 <!-- Recent Leave Requests -->
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-white d-flex justify-content-between">
-    <h6 class="mb-0 fw-semibold">Recent Leave Requests</h6>
-    <a href="{% url 'hrms:leave_requests' %}" class="small">View All</a>
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+    <span class="fw-semibold"><i class="bi bi-calendar-x me-2 text-warning"></i>Recent Leave Requests</span>
+    <a href="{% url 'hrms:leave_requests' %}" class="btn btn-sm btn-outline-secondary">View All</a>
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0 small">
+      <table class="table table-hover align-middle mb-0 small">
         <thead class="table-light">
-          <tr><th>Staff</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th>Action</th></tr>
+          <tr>
+            <th>Staff Member</th>
+            <th>Leave Type</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Days</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {% for leave in recent_leaves %}
           <tr>
-            <td>{{ leave.staff.get_full_name }}</td>
-            <td>{{ leave.leave_type.name }}</td>
-            <td>{{ leave.start_date|date:"d M" }}</td>
-            <td>{{ leave.end_date|date:"d M Y" }}</td>
-            <td>{{ leave.days_requested }}</td>
             <td>
-              {% if leave.status == 'PENDING' %}<span class="badge bg-warning text-dark">Pending</span>
-              {% elif leave.status == 'APPROVED' %}<span class="badge bg-success">Approved</span>
-              {% elif leave.status == 'REJECTED' %}<span class="badge bg-danger">Rejected</span>
+              <div class="fw-semibold">{{ leave.staff.get_full_name }}</div>
+            </td>
+            <td>{{ leave.leave_type.name }}</td>
+            <td>{{ leave.start_date|date:"d M Y" }}</td>
+            <td>{{ leave.end_date|date:"d M Y" }}</td>
+            <td class="fw-semibold">{{ leave.days_requested }}</td>
+            <td>
+              {% if leave.status == 'PENDING' %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% elif leave.status == 'APPROVED' %}
+                <span class="badge bg-success">Approved</span>
+              {% elif leave.status == 'REJECTED' %}
+                <span class="badge bg-danger">Rejected</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ leave.status }}</span>
               {% endif %}
             </td>
             <td>
               {% if leave.status == 'PENDING' %}
-              <a href="{% url 'hrms:approve_leave' leave.id %}" class="btn btn-sm btn-outline-primary">Review</a>
+              <a href="{% url 'hrms:approve_leave' leave.id %}" class="btn btn-sm btn-outline-primary py-0">Review</a>
+              {% else %}
+              <a href="{% url 'hrms:approve_leave' leave.id %}" class="btn btn-sm btn-outline-secondary py-0">View</a>
               {% endif %}
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="7" class="text-center text-muted py-3">No recent leave requests</td></tr>
+          <tr><td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-calendar-check fs-3 d-block mb-2 text-success"></i>
+            No leave requests — all clear!
+          </td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
+
 {% endblock %}
