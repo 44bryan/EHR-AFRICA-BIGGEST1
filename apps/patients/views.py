@@ -880,6 +880,49 @@ def qr_checkin_view(request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Triage Start — nurse finds any patient and begins triage directly
+# Creates today's visit if none exists, then redirects to triage form
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def triage_start_view(request, patient_id):
+    """
+    Triage nurse shortcut: given a patient_id, find or create today's visit
+    and redirect straight to the triage form. No queue token required.
+    """
+    if not request.user.can_do_triage() and not request.user.is_super_admin:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    today = timezone.localdate()
+
+    # Find today's active visit
+    visit = Visit.objects.filter(
+        patient=patient,
+        visit_date__date=today,
+        is_deleted=False,
+    ).exclude(status__in=['COMPLETED', 'DISCHARGED']).order_by('-visit_date').first()
+
+    if not visit:
+        # Create a new visit on the spot
+        from apps.core.utils import generate_visit_number
+        visit = Visit.objects.create(
+            patient=patient,
+            visit_number=generate_visit_number(),
+            visit_date=timezone.now(),
+            visit_type='RETURN',
+            chief_complaint='',
+            status='WAITING',
+            service_tier='STANDARD',
+            billing_type='SELF_PAY',
+        )
+        messages.info(request, f'New visit created for {patient.full_name} — please record chief complaint during triage.')
+
+    return redirect('patients:triage', visit_number=visit.visit_number)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Online Pre-Registration (patient fills form at home, prints slip with QR code)
 # ─────────────────────────────────────────────────────────────────────────────
 

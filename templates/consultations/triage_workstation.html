@@ -1,7 +1,40 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Triage / Parameters Workstation{% endblock %}
 
+{% block extra_css %}
+<style>
+  #triageSearchResults { position:absolute;z-index:1060;width:100%;background:#fff;border:1px solid #dee2e6;border-radius:0 0 8px 8px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:320px;overflow-y:auto;display:none; }
+  #triageSearchResults .t-item { display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f0f0; }
+  #triageSearchResults .t-item:last-child { border-bottom:none; }
+  #triageSearchResults .t-item:hover { background:#f0f9ff; }
+  #triageSearchResults .t-avatar { width:36px;height:36px;border-radius:50%;background:#0891b2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0; }
+  #triageSearchBox { position:relative; }
+</style>
+{% endblock %}
+
 {% block content %}
+
+{# ══ Walk-in / Direct Triage Search ══ #}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #dc3545 !important;">
+  <div class="card-body py-3">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div>
+        <div class="fw-semibold" style="font-size:.95rem;">
+          <i class="bi bi-search-heart me-1 text-danger"></i>Triage Any Patient Directly
+        </div>
+        <div class="text-muted small">Search by name, ID, or phone — no queue token needed</div>
+      </div>
+      <div class="flex-grow-1" style="min-width:260px;max-width:480px;">
+        <div id="triageSearchBox">
+          <input type="text" id="triageSearchInput" class="form-control form-control-sm"
+                 placeholder="Type patient name, ID or phone…" autocomplete="off">
+          <div id="triageSearchResults"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h4 class="fw-bold mb-0">
@@ -258,4 +291,56 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const input   = document.getElementById('triageSearchInput');
+  const results = document.getElementById('triageSearchResults');
+  if (!input) return;
+
+  let timer;
+
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    const q = this.value.trim();
+    if (q.length < 2) { results.style.display = 'none'; return; }
+
+    timer = setTimeout(() => {
+      fetch('/patients/search/?q=' + encodeURIComponent(q))
+        .then(r => r.json())
+        .then(data => {
+          if (!data.results || !data.results.length) {
+            results.innerHTML = '<div class="t-item text-muted small">No patients found</div>';
+            results.style.display = 'block';
+            return;
+          }
+          results.innerHTML = data.results.map(p => {
+            const initials = p.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+            return `<div class="t-item" onclick="window.location='/patients/${p.patient_id}/triage-start/'">
+              <div class="t-avatar">${initials}</div>
+              <div>
+                <div class="fw-semibold" style="font-size:.85rem;">${p.name}</div>
+                <div class="text-muted" style="font-size:.72rem;">${p.patient_id} &middot; ${p.age}yr &middot; ${p.gender}${p.phone ? ' &middot; ' + p.phone : ''}</div>
+              </div>
+              <div class="ms-auto">
+                <span class="badge bg-danger"><i class="bi bi-heart-pulse me-1"></i>Triage</span>
+              </div>
+            </div>`;
+          }).join('');
+          results.style.display = 'block';
+        })
+        .catch(() => { results.style.display = 'none'; });
+    }, 280);
+  });
+
+  // Close on outside click
+  document.addEventListener('click', function (e) {
+    if (!input.contains(e.target) && !results.contains(e.target)) {
+      results.style.display = 'none';
+    }
+  });
+})();
+</script>
 {% endblock %}

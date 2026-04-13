@@ -18,6 +18,7 @@ urlpatterns = [
     # ── Patient-specific routes ─────────────────────────────────────────────
     path('visit/<str:visit_number>/', views.visit_detail_view, name='visit_detail'),
     path('visit/<str:visit_number>/triage/', views.triage_view, name='triage'),
+    path('<str:patient_id>/triage-start/', views.triage_start_view, name='triage_start'),
     path('visit/<str:visit_number>/discharge/', views.discharge_view, name='discharge'),
     path('<str:patient_id>/', views.patient_detail_view, name='detail'),
     path('<str:patient_id>/edit/', views.patient_edit_view, name='edit'),
