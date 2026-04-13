@@ -31,8 +31,8 @@
   </div>
   {# ── Tier filter + Triage button ── #}
   <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
-    <button class="btn btn-danger btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#triagePatientModal">
-      <i class="bi bi-heart-pulse me-1"></i>Triage Patient
+    <button class="btn btn-light btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#triagePatientModal">
+      <i class="bi bi-heart-pulse me-1 text-danger"></i>Triage Patient
     </button>
     <div class="vr"></div>
     <a href="?tier=STANDARD"
@@ -102,6 +102,10 @@
     </div>
   </div>
 </div>
+
+{# ══ Two-column layout: queues (left) + history (right) ══ #}
+<div class="row g-4">
+<div class="col-lg-8">
 
 {% if show_mode == 'VIP' and not assigned_counter %}
 <div class="alert alert-warning py-2 small mb-3">
@@ -295,6 +299,58 @@
   {% endif %}
 </div>
 {% endif %}
+
+</div>{# /col-lg-8 left column #}
+
+{# ══ Right column: Today's triage history ══ #}
+<div class="col-lg-4">
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+      <h6 class="mb-0 fw-semibold">
+        <i class="bi bi-clock-history me-2 text-danger"></i>My Triage Today
+      </h6>
+      <span class="badge bg-danger rounded-pill">{{ triaged_today }}</span>
+    </div>
+    {% if triaged_visits %}
+    <div class="list-group list-group-flush" style="max-height:520px;overflow-y:auto;">
+      {% for v in triaged_visits %}
+      <a href="{% url 'patients:visit_detail' visit_number=v.visit_number %}"
+         class="list-group-item list-group-item-action py-2 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-semibold" style="font-size:.85rem;">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">
+              {{ v.patient.patient_id }}
+              {% if v.chief_complaint %}&nbsp;&bull;&nbsp;{{ v.chief_complaint|truncatechars:30 }}{% endif %}
+            </div>
+          </div>
+          <div class="text-end ms-2" style="flex-shrink:0;">
+            <div style="font-size:.72rem;color:#64748b;">{{ v.visit_date|time:"H:i" }}</div>
+            <span class="badge bg-light text-dark border" style="font-size:.62rem;">
+              {{ v.get_status_display }}
+            </span>
+          </div>
+        </div>
+        {% if v.vital_signs %}
+        <div class="mt-1 d-flex gap-2 flex-wrap" style="font-size:.68rem;color:#64748b;">
+          {% if v.vital_signs.blood_pressure %}<span><i class="bi bi-heart-pulse me-1"></i>BP: {{ v.vital_signs.blood_pressure }}</span>{% endif %}
+          {% if v.vital_signs.temperature %}<span><i class="bi bi-thermometer me-1"></i>{{ v.vital_signs.temperature }}°C</span>{% endif %}
+          {% if v.vital_signs.pulse %}<span><i class="bi bi-activity me-1"></i>{{ v.vital_signs.pulse }}bpm</span>{% endif %}
+        </div>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card-body text-center text-muted py-5">
+      <i class="bi bi-clipboard2-pulse fs-2 d-block mb-2"></i>
+      No patients triaged yet today.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+</div>{# /row #}
 
 {% endblock %}
 

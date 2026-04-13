@@ -575,12 +575,13 @@ def triage_workstation_view(request):
         for token in all_tokens:
             token.active_visit = active_visits.get(token.patient_id) if token.patient_id else None
 
-    # ── Nurse's personal stats ─────────────────────────────────────────────────
-    triaged_today = Visit.objects.filter(
+    # ── Nurse's personal stats + history ─────────────────────────────────────
+    triaged_visits = Visit.objects.filter(
         visit_date__date=today,
         triage_nurse=request.user,
         is_deleted=False,
-    ).count()
+    ).select_related('patient').order_by('-visit_date')
+    triaged_today = triaged_visits.count()
 
     # ── Tier breakdown for stats strip ────────────────────────────────────────
     all_today = QueueToken.objects.filter(
@@ -595,6 +596,7 @@ def triage_workstation_view(request):
         'parameters_queue': parameters_queue,
         'vip_params_queue': vip_params_queue,
         'triaged_today': triaged_today,
+        'triaged_visits': triaged_visits,
         'today': today,
         'show_mode': show_mode,
         'assigned_counter': assigned_counter,
