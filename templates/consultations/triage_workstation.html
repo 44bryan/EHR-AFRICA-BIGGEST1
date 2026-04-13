@@ -6,34 +6,13 @@
   #triageSearchResults { position:absolute;z-index:1060;width:100%;background:#fff;border:1px solid #dee2e6;border-radius:0 0 8px 8px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:320px;overflow-y:auto;display:none; }
   #triageSearchResults .t-item { display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f0f0; }
   #triageSearchResults .t-item:last-child { border-bottom:none; }
-  #triageSearchResults .t-item:hover { background:#f0f9ff; }
-  #triageSearchResults .t-avatar { width:36px;height:36px;border-radius:50%;background:#0891b2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0; }
+  #triageSearchResults .t-item:hover { background:#fff5f5; }
+  #triageSearchResults .t-avatar { width:38px;height:38px;border-radius:50%;background:#dc3545;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0; }
   #triageSearchBox { position:relative; }
 </style>
 {% endblock %}
 
 {% block content %}
-
-{# ══ Walk-in / Direct Triage Search ══ #}
-<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #dc3545 !important;">
-  <div class="card-body py-3">
-    <div class="d-flex align-items-center gap-3 flex-wrap">
-      <div>
-        <div class="fw-semibold" style="font-size:.95rem;">
-          <i class="bi bi-search-heart me-1 text-danger"></i>Triage Any Patient Directly
-        </div>
-        <div class="text-muted small">Search by name, ID, or phone — no queue token needed</div>
-      </div>
-      <div class="flex-grow-1" style="min-width:260px;max-width:480px;">
-        <div id="triageSearchBox">
-          <input type="text" id="triageSearchInput" class="form-control form-control-sm"
-                 placeholder="Type patient name, ID or phone…" autocomplete="off">
-          <div id="triageSearchResults"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
@@ -50,8 +29,12 @@
       {% endif %}
     </div>
   </div>
-  {# ── Tier filter buttons ── #}
-  <div class="d-flex gap-1">
+  {# ── Tier filter + Triage button ── #}
+  <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+    <button class="btn btn-danger btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#triagePatientModal">
+      <i class="bi bi-heart-pulse me-1"></i>Triage Patient
+    </button>
+    <div class="vr"></div>
     <a href="?tier=STANDARD"
        class="btn btn-sm {% if show_mode == 'STANDARD' %}btn-primary{% else %}btn-outline-primary{% endif %}">
       <i class="bi bi-person me-1"></i>Standard
@@ -65,6 +48,28 @@
        class="btn btn-sm {% if show_mode == 'ALL' %}btn-dark{% else %}btn-outline-dark{% endif %}">
       <i class="bi bi-grid me-1"></i>All Tiers
     </a>
+  </div>
+</div>
+
+{# ══ Triage Patient Modal ══ #}
+<div class="modal fade" id="triagePatientModal" tabindex="-1" aria-labelledby="triagePatientModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white py-2">
+        <h6 class="modal-title fw-bold" id="triagePatientModalLabel">
+          <i class="bi bi-heart-pulse me-2"></i>Triage a Patient
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">Search by name, patient ID or phone number. No queue token needed.</p>
+        <div id="triageSearchBox">
+          <input type="text" id="triageSearchInput" class="form-control"
+                 placeholder="Type patient name, ID or phone…" autocomplete="off">
+          <div id="triageSearchResults"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -296,12 +301,21 @@
 {% block extra_js %}
 <script>
 (function () {
-  const input   = document.getElementById('triageSearchInput');
-  const results = document.getElementById('triageSearchResults');
+  const modal  = document.getElementById('triagePatientModal');
+  const input  = document.getElementById('triageSearchInput');
+  const results= document.getElementById('triageSearchResults');
   if (!input) return;
 
-  let timer;
+  // Auto-focus input when modal opens, clear previous results
+  if (modal) {
+    modal.addEventListener('shown.bs.modal', function () {
+      input.value = '';
+      results.style.display = 'none';
+      input.focus();
+    });
+  }
 
+  let timer;
   input.addEventListener('input', function () {
     clearTimeout(timer);
     const q = this.value.trim();
@@ -312,7 +326,7 @@
         .then(r => r.json())
         .then(data => {
           if (!data.results || !data.results.length) {
-            results.innerHTML = '<div class="t-item text-muted small">No patients found</div>';
+            results.innerHTML = '<div class="t-item text-muted small py-3 px-3">No patients found</div>';
             results.style.display = 'block';
             return;
           }
@@ -320,26 +334,17 @@
             const initials = p.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
             return `<div class="t-item" onclick="window.location='/patients/${p.patient_id}/triage-start/'">
               <div class="t-avatar">${initials}</div>
-              <div>
-                <div class="fw-semibold" style="font-size:.85rem;">${p.name}</div>
+              <div style="flex:1;">
+                <div class="fw-semibold" style="font-size:.88rem;">${p.name}</div>
                 <div class="text-muted" style="font-size:.72rem;">${p.patient_id} &middot; ${p.age}yr &middot; ${p.gender}${p.phone ? ' &middot; ' + p.phone : ''}</div>
               </div>
-              <div class="ms-auto">
-                <span class="badge bg-danger"><i class="bi bi-heart-pulse me-1"></i>Triage</span>
-              </div>
+              <span class="badge bg-danger"><i class="bi bi-heart-pulse me-1"></i>Triage</span>
             </div>`;
           }).join('');
           results.style.display = 'block';
         })
         .catch(() => { results.style.display = 'none'; });
     }, 280);
-  });
-
-  // Close on outside click
-  document.addEventListener('click', function (e) {
-    if (!input.contains(e.target) && !results.contains(e.target)) {
-      results.style.display = 'none';
-    }
   });
 })();
 </script>
