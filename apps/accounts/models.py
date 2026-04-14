@@ -337,6 +337,22 @@ class User(AbstractUser):
     def can_do_triage(self):
         return self.role in self.NURSE_ROLES or self.is_medical_director
 
+    def can_dispatch_patient(self):
+        """Any clinical staff can route/dispatch a patient to any unit."""
+        return (
+            self.role in self.DOCTOR_ROLES
+            or self.role in self.NURSE_ROLES
+            or self.role in (
+                UserRole.INVESTIGATION_TECHNICIAN,
+                UserRole.LAB_TECHNICIAN,
+                UserRole.PHARMACIST,
+                UserRole.OPTICAL_DISPENSER,
+                UserRole.RECEPTIONIST,
+                UserRole.ADMISSION_OFFICER,
+            )
+            or self.is_super_admin
+        )
+
     def can_order_investigations(self):
         return self.is_super_admin or self.is_executive or self.role in self.DOCTOR_ROLES
 

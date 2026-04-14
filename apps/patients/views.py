@@ -402,7 +402,11 @@ def visit_detail_view(request, visit_number):
 
 @login_required
 def triage_view(request, visit_number):
-    """OPD Nurse records vitals and dispatches patient to any unit — Step 3."""
+    """Any clinical staff can record vitals and dispatch patient to any unit."""
+    if not request.user.can_dispatch_patient() and not request.user.is_super_admin:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("You do not have permission to dispatch patients.")
+
     visit = get_object_or_404(Visit, visit_number=visit_number)
 
     from apps.departments.models import Department
