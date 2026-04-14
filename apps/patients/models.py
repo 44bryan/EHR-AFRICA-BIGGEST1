@@ -435,3 +435,26 @@ class Visit(AuditModel):
     @property
     def iop_left(self):
         return self.vital_signs.get('intraocular_pressure_left', 'N/R')
+
+
+class PreRegistration(models.Model):
+    """
+    Stores patient pre-registration data in the database so any
+    receptionist can look it up by code — session-independent.
+    """
+    code        = models.CharField(max_length=20, unique=True, db_index=True)
+    data        = models.JSONField()
+    created_at  = models.DateTimeField(auto_now_add=True)
+    expires_at  = models.DateTimeField()
+    is_used     = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'PreReg {self.code}'
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        return timezone.now() > self.expires_at

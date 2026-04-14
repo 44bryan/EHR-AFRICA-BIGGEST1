@@ -1014,8 +1014,10 @@ def preregistration_view(request):
                     dest.write(chunk)
             referral_doc_path = f'prereg_referrals/{safe_name}'
 
-        # Store ALL fields in session — receptionist gets full auto-fill on scan
-        request.session[f'prereg_{code}'] = {
+        # Save ALL fields to DB — any receptionist can look it up by code
+        from django.utils import timezone as _tz
+        import datetime as _dt
+        prereg_data = {
             'code':                  code,
             'first_name':            first_name,
             'middle_name':           middle_name,
@@ -1047,7 +1049,12 @@ def preregistration_view(request):
             'has_referral_letter':   has_referral_letter,
             'referral_doc_path':     referral_doc_path,
         }
-        request.session.modified = True
+        from .models import PreRegistration
+        PreRegistration.objects.create(
+            code=code,
+            data=prereg_data,
+            expires_at=_tz.now() + _dt.timedelta(days=30),
+        )
         return redirect(f'/patients/prereg/{code}/slip/')
 
     from django.conf import settings
@@ -1070,8 +1077,15 @@ def preregistration_slip_view(request, code):
     """
     from django.conf import settings
     import datetime
+    from .models import PreRegistration
 
-    data = request.session.get(f'prereg_{code}')
+    try:
+        prereg = PreRegistration.objects.get(code=code.upper())
+        data = prereg.data
+    except PreRegistration.DoesNotExist:
+        # Fallback to session for backwards compatibility
+        data = request.session.get(f'prereg_{code}')
+
     if not data:
         from .forms import CAMEROON_REGIONS
         return render(request, 'patients/prereg.html', {
@@ -1097,12 +1111,26 @@ def preregistration_lookup_view(request):
     """
     Receptionist scans / types barcode code → auto-fills registration form.
     """
+    from .models import PreRegistration
+
+    def _get_prereg_data(code):
+        """Fetch from DB first, fallback to session."""
+        if not code:
+            return None
+        try:
+            prereg = PreRegistration.objects.get(code=code, is_used=False)
+            if prereg.is_expired:
+                return None
+            return prereg.data
+        except PreRegistration.DoesNotExist:
+            return request.session.get(f'prereg_{code}')
+
     code = request.GET.get('code', '').strip().upper()
-    data = request.session.get(f'prereg_{code}') if code else None
+    data = _get_prereg_data(code)
 
     if request.method == 'POST':
         code = request.POST.get('code', '').strip().upper()
-        data = request.session.get(f'prereg_{code}')
+        data = _get_prereg_data(code)
         if not data:
             messages.error(request, f'Pre-registration code "{code}" not found or expired.')
             return render(request, 'patients/prereg_lookup.html', {'code': code})
@@ -1150,6 +1178,11 @@ def preregistration_lookup_view(request):
             'has_referral_letter':  data.get('has_referral_letter', ''),
             'prereg_code':          code,
         }.items() if v})
+        # Mark as used in DB
+        try:
+            PreRegistration.objects.filter(code=code).update(is_used=True)
+        except Exception:
+            pass
         messages.success(request, f'Pre-registration found for {data["first_name"]} {data["last_name"]}. Verify details and click Register.')
         return redirect(f'/patients/register/?{params}')
 
