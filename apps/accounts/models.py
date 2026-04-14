@@ -398,6 +398,46 @@ class User(AbstractUser):
         )
 
 
+class HospitalConfig(models.Model):
+    """
+    Singleton model — one row, managed by Super Admin.
+    Controls which optional modules are active for this hospital installation.
+    Think of it as the licence/feature-flag control panel.
+    """
+    # ── Core modules (always on) ─────────────────────────
+    # patients, consultations, billing, reception are NOT toggleable.
+
+    # ── Optional clinical modules ────────────────────────
+    module_ai           = models.BooleanField(default=True,  verbose_name='AI Assistant')
+    module_qms          = models.BooleanField(default=True,  verbose_name='Queue Management System')
+    module_pharmacy     = models.BooleanField(default=True,  verbose_name='Pharmacy')
+    module_laboratory   = models.BooleanField(default=True,  verbose_name='Laboratory')
+    module_ipd          = models.BooleanField(default=True,  verbose_name='Inpatient (IPD / Surgical)')
+    module_opticals     = models.BooleanField(default=True,  verbose_name='Optical Dispensary')
+
+    # ── Optional operational modules ────────────────────
+    module_cssd         = models.BooleanField(default=True,  verbose_name='CSSD (Sterilization)')
+    module_inventory    = models.BooleanField(default=True,  verbose_name='Inventory & Pilferage Protection')
+    module_hrms         = models.BooleanField(default=True,  verbose_name='HR Management (HRMS)')
+
+    # ── Optional engagement modules ─────────────────────
+    module_outreach     = models.BooleanField(default=True,  verbose_name='Outreach & Community')
+    module_feedback     = models.BooleanField(default=True,  verbose_name='Patient Feedback & NPS')
+    module_leads        = models.BooleanField(default=True,  verbose_name='Lead Management (CRM)')
+
+    class Meta:
+        verbose_name = 'Hospital Configuration'
+
+    def __str__(self):
+        return 'Hospital Configuration'
+
+    @classmethod
+    def get(cls):
+        """Always returns the singleton config row (creates if missing)."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class UserAuditLog(models.Model):
     """Records every significant action taken by users."""
 

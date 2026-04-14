@@ -10,11 +10,12 @@ def cssd_dashboard(request):
         return Instrument.objects.filter(status=status, is_deleted=False).count()
 
     status_pipeline = [
-        (ic(InstrumentStatus.IN_USE),       'In Use',        '#2563eb', 'bi-person-badge'),
-        (ic(InstrumentStatus.DIRTY),        'Returned/Dirty','#dc2626', 'bi-exclamation-triangle'),
-        (ic(InstrumentStatus.MAINTENANCE),  'Decon/Washing', '#d97706', 'bi-droplet'),
-        (ic(InstrumentStatus.PACKING if hasattr(InstrumentStatus, 'PACKING') else InstrumentStatus.MAINTENANCE), 'Packing', '#7c3aed', 'bi-box'),
-        (ic(InstrumentStatus.AVAILABLE),    'Sterile/Ready', '#059669', 'bi-shield-check'),
+        (ic(InstrumentStatus.IN_USE),        'In Use',         '#2563eb', 'bi-person-badge'),
+        (ic(InstrumentStatus.DIRTY),         'Returned/Dirty', '#dc2626', 'bi-exclamation-triangle'),
+        (ic(InstrumentStatus.WASHING),       'Decon/Washing',  '#d97706', 'bi-droplet'),
+        (ic(InstrumentStatus.STERILIZING),   'Sterilizing',    '#7c3aed', 'bi-thermometer-half'),
+        (ic(InstrumentStatus.PACKING),       'Packing',        '#0891b2', 'bi-box'),
+        (ic(InstrumentStatus.AVAILABLE),     'Sterile/Ready',  '#059669', 'bi-shield-check'),
     ]
 
     context = {

@@ -396,3 +396,89 @@ def two_fa_setup_view(request):
         'pending': bool(request.session.get('_2fa_pending_secret')),
         'error': error,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# System Module Settings (Super Admin only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MODULE_META = [
+    # (field_name, icon, title, description, tier)
+    # tier: 'core' | 'clinical' | 'operational' | 'engagement'
+    ('module_ai',        'bi-robot',           'AI Assistant',
+     'Groq-powered clinical AI: drug checker, diagnostic support, case summaries.',
+     'clinical'),
+    ('module_qms',       'bi-ticket-perforated','Queue Management System',
+     'Patient token queue, TV display, department routing & waiting-time analytics.',
+     'clinical'),
+    ('module_pharmacy',  'bi-capsule',          'Pharmacy',
+     'Dispensing, drug stock, expiry alerts and prescription fulfilment.',
+     'clinical'),
+    ('module_laboratory','bi-eyedropper',       'Laboratory',
+     'Test requests, results entry, critical-value alerts and reporting.',
+     'clinical'),
+    ('module_ipd',       'bi-hospital',         'Inpatient / Surgical (IPD)',
+     'Ward admissions, bed management, surgical bookings and theatre scheduling.',
+     'clinical'),
+    ('module_opticals',  'bi-eyeglasses',       'Optical Dispensary',
+     'Frame & lens inventory, spectacle prescriptions, optical sales.',
+     'clinical'),
+    ('module_cssd',      'bi-shield-check',     'CSSD — Sterilisation',
+     'Instrument tracking, sterilization cycle logging and dispatch management.',
+     'operational'),
+    ('module_inventory', 'bi-box-seam',         'Inventory & Pilferage Protection',
+     'Medical supply stock, requisitions, pilferage alerts and reorder management.',
+     'operational'),
+    ('module_hrms',      'bi-people',           'HR Management (HRMS)',
+     'Staff records, leave management, payroll and performance tracking.',
+     'operational'),
+    ('module_outreach',  'bi-geo-alt',          'Outreach & Community',
+     'Outreach campaign planning, community screening records and field reports.',
+     'engagement'),
+    ('module_feedback',  'bi-star-half',        'Patient Feedback & NPS',
+     'Post-visit satisfaction surveys, NPS tracking and service recovery.',
+     'engagement'),
+    ('module_leads',     'bi-funnel',           'Lead Management (CRM)',
+     'Track prospective patients, referral sources and conversion analytics.',
+     'engagement'),
+]
+
+
+@login_required
+def system_modules_view(request):
+    """Super-admin module toggle page."""
+    from .models import HospitalConfig
+    user = request.user
+    if not user.is_super_admin:
+        return HttpResponseForbidden('Super Administrator access required.')
+
+    cfg = HospitalConfig.get()
+
+    if request.method == 'POST':
+        for field, *_ in _MODULE_META:
+            setattr(cfg, field, field in request.POST)
+        cfg.save()
+        messages.success(request, 'Module settings saved.')
+        return redirect('accounts:system_modules')
+
+    # Group modules by tier for display
+    tiers = {}
+    for field, icon, title, desc, tier in _MODULE_META:
+        tiers.setdefault(tier, []).append({
+            'field': field,
+            'icon': icon,
+            'title': title,
+            'desc': desc,
+            'enabled': getattr(cfg, field, True),
+        })
+
+    tier_order = [
+        ('clinical',    'Clinical Modules',    'bi-heart-pulse',    'Modules used by doctors, nurses and clinical staff.'),
+        ('operational', 'Operational Modules', 'bi-gear',           'Back-office and operations management.'),
+        ('engagement',  'Engagement Modules',  'bi-chat-heart',     'Patient relationship, feedback and outreach.'),
+    ]
+
+    return render(request, 'accounts/system_modules.html', {
+        'tiers': [(key, label, icon, desc, tiers.get(key, [])) for key, label, icon, desc in tier_order],
+        'cfg': cfg,
+    })

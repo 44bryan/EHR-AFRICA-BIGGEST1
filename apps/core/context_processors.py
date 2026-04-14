@@ -19,6 +19,16 @@ def hospital_settings(request):
     }
 
 
+def hospital_modules(request):
+    """Inject active-module flags into every template as `modules`."""
+    try:
+        from apps.accounts.models import HospitalConfig
+        cfg = HospitalConfig.get()
+    except Exception:
+        cfg = None
+    return {'modules': cfg}
+
+
 def user_notifications(request):
     """Inject unread notification count for authenticated users."""
     if not request.user.is_authenticated:

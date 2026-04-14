@@ -19,4 +19,6 @@ urlpatterns = [
     # Two-Factor Authentication
     path('2fa/verify/', views.two_fa_verify_view, name='two_fa_verify'),
     path('2fa/setup/', views.two_fa_setup_view, name='two_fa_setup'),
+    # System Module Settings
+    path('system/modules/', views.system_modules_view, name='system_modules'),
 ]

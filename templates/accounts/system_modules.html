@@ -1,0 +1,131 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}System Modules — Super Admin{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-toggles text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">System Module Settings</h5>
+      <div class="text-muted small">Enable or disable features for this hospital installation</div>
+    </div>
+  </div>
+  <span class="badge bg-danger px-3 py-2">
+    <i class="bi bi-shield-lock me-1"></i>Super Administrator Only
+  </span>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post">
+{% csrf_token %}
+
+<!-- Info banner -->
+<div class="alert alert-info border-0 d-flex align-items-start gap-3 mb-4" style="background:#eff6ff;border-left:4px solid #2563eb !important;border-radius:12px;">
+  <i class="bi bi-info-circle-fill text-primary mt-1" style="font-size:1.2rem;flex-shrink:0;"></i>
+  <div>
+    <strong>Flexible module licensing</strong> — Turn off any module your hospital does not use.
+    Disabled modules are completely hidden from all staff accounts — menus, links and pages disappear instantly.
+    Core functions (Patients, Consultations, Billing, Reception) are always on.
+  </div>
+</div>
+
+{% for tier_key, tier_label, tier_icon, tier_desc, module_list in tiers %}
+{% if module_list %}
+<div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden;">
+  <!-- Tier header -->
+  <div class="card-header border-0 py-3 px-4"
+       style="background:linear-gradient(135deg,#f8fafc,#f0f9ff);">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi {{ tier_icon }} text-primary fs-5"></i>
+      <div>
+        <div class="fw-bold text-dark">{{ tier_label }}</div>
+        <div class="text-muted" style="font-size:.78rem;">{{ tier_desc }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-body p-0">
+    {% for mod in module_list %}
+    <div class="d-flex align-items-center gap-3 px-4 py-3
+      {% if not forloop.last %}border-bottom{% endif %}
+      module-row {% if mod.enabled %}module-on{% else %}module-off{% endif %}"
+      style="transition:background .15s;">
+
+      <!-- Icon -->
+      <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+           style="width:44px;height:44px;
+                  background:{% if mod.enabled %}linear-gradient(135deg,#2563eb,#0891b2){% else %}#e2e8f0{% endif %};">
+        <i class="bi {{ mod.icon }}" style="color:{% if mod.enabled %}#fff{% else %}#94a3b8{% endif %};font-size:1.15rem;"></i>
+      </div>
+
+      <!-- Text -->
+      <div class="flex-grow-1">
+        <div class="fw-semibold {% if not mod.enabled %}text-muted{% endif %}" style="font-size:.92rem;">
+          {{ mod.title }}
+          {% if mod.enabled %}
+          <span class="badge ms-1" style="background:#dcfce7;color:#166534;font-size:.65rem;">Active</span>
+          {% else %}
+          <span class="badge ms-1" style="background:#fee2e2;color:#991b1b;font-size:.65rem;">Disabled</span>
+          {% endif %}
+        </div>
+        <div class="text-muted" style="font-size:.78rem;">{{ mod.desc }}</div>
+      </div>
+
+      <!-- Toggle switch -->
+      <div class="form-check form-switch m-0 flex-shrink-0">
+        <input class="form-check-input module-toggle" type="checkbox"
+               name="{{ mod.field }}" id="{{ mod.field }}"
+               {% if mod.enabled %}checked{% endif %}
+               style="width:3rem;height:1.5rem;cursor:pointer;"
+               onchange="markRow(this)">
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+<!-- Save bar (sticky) -->
+<div class="d-flex justify-content-between align-items-center p-3 rounded-3 shadow"
+     style="position:sticky;bottom:16px;background:#1e293b;z-index:10;">
+  <div class="text-white" style="font-size:.85rem;">
+    <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+    Changes take effect immediately for all staff.
+  </div>
+  <button type="submit" class="btn btn-primary px-4 fw-bold">
+    <i class="bi bi-floppy me-2"></i>Save Module Settings
+  </button>
+</div>
+
+</form>
+
+<script>
+function markRow(chk) {
+  const row = chk.closest('.module-row');
+  const icon = row.querySelector('.rounded-3');
+  const badge = row.querySelector('.badge');
+  const label = row.querySelector('.fw-semibold');
+  const bi = icon.querySelector('i');
+
+  if (chk.checked) {
+    row.classList.replace('module-off', 'module-on');
+    icon.style.background = 'linear-gradient(135deg,#2563eb,#0891b2)';
+    bi.style.color = '#fff';
+    badge.style.background = '#dcfce7';
+    badge.style.color = '#166534';
+    badge.textContent = 'Active';
+    label.classList.remove('text-muted');
+  } else {
+    row.classList.replace('module-on', 'module-off');
+    icon.style.background = '#e2e8f0';
+    bi.style.color = '#94a3b8';
+    badge.style.background = '#fee2e2';
+    badge.style.color = '#991b1b';
+    badge.textContent = 'Disabled';
+    label.classList.add('text-muted');
+  }
+}
+</script>
+{% endblock %}
