@@ -249,13 +249,27 @@
 
           {# ── Section 3: Dispatch ── #}
           <div class="fw-semibold text-uppercase text-muted mb-2" style="font-size:.7rem;letter-spacing:.06em;">
-            <i class="bi bi-signpost-split me-1"></i>Dispatch to Unit
+            <i class="bi bi-signpost-split me-1"></i>Dispatch to Unit — send patient anywhere
           </div>
           <div class="row g-3 mb-4">
-            <div class="col-md-6">
+            <div class="col-12">
               <label class="form-label fw-semibold small">Send Patient To <span class="text-danger">*</span></label>
-              <select name="dispatch_department" class="form-select" required>
-                <option value="">— Select Department / Unit —</option>
+
+              {# Quick-route buttons — direct service queues #}
+              <div class="mb-2 d-flex flex-wrap gap-2" id="quickRouteButtons">
+                {% for route in direct_routes %}
+                <button type="button"
+                  class="btn btn-sm btn-outline-primary quick-route-btn"
+                  data-service="{{ route.code }}"
+                  onclick="selectRoute('direct', '', '{{ route.code }}', '{{ route.label }}', this)">
+                  {{ route.label }}
+                </button>
+                {% endfor %}
+              </div>
+
+              {# Department dropdown #}
+              <select name="dispatch_department" id="dispatch_department" class="form-select mb-1" onchange="selectRoute('dept', this.value, '', this.options[this.selectedIndex].text, null)">
+                <option value="">— Or choose a Clinic / Department —</option>
                 {% for dept in departments %}
                 <option value="{{ dept.pk }}"
                   {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>
@@ -263,7 +277,17 @@
                 </option>
                 {% endfor %}
               </select>
-              <div class="form-text">Assign to correct clinic/unit after triage</div>
+
+              {# Hidden field for direct service #}
+              <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
+
+              <div id="routeConfirm" class="d-none mt-1">
+                <span class="badge bg-success fs-6">
+                  <i class="bi bi-arrow-right-circle me-1"></i>
+                  Routing to: <span id="routeLabel"></span>
+                </span>
+              </div>
+              <div class="form-text">Pick a quick route button OR choose from the department list</div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold small">Urgency / Priority</label>
@@ -315,6 +339,52 @@
 
 {% block extra_js %}
 <script>
+// ── Flexible routing ──────────────────────────────────────────────────────────
+function selectRoute(type, deptId, serviceCode, label, btn) {
+  const deptSel   = document.getElementById('dispatch_department');
+  const directInp = document.getElementById('dispatch_direct');
+  const confirm   = document.getElementById('routeConfirm');
+  const lbl       = document.getElementById('routeLabel');
+
+  // Clear all quick-route button highlights
+  document.querySelectorAll('.quick-route-btn').forEach(b => {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-outline-primary');
+  });
+
+  if (type === 'direct') {
+    // Direct service selected — clear department dropdown
+    deptSel.value  = '';
+    directInp.value = serviceCode;
+    if (btn) {
+      btn.classList.remove('btn-outline-primary');
+      btn.classList.add('btn-primary');
+    }
+  } else {
+    // Department selected — clear direct service
+    directInp.value = '';
+  }
+
+  if (deptId || serviceCode) {
+    lbl.textContent = label;
+    confirm.classList.remove('d-none');
+  } else {
+    confirm.classList.add('d-none');
+  }
+}
+
+// Validate at least one route chosen on submit
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('triageForm').addEventListener('submit', function(e) {
+    const dept   = document.getElementById('dispatch_department').value;
+    const direct = document.getElementById('dispatch_direct').value;
+    if (!dept && !direct) {
+      e.preventDefault();
+      alert('Please select where to send the patient — choose a quick route or a department.');
+    }
+  });
+});
+
 // ── Quick vitals templates ────────────────────────────────────────────────────
 const templates = {
   postop: {

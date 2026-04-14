@@ -402,16 +402,30 @@ def visit_detail_view(request, visit_number):
 
 @login_required
 def triage_view(request, visit_number):
-    """OPD Nurse records vitals and dispatches patient to a department — Step 3."""
+    """OPD Nurse records vitals and dispatches patient to any unit — Step 3."""
     visit = get_object_or_404(Visit, visit_number=visit_number)
 
     from apps.departments.models import Department
-    departments = Department.objects.filter(is_active=True).order_by('name')
+    from apps.qms.models import ServiceType
+    departments = Department.objects.filter(is_active=True).order_by('display_order', 'name')
+
+    # All routable destinations: departments + direct service queues
+    # Nurse can pick ANY of these regardless of patient tier or path
+    direct_routes = [
+        {'code': 'REFRACTION',  'label': 'Refraction / TSO'},
+        {'code': 'INVEST',      'label': 'Eye Investigations'},
+        {'code': 'LAB',         'label': 'Laboratory'},
+        {'code': 'PHARMACY',    'label': 'Pharmacy'},
+        {'code': 'CASHIER',     'label': 'Cashier / Payment'},
+        {'code': 'VIP_CONSULT', 'label': 'VIP Consultation Room'},
+        {'code': 'EXP_CONSULT', 'label': 'Express Consultation Room'},
+    ]
 
     if request.method == 'POST':
         form = VitalSignsForm(request.POST)
-        dept_id = request.POST.get('dispatch_department')
-        priority = request.POST.get('priority', 'NORMAL')
+        dept_id        = request.POST.get('dispatch_department', '').strip()
+        direct_service = request.POST.get('dispatch_direct', '').strip()
+        priority       = request.POST.get('priority', 'NORMAL')
 
         if form.is_valid():
             cd = form.cleaned_data
@@ -437,19 +451,10 @@ def triage_view(request, visit_number):
 
             visit.save(update_fields=['vital_signs', 'status', 'triage_nurse', 'department', 'updated_at'])
 
-            # ── QMS Integration: create department queue token ────────────────
-            # Tier-aware routing:
-            #   GEN_OPH → VIP gets VIP_CONSULT room, Express/FT gets EXP_CONSULT room,
-            #             Standard gets GENERAL queue
-            #   Specialist depts (RETINA, GLAUCOMA, etc.) → shared queue but tier
-            #             priority ensures Express/FT/VIP go ahead of Standard patients
-            _TIER_CONSULT_MAP = {
-                'VIP':        'VIP_CONSULT',
-                'EXPRESS':    'EXP_CONSULT',
-                'FAST_TRACK': 'EXP_CONSULT',
-            }
-            # Departments where VIP/Express get their own room
-            _TIER_SEPARATED_DEPTS = {'GEN_OPH', 'LOW_VIS', 'REFRAC'}
+            # ── QMS Integration: flexible routing ─────────────────────────────
+            # Priority 1: nurse picked a direct service (REFRACTION, LAB, etc.)
+            # Priority 2: dept has a known service type mapping
+            # Priority 3: use dept code as service type (covers future depts)
 
             _DEPT_TO_SERVICE_TYPE = {
                 'GEN_OPH':    'GENERAL',
@@ -464,53 +469,56 @@ def triage_view(request, visit_number):
                 'CATARACT':   'CATARACT',
                 'INVEST':     'INVEST',
                 'LAB':        'LAB',
+                'PHARMACY':   'PHARMACY',
+                'CASHIER':    'CASHIER',
             }
-            if dept:
-                base_service_type = _DEPT_TO_SERVICE_TYPE.get(dept.code)
-                # VIP/Express get dedicated consultation rooms for GEN_OPH
-                if dept.code in _TIER_SEPARATED_DEPTS and visit.service_tier in _TIER_CONSULT_MAP:
-                    service_type = _TIER_CONSULT_MAP[visit.service_tier]
-                else:
-                    service_type = base_service_type
-                if service_type:
-                    from apps.qms.models import (
-                        QueueToken, DailyTokenSequence, IssuancePoint,
-                        TIER_PRIORITY, TokenStatus,
-                    )
-                    from django.utils import timezone as _tz
-                    # Find entry token so display_token_number works correctly
-                    today = _tz.localdate()
-                    entry_token = QueueToken.objects.filter(
-                        patient=visit.patient,
-                        issued_at__date=today,
-                        issuance_point__in=[
-                            IssuancePoint.GATE, IssuancePoint.VIP_RECEPTION,
-                            IssuancePoint.EXPRESS_DESK, IssuancePoint.CASHIER,
-                        ],
-                        is_deleted=False,
-                    ).first()
 
-                    # Priority boost for URGENT/EMERGENCY
-                    base_priority = TIER_PRIORITY.get(visit.service_tier, 0)
-                    if priority == 'EMERGENCY':
-                        base_priority += 100
-                    elif priority == 'URGENT':
-                        base_priority += 50
+            # Determine service_type — fully flexible
+            if direct_service:
+                service_type = direct_service
+            elif dept:
+                service_type = _DEPT_TO_SERVICE_TYPE.get(dept.code, dept.code[:12].upper())
+            else:
+                service_type = None
 
-                    token_number = DailyTokenSequence.next_dept_token(service_type)
-                    QueueToken.objects.create(
-                        token_number=token_number,
-                        patient=visit.patient,
-                        visit=visit,
-                        patient_name=visit.patient.full_name if visit.patient else '',
-                        service_type=service_type,
-                        service_tier=visit.service_tier,
-                        issuance_point=IssuancePoint.SYSTEM,
-                        priority=base_priority,
-                        entry_token=entry_token,
-                        notes=f'Dispatched from triage by {request.user.get_full_name()}. Priority: {priority}',
-                        issued_by=request.user,
-                    )
+            if service_type:
+                from apps.qms.models import (
+                    QueueToken, DailyTokenSequence, IssuancePoint,
+                    TIER_PRIORITY, TokenStatus,
+                )
+                from django.utils import timezone as _tz
+                today = _tz.localdate()
+                entry_token = QueueToken.objects.filter(
+                    patient=visit.patient,
+                    issued_at__date=today,
+                    issuance_point__in=[
+                        IssuancePoint.GATE, IssuancePoint.VIP_RECEPTION,
+                        IssuancePoint.EXPRESS_DESK, IssuancePoint.CASHIER,
+                    ],
+                    is_deleted=False,
+                ).first()
+
+                base_priority = TIER_PRIORITY.get(visit.service_tier, 0)
+                if priority == 'EMERGENCY':
+                    base_priority += 100
+                elif priority == 'URGENT':
+                    base_priority += 50
+
+                token_number = DailyTokenSequence.next_dept_token(service_type)
+                dest_label = direct_service or (dept.name if dept else service_type)
+                QueueToken.objects.create(
+                    token_number=token_number,
+                    patient=visit.patient,
+                    visit=visit,
+                    patient_name=visit.patient.full_name if visit.patient else '',
+                    service_type=service_type,
+                    service_tier=visit.service_tier,
+                    issuance_point=IssuancePoint.SYSTEM,
+                    priority=base_priority,
+                    entry_token=entry_token,
+                    notes=f'Dispatched to {dest_label} by {request.user.get_full_name()}. Priority: {priority}',
+                    issued_by=request.user,
+                )
 
             dept_name = dept.name if dept else 'department'
             messages.success(
@@ -557,6 +565,7 @@ def triage_view(request, visit_number):
         'patient': patient,
         'form': form,
         'departments': departments,
+        'direct_routes': direct_routes,
         'med_history': med_history,
         'prev_visit': prev_visit,
         'recent_consultations': recent_consultations,
