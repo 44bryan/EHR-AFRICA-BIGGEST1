@@ -1108,13 +1108,31 @@ def preregistration_slip_view(request, code):
         })
 
     qr_img = _qr_b64(code)
+
+    # Embed logo as base64 so the slip works offline / cross-device
+    import base64 as _b64, os as _os
+    logo_data = ''
+    static_dirs = getattr(settings, 'STATICFILES_DIRS', [])
+    if static_dirs:
+        for _ext, _mime in [('svg', 'image/svg+xml'), ('png', 'image/png')]:
+            _logo_path = _os.path.join(str(static_dirs[0]), 'img', f'gludd_logo.{_ext}')
+            if _os.path.exists(_logo_path):
+                try:
+                    with open(_logo_path, 'rb') as _f:
+                        logo_data = f'data:{_mime};base64,' + _b64.b64encode(_f.read()).decode()
+                    break
+                except OSError:
+                    pass
+
     return render(request, 'patients/prereg_slip.html', {
         'data': data,
         'code': code,
         'qr_img': qr_img,
-        'hospital_name': getattr(settings, 'HOSPITAL_NAME', 'EHR Africa'),
+        'hospital_name':    getattr(settings, 'HOSPITAL_NAME', 'EHR Africa'),
         'hospital_address': getattr(settings, 'HOSPITAL_ADDRESS', ''),
-        'hospital_phone': getattr(settings, 'HOSPITAL_PHONE', ''),
+        'hospital_phone':   getattr(settings, 'HOSPITAL_PHONE', ''),
+        'hospital_email':   getattr(settings, 'HOSPITAL_EMAIL', ''),
+        'pdf_logo_url':     logo_data,
         'generated_at': datetime.datetime.now().strftime('%d %B %Y, %H:%M'),
     })
 

@@ -4,122 +4,343 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pre-Registration Slip — {{ hospital_name }}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
-    body { background: #f0f9ff; }
-    .slip { max-width: 480px; margin: 32px auto; background: white;
-            border: 2px solid #0891b2; border-radius: 12px; padding: 24px; }
-    .hospital-header { text-align: center; border-bottom: 2px solid #0891b2; padding-bottom: 12px; margin-bottom: 16px; }
-    .barcode-section { text-align: center; padding: 16px 0; background: #f8fafc;
-                       border: 1px dashed #cbd5e1; border-radius: 8px; margin: 16px 0; }
-    table td { padding: 4px 8px; font-size: 14px; }
-    .code { font-family: monospace; font-size: 18px; font-weight: bold; color: #0891b2;
-            letter-spacing: 2px; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:"Segoe UI",Arial,sans-serif; background:#e8f4f8; color:#1a1a2e; }
+
+    /* ── Page wrapper ──────────────────────────────────── */
+    .page-wrap { max-width:680px; margin:24px auto; padding:16px; }
+
+    /* ── Main slip card ────────────────────────────────── */
+    .slip {
+      background:#fff;
+      border-radius:16px;
+      box-shadow:0 8px 32px rgba(0,0,0,.12);
+      overflow:hidden;
+    }
+
+    /* ── Header / Letterhead ───────────────────────────── */
+    .slip-header {
+      background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0891b2 100%);
+      padding:24px 28px 20px;
+      color:#fff;
+      display:flex;
+      align-items:center;
+      gap:18px;
+    }
+    .slip-header .logo-circle {
+      width:64px; height:64px; border-radius:50%;
+      background:rgba(255,255,255,.15);
+      border:2px solid rgba(255,255,255,.3);
+      display:flex; align-items:center; justify-content:center;
+      flex-shrink:0; overflow:hidden;
+    }
+    .slip-header .logo-circle img { width:56px; height:56px; object-fit:contain; border-radius:50%; }
+    .slip-header .hosp-name { font-size:1.15rem; font-weight:800; letter-spacing:-.3px; }
+    .slip-header .hosp-sub  { font-size:.72rem; opacity:.75; margin-top:2px; }
+    .slip-header .doc-type  {
+      margin-left:auto; text-align:right; flex-shrink:0;
+    }
+    .slip-header .doc-type .badge {
+      display:inline-block; background:rgba(255,255,255,.2);
+      border:1px solid rgba(255,255,255,.35);
+      border-radius:20px; padding:4px 12px; font-size:.68rem;
+      font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    }
+    .slip-header .doc-type .date { font-size:.68rem; opacity:.65; margin-top:4px; }
+
+    /* ── Accent bar ────────────────────────────────────── */
+    .accent-bar {
+      background:linear-gradient(90deg,#0891b2,#7c3aed);
+      height:4px;
+    }
+
+    /* ── Body ──────────────────────────────────────────── */
+    .slip-body { padding:24px 28px; }
+
+    /* ── Patient banner ────────────────────────────────── */
+    .patient-banner {
+      background:linear-gradient(135deg,#f0f9ff,#e0f2fe);
+      border:1px solid #bae6fd;
+      border-radius:10px;
+      padding:14px 18px;
+      margin-bottom:20px;
+      display:flex;
+      align-items:center;
+      gap:16px;
+    }
+    .patient-avatar {
+      width:48px; height:48px; border-radius:50%;
+      background:linear-gradient(135deg,#0891b2,#1d4ed8);
+      color:#fff; display:flex; align-items:center; justify-content:center;
+      font-size:1.2rem; font-weight:800; flex-shrink:0;
+    }
+    .patient-name { font-size:1.05rem; font-weight:800; color:#0f172a; }
+    .patient-meta { font-size:.72rem; color:#0891b2; font-weight:600; margin-top:2px; }
+
+    /* ── Two-column info grid ──────────────────────────── */
+    .info-grid {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+      margin-bottom:20px;
+    }
+    .info-row {
+      display:flex;
+      flex-direction:column;
+      background:#f8fafc;
+      border-radius:8px;
+      padding:8px 12px;
+      border-left:3px solid #e2e8f0;
+    }
+    .info-row.highlight { border-left-color:#0891b2; background:#f0f9ff; }
+    .info-row .lbl { font-size:.62rem; text-transform:uppercase; letter-spacing:.07em; color:#94a3b8; font-weight:700; margin-bottom:2px; }
+    .info-row .val { font-size:.85rem; font-weight:700; color:#1e293b; }
+
+    /* ── QR section ────────────────────────────────────── */
+    .qr-section {
+      display:flex;
+      align-items:center;
+      gap:24px;
+      background:linear-gradient(135deg,#fafafa,#f0f9ff);
+      border:2px dashed #bae6fd;
+      border-radius:12px;
+      padding:20px 24px;
+      margin-bottom:20px;
+    }
+    .qr-section .qr-img img {
+      width:140px; height:140px;
+      border-radius:8px;
+      border:3px solid #fff;
+      box-shadow:0 4px 16px rgba(8,145,178,.2);
+    }
+    .qr-section .qr-info { flex:1; }
+    .qr-section .qr-label { font-size:.65rem; text-transform:uppercase; letter-spacing:.1em; color:#64748b; font-weight:700; margin-bottom:6px; }
+    .qr-section .qr-code {
+      font-family:monospace;
+      font-size:1.8rem;
+      font-weight:900;
+      color:#0891b2;
+      letter-spacing:4px;
+      background:#fff;
+      border:2px solid #bae6fd;
+      border-radius:8px;
+      padding:8px 14px;
+      display:inline-block;
+      margin-bottom:8px;
+    }
+    .qr-section .qr-hint { font-size:.72rem; color:#64748b; line-height:1.5; }
+
+    /* ── Instructions ──────────────────────────────────── */
+    .instructions {
+      background:#fffbeb;
+      border:1px solid #fde68a;
+      border-radius:10px;
+      padding:14px 18px;
+      margin-bottom:20px;
+    }
+    .instructions .inst-title { font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#92400e; margin-bottom:8px; }
+    .instructions ol { padding-left:18px; margin:0; }
+    .instructions li { font-size:.8rem; color:#78350f; margin-bottom:4px; line-height:1.5; }
+
+    /* ── Footer ────────────────────────────────────────── */
+    .slip-footer {
+      background:#f8fafc;
+      border-top:1px solid #e2e8f0;
+      padding:12px 28px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      font-size:.65rem;
+      color:#94a3b8;
+    }
+
+    /* ── Action buttons (screen only) ──────────────────── */
+    .action-bar {
+      display:flex; gap:10px; margin-top:20px;
+    }
+    .btn-print {
+      flex:1; background:linear-gradient(135deg,#0891b2,#1d4ed8);
+      color:#fff; border:none; border-radius:10px;
+      padding:12px; font-size:.9rem; font-weight:700;
+      cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+    }
+    .btn-back {
+      background:#f1f5f9; color:#475569; border:1px solid #e2e8f0;
+      border-radius:10px; padding:12px 20px; font-size:.9rem; font-weight:600;
+      cursor:pointer; text-decoration:none; display:flex; align-items:center; gap:6px;
+    }
+
+    /* ── Print ─────────────────────────────────────────── */
     @media print {
-      body { background: white; }
-      .no-print { display: none !important; }
-      .slip { border: 2px solid #000; }
+      body { background:#fff !important; }
+      .page-wrap { margin:0; padding:0; max-width:100%; }
+      .slip { box-shadow:none; border-radius:0; }
+      .action-bar { display:none !important; }
+      .slip-header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .accent-bar  { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .patient-banner { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .patient-avatar { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .qr-section { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     }
   </style>
 </head>
 <body>
+<div class="page-wrap">
 <div class="slip">
 
-  <div class="hospital-header">
-    <h5 class="fw-bold mb-1">{{ hospital_name }}</h5>
-    <p class="mb-0 small text-muted">{{ hospital_address }}</p>
-    <p class="mb-0 small text-muted">Tel: {{ hospital_phone }}</p>
-    <p class="mb-2 small fw-semibold text-primary mt-1">PATIENT PRE-REGISTRATION SLIP</p>
+  <!-- ── Letterhead ── -->
+  <div class="slip-header">
+    <div class="logo-circle">
+      {% if pdf_logo_url %}
+      <img src="{{ pdf_logo_url }}" alt="Logo">
+      {% else %}
+      <i class="bi bi-eye-fill" style="font-size:1.6rem;color:#fff;"></i>
+      {% endif %}
+    </div>
+    <div>
+      <div class="hosp-name">{{ hospital_name }}</div>
+      <div class="hosp-sub">{{ hospital_address }}{% if hospital_phone %} &nbsp;·&nbsp; {{ hospital_phone }}{% endif %}</div>
+      {% if hospital_email %}<div class="hosp-sub">{{ hospital_email }}</div>{% endif %}
+    </div>
+    <div class="doc-type">
+      <div class="badge">Pre-Registration Slip</div>
+      <div class="date">{{ generated_at }}</div>
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+
+  <!-- ── Body ── -->
+  <div class="slip-body">
+
+    <!-- Patient banner -->
+    <div class="patient-banner">
+      <div class="patient-avatar">
+        {{ data.first_name|first|upper }}{{ data.last_name|first|upper }}
+      </div>
+      <div>
+        <div class="patient-name">
+          {{ data.first_name }}{% if data.middle_name %} {{ data.middle_name }}{% endif %} {{ data.last_name }}
+        </div>
+        <div class="patient-meta">
+          {% if data.gender == 'M' %}Male{% elif data.gender == 'F' %}Female{% else %}{{ data.gender }}{% endif %}
+          {% if data.date_of_birth %} &nbsp;·&nbsp; DOB: {{ data.date_of_birth }}{% endif %}
+          {% if data.service_tier and data.service_tier != 'STANDARD' %} &nbsp;·&nbsp; <strong>{{ data.service_tier }}</strong>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Info grid -->
+    <div class="info-grid">
+      <div class="info-row highlight">
+        <span class="lbl">Phone</span>
+        <span class="val">{{ data.phone_number }}</span>
+      </div>
+      {% if data.email %}
+      <div class="info-row">
+        <span class="lbl">Email</span>
+        <span class="val">{{ data.email }}</span>
+      </div>
+      {% endif %}
+      {% if data.village_town or data.quarter %}
+      <div class="info-row">
+        <span class="lbl">Location</span>
+        <span class="val">{% if data.quarter %}{{ data.quarter }}, {% endif %}{{ data.village_town|default:"—" }}</span>
+      </div>
+      {% endif %}
+      {% if data.region %}
+      <div class="info-row">
+        <span class="lbl">Region</span>
+        <span class="val">{{ data.region }}</span>
+      </div>
+      {% endif %}
+      {% if data.occupation %}
+      <div class="info-row">
+        <span class="lbl">Occupation</span>
+        <span class="val">{{ data.occupation }}</span>
+      </div>
+      {% endif %}
+      {% if data.blood_group and data.blood_group != 'Unknown' %}
+      <div class="info-row highlight">
+        <span class="lbl">Blood Group</span>
+        <span class="val">{{ data.blood_group }}</span>
+      </div>
+      {% endif %}
+      {% if data.insurance_company %}
+      <div class="info-row highlight">
+        <span class="lbl">Insurance</span>
+        <span class="val">{{ data.insurance_company }}</span>
+      </div>
+      {% endif %}
+      {% if data.billing_type %}
+      <div class="info-row">
+        <span class="lbl">Billing Type</span>
+        <span class="val">{{ data.billing_type }}</span>
+      </div>
+      {% endif %}
+      {% if data.nok_name %}
+      <div class="info-row" style="grid-column:span 2;">
+        <span class="lbl">Next of Kin</span>
+        <span class="val">{{ data.nok_name }}{% if data.nok_relationship %} ({{ data.nok_relationship }}){% endif %}{% if data.nok_phone %} — {{ data.nok_phone }}{% endif %}</span>
+      </div>
+      {% endif %}
+      {% if data.chief_complaint %}
+      <div class="info-row highlight" style="grid-column:span 2;">
+        <span class="lbl">Chief Complaint / Reason for Visit</span>
+        <span class="val">{{ data.chief_complaint }}</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- QR + Code -->
+    <div class="qr-section">
+      <div class="qr-img">
+        {% if qr_img %}
+        <img src="{{ qr_img }}" alt="QR Code">
+        {% endif %}
+      </div>
+      <div class="qr-info">
+        <div class="qr-label">Scan at Reception or Read Out Code</div>
+        <div class="qr-code">{{ code }}</div>
+        <div class="qr-hint">
+          <i class="bi bi-qr-code me-1"></i>Show this slip at the Reception desk.<br>
+          The receptionist will scan the QR code or type the code above to instantly load your details.<br>
+          <strong>Valid for 30 days from {{ generated_at }}.</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="instructions">
+      <div class="inst-title"><i class="bi bi-info-circle-fill me-1"></i>What to do on the day</div>
+      <ol>
+        <li>Print this slip <strong>or</strong> show it on your phone screen — both work.</li>
+        <li>Go directly to the <strong>Reception Desk</strong> on arrival.</li>
+        <li>The receptionist will scan your QR code or enter the code above to complete your registration in seconds.</li>
+        <li>Proceed to the <strong>Cashier</strong> to pay your consultation fee, then wait for your name to be called.</li>
+      </ol>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="action-bar">
+      <button class="btn-print" onclick="window.print()">
+        <i class="bi bi-printer-fill"></i> Print This Slip
+      </button>
+      <a href="/patients/prereg/" class="btn-back">
+        <i class="bi bi-arrow-left"></i> Back
+      </a>
+    </div>
+
+  </div>{# /slip-body #}
+
+  <!-- Footer -->
+  <div class="slip-footer">
+    <span>{{ hospital_name }} &nbsp;·&nbsp; {{ hospital_address }}</span>
+    <span>Generated {{ generated_at }} &nbsp;·&nbsp; Confidential</span>
   </div>
 
-  <table class="w-100 mb-3">
-    <tr>
-      <td class="text-muted">Name:</td>
-      <td class="fw-bold">{{ data.first_name }} {% if data.middle_name %}{{ data.middle_name }} {% endif %}{{ data.last_name }}</td>
-    </tr>
-    <tr>
-      <td class="text-muted">Phone:</td>
-      <td class="fw-bold">{{ data.phone_number }}</td>
-    </tr>
-    {% if data.date_of_birth %}
-    <tr>
-      <td class="text-muted">Date of Birth:</td>
-      <td>{{ data.date_of_birth }}</td>
-    </tr>
-    {% endif %}
-    <tr>
-      <td class="text-muted">Gender:</td>
-      <td>{% if data.gender == 'M' %}Male{% elif data.gender == 'F' %}Female{% else %}{{ data.gender }}{% endif %}</td>
-    </tr>
-    {% if data.address %}
-    <tr>
-      <td class="text-muted">Address:</td>
-      <td>{{ data.address }}</td>
-    </tr>
-    {% endif %}
-    {% if data.occupation %}
-    <tr>
-      <td class="text-muted">Occupation:</td>
-      <td>{{ data.occupation }}</td>
-    </tr>
-    {% endif %}
-    {% if data.insurance_company %}
-    <tr>
-      <td class="text-muted">Insurance:</td>
-      <td>{{ data.insurance_company }}</td>
-    </tr>
-    {% endif %}
-    {% if data.nok_name %}
-    <tr>
-      <td class="text-muted">Next of Kin:</td>
-      <td>{{ data.nok_name }} ({{ data.nok_relationship }}) — {{ data.nok_phone }}</td>
-    </tr>
-    {% endif %}
-    <tr>
-      <td class="text-muted">Visit Type:</td>
-      <td>{% if data.visit_type == 'NEW' %}New Patient{% else %}Follow-Up{% endif %}</td>
-    </tr>
-    {% if data.chief_complaint %}
-    <tr>
-      <td class="text-muted">Complaint:</td>
-      <td>{{ data.chief_complaint }}</td>
-    </tr>
-    {% endif %}
-    <tr>
-      <td class="text-muted">Generated:</td>
-      <td class="small text-muted">{{ generated_at }}</td>
-    </tr>
-  </table>
-
-  <!-- QR Code -->
-  <div class="barcode-section">
-    {% if qr_img %}
-    <img src="{{ qr_img }}" alt="QR Code" style="width:160px; height:160px; object-fit:contain;">
-    {% endif %}
-    <div class="code mt-2">{{ code }}</div>
-    <div class="small text-muted mt-1">Show this QR code to reception or read out the code above</div>
-  </div>
-
-  <!-- Instructions -->
-  <div class="alert alert-info py-2 small mb-3">
-    <strong>Instructions:</strong>
-    <ol class="mb-0 ps-3 mt-1">
-      <li>Print this slip or show it on your phone screen.</li>
-      <li>Present it at the <strong>Reception desk</strong> on arrival.</li>
-      <li>The receptionist will scan the QR code to complete your registration instantly.</li>
-    </ol>
-  </div>
-
-  <div class="d-flex gap-2 no-print">
-    <button onclick="window.print()" class="btn btn-primary flex-fill">
-      <i class="bi bi-printer me-1"></i>Print This Slip
-    </button>
-    <a href="/patients/prereg/" class="btn btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Back
-    </a>
-  </div>
-
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</div>{# /slip #}
+</div>{# /page-wrap #}
 </body>
 </html>
