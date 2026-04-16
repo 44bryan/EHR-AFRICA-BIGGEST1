@@ -121,6 +121,9 @@ ASGI_APPLICATION = 'ehr_project.asgi.application'
 _db_url = env('DATABASE_URL', default='')
 if _db_url:
     DATABASES = {'default': env.db('DATABASE_URL')}
+    # Reuse DB connections for 60s instead of opening a new one per request.
+    # At 300 concurrent users this prevents PostgreSQL from being overwhelmed.
+    DATABASES['default']['CONN_MAX_AGE'] = 60
 else:
     DATABASES = {
         'default': {

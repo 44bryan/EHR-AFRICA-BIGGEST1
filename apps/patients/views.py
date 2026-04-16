@@ -16,7 +16,10 @@ from apps.core.decorators import (
 @login_required
 def patient_list_view(request):
     query = request.GET.get('q', '').strip()
-    patients = Patient.objects.filter(is_active=True).order_by('-registration_date')
+    # select_related('registered_by') fetches the linked user in the SAME query
+    # instead of firing a separate DB query for each of the 100 patients shown.
+    # Without this: 101 queries. With this: 1 query.
+    patients = Patient.objects.filter(is_active=True).select_related('registered_by').order_by('-registration_date')
 
     if query:
         patients = patients.filter(
@@ -26,10 +29,14 @@ def patient_list_view(request):
             Q(phone_number__icontains=query)
         )
 
+    # Evaluate queryset once — avoids hitting the DB twice (once for slice, once for count)
+    patients_page = list(patients[:100])
+    total_count   = patients.count() if query else Patient.objects.filter(is_active=True).count()
+
     return render(request, 'patients/list.html', {
-        'patients': patients[:100],
+        'patients': patients_page,
         'query': query,
-        'total_count': patients.count(),
+        'total_count': total_count,
     })
 
 

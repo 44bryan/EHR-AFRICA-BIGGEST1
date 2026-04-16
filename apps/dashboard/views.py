@@ -3,8 +3,28 @@ from django.shortcuts import render, redirect
 from django.utils import timezone
 from django.db import models
 from django.db.models import Count, Q, Sum, Avg
+from django.core.cache import cache
 from datetime import timedelta
 import json
+
+
+def _cached(key, builder_fn, timeout=60):
+    """
+    Cache helper for dashboard stats.
+    - key: unique cache key string
+    - builder_fn: callable that returns the value to cache
+    - timeout: seconds before cache refreshes (default 60s)
+
+    WHY: Dashboard stat queries (patient counts, revenue, queue) run on every
+    page load. At 300 users this means hundreds of identical DB queries per
+    minute. Caching returns the pre-computed answer instantly for 60 seconds,
+    then refreshes so numbers stay near-realtime.
+    """
+    result = cache.get(key)
+    if result is None:
+        result = builder_fn()
+        cache.set(key, result, timeout)
+    return result
 
 
 # Keywords that indicate an ophthalmic emergency or urgency
@@ -82,62 +102,86 @@ def _ceo_dashboard(request, user, today, ctx):
 
     month_start = today.replace(day=1)
     year_start  = today.replace(month=1, day=1)
-    last_30     = today - timedelta(days=30)
 
-    total_patients  = Patient.objects.filter(is_deleted=False).count()
-    new_month       = Patient.objects.filter(created_at__date__gte=month_start, is_deleted=False).count()
-    today_visits    = Visit.objects.filter(visit_date__date=today, is_deleted=False).count()
-    today_appts     = Appointment.objects.filter(appointment_date=today, is_deleted=False).count()
+    # ── Cached patient / visit counts (refresh every 60s) ──────────────────
+    # These are the most-hit queries. Cache key includes the date so stats
+    # auto-reset at midnight without any manual invalidation.
+    cache_date = today.strftime('%Y%m%d')
 
+    total_patients = _cached(f'ceo_total_pts_{cache_date}',
+        lambda: Patient.objects.filter(is_deleted=False).count(), 120)
+    new_month = _cached(f'ceo_new_month_{cache_date}',
+        lambda: Patient.objects.filter(created_at__date__gte=month_start, is_deleted=False).count(), 120)
+    today_visits = _cached(f'ceo_today_visits_{cache_date}',
+        lambda: Visit.objects.filter(visit_date__date=today, is_deleted=False).count(), 60)
+    today_appts = _cached(f'ceo_today_appts_{cache_date}',
+        lambda: Appointment.objects.filter(appointment_date=today, is_deleted=False).count(), 60)
+
+    # ── Revenue (cached 2 min — financial data doesn't need to be instant) ─
     try:
         from apps.billing.models import Payment, Invoice, InvoiceStatus
-        rev_today = Payment.objects.filter(payment_date__date=today, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
-        rev_month = Payment.objects.filter(payment_date__date__gte=month_start, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
-        rev_year  = Payment.objects.filter(payment_date__date__gte=year_start, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
-        outstanding = sum(
-            inv.balance_due for inv in
-            Invoice.objects.filter(status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID], is_deleted=False)
-            .prefetch_related('items', 'payments')
-        )
-        # 7-day revenue spark
-        rev_7d = []
-        for i in range(6, -1, -1):
-            d = today - timedelta(days=i)
-            amt = Payment.objects.filter(payment_date__date=d, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
-            rev_7d.append({'date': d.strftime('%d %b'), 'amount': float(amt)})
+
+        def _billing():
+            r_today = Payment.objects.filter(payment_date__date=today, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+            r_month = Payment.objects.filter(payment_date__date__gte=month_start, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+            r_year  = Payment.objects.filter(payment_date__date__gte=year_start, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+            out = sum(
+                inv.balance_due for inv in
+                Invoice.objects.filter(status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID], is_deleted=False)
+                .prefetch_related('items', 'payments')
+            )
+            spark = []
+            for i in range(6, -1, -1):
+                d = today - timedelta(days=i)
+                amt = Payment.objects.filter(payment_date__date=d, is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+                spark.append({'date': d.strftime('%d %b'), 'amount': float(amt)})
+            return r_today, r_month, r_year, out, spark
+
+        rev_today, rev_month, rev_year, outstanding, rev_7d = _cached(
+            f'ceo_billing_{cache_date}', _billing, 120)
     except Exception:
         rev_today = rev_month = rev_year = outstanding = 0
         rev_7d = [{'date': '', 'amount': 0}]
 
+    # ── Queue (cached 30s — queue changes fast) ─────────────────────────────
     try:
         from apps.qms.models import QueueToken, TokenStatus
-        queue_now = QueueToken.objects.filter(token_date=today, status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING], is_deleted=False).count()
-        served_today = QueueToken.objects.filter(token_date=today, status=TokenStatus.COMPLETED, is_deleted=False).count()
+        def _queue():
+            waiting = QueueToken.objects.filter(token_date=today, status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING], is_deleted=False).count()
+            served  = QueueToken.objects.filter(token_date=today, status=TokenStatus.COMPLETED, is_deleted=False).count()
+            return waiting, served
+        queue_now, served_today = _cached(f'ceo_queue_{cache_date}', _queue, 30)
     except Exception:
         queue_now = served_today = 0
 
+    # ── Beds / IPD (cached 60s) ─────────────────────────────────────────────
     try:
         from apps.ipd.models import Bed, Admission, AdmissionStatus
-        total_beds    = Bed.objects.filter(is_deleted=False).count()
-        occupied_beds = Bed.objects.filter(status='OCCUPIED', is_deleted=False).count()
-        bed_occupancy = round((occupied_beds / total_beds * 100), 1) if total_beds else 0
-        admissions    = Admission.objects.filter(status=AdmissionStatus.ADMITTED, is_deleted=False).count()
+        def _beds():
+            t = Bed.objects.filter(is_deleted=False).count()
+            o = Bed.objects.filter(status='OCCUPIED', is_deleted=False).count()
+            occ = round((o / t * 100), 1) if t else 0
+            adm = Admission.objects.filter(status=AdmissionStatus.ADMITTED, is_deleted=False).count()
+            return t, o, occ, adm
+        total_beds, occupied_beds, bed_occupancy, admissions = _cached(f'ceo_beds_{cache_date}', _beds, 60)
     except Exception:
         total_beds = occupied_beds = bed_occupancy = admissions = 0
 
+    # ── Staff & NPS (cached 5 min — very slow-changing) ────────────────────
     from apps.accounts.models import User as StaffUser
-    total_staff = StaffUser.objects.filter(is_active=True).count()
+    total_staff = _cached('ceo_total_staff', lambda: StaffUser.objects.filter(is_active=True).count(), 300)
 
     try:
         from apps.feedback.models import PatientFeedback
-        fb = PatientFeedback.objects.filter(nps_score__isnull=False, is_deleted=False)
-        total_fb = fb.count()
-        promo = fb.filter(nps_score__gte=9).count()
-        detr  = fb.filter(nps_score__lte=6).count()
-        nps   = round(((promo - detr) / total_fb) * 100) if total_fb else 0
-        open_complaints = PatientFeedback.objects.filter(
-            status__in=['NEW', 'ACKNOWLEDGED', 'INVESTIGATING'], is_deleted=False
-        ).count()
+        def _nps():
+            fb = PatientFeedback.objects.filter(nps_score__isnull=False, is_deleted=False)
+            total_fb = fb.count()
+            promo = fb.filter(nps_score__gte=9).count()
+            detr  = fb.filter(nps_score__lte=6).count()
+            n = round(((promo - detr) / total_fb) * 100) if total_fb else 0
+            oc = PatientFeedback.objects.filter(status__in=['NEW', 'ACKNOWLEDGED', 'INVESTIGATING'], is_deleted=False).count()
+            return n, oc
+        nps, open_complaints = _cached(f'ceo_nps_{cache_date}', _nps, 300)
     except Exception:
         nps = open_complaints = 0
 

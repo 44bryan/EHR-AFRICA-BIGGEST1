@@ -82,6 +82,13 @@ class Patient(AuditModel):
         ordering = ['-registration_date', 'last_name']
         verbose_name = 'Patient'
         verbose_name_plural = 'Patients'
+        indexes = [
+            # Speed up name/phone search (used in patient_list_view and patient_search_api)
+            models.Index(fields=['last_name', 'first_name'], name='patient_name_idx'),
+            models.Index(fields=['phone_number'], name='patient_phone_idx'),
+            # Speed up is_active + registration_date filtering (default list view)
+            models.Index(fields=['is_active', '-registration_date'], name='patient_active_date_idx'),
+        ]
 
     def __str__(self):
         return f"{self.patient_id} — {self.full_name}"
@@ -384,6 +391,11 @@ class Visit(AuditModel):
         ordering = ['-visit_date']
         verbose_name = 'Visit'
         verbose_name_plural = 'Visits'
+        indexes = [
+            # Dashboard queries visits by date constantly
+            models.Index(fields=['visit_date'], name='visit_date_idx'),
+            models.Index(fields=['patient', '-visit_date'], name='visit_patient_date_idx'),
+        ]
 
     def __str__(self):
         return f"{self.visit_number} — {self.patient.full_name}"
