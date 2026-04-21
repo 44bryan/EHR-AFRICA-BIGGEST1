@@ -27,6 +27,7 @@ urlpatterns = [
 
     # TV display board (public, no login)
     path('display/', views.display_board, name='display_board'),
+    path('display/names/', views.names_board, name='names_board'),
 
     # Daily census
     path('census/', views.daily_census, name='daily_census'),

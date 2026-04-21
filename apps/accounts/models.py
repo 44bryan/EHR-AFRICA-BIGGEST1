@@ -398,12 +398,36 @@ class User(AbstractUser):
         )
 
 
+class QueueBoardType(models.TextChoices):
+    TOKEN = 'token', 'Token Board (shows number called)'
+    NAMES = 'names', 'Names Board (shows live patient list)'
+
+
+class SystemTheme(models.TextChoices):
+    TEAL    = 'theme-teal',   'Teal (default)'
+    NAVY    = 'theme-navy',   'Navy Blue'
+    GREEN   = 'theme-green',  'Forest Green'
+    PURPLE  = 'theme-purple', 'Deep Purple'
+    SLATE   = 'theme-slate',  'Slate Gray'
+    CRIMSON = 'theme-crimson','Crimson Red'
+
+
 class HospitalConfig(models.Model):
     """
     Singleton model — one row, managed by Super Admin.
     Controls which optional modules are active for this hospital installation.
     Think of it as the licence/feature-flag control panel.
     """
+    # ── Display & Appearance ─────────────────────────────
+    system_theme     = models.CharField(
+        max_length=30, choices=SystemTheme.choices, default=SystemTheme.TEAL,
+        verbose_name='System Theme',
+    )
+    queue_board_type = models.CharField(
+        max_length=10, choices=QueueBoardType.choices, default=QueueBoardType.TOKEN,
+        verbose_name='Queue Display Board Type',
+    )
+
     # ── Core modules (always on) ─────────────────────────
     # patients, consultations, billing, reception are NOT toggleable.
 

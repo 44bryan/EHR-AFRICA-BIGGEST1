@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if zone_label %}{{ zone_label }}{% else %}Queue Display{% endif %} — Live Board</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --zone-color: {{ zone_color|default:'#0891b2' }};
+      --board-bg: #0a0f1e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--board-bg);
+      font-family: 'Inter', sans-serif;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    .board-header {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      border-bottom: 3px solid var(--zone-color);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .board-header .zone-label {
+      font-size: clamp(1.4rem, 3vw, 2.2rem);
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+    .board-header .hospital-name {
+      font-size: clamp(0.75rem, 1.5vw, 1rem);
+      color: rgba(255,255,255,0.5);
+      font-weight: 500;
+    }
+    .board-header .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 30px;
+      padding: 6px 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .live-dot {
+      width: 10px; height: 10px;
+      background: #22c55e;
+      border-radius: 50%;
+      animation: pulse-dot 1.5s infinite;
+    }
+    @keyframes pulse-dot {
+      0%,100% { opacity:1; transform:scale(1); }
+      50% { opacity:0.4; transform:scale(0.8); }
+    }
+    .board-clock {
+      font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+      font-weight: 700;
+      color: var(--zone-color);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Main columns ─────────────────────────────────────── */
+    .board-body {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 0;
+      height: calc(100vh - 82px);
+    }
+    @media (max-width: 900px) {
+      .board-body { grid-template-columns: 1fr; }
+      .now-serving-col { display: none; }
+    }
+
+    /* ── Now Serving panel ────────────────────────────────── */
+    .now-serving-col {
+      background: linear-gradient(180deg, #0f172a 0%, #0a0f1e 100%);
+      border-right: 1px solid rgba(255,255,255,0.07);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.35);
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .serving-card {
+      background: linear-gradient(135deg, var(--zone-color), color-mix(in srgb, var(--zone-color) 70%, #000));
+      border-radius: 16px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      animation: serving-glow 2s ease-in-out infinite alternate;
+    }
+    @keyframes serving-glow {
+      from { box-shadow: 0 0 20px rgba(255,255,255,0.05); }
+      to   { box-shadow: 0 0 40px color-mix(in srgb, var(--zone-color) 60%, transparent); }
+    }
+    .serving-card::before {
+      content: '';
+      position: absolute;
+      top: -30px; right: -30px;
+      width: 100px; height: 100px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 50%;
+    }
+    .serving-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 6px;
+    }
+    .serving-name {
+      font-size: clamp(1.1rem, 2.5vw, 1.6rem);
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .serving-token {
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.7);
+      margin-top: 4px;
+    }
+    .empty-serving {
+      border: 2px dashed rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 32px;
+      text-align: center;
+      color: rgba(255,255,255,0.3);
+    }
+
+    /* ── Queue list panel ─────────────────────────────────── */
+    .queue-col {
+      padding: 24px 28px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .queue-list {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    .queue-list-inner {
+      transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .queue-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      animation: slide-in 0.4s ease;
+    }
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .queue-row:nth-child(1) { background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.1); }
+    .queue-row:nth-child(2) { background: rgba(255,255,255,0.06); }
+    .queue-row:nth-child(3) { background: rgba(255,255,255,0.04); }
+    .queue-row:nth-child(n+4) { background: rgba(255,255,255,0.02); }
+
+    .queue-position {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.08);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: rgba(255,255,255,0.5);
+      flex-shrink: 0;
+    }
+    .queue-row:nth-child(1) .queue-position {
+      background: var(--zone-color);
+      color: #fff;
+    }
+    .queue-name {
+      flex: 1;
+      font-size: clamp(1rem, 2vw, 1.3rem);
+      font-weight: 600;
+      color: #fff;
+    }
+    .queue-row:nth-child(n+5) .queue-name { color: rgba(255,255,255,0.5); font-size: 1rem; }
+    .queue-token-badge {
+      font-size: 0.7rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.5);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .next-badge {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: color-mix(in srgb, var(--zone-color) 20%, transparent);
+      color: var(--zone-color);
+      border: 1px solid color-mix(in srgb, var(--zone-color) 40%, transparent);
+    }
+
+    /* ── Waiting count footer ─────────────────────────────── */
+    .board-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0 0;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      margin-top: 8px;
+    }
+    .waiting-count {
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.4);
+    }
+    .waiting-count span {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--zone-color);
+    }
+
+    /* ── Overview grid (no zone selected) ────────────────── */
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      padding: 32px;
+      align-content: start;
+      height: calc(100vh - 82px);
+      overflow-y: auto;
+    }
+    .zone-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 24px;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .zone-card:hover {
+      background: rgba(255,255,255,0.08);
+      transform: translateY(-2px);
+      border-color: rgba(255,255,255,0.15);
+    }
+    .zone-card-name { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 16px; }
+    .zone-stat { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .zone-stat-num { font-size: 2rem; font-weight: 800; }
+    .zone-stat-label { font-size: 0.75rem; color: rgba(255,255,255,0.45); }
+    .zone-nav-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+    .zone-nav-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px;
+      font-size: 0.8rem; font-weight: 600;
+      text-decoration: none;
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.7);
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: all 0.2s;
+    }
+    .zone-nav-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+    /* ── Zone nav bar ─────────────────────────────────────── */
+    .zone-nav {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      padding: 0 0 16px;
+    }
+    .zone-pill {
+      font-size: 0.72rem; font-weight: 600;
+      padding: 5px 14px; border-radius: 20px;
+      text-decoration: none;
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.5);
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: all 0.2s;
+    }
+    .zone-pill:hover, .zone-pill.active {
+      background: var(--zone-color);
+      color: #fff;
+      border-color: transparent;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="board-header">
+  <div>
+    <div class="zone-label">
+      <i class="bi bi-display me-2" style="color:var(--zone-color);font-size:0.85em;"></i>
+      {% if zone_label %}{{ zone_label }}{% else %}Queue Overview{% endif %}
+    </div>
+    <div class="hospital-name">Live Patient Queue Board</div>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      LIVE
+    </div>
+    <div class="board-clock" id="clock">--:--:--</div>
+  </div>
+</div>
+
+{% if zone %}
+<!-- Zone Board: Now Serving + Queue List -->
+<div class="board-body">
+
+  <!-- Left: Now Serving -->
+  <div class="now-serving-col">
+    <div class="section-title"><i class="bi bi-person-check me-1"></i>Now Serving</div>
+
+    {% if patients_serving %}
+      {% for p in patients_serving %}
+      <div class="serving-card">
+        <div class="serving-label">Currently with doctor</div>
+        <div class="serving-name">{{ p.name }}</div>
+        <div class="serving-token">
+          <i class="bi bi-ticket-perforated me-1"></i>{{ p.token.token_code|default:p.token.token_number }}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-serving">
+        <i class="bi bi-hourglass" style="font-size:2rem;margin-bottom:8px;display:block;"></i>
+        No patient being served yet
+      </div>
+    {% endif %}
+
+    <div style="margin-top:auto;">
+      <div class="d-flex align-items-center gap-2 p-3" style="background:rgba(255,255,255,0.04);border-radius:12px;">
+        <i class="bi bi-people" style="color:var(--zone-color);font-size:1.3rem;"></i>
+        <div>
+          <div style="font-size:1.6rem;font-weight:800;color:#fff;">{{ waiting_count }}</div>
+          <div style="font-size:0.72rem;color:rgba(255,255,255,0.4);font-weight:600;letter-spacing:1px;text-transform:uppercase;">Waiting</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Queue list -->
+  <div class="queue-col">
+    <div class="section-title"><i class="bi bi-list-ol me-1"></i>Queue — In Order</div>
+
+    <div class="queue-list" id="queueList">
+      <div class="queue-list-inner" id="queueInner">
+        {% if patients_waiting %}
+          {% for p in patients_waiting %}
+          <div class="queue-row" data-id="{{ p.token.pk }}">
+            <div class="queue-position">{{ p.position }}</div>
+            <div class="queue-name">{{ p.name }}</div>
+            {% if forloop.first %}
+              <span class="next-badge">NEXT</span>
+            {% endif %}
+            <span class="queue-token-badge">{{ p.token.token_code|default:p.token.token_number }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div style="text-align:center;padding:60px 20px;color:rgba(255,255,255,0.2);">
+            <i class="bi bi-check2-all" style="font-size:3rem;display:block;margin-bottom:12px;"></i>
+            Queue is empty
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="board-footer">
+      <div class="waiting-count"><span>{{ waiting_count }}</span> patient{{ waiting_count|pluralize }} in queue</div>
+      <div style="font-size:0.72rem;color:rgba(255,255,255,0.25);">Refreshes every 5 seconds</div>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<!-- Overview: all zones -->
+<div class="overview-grid">
+  {% if zone_summaries %}
+    {% for z in zone_summaries %}
+    <a href="?zone={{ z.key }}" class="zone-card" style="border-top:3px solid {{ z.color }};">
+      <div class="zone-card-name">{{ z.label }}</div>
+      <div class="d-flex gap-4">
+        <div class="zone-stat">
+          <div class="zone-stat-num" style="color:{{ z.color }};">{{ z.waiting }}</div>
+          <div class="zone-stat-label">Waiting</div>
+        </div>
+        <div class="zone-stat">
+          <div class="zone-stat-num" style="color:#22c55e;">{{ z.serving }}</div>
+          <div class="zone-stat-label">Serving</div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  {% else %}
+    <div style="grid-column:1/-1;text-align:center;padding:80px 20px;color:rgba(255,255,255,0.2);">
+      <i class="bi bi-calendar-x" style="font-size:3rem;display:block;margin-bottom:12px;"></i>
+      No active queues today
+    </div>
+  {% endif %}
+
+  <!-- Zone quick-links -->
+  <div style="grid-column:1/-1;">
+    <div style="font-size:0.7rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:12px;">Open a zone board</div>
+    <div class="zone-nav-links">
+      {% for key, label in all_zones.items %}
+      <a href="?zone={{ key }}" class="zone-nav-link">
+        <i class="bi bi-display"></i> {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const s = String(now.getSeconds()).padStart(2,'0');
+    document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  {% if zone %}
+  // Auto-refresh page every 5 seconds to get updated queue
+  // Uses smooth replace so the browser doesn't flash
+  let refreshTimer = setTimeout(doRefresh, 5000);
+
+  function doRefresh() {
+    // Fade out queue before refresh
+    const inner = document.getElementById('queueInner');
+    if (inner) inner.style.opacity = '0.4';
+    setTimeout(() => { location.reload(); }, 300);
+  }
+
+  // Pause refresh when tab is hidden (saves resources)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearTimeout(refreshTimer);
+    } else {
+      refreshTimer = setTimeout(doRefresh, 5000);
+    }
+  });
+  {% else %}
+  // Overview auto-refreshes every 15 seconds
+  setTimeout(() => location.reload(), 15000);
+  {% endif %}
+</script>
+</body>
+</html>

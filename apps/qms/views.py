@@ -1069,6 +1069,7 @@ def cashier_complete(request, token_id):
 def display_board(request):  # noqa: C901
     """
     Public TV display board — no login required.
+    Routes to either the token board or names board based on HospitalConfig.queue_board_type.
     Use ?zone=ZONE to show only the counters relevant to that TV location.
 
     Zone mode: unified chronological call log — all calls in this zone,
@@ -1093,6 +1094,15 @@ def display_board(request):  # noqa: C901
     admission    → Surgical Counseling + Billing + Admission
     (blank)      → Full overview card grid
     """
+    # Check which board type is configured — route accordingly
+    try:
+        from apps.accounts.models import HospitalConfig
+        board_type = HospitalConfig.get().queue_board_type
+        if board_type == 'names':
+            return names_board(request)
+    except Exception:
+        pass
+
     today = timezone.localdate()
     zone  = request.GET.get('zone', '').strip().lower()
 
@@ -1265,6 +1275,110 @@ def display_board(request):  # noqa: C901
         'today':              today,
     }
     return render(request, 'qms/display_board.html', context)
+
+
+def names_board(request):
+    """
+    Display Board 2 — Live patient names queue board.
+    Shows all waiting/serving patients ranked by position.
+    Names animate upward as patients move through the queue.
+    No login required (public TV display).
+    """
+    today = timezone.localdate()
+    zone  = request.GET.get('zone', '').strip().lower()
+
+    ZONE_CONFIGS = {
+        'entry':         {'label': 'Registration & Cashier',              'color': '#0ea5e9', 'q': Q(service_type__in=['RECEPTIONIST','CASHIER'], service_tier='STANDARD')},
+        'triage':        {'label': 'Parameters / Triage',                 'color': '#ef4444', 'q': Q(service_type='PARAMETERS', service_tier='STANDARD')},
+        'general':       {'label': 'General Ophthalmology',               'color': '#3b82f6', 'q': Q(service_type__in=['GENERAL','REFRACTION','CATARACT'])},
+        'retina':        {'label': 'Retina Clinic',                       'color': '#f97316', 'q': Q(service_type='RETINA')},
+        'glaucoma':      {'label': 'Glaucoma Clinic',                     'color': '#06b6d4', 'q': Q(service_type='GLAUCOMA')},
+        'pediatric':     {'label': 'Paediatric Ophthalmology',            'color': '#ec4899', 'q': Q(service_type='PEDIATRIC')},
+        'investigation': {'label': 'Eye Investigations',                  'color': '#f59e0b', 'q': Q(service_type='INVEST')},
+        'laboratory':    {'label': 'Laboratory',                          'color': '#14b8a6', 'q': Q(service_type='LAB')},
+        'express':       {'label': 'Express · Fast Track · Insurance',    'color': '#8b5cf6', 'q': Q(service_tier__in=['EXPRESS','FAST_TRACK','INSURANCE'])},
+        'vip':           {'label': 'VIP Services',                        'color': '#d97706', 'q': Q(service_tier='VIP')},
+        'pharmacy':      {'label': 'Pharmacy',                            'color': '#10b981', 'q': Q(service_type='PHARMACY', service_tier='STANDARD')},
+    }
+
+    ZONE_LABELS = {k: v['label'] for k, v in ZONE_CONFIGS.items()}
+
+    if zone and zone in ZONE_CONFIGS:
+        cfg = ZONE_CONFIGS[zone]
+        zone_label = cfg['label']
+        zone_color = cfg['color']
+        base_q = cfg['q'] & Q(token_date=today, is_deleted=False)
+
+        # Currently being served (top of board, highlighted)
+        serving = QueueToken.objects.filter(
+            base_q, status__in=[TokenStatus.CALLED, TokenStatus.SERVING]
+        ).select_related('entry_token').order_by('-called_at')[:3]
+
+        # Waiting — ordered by token number (position in queue)
+        waiting = QueueToken.objects.filter(
+            base_q, status=TokenStatus.WAITING
+        ).select_related('entry_token').order_by('token_number')[:30]
+
+        # Recently completed (last 5, shown dimmed at bottom)
+        completed = QueueToken.objects.filter(
+            base_q, status=TokenStatus.COMPLETED
+        ).select_related('entry_token').order_by('-completed_at')[:5]
+
+        patients_serving = []
+        for t in serving:
+            name = '—'
+            if t.entry_token and hasattr(t.entry_token, 'patient'):
+                p = t.entry_token.patient if hasattr(t.entry_token, 'patient') else None
+                if p:
+                    name = p.full_name
+            elif hasattr(t, 'patient_name') and t.patient_name:
+                name = t.patient_name
+            patients_serving.append({'token': t, 'name': name})
+
+        patients_waiting = []
+        for i, t in enumerate(waiting):
+            name = '—'
+            if t.entry_token and hasattr(t.entry_token, 'patient'):
+                p = getattr(t.entry_token, 'patient', None)
+                if p:
+                    name = p.full_name
+            elif hasattr(t, 'patient_name') and t.patient_name:
+                name = t.patient_name
+            patients_waiting.append({'token': t, 'name': name, 'position': i + 1})
+
+        context = {
+            'zone': zone,
+            'zone_label': zone_label,
+            'zone_color': zone_color,
+            'patients_serving': patients_serving,
+            'patients_waiting': patients_waiting,
+            'waiting_count': waiting.count(),
+            'today': today,
+            'all_zones': ZONE_LABELS,
+        }
+    else:
+        # Overview: show all active zones with their counts
+        zone_summaries = []
+        for key, cfg in ZONE_CONFIGS.items():
+            base_q = cfg['q'] & Q(token_date=today, is_deleted=False)
+            waiting_count = QueueToken.objects.filter(base_q, status=TokenStatus.WAITING).count()
+            serving_count = QueueToken.objects.filter(base_q, status__in=[TokenStatus.CALLED, TokenStatus.SERVING]).count()
+            if waiting_count + serving_count > 0:
+                zone_summaries.append({
+                    'key': key,
+                    'label': cfg['label'],
+                    'color': cfg['color'],
+                    'waiting': waiting_count,
+                    'serving': serving_count,
+                })
+        context = {
+            'zone': '',
+            'zone_summaries': zone_summaries,
+            'today': today,
+            'all_zones': ZONE_LABELS,
+        }
+
+    return render(request, 'qms/names_board.html', context)
 
 
 # ── JSON / HTMX endpoints ─────────────────────────────────────────────────────

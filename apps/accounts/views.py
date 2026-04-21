@@ -457,8 +457,16 @@ def system_modules_view(request):
     if request.method == 'POST':
         for field, *_ in _MODULE_META:
             setattr(cfg, field, field in request.POST)
+        # Appearance settings
+        from .models import SystemTheme, QueueBoardType
+        theme = request.POST.get('system_theme', SystemTheme.TEAL)
+        if theme in dict(SystemTheme.choices):
+            cfg.system_theme = theme
+        board = request.POST.get('queue_board_type', QueueBoardType.TOKEN)
+        if board in dict(QueueBoardType.choices):
+            cfg.queue_board_type = board
         cfg.save()
-        messages.success(request, 'Module settings saved.')
+        messages.success(request, 'Settings saved successfully.')
         return redirect('accounts:system_modules')
 
     # Group modules by tier for display
@@ -478,7 +486,9 @@ def system_modules_view(request):
         ('engagement',  'Engagement Modules',  'bi-chat-heart',     'Patient relationship, feedback and outreach.'),
     ]
 
+    from .models import SystemTheme
     return render(request, 'accounts/system_modules.html', {
         'tiers': [(key, label, icon, desc, tiers.get(key, [])) for key, label, icon, desc in tier_order],
         'cfg': cfg,
+        'theme_choices': SystemTheme.choices,
     })
