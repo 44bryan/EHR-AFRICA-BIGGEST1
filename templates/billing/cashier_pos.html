@@ -9,20 +9,15 @@
   /* ── POS layout ── */
   .pos-wrapper {
     display: grid;
-    grid-template-columns: 320px 1fr;   /* catalog fixed-narrow, billing fills rest */
+    grid-template-columns: 320px 1fr;
     gap: 1rem;
-    min-height: calc(100vh - 140px);
+    align-items: start;   /* each panel sizes to its own content */
   }
 
   /* ── Tablet + Mobile: stack panels vertically ── */
   @media (max-width: 1024px) {
     .pos-wrapper {
       grid-template-columns: 1fr;
-      min-height: auto;
-    }
-    .catalog-panel, .billing-panel {
-      max-height: none !important;
-      overflow-y: visible !important;
     }
     .billing-panel {
       order: -1; /* Show billing summary at top on tablet/mobile */
@@ -31,7 +26,6 @@
       font-size: 0.9rem !important;
       padding: 0.65rem 0.9rem !important;
     }
-    .pos-total-row { font-size: 1rem !important; }
   }
 
   /* Patient card */
@@ -51,15 +45,15 @@
     background: #fff;
     border-radius: 12px;
     border: 1px solid #dee2e6;
-    padding: 1rem 1rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100vh - 220px);
-    overflow: hidden;
+    padding: 1rem 1rem 0.75rem;
+    position: sticky;
+    top: 1rem;   /* sticks while billing panel scrolls with page */
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
   }
   .catalog-panel h6 { color: #6c757d; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
   /* Category tab buttons */
-  .cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; margin-bottom: 0.6rem; }
+  .cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 0.6rem; }
   .cat-tab-btn {
     background: #f1f5f9; border: 1px solid #dee2e6; border-radius: 20px;
     padding: 0.18rem 0.6rem; font-size: 0.7rem; font-weight: 600;
@@ -68,8 +62,7 @@
   .cat-tab-btn:hover { background: #e2e8f0; }
   .cat-tab-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
   .cat-tab-btn.active-orders { background: #16a34a; color: #fff; border-color: #16a34a; }
-  /* Scrollable services area */
-  #catalogScroll { overflow-y: auto; flex: 1; padding-bottom: 0.5rem; }
+  #catalogScroll { padding-bottom: 0.5rem; }
 
   .service-btn {
     background: #f8f9fa;
@@ -104,7 +97,7 @@
   .cat-pane { display: none; }
   .cat-pane.active { display: block; }
 
-  /* Right billing panel */
+  /* Right billing panel — no fixed height, page scrolls naturally */
   .billing-panel {
     background: #fff;
     border-radius: 12px;
@@ -113,8 +106,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    overflow-y: auto;
-    max-height: calc(100vh - 220px);
   }
 
   /* Items table */
@@ -130,12 +121,13 @@
   }
   .remove-item-btn:hover { background: #dc3545; color: #fff; border-color: #dc3545; }
 
-  /* Floating cart badge — always visible on tablet/mobile */
-  #floatingCart {
-    position: fixed; bottom: 1.2rem; right: 1.2rem;
-    z-index: 999; display: none;
+  /* Floating cart badge — tablet/mobile only */
+  #floatingCart { display: none; }
+  @media (max-width: 1024px) {
+    #floatingCart {
+      display: block; position: fixed; bottom: 1.2rem; right: 1.2rem; z-index: 999;
+    }
   }
-  @media (max-width: 1024px) { #floatingCart { display: block; } }
 
   /* Totals section */
   .totals-block { border-top: 2px solid #dee2e6; padding-top: 0.6rem; font-size: 0.9rem; }
@@ -221,7 +213,7 @@
       </div>
     </div>
   </div>
-  <div class="d-flex align-items-center gap-2">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
     {% if token %}
     <span class="badge tier-badge-{{ token.service_tier }} text-white px-3 py-2">
       {{ token.get_service_tier_display }}
@@ -238,6 +230,14 @@
       </span>
     {% endif %}
     <small class="text-muted">{{ today|date:"d M Y" }}</small>
+    {% if not token %}
+    <a href="{% url 'billing:invoice_create' %}"
+       class="btn btn-sm btn-outline-secondary ms-2"
+       onclick="return confirm('Switch to a different patient? Any unsaved changes will remain on this invoice.');"
+       title="Select a different patient">
+      <i class="bi bi-arrow-left-right me-1"></i>Change Patient
+    </a>
+    {% endif %}
   </div>
 </div>
 
@@ -905,22 +905,12 @@ function _doAddItem(description, category, quantity, unitPrice) {
         tbody.appendChild(tr);
         updateTotals(data);
         updateFloatingCart();
-        // Flash the row green then scroll the billing panel so it's visible
+        // Flash the row green so the cashier can see it was added
         tr.style.transition = 'background 0.3s';
         tr.style.background = '#d1fae5';
         setTimeout(function() { tr.style.background = ''; }, 1200);
-        setTimeout(function() {
-          // Use getBoundingClientRect so we scroll the overflow panel, not the page
-          var panel = document.getElementById('billingPanel');
-          if (panel) {
-            var panelRect = panel.getBoundingClientRect();
-            var trRect    = tr.getBoundingClientRect();
-            // Only scroll if the row is outside the visible area of the panel
-            if (trRect.top < panelRect.top || trRect.bottom > panelRect.bottom) {
-              panel.scrollTop += (trRect.top - panelRect.top) - 20;
-            }
-          }
-        }, 60);
+        // Scroll the new row into view (page-level scroll — no overflow panel)
+        setTimeout(function() { tr.scrollIntoView({behavior: 'smooth', block: 'nearest'}); }, 60);
         showToast('✓ ' + data.description + ' — ' + fmt(data.line_total) + ' FCFA added', 'success');
       } catch(err) {
         showToast('Item saved but display error: ' + err.message + '. Please refresh.', 'warning');
