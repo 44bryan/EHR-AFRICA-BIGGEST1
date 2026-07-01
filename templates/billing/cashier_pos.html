@@ -51,11 +51,25 @@
     background: #fff;
     border-radius: 12px;
     border: 1px solid #dee2e6;
-    padding: 1.25rem;
-    overflow-y: auto;
+    padding: 1rem 1rem 0.5rem;
+    display: flex;
+    flex-direction: column;
     max-height: calc(100vh - 220px);
+    overflow: hidden;
   }
   .catalog-panel h6 { color: #6c757d; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
+  /* Category tab buttons */
+  .cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; margin-bottom: 0.6rem; }
+  .cat-tab-btn {
+    background: #f1f5f9; border: 1px solid #dee2e6; border-radius: 20px;
+    padding: 0.18rem 0.6rem; font-size: 0.7rem; font-weight: 600;
+    cursor: pointer; transition: all .15s; color: #495057; line-height: 1.4;
+  }
+  .cat-tab-btn:hover { background: #e2e8f0; }
+  .cat-tab-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+  .cat-tab-btn.active-orders { background: #16a34a; color: #fff; border-color: #16a34a; }
+  /* Scrollable services area */
+  #catalogScroll { overflow-y: auto; flex: 1; padding-bottom: 0.5rem; }
 
   .service-btn {
     background: #f8f9fa;
@@ -86,6 +100,9 @@
   .service-btn:hover .price-tag { color: #cfe2ff; }
 
   .cat-section { margin-bottom: 0.75rem; }
+  /* Category panes — only active pane is visible */
+  .cat-pane { display: none; }
+  .cat-pane.active { display: block; }
 
   /* Right billing panel */
   .billing-panel {
@@ -264,145 +281,171 @@
   {# ───── LEFT: Service Catalog ───── #}
   <div class="catalog-panel">
 
-    {# ── Doctor's Orders — pre-populated from consultation ── #}
-    {% if doctor_orders %}
-    <div class="mb-3 rounded" style="background:#f0fdf4;border:1.5px solid #16a34a;padding:0.75rem;">
-      <div class="fw-bold small text-success mb-2">
-        <i class="bi bi-clipboard2-pulse-fill me-1"></i>Doctor's Orders — click to add
-      </div>
-      <div class="d-flex flex-column gap-1">
-        {% for wo in doctor_orders %}
-        <button type="button" class="service-btn"
-                style="border-color:#16a34a;background:#fff;"
-                onclick="addCatalogItem('{{ wo.description|escapejs }}','{{ wo.category }}',0)">
-          <span>{{ wo.description }}</span>
-          <span style="font-size:.7rem;color:#16a34a;font-weight:600;">{{ wo.get_category_display }}</span>
-        </button>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <span style="color:#0d6efd;font-weight:700;font-size:1rem;">
-        <i class="bi bi-grid-3x3-gap me-1"></i>Service Catalog
-      </span>
+    {# ── Category tab strip (always visible, never scrolls) ── #}
+    <div class="cat-tabs">
+      {% if doctor_orders %}
+      <button class="cat-tab-btn active active-orders" onclick="switchCat('ORDERS',this)">
+        <i class="bi bi-clipboard2-pulse me-1"></i>Orders ({{ doctor_orders|length }})
+      </button>
+      {% endif %}
+      <button class="cat-tab-btn {% if not doctor_orders %}active{% endif %}" onclick="switchCat('REG',this)">Reg</button>
+      <button class="cat-tab-btn" onclick="switchCat('CONSULT',this)">Consult</button>
+      <button class="cat-tab-btn" onclick="switchCat('INVEST',this)">Invest</button>
+      <button class="cat-tab-btn" onclick="switchCat('LAB',this)">Lab</button>
+      <button class="cat-tab-btn" onclick="switchCat('PHARM',this)">Pharm</button>
+      <button class="cat-tab-btn" onclick="switchCat('SURGERY',this)">Surgery</button>
+      <button class="cat-tab-btn" onclick="switchCat('OTHER',this)">Other</button>
       {% if invoice %}
-      <button class="ai-btn" id="aiSuggestBtn" onclick="aiSuggest()" style="width:auto;padding:0.35rem 0.85rem;font-size:0.78rem;">
-        <i class="bi bi-stars me-1"></i>AI Suggest
+      <button class="cat-tab-btn" onclick="switchCat('CUSTOM',this)">
+        <i class="bi bi-pencil me-1"></i>Custom
+      </button>
+      <button class="cat-tab-btn" id="aiSuggestBtn" onclick="aiSuggest()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-color:#6d28d9;">
+        <i class="bi bi-stars me-1"></i>AI
       </button>
       {% endif %}
     </div>
 
-    {# Registration #}
-    <div class="cat-section">
-      <h6><i class="bi bi-person-plus me-1"></i>Registration</h6>
-      <div class="d-flex flex-column gap-1">
-        {% for svc in service_catalog %}{% if svc.category == 'REG' %}
-        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-        </button>
-        {% endif %}{% endfor %}
-      </div>
-    </div>
+    {# ── Scrollable services area ── #}
+    <div id="catalogScroll">
 
-    {# Consultation #}
-    <div class="cat-section">
-      <h6><i class="bi bi-person-badge me-1"></i>Consultation</h6>
-      <div class="d-flex flex-column gap-1">
-        {% for svc in service_catalog %}{% if svc.category == 'CONSULT' %}
-        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-        </button>
-        {% endif %}{% endfor %}
-      </div>
-    </div>
-
-    {# Investigations #}
-    <div class="cat-section">
-      <h6><i class="bi bi-eyeglasses me-1"></i>Investigations</h6>
-      <div class="d-flex flex-column gap-1">
-        {% for svc in service_catalog %}{% if svc.category == 'INVEST' %}
-        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-        </button>
-        {% endif %}{% endfor %}
-      </div>
-    </div>
-
-    {# Laboratory #}
-    <div class="cat-section">
-      <h6><i class="bi bi-droplet me-1"></i>Laboratory</h6>
-      <div class="d-flex flex-column gap-1">
-        {% for svc in service_catalog %}{% if svc.category == 'LAB' %}
-        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-        </button>
-        {% endif %}{% endfor %}
-      </div>
-    </div>
-
-    {# Pharmacy & Opticals #}
-    <div class="cat-section">
-      <h6><i class="bi bi-capsule me-1"></i>Pharmacy &amp; Opticals</h6>
-      <div class="d-flex flex-column gap-1">
-        {% for svc in service_catalog %}{% if svc.category == 'PHARMACY' or svc.category == 'OPTICAL' %}
-        <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="price-tag">
-            {% if svc.price > 0 %}{{ svc.price|intcomma }} FCFA{% else %}Enter price{% endif %}
-          </span>
-        </button>
-        {% endif %}{% endfor %}
-      </div>
-    </div>
-
-    {# Custom Item #}
-    {% if invoice %}
-    <div class="cat-section">
-      <h6><i class="bi bi-pencil me-1"></i>Custom Item</h6>
-      <div class="custom-item-row">
-        <div class="row g-2 mb-2">
-          <div class="col-12">
-            <input type="text" id="customDesc" class="form-control form-control-sm"
-                   placeholder="Description…" />
-          </div>
+      {# Doctor's Orders pane #}
+      {% if doctor_orders %}
+      <div class="cat-pane" data-cat="ORDERS">
+        <div class="d-flex flex-column gap-1">
+          {% for wo in doctor_orders %}
+          <button type="button" class="service-btn"
+                  style="border-color:#16a34a;background:#f0fdf4;"
+                  onclick="addCatalogItem('{{ wo.description|escapejs }}','{{ wo.category }}',0)">
+            <span>{{ wo.description }}</span>
+            <span style="font-size:.7rem;color:#16a34a;font-weight:600;">{{ wo.get_category_display }}</span>
+          </button>
+          {% endfor %}
         </div>
-        <div class="row g-2 mb-2">
-          <div class="col-5">
-            <select id="customCat" class="form-select form-select-sm">
-              {% for val, label in categories %}
-              <option value="{{ val }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-3">
-            <input type="number" id="customQty" class="form-control form-control-sm"
-                   value="1" min="1" placeholder="Qty" />
-          </div>
-          <div class="col-4">
-            <input type="number" id="customPrice" class="form-control form-control-sm"
-                   placeholder="Price" min="0" />
-          </div>
-        </div>
-        <button class="service-btn" style="background:#1d4ed8;border-color:#3b82f6;"
-                onclick="addCustomItem()">
-          <span><i class="bi bi-plus-circle me-1"></i>Add to Bill</span>
-        </button>
       </div>
-    </div>
-    {% endif %}
+      {% endif %}
 
-    {# AI Suggestions placeholder #}
-    <div id="aiSuggestions" class="mt-2" style="display:none;">
-      <h6><i class="bi bi-stars me-1"></i>AI Suggestions</h6>
-      <div id="aiList" class="d-flex flex-column gap-1"></div>
-    </div>
+      {# Registration #}
+      <div class="cat-pane {% if not doctor_orders %}active{% endif %}" data-cat="REG">
+        <div class="d-flex flex-column gap-1">
+          {% for svc in service_catalog %}{% if svc.category == 'REG' %}
+          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+            <span>{{ svc.name }}</span>
+            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+          </button>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
 
+      {# Consultation #}
+      <div class="cat-pane" data-cat="CONSULT">
+        <div class="d-flex flex-column gap-1">
+          {% for svc in service_catalog %}{% if svc.category == 'CONSULT' %}
+          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+            <span>{{ svc.name }}</span>
+            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+          </button>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
+
+      {# Investigations #}
+      <div class="cat-pane" data-cat="INVEST">
+        <div class="d-flex flex-column gap-1">
+          {% for svc in service_catalog %}{% if svc.category == 'INVEST' %}
+          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+            <span>{{ svc.name }}</span>
+            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+          </button>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
+
+      {# Laboratory #}
+      <div class="cat-pane" data-cat="LAB">
+        <div class="d-flex flex-column gap-1">
+          {% for svc in service_catalog %}{% if svc.category == 'LAB' %}
+          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+            <span>{{ svc.name }}</span>
+            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+          </button>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
+
+      {# Pharmacy & Opticals #}
+      <div class="cat-pane" data-cat="PHARM">
+        <div class="d-flex flex-column gap-1">
+          {% for svc in service_catalog %}{% if svc.category == 'PHARMACY' or svc.category == 'OPTICAL' %}
+          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+            <span>{{ svc.name }}</span>
+            <span class="price-tag">
+              {% if svc.price > 0 %}{{ svc.price|intcomma }} FCFA{% else %}Enter price{% endif %}
+            </span>
+          </button>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
+
+      {# Surgery #}
+      <div class="cat-pane" data-cat="SURGERY">
+        <div class="d-flex flex-column gap-1">
+          {% for svc in service_catalog %}{% if svc.category == 'SURGERY' %}
+          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+            <span>{{ svc.name }}</span>
+            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+          </button>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
+
+      {# Other #}
+      <div class="cat-pane" data-cat="OTHER">
+        <div class="d-flex flex-column gap-1">
+          {% for svc in service_catalog %}{% if svc.category == 'OTHER' %}
+          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+            <span>{{ svc.name }}</span>
+            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
+          </button>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
+
+      {# Custom Item #}
+      {% if invoice %}
+      <div class="cat-pane" data-cat="CUSTOM">
+        <div class="custom-item-row">
+          <div class="row g-2 mb-2">
+            <div class="col-12">
+              <input type="text" id="customDesc" class="form-control form-control-sm" placeholder="Description…" />
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-5">
+              <select id="customCat" class="form-select form-select-sm">
+                {% for val, label in categories %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-3">
+              <input type="number" id="customQty" class="form-control form-control-sm" value="1" min="1" placeholder="Qty" />
+            </div>
+            <div class="col-4">
+              <input type="number" id="customPrice" class="form-control form-control-sm" placeholder="Price" min="0" />
+            </div>
+          </div>
+          <button class="service-btn" style="background:#1d4ed8;border-color:#3b82f6;color:#fff;"
+                  onclick="addCustomItem()">
+            <span><i class="bi bi-plus-circle me-1"></i>Add to Bill</span>
+          </button>
+        </div>
+      </div>
+      {% endif %}
+
+      {# AI Suggestions #}
+      <div id="aiSuggestions" class="cat-pane" data-cat="AI" style="display:none;">
+        <div id="aiList" class="d-flex flex-column gap-1"></div>
+      </div>
+
+    </div>{# end catalogScroll #}
   </div>{# end catalog-panel #}
 
 
@@ -690,6 +733,45 @@
 </div>
 
 <script>
+// ── Catalog tab switcher ──────────────────────────────────────────────────────
+function switchCat(cat, btn) {
+  // Update tab button active state
+  document.querySelectorAll('.cat-tab-btn').forEach(function(b) {
+    b.classList.remove('active');
+    // Restore AI button original style
+    if (b.id === 'aiSuggestBtn') {
+      b.style.background = 'linear-gradient(135deg,#7c3aed,#6d28d9)';
+      b.style.color = '#fff';
+    }
+  });
+  btn.classList.add('active');
+  // Show matching pane, hide others
+  document.querySelectorAll('.cat-pane').forEach(function(pane) {
+    pane.classList.toggle('active', pane.dataset.cat === cat);
+    pane.style.display = (pane.dataset.cat === cat) ? 'block' : 'none';
+  });
+  // Reset catalogScroll to top
+  var scroll = document.getElementById('catalogScroll');
+  if (scroll) scroll.scrollTop = 0;
+}
+
+// Initialise: show first active pane
+document.addEventListener('DOMContentLoaded', function() {
+  var firstActive = document.querySelector('.cat-tab-btn.active');
+  if (firstActive) {
+    var cat = firstActive.textContent.trim();
+    // Map tab label back to data-cat
+    var paneToShow = firstActive.classList.contains('active-orders') ? 'ORDERS'
+      : firstActive.textContent.trim() === 'Reg' ? 'REG' : null;
+    if (paneToShow) {
+      document.querySelectorAll('.cat-pane').forEach(function(p) {
+        p.style.display = p.dataset.cat === paneToShow ? 'block' : 'none';
+        p.classList.toggle('active', p.dataset.cat === paneToShow);
+      });
+    }
+  }
+});
+
 var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 {% if invoice %}
 var INVOICE_ID = '{{ invoice.id }}';
@@ -1087,7 +1169,11 @@ function renderAiSuggestions(suggestions) {
       list.appendChild(btn);
     });
   }
-  container.style.display = 'block';
+  // Switch catalog to AI pane
+  document.querySelectorAll('.cat-pane').forEach(function(p) {
+    p.style.display = p.dataset.cat === 'AI' ? 'block' : 'none';
+    p.classList.toggle('active', p.dataset.cat === 'AI');
+  });
 }
 
 // ── Floating cart badge ───────────────────────────────────────────────────────
