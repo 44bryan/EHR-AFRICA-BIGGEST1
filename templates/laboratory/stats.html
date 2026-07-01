@@ -70,7 +70,7 @@
   <div class="col-6 col-md col-lg">
     <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #6366f1 !important;">
       <div class="card-body py-3">
-        <div class="h2 fw-bold text-primary">{{ positivity_rate }}%</div>
+        <div class="h2 fw-bold text-primary">{{ positivity_rate|floatformat:1 }}%</div>
         <div class="small text-muted">Overall Positivity</div>
       </div>
     </div>
@@ -254,13 +254,13 @@
                   <div class="progress" style="height:8px;">
                     <div class="progress-bar {% if t.rate > 30 %}bg-danger{% elif t.rate > 10 %}bg-warning{% else %}bg-success{% endif %}"
                          role="progressbar"
-                         style="width:{{ t.rate }}%;"
+                         style="width:{{ t.rate|floatformat:1 }}%;"
                          aria-valuenow="{{ t.rate }}" aria-valuemin="0" aria-valuemax="100">
                     </div>
                   </div>
                 </div>
                 <span class="fw-bold {% if t.rate > 30 %}text-danger{% elif t.rate > 10 %}text-warning{% else %}text-success{% endif %}" style="min-width:40px;text-align:right;">
-                  {{ t.rate }}%
+                  {{ t.rate|floatformat:1 }}%
                 </span>
               </div>
             </td>
@@ -325,7 +325,7 @@
                 <td>{{ t.order_item__test_type__name }}</td>
                 <td class="text-end">{{ t.total }}</td>
                 <td class="text-end text-warning fw-semibold">{{ t.abnormal }}</td>
-                <td class="text-end text-muted">{{ t.abn_rate }}%</td>
+                <td class="text-end text-muted">{{ t.abn_rate|floatformat:1 }}%</td>
                 <td class="text-end text-danger fw-semibold">{{ t.critical }}</td>
               </tr>
               {% empty %}
@@ -400,81 +400,69 @@
   </div>
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-layers text-primary me-2"></i>Orders by Service Tier
-        <span class="badge bg-primary-subtle text-primary small ms-2">VIP / Express / Standard</span>
-      </div>
-      <div class="card-body">
-        <div class="row align-items-center">
-          <div class="col-5">
-            <canvas id="tierLabChart" style="max-height:180px;"></canvas>
-          </div>
-          <div class="col-7">
-            <table class="table table-sm table-borderless mb-0">
-              <thead class="table-light"><tr><th>Tier</th><th class="text-end">Orders</th><th class="text-end">%</th></tr></thead>
-              <tbody>
-                {% for row in tier_table %}
-                <tr>
-                  <td>
-                    {% if row.tier == 'VIP' %}<span class="badge" style="background:#7c3aed;">VIP</span>
-                    {% elif row.tier == 'Express' %}<span class="badge bg-warning text-dark">Express</span>
-                    {% elif row.tier == 'Fast Track' %}<span class="badge bg-info text-dark">Fast Track</span>
-                    {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
-                  </td>
-                  <td class="text-end fw-semibold">{{ row.count }}</td>
-                  <td class="text-end text-muted small">{% if total_orders %}{% widthratio row.count total_orders 100 %}%{% else %}—{% endif %}</td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="3" class="text-muted small">No data</td></tr>
-                {% endfor %}
-                <tr class="table-light fw-bold"><td>Total</td><td class="text-end">{{ total_orders }}</td><td class="text-end">100%</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-layers text-primary"></i>
+    <span>Completed Tests by Service Tier &amp; WHO Age Group</span>
+    <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_start|date:"F Y" }}</span>
+    <span class="ms-auto text-muted small fw-normal">Total completed: <strong>{{ total_completed_items }}</strong></span>
   </div>
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-cash-stack text-success me-2"></i>Orders by Billing Type
-        <span class="badge bg-success-subtle text-success small ms-2">Cash / Insurance / HMO</span>
+  <div class="card-body">
+    {% if tier_age_table %}
+    <div class="row align-items-start g-4">
+      <div class="col-md-4">
+        <canvas id="tierLabChart" style="max-height:220px;"></canvas>
       </div>
-      <div class="card-body">
-        <div class="row align-items-center">
-          <div class="col-5">
-            <canvas id="btLabChart" style="max-height:180px;"></canvas>
-          </div>
-          <div class="col-7">
-            <table class="table table-sm table-borderless mb-0">
-              <thead class="table-light"><tr><th>Billing</th><th class="text-end">Orders</th><th class="text-end">%</th></tr></thead>
-              <tbody>
-                {% for row in bt_table %}
-                <tr>
-                  <td>
-                    {% if row.bt == 'Cash / Card' %}<span class="badge bg-success">Cash/Card</span>
-                    {% elif row.bt == 'Insurance' %}<span class="badge bg-primary">Insurance</span>
-                    {% elif row.bt == 'HMO' %}<span class="badge bg-info text-dark">HMO</span>
-                    {% elif row.bt == 'Waiver' %}<span class="badge bg-warning text-dark">Waiver</span>
-                    {% else %}<span class="badge bg-secondary">{{ row.bt }}</span>{% endif %}
-                  </td>
-                  <td class="text-end fw-semibold">{{ row.count }}</td>
-                  <td class="text-end text-muted small">{% if total_orders %}{% widthratio row.count total_orders 100 %}%{% else %}—{% endif %}</td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="3" class="text-muted small">No data</td></tr>
-                {% endfor %}
-                <tr class="table-light fw-bold"><td>Total</td><td class="text-end">{{ total_orders }}</td><td class="text-end">100%</td></tr>
-              </tbody>
-            </table>
-          </div>
+      <div class="col-md-8">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Service Tier</th>
+                <th class="text-center"><i class="bi bi-person-fill text-success me-1"></i>Children<br><small class="text-muted fw-normal">0–14 yrs</small></th>
+                <th class="text-center"><i class="bi bi-person-fill text-primary me-1"></i>Adults<br><small class="text-muted fw-normal">15–59 yrs</small></th>
+                <th class="text-center"><i class="bi bi-person-fill text-warning me-1"></i>Elderly<br><small class="text-muted fw-normal">60+ yrs</small></th>
+                <th class="text-center fw-bold">Total</th>
+                <th class="text-end">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in tier_age_table %}
+              <tr>
+                <td>
+                  {% if row.tier == 'VIP' %}<span class="badge" style="background:#7c3aed;">VIP</span>
+                  {% elif row.tier == 'Express' %}<span class="badge bg-warning text-dark">Express</span>
+                  {% elif row.tier == 'Fast Track' %}<span class="badge bg-info text-dark">Fast Track</span>
+                  {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+                </td>
+                <td class="text-center text-success fw-semibold">{{ row.children }}</td>
+                <td class="text-center text-primary fw-semibold">{{ row.adults }}</td>
+                <td class="text-center fw-semibold" style="color:#d97706;">{{ row.elderly }}</td>
+                <td class="text-center fw-bold">{{ row.total }}</td>
+                <td class="text-end text-muted small">
+                  {% if total_completed_items %}{% widthratio row.total total_completed_items 100 %}%{% else %}—{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              <tr class="table-light fw-bold border-top">
+                <td>Total</td>
+                <td class="text-center text-success">{{ tier_age_table|length }}</td>
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+                <td class="text-center">{{ total_completed_items }}</td>
+                <td class="text-end">100%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-2 small text-muted">
+          <i class="bi bi-info-circle me-1"></i>Based on <strong>completed</strong> lab tests only. Children = 0–14 yrs, Adults = 15–59 yrs, Elderly = 60+ yrs (WHO standard).
         </div>
       </div>
     </div>
+    {% else %}
+    <div class="text-center text-muted py-4">No completed tests for this period</div>
+    {% endif %}
   </div>
 </div>
 
@@ -625,7 +613,7 @@ if (deptLab.data.some(v => v > 0)) {
   });
 }
 
-// Service Tier doughnut
+// Tier doughnut (completed tests per tier)
 const tierLab = {{ tier_lab_json|safe }};
 if (tierLab.data.some(v => v > 0)) {
   new Chart(document.getElementById('tierLabChart'), {
@@ -634,20 +622,10 @@ if (tierLab.data.some(v => v > 0)) {
       labels: tierLab.labels,
       datasets: [{ data: tierLab.data, backgroundColor: ['#7c3aed','#f59e0b','#06b6d4','#6c757d'], borderWidth: 2, borderColor: '#fff' }]
     },
-    options: { responsive: true, plugins: { legend: { display: false } } }
-  });
-}
-
-// Billing Type doughnut
-const btLab = {{ bt_lab_json|safe }};
-if (btLab.data.some(v => v > 0)) {
-  new Chart(document.getElementById('btLabChart'), {
-    type: 'doughnut',
-    data: {
-      labels: btLab.labels,
-      datasets: [{ data: btLab.data, backgroundColor: ['#198754','#0d6efd','#0dcaf0','#ffc107','#6c757d'], borderWidth: 2, borderColor: '#fff' }]
-    },
-    options: { responsive: true, plugins: { legend: { display: false } } }
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } }
+    }
   });
 }
 

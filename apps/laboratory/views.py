@@ -319,31 +319,59 @@ def lab_stats_view(request):
         'data':   [r['count'] for r in dept_lab_table],
     })
 
-    # ── Orders by service tier (VIP / Express / Fast Track / Standard) ───────
+    # ── Completed tests by service tier + WHO age groups ─────────────────────
+    # Base on COMPLETED LabOrderItems (actual tests done, not just ordered)
     TIER_DISPLAY = {'VIP': 'VIP', 'EXPRESS': 'Express', 'FAST_TRACK': 'Fast Track', 'STANDARD': 'Standard'}
-    tier_raw = list(
-        base_orders.values('consultation__visit__service_tier')
-        .annotate(count=Count('id'))
-        .order_by('-count')
-    )
-    tier_table = [
-        {'tier': TIER_DISPLAY.get(r['consultation__visit__service_tier'] or '', r['consultation__visit__service_tier'] or 'Unknown'), 'count': r['count']}
-        for r in tier_raw
-    ]
-    tier_lab_json = json.dumps({'labels': [r['tier'] for r in tier_table], 'data': [r['count'] for r in tier_table]})
+    TIER_ORDER   = ['VIP', 'EXPRESS', 'FAST_TRACK', 'STANDARD']
 
-    # ── Orders by billing type (Cash / Insurance / HMO) ──────────────────────
-    BT_DISPLAY = {'SELF_PAY': 'Cash / Card', 'INSURANCE': 'Insurance', 'HMO': 'HMO', 'WAIVER': 'Waiver', 'FREE': 'Free'}
-    bt_raw = list(
-        base_orders.values('consultation__visit__billing_type')
-        .annotate(count=Count('id'))
-        .order_by('-count')
+    # Pull completed items with tier and patient DOB
+    completed_items = list(
+        base_items.filter(status='COMPLETED')
+        .values(
+            'order__consultation__visit__service_tier',
+            'order__patient__date_of_birth',
+        )
     )
-    bt_table = [
-        {'bt': BT_DISPLAY.get(r['consultation__visit__billing_type'] or '', r['consultation__visit__billing_type'] or 'Unknown'), 'count': r['count']}
-        for r in bt_raw
-    ]
-    bt_lab_json = json.dumps({'labels': [r['bt'] for r in bt_table], 'data': [r['count'] for r in bt_table]})
+
+    # Age buckets: Children 0-14, Adults 15-59, Elderly 60+
+    tier_age = {}   # {'STANDARD': {'children': 0, 'adults': 0, 'elderly': 0, 'total': 0}, ...}
+    for row in completed_items:
+        tier_key = row['order__consultation__visit__service_tier'] or 'STANDARD'
+        dob      = row['order__patient__date_of_birth']
+        if tier_key not in tier_age:
+            tier_age[tier_key] = {'children': 0, 'adults': 0, 'elderly': 0, 'total': 0}
+        tier_age[tier_key]['total'] += 1
+        if dob:
+            try:
+                age = (today - dob).days // 365
+                if age <= 14:
+                    tier_age[tier_key]['children'] += 1
+                elif age <= 59:
+                    tier_age[tier_key]['adults'] += 1
+                else:
+                    tier_age[tier_key]['elderly'] += 1
+            except Exception:
+                pass
+
+    # Build ordered table (all tiers, even zeros)
+    tier_age_table = []
+    for tk in TIER_ORDER:
+        d = tier_age.get(tk, {'children': 0, 'adults': 0, 'elderly': 0, 'total': 0})
+        if d['total'] > 0:
+            tier_age_table.append({'tier': TIER_DISPLAY[tk], 'key': tk, **d})
+
+    # Also include any unknown tiers
+    for tk, d in tier_age.items():
+        if tk not in TIER_ORDER and d['total'] > 0:
+            tier_age_table.append({'tier': tk, 'key': tk, **d})
+
+    total_completed_items = sum(d['total'] for d in tier_age.values())
+
+    # JSON for tier doughnut
+    tier_lab_json = json.dumps({
+        'labels': [r['tier'] for r in tier_age_table],
+        'data':   [r['total'] for r in tier_age_table],
+    })
 
     # ── Urgency breakdown ────────────────────────────────────────────────────
     urgency_raw = list(
@@ -410,13 +438,12 @@ def lab_stats_view(request):
         'daily_volume': daily_volume,
         'daily_volume_json': json.dumps(daily_volume),
         'category_json': category_json,
-        # By department / tier / billing
+        # By department / tier+age / urgency
         'dept_lab_table': dept_lab_table,
         'dept_lab_json': dept_lab_json,
-        'tier_table': tier_table,
+        'tier_age_table': tier_age_table,
         'tier_lab_json': tier_lab_json,
-        'bt_table': bt_table,
-        'bt_lab_json': bt_lab_json,
+        'total_completed_items': total_completed_items,
         'urgency_json': urgency_json,
     }
     return render(request, 'laboratory/stats.html', context)
