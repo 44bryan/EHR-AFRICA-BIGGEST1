@@ -8,7 +8,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.http import require_POST
 from .models import AIConversation, AIMessage, ContextType
-from .claude_client import get_claude_response, suggest_diagnosis, build_exam_context, check_drug_interactions, get_patient_risk_summary
+from .claude_client import (
+    get_claude_response, suggest_diagnosis, build_exam_context,
+    check_drug_interactions, get_patient_risk_summary,
+    ai_triage_score, ai_analyze_investigation, ai_generate_soap_note,
+)
 
 
 @login_required
@@ -139,10 +143,17 @@ def send_message_view(request, pk):
             tokens_used = result.get('usage', {}).get('completion_tokens', 0)
             model_name = result.get('model', 'llama-3.3-70b-versatile')
         else:
-            response_text = f"AI assistant error: {result.get('error', 'Unknown error')}. Please try again."
+            err = result.get('error', '')
+            if 'not configured' in err.lower() or 'api key' in err.lower() or 'groq_api_key' in err.lower():
+                response_text = (
+                    "The AI assistant is not available right now — it has not been configured yet. "
+                    "Please contact your System Administrator to set up the AI service."
+                )
+            else:
+                response_text = "The AI assistant is temporarily unavailable. Please try again in a moment."
             reasoning = ''
             tokens_used = 0
-            model_name = 'groq-unavailable'
+            model_name = 'unavailable'
 
         response_time_ms = int((_time.time() - _start) * 1000)
 
@@ -538,15 +549,23 @@ def patient_risk_summary_view(request, patient_id):
 
 
 @login_required
-@require_POST
 def drug_interaction_view(request):
     """
     AI Drug Interaction Checker.
-    POST body: { drugs: ["Drug A 0.5%", "Drug B", ...] }
-    Returns JSON with interactions, cautions, safe flag.
+    GET  → renders the interactive checker page.
+    POST → { drugs: ["Drug A 0.5%", "Drug B", ...] } → JSON with interactions.
     """
     if not request.user.can_use_ai_assistant():
-        return JsonResponse({'error': 'Permission denied'}, status=403)
+        return HttpResponseForbidden()
+
+    if request.method == 'GET':
+        quick_drugs = [
+            'Timolol 0.5%', 'Latanoprost 0.005%', 'Brimonidine 0.2%',
+            'Dorzolamide 2%', 'Pilocarpine 2%', 'Prednisolone Acetate 1%',
+            'Dexamethasone 0.1%', 'Ciprofloxacin 0.3%', 'Tropicamide 1%',
+            'Cyclopentolate 1%', 'Atropine 1%', 'Phenylephrine 2.5%',
+        ]
+        return render(request, 'ai_assistant/drug_interactions.html', {'quick_drugs': quick_drugs})
 
     try:
         data = json.loads(request.body)
@@ -664,3 +683,81 @@ def analytics_ai_view(request):
         return JsonResponse({'response': response})
 
     return render(request, 'ai_assistant/analytics.html')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI TRIAGE SCORING
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def ai_triage_view(request):
+    """Score a patient triage priority 1-5 based on complaint, VA, IOP."""
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    result = ai_triage_score(
+        chief_complaint=data.get('chief_complaint', ''),
+        va_re=data.get('va_re', ''),
+        va_le=data.get('va_le', ''),
+        iop_re=data.get('iop_re', ''),
+        iop_le=data.get('iop_le', ''),
+        age=str(data.get('age', '')),
+        arrival_type=data.get('arrival_type', ''),
+    )
+    if result['success']:
+        return JsonResponse({'success': True, 'triage': result['data']})
+    return JsonResponse({'success': False, 'error': result.get('error', 'AI unavailable')}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI IMAGING / INVESTIGATION ANALYSIS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def ai_imaging_analysis_view(request, result_id):
+    """Run AI analysis on an investigation result."""
+    from apps.investigations.models import InvestigationResult
+    inv_result = get_object_or_404(InvestigationResult, pk=result_id)
+
+    result = ai_analyze_investigation(
+        investigation_type=inv_result.order.investigation_type.name,
+        eye=inv_result.order.get_eye_display(),
+        clinical_indication=inv_result.order.clinical_indication,
+        result_data=inv_result.result_data,
+        interpretation=inv_result.interpretation,
+    )
+    if result['success']:
+        # Cache the AI analysis in result_data
+        inv_result.result_data['ai_analysis'] = result['data']
+        inv_result.save(update_fields=['result_data'])
+        return JsonResponse({'success': True, 'analysis': result['data']})
+    return JsonResponse({'success': False, 'error': result.get('error', 'AI unavailable')}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI SOAP NOTE GENERATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def ai_soap_note_view(request):
+    """Convert free-form clinical text into a structured SOAP note."""
+    if not request.user.can_use_ai_assistant():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    raw_text = data.get('text', '').strip()
+    if not raw_text:
+        return JsonResponse({'error': 'No text provided'}, status=400)
+
+    result = ai_generate_soap_note(raw_text)
+    if result['success']:
+        return JsonResponse({'success': True, 'soap': result['data']})
+    return JsonResponse({'success': False, 'error': result.get('error', 'AI unavailable')}, status=500)

@@ -1,258 +1,288 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}CEO Executive Dashboard — {{ HOSPITAL_NAME }}{% endblock %}
+{% block title %}Executive Dashboard — {{ HOSPITAL_NAME }}{% endblock %}
 
-{% block extra_css %}
-<style>
-  .ceo-header {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #1e3a5f 100%);
-    border-radius: 14px;
-    padding: 24px 28px;
-    color: #fff;
-    margin-bottom: 28px;
-  }
-
-  .mega-card {
-    border-radius: 14px;
-    padding: 24px;
-    margin-bottom: 0;
-  }
-
-  .mega-val { font-size: 2.4rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
-  .mega-label { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; opacity: .6; }
-  .mega-sub { font-size: .75rem; margin-top: 6px; opacity: .75; }
-
-  .flag-card {
-    border-radius: 12px;
-    padding: 18px;
-    border: none;
-  }
-  .flag-num { font-size: 2rem; font-weight: 800; line-height: 1; }
-  .flag-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; margin-bottom: 2px; }
-  .flag-sub { font-size: .72rem; margin-top: 3px; }
-
-  .go-card {
-    display: block;
-    border-radius: 12px;
-    border: 1.5px solid #e2e8f0;
-    padding: 18px 20px;
-    text-decoration: none;
-    color: inherit;
-    transition: border-color .15s, box-shadow .15s;
-  }
-  .go-card:hover {
-    border-color: #3b82f6;
-    box-shadow: 0 4px 12px rgba(59,130,246,.12);
-    color: inherit;
-  }
-</style>
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Executive Dashboard</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — Hospital-wide overview</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'leadership:finance_dashboard' %}" class="btn btn-sm btn-outline-success"><i class="bi bi-cash-coin me-1"></i>Finance</a>
+    <a href="{% url 'leadership:analytics_dashboard' %}" class="btn btn-sm btn-outline-primary"><i class="bi bi-bar-chart-line me-1"></i>Analytics</a>
+    <a href="{% url 'leadership:monthly_stats' %}" class="btn btn-sm btn-primary"><i class="bi bi-file-bar-graph me-1"></i>Monthly Report</a>
+  </div>
+</div>
 {% endblock %}
 
 {% block content %}
 
-<!-- ── Header ── -->
-<div class="ceo-header">
-  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-    <div>
-      <div style="font-size:.7rem;opacity:.45;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">
-        {{ HOSPITAL_NAME }} &bull; {{ request.user.get_role_display }}
-      </div>
-      <h2 class="fw-bold mb-1" style="font-size:1.5rem;">
-        Good {% now "H" as hr %}{% if hr < "12" %}Morning{% elif hr < "17" %}Afternoon{% else %}Evening{% endif %}, {{ request.user.first_name }}
-      </h2>
-      <div style="font-size:.82rem;opacity:.6;">{{ today|date:"l, d F Y" }}</div>
-    </div>
-    <div class="d-flex gap-2 flex-wrap align-items-start">
-      <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm" style="background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);">
-        <i class="bi bi-graph-up-arrow me-1"></i>Performance Hub
-      </a>
-      <a href="{% url 'leadership:finance_dashboard' %}" class="btn btn-sm" style="background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);">
-        <i class="bi bi-cash-coin me-1"></i>Finance
-      </a>
-      <a href="{% url 'ai_assistant:analytics' %}" class="btn btn-sm" style="background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);">
-        <i class="bi bi-robot me-1"></i>AI Analytics
-      </a>
-    </div>
-  </div>
-  {% if open_complaints > 0 %}
-  <div class="mt-3 p-2 rounded d-flex align-items-center gap-2"
-       style="background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.3);font-size:.8rem;">
-    <i class="bi bi-exclamation-triangle-fill" style="color:#fbbf24;"></i>
-    <strong>{{ open_complaints }} open patient complaint{{ open_complaints|pluralize }}</strong>
-    <a href="{% url 'feedback:service_recovery' %}" style="color:#fbbf24;margin-left:6px;">Review &rarr;</a>
-  </div>
-  {% endif %}
+{% if open_complaints > 0 %}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3" style="font-size:.83rem;">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <strong>{{ open_complaints }} open patient complaint{{ open_complaints|pluralize }}</strong>
+  <a href="{% url 'feedback:service_recovery' %}" class="ms-auto btn btn-sm btn-warning">Review</a>
 </div>
+{% endif %}
 
-<!-- ── Three Big Numbers ── -->
+{# ── Primary KPI Strip ── #}
 <div class="row g-3 mb-4">
-
-  <div class="col-md-4">
-    <div class="mega-card h-100" style="background:#f0fdf4;">
-      <div class="mega-label" style="color:#166534;">Revenue This Year</div>
-      <div class="mega-val" style="color:#15803d;">XAF {{ rev_year|floatformat:0|intcomma }}</div>
-      <div class="mega-sub" style="color:#166534;">
-        {{ rev_month|floatformat:0|intcomma }} this month &nbsp;&bull;&nbsp; {{ rev_today|floatformat:0|intcomma }} today
-      </div>
-      {% if outstanding > 0 %}
-      <div class="mt-2" style="font-size:.72rem;color:#dc2626;">
-        <i class="bi bi-exclamation-circle me-1"></i>XAF {{ outstanding|floatformat:0|intcomma }} unpaid invoices
-      </div>
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="col-md-4">
-    <div class="mega-card h-100" style="background:#eff6ff;">
-      <div class="mega-label" style="color:#1e40af;">Registered Patients</div>
-      <div class="mega-val" style="color:#1d4ed8;">{{ total_patients|intcomma }}</div>
-      <div class="mega-sub" style="color:#1e40af;">
-        +{{ new_month }} new this month &nbsp;&bull;&nbsp; {{ today_visits }} visits today
-      </div>
-      <div class="mt-2" style="font-size:.72rem;color:#3b82f6;">
-        {{ total_staff }} active staff &nbsp;&bull;&nbsp; {{ occupied_beds }}/{{ total_beds }} beds ({{ bed_occupancy }}%)
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Revenue This Year</div>
+        <div class="fs-3 fw-bold text-success">{{ rev_year|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA year-to-date</div>
       </div>
     </div>
   </div>
-
-  <div class="col-md-4">
-    <div class="mega-card h-100" style="background:{% if nps >= 50 %}#f0fdf4{% elif nps >= 0 %}#fffbeb{% else %}#fff1f2{% endif %};">
-      <div class="mega-label" style="color:#64748b;">Patient Satisfaction (NPS)</div>
-      <div class="mega-val" style="color:{% if nps >= 50 %}#15803d{% elif nps >= 0 %}#b45309{% else %}#be123c{% endif %};">{{ nps }}</div>
-      <div class="mega-sub" style="color:#64748b;">
-        {% if nps >= 50 %}Excellent — world class{% elif nps >= 30 %}Good — room to improve{% elif nps >= 0 %}Fair — needs attention{% else %}Poor — urgent action needed{% endif %}
-      </div>
-      <div class="mt-2" style="font-size:.72rem;color:#64748b;">
-        Queue now: <strong class="{% if queue_now > 30 %}text-danger{% else %}text-success{% endif %}">{{ queue_now }}</strong> waiting
-        &nbsp;&bull;&nbsp; {{ served_today }} served today
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Revenue This Month</div>
+        <div class="fs-3 fw-bold text-primary">{{ rev_month|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">{% now "F Y" %}</div>
       </div>
     </div>
   </div>
-
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-info">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Registered Patients</div>
+        <div class="fs-3 fw-bold text-info">{{ total_patients|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">+{{ new_month }} new this month</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Unpaid Bills Total</div>
+        <div class="fs-3 fw-bold text-warning">{{ outstanding|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA owed to hospital</div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<!-- ── Risk Flags ── -->
-<h6 class="fw-bold text-muted mb-3" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;">
-  <i class="bi bi-flag me-1"></i>Executive Risk Flags
-</h6>
+{# ── Operational KPIs ── #}
 <div class="row g-3 mb-4">
-
-  <div class="col-6 col-md-3">
-    <div class="flag-card h-100" style="background:{% if queue_now > 30 %}#fff1f2{% elif queue_now > 15 %}#fffbeb{% else %}#f0fdf4{% endif %};">
-      <div class="flag-label">Live Queue</div>
-      <div class="flag-num" style="color:{% if queue_now > 30 %}#be123c{% elif queue_now > 15 %}#b45309{% else %}#15803d{% endif %};">{{ queue_now }}</div>
-      <div class="flag-sub" style="color:#64748b;">{% if queue_now > 30 %}High — review staffing{% elif queue_now > 15 %}Moderate{% else %}Normal{% endif %}</div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ today_visits }}</div>
+      <div class="text-muted small">Visits Today</div>
     </div>
   </div>
-
-  <div class="col-6 col-md-3">
-    <div class="flag-card h-100" style="background:{% if outstanding > 500000 %}#fff1f2{% else %}#f8fafc{% endif %};">
-      <div class="flag-label">Outstanding (XAF)</div>
-      <div class="flag-num" style="font-size:1.5rem;color:{% if outstanding > 500000 %}#be123c{% else %}#334155{% endif %};">{{ outstanding|floatformat:0|intcomma }}</div>
-      <div class="flag-sub"><a href="{% url 'leadership:finance_dashboard' %}" style="color:#0891b2;text-decoration:none;font-size:.72rem;">View invoices &rarr;</a></div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if queue_now > 30 %}text-danger{% elif queue_now > 15 %}text-warning{% else %}text-success{% endif %}">{{ queue_now }}</div>
+      <div class="text-muted small">In Queue Now</div>
     </div>
   </div>
-
-  <div class="col-6 col-md-3">
-    <div class="flag-card h-100" style="background:{% if bed_occupancy > 90 %}#fff1f2{% elif bed_occupancy > 70 %}#fffbeb{% else %}#f0fdf4{% endif %};">
-      <div class="flag-label">Bed Occupancy</div>
-      <div class="flag-num" style="color:{% if bed_occupancy > 90 %}#be123c{% elif bed_occupancy > 70 %}#b45309{% else %}#15803d{% endif %};">{{ bed_occupancy }}%</div>
-      <div class="flag-sub" style="color:#64748b;">{{ occupied_beds }} / {{ total_beds }} beds</div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ served_today }}</div>
+      <div class="text-muted small">Served Today</div>
     </div>
   </div>
-
-  <div class="col-6 col-md-3">
-    <div class="flag-card h-100" style="background:{% if open_complaints > 0 %}#fff7ed{% else %}#f0fdf4{% endif %};">
-      <div class="flag-label">Open Complaints</div>
-      <div class="flag-num" style="color:{% if open_complaints > 0 %}#c2410c{% else %}#15803d{% endif %};">
-        {% if open_complaints > 0 %}{{ open_complaints }}{% else %}<i class="bi bi-check-circle-fill fs-3"></i>{% endif %}
-      </div>
-      <div class="flag-sub">
-        {% if open_complaints > 0 %}<a href="{% url 'feedback:service_recovery' %}" style="color:#c2410c;text-decoration:none;font-size:.72rem;">Needs review &rarr;</a>{% else %}<span style="color:#15803d;font-size:.72rem;">No open issues</span>{% endif %}
-      </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if bed_occupancy > 90 %}text-danger{% elif bed_occupancy > 70 %}text-warning{% else %}text-success{% endif %}">{{ bed_occupancy }}%</div>
+      <div class="text-muted small">Beds In Use</div>
     </div>
   </div>
-
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if nps >= 50 %}text-success{% elif nps >= 0 %}text-warning{% else %}text-danger{% endif %}">{{ nps }}</div>
+      <div class="text-muted small">Patient Satisfaction</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-secondary">{{ total_staff }}</div>
+      <div class="text-muted small">Active Staff</div>
+    </div>
+  </div>
 </div>
 
-<!-- ── Go Deeper ── -->
-<h6 class="fw-bold text-muted mb-3" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;">
-  <i class="bi bi-compass me-1"></i>Go Deeper
-</h6>
-<div class="row g-3 mb-3">
-
-  <div class="col-md-4">
-    <a href="{% url 'leadership:dashboard' %}" class="go-card" style="background:#eff6ff;">
-      <div class="d-flex align-items-center gap-3">
-        <i class="bi bi-graph-up-arrow text-primary fs-3 flex-shrink-0"></i>
-        <div>
-          <div class="fw-bold">Performance Hub</div>
-          <div class="text-muted small">Full analytics — visits, clinical quality, staff, NPS trends, wait times</div>
-        </div>
+{# ── Charts Row 1 ── #}
+<div class="row g-3 mb-4">
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-people me-1 text-primary"></i>Patient Visits — 12 Months</h6>
       </div>
-    </a>
+      <div class="card-body py-3"><canvas id="ceoVisitsChart" height="150"></canvas></div>
+    </div>
   </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-cash-stack me-1 text-success"></i>Revenue — 12 Months</h6>
+      </div>
+      <div class="card-body py-3"><canvas id="ceoRevenueChart" height="150"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-list-ol me-1 text-danger"></i>Most Common Eye Conditions — Last 90 Days</h6>
+      </div>
+      <div class="card-body py-3"><canvas id="ceoDxChart" height="180"></canvas></div>
+    </div>
+  </div>
+</div>
 
+{# ── Charts Row 2 ── #}
+<div class="row g-3 mb-4">
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-calendar-check me-1 text-warning"></i>Appointments This Month</h6>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="ceoApptChart" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-gender-ambiguous me-1 text-primary"></i>Patient Demographics</h6>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="ceoGenderChart" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-person-badge me-1 text-primary"></i>Patients Seen Per Doctor — Last 30 Days</h6>
+      </div>
+      <div class="card-body py-3"><canvas id="ceoDoctorChart" height="160"></canvas></div>
+    </div>
+  </div>
+</div>
+
+{# ── Quick links ── #}
+<div class="row g-3">
   <div class="col-md-4">
-    <a href="{% url 'leadership:finance_dashboard' %}" class="go-card" style="background:#f0fdf4;">
-      <div class="d-flex align-items-center gap-3">
+    <a href="{% url 'leadership:finance_dashboard' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
         <i class="bi bi-cash-coin text-success fs-3 flex-shrink-0"></i>
         <div>
-          <div class="fw-bold">Finance Dashboard</div>
-          <div class="text-muted small">Revenue trends, collection rates, payment methods, outstanding</div>
+          <div class="fw-semibold small">Finance Dashboard</div>
+          <div class="text-muted" style="font-size:.72rem;">Collections, bills &amp; unpaid balances</div>
         </div>
+        <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     </a>
   </div>
-
   <div class="col-md-4">
-    <a href="{% url 'leadership:monthly_stats' %}" class="go-card" style="background:#faf5ff;">
-      <div class="d-flex align-items-center gap-3">
-        <i class="bi bi-file-bar-graph fs-3 flex-shrink-0" style="color:#7c3aed;"></i>
+    <a href="{% url 'leadership:analytics_dashboard' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <i class="bi bi-bar-chart-line text-primary fs-3 flex-shrink-0"></i>
         <div>
-          <div class="fw-bold">Monthly Report</div>
-          <div class="text-muted small">End-of-month printable summary for governance &amp; board</div>
+          <div class="fw-semibold small">Live Analytics</div>
+          <div class="text-muted" style="font-size:.72rem;">Trends, charts &amp; detailed reports</div>
         </div>
+        <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     </a>
   </div>
-
   <div class="col-md-4">
-    <a href="{% url 'ai_assistant:analytics' %}" class="go-card" style="background:#fff7ed;">
-      <div class="d-flex align-items-center gap-3">
-        <i class="bi bi-robot fs-3 flex-shrink-0" style="color:#ea580c;"></i>
+    <a href="{% url 'leadership:monthly_stats' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <i class="bi bi-file-bar-graph text-warning fs-3 flex-shrink-0"></i>
         <div>
-          <div class="fw-bold">AI Analytics</div>
-          <div class="text-muted small">Ask plain-language questions about hospital data</div>
+          <div class="fw-semibold small">Monthly Report</div>
+          <div class="text-muted" style="font-size:.72rem;">Clinical &amp; financial summary</div>
         </div>
+        <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     </a>
   </div>
-
-  <div class="col-md-4">
-    <a href="{% url 'feedback:dashboard' %}" class="go-card" style="background:#fffbeb;">
-      <div class="d-flex align-items-center gap-3">
-        <i class="bi bi-emoji-smile text-warning fs-3 flex-shrink-0"></i>
-        <div>
-          <div class="fw-bold">Patient Experience</div>
-          <div class="text-muted small">NPS scores, satisfaction surveys, complaints tracking</div>
-        </div>
-      </div>
-    </a>
-  </div>
-
-  <div class="col-md-4">
-    <a href="{% url 'leadership:retina_dashboard' %}" class="go-card" style="background:#fff1f2;">
-      <div class="d-flex align-items-center gap-3">
-        <i class="bi bi-eye text-danger fs-3 flex-shrink-0"></i>
-        <div>
-          <div class="fw-bold">Retina Outcomes</div>
-          <div class="text-muted small">Clinical outcomes for the Retina department</div>
-        </div>
-      </div>
-    </a>
-  </div>
-
 </div>
+
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
+<script>
+const _p = getComputedStyle(document.documentElement).getPropertyValue('--ehr-primary').trim() || '#0891b2';
+const PAL = [_p,'#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6'];
+let cc = {};
+function dc(id) { if (cc[id]) { cc[id].destroy(); delete cc[id]; } }
+
+fetch("{% url 'leadership:analytics_data' %}")
+  .then(r => r.json())
+  .then(d => {
+    dc('v'); cc['v'] = new Chart(document.getElementById('ceoVisitsChart'), {
+      type: 'line',
+      data: { labels: d.monthly_visits.map(m => m.month),
+        datasets: [{ data: d.monthly_visits.map(m => m.visits), borderColor: _p,
+          backgroundColor: _p + '18', fill: true, tension: 0.4, pointRadius: 3 }] },
+      options: { responsive: true, plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
+                  x: { ticks: { font: { size: 9 } } } } }
+    });
+
+    dc('r'); cc['r'] = new Chart(document.getElementById('ceoRevenueChart'), {
+      type: 'bar',
+      data: { labels: d.monthly_revenue.map(m => m.month),
+        datasets: [{ data: d.monthly_revenue.map(m => m.revenue),
+          backgroundColor: '#10b981', borderRadius: 4 }] },
+      options: { responsive: true, plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { font: { size: 9 },
+          callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'K' : v
+        }}, x: { ticks: { font: { size: 9 } } } } }
+    });
+
+    dc('dx'); const t7 = d.top_diagnoses.slice(0,7);
+    cc['dx'] = new Chart(document.getElementById('ceoDxChart'), {
+      type: 'bar',
+      data: { labels: t7.map(x => x.name),
+        datasets: [{ data: t7.map(x => x.count), backgroundColor: PAL, borderRadius: 3 }] },
+      options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } },
+                  y: { ticks: { font: { size: 9 } } } } }
+    });
+
+    if (d.appointments_by_status?.length) {
+      dc('a'); cc['a'] = new Chart(document.getElementById('ceoApptChart'), {
+        type: 'doughnut',
+        data: { labels: d.appointments_by_status.map(a => a.status),
+          datasets: [{ data: d.appointments_by_status.map(a => a.count), backgroundColor: PAL, borderWidth: 2 }] },
+        options: { responsive: true, cutout: '65%',
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 9 }, padding: 6 } } } }
+      });
+    }
+
+    if (d.patient_gender?.length) {
+      dc('g'); cc['g'] = new Chart(document.getElementById('ceoGenderChart'), {
+        type: 'doughnut',
+        data: { labels: d.patient_gender.map(g => g.gender || 'Unknown'),
+          datasets: [{ data: d.patient_gender.map(g => g.count),
+            backgroundColor: [_p, '#ec4899', '#94a3b8'], borderWidth: 2 }] },
+        options: { responsive: true, cutout: '65%',
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 9 }, padding: 6 } } } }
+      });
+    }
+
+    if (d.doctor_throughput?.length) {
+      dc('doc'); cc['doc'] = new Chart(document.getElementById('ceoDoctorChart'), {
+        type: 'bar',
+        data: { labels: d.doctor_throughput.map(x => x.name),
+          datasets: [{ data: d.doctor_throughput.map(x => x.count),
+            backgroundColor: _p, borderRadius: 3 }] },
+        options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
+          scales: { x: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } },
+                    y: { ticks: { font: { size: 9 } } } } }
+      });
+    }
+  })
+  .catch(e => console.warn('CEO chart load failed', e));
+
+setInterval(() => location.reload(), 5 * 60 * 1000);
+</script>
 
 {% endblock %}

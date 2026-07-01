@@ -1,0 +1,205 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Consultation Room — {{ dept.name|default:"Room" }}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h4 class="fw-bold mb-1">
+      <i class="bi bi-person-heart me-2 text-primary"></i>
+      Consultation Room — {{ dept.name|default:"My Room" }}
+    </h4>
+    <div class="text-muted small">
+      {{ user.full_name }} &bull; Consultation Room Nurse &bull; {{ today|date:"l, d F Y" }}
+      {% if not dept %}
+      &bull; <span class="text-danger fw-semibold">No department assigned — ask Admin to assign you to a room</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'consultations:triage_workstation' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-heart-pulse me-1"></i>Triage Station
+    </a>
+    <a href="{% url 'patients:list' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-search me-1"></i>Find Patient
+    </a>
+  </div>
+</div>
+
+{# ── Stats row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning mb-0">{{ waiting_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-hourglass-split me-1"></i>Waiting to be Called</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary mb-0">{{ in_progress_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-person-check me-1"></i>In Room Now</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success mb-0">{{ completed_today }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Completed Today</div>
+    </div>
+  </div>
+</div>
+
+{% if not qms_on %}
+{# ── No QMS mode ── #}
+<div class="alert alert-info d-flex gap-2 align-items-start py-2">
+  <i class="bi bi-info-circle-fill mt-1 flex-shrink-0"></i>
+  <div>Queue Management System is off. Patient calling is managed manually by the doctor.
+  You can still search for patients and record vitals below.</div>
+</div>
+{% endif %}
+
+{% if not dept %}
+<div class="alert alert-warning d-flex gap-2 align-items-start">
+  <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+  <div>
+    <strong>No room assigned.</strong> Ask the System Administrator to assign your account to a consultation department
+    (e.g. General OPH, Retina, Glaucoma…). Until then, the patient queue cannot be shown.
+  </div>
+</div>
+{% endif %}
+
+{% if dept %}
+{# ── Patient Queue for this room ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <i class="bi bi-people me-2 text-primary"></i>
+      Patient Queue — {{ dept.name }}
+    </h6>
+    <span class="badge bg-primary">{{ waiting_tokens|length }} patient{{ waiting_tokens|length|pluralize }}</span>
+  </div>
+
+  {% if waiting_tokens %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th style="width:60px;">Token</th>
+          <th>Patient</th>
+          <th>Visit Type</th>
+          <th>Priority</th>
+          <th>Status</th>
+          <th>Waiting Since</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for token in waiting_tokens %}
+        <tr class="{% if token.status == 'SERVING' %}table-primary{% elif token.status == 'CALLED' %}table-warning{% endif %}">
+          <td>
+            <code class="fw-bold">{{ token.display_token_number|default:token.token_number }}</code>
+          </td>
+          <td>
+            <div class="fw-semibold">{{ token.patient_name|default:token.patient.full_name }}</div>
+            {% if token.patient %}
+            <div class="text-muted" style="font-size:.72rem;">{{ token.patient.patient_id }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {% if token.active_visit %}
+              <span class="badge bg-light text-dark border small">{{ token.active_visit.get_visit_type_display|default:token.active_visit.visit_type }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if token.priority >= 100 %}
+              <span class="badge bg-danger">Emergency</span>
+            {% elif token.priority >= 50 %}
+              <span class="badge bg-warning text-dark">Urgent</span>
+            {% else %}
+              <span class="badge bg-secondary">Normal</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if token.status == 'SERVING' %}
+              <span class="badge bg-primary"><i class="bi bi-person-check me-1"></i>In Room</span>
+            {% elif token.status == 'CALLED' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-megaphone me-1"></i>Called</span>
+            {% else %}
+              <span class="badge bg-secondary">Waiting</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ token.issued_at|time:"H:i" }}</td>
+          <td>
+            {% if token.active_visit %}
+            <a href="{% url 'patients:visit_detail' visit_number=token.active_visit.visit_number %}"
+               class="btn btn-sm btn-outline-primary py-0 px-2"
+               title="View visit record">
+              <i class="bi bi-file-earmark-person"></i>
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-people fs-1 d-block mb-2 opacity-25"></i>
+    <div>No patients waiting in <strong>{{ dept.name }}</strong> queue right now.</div>
+    <div class="small mt-1">Patients will appear here once Triage dispatches them to this room.</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Quick actions ── #}
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-lightning-charge me-2 text-warning"></i>Quick Actions
+      </div>
+      <div class="card-body d-flex flex-column gap-2">
+        <a href="{% url 'consultations:triage_workstation' %}" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-heart-pulse me-2"></i>Record Vitals for a Patient
+        </a>
+        <a href="{% url 'patients:list' %}" class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-search me-2"></i>Look Up Patient Record
+        </a>
+        <a href="{% url 'consultations:triage_workstation' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-display me-2"></i>Triage / Parameters Workstation
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-info-circle me-2 text-info"></i>Your Room Assignment
+      </div>
+      <div class="card-body small">
+        <div class="mb-2">
+          <span class="text-muted">Department:</span>
+          <strong class="ms-2">{{ dept.name }}</strong>
+        </div>
+        {% if dept.code %}
+        <div class="mb-2">
+          <span class="text-muted">Room Code:</span>
+          <code class="ms-2">{{ dept.code }}</code>
+        </div>
+        {% endif %}
+        <hr class="my-2">
+        <div class="text-muted">
+          <i class="bi bi-info-circle me-1"></i>
+          You assist the doctor in this room. Patients appear in the queue above once Triage
+          dispatches them here. You can call them in, record vitals, and dispatch them out
+          after the consultation.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

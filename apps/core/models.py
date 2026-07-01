@@ -7,6 +7,41 @@ from django.db import models
 from django.utils import timezone
 
 
+class BackupLog(models.Model):
+    """Tracks every automated and manual database backup."""
+
+    class Status(models.TextChoices):
+        SUCCESS = 'SUCCESS', 'Success'
+        FAILED = 'FAILED', 'Failed'
+        RUNNING = 'RUNNING', 'Running'
+
+    class TriggerSource(models.TextChoices):
+        CELERY = 'CELERY', 'Automated (Celery)'
+        MANUAL = 'MANUAL', 'Manual (Admin)'
+        CLI = 'CLI', 'CLI (manage.py)'
+
+    id = models.BigAutoField(primary_key=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    filename = models.CharField(max_length=255, blank=True)
+    output_path = models.CharField(max_length=500, blank=True)
+    size_mb = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.RUNNING)
+    trigger = models.CharField(max_length=10, choices=TriggerSource.choices, default=TriggerSource.CELERY)
+    duration_seconds = models.FloatField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+    # Checksums / verification
+    copied_to_external = models.BooleanField(default=False)
+    external_path = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Backup Log'
+        verbose_name_plural = 'Backup Logs'
+
+    def __str__(self):
+        return f"{self.filename} — {self.status} ({self.created_at:%Y-%m-%d %H:%M})"
+
+
 class TimeStampedModel(models.Model):
     """
     Abstract base model providing self-managed created_at/updated_at

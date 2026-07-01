@@ -1,27 +1,45 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Dispensing Records{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Dispensing Records</h1>
-  <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary"><i class="bi bi-capsule me-1"></i>New Dispensing</a>
+  <div>
+    <h1 class="h3 mb-0">Dispensing Records</h1>
+    <small class="text-muted">Last 100 dispensings</small>
+  </div>
+  <div class="d-flex gap-2">
+    <button onclick="window.print()" class="btn btn-outline-dark btn-sm">
+      <i class="bi bi-printer me-1"></i>Print / PDF
+    </button>
+    <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm"><i class="bi bi-capsule me-1"></i>New Dispensing</a>
+  </div>
 </div>
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead class="table-light">
-          <tr><th>Ref No.</th><th>Patient</th><th>Status</th><th>Dispensed By</th><th>Date</th><th>Amount</th><th></th></tr>
+          <tr><th>Ref No.</th><th>Patient</th><th>Drugs</th><th>Status</th><th>Dispensed By</th><th>Date</th><th class="text-end">Total (FCFA)</th><th class="text-end">Paid (FCFA)</th><th></th></tr>
         </thead>
         <tbody>
           {% for d in dispensings %}
           <tr>
-            <td>{{ d.dispensing_number }}</td>
-            <td>{{ d.patient.full_name }}</td>
-            <td><span class="badge bg-secondary">{{ d.get_status_display }}</span></td>
-            <td>{{ d.dispensed_by.get_full_name }}</td>
-            <td>{{ d.dispensed_at|date:"d M Y H:i" }}</td>
-            <td>&#8358;{{ d.amount_paid|floatformat:2 }}</td>
-            <td><a href="{% url 'pharmacy:dispensing_detail' d.id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+            <td><code class="small">{{ d.dispensing_number }}</code></td>
+            <td class="fw-semibold">{{ d.patient.full_name }}<br><small class="text-muted">{{ d.patient.patient_id }}</small></td>
+            <td class="text-muted small">{{ d.items.count }} item{{ d.items.count|pluralize }}</td>
+            <td><span class="badge {% if d.status == 'DISPENSED' %}bg-success{% elif d.status == 'PARTIAL' %}bg-warning text-dark{% elif d.status == 'CANCELLED' %}bg-secondary{% else %}bg-info text-dark{% endif %}">{{ d.get_status_display }}</span></td>
+            <td class="text-muted small">{{ d.dispensed_by.get_full_name }}</td>
+            <td class="text-muted small">{{ d.dispensed_at|date:"d M Y H:i" }}</td>
+            <td class="text-end">{{ d.total_amount|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-semibold {% if d.amount_paid >= d.total_amount and d.total_amount > 0 %}text-success{% else %}text-danger{% endif %}">{{ d.amount_paid|floatformat:0|intcomma }}</td>
+            <td class="text-nowrap">
+              <a href="{% url 'pharmacy:dispensing_detail' d.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+              {% if d.status == 'DISPENSED' %}
+              <a href="{% url 'pharmacy:dispensing_receipt' d.id %}" target="_blank" class="btn btn-sm btn-outline-success py-0">
+                <i class="bi bi-printer"></i>
+              </a>
+              {% endif %}
+            </td>
           </tr>
           {% empty %}
           <tr><td colspan="7" class="text-center text-muted py-4">No dispensing records yet</td></tr>

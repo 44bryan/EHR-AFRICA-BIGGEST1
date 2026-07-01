@@ -4,7 +4,12 @@
 {% block body_class %}{% endblock %}
 
 {% block body %}
-<div id="wrapper">
+<div id="wrapper"
+     hx-boost="true"
+     hx-select="#page-content-wrapper"
+     hx-target="#page-content-wrapper"
+     hx-swap="outerHTML"
+     hx-push-url="true">
 
   <!-- Sidebar -->
   {% include 'components/sidebar.html' %}
@@ -18,6 +23,8 @@
     <!-- Main Content -->
     <main class="container-fluid px-4 py-3" style="flex:1;">
 
+      <!-- Auto-breadcrumb: filled by JS on every navigation -->
+      <div id="ehr-breadcrumb"></div>
       {% block breadcrumb %}{% endblock %}
 
       {% include 'components/alerts.html' %}
@@ -28,9 +35,174 @@
 
     </main>
 
+    {# Page-specific scripts — placed INSIDE #page-content-wrapper so HTMX re-executes them on every swap #}
+    {% block extra_js %}{% endblock %}
+
   </div><!-- /page-content-wrapper -->
 </div><!-- /wrapper -->
 
 <!-- Confirm Modal -->
 {% include 'components/modal_confirm.html' %}
+
+<!-- Auto-reload on tablet/phone wake from sleep -->
+<script>
+(function () {
+  var hiddenAt = 0;
+  var RELOAD_AFTER_MS = 2 * 60 * 1000; // reload if screen was off for 2+ minutes
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+    } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
+      if (Date.now() - hiddenAt >= RELOAD_AFTER_MS) {
+        window.location.reload();
+      }
+      hiddenAt = 0;
+    }
+  });
+})();
+</script>
+
+<!-- Multi-Session Slot: persist ?s=N across navigation + fix CSRF for HTMX -->
+<script>
+(function () {
+  'use strict';
+
+  /* ── 1. Resolve slot: URL param → sessionStorage → default '1' ── */
+  function getUrlParam(name) {
+    try { return new URLSearchParams(window.location.search).get(name) || ''; }
+    catch (e) {
+      var m = window.location.search.match(new RegExp('[?&]' + name + '=([1-9])'));
+      return m ? m[1] : '';
+    }
+  }
+
+  var urlSlot  = getUrlParam('s');
+  var savedSlot = '';
+  try { savedSlot = sessionStorage.getItem('ehr_slot') || ''; } catch (e) {}
+  var slot = (urlSlot || savedSlot || '1');
+  if (!/^[1-9]$/.test(slot)) slot = '1';
+
+  // Persist to sessionStorage (survives HTMX swaps & F5 within the same tab)
+  if (slot !== '1') { try { sessionStorage.setItem('ehr_slot', slot); } catch (e) {} }
+
+  /* ── 2. If slot > 1 but URL has lost ?s=, auto-redirect to re-add it ── */
+  if (slot !== '1' && !urlSlot) {
+    try {
+      var u = new URL(window.location.href);
+      u.searchParams.set('s', slot);
+      window.location.replace(u.toString());
+    } catch (e) {}
+    return; // stop — redirect is happening
+  }
+
+  if (slot === '1') {
+    /* ── Even for slot 1: ensure HTMX sends CSRF token header ── */
+    document.addEventListener('htmx:configRequest', function (evt) {
+      var token = '';
+      try {
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+          var c = cookies[i].trim();
+          if (c.indexOf('csrftoken=') === 0) { token = c.substring(10); break; }
+        }
+      } catch (e) {}
+      if (token) evt.detail.headers['X-CSRFToken'] = token;
+    });
+    return;
+  }
+
+  /* ── 3. Slot > 1: patch all links, forms, HTMX attrs, XHR ── */
+  function addSlot(url) {
+    if (!url) return url;
+    var c = url.charAt(0);
+    if (c === '#' || url.indexOf('javascript:') === 0 ||
+        url.indexOf('mailto:') === 0 || url.indexOf('data:') === 0) return url;
+    try {
+      var u = new URL(url, window.location.origin);
+      if (u.origin !== window.location.origin) return url;
+      u.searchParams.set('s', slot);
+      // Preserve relative form for relative inputs
+      return (c === '/' || c === '.' || c === '?')
+        ? (u.pathname + u.search + (u.hash || ''))
+        : u.toString();
+    } catch (e) { return url; }
+  }
+
+  function patchEl(el) {
+    if (!el || el.nodeType !== 1) return;
+    var tag = el.tagName;
+    if (tag === 'A') {
+      var h = el.getAttribute('href');
+      if (h && h.charAt(0) !== '#') el.setAttribute('href', addSlot(h));
+    }
+    if (tag === 'FORM') {
+      var method = (el.getAttribute('method') || 'get').toLowerCase();
+      if (method === 'get') {
+        // GET forms: add ?s= to action
+        el.setAttribute('action', addSlot(el.getAttribute('action') || window.location.pathname));
+      } else {
+        // POST forms: add hidden input (if not already present)
+        if (!el.querySelector('input[name="s"][data-mss]')) {
+          var inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = 's'; inp.value = slot;
+          inp.setAttribute('data-mss', '1');
+          el.appendChild(inp);
+        }
+      }
+    }
+    ['hx-get','hx-post','hx-put','hx-delete','hx-patch'].forEach(function (a) {
+      var v = el.getAttribute(a);
+      if (v) el.setAttribute(a, addSlot(v));
+    });
+  }
+
+  function patchAll(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll(
+      'a[href],form,[hx-get],[hx-post],[hx-put],[hx-delete],[hx-patch]'
+    ).forEach(patchEl);
+  }
+
+  function init() { patchAll(document.body); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+
+  // HTMX events: add slot + CSRF header to every HTMX request
+  document.addEventListener('htmx:configRequest', function (evt) {
+    evt.detail.headers['X-Session-Slot'] = slot;
+    // Also ensure CSRF token is in the header (HTMX doesn't do this automatically)
+    var token = '';
+    try {
+      var cookies = document.cookie.split(';');
+      for (var i = 0; i < cookies.length; i++) {
+        var c = cookies[i].trim();
+        if (c.indexOf('csrftoken=') === 0) { token = c.substring(10); break; }
+      }
+    } catch (e) {}
+    if (token) evt.detail.headers['X-CSRFToken'] = token;
+  });
+
+  // Re-patch after every HTMX swap
+  document.addEventListener('htmx:afterSwap', function (e) {
+    patchAll(e.detail ? e.detail.target : document.body);
+  });
+
+  // Watch for dynamic content (modals, dropdowns injected by JS)
+  try {
+    new MutationObserver(function (muts) {
+      muts.forEach(function (m) {
+        m.addedNodes.forEach(function (n) { patchEl(n); patchAll(n); });
+      });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+
+  // Patch XHR: add ?s=N to URL for all AJAX calls (belt + suspenders)
+  var _open = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    arguments[1] = addSlot(url);
+    return _open.apply(this, arguments);
+  };
+})();
+</script>
 {% endblock %}

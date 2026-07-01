@@ -1,0 +1,70 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Imaging — {{ patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-0"><i class="bi bi-camera me-2 text-primary"></i>Imaging Studies</h1>
+    <small class="text-muted">{{ patient.full_name }} · {{ patient.patient_id }}</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'investigations:imaging_create' %}?patient={{ patient.patient_id }}"
+       class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Register Study
+    </a>
+    <a href="{% url 'patients:detail' patient.patient_id %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Patient
+    </a>
+  </div>
+</div>
+
+{% if studies %}
+<div class="row g-3">
+  {% for study in studies %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <span class="badge bg-primary">{{ study.get_modality_display }}</span>
+        {% if study.is_reported %}
+        <span class="badge bg-success">Reported</span>
+        {% else %}
+        <span class="badge bg-warning text-dark">Pending</span>
+        {% endif %}
+      </div>
+      <div class="card-body" style="font-size:0.875rem;">
+        <div class="fw-semibold mb-1">{{ study.description }}</div>
+        <div class="text-muted small">{{ study.study_date|date:"d M Y" }}</div>
+        {% if study.accession_number %}
+        <div class="text-muted small">Acc: {{ study.accession_number }}</div>
+        {% endif %}
+        {% if study.is_reported and study.report %}
+        <div class="mt-2 p-2 bg-light rounded small" style="max-height:80px;overflow:hidden;">
+          {{ study.report|truncatewords:20 }}
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-white py-2 d-flex gap-2">
+        <a href="{% url 'investigations:imaging_detail' study.id %}"
+           class="btn btn-sm btn-outline-secondary flex-fill">View</a>
+        {% if study.viewer_url %}
+        <a href="{{ study.viewer_url }}" target="_blank"
+           class="btn btn-sm btn-outline-primary flex-fill">
+          <i class="bi bi-display me-1"></i>Open
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-camera fs-1 d-block mb-2"></i>
+  No imaging studies on file for this patient.
+  <div class="mt-3">
+    <a href="{% url 'investigations:imaging_create' %}?patient={{ patient.patient_id }}"
+       class="btn btn-primary btn-sm">Register First Study</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

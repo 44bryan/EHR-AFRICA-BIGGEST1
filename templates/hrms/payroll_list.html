@@ -1,0 +1,68 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Payroll Runs — HRMS{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-cash-stack me-2 text-success"></i>Payroll</h5>
+    <div class="text-muted small">Monthly salary runs</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'hrms:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>HRMS</a>
+    <a href="{% url 'hrms:payroll_create' %}" class="btn btn-success btn-sm"><i class="bi bi-plus-lg me-1"></i>New Payroll Run</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Period</th>
+            <th>Staff Count</th>
+            <th>Total Gross</th>
+            <th>Total Deductions</th>
+            <th>Total Net Pay</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in runs %}
+          <tr>
+            <td class="fw-semibold">{{ run.period_label }}</td>
+            <td>{{ run.entries.count }}</td>
+            <td>{{ run.total_gross|floatformat:2 }}</td>
+            <td class="text-danger">{{ run.total_deductions|floatformat:2 }}</td>
+            <td class="fw-bold text-success">{{ run.total_net|floatformat:2 }}</td>
+            <td>
+              <span class="badge
+                {% if run.status == 'PAID' %}bg-success
+                {% elif run.status == 'PROCESSED' %}bg-primary
+                {% else %}bg-secondary{% endif %}">
+                {{ run.get_status_display }}
+              </span>
+            </td>
+            <td>
+              <a href="{% url 'hrms:payroll_detail' run_id=run.pk %}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-eye me-1"></i>View
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-cash-stack d-block fs-2 mb-2 opacity-40"></i>
+              No payroll runs yet. <a href="{% url 'hrms:payroll_create' %}">Create the first one.</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

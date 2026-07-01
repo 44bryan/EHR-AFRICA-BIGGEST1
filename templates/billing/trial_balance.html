@@ -1,0 +1,102 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Trial Balance{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-clipboard-data me-2 text-primary"></i>Trial Balance</h4>
+  <p class="text-muted small mb-0">All accounts — debit and credit totals must balance</p>
+</div>
+{% endblock %}
+{% block content %}
+<!-- Period filter -->
+<form method="get" class="row g-2 mb-4 align-items-end">
+  <div class="col-md-3">
+    <label class="form-label fw-semibold small">As At Date</label>
+    <input type="date" name="as_at" class="form-control form-control-sm" value="{{ request.GET.as_at }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-sm btn-primary w-100">
+      <i class="bi bi-calculator me-1"></i>Run
+    </button>
+  </div>
+  <div class="col-md-2">
+    <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary w-100">Reset</a>
+  </div>
+  <div class="col-auto ms-auto">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</form>
+
+{% if is_balanced is not None %}
+<div class="alert {% if is_balanced %}alert-success{% else %}alert-danger{% endif %} d-flex align-items-center">
+  <i class="bi {% if is_balanced %}bi-check-circle-fill{% else %}bi-x-circle-fill{% endif %} me-2 fs-5"></i>
+  <div>
+    {% if is_balanced %}
+      <strong>Balanced.</strong> Total Debits = Total Credits = {{ grand_dr|floatformat:0|intcomma }} XAF
+    {% else %}
+      <strong>Out of Balance!</strong> Difference: {{ balance_diff|floatformat:0|intcomma }} XAF
+      — Dr: {{ grand_dr|floatformat:0|intcomma }} / Cr: {{ grand_cr|floatformat:0|intcomma }}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold">Trial Balance{% if as_at_label %} — As at {{ as_at_label }}{% endif %}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0" id="trialBalanceTable">
+      <thead class="table-light">
+        <tr>
+          <th style="width:110px">Code</th>
+          <th>Account Name</th>
+          <th style="width:130px">Type</th>
+          <th class="text-end" style="width:150px">Debit (XAF)</th>
+          <th class="text-end" style="width:150px">Credit (XAF)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for section in sections %}
+        <tr class="table-secondary">
+          <td colspan="5" class="fw-bold small text-uppercase ps-3">{{ section.label }}</td>
+        </tr>
+        {% for row in section.rows %}
+        <tr>
+          <td class="text-muted small">{{ row.code }}</td>
+          <td>
+            <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}" class="text-decoration-none text-dark">
+              {{ row.name }}
+            </a>
+          </td>
+          <td><span class="badge bg-light text-dark border small">{{ row.type_display }}</span></td>
+          <td class="text-end {% if row.debit %}fw-semibold text-success{% else %}text-muted{% endif %}">
+            {% if row.debit %}{{ row.debit|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end {% if row.credit %}fw-semibold text-danger{% else %}text-muted{% endif %}">
+            {% if row.credit %}{{ row.credit|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted small text-center">No accounts</td></tr>
+        {% endfor %}
+        <tr class="fw-bold">
+          <td colspan="3" class="text-end pe-3 small">{{ section.label }} Subtotal</td>
+          <td class="text-end text-success">{{ section.subtotal_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-danger">{{ section.subtotal_cr|floatformat:0|intcomma }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-secondary fw-bold border-top border-2">
+        <tr>
+          <td colspan="3" class="text-end">GRAND TOTAL</td>
+          <td class="text-end">{{ grand_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ grand_cr|floatformat:0|intcomma }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endblock %}

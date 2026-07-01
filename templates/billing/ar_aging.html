@@ -1,0 +1,173 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}AR Aging Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-hourglass-split text-warning fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Accounts Receivable Aging</h5>
+      <div class="text-muted small">As of {{ today|date:"l, d F Y" }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'billing:export_ar_aging' %}" class="btn btn-success btn-sm">
+      <i class="bi bi-download me-1"></i>Download CSV
+    </a>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'billing:reconciliation' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-calculator me-1"></i>Daily Reconciliation
+    </a>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Billing
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Summary KPI strip #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3" style="border-left:4px solid #10b981 !important;">
+      <div class="small text-muted mb-1">0 – 30 Days</div>
+      <div class="fw-bold fs-5 text-success">{{ buckets.current.total|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">{{ buckets.current.rows|length }} invoice{{ buckets.current.rows|length|pluralize }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3" style="border-left:4px solid #f59e0b !important;">
+      <div class="small text-muted mb-1">31 – 60 Days</div>
+      <div class="fw-bold fs-5 text-warning">{{ buckets.days31.total|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">{{ buckets.days31.rows|length }} invoice{{ buckets.days31.rows|length|pluralize }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3" style="border-left:4px solid #ef4444 !important;">
+      <div class="small text-muted mb-1">61 – 90 Days</div>
+      <div class="fw-bold fs-5 text-danger">{{ buckets.days61.total|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">{{ buckets.days61.rows|length }} invoice{{ buckets.days61.rows|length|pluralize }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3" style="border-left:4px solid #7c3aed !important;">
+      <div class="small text-muted mb-1">91+ Days (Critical)</div>
+      <div class="fw-bold fs-5" style="color:#7c3aed;">{{ buckets.days90.total|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">{{ buckets.days90.rows|length }} invoice{{ buckets.days90.rows|length|pluralize }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-secondary d-flex align-items-center gap-2 py-2 mb-4">
+  <i class="bi bi-info-circle fs-5"></i>
+  <div>
+    Total outstanding: <strong>{{ grand_total|floatformat:0|intcomma }} FCFA</strong>
+    across <strong>{{ buckets.current.rows|length|add:buckets.days31.rows|length|add:buckets.days61.rows|length|add:buckets.days90.rows|length }}</strong> invoices.
+    <a href="{% url 'billing:invoice_list' %}?status=ISSUED" class="ms-2">View all unpaid →</a>
+  </div>
+</div>
+
+{# One card per bucket — dict is insertion-ordered (current, days31, days61, days90) #}
+{% for key, bucket in buckets.items %}
+{% if bucket.rows %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span class="fw-semibold
+      {% if key == 'current' %}text-success
+      {% elif key == 'days31' %}text-warning
+      {% elif key == 'days61' %}text-danger
+      {% else %}{% endif %}" {% if key == 'days90' %}style="color:#7c3aed;"{% endif %}>
+      {{ bucket.label }}
+    </span>
+    <span class="fw-bold">{{ bucket.total|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Invoice #</th>
+          <th>Patient / Account</th>
+          <th>Issue Date</th>
+          <th class="text-end">Balance Due</th>
+          <th class="text-end">Age (days)</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in bucket.rows %}
+        <tr>
+          <td><code class="small">{{ row.invoice.invoice_number }}</code></td>
+          <td class="fw-semibold">
+            {{ row.invoice.patient.full_name }}
+            {% if row.invoice.corporate_account %}
+            <div class="small text-muted"><i class="bi bi-building me-1"></i>{{ row.invoice.corporate_account.company_name }}</div>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ row.invoice.issue_date|date:"d M Y" }}</td>
+          <td class="text-end fw-bold
+            {% if key == 'days90' %}
+            {% elif key == 'days61' %}text-danger
+            {% elif key == 'days31' %}text-warning
+            {% else %}text-success{% endif %}"
+            {% if key == 'days90' %}style="color:#7c3aed;"{% endif %}>
+            {{ row.balance|floatformat:0|intcomma }}
+          </td>
+          <td class="text-end">{{ row.age_days }}</td>
+          <td>
+            <span class="badge {% if row.invoice.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-primary{% endif %}">
+              {{ row.invoice.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'billing:invoice_detail' row.invoice.id %}" class="btn btn-xs btn-outline-secondary py-0" style="font-size:.75rem;padding:2px 8px;">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{# Corporate AR Summary #}
+{% if corporate_ar %}
+<div class="card border-0 shadow-sm mb-4 border-start border-4 border-warning">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-building me-2 text-warning"></i>Corporate Account AR Summary
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Company</th>
+          <th class="text-end">Outstanding Balance (FCFA)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in corporate_ar %}
+        <tr>
+          <td class="fw-semibold">{{ c.account.company_name }}</td>
+          <td class="text-end text-warning fw-bold">{{ c.balance|floatformat:0|intcomma }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if not grand_total %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-check-circle-fill fs-1 text-success d-block mb-3"></i>
+  <strong>No outstanding receivables.</strong><br>
+  All invoices are paid, waived, or cancelled.
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,44 +1,105 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}Billing Workstation{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4">
+{% load humanize %}
+{% block title %}Billing Workstation — {{ user.full_name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
   <div>
-    <h1 class="h3 mb-1">Billing &amp; Accounts</h1>
-    <div class="text-muted">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-receipt me-2 text-warning"></i>Billing Workstation</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — {{ user.full_name }}</p>
   </div>
-  <div class="d-flex gap-2">
-    <a href="{% url 'billing:invoice_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-receipt me-1"></i>New Invoice</a>
-    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">All Invoices</a>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'billing:invoice_create' %}" class="btn btn-sm btn-primary"><i class="bi bi-file-earmark-plus me-1"></i>New Invoice</a>
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-list-ul me-1"></i>All Invoices</a>
+    <a href="{% url 'billing:report_daily_summary' %}" class="btn btn-sm btn-outline-info"><i class="bi bi-calendar-day me-1"></i>Daily Summary</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Quick-action cards #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Awaiting Payment</div>
+        <div class="fs-3 fw-bold text-warning">{{ unpaid_count }}</div>
+        <div class="text-muted" style="font-size:.72rem;">open invoices</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="{% url 'billing:invoice_create' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <i class="bi bi-file-earmark-plus text-primary fs-3 flex-shrink-0"></i>
+        <div><div class="fw-semibold small">New Invoice</div><div class="text-muted" style="font-size:.72rem;">Bill a patient directly</div></div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="{% url 'billing:service_price_list' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <i class="bi bi-tags text-success fs-3 flex-shrink-0"></i>
+        <div><div class="fw-semibold small">Price Catalog</div><div class="text-muted" style="font-size:.72rem;">Services &amp; fees</div></div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="{% url 'billing:corporate_list' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <i class="bi bi-building text-info fs-3 flex-shrink-0"></i>
+        <div><div class="fw-semibold small">Corporate Accounts</div><div class="text-muted" style="font-size:.72rem;">Insurance &amp; organisations</div></div>
+      </div>
+    </a>
   </div>
 </div>
 
+{# Unpaid invoices table #}
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-white py-3 d-flex justify-content-between">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-warning"></i>Unpaid Invoices</h6>
+  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+    <h6 class="fw-semibold mb-0 small"><i class="bi bi-exclamation-circle me-1 text-warning"></i>Pending Collections</h6>
     <span class="badge bg-warning text-dark">{{ unpaid_count }}</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Invoice No.</th><th>Patient</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr>
+        <tr>
+          <th>Invoice No.</th>
+          <th>Patient</th>
+          <th>Total</th>
+          <th>Paid</th>
+          <th>Balance</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
       </thead>
       <tbody>
         {% for inv in unpaid_invoices %}
         <tr>
-          <td><code>{{ inv.invoice_number }}</code></td>
+          <td><code class="text-primary">{{ inv.invoice_number }}</code></td>
           <td class="fw-semibold">{{ inv.patient.full_name }}</td>
-          <td>{{ inv.total|floatformat:0 }} FCFA</td>
-          <td class="text-success">{{ inv.amount_paid|floatformat:0 }} FCFA</td>
-          <td class="text-danger fw-semibold">{{ inv.balance_due|floatformat:0 }} FCFA</td>
+          <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
+          <td class="text-success">{{ inv.amount_paid|floatformat:0|intcomma }} FCFA</td>
+          <td class="text-danger fw-bold">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
           <td>
             <span class="badge bg-{% if inv.status == 'PARTIAL' %}warning text-dark{% else %}secondary{% endif %}">
               {{ inv.get_status_display }}
             </span>
           </td>
-          <td><a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-warning">Collect</a></td>
+          <td>
+            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-warning">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
+          </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-center text-muted py-4">No unpaid invoices.</td></tr>
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            <i class="bi bi-check-circle text-success fs-4 d-block mb-1"></i>
+            All invoices are settled.
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>

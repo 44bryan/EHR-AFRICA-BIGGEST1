@@ -1,0 +1,137 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Disease Burden Report{% endblock %}
+
+{% block extra_css %}
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-bar-chart-fill me-2 text-primary"></i>Disease Burden</h4>
+    <div class="text-muted small">Top diagnoses — last {{ period }} days (from {{ date_from|date:"d M Y" }})</div>
+  </div>
+  <div class="d-flex gap-2">
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <select name="days" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="30" {% if period == 30 %}selected{% endif %}>Last 30 days</option>
+        <option value="90" {% if period == 90 %}selected{% endif %}>Last 90 days</option>
+        <option value="180" {% if period == 180 %}selected{% endif %}>Last 6 months</option>
+        <option value="365" {% if period == 365 %}selected{% endif %}>Last year</option>
+      </select>
+    </form>
+    <a href="{% url 'reports:moh_disease_export' %}" class="btn btn-sm btn-success">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">Top 20 Diagnoses by Case Count</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="dxChart" height="380"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">Monthly Diagnosis Trend (6 months)</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="monthlyChart" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom py-2">
+    <h6 class="mb-0 fw-semibold small">Full Diagnosis Table</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>ICD-10</th>
+          <th>Diagnosis</th>
+          <th class="text-end">Cases</th>
+          <th class="text-end">% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% with total=top_dx|length %}
+        {% for dx in top_dx %}
+        <tr>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td><span class="badge bg-secondary bg-opacity-75">{{ dx.diagnosis__icd10_code|default:"—" }}</span></td>
+          <td>{{ dx.diagnosis__description|default:"Unknown" }}</td>
+          <td class="text-end fw-bold">{{ dx.count }}</td>
+          <td class="text-end text-muted" style="font-size:0.8rem;">
+            {% if top_dx.0.count > 0 %}
+              {% widthratio dx.count top_dx.0.count 100 %}%
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center text-muted py-4">No diagnosis data for this period.</td></tr>
+        {% endfor %}
+        {% endwith %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% block extra_js %}
+<script>
+const dxLabels  = [{% for d in top_dx %}"{{ d.diagnosis__description|default:'Unknown'|truncatechars:30 }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const dxCounts  = [{% for d in top_dx %}{{ d.count }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const months    = [{% for m in monthly %}"{{ m.month }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const monthlyCt = [{% for m in monthly %}{{ m.count }}{% if not forloop.last %},{% endif %}{% endfor %}];
+
+const palette = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16',
+                 '#ec4899','#14b8a6','#a78bfa','#fb923c','#4ade80','#60a5fa','#fbbf24','#f43f5e',
+                 '#34d399','#818cf8','#2dd4bf','#c084fc'];
+
+new Chart(document.getElementById('dxChart'), {
+  type: 'bar',
+  data: {
+    labels: dxLabels,
+    datasets: [{ label: 'Cases', data: dxCounts, backgroundColor: palette, borderRadius: 4 }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+  }
+});
+
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'line',
+  data: {
+    labels: months,
+    datasets: [{
+      label: 'Diagnoses',
+      data: monthlyCt,
+      borderColor: '#3b82f6',
+      backgroundColor: 'rgba(59,130,246,.1)',
+      fill: true,
+      tension: 0.4,
+      pointRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+  }
+});
+</script>
+{% endblock %}
+{% endblock %}

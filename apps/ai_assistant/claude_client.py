@@ -82,12 +82,35 @@ def build_consultation_context(consultation):
     return "\n".join(lines)
 
 
+def _get_chat_fn():
+    """Return the appropriate chat function based on AI_ENGINE_REASONING setting."""
+    engine = getattr(settings, 'AI_ENGINE_REASONING', 'groq').lower()
+    if engine == 'ollama':
+        from apps.ai_assistant.ollama_client import ollama_chat
+        return ollama_chat
+    else:
+        from apps.ai_assistant.groq_client import groq_chat
+        return groq_chat
+
+
+def _get_json_fn():
+    """Return the appropriate JSON chat function based on AI_ENGINE_REASONING setting."""
+    engine = getattr(settings, 'AI_ENGINE_REASONING', 'groq').lower()
+    if engine == 'ollama':
+        from apps.ai_assistant.ollama_client import ollama_json
+        return ollama_json
+    else:
+        from apps.ai_assistant.groq_client import groq_json
+        return groq_json
+
+
 def get_claude_response(conversation, user_message_text):
     """
-    Send a message to the AI and return the response via Groq.
+    Send a message to the AI and return the response.
+    Routes to Groq (testing) or Ollama (production) based on AI_ENGINE_REASONING.
     Returns (response_text, tokens_used, response_time_ms) tuple.
     """
-    from apps.ai_assistant.groq_client import groq_chat
+    chat_fn = _get_chat_fn()
 
     # Build system prompt
     system_prompt = OPHTHALMOLOGY_SYSTEM_PROMPT
@@ -103,7 +126,7 @@ def get_claude_response(conversation, user_message_text):
 
     start_time = time.time()
     try:
-        result = groq_chat(
+        result = chat_fn(
             messages=messages,
             system=system_prompt,
             max_tokens=getattr(settings, 'AI_MAX_TOKENS', 2048),
@@ -147,8 +170,8 @@ Hospital services include:
 def get_virtual_receptionist_response(user_message: str) -> str:
     """Get a response from the AI virtual receptionist."""
     try:
-        from apps.ai_assistant.groq_client import groq_chat
-        result = groq_chat(
+        chat_fn = _get_chat_fn()
+        result = chat_fn(
             messages=[{"role": "user", "content": user_message}],
             system=VIRTUAL_RECEPTIONIST_PROMPT,
             max_tokens=512,
@@ -192,11 +215,12 @@ Be concise. Use proper medical terminology. Consider Cameroonian disease prevale
 def suggest_diagnosis(chief_complaint: str, hpc: str = '', exam_summary: str = '',
                       age: str = '', gender: str = '') -> dict:
     """
-    Suggest ophthalmic differential diagnoses using Groq.
+    Suggest ophthalmic differential diagnoses.
+    Routes to Groq or Ollama based on AI_ENGINE_REASONING setting.
     Returns a dict with keys: success, data (parsed JSON), error.
     """
     try:
-        from apps.ai_assistant.groq_client import groq_json
+        json_fn = _get_json_fn()
 
         parts = [f"Chief Complaint: {chief_complaint}"]
         if age or gender:
@@ -210,7 +234,7 @@ def suggest_diagnosis(chief_complaint: str, hpc: str = '', exam_summary: str = '
 
         user_msg = "\n".join(parts)
 
-        result = groq_json(
+        result = json_fn(
             messages=[{"role": "user", "content": user_msg}],
             system=DIAGNOSIS_ASSIST_PROMPT,
             max_tokens=1024,
@@ -463,3 +487,171 @@ def get_analytics_response(question: str, user) -> str:
     except Exception as e:
         logger.error(f"Analytics AI error: {e}")
         return f"Analytics AI encountered an error: {str(e)}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI TRIAGE SCORING
+# ─────────────────────────────────────────────────────────────────────────────
+
+AI_TRIAGE_PROMPT = """You are an expert ophthalmic triage nurse at a specialist eye hospital in Cameroon.
+
+Score this patient's urgency from 1 to 5:
+  1 = EMERGENCY — life/sight-threatening. Must be seen immediately.
+  2 = URGENT — significant risk of vision loss. Seen within 1 hour.
+  3 = SEMI-URGENT — active eye problem needing prompt attention. Seen within 2-3 hours.
+  4 = ROUTINE — non-urgent eye complaint. Seen in normal queue.
+  5 = NON-CLINICAL — admin/spectacle pick-up/follow-up with no active symptoms.
+
+EMERGENCY triggers (auto score 1): sudden vision loss, chemical burn, penetrating injury,
+  IOP >40 mmHg, acute angle closure, retinal detachment symptoms, amaurosis fugax.
+
+URGENT triggers (score 2): VA worse than 6/60 either eye, uveitis flare, significant corneal problem,
+  IOP 30-40 mmHg, recent trauma.
+
+Respond ONLY with valid JSON — no markdown, no explanation:
+{
+  "priority": <1-5>,
+  "label": "EMERGENCY|URGENT|SEMI-URGENT|ROUTINE|NON-CLINICAL",
+  "reason": "<one concise sentence explaining the score>",
+  "urgent_flags": ["<flag1>", "<flag2>"]
+}"""
+
+
+def ai_triage_score(
+    chief_complaint: str,
+    va_re: str = '',
+    va_le: str = '',
+    iop_re: str = '',
+    iop_le: str = '',
+    age: str = '',
+    arrival_type: str = '',
+) -> dict:
+    """
+    Score a patient's triage priority 1-5 using AI.
+    Returns dict: { success, data: { priority, label, reason, urgent_flags }, error }
+    """
+    try:
+        from apps.ai_assistant.groq_client import groq_json
+
+        parts = [f"Chief Complaint: {chief_complaint}"]
+        if age:
+            parts.append(f"Age: {age}")
+        if arrival_type:
+            parts.append(f"Arrival type: {arrival_type}")
+        if va_re or va_le:
+            parts.append(f"Visual Acuity: RE={va_re or 'not measured'}, LE={va_le or 'not measured'}")
+        if iop_re or iop_le:
+            parts.append(f"IOP: RE={iop_re or 'not measured'}, LE={iop_le or 'not measured'} mmHg")
+
+        user_msg = "\n".join(parts)
+
+        result = groq_json(
+            messages=[{"role": "user", "content": user_msg}],
+            system=AI_TRIAGE_PROMPT,
+            max_tokens=256,
+        )
+        if result['success']:
+            return {'success': True, 'data': result['data']}
+        return {'success': False, 'error': result.get('error', 'AI triage error')}
+    except Exception as e:
+        logger.exception('ai_triage_score error: %s', e)
+        return {'success': False, 'error': str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI IMAGING / INVESTIGATION ANALYSIS
+# ─────────────────────────────────────────────────────────────────────────────
+
+AI_IMAGING_PROMPT = """You are an ophthalmic imaging specialist and clinical AI assistant for a specialist eye hospital in Cameroon.
+
+Given clinical investigation findings, provide a structured analysis.
+
+Respond ONLY with valid JSON — no markdown, no text outside the JSON:
+{
+  "key_findings": ["<finding1>", "<finding2>"],
+  "severity": "normal|mild|moderate|severe",
+  "likely_conditions": [
+    { "condition": "...", "icd10": "...", "confidence": "high|medium|low" }
+  ],
+  "management_recommendations": ["<step1>", "<step2>"],
+  "follow_up": "<recommended follow-up timeframe and action>",
+  "confidence": 0.85
+}
+
+Consider Cameroonian disease prevalence: glaucoma, diabetic retinopathy, onchocerciasis,
+sickle cell retinopathy, macular degeneration, cataract."""
+
+
+def ai_analyze_investigation(investigation_type: str, eye: str, clinical_indication: str,
+                              result_data: dict, interpretation: str = '') -> dict:
+    """
+    Run AI analysis on an investigation result.
+    Returns dict: { success, data: { key_findings, severity, likely_conditions, ... }, error }
+    """
+    try:
+        from apps.ai_assistant.groq_client import groq_json
+
+        parts = [
+            f"Investigation: {investigation_type}",
+            f"Eye: {eye}",
+            f"Clinical Indication: {clinical_indication}",
+        ]
+        if result_data:
+            import json
+            parts.append(f"Result Data:\n{json.dumps(result_data, indent=2)[:800]}")
+        if interpretation:
+            parts.append(f"Technician Interpretation: {interpretation[:400]}")
+
+        user_msg = "\n".join(parts)
+
+        result = groq_json(
+            messages=[{"role": "user", "content": user_msg}],
+            system=AI_IMAGING_PROMPT,
+            max_tokens=768,
+        )
+        if result['success']:
+            return {'success': True, 'data': result['data']}
+        return {'success': False, 'error': result.get('error', 'AI imaging error')}
+    except Exception as e:
+        logger.exception('ai_analyze_investigation error: %s', e)
+        return {'success': False, 'error': str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI SOAP NOTE GENERATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+AI_SOAP_PROMPT = """You are a clinical documentation specialist for an ophthalmology hospital in Cameroon.
+
+Convert raw dictated or typed clinical text into a structured SOAP note for an ophthalmology encounter.
+
+Respond ONLY with valid JSON — no markdown, no text outside the JSON:
+{
+  "subjective": "<Chief complaint and history in patient's words, HPC, past history>",
+  "objective": "<Examination findings — VA, IOP, slit lamp, fundus, special tests>",
+  "assessment": "<Diagnosis or differential diagnoses with ICD-10 codes where possible>",
+  "plan": "<Management plan, investigations ordered, prescriptions, follow-up, referrals>"
+}
+
+Keep clinical terminology. Be concise but complete. Preserve all clinically significant details."""
+
+
+def ai_generate_soap_note(raw_text: str) -> dict:
+    """
+    Convert free-form clinical dictation into a structured SOAP note.
+    Returns dict: { success, data: { subjective, objective, assessment, plan }, error }
+    """
+    try:
+        from apps.ai_assistant.groq_client import groq_json
+
+        result = groq_json(
+            messages=[{"role": "user", "content": f"Convert this clinical text into a SOAP note:\n\n{raw_text[:2000]}"}],
+            system=AI_SOAP_PROMPT,
+            max_tokens=1024,
+        )
+        if result['success']:
+            return {'success': True, 'data': result['data']}
+        return {'success': False, 'error': result.get('error', 'SOAP generation error')}
+    except Exception as e:
+        logger.exception('ai_generate_soap_note error: %s', e)
+        return {'success': False, 'error': str(e)}

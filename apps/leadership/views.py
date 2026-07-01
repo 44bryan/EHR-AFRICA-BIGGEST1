@@ -134,8 +134,11 @@ def leadership_dashboard(request):
         revenue_by_method = []
         revenue_trend = [{'date': (today - timedelta(days=i)).strftime('%d %b'), 'amount': 0} for i in range(6, -1, -1)]
 
-    # ── Operational Efficiency ────────────────────────────────────────────────
+    # ── Operational Efficiency ─────────────────────────────────────────────────
+    from apps.core.context_processors import qms_active as _qms_active
     try:
+        if not _qms_active():
+            raise ValueError('QMS off')
         from apps.qms.models import QueueToken, TokenStatus
 
         # Average wait time across all departments (last 7 days)
@@ -408,19 +411,29 @@ def kpi_json(request):
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
     from apps.patients.models import Visit
-    from apps.qms.models import QueueToken, TokenStatus
+    from apps.core.context_processors import qms_active as _qms_active
     today = timezone.localdate()
     last_7 = [(today - timedelta(days=i)) for i in range(6, -1, -1)]
 
     visits_per_day, revenue_per_day, queue_per_day = [], [], []
     for d in last_7:
         visits_per_day.append({'date': d.isoformat(), 'visits': Visit.objects.filter(visit_date__date=d, is_deleted=False).count()})
-        queue_per_day.append({'date': d.isoformat(), 'served': QueueToken.objects.filter(token_date=d, status=TokenStatus.COMPLETED, is_deleted=False).count()})
+        if _qms_active():
+            from apps.qms.models import QueueToken, TokenStatus
+            queue_per_day.append({'date': d.isoformat(), 'served': QueueToken.objects.filter(token_date=d, status=TokenStatus.COMPLETED, is_deleted=False).count()})
+        else:
+            queue_per_day.append({'date': d.isoformat(), 'served': 0})
+
+    if _qms_active():
+        from apps.qms.models import QueueToken, TokenStatus
+        queue_now = QueueToken.objects.filter(token_date=today, status=TokenStatus.WAITING, is_deleted=False).count()
+    else:
+        queue_now = 0
 
     return JsonResponse({
         'visits_per_day': visits_per_day,
         'queue_per_day': queue_per_day,
-        'queue_now': QueueToken.objects.filter(token_date=today, status=TokenStatus.WAITING, is_deleted=False).count(),
+        'queue_now': queue_now,
     })
 
 
@@ -460,15 +473,32 @@ def monthly_stats(request):
     returning    = visits.filter(visit_type__in=['FOLLOW_UP', 'REVIEW', 'PROCEDURE']).count()
     total_visits = visits.count()
 
+    # explicit visit-type counts
+    _vt = {d['visit_type']: d['count'] for d in visits.values('visit_type').annotate(count=Count('id'))}
+    followup_visits   = _vt.get('FOLLOW_UP', 0)
+    emergency_visits  = _vt.get('EMERGENCY', 0)
+    review_visits     = _vt.get('REVIEW', 0)
+    procedure_visits  = _vt.get('PROCEDURE', 0)
+
     # by tier
     tier_breakdown = list(
         visits.values('service_tier').annotate(count=Count('id')).order_by('-count')
     )
+    _tier = {d['service_tier']: d['count'] for d in tier_breakdown}
+    tier_standard  = _tier.get('STANDARD', 0)
+    tier_express   = _tier.get('EXPRESS', 0)
+    tier_fast      = _tier.get('FAST_TRACK', 0)
+    tier_vip       = _tier.get('VIP', 0)
 
     # by billing type
     billing_breakdown = list(
         visits.values('billing_type').annotate(count=Count('id')).order_by('-count')
     )
+    _bt = {d['billing_type']: d['count'] for d in billing_breakdown}
+    bt_self_pay  = _bt.get('SELF_PAY', 0)
+    bt_insurance = _bt.get('INSURANCE', 0)
+    bt_hmo       = _bt.get('HMO', 0)
+    bt_free      = _bt.get('FREE', 0)
 
     # ── Consultations ─────────────────────────────────────────────────────────
     consults = Consultation.objects.filter(
@@ -605,8 +635,20 @@ def monthly_stats(request):
         'total_visits': total_visits,
         'new_patients': new_patients,
         'returning': returning,
+        'followup_visits': followup_visits,
+        'emergency_visits': emergency_visits,
+        'review_visits': review_visits,
+        'procedure_visits': procedure_visits,
         'tier_breakdown': tier_breakdown,
+        'tier_standard': tier_standard,
+        'tier_express': tier_express,
+        'tier_fast': tier_fast,
+        'tier_vip': tier_vip,
         'billing_breakdown': billing_breakdown,
+        'bt_self_pay': bt_self_pay,
+        'bt_insurance': bt_insurance,
+        'bt_hmo': bt_hmo,
+        'bt_free': bt_free,
         # Consultations
         'total_consults': total_consults,
         'dept_consults': dept_consults,
@@ -755,7 +797,8 @@ def finance_dashboard(request):
     Also accessible to CEO and Super Admin.
     """
     if not (request.user.is_finance_director or request.user.is_super_admin
-            or request.user.is_ceo or request.user.is_admin_director):
+            or request.user.is_ceo or request.user.is_admin_director
+            or request.user.is_medical_director):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied
 

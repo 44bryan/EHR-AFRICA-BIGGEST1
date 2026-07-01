@@ -1,0 +1,270 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Drug Interaction Checker — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a href="{% url 'ai_assistant:home' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-capsule text-danger me-2"></i>AI Drug Interaction Checker</h5>
+    <p class="text-muted small mb-0">Add ophthalmic and systemic drugs below — AI checks for interactions and contraindications.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-plus-circle me-1 text-danger"></i>Add Drugs to Check</h6>
+      </div>
+      <div class="card-body p-3">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Drug name</label>
+          <div class="input-group">
+            <input type="text" id="drugInput" class="form-control"
+                   placeholder="e.g. Timolol 0.5%, Latanoprost, Aspirin 100mg"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();addDrug();}">
+            <button class="btn btn-outline-danger" type="button" onclick="addDrug()">
+              <i class="bi bi-plus-lg"></i> Add
+            </button>
+          </div>
+          <div class="form-text">Press Enter or click Add. Include strength where relevant.</div>
+        </div>
+
+        <!-- Drug list -->
+        <div id="drugList" class="mb-3">
+          <p class="text-muted small text-center py-3" id="emptyMsg">No drugs added yet.</p>
+        </div>
+
+        <!-- Quick add common ophthalmic drugs -->
+        <div class="mb-3">
+          <div class="small text-muted fw-semibold mb-2">Quick add:</div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for drug in quick_drugs %}
+            <button class="btn btn-outline-secondary btn-sm py-0" style="font-size:.72rem;"
+                    onclick="quickAdd('{{ drug }}')">{{ drug }}</button>
+            {% endfor %}
+          </div>
+        </div>
+
+        <button class="btn btn-danger w-100" id="checkBtn" onclick="checkInteractions()" disabled>
+          <i class="bi bi-search-heart me-1"></i>Check Interactions
+          <span id="checkSpinner" class="spinner-border spinner-border-sm ms-1 d-none"></span>
+        </button>
+        <button class="btn btn-outline-secondary w-100 mt-2" onclick="clearAll()">
+          <i class="bi bi-trash me-1"></i>Clear All
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <!-- Result panel -->
+    <div id="resultPanel" class="d-none">
+      <!-- Safety badge -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-3 d-flex align-items-center gap-3" id="safetyBadgeCard">
+          <div id="safetyIcon" class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:48px;height:48px;">
+            <i class="bi fs-4" id="safetyIconClass"></i>
+          </div>
+          <div>
+            <div class="fw-bold fs-5" id="safetyLabel"></div>
+            <div class="small text-muted" id="safetySubLabel"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactions -->
+      <div id="interactionCards" class="mb-3"></div>
+
+      <!-- Cautions -->
+      <div id="cautionCard" class="d-none card border-0 shadow-sm mb-3 border-start border-warning border-3">
+        <div class="card-header bg-warning-subtle border-bottom py-2">
+          <h6 class="mb-0 fw-semibold text-warning-emphasis"><i class="bi bi-exclamation-triangle me-1"></i>General Cautions</h6>
+        </div>
+        <ul id="cautionList" class="list-group list-group-flush small"></ul>
+      </div>
+
+      <div class="alert alert-info py-2 small">
+        <i class="bi bi-info-circle me-1"></i>
+        AI drug interaction checks are for <strong>clinical decision support only</strong>.
+        Always verify with current BNF / formulary before prescribing.
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="emptyState" class="card border-0 shadow-sm text-center py-5">
+      <i class="bi bi-capsule text-muted fs-1 d-block mb-2 opacity-50"></i>
+      <p class="text-muted small">Add at least 2 drugs and click <strong>Check Interactions</strong>.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CHECK_URL = "{% url 'ai_assistant:drug_interactions' %}";
+const CSRF = () => document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+let _drugs = [];
+
+function _renderDrugList() {
+  const list = document.getElementById('drugList');
+  const empty = document.getElementById('emptyMsg');
+  const btn = document.getElementById('checkBtn');
+  if (_drugs.length === 0) {
+    list.innerHTML = '<p class="text-muted small text-center py-3">No drugs added yet.</p>';
+    btn.disabled = true;
+    return;
+  }
+  list.innerHTML = _drugs.map((d, i) => `
+    <div class="d-flex align-items-center justify-content-between border rounded px-2 py-1 mb-1 bg-light">
+      <span class="small fw-semibold"><i class="bi bi-capsule me-1 text-danger"></i>${_esc(d)}</span>
+      <button class="btn btn-sm btn-link text-danger p-0" onclick="removeDrug(${i})" title="Remove">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+  `).join('');
+  btn.disabled = _drugs.length < 2;
+}
+
+function _esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function addDrug() {
+  const input = document.getElementById('drugInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (!_drugs.includes(val)) { _drugs.push(val); _renderDrugList(); }
+  input.value = '';
+  input.focus();
+}
+
+function quickAdd(drug) {
+  if (!_drugs.includes(drug)) { _drugs.push(drug); _renderDrugList(); }
+}
+
+function removeDrug(i) {
+  _drugs.splice(i, 1);
+  _renderDrugList();
+}
+
+function clearAll() {
+  _drugs = [];
+  _renderDrugList();
+  document.getElementById('resultPanel').classList.add('d-none');
+  document.getElementById('emptyState').classList.remove('d-none');
+}
+
+async function checkInteractions() {
+  if (_drugs.length < 2) return;
+  const btn = document.getElementById('checkBtn');
+  const spin = document.getElementById('checkSpinner');
+  btn.disabled = true;
+  spin.classList.remove('d-none');
+
+  try {
+    const resp = await fetch(CHECK_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF()},
+      body: JSON.stringify({drugs: _drugs}),
+    });
+    const result = await resp.json();
+    if (result.success) {
+      _renderResult(result.data);
+    } else {
+      alert('AI error: ' + (result.error || 'Please try again.'));
+    }
+  } catch(e) {
+    alert('Connection error. Please check your connection and try again.');
+  } finally {
+    btn.disabled = _drugs.length < 2;
+    spin.classList.add('d-none');
+  }
+}
+
+function _renderResult(data) {
+  document.getElementById('emptyState').classList.add('d-none');
+  document.getElementById('resultPanel').classList.remove('d-none');
+
+  const safe = data.safe !== false && (data.interactions || []).length === 0;
+  const hasMajor = (data.interactions || []).some(i => i.severity === 'major');
+
+  // Safety badge
+  const card = document.getElementById('safetyBadgeCard');
+  const icon = document.getElementById('safetyIcon');
+  const iconClass = document.getElementById('safetyIconClass');
+  const label = document.getElementById('safetyLabel');
+  const sub = document.getElementById('safetySubLabel');
+
+  if (safe) {
+    card.style.background = '#f0fdf4';
+    icon.style.background = '#bbf7d0';
+    iconClass.className = 'bi bi-check-circle-fill text-success fs-4';
+    label.textContent = 'No significant interactions found';
+    label.className = 'fw-bold fs-5 text-success';
+    sub.textContent = 'The listed drugs appear compatible. Always verify with formulary.';
+  } else if (hasMajor) {
+    card.style.background = '#fef2f2';
+    icon.style.background = '#fecaca';
+    iconClass.className = 'bi bi-x-circle-fill text-danger fs-4';
+    label.textContent = 'Major interaction(s) detected';
+    label.className = 'fw-bold fs-5 text-danger';
+    sub.textContent = 'Review all interactions carefully before prescribing.';
+  } else {
+    card.style.background = '#fffbeb';
+    icon.style.background = '#fde68a';
+    iconClass.className = 'bi bi-exclamation-triangle-fill text-warning fs-4';
+    label.textContent = 'Moderate interaction(s) detected';
+    label.className = 'fw-bold fs-5 text-warning-emphasis';
+    sub.textContent = 'Use with caution and monitor patient closely.';
+  }
+
+  // Interaction cards
+  const severityMeta = {
+    major:    {bg: 'danger',  icon: 'bi-x-circle-fill',            label: 'MAJOR'},
+    moderate: {bg: 'warning', icon: 'bi-exclamation-triangle-fill', label: 'MODERATE'},
+    minor:    {bg: 'info',    icon: 'bi-info-circle-fill',          label: 'MINOR'},
+  };
+
+  const ixCards = document.getElementById('interactionCards');
+  const interactions = data.interactions || [];
+  if (interactions.length > 0) {
+    ixCards.innerHTML = interactions.map(ix => {
+      const m = severityMeta[ix.severity] || severityMeta.moderate;
+      return `
+        <div class="card border-0 shadow-sm mb-2 border-start border-${m.bg} border-3">
+          <div class="card-body py-2 px-3">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i class="bi ${m.icon} text-${m.bg}"></i>
+              <span class="badge bg-${m.bg} ${m.bg==='warning'?'text-dark':''}">${m.label}</span>
+              <span class="small fw-semibold">${(ix.drugs||[]).map(_esc).join(' + ')}</span>
+            </div>
+            <p class="small mb-1">${_esc(ix.description || '')}</p>
+            ${ix.recommendation ? `<p class="small text-muted mb-0"><i class="bi bi-arrow-right me-1"></i>${_esc(ix.recommendation)}</p>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } else {
+    ixCards.innerHTML = '';
+  }
+
+  // Cautions
+  const cautions = data.cautions || [];
+  const cautionCard = document.getElementById('cautionCard');
+  if (cautions.length > 0) {
+    cautionCard.classList.remove('d-none');
+    document.getElementById('cautionList').innerHTML = cautions.map(c =>
+      `<li class="list-group-item py-1 small"><i class="bi bi-dot text-warning me-1"></i>${_esc(c)}</li>`
+    ).join('');
+  } else {
+    cautionCard.classList.add('d-none');
+  }
+}
+
+// init
+_renderDrugList();
+</script>
+{% endblock %}

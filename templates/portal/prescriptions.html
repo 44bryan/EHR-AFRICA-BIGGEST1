@@ -1,0 +1,52 @@
+{% extends "portal/base.html" %}
+{% load humanize %}
+{% block title %}My Prescriptions{% endblock %}
+{% block nav_prescriptions %}active{% endblock %}
+
+{% block content %}
+<h2 class="fw-bold mb-4"><i class="bi bi-capsule me-2 text-success"></i>My Prescriptions</h2>
+
+{% if prescriptions %}
+<div class="row g-3">
+  {% for rx in prescriptions %}
+  <div class="col-md-6">
+    <div class="card portal-card border-0">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <div>
+          <div class="fw-semibold">{{ rx.created_at|date:"d M Y" }}</div>
+          {% if rx.prescribed_by %}
+          <small class="text-muted">Dr. {{ rx.prescribed_by.get_full_name }}</small>
+          {% endif %}
+        </div>
+        <span class="badge {% if rx.status == 'DISPENSED' %}bg-success{% elif rx.status == 'PARTIALLY_DISPENSED' %}bg-warning text-dark{% else %}bg-light text-dark border{% endif %}">
+          {{ rx.get_status_display|default:rx.status }}
+        </span>
+      </div>
+      <div class="card-body" style="font-size:0.875rem;">
+        {% if rx.diagnosis %}
+        <div class="text-muted small mb-2"><i class="bi bi-clipboard-pulse me-1"></i>{{ rx.diagnosis }}</div>
+        {% endif %}
+        {% for item in rx.items.all|slice:":5" %}
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="fw-semibold">{{ item.drug_name }}</span>
+          <span class="text-muted small">{{ item.dosage }} · {{ item.frequency }}</span>
+        </div>
+        {% empty %}
+        <div class="text-muted small">No drug items.</div>
+        {% endfor %}
+        {% if rx.special_instructions %}
+        <div class="mt-2 p-2 bg-light rounded small">
+          <i class="bi bi-info-circle me-1 text-info"></i>{{ rx.special_instructions }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-capsule fs-1 d-block mb-2"></i>No prescriptions on file.
+</div>
+{% endif %}
+{% endblock %}

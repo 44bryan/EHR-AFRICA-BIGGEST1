@@ -1,0 +1,83 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{% if lens %}Edit Lens{% else %}Add Lens{% endif %}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold">
+          <i class="bi bi-circle me-2 text-info"></i>
+          {% if lens %}Edit Lens — {{ lens.name }}{% else %}Add Lens to Catalogue{% endif %}
+        </h5>
+        <a href="{% url 'opticals:lens_list' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Lens Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" value="{{ lens.name|default:'' }}" required
+                     placeholder="e.g. CR-39 Single Vision, Polycarbonate Progressive">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Lens Type <span class="text-danger">*</span></label>
+              <select name="lens_type" class="form-select" required>
+                <option value="">— Select Type —</option>
+                {% for val, label in lens_types %}
+                <option value="{{ val }}" {% if lens.lens_type == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Material</label>
+              <input type="text" name="material" class="form-control" value="{{ lens.material|default:'' }}"
+                     placeholder="e.g. CR-39, Polycarbonate, Hi-index 1.67">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Coating / Treatment</label>
+              <input type="text" name="coating" class="form-control" value="{{ lens.coating|default:'' }}"
+                     placeholder="e.g. Anti-reflective, UV400, Photochromic, Blue-light filter">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Cost Price (FCFA)</label>
+              <input type="number" name="cost_price" class="form-control" min="0" step="100"
+                     value="{{ lens.cost_price|default:'0'|floatformat:0 }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Selling Price (FCFA) <span class="text-danger">*</span></label>
+              <input type="number" name="selling_price" class="form-control fw-bold" min="0" step="100"
+                     value="{{ lens.selling_price|default:'0'|floatformat:0 }}" required>
+            </div>
+
+            {% if lens %}
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" id="is_active"
+                       {% if lens.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="is_active">Active (visible in dispensing catalogue)</label>
+              </div>
+            </div>
+            {% endif %}
+
+          </div>
+
+          <hr class="my-4">
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-save me-1"></i>{% if lens %}Save Changes{% else %}Add to Catalogue{% endif %}
+            </button>
+            <a href="{% url 'opticals:lens_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

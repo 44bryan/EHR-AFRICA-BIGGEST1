@@ -1,0 +1,95 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Walk-in Confirmation — {{ patient.full_name }}{% endblock %}
+
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=patient %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7 col-md-9">
+
+    <div class="alert alert-warning border-start border-4 border-warning mb-4">
+      <h5 class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i>No Active Visit Found</h5>
+      <p class="mb-0 small">
+        <strong>{{ patient.full_name }}</strong> does not have an active visit (not checked in through reception/cashier today).
+        Creating a walk-in visit bypasses the normal billing pathway.
+        Please confirm the reason and provide the chief complaint before proceeding.
+      </p>
+    </div>
+
+    {% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-warning bg-opacity-10 border-bottom py-3">
+        <h5 class="mb-0 fw-bold"><i class="bi bi-person-walking me-2"></i>Walk-in Visit Confirmation</h5>
+      </div>
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="walkin_confirm" value="1">
+
+          <div class="mb-4">
+            <label for="chief_complaint" class="form-label fw-semibold">
+              Chief Complaint <span class="text-danger">*</span>
+            </label>
+            <textarea name="chief_complaint" id="chief_complaint" rows="3"
+                      class="form-control" placeholder="Describe the patient's main presenting complaint..."
+                      required></textarea>
+            <div class="form-text">Briefly describe the reason for this consultation.</div>
+          </div>
+
+          <div class="mb-4">
+            <label for="walkin_reason" class="form-label fw-semibold">
+              Reason for Walk-in <span class="text-danger">*</span>
+            </label>
+            <select name="walkin_reason" id="walkin_reason" class="form-select" required>
+              <option value="">— Select reason —</option>
+              <option value="EMERGENCY">Emergency — Immediate care required</option>
+              <option value="URGENT">Urgent — Cannot wait for normal registration</option>
+              <option value="FOLLOW_UP">Post-operative / Follow-up visit</option>
+              <option value="REFERRAL">Internal referral from another department</option>
+              <option value="REVIEW">Review of previous treatment</option>
+              <option value="DIRECT_BOOKING">Direct appointment booking (pre-paid)</option>
+            </select>
+            <div class="form-text text-warning-emphasis">
+              <i class="bi bi-info-circle me-1"></i>
+              This information is logged for audit. Walk-in visits must be billed separately through the cashier.
+            </div>
+          </div>
+
+          <div class="d-flex gap-3">
+            <button type="submit" class="btn btn-warning fw-semibold px-4">
+              <i class="bi bi-check-circle me-1"></i>Confirm & Proceed to Consultation
+            </button>
+            <a href="{% url 'patients:detail' patient.patient_id %}" class="btn btn-outline-secondary">
+              <i class="bi bi-x-circle me-1"></i>Cancel
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Patient info summary -->
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-body py-2 px-3 d-flex flex-wrap gap-3 small text-muted">
+        <span><i class="bi bi-person me-1"></i>{{ patient.full_name }}</span>
+        <span><i class="bi bi-calendar me-1"></i>{{ patient.age_display }}</span>
+        <span><i class="bi bi-gender-ambiguous me-1"></i>{{ patient.get_gender_display }}</span>
+        <span><i class="bi bi-hash me-1"></i>{{ patient.patient_id }}</span>
+        {% with v=patient.visits.last %}
+        {% if v %}<span><i class="bi bi-clock me-1"></i>Last visit: {{ v.visit_date|date:"d M Y" }}</span>{% endif %}
+        {% endwith %}
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

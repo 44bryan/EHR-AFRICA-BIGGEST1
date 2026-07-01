@@ -7,16 +7,26 @@
   <span class="badge {% if booking.status == 'CONFIRMED' %}bg-success{% elif booking.status == 'PENDING_PAYMENT' %}bg-warning text-dark{% elif booking.status == 'COMPLETED' %}bg-primary{% elif booking.status == 'CANCELLED' %}bg-danger{% else %}bg-secondary{% endif %} fs-6">
     {{ booking.get_status_display }}
   </span>
-  <div class="ms-auto d-flex gap-2">
+  <div class="ms-auto d-flex gap-2 flex-wrap">
     {% if booking.status == 'CONFIRMED' or booking.status == 'SCHEDULED' %}
     <a href="{% url 'ipd:admit_from_booking' booking.pk %}"
        class="btn btn-success btn-sm">
       <i class="bi bi-hospital me-1"></i>Admit to IPD
     </a>
     {% endif %}
+    {% if proforma %}
+    <a href="{% url 'billing:proforma_detail' proforma.pk %}"
+       class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-file-earmark-text me-1"></i>Proforma {{ proforma.proforma_number }}
+    </a>
+    <a href="{% url 'billing:proforma_pdf' proforma.pk %}" target="_blank"
+       class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-file-pdf me-1"></i>Print Cost Estimate
+    </a>
+    {% endif %}
     <a href="{% url 'billing:surgical_deposit' booking_id=booking.pk %}"
-       class="btn btn-success btn-sm">
-      <i class="bi bi-cash-coin me-1"></i>Collect Deposit
+       class="btn btn-warning btn-sm">
+      <i class="bi bi-cash-coin me-1"></i>Cashier — Collect Deposit
     </a>
     <a href="{% url 'ipd:surgical_booking_slip_pdf' booking_id=booking.pk %}"
        class="btn btn-outline-danger btn-sm" target="_blank">
@@ -138,6 +148,33 @@
         {% endif %}
       </div>
     </div>
+
+    {% if proforma %}
+    <div class="card border-0 shadow-sm mt-3 border-primary">
+      <div class="card-header bg-primary bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold small text-primary"><i class="bi bi-file-earmark-text me-1"></i>Cost Estimate (Proforma)</h6>
+      </div>
+      <div class="card-body small">
+        <div class="text-muted mb-1">Proforma No.</div>
+        <div class="fw-bold mb-2">{{ proforma.proforma_number }}</div>
+        {% for item in proforma.items.all %}
+        <div class="d-flex justify-content-between">
+          <span class="text-muted">{{ item.description }}</span>
+          <span class="fw-semibold">{{ item.unit_price|floatformat:0 }} XAF</span>
+        </div>
+        {% endfor %}
+        <div class="d-flex justify-content-between border-top mt-2 pt-1">
+          <span class="fw-bold">Total</span>
+          <span class="fw-bold text-primary">{{ proforma.subtotal|floatformat:0 }} XAF</span>
+        </div>
+        <div class="mt-2">
+          <span class="badge {% if proforma.status == 'CONVERTED' %}bg-success{% elif proforma.status == 'ISSUED' %}bg-primary{% else %}bg-secondary{% endif %}">
+            {{ proforma.get_status_display }}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <div class="card border-0 shadow-sm mt-3">
       <div class="card-header bg-light py-2">

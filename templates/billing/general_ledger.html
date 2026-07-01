@@ -1,0 +1,128 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}General Ledger{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Chart of Accounts
+  </a>
+  <h4 class="fw-bold mb-0"><i class="bi bi-journal-text me-2 text-primary"></i>General Ledger</h4>
+  <p class="text-muted small mb-0">Full transaction history per account with running balance</p>
+</div>
+{% endblock %}
+{% block content %}
+<!-- Filters -->
+<form method="get" class="row g-2 mb-4 align-items-end">
+  <div class="col-md-4">
+    <label class="form-label fw-semibold small">Account</label>
+    <select name="account" class="form-select form-select-sm">
+      <option value="">— All Accounts —</option>
+      {% for a in all_accounts %}
+      <option value="{{ a.pk }}" {% if request.GET.account == a.pk|stringformat:'s' %}selected{% endif %}>
+        {{ a.code }} — {{ a.name }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
+    <label class="form-label fw-semibold small">From</label>
+    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request.GET.date_from }}">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label fw-semibold small">To</label>
+    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request.GET.date_to }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-sm btn-primary w-100">
+      <i class="bi bi-funnel me-1"></i>Filter
+    </button>
+  </div>
+  <div class="col-md-2">
+    <a href="{% url 'billing:general_ledger' %}" class="btn btn-sm btn-outline-secondary w-100">Clear</a>
+  </div>
+</form>
+
+{% if ledger_data %}
+  {% for group in ledger_data %}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+      <div>
+        <span class="fw-bold text-primary">{{ group.account.code }}</span>
+        <span class="fw-semibold ms-2">{{ group.account.name }}</span>
+        <span class="badge ms-2
+          {% if group.account.account_type == 'ASSET' %}bg-primary
+          {% elif group.account.account_type == 'LIABILITY' %}bg-warning text-dark
+          {% elif group.account.account_type == 'EQUITY' %}bg-success
+          {% elif group.account.account_type == 'REVENUE' %}bg-info
+          {% else %}bg-secondary{% endif %}">
+          {{ group.account.get_account_type_display }}
+        </span>
+      </div>
+      <div class="text-end">
+        <small class="text-muted">Closing Balance:</small>
+        <span class="fw-bold ms-1 {% if group.closing_balance >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ group.closing_balance|floatformat:0|intcomma }} XAF
+        </span>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:110px">Date</th>
+            <th>Description</th>
+            <th style="width:120px">Ref</th>
+            <th class="text-end" style="width:130px">Debit (XAF)</th>
+            <th class="text-end" style="width:130px">Credit (XAF)</th>
+            <th class="text-end" style="width:140px">Balance (XAF)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="table-secondary">
+            <td colspan="5" class="fw-semibold">Opening Balance</td>
+            <td class="text-end fw-semibold">{{ group.opening_balance|floatformat:0|intcomma }}</td>
+          </tr>
+          {% for line in group.lines %}
+          <tr>
+            <td class="text-muted small">{{ line.entry.entry_date|date:"d/m/Y" }}</td>
+            <td>
+              <a href="{% url 'billing:journal_entry_detail' line.entry.pk %}" class="text-decoration-none">
+                {{ line.entry.description|truncatechars:60 }}
+              </a>
+              <small class="d-block text-muted">{{ line.entry.entry_number }}</small>
+            </td>
+            <td class="small text-muted">{{ line.entry.reference|default:"—" }}</td>
+            <td class="text-end {% if line.debit_amount %}text-success fw-semibold{% else %}text-muted{% endif %}">
+              {% if line.debit_amount %}{{ line.debit_amount|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end {% if line.credit_amount %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+              {% if line.credit_amount %}{{ line.credit_amount|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end fw-semibold {% if line.running_balance >= 0 %}text-dark{% else %}text-danger{% endif %}">
+              {{ line.running_balance|floatformat:0|intcomma }}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-3">No transactions in this period</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td colspan="3" class="text-end">Period Totals</td>
+            <td class="text-end text-success">{{ group.total_debits|floatformat:0|intcomma }}</td>
+            <td class="text-end text-danger">{{ group.total_credits|floatformat:0|intcomma }}</td>
+            <td class="text-end">{{ group.closing_balance|floatformat:0|intcomma }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    {% if request.GET.account %}No transactions found for the selected account and period.
+    {% else %}Select an account above to view its transaction history.{% endif %}
+  </div>
+{% endif %}
+{% endblock %}

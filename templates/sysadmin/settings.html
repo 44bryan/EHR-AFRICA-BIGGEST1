@@ -1,0 +1,460 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}System Settings{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1">
+        <li class="breadcrumb-item"><a href="{% url 'dashboard:sysadmin' %}">System Admin</a></li>
+        <li class="breadcrumb-item active">System Settings</li>
+      </ol>
+    </nav>
+    <h4 class="fw-bold mb-0"><i class="bi bi-gear-wide-connected me-2 text-primary"></i>System Settings</h4>
+    <p class="text-muted small mb-0">Manage hospital configuration, security, modules, QMS and backup</p>
+  </div>
+  <a href="{% url 'dashboard:sysadmin' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Admin
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include "components/alerts.html" %}
+
+<div class="row g-0" style="min-height:70vh;">
+
+  {# ── Left Settings Nav ──────────────────────────────────────────────────── #}
+  <div class="col-12 col-md-3 col-lg-2">
+    <div class="card border-0 shadow-sm h-100" style="border-radius:0.5rem 0 0 0.5rem !important;">
+      <div class="list-group list-group-flush" id="settingsNav" style="border-radius:0.5rem 0 0 0.5rem;">
+
+        <a href="#sec-hospital" class="list-group-item list-group-item-action settings-nav-link active border-0 py-3 px-3"
+           onclick="showSection('sec-hospital', this)">
+          <i class="bi bi-building me-2 text-primary"></i>
+          <span class="fw-semibold">Hospital Info</span>
+        </a>
+
+        <a href="#sec-security" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-security', this)">
+          <i class="bi bi-shield-lock me-2 text-danger"></i>
+          <span class="fw-semibold">Security</span>
+        </a>
+
+        <a href="#sec-audit" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-audit', this)">
+          <i class="bi bi-journal-text me-2 text-info"></i>
+          <span class="fw-semibold">Audit &amp; Logging</span>
+        </a>
+
+        <a href="#sec-modules" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-modules', this)">
+          <i class="bi bi-toggles me-2 text-success"></i>
+          <span class="fw-semibold">System Modules</span>
+        </a>
+
+        <a href="#sec-appearance" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-appearance', this)">
+          <i class="bi bi-palette me-2 text-warning"></i>
+          <span class="fw-semibold">Appearance</span>
+        </a>
+
+        <a href="#sec-qms" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-qms', this)">
+          <i class="bi bi-person-lines-fill me-2 text-purple" style="color:#8b5cf6;"></i>
+          <span class="fw-semibold">Queue (QMS)</span>
+        </a>
+
+        <a href="#sec-backup" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-backup', this)">
+          <i class="bi bi-cloud-arrow-down me-2 text-secondary"></i>
+          <span class="fw-semibold">Backup</span>
+        </a>
+
+        <a href="#sec-reset" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-reset', this)">
+          <i class="bi bi-exclamation-triangle me-2 text-danger"></i>
+          <span class="fw-semibold">System Reset</span>
+        </a>
+
+      </div>
+    </div>
+  </div>
+
+  {# ── Right Content Panels ───────────────────────────────────────────────── #}
+  <div class="col-12 col-md-9 col-lg-10">
+    <div class="card border-0 shadow-sm h-100" style="border-radius:0 0.5rem 0.5rem 0 !important; border-left:1px solid #e9ecef !important;">
+      <div class="card-body p-4">
+
+        {# ── Hospital Info ─────────────────────────────────────────────────── #}
+        <div id="sec-hospital" class="settings-section">
+          <h5 class="fw-bold mb-1"><i class="bi bi-building me-2 text-primary"></i>Hospital Information</h5>
+          <p class="text-muted small mb-4">This information appears on invoices, receipts and patient documents.</p>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_general">
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label class="form-label fw-semibold">Hospital Name <span class="text-danger">*</span></label>
+                <input type="text" name="hospital_name" class="form-control" value="{{ config.hospital_name }}" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Tax ID / NIU</label>
+                <input type="text" name="hospital_tax_id" class="form-control" value="{{ config.hospital_tax_id }}" placeholder="e.g. M081200012345E">
+              </div>
+              <div class="col-12">
+                <label class="form-label fw-semibold">Address</label>
+                <textarea name="hospital_address" class="form-control" rows="2" placeholder="Street, City, Region">{{ config.hospital_address }}</textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Phone</label>
+                <input type="text" name="hospital_phone" class="form-control" value="{{ config.hospital_phone }}" placeholder="+237 6XX XXX XXX">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Email</label>
+                <input type="email" name="hospital_email" class="form-control" value="{{ config.hospital_email }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Website</label>
+                <input type="url" name="hospital_website" class="form-control" value="{{ config.hospital_website }}" placeholder="https://...">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Consultation Validity (days)</label>
+                <input type="number" name="consultation_days" class="form-control" value="{{ config.consultation_days }}" min="1" max="365">
+                <div class="form-text">Patient pays new fee after this many days without a visit</div>
+              </div>
+            </div>
+            <div class="mt-4 pt-3 border-top">
+              <button type="submit" class="btn btn-primary px-4">
+                <i class="bi bi-check-circle me-1"></i>Save Hospital Info
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {# ── Security ──────────────────────────────────────────────────────── #}
+        <div id="sec-security" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-shield-lock me-2 text-danger"></i>Security Settings</h5>
+          <p class="text-muted small mb-4">Controls login behaviour, session duration and account lockout policy.</p>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_general">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Session Timeout (hours)</label>
+                <input type="number" name="session_timeout_hours" class="form-control" value="{{ config.session_timeout_hours }}" min="1" max="24">
+                <div class="form-text">Users auto-logged out after this idle period</div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Max Failed Login Attempts</label>
+                <input type="number" name="max_failed_logins" class="form-control" value="{{ config.max_failed_logins }}" min="1" max="20">
+                <div class="form-text">Account locks after this many wrong passwords</div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Account Lockout (minutes)</label>
+                <input type="number" name="account_lockout_minutes" class="form-control" value="{{ config.account_lockout_minutes }}" min="1" max="1440">
+                <div class="form-text">Duration account stays locked</div>
+              </div>
+            </div>
+            <div class="mt-4 pt-3 border-top">
+              <button type="submit" class="btn btn-danger px-4">
+                <i class="bi bi-check-circle me-1"></i>Save Security Settings
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {# ── Audit & Logging ───────────────────────────────────────────────── #}
+        <div id="sec-audit" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-journal-text me-2 text-info"></i>Audit &amp; Logging</h5>
+          <p class="text-muted small mb-4">Every login, logout, failed attempt, record view/edit and password change is automatically logged. You cannot disable audit logging — it is required for compliance.</p>
+
+          <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-lg-3">
+              <div class="card border-0 bg-light text-center p-3">
+                <i class="bi bi-box-arrow-in-right fs-2 text-success mb-2"></i>
+                <div class="fw-bold">LOGIN</div>
+                <div class="small text-muted">Timestamp + IP</div>
+              </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="card border-0 bg-light text-center p-3">
+                <i class="bi bi-exclamation-triangle fs-2 text-danger mb-2"></i>
+                <div class="fw-bold">FAILED LOGIN</div>
+                <div class="small text-muted">User + IP logged</div>
+              </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="card border-0 bg-light text-center p-3">
+                <i class="bi bi-pencil-square fs-2 text-primary mb-2"></i>
+                <div class="fw-bold">RECORD EDITS</div>
+                <div class="small text-muted">Create / Update / Delete</div>
+              </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="card border-0 bg-light text-center p-3">
+                <i class="bi bi-key fs-2 text-warning mb-2"></i>
+                <div class="fw-bold">PASSWORD CHANGE</div>
+                <div class="small text-muted">Who + when</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <a href="{% url 'dashboard:sysadmin_audit' %}" class="btn btn-outline-primary">
+              <i class="bi bi-eye me-1"></i>View Full Audit Log
+            </a>
+            <a href="{% url 'dashboard:export_audit_log' %}" class="btn btn-outline-success">
+              <i class="bi bi-download me-1"></i>Export to CSV
+            </a>
+          </div>
+        </div>
+
+        {# ── System Modules ────────────────────────────────────────────────── #}
+        <div id="sec-modules" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-toggles me-2 text-success"></i>System Modules</h5>
+          <p class="text-muted small mb-4">Toggle optional modules on or off. Core modules (patients, billing, consultations) are always on.</p>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_modules">
+            <div class="row g-3">
+              {% for field_name, label, value in config.get_module_flags %}
+              <div class="col-md-6">
+                <div class="d-flex align-items-center justify-content-between p-3 border rounded
+                            {% if value %}border-success bg-success bg-opacity-10{% else %}border-light bg-light{% endif %}">
+                  <div>
+                    <div class="fw-semibold">{{ label }}</div>
+                    <div class="small text-muted">{{ field_name }}</div>
+                  </div>
+                  <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="{{ field_name }}" name="{{ field_name }}"
+                           {% if value %}checked{% endif %} style="width:2.5rem; height:1.25rem;">
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="mt-4 pt-3 border-top">
+              <button type="submit" class="btn btn-success px-4">
+                <i class="bi bi-check-circle me-1"></i>Save Module Settings
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {# ── Appearance ────────────────────────────────────────────────────── #}
+        <div id="sec-appearance" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-palette me-2 text-warning"></i>Appearance</h5>
+          <p class="text-muted small mb-4">Control the system colour theme and how the patient queue board displays.</p>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_appearance">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">System Theme</label>
+                <select name="system_theme" class="form-select">
+                  {% for val, label in theme_choices %}
+                  <option value="{{ val }}" {% if config.system_theme == val %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Applied to all pages for all users</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Queue Display Board Type</label>
+                <select name="queue_board_type" class="form-select">
+                  {% for val, label in board_choices %}
+                  <option value="{{ val }}" {% if config.queue_board_type == val %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Controls the public patient-facing display board</div>
+              </div>
+            </div>
+            <div class="mt-4 pt-3 border-top">
+              <button type="submit" class="btn btn-warning text-dark px-4">
+                <i class="bi bi-check-circle me-1"></i>Save Appearance
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {# ── QMS ───────────────────────────────────────────────────────────── #}
+        <div id="sec-qms" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-person-lines-fill me-2" style="color:#8b5cf6;"></i>Queue Management (QMS)</h5>
+          <p class="text-muted small mb-4">Set up service counters and manage the live queue display board.</p>
+
+          <div class="card border-success border-opacity-25 mb-4">
+            <div class="card-header bg-white fw-semibold small">
+              <i class="bi bi-plus-circle me-1 text-success"></i>Seed Service Counters
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">
+                Creates all default counters: Cashier (Standard, VIP, Express), Reception, Triage,
+                Consultation rooms, Lab, Pharmacy, Optical, Billing, Surgical Counselling.
+                <strong>Safe to run multiple times</strong> — existing counters are updated, not duplicated.
+              </p>
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="seed_qms">
+                <button type="submit" class="btn btn-success"
+                        onclick="return confirm('Seed all default QMS service counters now?')">
+                  <i class="bi bi-play-circle me-1"></i>Seed QMS Counters
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card border-0 bg-light">
+            <div class="card-body">
+              <div class="fw-semibold mb-2"><i class="bi bi-link-45deg me-1"></i>Quick Links</div>
+              <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'qms:dashboard' %}" class="btn btn-outline-primary btn-sm">
+                  <i class="bi bi-speedometer2 me-1"></i>QMS Dashboard
+                </a>
+                <a href="{% url 'qms:counter_assign' %}" class="btn btn-outline-secondary btn-sm">
+                  <i class="bi bi-person-check me-1"></i>Counter Assignment
+                </a>
+                <a href="{% url 'qms:display_board' %}" target="_blank" class="btn btn-outline-dark btn-sm">
+                  <i class="bi bi-tv me-1"></i>Display Board
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# ── Backup ────────────────────────────────────────────────────────── #}
+        <div id="sec-backup" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-cloud-arrow-down me-2 text-secondary"></i>Backup Configuration</h5>
+          <p class="text-muted small mb-4">Automated full backups run daily at <strong>02:00</strong> via Celery Beat. You can also trigger a backup manually.</p>
+
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_general">
+            <div class="row g-3 mb-4">
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Keep Backups (days)</label>
+                <input type="number" name="backup_keep_days" class="form-control" value="{{ config.backup_keep_days }}" min="7" max="365">
+                <div class="form-text">Backups older than this are automatically deleted</div>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label fw-semibold">Backup Location</label>
+                <input class="form-control" value="/opt/ehr-africa/backups/" readonly disabled>
+                <div class="form-text">Change <code>BACKUP_DIR</code> in <code>.env</code> file to move it</div>
+              </div>
+            </div>
+
+            <div class="alert alert-light border small mb-4">
+              <div class="fw-semibold mb-1"><i class="bi bi-info-circle me-1 text-info"></i>Backup Types</div>
+              <ul class="mb-0 ps-3">
+                <li><strong>Full backup</strong> — runs nightly at 02:00, stores entire PostgreSQL database as <code>.dump</code></li>
+                <li><strong>Incremental (WAL)</strong> — requires PostgreSQL WAL archiving configuration on the server (contact IT)</li>
+                <li><strong>Manual backup</strong> — click "Run Backup Now" below at any time</li>
+              </ul>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap">
+              <button type="submit" class="btn btn-secondary px-4">
+                <i class="bi bi-check-circle me-1"></i>Save Backup Settings
+              </button>
+              <form method="post" action="{% url 'dashboard:trigger_backup' %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-success"
+                        onclick="return confirm('Start a full backup now?')">
+                  <i class="bi bi-play me-1"></i>Run Backup Now
+                </button>
+              </form>
+              <a href="{% url 'dashboard:health_check' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-heart-pulse me-1"></i>View Backup Log
+              </a>
+            </div>
+          </form>
+        </div>
+
+        {# ── System Reset ──────────────────────────────────────────────────── #}
+        <div id="sec-reset" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>System Reset</h5>
+          <p class="text-muted small mb-4">Dangerous operations. These cannot be undone. Always take a backup first.</p>
+
+          <div class="card border-warning mb-3">
+            <div class="card-header bg-warning bg-opacity-10 fw-semibold text-warning">
+              <i class="bi bi-lightning me-1"></i>Clear Cache
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">Clears all Redis cache. Pages reload slightly slower for ~1 minute then re-cache automatically.</p>
+              <form method="post" action="{% url 'dashboard:sysadmin_tools' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="clear_cache">
+                <button type="submit" class="btn btn-warning text-dark"
+                        onclick="return confirm('Clear all cached data?')">
+                  <i class="bi bi-lightning me-1"></i>Clear Cache
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card border-danger">
+            <div class="card-header bg-danger bg-opacity-10 fw-semibold text-danger">
+              <i class="bi bi-trash me-1"></i>Flush Expired Sessions
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">Removes expired browser sessions from the database. Active users are not affected.</p>
+              <form method="post" action="{% url 'dashboard:sysadmin_tools' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="flush_sessions">
+                <button type="submit" class="btn btn-outline-danger"
+                        onclick="return confirm('Delete all expired sessions?')">
+                  <i class="bi bi-x-circle me-1"></i>Flush Expired Sessions
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /card-body -->
+    </div><!-- /card -->
+  </div><!-- /col -->
+
+</div><!-- /row -->
+
+<style>
+.settings-nav-link {
+  border-radius: 0 !important;
+  border-left: 3px solid transparent !important;
+  transition: all 0.15s;
+}
+.settings-nav-link.active,
+.settings-nav-link:hover {
+  background: var(--bs-primary-bg-subtle, #e7f1ff) !important;
+  border-left-color: var(--ehr-primary, #0d6efd) !important;
+  color: var(--ehr-primary, #0d6efd) !important;
+}
+.settings-nav-link.active {
+  font-weight: 600;
+}
+</style>
+
+<script>
+function showSection(id, el) {
+  event.preventDefault();
+  document.querySelectorAll('.settings-section').forEach(s => s.classList.add('d-none'));
+  document.getElementById(id).classList.remove('d-none');
+  document.querySelectorAll('.settings-nav-link').forEach(a => a.classList.remove('active'));
+  el.classList.add('active');
+  // persist selection in URL hash
+  history.replaceState(null, '', '#' + id);
+}
+
+// Restore section from URL hash on load
+document.addEventListener('DOMContentLoaded', function() {
+  var hash = window.location.hash.replace('#', '');
+  if (hash) {
+    var el = document.querySelector('[href="#' + hash + '"]');
+    if (el) showSection(hash, el);
+  }
+  // Also auto-open if there's a Django message (means a form was submitted)
+  {% if messages %}
+  // keep current section active after save
+  {% endif %}
+});
+</script>
+{% endblock %}

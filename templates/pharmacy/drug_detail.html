@@ -20,7 +20,7 @@
           <dt>Current Stock</dt>
           <dd><span class="badge {% if drug.needs_reorder %}bg-danger{% else %}bg-success{% endif %} fs-6">{{ drug.current_stock }} {{ drug.unit }}s</span></dd>
           <dt>Reorder Level</dt><dd>{{ drug.reorder_level }}</dd>
-          <dt>Selling Price</dt><dd>&#8358;{{ drug.selling_price }}</dd>
+          <dt>Selling Price</dt><dd>{{ drug.selling_price|floatformat:0 }} XAF</dd>
         </dl>
       </div>
     </div>
@@ -31,19 +31,40 @@
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover mb-0 small">
-            <thead class="table-light"><tr><th>Batch</th><th>Expiry</th><th>Qty Remaining</th><th>Supplier</th></tr></thead>
+            <thead class="table-light"><tr><th>Batch</th><th>Mfg. Date</th><th>Expiry</th><th>Days Left</th><th>Received</th><th>Remaining</th><th>Supplier</th><th></th></tr></thead>
             <tbody>
               {% for s in stocks %}
               <tr class="{% if s.is_expired %}table-danger{% elif s.days_to_expiry <= 30 %}table-warning{% endif %}">
-                <td>{{ s.batch_number }}</td>
+                <td class="fw-semibold">{{ s.batch_number }}</td>
+                <td class="text-muted">{{ s.manufacture_date|date:"d M Y"|default:"—" }}</td>
                 <td>{{ s.expiry_date|date:"d M Y" }}
                   {% if s.is_expired %}<span class="badge bg-danger ms-1">Expired</span>{% endif %}
                 </td>
-                <td>{{ s.quantity_remaining }}</td>
-                <td>{{ s.supplier|default:"-" }}</td>
+                <td>
+                  {% if s.is_expired %}
+                    <span class="badge bg-danger">Expired</span>
+                  {% elif s.days_to_expiry <= 30 %}
+                    <span class="badge bg-danger">{{ s.days_to_expiry }}d</span>
+                  {% elif s.days_to_expiry <= 60 %}
+                    <span class="badge bg-warning text-dark">{{ s.days_to_expiry }}d</span>
+                  {% else %}
+                    <span class="text-muted small">{{ s.days_to_expiry }}d</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted">{{ s.received_date|date:"d M Y" }}</td>
+                <td><span class="badge {% if s.quantity_remaining == 0 %}bg-secondary{% else %}bg-success{% endif %}">{{ s.quantity_remaining }}</span></td>
+                <td class="text-muted">{{ s.supplier|default:"—" }}</td>
+                <td>
+                  <a href="{% url 'pharmacy:stock_adjustment_create' batch_id=s.id %}"
+                     class="btn btn-xs btn-outline-secondary"
+                     style="font-size:.72rem;padding:2px 7px;"
+                     title="Adjust stock for this batch">
+                    <i class="bi bi-sliders me-1"></i>Adjust
+                  </a>
+                </td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted py-3">No stock batches recorded</td></tr>
+              <tr><td colspan="8" class="text-center text-muted py-3">No stock batches recorded</td></tr>
               {% endfor %}
             </tbody>
           </table>

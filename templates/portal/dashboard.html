@@ -1,0 +1,111 @@
+{% extends "portal/base.html" %}
+{% load humanize %}
+{% block title %}My Health Dashboard{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h2 class="fw-bold mb-0">Hello, {{ patient.first_name }} 👋</h2>
+  <p class="text-muted">{{ patient.patient_id }} · {{ today|date:"l, d F Y" }}</p>
+</div>
+
+{# Quick stats #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="stat-box bg-white portal-card">
+      <i class="bi bi-calendar-check fs-2 text-primary d-block mb-1"></i>
+      <div class="fw-bold fs-4">{{ upcoming_appts.count }}</div>
+      <div class="text-muted small">Upcoming Appointments</div>
+      <a href="{% url 'portal:appointments' %}" class="btn btn-sm btn-outline-primary mt-2">View</a>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="stat-box bg-white portal-card">
+      <i class="bi bi-receipt fs-2 text-warning d-block mb-1"></i>
+      <div class="fw-bold fs-4">{{ unpaid_invoices.count }}</div>
+      <div class="text-muted small">Unpaid Invoices</div>
+      <a href="{% url 'portal:invoices' %}" class="btn btn-sm btn-outline-warning mt-2">View</a>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="stat-box bg-white portal-card">
+      <i class="bi bi-capsule fs-2 text-success d-block mb-1"></i>
+      <div class="fw-bold fs-4">{{ recent_prescriptions.count }}</div>
+      <div class="text-muted small">Recent Prescriptions</div>
+      <a href="{% url 'portal:prescriptions' %}" class="btn btn-sm btn-outline-success mt-2">View</a>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  {# Upcoming appointments #}
+  <div class="col-md-6">
+    <div class="card portal-card border-0 h-100">
+      <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar-check me-2 text-primary"></i>Upcoming Appointments</span>
+        <a href="{% url 'portal:book_appointment' %}" class="btn btn-primary btn-sm">+ Book</a>
+      </div>
+      <div class="card-body">
+        {% for appt in upcoming_appts %}
+        <div class="d-flex gap-3 align-items-start mb-3 pb-3 border-bottom">
+          <div class="text-center" style="min-width:50px;">
+            <div class="fw-bold text-primary fs-5">{{ appt.appointment_date|date:"d" }}</div>
+            <div class="text-muted small">{{ appt.appointment_date|date:"M Y" }}</div>
+          </div>
+          <div>
+            <div class="fw-semibold">{{ appt.department.name|default:"General" }}</div>
+            <div class="text-muted small">
+              {{ appt.appointment_time|time:"H:i" }} ·
+              {% if appt.doctor %}Dr. {{ appt.doctor.get_full_name }}{% else %}Doctor TBC{% endif %}
+            </div>
+            <span class="badge {% if appt.status == 'CONFIRMED' %}bg-success{% else %}bg-warning text-dark{% endif %} mt-1">
+              {{ appt.get_status_display }}
+            </span>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted py-3">
+          <i class="bi bi-calendar-x d-block fs-2 mb-2"></i>No upcoming appointments.
+          <div class="mt-2">
+            <a href="{% url 'portal:book_appointment' %}" class="btn btn-primary btn-sm">Book Appointment</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# Unpaid invoices #}
+  <div class="col-md-6">
+    <div class="card portal-card border-0 h-100">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-receipt me-2 text-warning"></i>Pending Payments
+      </div>
+      <div class="card-body">
+        {% for inv in unpaid_invoices %}
+        <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+          <div>
+            <div class="fw-semibold">{{ inv.invoice_number }}</div>
+            <div class="text-muted small">{{ inv.issue_date|date:"d M Y" }}</div>
+          </div>
+          <div class="text-end">
+            <div class="fw-bold text-danger">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</div>
+            <div class="text-muted small">balance due</div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted py-3">
+          <i class="bi bi-check-circle d-block fs-2 text-success mb-2"></i>
+          No outstanding payments. You're all clear!
+        </div>
+        {% endfor %}
+        {% if unpaid_invoices %}
+        <div class="text-end">
+          <a href="{% url 'portal:invoices' %}" class="btn btn-sm btn-outline-warning">View All Invoices</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

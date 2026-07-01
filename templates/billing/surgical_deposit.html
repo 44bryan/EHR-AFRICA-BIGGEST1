@@ -97,7 +97,43 @@
   <div class="col-md-7">
 
     {% if not deposit_invoice %}
-    <!-- No invoice yet -->
+    <!-- No invoice yet — show proforma if available -->
+    {% if proforma %}
+    <div class="card border-0 shadow-sm mb-3 border-primary">
+      <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold small text-primary"><i class="bi bi-file-earmark-text me-1"></i>Proforma {{ proforma.proforma_number }}</h6>
+        <span class="badge bg-primary">{{ proforma.get_status_display }}</span>
+      </div>
+      <div class="card-body small p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Item</th><th class="text-end">Amount (FCFA)</th></tr></thead>
+          <tbody>
+            {% for item in proforma_items %}
+            <tr>
+              <td>{{ item.description }}</td>
+              <td class="text-end fw-bold">{{ item.unit_price|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light">
+            <tr><td class="fw-bold">Total</td><td class="text-end fw-bold text-primary">{{ proforma.subtotal|floatformat:0|intcomma }}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body text-center py-4">
+        <p class="text-muted mb-3 small">Convert the proforma above to an invoice to start collecting payment.</p>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_invoice">
+          <button type="submit" class="btn btn-success px-5">
+            <i class="bi bi-arrow-right-circle me-1"></i>Convert Proforma to Invoice &amp; Collect
+          </button>
+        </form>
+      </div>
+    </div>
+    {% else %}
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body text-center py-5">
         <i class="bi bi-receipt text-muted" style="font-size:3rem;"></i>
@@ -111,6 +147,7 @@
         </form>
       </div>
     </div>
+    {% endif %}
 
     {% else %}
 

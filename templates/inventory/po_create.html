@@ -1,0 +1,137 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Create Purchase Order{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0"><i class="bi bi-cart-plus me-2 text-primary"></i>New Purchase Order</h1>
+  <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+</div>
+
+<form method="post" id="poForm">
+  {% csrf_token %}
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold">Order Details</div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Vendor <span class="text-danger">*</span></label>
+            <select name="vendor_id" class="form-select" required>
+              <option value="">— select vendor —</option>
+              {% for v in vendors %}
+              <option value="{{ v.id }}">{{ v.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Expected Delivery</label>
+            <input type="date" name="expected_date" class="form-control" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea name="notes" class="form-control" rows="3"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold">Order Summary</div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="text-muted">Items</span>
+            <span id="lineCount">0</span>
+          </div>
+          <div class="d-flex justify-content-between fw-bold">
+            <span>Total</span>
+            <span id="grandTotal">0 FCFA</span>
+          </div>
+        </div>
+        <div class="card-footer bg-white">
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-send me-1"></i>Submit PO
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Line Items</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()">
+            <i class="bi bi-plus-lg me-1"></i>Add Item
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" id="lineTable">
+            <thead class="table-light">
+              <tr>
+                <th>Item</th>
+                <th style="width:90px;">Qty</th>
+                <th style="width:120px;">Unit Price</th>
+                <th style="width:120px;" class="text-end">Subtotal</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody id="lineBody">
+              <tr id="emptyRow">
+                <td colspan="5" class="text-center text-muted py-3">
+                  Click "Add Item" to build your order.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+const ITEMS = [
+  {% for i in items %}
+  {id:"{{ i.id }}", name:"{{ i.name|escapejs }}", code:"{{ i.item_code|escapejs }}", cost:{{ i.unit_cost|default:0 }}},
+  {% endfor %}
+];
+
+function addLine() {
+  document.getElementById('emptyRow')?.remove();
+  const tbody = document.getElementById('lineBody');
+  const idx = tbody.rows.length;
+  const opts = ITEMS.map(i => `<option value="${i.id}" data-cost="${i.cost}">${i.code} — ${i.name}</option>`).join('');
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td><select name="item_id[]" class="form-select form-select-sm" onchange="fillCost(this)" required>${opts}</select></td>
+    <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" value="1" onchange="recalc()" required /></td>
+    <td><input type="number" name="unit_price[]" class="form-control form-control-sm" step="0.01" min="0" value="" onchange="recalc()" required /></td>
+    <td class="text-end fw-semibold subtotal-cell">0</td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove();recalc()"><i class="bi bi-trash"></i></button></td>
+  `;
+  tbody.appendChild(row);
+  fillCost(row.querySelector('select'));
+}
+
+function fillCost(sel) {
+  const opt = sel.selectedOptions[0];
+  const cost = opt?.dataset?.cost || 0;
+  const row = sel.closest('tr');
+  row.querySelector('[name="unit_price[]"]').value = cost;
+  recalc();
+}
+
+function recalc() {
+  let total = 0, count = 0;
+  document.querySelectorAll('#lineBody tr').forEach(row => {
+    const qty = parseFloat(row.querySelector('[name="quantity[]"]')?.value || 0);
+    const price = parseFloat(row.querySelector('[name="unit_price[]"]')?.value || 0);
+    const sub = qty * price;
+    const cell = row.querySelector('.subtotal-cell');
+    if (cell) { cell.textContent = sub.toLocaleString('fr-CM'); count++; }
+    total += sub;
+  });
+  document.getElementById('grandTotal').textContent = total.toLocaleString('fr-CM') + ' FCFA';
+  document.getElementById('lineCount').textContent = count;
+}
+</script>
+{% endblock %}

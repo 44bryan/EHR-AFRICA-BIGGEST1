@@ -78,10 +78,17 @@
             {% else %}<span class="badge bg-secondary">Waiting</span>{% endif %}
           </td>
           <td class="d-flex gap-1 flex-wrap">
-            <a href="{% url 'investigations:list' %}?patient={{ token.visit.patient.patient_id }}"
+            {% if token.pending_order %}
+            <a href="{% url 'investigations:detail' pk=token.pending_order.pk %}"
                class="btn btn-sm btn-primary">
               <i class="bi bi-clipboard2-check me-1"></i>Enter Results
             </a>
+            {% else %}
+            <a href="{% url 'investigations:list' %}?patient={{ token.visit.patient.patient_id }}"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-search me-1"></i>View Orders
+            </a>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -108,6 +115,7 @@
           <th>Test</th>
           <th>Eye</th>
           <th>Urgency</th>
+          <th>Payment</th>
           <th>Ordered By</th>
           <th>Clinical Indication</th>
           <th>Ordered At</th>
@@ -117,7 +125,7 @@
       </thead>
       <tbody>
         {% for order in urgent_orders %}
-        <tr>
+        <tr {% if order.is_paid == False %}class="table-warning"{% endif %}>
           <td class="fw-semibold">{{ order.patient.full_name }}</td>
           <td>{{ order.investigation_type.name }}</td>
           <td><span class="badge bg-secondary">{{ order.eye }}</span></td>
@@ -126,6 +134,13 @@
               <span class="badge bg-danger">EMERGENCY</span>
             {% else %}
               <span class="badge bg-warning text-dark">URGENT</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if order.is_paid == True %}
+              <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
+            {% elif order.is_paid == False %}
+              <span class="badge bg-danger"><i class="bi bi-exclamation-circle me-1"></i>Unpaid</span>
             {% endif %}
           </td>
           <td class="text-muted">Dr. {{ order.ordered_by.last_name|default:order.ordered_by.full_name }}</td>
@@ -139,6 +154,7 @@
             {% endif %}
           </td>
           <td>
+            {# Urgent/Emergency — allow even if unpaid (emergencies bypass payment) #}
             <a href="{% url 'investigations:detail' pk=order.pk %}" class="btn btn-sm btn-danger">
               <i class="bi bi-pencil-square me-1"></i>Enter Result
             </a>
@@ -168,6 +184,7 @@
           <th>Test</th>
           <th>Category</th>
           <th>Eye</th>
+          <th>Payment</th>
           <th>Ordered By</th>
           <th>Indication</th>
           <th>Ordered At</th>
@@ -176,18 +193,31 @@
       </thead>
       <tbody>
         {% for order in routine_orders %}
-        <tr>
+        <tr {% if order.is_paid == False %}class="table-warning"{% endif %}>
           <td class="fw-semibold">{{ order.patient.full_name }}</td>
           <td>{{ order.investigation_type.name }}</td>
           <td><span class="badge bg-light text-dark border">{{ order.investigation_type.get_category_display }}</span></td>
           <td><span class="badge bg-secondary">{{ order.eye }}</span></td>
+          <td>
+            {% if order.is_paid == True %}
+              <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
+            {% elif order.is_paid == False %}
+              <span class="badge bg-danger"><i class="bi bi-exclamation-circle me-1"></i>Unpaid</span>
+            {% endif %}
+          </td>
           <td class="text-muted">Dr. {{ order.ordered_by.last_name|default:order.ordered_by.full_name }}</td>
           <td class="text-muted" style="max-width:180px;">{{ order.clinical_indication|truncatechars:60 }}</td>
           <td class="text-muted">{{ order.created_at|date:"d M, H:i" }}</td>
           <td>
+            {% if order.is_paid == False %}
+            <span class="badge bg-danger py-2 px-2" style="font-size:.75rem;">
+              <i class="bi bi-cash-coin me-1"></i>Awaiting Payment
+            </span>
+            {% else %}
             <a href="{% url 'investigations:detail' pk=order.pk %}" class="btn btn-sm btn-primary">
               <i class="bi bi-pencil-square me-1"></i>Enter Result
             </a>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

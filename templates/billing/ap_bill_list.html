@@ -1,0 +1,149 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Bills — Accounts Payable{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-receipt me-2 text-primary"></i>Vendor Bills</h4>
+    <p class="text-muted small mb-0">Accounts Payable — bills from suppliers</p>
+  </div>
+  <a href="{% url 'billing:ap_bill_create' %}" class="btn btn-sm btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Record Bill
+  </a>
+</div>
+{% endblock %}
+{% block content %}
+<!-- Filters -->
+<form method="get" class="row g-2 mb-4 align-items-end">
+  <div class="col-md-3">
+    <select name="vendor" class="form-select form-select-sm">
+      <option value="">— All Vendors —</option>
+      {% for v in all_vendors %}
+      <option value="{{ v.pk }}" {% if request.GET.vendor == v.pk|stringformat:'s' %}selected{% endif %}>{{ v.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
+    <select name="status" class="form-select form-select-sm">
+      <option value="">— All Status —</option>
+      <option value="DRAFT"   {% if request.GET.status == 'DRAFT' %}selected{% endif %}>Draft</option>
+      <option value="PENDING" {% if request.GET.status == 'PENDING' %}selected{% endif %}>Pending</option>
+      <option value="PARTIAL" {% if request.GET.status == 'PARTIAL' %}selected{% endif %}>Partially Paid</option>
+      <option value="PAID"    {% if request.GET.status == 'PAID' %}selected{% endif %}>Paid</option>
+      <option value="OVERDUE" {% if request.GET.status == 'OVERDUE' %}selected{% endif %}>Overdue</option>
+    </select>
+  </div>
+  <div class="col-md-2">
+    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request.GET.date_from }}" placeholder="From">
+  </div>
+  <div class="col-md-2">
+    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request.GET.date_to }}" placeholder="To">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-funnel me-1"></i>Filter</button>
+  </div>
+  <div class="col-md-1">
+    <a href="{% url 'billing:ap_bill_list' %}" class="btn btn-sm btn-outline-secondary w-100">Clear</a>
+  </div>
+</form>
+
+<!-- Summary -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-4 text-primary">{{ total_bills }}</div>
+      <div class="text-muted small">Total Bills</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-4 text-danger">{{ total_outstanding|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">Outstanding (XAF)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-4 text-warning">{{ overdue_amount|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">Overdue (XAF)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-4 text-success">{{ paid_this_month|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">Paid This Month (XAF)</div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Bill #</th>
+          <th>Vendor</th>
+          <th>Bill Date</th>
+          <th>Due Date</th>
+          <th>Description</th>
+          <th class="text-end">Amount (XAF)</th>
+          <th class="text-end">Balance (XAF)</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for bill in bills %}
+        <tr>
+          <td class="fw-semibold small text-primary">
+            <a href="{% url 'billing:ap_bill_detail' bill.pk %}" class="text-decoration-none">{{ bill.bill_number }}</a>
+          </td>
+          <td class="fw-semibold">{{ bill.vendor.name }}</td>
+          <td class="small text-muted">{{ bill.bill_date|date:"d/m/Y" }}</td>
+          <td class="small {% if bill.is_overdue %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+            {{ bill.due_date|date:"d/m/Y"|default:"—" }}
+            {% if bill.is_overdue %}<i class="bi bi-exclamation-triangle-fill ms-1"></i>{% endif %}
+          </td>
+          <td class="small">{{ bill.description|truncatechars:40|default:"—" }}</td>
+          <td class="text-end fw-semibold">{{ bill.amount_due|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold {% if bill.balance_due > 0 %}text-danger{% else %}text-success{% endif %}">
+            {{ bill.balance_due|floatformat:0|intcomma }}
+          </td>
+          <td>
+            {% if bill.status == 'PAID' %}
+              <span class="badge bg-success">Paid</span>
+            {% elif bill.status == 'PARTIAL' %}
+              <span class="badge bg-info text-dark">Partial</span>
+            {% elif bill.status == 'OVERDUE' %}
+              <span class="badge bg-danger">Overdue</span>
+            {% elif bill.status == 'DRAFT' %}
+              <span class="badge bg-secondary">Draft</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="btn-group btn-group-sm">
+              <a href="{% url 'billing:ap_bill_detail' bill.pk %}" class="btn btn-outline-primary" title="View">
+                <i class="bi bi-eye"></i>
+              </a>
+              {% if bill.status != 'PAID' and bill.status != 'VOID' %}
+              <a href="{% url 'billing:ap_bill_pay' bill.pk %}" class="btn btn-outline-success" title="Pay">
+                <i class="bi bi-cash"></i>
+              </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center text-muted py-4">
+            <i class="bi bi-receipt fs-2 d-block mb-2 opacity-25"></i>
+            No bills found. <a href="{% url 'billing:ap_bill_create' %}">Record your first bill</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

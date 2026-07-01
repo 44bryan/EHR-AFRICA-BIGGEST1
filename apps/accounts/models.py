@@ -27,26 +27,35 @@ class UserRole(models.TextChoices):
     NEURO_OPHTHALMOLOGIST     = 'neuro_ophthalmologist',     _('Neuro-ophthalmologist')
     UVEITIS_SPECIALIST        = 'uveitis_specialist',        _('Uveitis Specialist')
     OPTOMETRIST               = 'optometrist',               _('Optometrist / Refractionist')
-    EXPRESS_OPHTHALMOLOGIST   = 'express_ophthalmologist',   _('Ophthalmologist (Express / Fast Track)')
-    INSURANCE_OPHTHALMOLOGIST = 'insurance_ophthalmologist', _('Ophthalmologist (Insurance Consultation)')
+    LOW_VISION_SPECIALIST     = 'low_vision_specialist',     _('Low Vision Specialist / Rehabilitation')
     INTERN                    = 'intern',                    _('Intern / House Officer')
+    # ── Allied Clinical ──────────────────────────────────────────────────
+    ANAESTHETIST              = 'anaesthetist',              _('Anaesthetist')
+    ORTHOPTIST                = 'orthoptist',                _('Orthoptist / Binocular Vision Therapist')
     # ── Nursing ──────────────────────────────────────────────────────────
     NURSE                     = 'nurse',                     _('OPD Nurse (Triage)')
+    CONSULTATION_NURSE        = 'consultation_nurse',        _('Consultation Room Nurse')
     THEATRE_NURSE             = 'theatre_nurse',             _('Theatre Nurse')
     WARD_NURSE                = 'ward_nurse',                _('Ward Nurse (IPD)')
     COUNSELING_NURSE          = 'counseling_nurse',          _('Surgical Counseling Nurse')
+    NURSE_DIRECTOR            = 'nurse_director',            _('Director of Nursing / Head Nurse')
     # ── Technical ────────────────────────────────────────────────────────
     INVESTIGATION_TECHNICIAN  = 'investigation_technician',  _('Investigation Technician')
     LAB_TECHNICIAN            = 'lab_technician',            _('Lab Technician')
     PHARMACIST                = 'pharmacist',                _('Pharmacist')
     OPTICAL_DISPENSER         = 'optical_dispenser',         _('Optical Dispenser')
+    CSSD_TECHNICIAN           = 'cssd_technician',           _('CSSD Technician (Sterilization)')
     # ── Administrative ───────────────────────────────────────────────────
     RECEPTIONIST              = 'receptionist',              _('Receptionist')
     ADMISSION_OFFICER         = 'admission_officer',         _('Admission Officer')
     BILLING_OFFICER           = 'billing_officer',           _('Billing Officer')
     CASHIER                   = 'cashier',                   _('Cashier')
+    CHIEF_CASHIER             = 'chief_cashier',             _('Chief Cashier')
+    ACCOUNTANT                = 'accountant',                _('Accountant')
+    SENIOR_ACCOUNTANT         = 'senior_accountant',         _('Senior Accountant')
     GATEKEEPER                = 'gatekeeper',                _('Gate Security / Ticket Issuer')
     MEDICAL_RECORDS           = 'medical_records',           _('Medical Records Officer')
+    QUALITY_OFFICER           = 'quality_officer',           _('Quality / JCI Compliance Officer')
     ADMIN                     = 'admin',                     _('System Administrator')
 
 
@@ -61,6 +70,19 @@ class CashierStation(models.TextChoices):
     FAST_TRACK = 'FAST_TRACK', _('Fast Track Consultation')
     VIP        = 'VIP',        _('VIP Consultation')
     INSURED    = 'INSURED',    _('Insured / HMO')
+
+
+class ConsultationUnit(models.TextChoices):
+    """
+    For OPHTHALMOLOGIST accounts only — indicates which consultation desk/unit
+    this doctor is assigned to. This replaces the old EXPRESS_OPHTHALMOLOGIST
+    and INSURANCE_OPHTHALMOLOGIST roles. One role (OPHTHALMOLOGIST), multiple
+    possible desks. QMS queue is filtered by this unit.
+    """
+    GENERAL   = 'GENERAL',      _('General Consultation')
+    EXPRESS   = 'EXP_CONSULT',  _('Express / Fast Track')
+    VIP       = 'VIP_CONSULT',  _('VIP Consultation')
+    INSURANCE = 'INSUR_CONSULT', _('Insurance Consultation')
 
 
 class User(AbstractUser):
@@ -81,6 +103,13 @@ class User(AbstractUser):
         blank=True,
         help_text='For Cashier/Billing Officer accounts only — indicates which consultation desk this cashier serves. QMS tokens are routed to the matching station.',
     )
+    consultation_unit = models.CharField(
+        max_length=20,
+        choices=ConsultationUnit.choices,
+        default=ConsultationUnit.GENERAL,
+        blank=True,
+        help_text='For Ophthalmologist accounts only — which consultation desk this doctor is assigned to (General, Express, VIP, Insurance). Determines which QMS queue they see.',
+    )
     department = models.ForeignKey(
         'departments.Department',
         on_delete=models.SET_NULL,
@@ -94,8 +123,8 @@ class User(AbstractUser):
         null=True,
         blank=True,
     )
-    employee_id = models.CharField(max_length=20, unique=True)
-    must_change_password = models.BooleanField(default=True)
+    employee_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
+    must_change_password = models.BooleanField(default=False)
     last_password_change = models.DateTimeField(null=True, blank=True)
     # ── Two-Factor Authentication (TOTP) ─────────────────────────────────
     totp_secret   = models.CharField(max_length=64, blank=True, default='')
@@ -103,8 +132,8 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'first_name', 'last_name', 'employee_id']
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['email', 'first_name', 'last_name', 'employee_id']
 
     class Meta:
         verbose_name = _('User')
@@ -139,21 +168,26 @@ class User(AbstractUser):
         UserRole.NEURO_OPHTHALMOLOGIST,
         UserRole.UVEITIS_SPECIALIST,
         UserRole.OPTOMETRIST,
-        UserRole.EXPRESS_OPHTHALMOLOGIST,
-        UserRole.INSURANCE_OPHTHALMOLOGIST,
+        UserRole.LOW_VISION_SPECIALIST,
+        UserRole.ORTHOPTIST,
         UserRole.INTERN,
     )
     NURSE_ROLES = (
         UserRole.NURSE,
+        UserRole.CONSULTATION_NURSE,
         UserRole.THEATRE_NURSE,
         UserRole.WARD_NURSE,
         UserRole.COUNSELING_NURSE,
+        UserRole.NURSE_DIRECTOR,
     )
     ADMIN_ROLES = (
         UserRole.RECEPTIONIST,
         UserRole.ADMISSION_OFFICER,
         UserRole.BILLING_OFFICER,
         UserRole.CASHIER,
+        UserRole.CHIEF_CASHIER,
+        UserRole.ACCOUNTANT,
+        UserRole.SENIOR_ACCOUNTANT,
         UserRole.GATEKEEPER,
         UserRole.MEDICAL_RECORDS,
         UserRole.ADMIN,
@@ -196,8 +230,7 @@ class User(AbstractUser):
 
     @property
     def is_doctor(self):
-        """CEO is also head of retinal unit — treat as doctor for clinical access."""
-        return self.role in self.DOCTOR_ROLES or self.is_super_admin or self.is_ceo
+        return self.role in self.DOCTOR_ROLES or self.is_super_admin
 
     @property
     def is_nurse(self):
@@ -207,6 +240,11 @@ class User(AbstractUser):
     def is_opd_nurse(self):
         """Can perform triage and dispatch."""
         return self.role == UserRole.NURSE
+
+    @property
+    def is_consultation_nurse(self):
+        """Nurse assigned to a specific consultation room — assists doctor, calls patients."""
+        return self.role == UserRole.CONSULTATION_NURSE
 
     @property
     def is_theatre_nurse(self):
@@ -237,6 +275,26 @@ class User(AbstractUser):
         return self.role == UserRole.OPTICAL_DISPENSER
 
     @property
+    def is_cssd_technician(self):
+        return self.role == UserRole.CSSD_TECHNICIAN
+
+    @property
+    def is_anaesthetist(self):
+        return self.role == UserRole.ANAESTHETIST
+
+    @property
+    def is_orthoptist(self):
+        return self.role == UserRole.ORTHOPTIST
+
+    @property
+    def is_nurse_director(self):
+        return self.role == UserRole.NURSE_DIRECTOR
+
+    @property
+    def is_quality_officer(self):
+        return self.role == UserRole.QUALITY_OFFICER
+
+    @property
     def is_receptionist(self):
         return self.role == UserRole.RECEPTIONIST
 
@@ -249,8 +307,20 @@ class User(AbstractUser):
         return self.role == UserRole.BILLING_OFFICER
 
     @property
+    def is_chief_cashier(self):
+        return self.role == UserRole.CHIEF_CASHIER
+
+    @property
+    def is_accountant(self):
+        return self.role in (UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT)
+
+    @property
+    def is_senior_accountant(self):
+        return self.role == UserRole.SENIOR_ACCOUNTANT
+
+    @property
     def is_cashier(self):
-        return self.role in (UserRole.BILLING_OFFICER, UserRole.CASHIER)
+        return self.role in (UserRole.CASHIER, UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER)
 
     @property
     def is_gatekeeper(self):
@@ -309,9 +379,6 @@ class User(AbstractUser):
     @property
     def role_department_code(self):
         """Maps doctor role → expected department code for queue filtering."""
-        # CEO is head of retinal unit
-        if self.role == UserRole.CEO:
-            return 'RETINA'
         mapping = {
             UserRole.RETINA_SPECIALIST:         'RETINA',
             UserRole.GLAUCOMA_SPECIALIST:       'GLAUC',
@@ -323,22 +390,28 @@ class User(AbstractUser):
             UserRole.UVEITIS_SPECIALIST:        'UVEITIS',
             UserRole.OPTOMETRIST:               'REFRAC',
             UserRole.PEDIATRIC_REFRACTIONIST:   'PEDS_REFRAC',
+            UserRole.LOW_VISION_SPECIALIST:     'LOW_VIS',
             UserRole.OPHTHALMOLOGIST:           'GEN_OPH',
-            UserRole.EXPRESS_OPHTHALMOLOGIST:   'GEN_OPH',
-            UserRole.INSURANCE_OPHTHALMOLOGIST: 'GEN_OPH',
+            UserRole.INTERN:                    'GEN_OPH',   # interns work under general ophthalmology
             UserRole.INVESTIGATION_TECHNICIAN:  'INVEST',
         }
         return mapping.get(self.role)
 
     # ── Permission methods ────────────────────────────────────────────────
     def can_create_consultation(self):
-        return self.role in self.DOCTOR_ROLES or self.is_super_admin or self.is_ceo
+        return self.role in self.DOCTOR_ROLES or self.is_super_admin
 
     def can_do_triage(self):
+        # Counseling nurses do counseling only — not triage/vitals
+        if self.role == UserRole.COUNSELING_NURSE:
+            return False
         return self.role in self.NURSE_ROLES or self.is_medical_director
 
     def can_dispatch_patient(self):
         """Any clinical staff can route/dispatch a patient to any unit."""
+        # Counseling nurses do counseling only — patient dispatch is not their function
+        if self.role == UserRole.COUNSELING_NURSE:
+            return False
         return (
             self.role in self.DOCTOR_ROLES
             or self.role in self.NURSE_ROLES
@@ -347,8 +420,10 @@ class User(AbstractUser):
                 UserRole.LAB_TECHNICIAN,
                 UserRole.PHARMACIST,
                 UserRole.OPTICAL_DISPENSER,
+                UserRole.CSSD_TECHNICIAN,
                 UserRole.RECEPTIONIST,
                 UserRole.ADMISSION_OFFICER,
+                UserRole.ANAESTHETIST,
             )
             or self.is_super_admin
         )
@@ -449,6 +524,29 @@ class HospitalConfig(models.Model):
     module_feedback     = models.BooleanField(default=True,  verbose_name='Patient Feedback & NPS')
     module_leads        = models.BooleanField(default=True,  verbose_name='Lead Management (CRM)')
 
+    # ── Consultation validity threshold ──────────────────
+    consultation_days   = models.PositiveSmallIntegerField(
+        default=15,
+        verbose_name='Consultation Validity (days)',
+        help_text='Consultation window. After this, patient must pay a new consultation fee.',
+    )
+
+    # ── Hospital Identity ─────────────────────────────
+    hospital_name    = models.CharField(max_length=200, default='EHR Africa Hospital', verbose_name='Hospital Name')
+    hospital_address = models.TextField(blank=True, default='', verbose_name='Address')
+    hospital_phone   = models.CharField(max_length=30,  blank=True, default='', verbose_name='Phone')
+    hospital_email   = models.EmailField(blank=True, default='', verbose_name='Email')
+    hospital_website = models.URLField(blank=True, default='', verbose_name='Website')
+    hospital_tax_id  = models.CharField(max_length=60,  blank=True, default='', verbose_name='Tax ID / NIU')
+
+    # ── Security ──────────────────────────────────────
+    session_timeout_hours   = models.PositiveSmallIntegerField(default=8,  verbose_name='Session Timeout (hours)')
+    max_failed_logins       = models.PositiveSmallIntegerField(default=5,  verbose_name='Max Failed Login Attempts')
+    account_lockout_minutes = models.PositiveSmallIntegerField(default=30, verbose_name='Account Lockout (minutes)')
+
+    # ── Backup ────────────────────────────────────────
+    backup_keep_days = models.PositiveSmallIntegerField(default=30, verbose_name='Keep Backups (days)')
+
     class Meta:
         verbose_name = 'Hospital Configuration'
 
@@ -460,6 +558,14 @@ class HospitalConfig(models.Model):
         """Always returns the singleton config row (creates if missing)."""
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+    def get_module_flags(self):
+        """Return list of (field_name, verbose_name, value) for all module BooleanFields."""
+        flags = []
+        for f in self._meta.get_fields():
+            if hasattr(f, 'get_internal_type') and f.get_internal_type() == 'BooleanField' and f.name.startswith('module_'):
+                flags.append((f.name, f.verbose_name, getattr(self, f.name)))
+        return flags
 
 
 class UserAuditLog(models.Model):
@@ -499,3 +605,22 @@ class UserAuditLog(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.action} at {self.timestamp}"
+
+    @classmethod
+    def log(cls, user, action, target_model='', target_id='', extra_data=None, request=None):
+        """Convenience method to write an audit entry from any view."""
+        ip = None
+        if request:
+            xff = request.META.get('HTTP_X_FORWARDED_FOR')
+            ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
+        try:
+            cls.objects.create(
+                user=user,
+                action=action,
+                target_model=target_model,
+                target_id=str(target_id),
+                ip_address=ip,
+                extra_data=extra_data or {},
+            )
+        except Exception:
+            pass  # Never let audit logging crash a user-facing request

@@ -10,7 +10,7 @@
   </button>
 
   <!-- Global Patient Search -->
-  <div style="flex:1;max-width:400px;position:relative;">
+  <div style="flex:1;max-width:400px;position:relative;" class="d-none d-sm-block">
     <div class="input-group input-group-sm">
       <span class="input-group-text" style="background:#f8fafc;border-color:#e5e7eb;border-right:none;">
         <i class="bi bi-search" style="color:#94a3b8;font-size:0.8rem;"></i>
@@ -25,6 +25,13 @@
          class="dropdown-menu w-100 shadow-lg"
          style="display:none;position:absolute;z-index:9999;border-radius:10px;border:1px solid #e5e7eb;top:calc(100% + 4px);"></div>
   </div>
+
+  <!-- Mobile-only search icon (phones) -->
+  <a href="{% url 'patients:list' %}" class="d-sm-none btn btn-sm ms-2"
+     style="width:36px;height:36px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#374151;display:flex;align-items:center;justify-content:center;"
+     title="Search Patient">
+    <i class="bi bi-search" style="font-size:0.95rem;"></i>
+  </a>
 
   <!-- Right actions -->
   <div class="ms-auto d-flex align-items-center gap-2">
@@ -43,17 +50,54 @@
       {% endif %}
     </a>
 
+    <!-- Multi-Session Slot Switcher -->
+    <div class="dropdown d-none d-sm-block" id="session-slot-switcher">
+      <button class="btn btn-sm d-flex align-items-center gap-1 dropdown-toggle"
+              style="border:1px solid #e5e7eb;background:#fff;color:#374151;border-radius:8px;padding:5px 10px;font-size:0.8rem;height:36px;"
+              data-bs-toggle="dropdown" aria-expanded="false"
+              title="Multi-session: open the same app as different users simultaneously">
+        <i class="bi bi-layers" style="font-size:0.9rem;"></i>
+        <span class="fw-semibold">S{{ session_slot }}</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="border-radius:10px;border:1px solid #e5e7eb;min-width:210px;padding:8px;">
+        <li>
+          <p class="px-3 mb-1 mt-1" style="font-size:0.72rem;color:#64748b;line-height:1.4;">
+            Open a new tab for each slot to log in as a different user simultaneously.
+          </p>
+        </li>
+        <li><hr class="dropdown-divider my-1"></li>
+        {% for n in session_slots %}
+        <li>
+          <a class="dropdown-item rounded-1 d-flex align-items-center gap-2"
+             style="font-size:0.825rem;padding:7px 12px;{% if session_slot == n %}background:#f0f9ff;{% endif %}"
+             href="/?s={{ n }}" target="_blank" rel="noopener">
+            <span class="d-flex align-items-center justify-content-center rounded-circle fw-bold flex-shrink-0"
+                  style="width:24px;height:24px;font-size:0.72rem;
+                         background:{% if session_slot == n %}#0891b2{% else %}#f1f5f9{% endif %};
+                         color:{% if session_slot == n %}#fff{% else %}#64748b{% endif %};">{{ n }}</span>
+            <span>
+              Session {{ n }}
+              {% if session_slot == n %}<br><small style="color:#0891b2;font-size:0.7rem;">← this tab</small>{% endif %}
+            </span>
+          </a>
+        </li>
+        {% endfor %}
+        <li><hr class="dropdown-divider my-1"></li>
+        <li><p class="px-3 mb-1" style="font-size:0.7rem;color:#94a3b8;">Each session is completely independent</p></li>
+      </ul>
+    </div>
+
     <!-- User Dropdown -->
     <div class="dropdown">
-      <button class="btn btn-sm d-flex align-items-center gap-2 dropdown-toggle"
+      <button class="btn btn-sm d-flex align-items-center gap-2 dropdown-toggle topbar-user-btn"
               style="border:1px solid #e5e7eb;background:#fff;color:#374151;border-radius:8px;padding:5px 10px;font-size:0.825rem;"
               data-bs-toggle="dropdown" aria-expanded="false">
         {% if request.user.profile_photo %}
           <img src="{{ request.user.profile_photo.url }}"
                class="rounded-circle" width="24" height="24" style="object-fit:cover;" alt="">
         {% else %}
-          <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold"
-               style="width:26px;height:26px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;font-size:0.72rem;flex-shrink:0;">
+          <div class="rounded-circle fw-bold"
+               style="width:26px;height:26px;min-width:26px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;font-size:0.72rem;flex-shrink:0;display:flex !important;align-items:center !important;justify-content:center !important;line-height:1;text-align:center;">
             {{ request.user.first_name|first|upper }}{{ request.user.last_name|first|upper }}
           </div>
         {% endif %}
@@ -93,10 +137,15 @@
         </li>
         <li><hr class="dropdown-divider my-1"></li>
         <li>
-          <a class="dropdown-item rounded-1" style="font-size:0.825rem;padding:8px 12px;color:#ef4444;"
-             href="{% url 'accounts:logout' %}">
-            <i class="bi bi-box-arrow-right me-2"></i>Sign Out
-          </a>
+          <form method="post" action="{% url 'accounts:logout' %}" id="signout-form"
+                hx-boost="false">
+            {% csrf_token %}
+            <button type="submit"
+                    class="dropdown-item rounded-1 border-0 bg-transparent w-100 text-start"
+                    style="font-size:0.825rem;padding:8px 12px;color:#ef4444;cursor:pointer;">
+              <i class="bi bi-box-arrow-right me-2"></i>Sign Out
+            </button>
+          </form>
         </li>
       </ul>
     </div>

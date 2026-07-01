@@ -155,8 +155,18 @@ def submit_feedback(request):
     return render(request, 'feedback/submit.html', {'feedback_types': FeedbackType.choices})
 
 
+def _can_manage_feedback(user):
+    return user.role in (
+        'quality_officer', 'medical_director', 'admin_staff',
+        'department_head', 'ceo', 'super_admin',
+    )
+
+
 @login_required
 def resolve_feedback(request, feedback_id):
+    if not _can_manage_feedback(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     feedback = get_object_or_404(PatientFeedback, id=feedback_id, is_deleted=False)
     if request.method == 'POST':
         feedback.status = FeedbackStatus.RESOLVED
@@ -172,6 +182,8 @@ def resolve_feedback(request, feedback_id):
 @login_required
 def escalate_feedback(request, feedback_id):
     """Escalate a complaint to a department head / manager."""
+    if not _can_manage_feedback(request.user):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
@@ -220,6 +232,9 @@ def escalate_feedback(request, feedback_id):
 @login_required
 def acknowledge_feedback(request, feedback_id):
     """Quick-acknowledge a complaint (AJAX or form POST)."""
+    if not _can_manage_feedback(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     feedback = get_object_or_404(PatientFeedback, id=feedback_id, is_deleted=False)
     if feedback.status == FeedbackStatus.NEW:
         feedback.status = FeedbackStatus.ACKNOWLEDGED

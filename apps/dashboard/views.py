@@ -540,7 +540,8 @@ def home_view(request):
                 'WAITING', 'TRIAGE', 'IN_CONSULTATION',
                 'REFRACTION', 'RETINA', 'GLAUCOMA', 'CATARACT',
                 'NEURO', 'OCULOPLASTY', 'CORNEA', 'PEDIATRIC',
-                'INVESTIGATION', 'PARAMETERS', 'UVEITIS',
+                'INVESTIGATION', 'UVEITIS',
+                # 'PARAMETERS' excluded — triage patients not dispatched yet
             ],
         ).order_by('visit_date')
 
@@ -958,11 +959,13 @@ def home_view(request):
         ).aggregate(total=Sum('amount'))['total'] or 0
 
         # Only invoices THIS cashier issued — own tracking + audit trail
-        unpaid = Invoice.objects.select_related('patient').filter(
+        _unpaid_qs = Invoice.objects.select_related('patient').filter(
             created_by=user,
             status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
             is_deleted=False
-        ).order_by('-created_at')[:20]
+        ).order_by('-created_at')
+        unpaid_count = _unpaid_qs.count()
+        unpaid = list(_unpaid_qs[:20])
 
         invoices_today = Invoice.objects.filter(
             created_by=user,
@@ -982,7 +985,7 @@ def home_view(request):
             'revenue_today': my_shift.total_collected if my_shift else revenue_today,
             'my_shift': my_shift,
             'unpaid_invoices': unpaid,
-            'unpaid_count': unpaid.count(),
+            'unpaid_count': unpaid_count,
             'invoices_today': invoices_today,
             'cashier_station_label': user.get_cashier_station_display() if hasattr(user, 'get_cashier_station_display') else 'All',
         })

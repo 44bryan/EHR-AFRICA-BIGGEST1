@@ -1,0 +1,95 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{% if frame %}Edit Frame{% else %}Add Frame{% endif %}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold">
+          <i class="bi bi-collection me-2 text-primary"></i>
+          {% if frame %}Edit Frame — {{ frame.brand }} {{ frame.model }}{% else %}Add Frame to Catalogue{% endif %}
+        </h5>
+        <a href="{% url 'opticals:frame_list' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3">
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Brand <span class="text-danger">*</span></label>
+              <input type="text" name="brand" class="form-control" value="{{ frame.brand|default:'' }}" required
+                     placeholder="e.g. Ray-Ban, Oakley, Silhouette">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Model <span class="text-danger">*</span></label>
+              <input type="text" name="model" class="form-control" value="{{ frame.model|default:'' }}" required
+                     placeholder="e.g. RB2140, Holbrook">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Color</label>
+              <input type="text" name="color" class="form-control" value="{{ frame.color|default:'' }}"
+                     placeholder="e.g. Black, Tortoise, Gold">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Shape</label>
+              <select name="shape" class="form-select">
+                <option value="">— Select Shape —</option>
+                {% for val, label in frame_shapes %}
+                <option value="{{ val }}" {% if frame.shape == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">SKU / Barcode</label>
+              <input type="text" name="sku" class="form-control" value="{{ frame.sku|default:'' }}"
+                     placeholder="Scan barcode or enter manually">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Cost Price (FCFA)</label>
+              <input type="number" name="cost_price" class="form-control" min="0" step="100"
+                     value="{{ frame.cost_price|default:'0'|floatformat:0 }}">
+              <div class="form-text">Purchase price from supplier</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Selling Price (FCFA) <span class="text-danger">*</span></label>
+              <input type="number" name="selling_price" class="form-control fw-bold" min="0" step="100"
+                     value="{{ frame.selling_price|default:'0'|floatformat:0 }}" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Quantity in Stock</label>
+              <input type="number" name="quantity_in_stock" class="form-control" min="0"
+                     value="{{ frame.quantity_in_stock|default:'0' }}">
+              <div class="form-text">Units received in this batch</div>
+            </div>
+
+            {% if frame %}
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" id="is_active"
+                       {% if frame.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="is_active">Active (visible in dispensing catalogue)</label>
+              </div>
+            </div>
+            {% endif %}
+
+          </div>
+
+          <hr class="my-4">
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-save me-1"></i>{% if frame %}Save Changes{% else %}Add to Catalogue{% endif %}
+            </button>
+            <a href="{% url 'opticals:frame_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

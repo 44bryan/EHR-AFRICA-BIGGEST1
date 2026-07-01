@@ -1,0 +1,152 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Balance Sheet{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-bank me-2 text-primary"></i>Balance Sheet</h4>
+  <p class="text-muted small mb-0">Statement of Financial Position — Assets = Liabilities + Equity</p>
+</div>
+{% endblock %}
+{% block content %}
+<form method="get" class="row g-2 mb-4 align-items-end">
+  <div class="col-md-3">
+    <label class="form-label fw-semibold small">As At Date</label>
+    <input type="date" name="as_at" class="form-control form-control-sm" value="{{ request.GET.as_at }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-sm btn-primary w-100">
+      <i class="bi bi-calculator me-1"></i>Generate
+    </button>
+  </div>
+  <div class="col-auto ms-auto">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</form>
+
+<div class="row g-4">
+  <!-- ASSETS -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header py-2 bg-primary text-white">
+        <span class="fw-bold"><i class="bi bi-safe2 me-2"></i>ASSETS</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for group in assets %}
+            <tr class="table-light">
+              <td colspan="2" class="fw-semibold small text-uppercase ps-3 py-1">{{ group.label }}</td>
+            </tr>
+            {% for row in group.rows %}
+            <tr>
+              <td class="ps-4 small">{{ row.code }} — {{ row.name }}</td>
+              <td class="text-end fw-semibold">{{ row.balance|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="fw-bold border-top">
+              <td class="ps-3 small">Total {{ group.label }}</td>
+              <td class="text-end text-primary">{{ group.total|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-primary fw-bold">
+            <tr>
+              <td class="ps-3">TOTAL ASSETS</td>
+              <td class="text-end fs-6">{{ total_assets|floatformat:0|intcomma }} XAF</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIABILITIES + EQUITY -->
+  <div class="col-lg-6">
+    <!-- Liabilities -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 bg-warning text-dark">
+        <span class="fw-bold"><i class="bi bi-arrow-return-left me-2"></i>LIABILITIES</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for group in liabilities %}
+            <tr class="table-light">
+              <td colspan="2" class="fw-semibold small text-uppercase ps-3 py-1">{{ group.label }}</td>
+            </tr>
+            {% for row in group.rows %}
+            <tr>
+              <td class="ps-4 small">{{ row.code }} — {{ row.name }}</td>
+              <td class="text-end fw-semibold">{{ row.balance|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="fw-bold border-top">
+              <td class="ps-3 small">Total {{ group.label }}</td>
+              <td class="text-end text-warning" style="color:#856404!important">{{ group.total|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-warning fw-bold">
+            <tr>
+              <td class="ps-3">TOTAL LIABILITIES</td>
+              <td class="text-end">{{ total_liabilities|floatformat:0|intcomma }} XAF</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Equity -->
+    <div class="card shadow-sm">
+      <div class="card-header py-2 bg-success text-white">
+        <span class="fw-bold"><i class="bi bi-graph-up-arrow me-2"></i>EQUITY</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for row in equity_rows %}
+            <tr>
+              <td class="ps-4 small">{{ row.code }} — {{ row.name }}</td>
+              <td class="text-end fw-semibold">{{ row.balance|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted small">No equity accounts</td></tr>
+            {% endfor %}
+            <tr class="fw-bold border-top">
+              <td class="ps-3 small">Retained Earnings (Current Period)</td>
+              <td class="text-end {% if net_income >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ net_income|floatformat:0|intcomma }}
+              </td>
+            </tr>
+          </tbody>
+          <tfoot class="table-success fw-bold">
+            <tr>
+              <td class="ps-3">TOTAL EQUITY</td>
+              <td class="text-end">{{ total_equity|floatformat:0|intcomma }} XAF</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Balance check -->
+    <div class="mt-3 p-3 rounded border
+      {% if is_balanced %}border-success bg-success bg-opacity-10{% else %}border-danger bg-danger bg-opacity-10{% endif %}">
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="fw-bold">Total Liabilities + Equity</span>
+        <span class="fw-bold fs-6">{{ total_liab_equity|floatformat:0|intcomma }} XAF</span>
+      </div>
+      <div class="mt-1 small
+        {% if is_balanced %}text-success{% else %}text-danger{% endif %}">
+        {% if is_balanced %}
+          <i class="bi bi-check-circle-fill me-1"></i>Balance sheet is balanced.
+        {% else %}
+          <i class="bi bi-x-circle-fill me-1"></i>Out of balance by {{ balance_diff|floatformat:0|intcomma }} XAF
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Void & Cancel Register{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-slash-circle text-danger fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Void & Cancellation Register</h5>
+      <div class="text-muted small">Audit trail — all cancelled and waived invoices</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:export_void_register' %}?from={{ date_from }}&to={{ date_to }}" class="btn btn-sm btn-success">
+      <i class="bi bi-download me-1"></i>Download CSV
+    </a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Summary Cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-danger mb-0">{{ summary.total_count }}</div>
+      <div class="text-muted small mt-1">Total Voided</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-secondary mb-0">{{ summary.total_cancelled }}</div>
+      <div class="text-muted small mt-1">Cancelled</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-warning mb-0">{{ summary.total_waived }}</div>
+      <div class="text-muted small mt-1">Waived</div>
+    </div>
+  </div>
+</div>
+
+{# ── Date Filter ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="d-flex align-items-center gap-2">
+        <label class="form-label mb-0 small fw-semibold">From</label>
+        <input type="date" name="from" value="{{ date_from }}" class="form-control form-control-sm" style="width:150px;">
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <label class="form-label mb-0 small fw-semibold">To</label>
+        <input type="date" name="to" value="{{ date_to }}" class="form-control form-control-sm" style="width:150px;">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-funnel me-1"></i>Filter
+      </button>
+      <a href="{% url 'billing:void_register' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+    </form>
+  </div>
+</div>
+
+{# ── Register Table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="bi bi-list-ul me-2"></i>Void & Cancel Register</h6>
+    <small class="opacity-75">{{ invoices|length }} record{{ invoices|length|pluralize }}</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Invoice #</th>
+          <th>Patient</th>
+          <th class="text-end">Amount (FCFA)</th>
+          <th>Status</th>
+          <th>Reason Code</th>
+          <th>Reason</th>
+          <th>Authorised By</th>
+          <th>Created By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+        <tr>
+          <td class="text-muted">{{ inv.issue_date|date:"d/m/Y" }}</td>
+          <td>
+            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="fw-semibold text-decoration-none">
+              {{ inv.invoice_number }}
+            </a>
+          </td>
+          <td>
+            <div class="fw-semibold">{{ inv.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ inv.patient.patient_id }}</div>
+          </td>
+          <td class="text-end fw-semibold">{{ inv.total|floatformat:0|intcomma }}</td>
+          <td>
+            {% if inv.status == 'CANCELLED' %}
+            <span class="badge bg-danger">Cancelled</span>
+            {% elif inv.status == 'WAIVED' %}
+            <span class="badge bg-warning text-dark">Waived</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if inv.void_reason %}
+            <span class="badge bg-secondary">{{ inv.void_reason.code }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-muted fst-italic">
+            {% if inv.void_reason %}
+              {{ inv.void_reason.label }}
+            {% elif inv.discount_reason %}
+              {{ inv.discount_reason|truncatechars:50 }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if inv.updated_by %}
+              {{ inv.updated_by.get_full_name|default:inv.updated_by.username }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">
+            {{ inv.created_by.get_full_name|default:inv.created_by.username|default:"—" }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center text-muted py-5">
+            <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2 opacity-50"></i>
+            No cancelled or waived invoices found{% if date_from or date_to %} for the selected period{% endif %}.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

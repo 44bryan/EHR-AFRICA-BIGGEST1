@@ -1,0 +1,108 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{{ dept_name }} — Work Queue{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">
+      <i class="bi bi-check2-square me-2 text-success"></i>{{ dept_name }}
+    </h4>
+    <div class="text-muted small">Paid & waiting — {{ today|date:"l, d F Y" }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    {# Quick-filter links for each department #}
+    <a href="{% url 'billing:work_queue' %}?cat=PHARMACY" class="btn btn-outline-primary btn-sm">Pharmacy</a>
+    <a href="{% url 'billing:work_queue' %}?cat=LAB&cat=INVEST" class="btn btn-outline-primary btn-sm">Lab / Investigations</a>
+    <a href="{% url 'billing:work_queue' %}?cat=OPTICAL" class="btn btn-outline-primary btn-sm">Opticals</a>
+    <a href="{% url 'billing:work_queue' %}?cat=SURGICAL" class="btn btn-outline-primary btn-sm">Theater</a>
+    <a href="{% url 'billing:work_queue' %}?cat=CONSULT" class="btn btn-outline-primary btn-sm">Consultation</a>
+    <a href="{% url 'billing:work_queue' %}" class="btn btn-outline-secondary btn-sm">All</a>
+  </div>
+</div>
+
+{% if work_orders %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header d-flex align-items-center gap-2" style="background:#f0fdf4;">
+    <i class="bi bi-check-circle-fill text-success"></i>
+    <span class="fw-semibold text-success">{{ work_orders|length }} pending</span>
+    <small class="text-muted ms-auto">Click <strong>Mark Done</strong> when service is delivered</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Time</th>
+          <th>Patient</th>
+          <th>Service</th>
+          <th>Category</th>
+          <th>Invoice</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="workQueueBody">
+        {% for wo in work_orders %}
+        <tr id="wo-{{ wo.id }}">
+          <td class="text-muted small">{{ wo.created_at|time:"H:i" }}</td>
+          <td>
+            <div class="fw-semibold">{{ wo.patient.full_name }}</div>
+            <small class="text-muted">{{ wo.patient.patient_id }}</small>
+          </td>
+          <td>{{ wo.description }}</td>
+          <td><span class="badge bg-secondary">{{ wo.get_category_display }}</span></td>
+          <td><code class="small">{{ wo.invoice.invoice_number }}</code></td>
+          <td>
+            <button class="btn btn-sm btn-success wo-done-btn" data-wo="{{ wo.id }}">
+              <i class="bi bi-check2 me-1"></i>Mark Done
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-check-circle fs-1 d-block mb-3 text-success opacity-50"></i>
+    <h5>All clear — nothing waiting</h5>
+    <p class="small mb-0">Work orders appear here automatically when a patient pays at the cashier.</p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.wo-done-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const woId = this.dataset.wo;
+    const row  = document.getElementById('wo-' + woId);
+    this.disabled = true;
+    this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    fetch(`/billing/work-orders/${woId}/done/`, {
+      method: 'POST',
+      headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json()).then(data => {
+      if (data.success) {
+        row.style.transition = 'opacity .3s';
+        row.style.opacity = '0';
+        setTimeout(() => {
+          row.remove();
+          const tbody = document.getElementById('workQueueBody');
+          if (tbody && !tbody.querySelector('tr')) {
+            document.querySelector('.card').innerHTML = `
+              <div class="card-body text-center py-5 text-muted">
+                <i class="bi bi-check-circle fs-1 d-block mb-3 text-success opacity-50"></i>
+                <h5>All clear — nothing waiting</h5>
+                <p class="small mb-0">Work orders appear here automatically when a patient pays at the cashier.</p>
+              </div>`;
+          }
+        }, 300);
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

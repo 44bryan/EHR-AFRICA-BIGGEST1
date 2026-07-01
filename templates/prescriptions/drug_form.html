@@ -9,16 +9,52 @@
         <div class="text-muted small">Patient: <strong>{{ consultation.patient.full_name }}</strong></div>
       </div>
       <div class="card-body">
+        {% if allergies %}
+        <div class="alert alert-danger border-danger d-flex align-items-start gap-2 mb-3" role="alert">
+          <i class="bi bi-exclamation-octagon-fill fs-5 mt-1 flex-shrink-0 text-danger"></i>
+          <div>
+            <strong>ALLERGY WARNING — check before prescribing:</strong>
+            <ul class="mb-0 mt-1">
+              {% for a in allergies %}
+              <li><strong>{{ a.allergen }}</strong> — {{ a.get_allergy_type_display }} —
+                <span class="badge {{ a.severity_badge_class }}">{{ a.get_severity_display }}</span>
+                {% if a.reaction %}<span class="text-muted"> — {{ a.reaction }}</span>{% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+        {% endif %}
         <form method="post">
           {% csrf_token %}
           {{ formset.management_form }}
 
-          <h6 class="fw-bold mb-3">Drugs</h6>
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h6 class="fw-bold mb-0">Drugs</h6>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="add-drug-row">
+              <i class="bi bi-plus me-1"></i>Add Drug
+            </button>
+          </div>
+
+          <div id="drug-rows">
           {% for drug_form in formset %}
           <div class="card border bg-light mb-3 p-3 drug-row">
             {{ drug_form.id }}
             <div class="row g-2">
-              <div class="col-md-4"><label class="form-label small fw-semibold">Drug Name</label>{{ drug_form.drug_name }}</div>
+
+              <!-- Drug Name — select from pharmacy or type manually -->
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold">Drug Name <span class="text-danger">*</span></label>
+                <div class="d-none">{{ drug_form.drug_name }}</div>
+                <select class="form-select form-select-sm drug-name-select">
+                  <option value="">— Select from pharmacy —</option>
+                  <option value="__other__">✏ Other (type manually)</option>
+                </select>
+                <input type="text" class="form-control form-control-sm drug-name-other mt-1 d-none"
+                       placeholder="Enter drug name...">
+                <div class="form-text" style="font-size:.68rem;">Only in-stock drugs shown</div>
+              </div>
+
               <div class="col-md-2"><label class="form-label small fw-semibold">Strength</label>{{ drug_form.concentration }}</div>
               <div class="col-md-3"><label class="form-label small fw-semibold">Form</label>{{ drug_form.drug_form }}</div>
               <div class="col-md-3"><label class="form-label small fw-semibold">Eye</label>{{ drug_form.eye }}</div>
@@ -27,10 +63,94 @@
               <div class="col-md-2"><label class="form-label small fw-semibold">Duration</label>{{ drug_form.duration }}</div>
               <div class="col-md-2"><label class="form-label small fw-semibold">Route</label>{{ drug_form.route }}</div>
               <div class="col-md-2"><label class="form-label small fw-semibold">Qty</label>{{ drug_form.quantity }}</div>
-              <div class="col-md-2 d-flex align-items-end"><div class="form-check">{{ drug_form.DELETE }} <label class="form-check-label small">Remove</label></div></div>
+              <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check">{{ drug_form.DELETE }} <label class="form-check-label small">Remove</label></div>
+              </div>
             </div>
           </div>
           {% endfor %}
+          </div>
+
+          <script>
+          // ── Pharmacy drug list from server ──────────────────────────────────────
+          var PHARMACY_DRUGS = {{ drugs_json|safe }};
+
+          function initDrugRow(row) {
+            var sel   = row.querySelector('.drug-name-select');
+            var other = row.querySelector('.drug-name-other');
+            var hidden= row.querySelector('input[name$="-drug_name"]');
+
+            // Populate select
+            PHARMACY_DRUGS.forEach(function(d) {
+              var opt = document.createElement('option');
+              opt.value = d.name;
+              opt.text  = d.name + (d.strength ? ' (' + d.strength + ')' : '');
+              opt.dataset.strength = d.strength || '';
+              opt.dataset.form     = d.form     || '';
+              sel.appendChild(opt);
+            });
+            // Move "Other" to end — create fresh if it was cleared during clone cleanup
+            var otherOpt = sel.querySelector('option[value="__other__"]');
+            if (!otherOpt) {
+              otherOpt = document.createElement('option');
+              otherOpt.value = '__other__';
+              otherOpt.text  = '✏ Other (type manually)';
+            }
+            sel.appendChild(otherOpt);
+
+            sel.addEventListener('change', function() {
+              if (sel.value === '__other__') {
+                other.classList.remove('d-none');
+                other.focus();
+                hidden.value = '';
+              } else {
+                other.classList.add('d-none');
+                hidden.value = sel.value;
+                // Auto-fill strength and form
+                var chosen = sel.options[sel.selectedIndex];
+                if (chosen && chosen.dataset.strength !== undefined) {
+                  var concInput = row.querySelector('input[name$="-concentration"]');
+                  var formSel   = row.querySelector('select[name$="-drug_form"]');
+                  if (concInput && !concInput.value) concInput.value = chosen.dataset.strength;
+                  if (formSel  && !formSel.value)   formSel.value   = chosen.dataset.form;
+                }
+              }
+            });
+
+            other.addEventListener('input', function() {
+              hidden.value = other.value.trim();
+            });
+          }
+
+          // Init existing rows
+          document.querySelectorAll('.drug-row').forEach(initDrugRow);
+
+          // ── Add Drug Row ─────────────────────────────────────────────────────────
+          document.getElementById('add-drug-row').addEventListener('click', function() {
+            var container = document.getElementById('drug-rows');
+            var rows = container.querySelectorAll('.drug-row');
+            var totalInput = document.querySelector('[name="form-TOTAL_FORMS"]');
+            var idx = parseInt(totalInput.value);
+
+            // Clone first row and replace indices
+            var clone = rows[0].cloneNode(true);
+            clone.innerHTML = clone.innerHTML.replace(/form-\d+-/g, 'form-' + idx + '-');
+
+            // Reset all inputs
+            clone.querySelectorAll('input:not([type=hidden]), select, textarea').forEach(function(el) {
+              el.value = '';
+            });
+            clone.querySelectorAll('.drug-name-other').forEach(function(el) { el.classList.add('d-none'); });
+            clone.querySelectorAll('.drug-name-select').forEach(function(el) {
+              // Remove cloned options (they were duplicated), rebuild
+              while (el.options.length > 1) el.remove(1);
+            });
+
+            container.appendChild(clone);
+            totalInput.value = idx + 1;
+            initDrugRow(clone);
+          });
+          </script>
 
           <div class="mb-3"><label class="form-label fw-semibold">Notes</label>{{ form.notes }}</div>
 

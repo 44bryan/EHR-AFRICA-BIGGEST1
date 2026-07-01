@@ -40,4 +40,21 @@ urlpatterns = [
     # ── Ward Rounds ───────────────────────────────────────────────────────────
     path('admissions/<uuid:admission_id>/ward-round/', views.ward_round_add, name='ward_round_add'),
     path('admissions/<uuid:admission_id>/discharge-pdf/', views.discharge_summary_pdf, name='discharge_summary_pdf'),
+
+    # ── Ward & Bed Management (Super Admin) ───────────────────────────────────
+    path('wards/manage/', views.ward_manage, name='ward_manage'),
+    path('wards/create/', views.ward_create, name='ward_create'),
+    path('wards/<uuid:ward_id>/beds/add/', views.bed_add, name='bed_add'),
+    path('beds/<uuid:bed_id>/toggle/', views.bed_toggle_status, name='bed_toggle_status'),
+    path('beds/<uuid:bed_id>/delete/', views.bed_delete, name='bed_delete'),
+    path('wards/<uuid:ward_id>/delete/', views.ward_delete, name='ward_delete'),
+
+    # ── Anaesthetic Record (JCI ASC.5/6) ──────────────────────────────────────
+    path('anaesthetic/', views.anaesthetic_record_list, name='anaesthetic_record_list'),
+    path('surgical-booking/<uuid:booking_id>/anaesthetic/', views.anaesthetic_record_create, name='anaesthetic_record_create'),
+    path('anaesthetic/<uuid:record_id>/', views.anaesthetic_record_detail, name='anaesthetic_record_detail'),
+
+    # ── Nursing Care Plan (JCI COP.8) ─────────────────────────────────────────
+    path('admissions/<uuid:admission_id>/care-plan/', views.care_plan_create, name='care_plan_create'),
+    path('care-plan/<uuid:plan_id>/', views.care_plan_detail, name='care_plan_detail'),
 ]

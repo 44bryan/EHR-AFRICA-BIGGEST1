@@ -1,0 +1,311 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}System Health Check{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 class="fw-bold mb-0"><i class="bi bi-heart-pulse me-2 text-danger"></i>System Health</h2>
+    <p class="text-muted small mb-0">{{ platform }} &nbsp;·&nbsp; Python {{ python_version }} &nbsp;·&nbsp; {{ now|date:"d M Y H:i" }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'dashboard:sysadmin' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Admin Panel</a>
+    <button onclick="location.reload()" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+  </div>
+</div>
+
+{# ── Service Status Row ─────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  {# Database #}
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-database fs-2 {% if db_size %}text-success{% else %}text-danger{% endif %} d-block mb-2"></i>
+        <div class="fw-bold">PostgreSQL</div>
+        <div class="small text-muted">{{ db_name|default:"N/A" }}</div>
+        {% if db_size %}
+        <span class="badge bg-success mt-1">Online</span>
+        <div class="small mt-1 text-success fw-semibold">{{ db_size }}</div>
+        {% else %}
+        <span class="badge bg-danger mt-1">Unreachable</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# Redis #}
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-lightning-charge fs-2 {% if redis_ok %}text-success{% else %}text-danger{% endif %} d-block mb-2"></i>
+        <div class="fw-bold">Redis Cache</div>
+        <div class="small text-muted">Cache &amp; Queue broker</div>
+        <span class="badge {% if redis_ok %}bg-success{% else %}bg-danger{% endif %} mt-1">
+          {% if redis_ok %}Online{% else %}Offline{% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {# Celery #}
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-gear fs-2 {% if celery_ok %}text-success{% else %}text-warning{% endif %} d-block mb-2"></i>
+        <div class="fw-bold">Celery Worker</div>
+        <div class="small text-muted">Background tasks</div>
+        <span class="badge {% if celery_ok %}bg-success{% else %}bg-warning text-dark{% endif %} mt-1">
+          {% if celery_ok %}Running{% else %}No workers{% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {# AI Engine #}
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-cpu fs-2 text-primary d-block mb-2"></i>
+        <div class="fw-bold">AI Engine</div>
+        <div class="small text-muted">{{ ai_engine|upper }}</div>
+        {% if ai_engine == "ollama" %}
+          {% if ollama_status.online %}
+          <span class="badge bg-success mt-1">Ollama Online</span>
+          <div class="small mt-1 text-muted">
+            {% if ollama_status.model_available %}Model loaded{% else %}<span class="text-danger">Model not pulled</span>{% endif %}
+          </div>
+          {% else %}
+          <span class="badge bg-danger mt-1">Ollama Offline</span>
+          {% endif %}
+        {% else %}
+          {% if groq_configured %}
+          <span class="badge bg-success mt-1">Groq — Key Set</span>
+          {% else %}
+          <span class="badge bg-danger mt-1">Groq — No API Key</span>
+          <div class="small mt-1 text-danger">Add GROQ_API_KEY to .env</div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Server Resources ─────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  {# CPU #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-semibold"><i class="bi bi-cpu me-1 text-primary"></i>CPU Usage</span>
+          {% if psutil_ok %}
+          <span class="fw-bold {% if cpu_pct > 80 %}text-danger{% elif cpu_pct > 60 %}text-warning{% else %}text-success{% endif %}">{{ cpu_pct }}%</span>
+          {% else %}
+          <span class="text-muted small">psutil not installed</span>
+          {% endif %}
+        </div>
+        {% if psutil_ok %}
+        <div class="progress" style="height:8px;">
+          <div class="progress-bar {% if cpu_pct > 80 %}bg-danger{% elif cpu_pct > 60 %}bg-warning{% else %}bg-success{% endif %}"
+               style="width:{{ cpu_pct }}%"></div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# RAM #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-semibold"><i class="bi bi-memory me-1 text-info"></i>Memory</span>
+          {% if psutil_ok %}
+          <span class="fw-bold {% if ram_pct > 85 %}text-danger{% elif ram_pct > 65 %}text-warning{% else %}text-success{% endif %}">{{ ram_used_gb }} / {{ ram_total_gb }} GB</span>
+          {% else %}
+          <span class="text-muted small">—</span>
+          {% endif %}
+        </div>
+        {% if psutil_ok %}
+        <div class="progress" style="height:8px;">
+          <div class="progress-bar {% if ram_pct > 85 %}bg-danger{% elif ram_pct > 65 %}bg-warning{% else %}bg-info{% endif %}"
+               style="width:{{ ram_pct }}%"></div>
+        </div>
+        <div class="small text-muted mt-1">{{ ram_pct }}% used</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# Disk #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-semibold"><i class="bi bi-hdd me-1 text-secondary"></i>Disk</span>
+          <span class="fw-bold {% if disk_pct > 85 %}text-danger{% elif disk_pct > 70 %}text-warning{% else %}text-success{% endif %}">
+            {{ disk_used_gb }} / {{ disk_total_gb }} GB
+          </span>
+        </div>
+        <div class="progress" style="height:8px;">
+          <div class="progress-bar {% if disk_pct > 85 %}bg-danger{% elif disk_pct > 70 %}bg-warning{% else %}bg-secondary{% endif %}"
+               style="width:{{ disk_pct }}%"></div>
+        </div>
+        <div class="small text-muted mt-1">{{ disk_free_gb }} GB free ({{ disk_pct }}% used)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Backup Status & Sessions ─────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-cloud-arrow-down me-2 text-success"></i>Backup Status</span>
+        <form method="post" action="{% url 'dashboard:trigger_backup' %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Start a backup now?')">
+            <i class="bi bi-play me-1"></i>Run Now
+          </button>
+        </form>
+      </div>
+      <div class="card-body" style="font-size:0.875rem;">
+        {% if last_backup %}
+        <div class="mb-3 p-2 rounded bg-light">
+          <div class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>Last successful backup</div>
+          <div class="text-muted">{{ last_backup.created_at|date:"d M Y H:i" }} · {{ last_backup.size_mb }} MB · {{ last_backup.duration_seconds }}s</div>
+          {% if last_backup.copied_to_external %}<div class="text-info small"><i class="bi bi-usb-drive me-1"></i>Also on external drive</div>{% endif %}
+        </div>
+        {% else %}
+        <div class="text-danger mb-2"><i class="bi bi-exclamation-triangle me-1"></i>No successful backup found!</div>
+        {% endif %}
+
+        {% if recent_backups %}
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Date</th><th>Size</th><th>Source</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for b in recent_backups %}
+            <tr>
+              <td class="small">{{ b.created_at|date:"d M H:i" }}</td>
+              <td class="small">{% if b.size_mb %}{{ b.size_mb }} MB{% else %}—{% endif %}</td>
+              <td class="small">{{ b.get_trigger_display }}</td>
+              <td><span class="badge {% if b.status == 'SUCCESS' %}bg-success{% elif b.status == 'RUNNING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{ b.get_status_display }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-people me-2 text-primary"></i>Active Sessions
+      </div>
+      <div class="card-body d-flex flex-column justify-content-center align-items-center">
+        <div class="fw-bold fs-1 text-primary">{{ active_sessions }}</div>
+        <div class="text-muted">concurrent sessions</div>
+        <div class="text-muted small mt-2">(browser sessions not expired)</div>
+        <a href="{% url 'dashboard:sysadmin' %}#users" class="btn btn-outline-primary btn-sm mt-3">View Users Online</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── System Info Row ───────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-clock-history fs-2 text-secondary d-block mb-2"></i>
+        <div class="fw-bold">Uptime</div>
+        <div class="small text-muted mt-1">{{ uptime_str }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-activity fs-2 text-warning d-block mb-2"></i>
+        <div class="fw-bold">Load Average</div>
+        <div class="small text-muted mt-1">
+          {% if load_avg.0 %}
+          1m: <strong>{{ load_avg.0 }}</strong> &nbsp;
+          5m: <strong>{{ load_avg.1 }}</strong> &nbsp;
+          15m: <strong>{{ load_avg.2 }}</strong>
+          {% else %}N/A{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-list-task fs-2 text-info d-block mb-2"></i>
+        <div class="fw-bold">Processes</div>
+        <div class="small text-muted mt-1">
+          {% if process_count %}Total: <strong>{{ process_count }}</strong>{% else %}N/A{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-3">
+        <i class="bi bi-server fs-2 {% if gunicorn_workers > 0 %}text-success{% else %}text-danger{% endif %} d-block mb-2"></i>
+        <div class="fw-bold">Gunicorn</div>
+        <span class="badge {% if gunicorn_workers > 0 %}bg-success{% else %}bg-danger{% endif %} mt-1">
+          {{ gunicorn_workers }} worker{{ gunicorn_workers|pluralize }}
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Network / NIC ─────────────────────────────────────────────────────────── #}
+{% if nic_stats %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-ethernet me-2 text-primary"></i>Network Interfaces
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Interface</th>
+            <th>IP Address</th>
+            <th class="text-end">RX (received)</th>
+            <th class="text-end">TX (sent)</th>
+            <th class="text-center">RX Errors</th>
+            <th class="text-center">TX Errors</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for nic in nic_stats %}
+          <tr>
+            <td class="fw-semibold"><i class="bi bi-hdd-network me-1 text-muted"></i>{{ nic.name }}</td>
+            <td class="text-muted small">{{ nic.ip|default:"—" }}</td>
+            <td class="text-end text-success fw-semibold">{{ nic.rx_mb }} MB</td>
+            <td class="text-end text-primary fw-semibold">{{ nic.tx_mb }} MB</td>
+            <td class="text-center {% if nic.rx_errors > 0 %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ nic.rx_errors }}</td>
+            <td class="text-center {% if nic.tx_errors > 0 %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ nic.tx_errors }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if not psutil_ok %}
+<div class="alert alert-info small">
+  <i class="bi bi-info-circle me-1"></i>
+  CPU/RAM and full NIC metrics require <strong>psutil</strong>:
+  <code>pip install psutil</code> &nbsp;→&nbsp; restart gunicorn
+</div>
+{% endif %}
+{% endblock %}

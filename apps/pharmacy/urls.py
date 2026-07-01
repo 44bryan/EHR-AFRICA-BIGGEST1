@@ -17,4 +17,10 @@ urlpatterns = [
     path('dispensing/<uuid:dispensing_id>/add-item/', views.add_dispensing_item, name='add_dispensing_item'),
     path('dispensing/<uuid:dispensing_id>/complete/', views.complete_dispensing, name='complete_dispensing'),
     path('pilferage/', views.pilferage_dashboard, name='pilferage'),
+    path('dispensing/<uuid:dispensing_id>/receipt/', views.dispensing_receipt, name='dispensing_receipt'),
+    path('search/', views.patient_search, name='patient_search'),
+    path('rx/<uuid:rx_id>/start-dispensing/', views.start_rx_dispensing, name='start_rx_dispensing'),
+    path('rx/<uuid:rx_id>/declined/', views.rx_declined, name='rx_declined'),
+    path('adjustments/', views.stock_adjustment_list, name='stock_adjustment_list'),
+    path('stock/<uuid:batch_id>/adjust/', views.stock_adjustment_create, name='stock_adjustment_create'),
 ]

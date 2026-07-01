@@ -1,0 +1,140 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+
+{% block title %}Asset Register{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-building-gear text-primary me-2"></i>Asset Register</h4>
+    <small class="text-muted">Fixed assets — tracking, depreciation &amp; net book value</small>
+  </div>
+  <a href="{% url 'billing:asset_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-circle me-1"></i>Add Asset
+  </a>
+</div>
+
+{# Summary KPI cards #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-4 fw-bold text-primary">{{ total_assets }}</div>
+        <div class="text-muted small">Total Assets</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-5 fw-bold text-success">{{ total_cost|floatformat:0|intcomma }}</div>
+        <div class="text-muted small">Total Cost (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-5 fw-bold text-info">{{ total_nbv|floatformat:0|intcomma }}</div>
+        <div class="text-muted small">Net Book Value (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-4 fw-bold text-warning">{{ fully_depreciated }}</div>
+        <div class="text-muted small">Fully Depreciated</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Filter bar #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 px-3">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-3">
+        <select name="category" class="form-select form-select-sm">
+          <option value="">All Categories</option>
+          {% for v, label in categories %}
+          <option value="{{ v }}" {% if request.GET.category == v %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          {% for v, label in statuses %}
+          <option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary">Filter</button>
+        <a href="{% url 'billing:asset_list' %}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Assets table #}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Asset Name</th>
+          <th>Category</th>
+          <th>Serial / Tag</th>
+          <th>Location</th>
+          <th class="text-end">Purchase Cost</th>
+          <th class="text-end">Acc. Depreciation</th>
+          <th class="text-end">Net Book Value</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for asset in assets %}
+        <tr {% if asset.is_fully_depreciated %}class="table-warning"{% endif %}>
+          <td>
+            <div class="fw-semibold">{{ asset.name }}</div>
+            <div class="text-muted" style="font-size:11px;">Purchased {{ asset.purchase_date|date:"d M Y" }}</div>
+          </td>
+          <td>{{ asset.get_category_display }}</td>
+          <td class="text-muted">{{ asset.serial_number|default:"—" }}</td>
+          <td class="text-muted">{{ asset.location|default:"—" }}</td>
+          <td class="text-end">{{ asset.purchase_cost|floatformat:0|intcomma }}</td>
+          <td class="text-end text-danger">{{ asset.accumulated_depreciation|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold {% if asset.net_book_value <= 0 %}text-muted{% else %}text-success{% endif %}">
+            {{ asset.net_book_value|floatformat:0|intcomma }}
+          </td>
+          <td>
+            {% if asset.status == 'ACTIVE' %}
+            <span class="badge bg-success">Active</span>
+            {% elif asset.status == 'DISPOSED' %}
+            <span class="badge bg-danger">Disposed</span>
+            {% elif asset.status == 'UNDER_MAINTENANCE' %}
+            <span class="badge bg-warning text-dark">Maintenance</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ asset.get_status_display }}</span>
+            {% endif %}
+            {% if asset.is_fully_depreciated %}
+            <span class="badge bg-light text-dark border ms-1">Fully Depr.</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'billing:asset_edit' asset.id %}" class="btn btn-xs btn-outline-secondary btn-sm py-0 px-2">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-center py-4 text-muted">No assets recorded yet. <a href="{% url 'billing:asset_create' %}">Add the first asset</a>.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,143 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ run.period_label }} Payroll{% endblock %}
+
+{% block extra_css %}
+<style>
+.pay-input { width:110px; font-size:.8rem; }
+.tbl-head-sticky { position:sticky; top:0; background:#f8fafc; z-index:1; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-cash-stack me-2 text-success"></i>{{ run.period_label }} Payroll</h5>
+    <div class="text-muted small">{{ entries|length }} staff entries ·
+      <span class="badge {% if run.status == 'PAID' %}bg-success{% elif run.status == 'PROCESSED' %}bg-primary{% else %}bg-secondary{% endif %}">
+        {{ run.get_status_display }}
+      </span>
+    </div>
+  </div>
+  <a href="{% url 'hrms:payroll_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All Payrolls</a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Summary cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h4 fw-bold text-primary mb-0">{{ entries|length }}</div>
+      <div class="text-muted small mt-1">Staff</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h4 fw-bold mb-0">{{ run.total_gross|floatformat:0 }}</div>
+      <div class="text-muted small mt-1">Total Gross</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h4 fw-bold text-danger mb-0">{{ run.total_deductions|floatformat:0 }}</div>
+      <div class="text-muted small mt-1">Total Deductions</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #16a34a !important;">
+      <div class="h4 fw-bold text-success mb-0">{{ run.total_net|floatformat:0 }}</div>
+      <div class="text-muted small mt-1">Total Net Pay</div>
+    </div>
+  </div>
+</div>
+
+{# ── Entries table (editable if DRAFT) ── #}
+<div class="card border-0 shadow-sm">
+  <form method="post">
+    {% csrf_token %}
+    <div class="table-responsive">
+      <table class="table table-bordered table-sm align-middle mb-0" style="font-size:.78rem;">
+        <thead class="table-light tbl-head-sticky">
+          <tr>
+            <th>Staff</th>
+            <th>Role</th>
+            <th>Basic</th>
+            <th>Housing</th>
+            <th>Transport</th>
+            <th>Other Allow.</th>
+            <th class="text-success fw-bold">Gross</th>
+            <th>Tax</th>
+            <th>Pension</th>
+            <th>Other Ded.</th>
+            <th class="text-danger fw-bold">Total Ded.</th>
+            <th class="text-success fw-bold">Net Pay</th>
+            <th>Days Absent</th>
+            <th>Payslip</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in entries %}
+          <tr>
+            <td class="fw-semibold">{{ entry.staff.get_full_name|default:entry.staff.username }}</td>
+            <td class="text-muted small">{{ entry.staff.get_role_display|default:entry.staff.role }}</td>
+
+            {% if run.status == 'DRAFT' %}
+            <td><input type="number" step="0.01" name="basic_{{ entry.pk }}" value="{{ entry.basic_salary }}" class="form-control form-control-sm pay-input"></td>
+            <td><input type="number" step="0.01" name="housing_{{ entry.pk }}" value="{{ entry.housing_allowance }}" class="form-control form-control-sm pay-input"></td>
+            <td><input type="number" step="0.01" name="transport_{{ entry.pk }}" value="{{ entry.transport_allowance }}" class="form-control form-control-sm pay-input"></td>
+            <td><input type="number" step="0.01" name="other_allow_{{ entry.pk }}" value="{{ entry.other_allowances }}" class="form-control form-control-sm pay-input"></td>
+            <td class="fw-bold text-success">{{ entry.gross_pay|floatformat:0 }}</td>
+            <td><input type="number" step="0.01" name="tax_{{ entry.pk }}" value="{{ entry.tax_deduction }}" class="form-control form-control-sm pay-input"></td>
+            <td><input type="number" step="0.01" name="pension_{{ entry.pk }}" value="{{ entry.pension_deduction }}" class="form-control form-control-sm pay-input"></td>
+            <td><input type="number" step="0.01" name="other_ded_{{ entry.pk }}" value="{{ entry.other_deductions }}" class="form-control form-control-sm pay-input"></td>
+            <td class="fw-bold text-danger">{{ entry.total_deductions|floatformat:0 }}</td>
+            <td class="fw-bold text-success">{{ entry.net_pay|floatformat:0 }}</td>
+            <td><input type="number" name="absent_{{ entry.pk }}" value="{{ entry.days_absent }}" min="0" class="form-control form-control-sm" style="width:70px;"></td>
+            {% else %}
+            <td>{{ entry.basic_salary|floatformat:0 }}</td>
+            <td>{{ entry.housing_allowance|floatformat:0 }}</td>
+            <td>{{ entry.transport_allowance|floatformat:0 }}</td>
+            <td>{{ entry.other_allowances|floatformat:0 }}</td>
+            <td class="fw-bold text-success">{{ entry.gross_pay|floatformat:0 }}</td>
+            <td>{{ entry.tax_deduction|floatformat:0 }}</td>
+            <td>{{ entry.pension_deduction|floatformat:0 }}</td>
+            <td>{{ entry.other_deductions|floatformat:0 }}</td>
+            <td class="fw-bold text-danger">{{ entry.total_deductions|floatformat:0 }}</td>
+            <td class="fw-bold text-success">{{ entry.net_pay|floatformat:0 }}</td>
+            <td>{{ entry.days_absent }}</td>
+            {% endif %}
+
+            <td>
+              <a href="{% url 'hrms:payslip' entry_id=entry.pk %}" target="_blank"
+                 class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:.65rem;">
+                <i class="bi bi-printer me-1"></i>Slip
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if run.status == 'DRAFT' %}
+    <div class="p-3 d-flex gap-2 flex-wrap border-top">
+      <button type="submit" name="action" value="save_entries" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-save me-1"></i>Save Changes
+      </button>
+      <button type="submit" name="action" value="process" class="btn btn-primary btn-sm"
+              onclick="return confirm('Process payroll for {{ run.period_label }}? This will lock all entries.')">
+        <i class="bi bi-check2-circle me-1"></i>Process Payroll
+      </button>
+    </div>
+    {% elif run.status == 'PROCESSED' %}
+    <div class="p-3 border-top">
+      <button type="submit" name="action" value="mark_paid" class="btn btn-success btn-sm"
+              onclick="return confirm('Mark this payroll as fully paid?')">
+        <i class="bi bi-cash me-1"></i>Mark as Paid
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

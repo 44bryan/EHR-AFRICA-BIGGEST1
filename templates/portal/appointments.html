@@ -1,0 +1,90 @@
+{% extends "portal/base.html" %}
+{% load humanize %}
+{% block title %}My Appointments{% endblock %}
+{% block nav_appts %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <h2 class="fw-bold mb-0"><i class="bi bi-calendar-check me-2 text-primary"></i>My Appointments</h2>
+  <a href="{% url 'portal:book_appointment' %}" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Book Appointment
+  </a>
+</div>
+
+{% if upcoming %}
+<h5 class="fw-semibold mb-3 text-primary">Upcoming</h5>
+<div class="row g-3 mb-4">
+  {% for appt in upcoming %}
+  <div class="col-md-6">
+    <div class="card portal-card border-0">
+      <div class="card-body">
+        <div class="d-flex gap-3">
+          <div class="text-center px-3 py-2 rounded" style="background:#eff6ff;min-width:70px;">
+            <div class="fw-bold text-primary fs-4">{{ appt.appointment_date|date:"d" }}</div>
+            <div class="text-muted small">{{ appt.appointment_date|date:"M" }}</div>
+            <div class="text-muted small">{{ appt.appointment_date|date:"Y" }}</div>
+          </div>
+          <div class="flex-grow-1">
+            <div class="fw-bold">{{ appt.department.name|default:"General Clinic" }}</div>
+            <div class="text-muted small">
+              <i class="bi bi-clock me-1"></i>{{ appt.appointment_time|time:"H:i" }}
+            </div>
+            {% if appt.doctor %}
+            <div class="text-muted small">
+              <i class="bi bi-person-badge me-1"></i>Dr. {{ appt.doctor.get_full_name }}
+            </div>
+            {% endif %}
+            <div class="mt-1">
+              <span class="badge {% if appt.status == 'CONFIRMED' %}bg-success{% elif appt.status == 'SCHEDULED' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                {{ appt.get_status_display }}
+              </span>
+              <span class="badge bg-light text-dark ms-1">{{ appt.get_appointment_type_display }}</span>
+            </div>
+            {% if appt.reason %}
+            <div class="text-muted small mt-1" style="font-size:0.78rem;">{{ appt.reason|truncatechars:60 }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h5 class="fw-semibold mb-3 text-muted">Past Appointments</h5>
+{% if past %}
+<div class="card portal-card border-0">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:0.875rem;">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Department</th>
+          <th>Doctor</th>
+          <th>Type</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for appt in past %}
+        <tr>
+          <td>{{ appt.appointment_date|date:"d M Y" }}</td>
+          <td>{{ appt.department.name|default:"—" }}</td>
+          <td>{{ appt.doctor.get_full_name|default:"—" }}</td>
+          <td class="text-muted small">{{ appt.get_appointment_type_display }}</td>
+          <td>
+            <span class="badge {% if appt.status == 'COMPLETED' %}bg-success{% elif appt.status == 'NO_SHOW' %}bg-danger{% elif appt.status == 'CANCELLED' %}bg-secondary{% else %}bg-light text-dark{% endif %}">
+              {{ appt.get_status_display }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="text-center text-muted py-4">No past appointments found.</div>
+{% endif %}
+{% endblock %}

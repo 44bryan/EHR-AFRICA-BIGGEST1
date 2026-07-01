@@ -10,4 +10,6 @@ urlpatterns = [
     path('cycles/', views.sterilization_cycles, name='cycles'),
     path('cycles/record/', views.record_cycle, name='record_cycle'),
     path('dispatch/', views.dispatch_list, name='dispatch_list'),
+    path('dispatch/new/', views.dispatch_instrument, name='dispatch_instrument'),
+    path('cycles/<uuid:cycle_id>/complete/', views.complete_cycle, name='complete_cycle'),
 ]

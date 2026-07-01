@@ -1,0 +1,407 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Shift — {{ shift.cashier.get_full_name|default:shift.cashier.username }}{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  @page { size: A4; margin: 12mm; }
+  .no-print, nav, .sidebar, .btn, .page-header, .alert:not(.print-show) { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; page-break-inside: avoid; }
+  .card-header { padding: 6px 12px !important; }
+  .card-body { padding: 8px 12px !important; }
+  body, .card, table, td, th { font-size: 11px !important; }
+  .row { display: flex !important; flex-wrap: wrap; }
+  .col-md-5 { width: 40% !important; flex: 0 0 40%; }
+  .col-md-7 { width: 58% !important; flex: 0 0 58%; margin-left: 2%; }
+  .fs-2 { font-size: 1.2rem !important; }
+  .running-total-card { display: none !important; }
+  h5 { font-size: 13px !important; }
+}
+.variance-ok      { color: #059669; font-weight: 700; }
+.variance-over    { color: #d97706; font-weight: 700; }
+.variance-short   { color: #dc2626; font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 no-print">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-person-badge text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">
+        Cashier Shift — {{ shift.cashier.get_full_name|default:shift.cashier.username }}
+      </h5>
+      <div class="text-muted small">{{ shift.shift_date|date:"l, d F Y" }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print Handover Slip
+    </button>
+    {% if request.user.role != 'cashier' %}
+    <a href="{% url 'billing:shift_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>All Shifts
+    </a>
+    {% else %}
+    <a href="{% url 'dashboard:home' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>My Dashboard
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Status banner ── #}
+<div class="alert py-2 mb-3
+  {% if shift.status == 'OPEN' %}alert-success
+  {% elif shift.status == 'CLOSED' %}alert-warning
+  {% elif shift.status == 'SUBMITTED' %}alert-info
+  {% else %}alert-secondary{% endif %} d-flex align-items-center gap-2">
+  <i class="bi
+    {% if shift.status == 'OPEN' %}bi-door-open
+    {% elif shift.status == 'CLOSED' %}bi-door-closed
+    {% elif shift.status == 'SUBMITTED' %}bi-send-check
+    {% else %}bi-patch-check-fill{% endif %} fs-5"></i>
+  <div>
+    <strong>{{ shift.get_status_display }}</strong>
+    {% if shift.status == 'OPEN' %}
+      — Shift started at {{ shift.opened_at|time:"H:i" }}
+    {% elif shift.status == 'CLOSED' %}
+      — Closed at {{ shift.closed_at|time:"H:i" }}. Ready to submit to Chief Cashier.
+    {% elif shift.status == 'SUBMITTED' %}
+      — Submitted at {{ shift.submitted_at|time:"H:i" }}. Awaiting Chief Cashier verification.
+    {% elif shift.status == 'VERIFIED' %}
+      — Verified by {{ shift.verified_by.get_full_name|default:shift.verified_by.username }}
+        at {{ shift.verified_at|date:"d M Y H:i" }}.
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+
+  {# ── Left: Cash Summary ── #}
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-cash-stack me-2 text-success"></i>Cash Account
+      </div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between py-2 border-bottom">
+          <span class="text-muted">Opening Float</span>
+          <span class="fw-semibold">{{ shift.opening_cash|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between py-2 border-bottom">
+          <span class="text-muted">Cash Collected</span>
+          <span class="fw-semibold text-success">+ {{ shift.cash_collected|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between py-2 border-bottom fw-bold">
+          <span>Expected Cash in Hand</span>
+          <span>{{ shift.expected_cash_in_hand|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        {% if shift.closing_cash_declared is not None %}
+        <div class="d-flex justify-content-between py-2 border-bottom">
+          <span class="text-muted">Declared by Cashier</span>
+          <span class="fw-semibold">{{ shift.closing_cash_declared|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between py-2 fw-bold">
+          <span>Variance</span>
+          {% with v=shift.cash_variance %}
+          <span class="{% if v == 0 %}variance-ok{% elif v > 0 %}variance-over{% else %}variance-short{% endif %}">
+            {% if v >= 0 %}+{% endif %}{{ v|floatformat:0|intcomma }} FCFA
+            {% if v == 0 %}<i class="bi bi-check-circle ms-1"></i>
+            {% elif v > 0 %}<i class="bi bi-exclamation-triangle ms-1"></i> Overage
+            {% else %}<i class="bi bi-x-circle ms-1"></i> SHORTAGE
+            {% endif %}
+          </span>
+          {% endwith %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-info-circle me-2 text-muted"></i>Shift Info
+      </div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Date</span>
+          <span>{{ shift.shift_date|date:"d M Y" }}</span>
+        </div>
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Opened</span>
+          <span>{{ shift.opened_at|time:"H:i" }}</span>
+        </div>
+        {% if shift.closed_at %}
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Closed</span>
+          <span>{{ shift.closed_at|time:"H:i" }}</span>
+        </div>
+        {% endif %}
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Transactions</span>
+          <span class="fw-semibold">{{ shift.transaction_count }}</span>
+        </div>
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Total Collected (all methods)</span>
+          <span class="fw-semibold text-primary">{{ shift.total_collected|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Refunds Issued</span>
+          <span class="text-danger">- {{ shift.refunds_issued|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        {% if shift.notes %}
+        <div class="mt-2 p-2 bg-light rounded">
+          <div class="text-muted small">Notes:</div>
+          <div>{{ shift.notes }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── Running balance (live, only when OPEN) ── #}
+    {% if shift.status == 'OPEN' %}
+    <div class="card border-0 shadow-sm mb-3 running-total-card no-print" style="border-left:4px solid #059669 !important;">
+      <div class="card-body py-3 text-center">
+        <div class="text-muted small text-uppercase fw-semibold mb-1">Your Running Total</div>
+        <div class="fs-2 fw-bold text-success">{{ shift.total_collected|floatformat:0|intcomma }}</div>
+        <div class="text-muted small">FCFA collected so far today</div>
+        <div class="text-muted small mt-1">{{ shift.transaction_count }} transaction{{ shift.transaction_count|pluralize }}</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Action buttons ── #}
+    <div class="no-print">
+      {% if shift.status == 'OPEN' and shift.cashier == request.user %}
+      <button class="btn btn-primary w-100 mb-2 fw-bold" data-bs-toggle="modal" data-bs-target="#transferModal">
+        <i class="bi bi-box-arrow-up me-2"></i>Transfer to Chief Cashier
+      </button>
+      <div class="text-muted small text-center">Count your cash, enter the total, and hand it over.</div>
+      {% endif %}
+
+      {% if shift.status == 'CLOSED' and shift.cashier == request.user %}
+      <form method="post" action="{% url 'billing:shift_submit' shift.id %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary w-100 mb-2 fw-bold">
+          <i class="bi bi-send me-2"></i>Submit to Chief Cashier
+        </button>
+      </form>
+      {% endif %}
+
+      {% if shift.status == 'SUBMITTED' %}
+      {% if request.user.role == 'chief_cashier' or request.user.role == 'billing_officer' or request.user.role == 'senior_accountant' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
+      <form method="post" action="{% url 'billing:shift_verify' shift.id %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-success w-100 fw-bold"
+                onclick="return confirm('Confirm receipt and verify this shift?')">
+          <i class="bi bi-patch-check me-2"></i>Confirm Receipt &amp; Verify
+        </button>
+      </form>
+      {% else %}
+      <div class="alert alert-info py-2 small text-center">
+        <i class="bi bi-send-check me-1"></i>
+        Transferred to Chief Cashier — awaiting verification.
+      </div>
+      {% endif %}
+
+      {# Reopen button — Chief Cashier can reopen CLOSED or SUBMITTED shifts same day #}
+      {% if request.user.role == 'chief_cashier' or request.user.role == 'finance_director' or request.user.is_superuser %}
+      {% if shift.shift_date == today %}
+      <form method="post" action="{% url 'billing:shift_reopen' shift.id %}" class="mt-2">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-warning w-100 btn-sm"
+                onclick="return confirm('Reopen this shift? The cashier will be able to continue collecting payments.')">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen Shift
+        </button>
+      </form>
+      {% endif %}
+      {% endif %}
+      {% endif %}{# end SUBMITTED #}
+
+      {# Also show reopen for CLOSED shifts (not yet submitted) #}
+      {% if shift.status == 'CLOSED' %}
+      {% if request.user.role == 'chief_cashier' or request.user.role == 'finance_director' or request.user.is_superuser %}
+      {% if shift.shift_date == today %}
+      <form method="post" action="{% url 'billing:shift_reopen' shift.id %}" class="mt-2">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-warning w-100 btn-sm"
+                onclick="return confirm('Reopen this shift so the cashier can continue billing?')">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen Shift (Same Day)
+        </button>
+      </form>
+      {% endif %}
+      {% endif %}
+      {% endif %}
+
+      {% if shift.status == 'VERIFIED' %}
+      <div class="alert alert-success py-2 small text-center">
+        <i class="bi bi-patch-check-fill me-1"></i>
+        Shift settled and verified. Balance: 0 outstanding.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Right: Collections by Method ── #}
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-bar-chart me-2 text-info"></i>Collections by Payment Method
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Method</th>
+              <th class="text-end">Amount (FCFA)</th>
+              <th class="text-end">In Cash Drawer?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in shift.collections_by_method %}
+            <tr>
+              <td>
+                {% if row.payment_method == 'CASH' %}<i class="bi bi-cash me-1 text-success"></i>
+                {% elif row.payment_method == 'CARD' %}<i class="bi bi-credit-card me-1 text-primary"></i>
+                {% elif row.payment_method == 'MOBILE' %}<i class="bi bi-phone me-1 text-warning"></i>
+                {% elif row.payment_method == 'TRANSFER' %}<i class="bi bi-bank me-1 text-info"></i>
+                {% elif row.payment_method == 'INSURANCE' %}<i class="bi bi-shield-check me-1 text-secondary"></i>
+                {% elif row.payment_method == 'NHIS' %}<i class="bi bi-shield-fill me-1 text-secondary"></i>
+                {% else %}<i class="bi bi-currency-exchange me-1"></i>{% endif %}
+                {{ row.payment_method }}
+              </td>
+              <td class="text-end fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
+              <td class="text-end">
+                {% if row.payment_method == 'CASH' %}
+                <span class="badge bg-success">Yes</span>
+                {% else %}
+                <span class="badge bg-light text-muted">No — transfer to bank</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-3">No transactions recorded yet.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td>TOTAL</td>
+              <td class="text-end text-primary">{{ shift.total_collected|floatformat:0|intcomma }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    {# ── Handover Signature Block (always visible, essential for print) ── #}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-pen me-2"></i>Handover Confirmation
+      </div>
+      <div class="card-body">
+        <div class="row g-4 mt-1">
+          <div class="col-6 text-center">
+            <div style="border-top:1px solid #333;margin-top:50px;padding-top:6px;font-size:.8rem;">
+              <strong>{{ shift.cashier.get_full_name|default:shift.cashier.username }}</strong><br>
+              Cashier Signature &amp; Date
+            </div>
+          </div>
+          <div class="col-6 text-center">
+            <div style="border-top:1px solid #333;margin-top:50px;padding-top:6px;font-size:.8rem;">
+              {% if shift.verified_by %}
+              <strong>{{ shift.verified_by.get_full_name|default:shift.verified_by.username }}</strong><br>
+              {% else %}
+              <strong>Chief Cashier</strong><br>
+              {% endif %}
+              Verified By &amp; Date
+            </div>
+          </div>
+        </div>
+        {% if shift.status == 'VERIFIED' %}
+        <div class="text-center mt-3 text-success small">
+          <i class="bi bi-patch-check-fill me-1"></i>
+          Verified on {{ shift.verified_at|date:"d M Y" }} at {{ shift.verified_at|time:"H:i" }}
+          by {{ shift.verified_by.get_full_name|default:shift.verified_by.username }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{# ── Transfer to Chief Cashier Modal ── #}
+{% if shift.status == 'OPEN' and shift.cashier == request.user %}
+<div class="modal fade" id="transferModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'billing:shift_transfer' shift.id %}">
+        {% csrf_token %}
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">
+            <i class="bi bi-box-arrow-up me-2"></i>Transfer to Chief Cashier
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning py-2 small mb-3">
+            <strong>Step 1:</strong> Count all the physical CASH in your drawer.<br>
+            <strong>Step 2:</strong> Enter the total below.<br>
+            <strong>Step 3:</strong> Click Transfer — your balance will be submitted to the Chief Cashier.
+          </div>
+          <div class="card bg-light border-0 p-3 mb-3">
+            <div class="row text-center g-2 small">
+              <div class="col-4">
+                <div class="text-muted">Opening Float</div>
+                <div class="fw-bold">{{ shift.opening_cash|floatformat:0|intcomma }}</div>
+              </div>
+              <div class="col-4">
+                <div class="text-muted">Cash Collected</div>
+                <div class="fw-bold text-success">{{ shift.cash_collected|floatformat:0|intcomma }}</div>
+              </div>
+              <div class="col-4">
+                <div class="text-muted">Expected in Drawer</div>
+                <div class="fw-bold text-primary">{{ shift.expected_cash_in_hand|floatformat:0|intcomma }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              Cash Count in Drawer (FCFA) <span class="text-danger">*</span>
+            </label>
+            <div class="input-group input-group-lg">
+              <input type="number" name="closing_cash_declared" class="form-control fw-bold"
+                     min="0" step="1" required placeholder="Enter physical cash count"
+                     autofocus>
+              <span class="input-group-text">FCFA</span>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes (optional)</label>
+            <textarea name="notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Any discrepancy explanation, issues, remarks…"></textarea>
+          </div>
+          <div class="alert alert-secondary py-2 small">
+            <i class="bi bi-info-circle me-1"></i>
+            Non-cash collections (Mobile Money, Card, Insurance) are NOT in your drawer —
+            they go directly to the bank. Only enter physical CASH.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary fw-bold px-4">
+            <i class="bi bi-box-arrow-up me-1"></i>Confirm Transfer
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

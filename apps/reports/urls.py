@@ -13,4 +13,10 @@ urlpatterns = [
     path('consultation/<uuid:consultation_pk>/certificate/', views.medical_certificate_view, name='medical_certificate'),
     path('consultation/<uuid:consultation_pk>/referral/', views.referral_letter_view, name='referral_letter'),
     path('patient/<str:patient_id>/summary/', views.patient_summary_pdf_view, name='patient_summary_pdf'),
+    # MOH Export (CSV)
+    path('moh/disease-export/', views.moh_disease_export_view, name='moh_disease_export'),
+    # Analytics HTML pages
+    path('analytics/disease-burden/', views.disease_burden_view, name='disease_burden'),
+    path('analytics/revenue/', views.revenue_report_view, name='revenue_report'),
+    path('analytics/staff-performance/', views.staff_performance_view, name='staff_performance'),
 ]

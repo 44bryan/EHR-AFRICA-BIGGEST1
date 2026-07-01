@@ -61,9 +61,49 @@ def lab_dashboard(request):
         updated_at__date__gte=month_start,
     ).count()
 
+    # Patients waiting at lab (visit status = LABORATORY, today)
+    from apps.patients.models import Visit
+    waiting_visits = list(
+        Visit.objects.filter(
+            visit_date__date=today,
+            status='LABORATORY',
+            is_deleted=False,
+        ).select_related('patient', 'attending_doctor').order_by('visit_date')
+    )
+
+    # Annotate each pending order with payment status and elapsed time
+    pending_orders = list(pending_orders)
+    now_dt = timezone.now()
+    try:
+        from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+        # Per-test payment: find which lab_order_items have an ACTIVE (PENDING/DONE) work order
+        active_item_ids = set(
+            ServiceWorkOrder.objects.filter(
+                category=ServiceCategory.LABORATORY,
+                status__in=[WorkOrderStatus.PENDING, WorkOrderStatus.DONE],
+                lab_order_item__isnull=False,
+                is_deleted=False,
+            ).values_list('lab_order_item__order_id', flat=True)
+        )
+        for order in pending_orders:
+            order.is_paid = order.id in active_item_ids
+            # Elapsed time since order was placed
+            delta = now_dt - order.created_at
+            total_mins = int(delta.total_seconds() // 60)
+            if total_mins < 60:
+                order.elapsed = f'{total_mins}m'
+            else:
+                order.elapsed = f'{total_mins // 60}h {total_mins % 60}m'
+            order.elapsed_mins = total_mins
+    except Exception:
+        for order in pending_orders:
+            order.is_paid = None
+            order.elapsed = ''
+            order.elapsed_mins = 0
+
     context = {
         'pending_orders': pending_orders,
-        'pending_count': pending_orders.count(),
+        'pending_count': len(pending_orders),
         'completed_today': completed_today,
         'completed_this_month': completed_this_month,
         'critical_unverified': critical_unverified,
@@ -71,6 +111,7 @@ def lab_dashboard(request):
         'abnormal_count': abnormal_count,
         'category_stats': category_stats,
         'today': today,
+        'waiting_visits': waiting_visits,
     }
     return render(request, 'laboratory/dashboard.html', context)
 
@@ -171,13 +212,34 @@ def lab_stats_view(request):
         is_critical=True, is_deleted=False, created_at__date__gte=month_start
     ).count()
 
+    # Category totals for donut chart
+    category_totals = (
+        LabOrderItem.objects.filter(
+            order__is_deleted=False,
+            order__created_at__date__gte=month_start,
+        )
+        .values('test_type__category')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    category_labels = {
+        'HAEMATOLOGY': 'Haematology', 'BIOCHEMISTRY': 'Biochemistry',
+        'MICROBIOLOGY': 'Microbiology', 'SEROLOGY': 'Serology',
+        'URINALYSIS': 'Urinalysis', 'HISTOLOGY': 'Histology',
+        'OCULAR': 'Ocular',
+    }
     import json
+    category_json = json.dumps([
+        {'label': category_labels.get(c['test_type__category'], c['test_type__category']), 'count': c['count']}
+        for c in category_totals
+    ])
     context = {
         'category_volume': category_volume,
         'top_tests': top_tests,
         'abnormal_by_test': abnormal_by_test,
         'daily_volume': daily_volume,
         'daily_volume_json': json.dumps(daily_volume),
+        'category_json': category_json,
         'total_orders': total_orders,
         'total_items': total_items,
         'total_abnormal': total_abnormal,
@@ -220,15 +282,30 @@ def lab_order_view(request, consultation_pk):
             order.ordered_by = request.user
             order.created_by = request.user
             order.save()
+            items_created = []
             for test_id in selected_tests:
-                LabOrderItem.objects.create(order=order, test_type_id=test_id)
-            # Auto-billing
+                item = LabOrderItem.objects.create(order=order, test_type_id=test_id)
+                items_created.append(item)
+            # Create one PENDING_PAYMENT work order per test item for per-test payment tracking
             try:
-                from apps.billing.utils import bill_lab_order
-                bill_lab_order(order, created_by=request.user)
+                from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+                for item in items_created:
+                    ServiceWorkOrder.objects.create(
+                        patient=consultation.patient,
+                        consultation=consultation,
+                        category=ServiceCategory.LABORATORY,
+                        description=f'Lab: {item.test_type.name}',
+                        status=WorkOrderStatus.PENDING_PAYMENT,
+                        lab_order_item=item,
+                        created_by=request.user,
+                    )
             except Exception:
                 pass
-            messages.success(request, f'Lab order created with {len(selected_tests)} test(s).')
+            messages.success(
+                request,
+                f'Lab order created ({len(selected_tests)} test(s)). '
+                'Direct patient to cashier to pay — lab queue will activate after payment.'
+            )
             return redirect('consultations:detail', pk=consultation_pk)
         elif not selected_tests:
             messages.error(request, 'Please select at least one test.')
@@ -258,6 +335,8 @@ def lab_detail_view(request, pk):
 
 @login_required
 def collect_sample_view(request, pk):
+    if not (request.user.is_lab_tech or request.user.is_medical_director):
+        return HttpResponseForbidden()
     order = get_object_or_404(LabOrder, pk=pk)
     if hasattr(order, 'sample_collection'):
         messages.info(request, 'Sample already collected.')
@@ -312,11 +391,36 @@ def enter_results_view(request, pk):
                 result.comment = request.POST.get(f'comment_{item.pk}', '')
                 result.performed_by = request.user
                 result.save()
+                if result.is_critical:
+                    try:
+                        from apps.notifications.utils import notify_critical_lab_result
+                        notify_critical_lab_result(result)
+                    except Exception:
+                        pass
                 item.status = LabOrder.Status.COMPLETED
                 item.save(update_fields=['status'])
 
         order.status = LabOrder.Status.COMPLETED
         order.save(update_fields=['status'])
+        # Notify ordering doctor that all results are ready
+        try:
+            from apps.notifications.utils import notify
+            from apps.notifications.models import NotificationType, NotificationPriority
+            doctor = getattr(order, 'ordered_by', None)
+            if doctor:
+                notify(
+                    recipient=doctor,
+                    title=f'Lab Results Ready — {order.patient.full_name}',
+                    message=(
+                        f'All laboratory results for {order.patient.full_name} are now available. '
+                        f'Order from {order.created_at:%d %b %Y}.'
+                    ),
+                    link=f'/lab/{order.id}/',
+                    notification_type=NotificationType.LAB_RESULT,
+                    priority=NotificationPriority.NORMAL,
+                )
+        except Exception:
+            pass
         messages.success(request, 'Results saved successfully.')
         return redirect('laboratory:detail', pk=pk)
 

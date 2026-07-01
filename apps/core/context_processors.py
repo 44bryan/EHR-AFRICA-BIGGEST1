@@ -29,6 +29,28 @@ def hospital_modules(request):
     return {'modules': cfg}
 
 
+def qms_active():
+    """
+    Returns True if the Queue Management System module is enabled.
+    Import this anywhere in views: `from apps.core.context_processors import qms_active`
+    When QMS is disabled, all token creation and queue reads should be skipped.
+    """
+    try:
+        from apps.accounts.models import HospitalConfig
+        return HospitalConfig.get().module_qms
+    except Exception:
+        return True  # default to enabled if config is unavailable
+
+
+def session_slot(request):
+    """Inject current session slot (1-9) and slot list for the topbar switcher."""
+    slot = getattr(request, 'session_slot', '1')
+    return {
+        'session_slot': slot,
+        'session_slots': [str(i) for i in range(1, 6)],
+    }
+
+
 def user_notifications(request):
     """Inject unread notification count for authenticated users."""
     if not request.user.is_authenticated:

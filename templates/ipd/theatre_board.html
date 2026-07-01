@@ -18,19 +18,15 @@
 </div>
 
 <!-- Summary strip -->
-<div class="row g-2 mb-3">
-  <div class="col-auto">
-    <div class="card border-0 bg-primary bg-opacity-10 px-3 py-2 text-center">
-      <div class="fs-4 fw-bold text-primary">{{ total_cases }}</div>
-      <div class="small text-muted">Total Cases</div>
-    </div>
+<div class="d-flex gap-2 flex-wrap mb-3">
+  <div class="card border-0 shadow-sm px-4 py-2 text-center" style="background:#1e3a5f;min-width:100px;">
+    <div class="fs-3 fw-bold text-white">{{ total_cases }}</div>
+    <div class="small text-white-50">Total Cases</div>
   </div>
   {% for theatre, cases in theatre_groups.items %}
-  <div class="col-auto">
-    <div class="card border-0 bg-light px-3 py-2 text-center">
-      <div class="fs-5 fw-bold">{{ cases|length }}</div>
-      <div class="small text-muted">{{ theatre }}</div>
-    </div>
+  <div class="card border-0 shadow-sm px-4 py-2 text-center" style="background:#f8fafc;min-width:100px;border-left:4px solid #dc2626 !important;">
+    <div class="fs-4 fw-bold text-danger">{{ cases|length }}</div>
+    <div class="small text-muted fw-semibold">{{ theatre }}</div>
   </div>
   {% endfor %}
 </div>
@@ -54,11 +50,13 @@
             <th>Anaesthesia</th>
             <th>Surgeon</th>
             <th style="width:160px">Status</th>
-            <th>Notes</th>
+            <th>Pre-op Notes</th>
+            <th style="width:140px">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for b in cases %}
+          {% with ana_record=b.anaesthetic_records.first %}
           <tr id="row-{{ b.id }}">
             <td class="fw-bold text-primary">
               {{ b.surgery_date|date:"H:i" }}
@@ -88,7 +86,23 @@
               </select>
             </td>
             <td class="small text-muted">{{ b.pre_op_requirements|truncatechars:60|default:"—" }}</td>
+            <td>
+              {% if request.user.is_anaesthetist or request.user.is_doctor or request.user.is_medical_director or request.user.is_super_admin %}
+              {% if ana_record %}
+                <a href="{% url 'ipd:anaesthetic_record_detail' record_id=ana_record.pk %}"
+                   class="btn btn-sm btn-success w-100" title="View/Update Anaesthetic Chart">
+                  <i class="bi bi-clipboard2-pulse me-1"></i>Chart
+                </a>
+              {% else %}
+                <a href="{% url 'ipd:anaesthetic_record_create' booking_id=b.pk %}"
+                   class="btn btn-sm btn-outline-danger w-100" title="Start Anaesthetic Chart">
+                  <i class="bi bi-clipboard2-plus me-1"></i>New Chart
+                </a>
+              {% endif %}
+              {% else %}—{% endif %}
+            </td>
           </tr>
+          {% endwith %}
           {% endfor %}
         </tbody>
       </table>

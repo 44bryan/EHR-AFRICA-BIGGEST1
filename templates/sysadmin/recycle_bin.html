@@ -1,0 +1,311 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Recycle Bin{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-trash3 text-danger fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">System Recycle Bin</h5>
+      <div class="text-muted small">Soft-deleted records — Super Admin only</div>
+    </div>
+  </div>
+  <a href="{% url 'dashboard:sysadmin' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="alert alert-warning d-flex gap-2 align-items-start mb-4 small">
+  <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+  <div>
+    <strong>Permanent deletion is irreversible.</strong>
+    Financial records (invoices, payments) are <strong>never deletable</strong> here — use Void/Cancel.
+  </div>
+</div>
+
+{# ─── Macro: section header ────────────────────────────────────────────────── #}
+{% comment %}Reused card header pattern{% endcomment %}
+
+{# ── PATIENTS ────────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center gap-2 py-2">
+    <i class="bi bi-person-x text-danger"></i>
+    <span class="fw-semibold">Deleted Patients</span>
+    <span class="badge bg-danger ms-1">{{ deleted_patients|length }}</span>
+  </div>
+
+  {% if deleted_patients %}
+  {# Desktop table #}
+  <div class="d-none d-md-block table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient ID</th><th>Full Name</th><th>Deleted</th><th class="text-end">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for p in deleted_patients %}
+        <tr>
+          <td class="font-monospace text-muted">{{ p.patient_id }}</td>
+          <td class="fw-semibold">{{ p.full_name }}</td>
+          <td class="text-muted">{{ p.updated_at|date:"d M Y H:i" }}</td>
+          <td class="text-end">
+            <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Patient' p.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Restore this patient?')">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+              </button>
+            </form>
+            <form method="post" action="{% url 'dashboard:recycle_bin_delete' 'Patient' p.pk %}" class="d-inline ms-1">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('PERMANENTLY DELETE {{ p.full_name|escapejs }}? Cannot be undone.')">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {# Mobile cards #}
+  <div class="d-md-none">
+    {% for p in deleted_patients %}
+    <div class="border-bottom px-3 py-3">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">{{ p.full_name }}</div>
+          <div class="small text-muted">{{ p.patient_id }} · {{ p.updated_at|date:"d M Y" }}</div>
+        </div>
+        <div class="d-flex gap-2 flex-shrink-0 ms-2">
+          <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Patient' p.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-success px-2" onclick="return confirm('Restore?')" title="Restore">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </form>
+          <form method="post" action="{% url 'dashboard:recycle_bin_delete' 'Patient' p.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger px-2" onclick="return confirm('Delete forever?')" title="Delete Forever">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-4 small"><i class="bi bi-check-circle me-1 text-success"></i>No deleted patients.</div>
+  {% endif %}
+</div>
+
+{# ── CONSULTATIONS ────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center gap-2 py-2">
+    <i class="bi bi-file-earmark-medical text-danger"></i>
+    <span class="fw-semibold">Deleted Consultations</span>
+    <span class="badge bg-danger ms-1">{{ deleted_consultations|length }}</span>
+  </div>
+
+  {% if deleted_consultations %}
+  <div class="d-none d-md-block table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Deleted</th><th class="text-end">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for c in deleted_consultations %}
+        <tr>
+          <td class="fw-semibold">{{ c.patient.full_name|default:"—" }}</td>
+          <td class="text-muted">{{ c.doctor.get_full_name|default:"—" }}</td>
+          <td>{{ c.created_at|date:"d M Y" }}</td>
+          <td class="text-muted">{{ c.updated_at|date:"d M Y H:i" }}</td>
+          <td class="text-end">
+            <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Consultation' c.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Restore this consultation?')">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+              </button>
+            </form>
+            <span class="badge bg-light text-muted border ms-1">Protected</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="d-md-none">
+    {% for c in deleted_consultations %}
+    <div class="border-bottom px-3 py-3">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">{{ c.patient.full_name|default:"—" }}</div>
+          <div class="small text-muted">Dr. {{ c.doctor.get_full_name|default:"—" }}</div>
+          <div class="small text-muted">{{ c.created_at|date:"d M Y" }}</div>
+        </div>
+        <div class="d-flex gap-2 flex-shrink-0 ms-2">
+          <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Consultation' c.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-success px-2" onclick="return confirm('Restore?')" title="Restore">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </form>
+          <span class="badge bg-light text-muted border align-self-center">Protected</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-4 small"><i class="bi bi-check-circle me-1 text-success"></i>No deleted consultations.</div>
+  {% endif %}
+</div>
+
+{# ── APPOINTMENTS ────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center gap-2 py-2">
+    <i class="bi bi-calendar-x text-danger"></i>
+    <span class="fw-semibold">Deleted Appointments</span>
+    <span class="badge bg-danger ms-1">{{ deleted_appointments|length }}</span>
+  </div>
+
+  {% if deleted_appointments %}
+  <div class="d-none d-md-block table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Doctor</th><th>Appt Date</th><th>Deleted</th><th class="text-end">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for a in deleted_appointments %}
+        <tr>
+          <td class="fw-semibold">{{ a.patient.full_name|default:"—" }}</td>
+          <td class="text-muted">{{ a.doctor.get_full_name|default:"—" }}</td>
+          <td>{{ a.appointment_date|date:"d M Y" }}</td>
+          <td class="text-muted">{{ a.updated_at|date:"d M Y H:i" }}</td>
+          <td class="text-end">
+            <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Appointment' a.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Restore this appointment?')">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+              </button>
+            </form>
+            <form method="post" action="{% url 'dashboard:recycle_bin_delete' 'Appointment' a.pk %}" class="d-inline ms-1">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete permanently?')">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="d-md-none">
+    {% for a in deleted_appointments %}
+    <div class="border-bottom px-3 py-3">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">{{ a.patient.full_name|default:"—" }}</div>
+          <div class="small text-muted">Dr. {{ a.doctor.get_full_name|default:"—" }} · {{ a.appointment_date|date:"d M Y" }}</div>
+        </div>
+        <div class="d-flex gap-2 flex-shrink-0 ms-2">
+          <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Appointment' a.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-success px-2" onclick="return confirm('Restore?')" title="Restore">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </form>
+          <form method="post" action="{% url 'dashboard:recycle_bin_delete' 'Appointment' a.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger px-2" onclick="return confirm('Delete forever?')" title="Delete Forever">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-4 small"><i class="bi bi-check-circle me-1 text-success"></i>No deleted appointments.</div>
+  {% endif %}
+</div>
+
+{# ── STAFF ACCOUNTS ────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center gap-2 py-2">
+    <i class="bi bi-person-dash text-danger"></i>
+    <span class="fw-semibold">Deactivated Staff Accounts</span>
+    <span class="badge bg-danger ms-1">{{ deleted_staff|length }}</span>
+  </div>
+
+  {% if deleted_staff %}
+  <div class="d-none d-md-block table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Name</th><th>Role</th><th>Username</th><th class="text-end">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for u in deleted_staff %}
+        <tr>
+          <td class="fw-semibold">{{ u.get_full_name|default:u.username }}</td>
+          <td><span class="badge bg-light text-dark border">{{ u.get_role_display }}</span></td>
+          <td class="text-muted font-monospace">{{ u.username }}</td>
+          <td class="text-end">
+            <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Staff' u.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Reactivate {{ u.get_full_name|escapejs }}?')">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Reactivate
+              </button>
+            </form>
+            <form method="post" action="{% url 'dashboard:recycle_bin_delete' 'Staff' u.pk %}" class="d-inline ms-1">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Permanently delete {{ u.get_full_name|escapejs }}?')">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="d-md-none">
+    {% for u in deleted_staff %}
+    <div class="border-bottom px-3 py-3">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">{{ u.get_full_name|default:u.username }}</div>
+          <div class="small">
+            <span class="badge bg-light text-dark border">{{ u.get_role_display }}</span>
+          </div>
+          <div class="small text-muted font-monospace">{{ u.username }}</div>
+        </div>
+        <div class="d-flex gap-2 flex-shrink-0 ms-2">
+          <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Staff' u.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-success px-2" onclick="return confirm('Reactivate?')" title="Reactivate">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </form>
+          <form method="post" action="{% url 'dashboard:recycle_bin_delete' 'Staff' u.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger px-2" onclick="return confirm('Delete forever?')" title="Delete Forever">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-4 small"><i class="bi bi-check-circle me-1 text-success"></i>No deactivated staff.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

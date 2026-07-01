@@ -81,6 +81,7 @@ class DrugStock(AuditModel):
     supplier = models.CharField(max_length=200, blank=True)
     purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     received_date = models.DateField(default=timezone.now)
+    manufacture_date = models.DateField(null=True, blank=True, help_text='Manufacturing / production date on the package')
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -161,3 +162,44 @@ class DispensingItem(TimeStampedModel):
                 0, self.stock_batch.quantity_remaining - self.quantity_dispensed
             )
             self.stock_batch.save()
+
+
+class AdjustmentReason(models.TextChoices):
+    DAMAGE = 'DAMAGE', 'Damaged / Broken'
+    EXPIRED = 'EXPIRED', 'Expired — Disposal'
+    COUNT_UP = 'COUNT_UP', 'Physical Count — Surplus'
+    COUNT_DOWN = 'COUNT_DOWN', 'Physical Count — Shortage'
+    RETURN = 'RETURN', 'Patient Return'
+    THEFT = 'THEFT', 'Suspected Theft / Pilferage'
+    OTHER = 'OTHER', 'Other'
+
+
+class StockAdjustment(AuditModel):
+    """Manual stock adjustment — records any change to a batch's quantity_remaining."""
+    batch = models.ForeignKey(
+        DrugStock, on_delete=models.PROTECT, related_name='adjustments'
+    )
+    reason = models.CharField(max_length=20, choices=AdjustmentReason.choices)
+    quantity_before = models.IntegerField(help_text='Stock level before adjustment')
+    quantity_change = models.IntegerField(
+        help_text='Positive = stock added, Negative = stock removed'
+    )
+    quantity_after = models.IntegerField(help_text='Stock level after adjustment')
+    notes = models.TextField(blank=True)
+    adjusted_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-adjusted_at']
+
+    def __str__(self):
+        sign = '+' if self.quantity_change >= 0 else ''
+        return (
+            f'{self.batch.drug.name} | {self.get_reason_display()} | '
+            f'{sign}{self.quantity_change} (Batch {self.batch.batch_number})'
+        )
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Apply the change to the batch
+        self.batch.quantity_remaining = max(0, self.quantity_after)
+        self.batch.save(update_fields=['quantity_remaining'])

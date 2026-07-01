@@ -1,0 +1,169 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Stock Adjustment — {{ batch.drug.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">
+      <i class="bi bi-sliders me-2 text-primary"></i>Stock Adjustment
+    </h1>
+    <div class="text-muted small">
+      Record a change to <strong>{{ batch.drug.name }}</strong> — Batch {{ batch.batch_number }}
+    </div>
+  </div>
+  <a href="{% url 'pharmacy:drug_detail' drug_id=batch.drug.id %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Drug
+  </a>
+</div>
+
+{# ── Current Batch Info ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Drug</div>
+        <div class="fw-bold">{{ batch.drug.name }}</div>
+        {% if batch.drug.strength %}<div class="text-muted small">{{ batch.drug.strength }}</div>{% endif %}
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Batch Number</div>
+        <div class="fw-bold">{{ batch.batch_number }}</div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Current Stock</div>
+        <div class="fw-bold fs-5 {% if batch.quantity_remaining == 0 %}text-danger{% elif batch.quantity_remaining <= 10 %}text-warning{% else %}text-success{% endif %}">
+          {{ batch.quantity_remaining }} {{ batch.drug.unit }}
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Expiry Date</div>
+        <div class="fw-bold {% if batch.is_expired %}text-danger{% endif %}">
+          {{ batch.expiry_date|date:"d M Y" }}
+          {% if batch.is_expired %}<span class="badge bg-danger ms-1">Expired</span>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Adjustment Form ── #}
+<div class="card border-0 shadow-sm mb-4" style="max-width:560px;">
+  <div class="card-header fw-semibold" style="background:#eff6ff;border-left:4px solid #2563eb;">
+    <i class="bi bi-pencil-square me-2 text-primary"></i>Record Adjustment
+  </div>
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+        <select name="reason" class="form-select" required id="reason-select">
+          <option value="">— Select reason —</option>
+          {% for val, label in reasons %}
+          <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Quantity Change <span class="text-danger">*</span></label>
+        <div class="input-group">
+          <input type="number" name="quantity_change" id="qty-change"
+                 class="form-control" placeholder="e.g. -5 or +10" required
+                 oninput="updatePreview()">
+          <span class="input-group-text">{{ batch.drug.unit }}</span>
+        </div>
+        <div class="form-text">
+          Use a <strong>negative number</strong> to reduce stock (e.g. -3 for damage).
+          Use a <strong>positive number</strong> to increase stock (e.g. +5 for surplus count).
+        </div>
+      </div>
+
+      {# Live preview #}
+      <div class="alert alert-light border mb-3 py-2 small" id="preview-box" style="display:none;">
+        <span class="fw-semibold">Preview:</span>
+        <span id="preview-text"></span>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Notes / Justification</label>
+        <textarea name="notes" class="form-control" rows="2"
+                  placeholder="Optional — e.g. 'Found 3 vials broken on shelf inspection'"></textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-check-circle me-1"></i>Save Adjustment
+        </button>
+        <a href="{% url 'pharmacy:drug_detail' drug_id=batch.drug.id %}" class="btn btn-outline-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Previous Adjustments for this Batch ── #}
+{% with adjustments=batch.adjustments.all %}
+{% if adjustments %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header fw-semibold small text-muted">
+    <i class="bi bi-clock-history me-1"></i>Previous Adjustments — Batch {{ batch.batch_number }}
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Reason</th>
+          <th class="text-end">Before</th>
+          <th class="text-end">Change</th>
+          <th class="text-end">After</th>
+          <th>By</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for adj in adjustments %}
+        <tr>
+          <td class="text-muted small">{{ adj.adjusted_at|date:"d M Y H:i" }}</td>
+          <td>
+            <span class="badge
+              {% if adj.reason == 'DAMAGE' %}bg-danger{% elif adj.reason == 'EXPIRED' %}bg-secondary
+              {% elif adj.reason == 'COUNT_UP' %}bg-success{% elif adj.reason == 'COUNT_DOWN' %}bg-warning text-dark
+              {% elif adj.reason == 'THEFT' %}bg-danger{% else %}bg-light text-dark border{% endif %}">
+              {{ adj.get_reason_display }}
+            </span>
+          </td>
+          <td class="text-end">{{ adj.quantity_before }}</td>
+          <td class="text-end fw-bold {% if adj.quantity_change < 0 %}text-danger{% else %}text-success{% endif %}">
+            {% if adj.quantity_change > 0 %}+{% endif %}{{ adj.quantity_change }}
+          </td>
+          <td class="text-end">{{ adj.quantity_after }}</td>
+          <td class="small">{{ adj.created_by.get_full_name|default:adj.created_by.username }}</td>
+          <td class="text-muted small fst-italic">{{ adj.notes|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+
+<script>
+const currentStock = {{ batch.quantity_remaining }};
+function updatePreview() {
+  const input = document.getElementById('qty-change');
+  const box = document.getElementById('preview-box');
+  const text = document.getElementById('preview-text');
+  const val = parseInt(input.value, 10);
+  if (isNaN(val) || val === 0) { box.style.display = 'none'; return; }
+  const after = Math.max(0, currentStock + val);
+  const sign = val > 0 ? '+' : '';
+  const color = val < 0 ? 'text-danger' : 'text-success';
+  text.innerHTML = ` ${currentStock} → <span class="fw-bold ${color}">${after}</span> (${sign}${val})`;
+  box.style.display = '';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,140 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Receipt — {{ dispensing.dispensing_number }}{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  body { font-size: 12px; }
+  .receipt-box { border: 1px solid #ccc !important; }
+  .drug-label { border: 1px dashed #666 !important; page-break-inside: avoid; }
+}
+.receipt-header { background: #0f172a; color: #fff; border-radius: 10px; padding: 18px 22px; }
+.drug-label {
+  border: 2px dashed #1d4ed8;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: #f8faff;
+}
+.drug-label .drug-name { font-size: 1rem; font-weight: 700; color: #1e3a5f; }
+.drug-label .drug-instr { font-size: .82rem; color: #374151; margin-top: 4px; }
+.drug-label .drug-meta { font-size: .7rem; color: #6b7280; margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center no-print">
+  <h5 class="fw-bold mb-0"><i class="bi bi-receipt me-2 text-success"></i>Dispensing Receipt</h5>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dispensing_detail' dispensing_id=dispensing.id %}" class="btn btn-outline-secondary btn-sm no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <button onclick="window.print()" class="btn btn-primary btn-sm no-print">
+      <i class="bi bi-printer me-1"></i>Print Receipt
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+
+    {# Hospital header #}
+    <div class="receipt-header mb-4">
+      <div class="fw-bold fs-5">{{ HOSPITAL_NAME }}</div>
+      <div class="small opacity-70 mt-1">{{ HOSPITAL_ADDRESS }}</div>
+      <div class="mt-3 fw-semibold" style="font-size:1.05rem; letter-spacing:.04em;">
+        PHARMACY DISPENSING RECEIPT
+      </div>
+      <div class="small opacity-60 mt-1">{{ dispensing.dispensing_number }}</div>
+    </div>
+
+    {# Patient & transaction info #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-6">
+            <div class="text-muted small">Patient Name</div>
+            <div class="fw-semibold">{{ dispensing.patient.full_name }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Patient ID</div>
+            <div class="fw-semibold">{{ dispensing.patient.patient_id }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Date &amp; Time</div>
+            <div class="fw-semibold">{{ dispensing.dispensed_at|date:"d M Y H:i" }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Dispensed By</div>
+            <div class="fw-semibold">{{ dispensing.dispensed_by.get_full_name }}</div>
+          </div>
+          {% if dispensing.prescription %}
+          <div class="col-12">
+            <div class="text-muted small">Linked Prescription</div>
+            <div class="fw-semibold">{{ dispensing.prescription }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Drug labels — one per item #}
+    <div class="mb-3">
+      <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.06em;">
+        <i class="bi bi-capsule-pill me-1"></i>Dispensed Medications
+      </div>
+      {% for item in dispensing.items.all %}
+      <div class="drug-label">
+        <div class="drug-name">{{ item.drug.name }}
+          <span class="badge bg-primary-subtle text-primary ms-1" style="font-size:.65rem;">{{ item.quantity_dispensed }} {{ item.drug.unit|default:"unit" }}</span>
+        </div>
+        {% if item.instructions %}
+        <div class="drug-instr"><i class="bi bi-info-circle me-1 text-primary"></i>{{ item.instructions }}</div>
+        {% endif %}
+        <div class="drug-meta d-flex flex-wrap gap-3 mt-1">
+          <span>Unit Price: {{ item.unit_price|floatformat:2 }}</span>
+          <span class="fw-semibold">Subtotal: {{ item.subtotal|floatformat:2 }}</span>
+          {% if item.stock_batch %}<span>Batch: {{ item.stock_batch.batch_number }} · Exp: {{ item.stock_batch.expiry_date|date:"M Y" }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Totals #}
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Total Amount</span>
+          <span class="fw-bold">{{ dispensing.total_amount|floatformat:2 }}</span>
+        </div>
+        <div class="d-flex justify-content-between py-1 border-top">
+          <span class="text-muted">Amount Paid</span>
+          <span class="fw-bold text-success">{{ dispensing.amount_paid|floatformat:2 }}</span>
+        </div>
+        {% if dispensing.total_amount != dispensing.amount_paid %}
+        <div class="d-flex justify-content-between py-1 border-top">
+          <span class="text-muted">Balance</span>
+          <span class="fw-bold text-danger">{{ dispensing.total_amount|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+        <div class="d-flex justify-content-between py-1 border-top">
+          <span class="fw-semibold">Status</span>
+          <span class="badge {% if dispensing.status == 'DISPENSED' %}bg-success{% elif dispensing.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+            {{ dispensing.get_status_display }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center text-muted small mb-3">
+      <i class="bi bi-shield-check me-1"></i>
+      Thank you for using {{ HOSPITAL_NAME }}<br>
+      Keep this receipt for your records.
+    </div>
+
+  </div>
+</div>
+{% endblock %}

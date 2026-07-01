@@ -4,11 +4,21 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h3 mb-0">Lab Order — {{ order.patient.full_name }}</h1>
   <div class="d-flex gap-2">
+    {% if request.user.is_lab_tech or request.user.is_medical_director %}
     {% if order.status == 'ORDERED' and not sample %}
     <a href="{% url 'laboratory:collect_sample' order.pk %}" class="btn btn-warning"><i class="bi bi-droplet me-1"></i>Collect Sample</a>
     {% endif %}
     {% if order.status == 'SAMPLE_COLLECTED' or order.status == 'PROCESSING' %}
-    <a href="{% url 'laboratory:results' order.pk %}" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i>Enter Results</a>
+    <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i>Enter Results</a>
+    {% endif %}
+    {% endif %}
+    {% if order.status == 'COMPLETED' %}
+    <a href="{% url 'reports:lab_pdf' pk=order.pk %}" class="btn btn-outline-danger" target="_blank"><i class="bi bi-file-pdf me-1"></i>Print PDF</a>
+    {% endif %}
+    {% if order.status == 'ORDERED' or order.status == 'SAMPLE_COLLECTED' or order.status == 'PROCESSING' %}
+    {% if request.user.is_lab_tech or request.user.is_medical_director %}
+    <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-success"><i class="bi bi-pencil-square me-1"></i>Enter Results</a>
+    {% endif %}
     {% endif %}
     <a href="{% url 'laboratory:list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
   </div>
@@ -24,7 +34,7 @@
           <dt class="col-5 text-muted">Date</dt><dd class="col-7">{{ order.created_at|date:"d M Y, H:i" }}</dd>
           <dt class="col-5 text-muted">Urgency</dt><dd class="col-7"><span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span></dd>
           <dt class="col-5 text-muted">Status</dt><dd class="col-7"><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ order.get_status_display }}</span></dd>
-          {% if order.specimen %}<dt class="col-5 text-muted">Specimen</dt><dd class="col-7">{{ order.specimen }}</dd>{% endif %}
+          {% if order.clinical_indication %}<dt class="col-5 text-muted">Indication</dt><dd class="col-7">{{ order.clinical_indication }}</dd>{% endif %}
         </dl>
       </div>
     </div>
@@ -33,7 +43,7 @@
       <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Sample Collection</h6></div>
       <div class="card-body small">
         <div>Collected by: <strong>{{ sample.collected_by.full_name }}</strong></div>
-        <div class="text-muted">{{ sample.collection_time|date:"d M Y H:i" }}</div>
+        <div class="text-muted">{{ sample.collection_date|date:"d M Y H:i" }}</div>
         {% if sample.notes %}<div class="mt-1 text-muted">{{ sample.notes }}</div>{% endif %}
       </div>
     </div>
@@ -45,21 +55,61 @@
       <div class="table-responsive">
         <table class="table table-sm mb-0">
           <thead class="table-light">
-            <tr><th>Test</th><th>Result</th><th>Unit</th><th>Reference</th><th>Flag</th></tr>
+            <tr><th>Test</th><th>Category</th><th>Result</th><th>Unit / Range</th><th>Flag</th><th>Verified</th></tr>
           </thead>
           <tbody>
             {% for item in order.items.all %}
             <tr>
-              <td class="fw-semibold small">{{ item.test_type.name }}</td>
+              <td class="fw-semibold small">
+                {{ item.test_type.name }}
+                <div class="text-muted" style="font-size:.7rem;">{{ item.test_type.code }}</div>
+              </td>
+              <td class="small text-muted">{{ item.test_type.get_category_display }}</td>
               {% if item.result %}
-              <td class="fw-bold {% if item.result.is_critical %}text-danger{% elif item.result.is_abnormal %}text-warning{% endif %}">{{ item.result.result_value }}</td>
-              <td class="small text-muted">{{ item.result.result_unit }}</td>
-              <td class="small text-muted">{{ item.result.reference_range }}</td>
-              <td>{% if item.result.is_critical %}<span class="badge bg-danger">Critical</span>{% elif item.result.is_abnormal %}<span class="badge bg-warning text-dark">Abnormal</span>{% else %}<span class="badge bg-success">Normal</span>{% endif %}</td>
+              <td class="fw-bold">
+                {% if item.test_type.result_type == 'QUALITATIVE' or item.test_type.result_type == 'SEMI_QUANT' %}
+                  {% if item.result.is_critical %}
+                    <span class="badge bg-danger fs-6">{{ item.result.result_value }}</span>
+                  {% elif item.result.is_abnormal %}
+                    <span class="badge bg-warning text-dark fs-6">{{ item.result.result_value }}</span>
+                  {% else %}
+                    <span class="badge bg-success fs-6">{{ item.result.result_value }}</span>
+                  {% endif %}
+                {% elif item.test_type.result_type == 'TEXT' or item.test_type.result_type == 'PANEL' %}
+                  <div class="small text-wrap" style="max-width:240px;white-space:pre-line;">{{ item.result.result_value|truncatechars:120 }}</div>
+                {% else %}
+                  <span class="{% if item.result.is_critical %}text-danger{% elif item.result.is_abnormal %}text-warning{% endif %}">
+                    {{ item.result.result_value }}
+                  </span>
+                {% endif %}
+              </td>
+              <td class="small text-muted">
+                {% if item.result.result_unit %}{{ item.result.result_unit }}{% endif %}
+                {% if item.result.reference_range %}<div style="font-size:.7rem;">{{ item.result.reference_range }}</div>{% endif %}
+              </td>
+              <td>
+                {% if item.result.is_critical %}<span class="badge bg-danger">Critical</span>
+                {% elif item.result.is_abnormal %}<span class="badge bg-warning text-dark">Abnormal</span>
+                {% else %}<span class="badge bg-success">Normal</span>{% endif %}
+              </td>
+              <td class="small">
+                {% if item.result.is_verified %}
+                  <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>{{ item.result.verified_by.get_full_name }}</span>
+                {% else %}
+                  <span class="text-muted">Unverified</span>
+                {% endif %}
+              </td>
               {% else %}
-              <td colspan="4" class="text-muted small">Pending</td>
+              <td colspan="4" class="text-muted small"><span class="badge bg-light text-muted border">Pending</span></td>
               {% endif %}
             </tr>
+            {% if item.result and item.result.comment %}
+            <tr class="table-light">
+              <td colspan="6" class="small text-muted fst-italic py-1 ps-3">
+                <i class="bi bi-chat-left-text me-1"></i>{{ item.result.comment }}
+              </td>
+            </tr>
+            {% endif %}
             {% endfor %}
           </tbody>
         </table>

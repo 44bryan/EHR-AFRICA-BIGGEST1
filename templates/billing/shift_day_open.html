@@ -1,0 +1,133 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Open Working Day — {{ today|date:"d M Y" }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-door-open text-success fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Open Working Day for All Cashiers</h5>
+      <div class="text-muted small">{{ today|date:"l, d F Y" }} — Chief Cashier action</div>
+    </div>
+  </div>
+  <a href="{% url 'billing:shift_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Shifts
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if all_open %}
+<div class="alert alert-success d-flex align-items-center gap-2">
+  <i class="bi bi-check-circle-fill fs-5"></i>
+  <div>All cashiers already have an open shift for today. The day is already started.</div>
+</div>
+{% endif %}
+
+<form method="post">
+  {% csrf_token %}
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom fw-semibold small">
+      <i class="bi bi-cash-coin me-2 text-success"></i>Default Opening Float
+    </div>
+    <div class="card-body">
+      <div class="row g-2 align-items-center">
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Default cash float for all cashiers (FCFA)</label>
+          <input type="number" name="default_float" id="defaultFloat" class="form-control"
+                 value="50000" min="0" step="1000">
+          <div class="form-text">This will pre-fill all cashiers below. You can override per cashier.</div>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="applyDefault()">
+            Apply to All
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom fw-semibold small">
+      <i class="bi bi-people me-2 text-primary"></i>Cashier Roster — {{ today|date:"d M Y" }}
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Cashier</th>
+            <th>Role</th>
+            <th>Status Today</th>
+            <th style="width:220px;">Opening Float (FCFA)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in cashier_info %}
+          <tr class="{% if row.existing_shift %}table-light{% endif %}">
+            <td class="fw-semibold">
+              <i class="bi bi-person-circle me-1 text-muted"></i>
+              {{ row.cashier.get_full_name|default:row.cashier.username }}
+            </td>
+            <td class="text-muted">{{ row.cashier.get_role_display|default:row.cashier.role }}</td>
+            <td>
+              {% if row.existing_shift %}
+                <span class="badge
+                  {% if row.existing_shift.status == 'OPEN' %}bg-success
+                  {% elif row.existing_shift.status == 'SUBMITTED' %}bg-info text-dark
+                  {% elif row.existing_shift.status == 'VERIFIED' %}bg-secondary
+                  {% else %}bg-warning text-dark{% endif %}">
+                  {{ row.existing_shift.get_status_display }}
+                </span>
+                <span class="text-muted ms-2" style="font-size:.72rem;">
+                  Float: {{ row.existing_shift.opening_cash|floatformat:0|intcomma }} FCFA
+                </span>
+              {% else %}
+                <span class="badge bg-light text-secondary border">Not started</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.existing_shift %}
+                <span class="text-muted small fst-italic">Already open</span>
+              {% else %}
+                <input type="number" name="float_{{ row.cashier.id }}"
+                       class="form-control form-control-sm cashier-float"
+                       value="50000" min="0" step="1000">
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="text-center text-muted py-4">
+              <i class="bi bi-person-x fs-3 d-block mb-2"></i>
+              No active cashiers found. Add cashier accounts first.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if not all_open %}
+  <div class="d-flex justify-content-end gap-2">
+    <a href="{% url 'billing:shift_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    <button type="submit" class="btn btn-success fw-bold px-4">
+      <i class="bi bi-door-open me-2"></i>Open Day for All Cashiers
+    </button>
+  </div>
+  {% endif %}
+
+</form>
+
+<script>
+function applyDefault() {
+  var val = document.getElementById('defaultFloat').value;
+  document.querySelectorAll('.cashier-float').forEach(function(el) {
+    el.value = val;
+  });
+}
+</script>
+{% endblock %}

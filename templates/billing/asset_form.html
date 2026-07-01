@@ -1,0 +1,140 @@
+{% extends 'layouts/base_authenticated.html' %}
+
+{% block title %}{% if asset %}Edit Asset{% else %}Add Asset{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <div>
+        <nav aria-label="breadcrumb"><ol class="breadcrumb mb-1 small">
+          <li class="breadcrumb-item"><a href="{% url 'billing:asset_list' %}">Asset Register</a></li>
+          <li class="breadcrumb-item active">{% if asset %}Edit{% else %}New Asset{% endif %}</li>
+        </ol></nav>
+        <h4 class="mb-0 fw-bold">
+          <i class="bi bi-building-gear text-primary me-2"></i>
+          {% if asset %}Edit: {{ asset.name }}{% else %}Add New Asset{% endif %}
+        </h4>
+      </div>
+    </div>
+
+    {% if messages %}
+    {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="row g-3">
+            {# Asset Identity #}
+            <div class="col-12">
+              <div class="text-muted small fw-semibold text-uppercase mb-2" style="letter-spacing:.05em;">Asset Identity</div>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Asset Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required
+                     value="{{ asset.name|default:'' }}" placeholder="e.g. Zeiss OPMI Lumera T Microscope">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+              <select name="category" class="form-select" required>
+                {% for v, label in categories %}
+                <option value="{{ v }}" {% if asset and asset.category == v %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Serial Number / Asset Tag</label>
+              <input type="text" name="serial_number" class="form-control"
+                     value="{{ asset.serial_number|default:'' }}" placeholder="SN or internal tag">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Location / Department</label>
+              <input type="text" name="location" class="form-control"
+                     value="{{ asset.location|default:'' }}" placeholder="e.g. Theatre 1, OPD, Pharmacy">
+            </div>
+
+            {# Financial Details #}
+            <div class="col-12 mt-2">
+              <div class="text-muted small fw-semibold text-uppercase mb-2" style="letter-spacing:.05em;">Financial Details</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Purchase Cost (XAF) <span class="text-danger">*</span></label>
+              <input type="number" name="purchase_cost" class="form-control" min="0" step="1" required
+                     value="{{ asset.purchase_cost|default:'' }}" placeholder="0">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Purchase Date <span class="text-danger">*</span></label>
+              <input type="date" name="purchase_date" class="form-control" required
+                     value="{{ asset.purchase_date|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Useful Life (years) <span class="text-danger">*</span></label>
+              <input type="number" name="useful_life_years" class="form-control" min="1" max="50" required
+                     value="{{ asset.useful_life_years|default:5 }}" placeholder="5">
+              <div class="form-text">Used for straight-line depreciation</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Residual / Salvage Value (XAF)</label>
+              <input type="number" name="residual_value" class="form-control" min="0" step="1"
+                     value="{{ asset.residual_value|default:0 }}" placeholder="0">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Supplier / Vendor</label>
+              <input type="text" name="supplier" class="form-control"
+                     value="{{ asset.supplier|default:'' }}" placeholder="e.g. Zeiss Africa GmbH">
+            </div>
+
+            {# Status & Notes #}
+            <div class="col-12 mt-2">
+              <div class="text-muted small fw-semibold text-uppercase mb-2" style="letter-spacing:.05em;">Status &amp; Notes</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Status</label>
+              <select name="status" class="form-select">
+                {% for v, label in statuses %}
+                <option value="{{ v }}" {% if asset and asset.status == v %}selected{% elif not asset and v == 'ACTIVE' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Warranty Expiry</label>
+              <input type="date" name="warranty_expiry" class="form-control"
+                     value="{{ asset.warranty_expiry|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description / Notes</label>
+              <textarea name="description" class="form-control" rows="2"
+                        placeholder="Model details, condition, service history, etc.">{{ asset.description|default:'' }}</textarea>
+            </div>
+          </div>
+
+          {% if asset %}
+          {# Show depreciation summary when editing #}
+          <div class="alert alert-info mt-4 py-2 small">
+            <strong>Depreciation Summary:</strong>
+            Annual: <strong>{{ asset.annual_depreciation|floatformat:0 }} XAF</strong> &nbsp;|&nbsp;
+            Accumulated: <strong>{{ asset.accumulated_depreciation|floatformat:0 }} XAF</strong> &nbsp;|&nbsp;
+            Net Book Value: <strong>{{ asset.net_book_value|floatformat:0 }} XAF</strong>
+            {% if asset.is_fully_depreciated %}<span class="badge bg-warning text-dark ms-2">Fully Depreciated</span>{% endif %}
+          </div>
+          {% endif %}
+
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check2 me-1"></i>{% if asset %}Save Changes{% else %}Add Asset{% endif %}
+            </button>
+            <a href="{% url 'billing:asset_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

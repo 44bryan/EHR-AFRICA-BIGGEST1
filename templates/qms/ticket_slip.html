@@ -166,6 +166,7 @@
     <!-- Tier badge -->
     <div class="t-center" style="margin-bottom:4px;">
       <span class="t-tier">{{ token.get_service_tier_display }}</span>
+      {% if token.is_insured %}<span class="t-tier" style="margin-left:4px;border-color:#2e7d32;color:#2e7d32;">INSURED</span>{% endif %}
     </div>
 
     <hr class="t-dashes">
@@ -187,10 +188,22 @@
       <span class="t-field-lbl">Issued  :</span>
       <span>{{ token.issued_by.get_full_name|default:"Staff" }}</span>
     </div>
+    {% if token.is_insured %}
+    <div class="t-field" style="border:1px solid #2e7d32;padding:2px 4px;border-radius:2px;background:#f1f8e9;">
+      <span class="t-field-lbl" style="color:#2e7d32;">Insurer :</span>
+      <span style="color:#2e7d32;font-weight:bold;">{{ token.insurance_company|default:"Insured" }}</span>
+    </div>
+    {% endif %}
 
     <hr class="t-dashes">
 
     <!-- First stop instruction -->
+    {% if is_free_followup %}
+    <div class="t-stop" style="border-color:#2e7d32;color:#2e7d32;">
+      FREE FOLLOW-UP<br>
+      <span style="font-size:9px;font-weight:normal;">GO DIRECTLY TO CLINIC</span>
+    </div>
+    {% else %}
     <div class="t-stop">
       FIRST STOP:
       {% if token.service_tier == 'STANDARD' %}
@@ -201,14 +214,23 @@
         EXPRESS CASHIER
       {% endif %}
     </div>
+    {% endif %}
 
     <hr class="t-dashes">
 
     <!-- Watch-screen message -->
+    {% if is_free_followup %}
+    <div class="t-msg">
+      No payment required today.<br>
+      Wait for <strong>{{ token.token_number }}</strong> on the screen.<br>
+      <span style="font-size:9px;">Consultation still valid — within follow-up period.</span>
+    </div>
+    {% else %}
     <div class="t-msg">
       Watch the display screen.<br>
       Proceed when <strong>{{ token.token_number }}</strong> is called.
     </div>
+    {% endif %}
 
     {% if HOSPITAL_PHONE %}
     <hr class="t-dashes">
@@ -223,10 +245,10 @@
 
   <!-- Screen-only buttons -->
   <div class="d-flex gap-2 mt-3 d-print-none">
-    <button class="btn btn-dark" onclick="window.print()">
+    <button class="btn btn-primary" onclick="window.print()">
       <i class="bi bi-printer me-1"></i>Print Ticket
     </button>
-    <a href="{% url 'qms:gate_issue' %}" class="btn btn-outline-secondary">
+    <a href="{% url 'qms:gate_issue' %}" class="btn btn-outline-secondary" hx-boost="false">
       <i class="bi bi-plus-circle me-1"></i>New Ticket
     </a>
   </div>

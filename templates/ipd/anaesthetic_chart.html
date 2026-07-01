@@ -1,0 +1,310 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load static %}
+
+{% block title %}Anaesthetic Chart — {{ patient.full_name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'ipd:dashboard' %}">IPD</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'ipd:theatre_board' %}">Theatre Board</a></li>
+    <li class="breadcrumb-item active">Anaesthetic Chart</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+  <div>
+    <h1 class="h4 mb-0">Anaesthetic Chart</h1>
+    <p class="text-muted mb-0">{{ patient.full_name }} · {{ patient.patient_id }}
+      <span class="badge bg-primary bg-opacity-10 text-primary ms-2">JCI ASC.5/6</span>
+    </p>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="row g-4">
+
+    <!-- Pre-op Assessment -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header py-2" style="background:#f8fafc;">
+          <strong class="fs-7 text-uppercase letter-spacing-1">Pre-Operative Assessment</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">ASA Grade</label>
+              <select name="asa_grade" class="form-select form-select-sm">
+                <option value="">— Select —</option>
+                {% for val, label in asa_grades %}
+                  <option value="{{ val }}" {% if record and record.asa_grade == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Weight (kg)</label>
+              <input type="number" step="0.1" name="weight_kg" class="form-control form-control-sm"
+                     value="{{ record.weight_kg|default:'' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Height (cm)</label>
+              <input type="number" step="0.1" name="height_cm" class="form-control form-control-sm"
+                     value="{{ record.height_cm|default:'' }}">
+            </div>
+            {% if record and record.bmi %}
+            <div class="col-md-2">
+              <label class="form-label">BMI</label>
+              <div class="form-control form-control-sm bg-light border-0">{{ record.bmi|floatformat:1 }}</div>
+            </div>
+            {% endif %}
+            <div class="col-md-3">
+              <label class="form-label">Last Oral Intake</label>
+              <input type="datetime-local" name="last_oral_intake" class="form-control form-control-sm"
+                     value="{{ record.last_oral_intake|date:'Y-m-d\TH:i'|default:'' }}">
+            </div>
+          </div>
+
+          <hr class="my-3">
+          <div class="fw-semibold fs-7 mb-2 text-uppercase" style="color:#64748b;letter-spacing:.07em;">Airway Assessment</div>
+          <div class="row g-3">
+            <div class="col-md-2">
+              <label class="form-label">Mallampati</label>
+              <select name="mallampati_score" class="form-select form-select-sm">
+                <option value="">—</option>
+                <option value="I" {% if record and record.mallampati_score == 'I' %}selected{% endif %}>I</option>
+                <option value="II" {% if record and record.mallampati_score == 'II' %}selected{% endif %}>II</option>
+                <option value="III" {% if record and record.mallampati_score == 'III' %}selected{% endif %}>III</option>
+                <option value="IV" {% if record and record.mallampati_score == 'IV' %}selected{% endif %}>IV</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Mouth Opening</label>
+              <input type="text" name="mouth_opening" class="form-control form-control-sm"
+                     placeholder=">4 cm" value="{{ record.mouth_opening|default:'' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Neck Mobility</label>
+              <input type="text" name="neck_mobility" class="form-control form-control-sm"
+                     placeholder="Full / Limited" value="{{ record.neck_mobility|default:'' }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Thyromental Dist.</label>
+              <input type="text" name="thyromental_distance" class="form-control form-control-sm"
+                     placeholder=">6.5 cm" value="{{ record.thyromental_distance|default:'' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label d-block">Difficult Airway</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="difficult_airway_predicted"
+                       {% if record and record.difficult_airway_predicted %}checked{% endif %}>
+                <label class="form-check-label fs-7">Anticipated difficult airway</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Airway Notes</label>
+              <textarea name="airway_notes" class="form-control form-control-sm" rows="2">{{ record.airway_notes|default:'' }}</textarea>
+            </div>
+          </div>
+
+          <hr class="my-3">
+          <div class="fw-semibold fs-7 mb-2 text-uppercase" style="color:#64748b;letter-spacing:.07em;">Allergy & Medication Review</div>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="allergies_reviewed"
+                       {% if record and record.allergies_reviewed %}checked{% endif %}>
+                <label class="form-check-label fs-7">Allergies reviewed</label>
+              </div>
+              <textarea name="anaesthetic_allergies" class="form-control form-control-sm mt-2" rows="2"
+                        placeholder="Known anaesthetic-related allergies...">{{ record.anaesthetic_allergies|default:'' }}</textarea>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="current_medications_reviewed"
+                       {% if record and record.current_medications_reviewed %}checked{% endif %}>
+                <label class="form-check-label fs-7">Current medications reviewed</label>
+              </div>
+              <textarea name="medications_to_continue" class="form-control form-control-sm mt-2" rows="2"
+                        placeholder="Medications to continue...">{{ record.medications_to_continue|default:'' }}</textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Medications to STOP</label>
+              <textarea name="medications_to_stop" class="form-control form-control-sm" rows="2"
+                        placeholder="Medications to stop pre-op...">{{ record.medications_to_stop|default:'' }}</textarea>
+            </div>
+          </div>
+
+          <hr class="my-3">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Pre-medication Given</label>
+              <textarea name="premedication_given" class="form-control form-control-sm" rows="2"
+                        placeholder="e.g. Midazolam 2mg IV at 08:30">{{ record.premedication_given|default:'' }}</textarea>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Anaesthesia Type</label>
+              <select name="anaesthesia_type" class="form-select form-select-sm">
+                <option value="">— Select —</option>
+                <option value="LOCAL" {% if record and record.anaesthesia_type == 'LOCAL' %}selected{% endif %}>Local</option>
+                <option value="REGIONAL" {% if record and record.anaesthesia_type == 'REGIONAL' %}selected{% endif %}>Regional Block</option>
+                <option value="GENERAL" {% if record and record.anaesthesia_type == 'GENERAL' %}selected{% endif %}>General (GA)</option>
+                <option value="SEDATION" {% if record and record.anaesthesia_type == 'SEDATION' %}selected{% endif %}>MAC / Sedation</option>
+                <option value="COMBINED" {% if record and record.anaesthesia_type == 'COMBINED' %}selected{% endif %}>Combined</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <div class="mt-4">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="fasting_adequate"
+                         {% if record and record.fasting_adequate %}checked{% endif %}>
+                  <label class="form-check-label fs-7">Fasting criteria met</label>
+                </div>
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" name="anaesthetic_consent_obtained"
+                         {% if record and record.anaesthetic_consent_obtained %}checked{% endif %}>
+                  <label class="form-check-label fs-7">Anaesthetic consent obtained</label>
+                </div>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Planned Agents</label>
+              <input type="text" name="planned_agents" class="form-control form-control-sm"
+                     placeholder="e.g. Propofol induction, Sevoflurane maintenance"
+                     value="{{ record.planned_agents|default:'' }}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if mode == 'detail' %}
+    <!-- Intraoperative -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header py-2" style="background:#f8fafc;">
+          <strong class="fs-7 text-uppercase">Intraoperative Monitoring</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">Induction Agent</label>
+              <input type="text" name="induction_agent" class="form-control form-control-sm"
+                     value="{{ record.induction_agent|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Induction Dose</label>
+              <input type="text" name="induction_dose" class="form-control form-control-sm"
+                     value="{{ record.induction_dose|default:'' }}" placeholder="e.g. 2 mg/kg">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Maintenance Agent</label>
+              <input type="text" name="maintenance_agent" class="form-control form-control-sm"
+                     value="{{ record.maintenance_agent|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Airway Management</label>
+              <input type="text" name="airway_management" class="form-control form-control-sm"
+                     value="{{ record.airway_management|default:'' }}" placeholder="e.g. LMA #3">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Analgesics</label>
+              <input type="text" name="analgesics_used" class="form-control form-control-sm"
+                     value="{{ record.analgesics_used|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Muscle Relaxants</label>
+              <input type="text" name="muscle_relaxants_used" class="form-control form-control-sm"
+                     value="{{ record.muscle_relaxants_used|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Reversal Agent</label>
+              <input type="text" name="reversal_agents" class="form-control form-control-sm"
+                     value="{{ record.reversal_agents|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Total Anaesthesia Time (min)</label>
+              <input type="number" name="total_duration_minutes" class="form-control form-control-sm"
+                     value="{{ record.total_duration_minutes|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Blood Loss (mL)</label>
+              <input type="number" name="estimated_blood_loss_ml" class="form-control form-control-sm"
+                     value="{{ record.estimated_blood_loss_ml|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">IV Fluids Given</label>
+              <input type="text" name="iv_fluids_given" class="form-control form-control-sm"
+                     placeholder="e.g. 500mL NS + 250mL RL"
+                     value="{{ record.iv_fluids_given|default:'' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Intraop Monitoring Notes</label>
+              <textarea name="monitoring_notes" class="form-control form-control-sm" rows="3">{{ record.monitoring_notes|default:'' }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Intraoperative Complications</label>
+              <textarea name="intraoperative_complications" class="form-control form-control-sm" rows="2"
+                        placeholder="None / describe...">{{ record.intraoperative_complications|default:'' }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Post-operative -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header py-2" style="background:#f8fafc;">
+          <strong class="fs-7 text-uppercase">Post-Operative Recovery</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">Recovery Time (min)</label>
+              <input type="number" name="recovery_time_mins" class="form-control form-control-sm"
+                     value="{{ record.recovery_time_mins|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Pain Score (0-10)</label>
+              <input type="number" min="0" max="10" name="pain_score_on_discharge" class="form-control form-control-sm"
+                     value="{{ record.pain_score_on_discharge|default:'' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label d-block">PONV</label>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="post_op_nausea_vomiting"
+                       {% if record and record.post_op_nausea_vomiting %}checked{% endif %}>
+                <label class="form-check-label fs-7">Post-op nausea/vomiting</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Post-op Instructions</label>
+              <textarea name="post_op_instructions" class="form-control form-control-sm" rows="3">{{ record.post_op_instructions|default:'' }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Post-operative Complications</label>
+              <textarea name="post_op_complications" class="form-control form-control-sm" rows="2"
+                        placeholder="None / describe...">{{ record.post_op_complications|default:'' }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="col-12 d-flex justify-content-end gap-2">
+      <a href="{% url 'ipd:theatre_board' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to Theatre Board
+      </a>
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-lg me-1"></i>
+        {% if mode == 'create' %}Save Pre-Op Assessment{% else %}Update Record{% endif %}
+      </button>
+    </div>
+
+  </div>
+</form>
+{% endblock %}

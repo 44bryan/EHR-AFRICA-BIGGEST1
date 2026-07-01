@@ -201,6 +201,8 @@ class QueueToken(TimeStampedModel):
     wait_time_minutes    = models.PositiveIntegerField(null=True, blank=True)
     service_time_minutes = models.PositiveIntegerField(null=True, blank=True)
     notes           = models.TextField(blank=True)
+    is_insured      = models.BooleanField(default=False)
+    insurance_company = models.CharField(max_length=100, blank=True)
     issued_by       = models.ForeignKey(
         'accounts.User', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='issued_tokens'
@@ -255,6 +257,20 @@ class QueueToken(TimeStampedModel):
             delta = self.completed_at - self.served_at
             self.service_time_minutes = int(delta.total_seconds() / 60)
         self.save()
+
+    @property
+    def visit_type_label(self):
+        """Return the visit type ('NEW', 'FOLLOW_UP', etc.) from the linked Visit."""
+        if self.visit:
+            return self.visit.visit_type
+        return ''
+
+    @property
+    def active_visit(self):
+        """Return the linked Visit if it is still active (not completed/discharged)."""
+        if self.visit and self.visit.status not in ('COMPLETED', 'DISCHARGED', 'CANCELLED'):
+            return self.visit
+        return None
 
     @property
     def display_token_number(self):

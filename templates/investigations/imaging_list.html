@@ -1,0 +1,109 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Imaging Studies{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <h1 class="h3 mb-0"><i class="bi bi-camera me-2 text-primary"></i>Imaging Studies</h1>
+  <a href="{% url 'investigations:imaging_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Register Study
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-sm-4">
+        <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
+               placeholder="Patient name or accession #…" />
+      </div>
+      <div class="col-sm-3">
+        <select name="modality" class="form-select form-select-sm">
+          <option value="">All modalities</option>
+          {% for val, label in modalities %}
+          <option value="{{ val }}" {% if modality == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <select name="reported" class="form-select form-select-sm">
+          <option value="">All statuses</option>
+          <option value="0" {% if reported == '0' %}selected{% endif %}>Pending Report</option>
+          <option value="1" {% if reported == '1' %}selected{% endif %}>Reported</option>
+        </select>
+      </div>
+      <div class="col-sm-1">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Go</button>
+      </div>
+      <div class="col-sm-2">
+        <a href="{% url 'investigations:imaging_list' %}" class="btn btn-outline-secondary btn-sm w-100">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:0.85rem;">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Patient</th>
+          <th>Modality</th>
+          <th>Description</th>
+          <th>Accession #</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for study in page_obj %}
+        <tr>
+          <td class="text-muted">{{ study.study_date|date:"d/m/Y" }}</td>
+          <td>
+            <div><a href="{% url 'patients:detail' study.patient.patient_id %}">{{ study.patient.full_name }}</a></div>
+            <small class="text-muted">{{ study.patient.patient_id }}</small>
+          </td>
+          <td><span class="badge bg-primary">{{ study.get_modality_display }}</span></td>
+          <td>{{ study.description }}</td>
+          <td class="text-muted small">{{ study.accession_number|default:"—" }}</td>
+          <td>
+            {% if study.is_reported %}
+            <span class="badge bg-success">Reported</span>
+            {% else %}
+            <span class="badge bg-warning text-dark">Pending</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{% url 'investigations:imaging_detail' study.id %}"
+                 class="btn btn-sm btn-outline-secondary">View</a>
+              {% if study.viewer_url %}
+              <a href="{{ study.viewer_url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-display me-1"></i>Open Viewer
+              </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No imaging studies found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.has_other_pages %}
+  <div class="card-footer bg-white d-flex justify-content-center">
+    <nav><ul class="pagination pagination-sm mb-0">
+      {% if page_obj.has_previous %}
+      <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ q }}&modality={{ modality }}&reported={{ reported }}">‹</a></li>
+      {% endif %}
+      <li class="page-item active"><a class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</a></li>
+      {% if page_obj.has_next %}
+      <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ q }}&modality={{ modality }}&reported={{ reported }}">›</a></li>
+      {% endif %}
+    </ul></nav>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

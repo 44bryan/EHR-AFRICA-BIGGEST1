@@ -7,19 +7,22 @@ from .models import User
 
 
 class LoginForm(AuthenticationForm):
-    username = forms.EmailField(
-        label=_('Email'),
-        widget=forms.EmailInput(attrs={
-            'class': 'form-control',
-            'placeholder': 'your@email.com',
+    username = forms.CharField(
+        label=_('Username'),
+        widget=forms.TextInput(attrs={
+            'class': 'form-control form-control-lg',
+            'placeholder': 'Enter your username',
             'autofocus': True,
+            'autocomplete': 'username',
         })
     )
     password = forms.CharField(
         label=_('Password'),
         widget=forms.PasswordInput(attrs={
-            'class': 'form-control',
+            'class': 'form-control form-control-lg',
             'placeholder': '••••••••',
+            'autocomplete': 'current-password',
+            'id': 'id_password',
         })
     )
 
@@ -27,11 +30,7 @@ class LoginForm(AuthenticationForm):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()
         self.helper.form_method = 'post'
-        self.helper.layout = Layout(
-            Field('username'),
-            Field('password'),
-            Submit('submit', 'Sign In', css_class='btn btn-primary w-100 btn-lg mt-3'),
-        )
+        self.helper.form_tag = False
 
 
 class UserCreateForm(forms.ModelForm):
@@ -42,7 +41,8 @@ class UserCreateForm(forms.ModelForm):
         model = User
         fields = [
             'first_name', 'last_name', 'email', 'username',
-            'employee_id', 'role', 'cashier_station', 'department', 'phone_number', 'profile_photo',
+            'employee_id', 'role', 'department', 'phone_number', 'profile_photo',
+            'cashier_station', 'consultation_unit',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -51,15 +51,35 @@ class UserCreateForm(forms.ModelForm):
             'username': forms.TextInput(attrs={'class': 'form-control'}),
             'employee_id': forms.TextInput(attrs={'class': 'form-control'}),
             'role': forms.Select(attrs={'class': 'form-select', 'id': 'id_role'}),
-            'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
             'department': forms.Select(attrs={'class': 'form-select'}),
             'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
+            'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
+            'consultation_unit': forms.Select(attrs={'class': 'form-select', 'id': 'id_consultation_unit'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Make email, phone and employee_id optional
+        self.fields['email'].required = False
+        self.fields['phone_number'].required = False
+        self.fields['employee_id'].required = False
 
     def clean_cashier_station(self):
         # Always return a valid non-empty value — default to 'ALL' for non-cashier roles
         val = self.cleaned_data.get('cashier_station')
         return val if val else 'ALL'
+
+    def clean_employee_id(self):
+        val = self.cleaned_data.get('employee_id', '').strip()
+        if not val:
+            return None
+        # Check uniqueness only if a value is provided
+        qs = User.objects.filter(employee_id=val)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('A user with this employee ID already exists.')
+        return val
 
     def clean_password2(self):
         p1 = self.cleaned_data.get('password1')
@@ -71,7 +91,7 @@ class UserCreateForm(forms.ModelForm):
     def save(self, commit=True):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data['password1'])
-        user.must_change_password = True
+        user.must_change_password = False
         # Guarantee cashier_station is never empty — the DB column is NOT NULL
         if not user.cashier_station:
             user.cashier_station = 'ALL'
@@ -85,16 +105,18 @@ class UserEditForm(forms.ModelForm):
         model = User
         fields = [
             'first_name', 'last_name', 'email',
-            'role', 'cashier_station', 'department', 'phone_number', 'profile_photo', 'is_active',
+            'role', 'department', 'phone_number', 'profile_photo', 'is_active',
+            'cashier_station', 'consultation_unit',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
             'last_name': forms.TextInput(attrs={'class': 'form-control'}),
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
             'role': forms.Select(attrs={'class': 'form-select', 'id': 'id_role'}),
-            'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
             'department': forms.Select(attrs={'class': 'form-select'}),
             'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
+            'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
+            'consultation_unit': forms.Select(attrs={'class': 'form-select', 'id': 'id_consultation_unit'}),
         }
 
     def clean_cashier_station(self):

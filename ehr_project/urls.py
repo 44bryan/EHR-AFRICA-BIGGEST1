@@ -2,6 +2,13 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.shortcuts import render
+
+# Custom error handlers
+def handler403(request, exception=None):
+    return render(request, '403.html', status=403)
+
+handler403 = handler403
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -32,6 +39,8 @@ urlpatterns = [
     path('reception/', include('apps.reception.urls', namespace='reception')),
     path('notifications/', include('apps.notifications.urls', namespace='notifications')),
     path('outreach/', include('apps.outreach.urls', namespace='outreach')),
+    path('departments/', include('apps.departments.urls', namespace='departments')),
+    path('portal/', include('apps.patient_portal.urls', namespace='portal')),
 ]
 
 if settings.DEBUG:

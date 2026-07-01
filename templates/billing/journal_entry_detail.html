@@ -1,0 +1,77 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}{{ entry.entry_number }}{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Back to Journal
+  </a>
+  <h4 class="fw-bold mb-0">{{ entry.entry_number }}
+    {% if entry.is_reversal %}<span class="badge bg-warning ms-2">Reversal</span>{% endif %}
+    {% if not entry.is_posted %}<span class="badge bg-secondary ms-2">Draft</span>{% endif %}
+  </h4>
+  <p class="text-muted small mb-0">{{ entry.description }}</p>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header fw-semibold py-2">Entry Details</div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Entry #</dt><dd class="col-7 fw-semibold font-monospace">{{ entry.entry_number }}</dd>
+          <dt class="col-5 text-muted">Date</dt><dd class="col-7">{{ entry.entry_date|date:"d M Y" }}</dd>
+          <dt class="col-5 text-muted">Reference</dt><dd class="col-7">{{ entry.reference|default:"—" }}</dd>
+          <dt class="col-5 text-muted">Source</dt><dd class="col-7">{{ entry.source_type|default:"manual"|capfirst }}</dd>
+          <dt class="col-5 text-muted">Posted by</dt><dd class="col-7">{{ entry.created_by.get_full_name|default:"System" }}</dd>
+          <dt class="col-5 text-muted">Posted at</dt><dd class="col-7">{{ entry.created_at|date:"d/m/Y H:i" }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold">Journal Lines</span>
+        {% if entry.is_balanced %}
+          <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Balanced</span>
+        {% else %}
+          <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Unbalanced</span>
+        {% endif %}
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>#</th>
+              <th>Account</th>
+              <th>Description</th>
+              <th class="text-end">Debit (XAF)</th>
+              <th class="text-end">Credit (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in entry.lines.all %}
+            <tr>
+              <td class="text-muted small">{{ line.sequence }}</td>
+              <td><span class="badge bg-light text-dark font-monospace me-1">{{ line.account.code }}</span>{{ line.account.name }}</td>
+              <td class="text-muted small">{{ line.description|default:"—" }}</td>
+              <td class="text-end fw-semibold text-success">{% if line.debit_amount %}{{ line.debit_amount|floatformat:0|intcomma }}{% endif %}</td>
+              <td class="text-end fw-semibold text-danger">{% if line.credit_amount %}{{ line.credit_amount|floatformat:0|intcomma }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td colspan="3" class="text-end">Totals</td>
+              <td class="text-end text-success">{{ entry.total_debits|floatformat:0|intcomma }}</td>
+              <td class="text-end text-danger">{{ entry.total_credits|floatformat:0|intcomma }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

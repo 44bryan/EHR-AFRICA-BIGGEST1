@@ -30,10 +30,12 @@ _ROLE_GROUPS = {
 
 # ── Roles that can VIEW patient records (read-only access) ───────────────────
 CAN_VIEW_PATIENT = (
+    # Leadership / admin oversight
     UserRole.SUPER_ADMIN,
     UserRole.CEO,
     UserRole.ADMIN_DIRECTOR,
     UserRole.MEDICAL_DIRECTOR,
+    # Clinical — doctors
     UserRole.OPHTHALMOLOGIST,
     UserRole.RETINA_SPECIALIST,
     UserRole.GLAUCOMA_SPECIALIST,
@@ -45,22 +47,32 @@ CAN_VIEW_PATIENT = (
     UserRole.NEURO_OPHTHALMOLOGIST,
     UserRole.UVEITIS_SPECIALIST,
     UserRole.OPTOMETRIST,
-    UserRole.EXPRESS_OPHTHALMOLOGIST,
-    UserRole.INSURANCE_OPHTHALMOLOGIST,
+    UserRole.LOW_VISION_SPECIALIST,
     UserRole.INTERN,
+    UserRole.ANAESTHETIST,
+    UserRole.ORTHOPTIST,
+    # Clinical — nursing & paramedical
     UserRole.NURSE,
     UserRole.THEATRE_NURSE,
     UserRole.WARD_NURSE,
     UserRole.COUNSELING_NURSE,
+    UserRole.CONSULTATION_NURSE,
     UserRole.INVESTIGATION_TECHNICIAN,
     UserRole.LAB_TECHNICIAN,
+    # Clinical — dispensing (tab-restricted to prescriptions/medications only)
     UserRole.PHARMACIST,
     UserRole.OPTICAL_DISPENSER,
+    # Admin — patient-facing (tab-restricted to demographics/insurance)
     UserRole.RECEPTIONIST,
     UserRole.ADMISSION_OFFICER,
+    UserRole.MEDICAL_RECORDS,
+    # Billing — invoice/patient lookup
     UserRole.BILLING_OFFICER,
     UserRole.CASHIER,
-    UserRole.MEDICAL_RECORDS,
+    UserRole.CHIEF_CASHIER,
+    UserRole.ACCOUNTANT,
+    UserRole.SENIOR_ACCOUNTANT,
+    UserRole.FINANCE_DIRECTOR,
 )
 
 # ── Roles that can CREATE consultations ─────────────────────────────────────
@@ -78,8 +90,7 @@ CAN_CREATE_CONSULTATION = (
     UserRole.NEURO_OPHTHALMOLOGIST,
     UserRole.UVEITIS_SPECIALIST,
     UserRole.OPTOMETRIST,
-    UserRole.EXPRESS_OPHTHALMOLOGIST,
-    UserRole.INSURANCE_OPHTHALMOLOGIST,
+    UserRole.LOW_VISION_SPECIALIST,
     UserRole.INTERN,
 )
 
@@ -98,12 +109,14 @@ CAN_MANAGE_VISIT = (
     UserRole.RETINA_SPECIALIST,
     UserRole.GLAUCOMA_SPECIALIST,
     UserRole.PEDIATRIC_OPHTHALMOLOGIST,
+    UserRole.PEDIATRIC_REFRACTIONIST,
     UserRole.CATARACT_SURGEON,
     UserRole.CORNEA_SPECIALIST,
     UserRole.OCULOPLASTICS_SURGEON,
     UserRole.NEURO_OPHTHALMOLOGIST,
     UserRole.UVEITIS_SPECIALIST,
     UserRole.OPTOMETRIST,
+    UserRole.LOW_VISION_SPECIALIST,
     UserRole.INTERN,
 )
 
@@ -113,8 +126,14 @@ CAN_MANAGE_BILLING = (
     UserRole.MEDICAL_DIRECTOR,
     UserRole.BILLING_OFFICER,
     UserRole.CASHIER,
+    UserRole.CHIEF_CASHIER,
+    UserRole.ACCOUNTANT,
+    UserRole.SENIOR_ACCOUNTANT,
     UserRole.RECEPTIONIST,
     UserRole.ADMIN,
+    UserRole.ADMIN_DIRECTOR,
+    UserRole.CEO,
+    UserRole.FINANCE_DIRECTOR,
 )
 
 # ── Roles that can access QMS / queue management ─────────────────────────────

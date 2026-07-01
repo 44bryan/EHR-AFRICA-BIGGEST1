@@ -1,0 +1,370 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Clinic Nurse Workstation{% endblock %}
+
+{% block extra_css %}
+<style>
+  .patient-card { transition: box-shadow 0.15s; cursor: default; }
+  .patient-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12) !important; }
+  .token-badge { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Page header ── #}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h1 class="h4 mb-0 fw-bold">
+      <i class="bi bi-person-badge me-2 text-info"></i>Clinic Nurse Workstation
+    </h1>
+    <div class="text-muted small">
+      {{ today|date:"l, d F Y" }}
+      {% if dept %}&mdash; <strong>{{ dept.name }}</strong>{% endif %}
+      &nbsp;
+      {% if qms_on %}
+        <span class="badge bg-info text-dark">QMS Active</span>
+      {% else %}
+        <span class="badge bg-secondary">QMS Off</span>
+      {% endif %}
+    </div>
+  </div>
+  {# Dept switcher for Medical Director / Super Admin #}
+  {% if all_clinical_depts %}
+  <form method="get" class="d-flex gap-2 align-items-center">
+    <select name="dept" class="form-select form-select-sm" style="min-width:180px;" onchange="this.form.submit()">
+      <option value="">— Select Department —</option>
+      {% for d in all_clinical_depts %}
+      <option value="{{ d.code }}" {% if d.code == dept_code %}selected{% endif %}>{{ d.name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% endif %}
+</div>
+
+{# ── Summary badges ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ waiting_count }}</div>
+      <div class="text-muted small">Waiting</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-primary mb-0">{{ in_consult_count }}</div>
+      <div class="text-muted small">In Consultation</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-success mb-0">{{ completed_today }}</div>
+      <div class="text-muted small">Completed Today</div>
+    </div>
+  </div>
+</div>
+
+{# ── No department configured ── #}
+{% if not dept_code %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle me-2"></i>
+  No department is configured for your account. Please ask your administrator to assign you to a department.
+</div>
+{% endif %}
+
+{# ============================================================ #}
+{# ── WAITING QUEUE ────────────────────────────────────────── #}
+{# ============================================================ #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-bold"><i class="bi bi-hourglass-split text-warning me-2"></i>Waiting Queue</h6>
+    <span class="badge bg-warning text-dark">{{ waiting_count }} patient{{ waiting_count|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    {% if qms_on %}
+      {# ─── QMS ON: show QueueTokens ─── #}
+      {% if waiting_tokens %}
+      <div class="list-group list-group-flush">
+        {% for tok in waiting_tokens %}
+        <div class="list-group-item patient-card border-0 border-bottom px-3 py-3"
+             id="token-row-{{ tok.pk }}">
+          <div class="d-flex align-items-center gap-3">
+            {# Token number badge #}
+            <div class="token-badge text-primary" style="min-width:52px;text-align:center;">
+              {{ tok.token_number }}
+            </div>
+            {# Patient info #}
+            <div class="flex-grow-1">
+              <div class="fw-semibold">{{ tok.patient.full_name }}</div>
+              <div class="text-muted small">
+                {{ tok.patient.patient_id }}
+                {% if tok.active_visit %}
+                  &bull; Visit {{ tok.active_visit.visit_number }}
+                {% endif %}
+              </div>
+              <div class="mt-1">
+                {% if tok.status == 'WAITING' %}
+                  <span class="badge bg-warning text-dark">Waiting</span>
+                {% elif tok.status == 'CALLED' %}
+                  <span class="badge bg-info">Called</span>
+                {% elif tok.status == 'SERVING' %}
+                  <span class="badge bg-primary">Serving</span>
+                {% endif %}
+                {% if tok.priority %}
+                  <span class="badge bg-danger ms-1">Priority</span>
+                {% endif %}
+              </div>
+            </div>
+            {# Call button #}
+            {% if tok.active_visit and tok.status != 'SERVING' %}
+            <button class="btn btn-primary btn-sm call-btn"
+                    data-visit="{{ tok.active_visit.pk }}"
+                    data-row="token-row-{{ tok.pk }}">
+              <i class="bi bi-megaphone me-1"></i>Call
+            </button>
+            {% elif tok.status == 'SERVING' %}
+            <span class="text-success small fw-semibold"><i class="bi bi-check-circle me-1"></i>In Consult</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-check-circle fs-2 d-block mb-2 text-success"></i>
+        No patients waiting in the queue right now.
+      </div>
+      {% endif %}
+
+    {% else %}
+      {# ─── QMS OFF: show Visits ─── #}
+      {% if waiting_visits %}
+      <div class="list-group list-group-flush">
+        {% for v in waiting_visits %}
+        <div class="list-group-item patient-card border-0 border-bottom px-3 py-3"
+             id="visit-row-{{ v.pk }}">
+          <div class="d-flex align-items-center gap-3">
+            <div class="flex-grow-1">
+              <div class="fw-semibold">{{ v.patient.full_name }}</div>
+              <div class="text-muted small">
+                {{ v.patient.patient_id }} &bull; Visit {{ v.visit_number }}
+              </div>
+              <div class="mt-1 text-muted small">
+                Arrived {{ v.visit_date|date:"H:i" }}
+                {% if v.attending_doctor %}
+                  &bull; Dr {{ v.attending_doctor.get_full_name }}
+                {% endif %}
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm call-btn"
+                    data-visit="{{ v.pk }}"
+                    data-row="visit-row-{{ v.pk }}">
+              <i class="bi bi-megaphone me-1"></i>Call Patient
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-check-circle fs-2 d-block mb-2 text-success"></i>
+        No patients waiting right now.
+      </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{# ============================================================ #}
+{# ── IN CONSULTATION ─────────────────────────────────────── #}
+{# ============================================================ #}
+{% if in_consult_visits %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-bold"><i class="bi bi-person-lines-fill text-primary me-2"></i>Currently In Consultation</h6>
+    <span class="badge bg-primary">{{ in_consult_count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Visit</th>
+          <th>Doctor</th>
+          <th>Time Called</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in in_consult_visits %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <small class="text-muted">{{ v.patient.patient_id }}</small>
+          </td>
+          <td class="text-muted small">{{ v.visit_number }}</td>
+          <td class="text-muted small">
+            {% if v.attending_doctor %}Dr {{ v.attending_doctor.get_full_name }}{% else %}—{% endif %}
+          </td>
+          <td class="text-muted small">{{ v.updated_at|date:"H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── READY TO ROUTE — Doctor done, nurse dispatches ── #}
+{% if ready_to_route %}
+<div class="card border-0 shadow-sm mb-4 border-success border-2">
+  <div class="card-header bg-success bg-opacity-10 d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-bold text-success"><i class="bi bi-arrow-right-circle me-2"></i>Doctor Done — Route Patient</h6>
+    <span class="badge bg-success">{{ ready_to_route|length }} patient{{ ready_to_route|length|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="px-3 pt-2 pb-1">
+      <small class="text-muted">Doctor completed consultation. Select where to send the patient next.</small>
+    </div>
+    {% for v in ready_to_route %}
+    <div class="px-3 py-3 border-bottom" id="route-row-{{ v.pk }}">
+      <div class="d-flex align-items-start gap-3 flex-wrap">
+        <div class="flex-grow-1">
+          <div class="fw-semibold">{{ v.patient.full_name }}</div>
+          <div class="text-muted small">{{ v.patient.patient_id }}
+            {% if v.attending_doctor %}&bull; Dr {{ v.attending_doctor.get_full_name }}{% endif %}
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-1">
+          <button class="btn btn-sm btn-outline-danger route-btn" data-visit="{{ v.pk }}" data-dest="PHARMACY">
+            <i class="bi bi-capsule me-1"></i>Pharmacy
+          </button>
+          <button class="btn btn-sm btn-outline-success route-btn" data-visit="{{ v.pk }}" data-dest="CASHIER">
+            <i class="bi bi-cash me-1"></i>Cashier
+          </button>
+          <button class="btn btn-sm btn-outline-warning route-btn" data-visit="{{ v.pk }}" data-dest="LAB">
+            <i class="bi bi-eyedropper me-1"></i>Lab
+          </button>
+          <button class="btn btn-sm btn-outline-primary route-btn" data-visit="{{ v.pk }}" data-dest="IMAGING">
+            <i class="bi bi-camera me-1"></i>Imaging
+          </button>
+          <button class="btn btn-sm btn-outline-info route-btn" data-visit="{{ v.pk }}" data-dest="OPTICAL">
+            <i class="bi bi-eyeglasses me-1"></i>Optical
+          </button>
+          <button class="btn btn-sm btn-outline-secondary route-btn" data-visit="{{ v.pk }}" data-dest="COUNSELING">
+            <i class="bi bi-chat-square-heart me-1"></i>Counseling
+          </button>
+          <button class="btn btn-sm btn-outline-dark route-btn" data-visit="{{ v.pk }}" data-dest="GLAUCOMA">
+            <i class="bi bi-eye me-1"></i>Glaucoma
+          </button>
+          <button class="btn btn-sm btn-outline-dark route-btn" data-visit="{{ v.pk }}" data-dest="RETINA">
+            <i class="bi bi-eye-fill me-1"></i>Retina
+          </button>
+          <button class="btn btn-sm btn-secondary route-btn" data-visit="{{ v.pk }}" data-dest="DISCHARGE">
+            <i class="bi bi-door-open me-1"></i>Done
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Call notification toast ── #}
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:1100;">
+  <div id="callToast" class="toast align-items-center text-bg-success border-0" role="alert" aria-live="polite">
+    <div class="d-flex">
+      <div class="toast-body fw-semibold" id="callToastMsg">Patient called.</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const toast = new bootstrap.Toast(document.getElementById('callToast'), {delay: 4000});
+  const toastMsg = document.getElementById('callToastMsg');
+
+  document.querySelectorAll('.call-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const visitPk = btn.dataset.visit;
+      const rowId = btn.dataset.row;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+      fetch('{% url "consultations:clinic_call" visit_pk="00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', visitPk), {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': '{{ csrf_token }}',
+          'Content-Type': 'application/json',
+        },
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.success) {
+          toastMsg.textContent = data.message;
+          toast.show();
+          const row = document.getElementById(rowId);
+          if (row) {
+            row.style.opacity = '0.4';
+            btn.outerHTML = '<span class="text-success small fw-semibold"><i class="bi bi-check-circle me-1"></i>Called</span>';
+          }
+        } else {
+          alert(data.error || 'Could not call patient. Please refresh.');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-megaphone me-1"></i>Call';
+        }
+      })
+      .catch(function () {
+        alert('Network error. Please refresh.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-megaphone me-1"></i>Call';
+      });
+    });
+  });
+
+  // ── Route patient after consultation ──────────────────────────────────
+  const routeUrlTemplate = '{% url "consultations:nurse_route" visit_pk="00000000-0000-0000-0000-000000000000" %}';
+  document.querySelectorAll('.route-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const visitPk = btn.dataset.visit;
+      const dest = btn.dataset.dest;
+      const row = document.getElementById('route-row-' + visitPk);
+      // Disable all buttons in this row
+      row.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = true; });
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+      const fd = new FormData();
+      fd.append('destination', dest);
+      fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+      fetch(routeUrlTemplate.replace('00000000-0000-0000-0000-000000000000', visitPk), {
+        method: 'POST',
+        body: fd,
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          toastMsg.textContent = data.message;
+          toast.show();
+          if (row) {
+            row.style.opacity = '0.4';
+            row.querySelector('.d-flex.flex-wrap').outerHTML =
+              '<span class="badge bg-success ms-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
+          }
+        } else {
+          alert(data.error || 'Routing failed. Please refresh.');
+          row.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = false; });
+        }
+      })
+      .catch(function(){
+        alert('Network error. Please refresh.');
+        row.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = false; });
+      });
+    });
+  });
+});
+</script>
+{% endblock %}

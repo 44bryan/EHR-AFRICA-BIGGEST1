@@ -1,0 +1,60 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Dispatch Instruments — CSSD{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-send me-2 text-primary"></i>Dispatch Sterile Instruments</h5>
+    <div class="text-muted small">Send ready instruments to theatre or department</div>
+  </div>
+  <a href="{% url 'cssd:dispatch_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Destination Department / Theatre</label>
+            <select name="department" class="form-select" required>
+              <option value="">— Select Department —</option>
+              {% for dept in departments %}
+              <option value="{{ dept.id }}">{{ dept.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Select Sterile Instruments</label>
+            {% if available %}
+            <div class="border rounded p-2" style="max-height:300px;overflow-y:auto;">
+              {% for inst in available %}
+              <div class="form-check py-1 border-bottom">
+                <input class="form-check-input" type="checkbox" name="instruments" value="{{ inst.id }}" id="inst_{{ inst.id }}">
+                <label class="form-check-label small" for="inst_{{ inst.id }}">
+                  <strong>{{ inst.instrument_code }}</strong> — {{ inst.name }}
+                  {% if inst.department %}<span class="text-muted">({{ inst.department }})</span>{% endif %}
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="alert alert-warning border-0">No sterile instruments available for dispatch.</div>
+            {% endif %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes (optional)</label>
+            <textarea name="notes" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" {% if not available %}disabled{% endif %}>
+            <i class="bi bi-send me-1"></i>Dispatch Selected Instruments
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

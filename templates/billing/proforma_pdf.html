@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  @page { size: A4; margin: 1.2cm 1.6cm; }
+
+  .doc-title {
+    text-align: center;
+    font-size: 14pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #0d6efd;
+    margin: 10px 0 4px;
+  }
+  .doc-subtitle {
+    text-align: center;
+    font-size: 9pt;
+    color: #666;
+    margin-bottom: 14px;
+  }
+
+  .info-grid {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 14px;
+  }
+  .info-block {
+    flex: 1;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 8px 12px;
+  }
+  .info-block-title {
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #0d6efd;
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+    margin-bottom: 3px;
+  }
+  .info-label { color: #666; }
+  .info-value { font-weight: 600; }
+
+  /* Itemized table */
+  .items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin-bottom: 10px;
+  }
+  .items-table thead tr {
+    background: #0d6efd;
+    color: #fff;
+  }
+  .items-table th {
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .items-table th.right, .items-table td.right { text-align: right; }
+  .items-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e9ecef;
+    vertical-align: top;
+  }
+  .items-table tbody tr:nth-child(even) td { background: #f8faff; }
+  .items-table .cat-badge {
+    font-size: 7.5pt;
+    color: #888;
+    display: block;
+  }
+
+  /* Totals section */
+  .totals-section {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 14px;
+  }
+  .totals-box {
+    width: 280px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .totals-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 12px;
+    font-size: 9.5pt;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .totals-row.insurance { color: #0891b2; }
+  .totals-row.grand {
+    background: #0d6efd;
+    color: #fff;
+    font-weight: 700;
+    font-size: 11pt;
+    padding: 8px 12px;
+  }
+
+  /* Payment instructions box */
+  .pay-box {
+    background: #fffbeb;
+    border: 2px solid #f59e0b;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+  }
+  .pay-box-title {
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #92400e;
+    margin-bottom: 5px;
+  }
+  .pay-box ol {
+    margin: 0 0 0 14px;
+    padding: 0;
+    font-size: 9pt;
+    color: #44403c;
+    line-height: 1.7;
+  }
+
+  /* Validity notice */
+  .validity-notice {
+    background: #f0f9ff;
+    border-left: 4px solid #0d6efd;
+    padding: 6px 10px;
+    font-size: 8.5pt;
+    color: #1e40af;
+    margin-bottom: 12px;
+  }
+
+  /* Signature area */
+  .sig-area {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+  }
+  .sig-block {
+    text-align: center;
+    width: 160px;
+  }
+  .sig-line {
+    border-top: 1px solid #1a1a1a;
+    margin-top: 28px;
+    padding-top: 4px;
+    font-size: 8pt;
+    color: #555;
+  }
+
+  .watermark-paid {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-35deg);
+    font-size: 72pt;
+    font-weight: 900;
+    color: rgba(34, 197, 94, 0.12);
+    text-transform: uppercase;
+    letter-spacing: 10px;
+    pointer-events: none;
+    z-index: 0;
+  }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Cost Estimate / Proforma Invoice</span>
+  <span>{{ pro.proforma_number }}</span>
+</div>
+
+<div class="doc-title">Cost Estimate</div>
+<div class="doc-subtitle">This is a cost estimate only — not a tax invoice. Payment at Cashier Desk required.</div>
+
+{# Patient + document info grid #}
+<div class="info-grid">
+  <div class="info-block">
+    <div class="info-block-title">Patient Information</div>
+    <div class="info-row">
+      <span class="info-label">Full Name</span>
+      <span class="info-value">{{ pro.patient.full_name }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Patient ID</span>
+      <span class="info-value">{{ pro.patient.patient_id }}</span>
+    </div>
+    {% if pro.patient.date_of_birth %}
+    <div class="info-row">
+      <span class="info-label">Date of Birth</span>
+      <span class="info-value">{{ pro.patient.date_of_birth|date:"d M Y" }}</span>
+    </div>
+    {% endif %}
+    {% if pro.patient.phone_number %}
+    <div class="info-row">
+      <span class="info-label">Phone</span>
+      <span class="info-value">{{ pro.patient.phone_number }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="info-block">
+    <div class="info-block-title">Document Details</div>
+    <div class="info-row">
+      <span class="info-label">Proforma No.</span>
+      <span class="info-value">{{ pro.proforma_number }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Issue Date</span>
+      <span class="info-value">{{ pro.issue_date|date:"d M Y" }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Valid Until</span>
+      <span class="info-value">{{ pro.expiry_date|date:"d M Y" }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Issued By</span>
+      <span class="info-value">{{ pro.issued_by.get_full_name|default:pro.issued_by.username }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Status</span>
+      <span class="info-value">{{ pro.get_status_display }}</span>
+    </div>
+  </div>
+</div>
+
+{% if pro.notes %}
+<div class="patient-bar" style="margin-bottom:12px;">
+  <strong>Reference:</strong> {{ pro.notes }}
+</div>
+{% endif %}
+
+{# Itemized services table #}
+<div class="section-title">Services / Procedures</div>
+<table class="items-table">
+  <thead>
+    <tr>
+      <th style="width:30px;">#</th>
+      <th>Description</th>
+      <th style="width:80px;">Category</th>
+      <th class="right" style="width:40px;">Qty</th>
+      <th class="right" style="width:110px;">Unit Price (XAF)</th>
+      <th class="right" style="width:110px;">Total (XAF)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td>
+        {{ item.description }}
+        <span class="cat-badge">{{ item.get_category_display }}</span>
+      </td>
+      <td>{{ item.get_category_display }}</td>
+      <td class="right">{{ item.quantity }}</td>
+      <td class="right">{{ item.unit_price|floatformat:0 }}</td>
+      <td class="right"><strong>{{ item.line_total|floatformat:0 }}</strong></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" style="text-align:center;color:#888;padding:10px;">No items.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# Totals #}
+<div class="totals-section">
+  <div class="totals-box">
+    <div class="totals-row">
+      <span>Subtotal</span>
+      <span>{{ pro.subtotal|floatformat:0 }} XAF</span>
+    </div>
+    {% if pro.insurance_amount and pro.insurance_amount > 0 %}
+    <div class="totals-row insurance">
+      <span>Insurance Covers</span>
+      <span>- {{ pro.insurance_amount|floatformat:0 }} XAF</span>
+    </div>
+    {% endif %}
+    <div class="totals-row grand">
+      <span>PATIENT PAYS</span>
+      <span>{{ pro.patient_amount|floatformat:0 }} XAF</span>
+    </div>
+  </div>
+</div>
+
+{# Payment instructions #}
+<div class="pay-box">
+  <div class="pay-box-title">Payment Instructions — Please Read Carefully</div>
+  <ol>
+    <li>Present this document at the <strong>Cashier Desk</strong>.</li>
+    <li>Pay the amount shown above: <strong>{{ pro.patient_amount|floatformat:0 }} XAF</strong>.</li>
+    <li>Keep your <strong>payment receipt</strong> — you will need it on the day of your procedure.</li>
+    <li>This estimate is valid until <strong>{{ pro.expiry_date|date:"d M Y" }}</strong>. After this date, a new estimate will be required.</li>
+    {% if pro.notes %}<li>Reference: {{ pro.notes }}</li>{% endif %}
+  </ol>
+</div>
+
+<div class="validity-notice">
+  <strong>Note:</strong> This is a cost estimate, not a final invoice. Actual charges may vary if the scope of services changes.
+  A valid receipt from the Cashier Desk is the only proof of payment.
+</div>
+
+{# Signature area #}
+<div class="sig-area">
+  <div class="sig-block">
+    <div class="sig-line">Issued By — {{ pro.issued_by.get_full_name }}</div>
+  </div>
+  <div class="sig-block">
+    <div class="sig-line">Patient / Guardian Signature</div>
+  </div>
+  <div class="sig-block">
+    <div class="sig-line">Cashier Acknowledgement</div>
+  </div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} &nbsp;|&nbsp; {{ hospital_address }}</span>
+  <span>Printed: {% now "d M Y H:i" %} &nbsp;|&nbsp; {{ pro.proforma_number }}</span>
+</div>
+
+</body>
+</html>

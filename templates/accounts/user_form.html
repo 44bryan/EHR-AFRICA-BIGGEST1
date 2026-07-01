@@ -36,12 +36,50 @@
           {% csrf_token %}
           <div class="row g-3">
             {% for field in form %}
-            <div class="col-md-6{% if field.name == 'cashier_station' %} d-none" id="cashier_station_row{% endif %}">
+
+            {# cashier_station — hidden by default, shown for cashier / billing / chief_cashier #}
+            {% if field.name == 'cashier_station' %}
+            <div class="col-md-6 d-none" id="cashier_station_row">
+              <label class="form-label fw-semibold small">
+                <i class="bi bi-cash-coin me-1 text-success"></i>Cashier Counter Type <span class="text-danger">*</span>
+              </label>
+              {{ field }}
+              {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors.0 }}</div>{% endif %}
+              <div class="text-muted small mt-1">Which consultation tier this cashier serves.</div>
+            </div>
+
+            {# consultation_unit — hidden by default, shown for ophthalmologist / optometrist roles #}
+            {% elif field.name == 'consultation_unit' %}
+            <div class="col-md-6 d-none" id="consultation_unit_row">
+              <label class="form-label fw-semibold small">
+                <i class="bi bi-hospital me-1 text-primary"></i>Consultation Desk / Unit <span class="text-danger">*</span>
+              </label>
+              {{ field }}
+              {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors.0 }}</div>{% endif %}
+              <div class="text-muted small mt-1">Which consultation queue this doctor is assigned to (General, VIP, Express, Insurance).</div>
+            </div>
+
+            {# department — shown for all, but label changes per role #}
+            {% elif field.name == 'department' %}
+            <div class="col-md-6" id="department_row">
+              <label class="form-label fw-semibold small" id="department_label">
+                <i class="bi bi-building me-1"></i><span id="department_label_text">Department / Unit</span>
+              </label>
+              {{ field }}
+              {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors.0 }}</div>{% endif %}
+              <div class="text-muted small mt-1" id="department_help">Assign this user to their primary department.</div>
+            </div>
+
+            {# all other fields — standard layout #}
+            {% else %}
+            <div class="col-md-6">
               <label class="form-label fw-semibold small">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
               {{ field }}
               {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors.0 }}</div>{% endif %}
               {% if field.help_text %}<div class="text-muted small mt-1">{{ field.help_text }}</div>{% endif %}
             </div>
+            {% endif %}
+
             {% endfor %}
           </div>
           <div class="d-flex gap-2 justify-content-end mt-4">
@@ -57,17 +95,64 @@
 
 {% block extra_js %}
 <script>
-// Show cashier_station row only when role is cashier or billing_officer
-const roleSelect = document.getElementById('id_role');
-const stationRow = document.getElementById('cashier_station_row');
-function toggleStation() {
-  if (!roleSelect || !stationRow) return;
+const roleSelect      = document.getElementById('id_role');
+const stationRow      = document.getElementById('cashier_station_row');
+const unitRow         = document.getElementById('consultation_unit_row');
+const deptRow         = document.getElementById('department_row');
+const deptLabelText   = document.getElementById('department_label_text');
+const deptHelp        = document.getElementById('department_help');
+
+// Roles that need cashier_station (chief_cashier oversees ALL stations — no station assigned)
+const CASHIER_ROLES = ['cashier', 'billing_officer'];
+
+// Roles that need consultation_unit (ophthalmologist desk picker)
+const CONSULT_UNIT_ROLES = ['ophthalmologist'];
+
+// Roles where department means "consultation room assignment"
+const ROOM_NURSE_ROLES = ['consultation_nurse'];
+
+// Roles where department means "their clinical specialty department"
+const DEPT_CLINICAL_ROLES = [
+  'nurse', 'theatre_nurse', 'ward_nurse', 'nurse_director',
+  'retina_specialist', 'glaucoma_specialist', 'pediatric_ophthalmologist',
+  'pediatric_refractionist', 'cataract_surgeon', 'cornea_specialist',
+  'oculoplastics_surgeon', 'neuro_ophthalmologist', 'uveitis_specialist',
+  'optometrist', 'low_vision_specialist', 'intern',
+  'investigation_technician', 'lab_technician',
+  'orthoptist', 'anaesthetist',
+];
+
+function updateFields() {
+  if (!roleSelect) return;
   const val = roleSelect.value;
-  stationRow.classList.toggle('d-none', val !== 'cashier' && val !== 'billing_officer');
+
+  // cashier_station: only cashier roles
+  if (stationRow) stationRow.classList.toggle('d-none', !CASHIER_ROLES.includes(val));
+
+  // consultation_unit: only ophthalmologist
+  if (unitRow) unitRow.classList.toggle('d-none', !CONSULT_UNIT_ROLES.includes(val));
+
+  // department: update label & help text based on role
+  if (deptLabelText && deptHelp) {
+    if (ROOM_NURSE_ROLES.includes(val)) {
+      deptLabelText.textContent = 'Consultation Room Assignment ★';
+      deptHelp.textContent = 'Select the specific consultation room this nurse is assigned to (e.g. Retina, Glaucoma, General OPH). Their dashboard will show only that room\'s patient queue.';
+      if (deptRow) deptRow.classList.add('border', 'border-primary', 'rounded', 'p-2', 'bg-primary', 'bg-opacity-10');
+    } else if (DEPT_CLINICAL_ROLES.includes(val)) {
+      deptLabelText.textContent = 'Department / Specialty';
+      deptHelp.textContent = 'Clinical department this staff member is attached to.';
+      if (deptRow) deptRow.classList.remove('border', 'border-primary', 'rounded', 'p-2', 'bg-primary', 'bg-opacity-10');
+    } else {
+      deptLabelText.textContent = 'Department (optional)';
+      deptHelp.textContent = 'Assign this user to a department if applicable.';
+      if (deptRow) deptRow.classList.remove('border', 'border-primary', 'rounded', 'p-2', 'bg-primary', 'bg-opacity-10');
+    }
+  }
 }
+
 if (roleSelect) {
-  roleSelect.addEventListener('change', toggleStation);
-  toggleStation();
+  roleSelect.addEventListener('change', updateFields);
+  updateFields();
 }
 </script>
 {% endblock %}

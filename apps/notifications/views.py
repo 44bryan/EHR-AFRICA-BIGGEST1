@@ -30,3 +30,27 @@ def mark_read(request, pk):
 def unread_count(request):
     count = Notification.objects.filter(recipient=request.user, is_read=False).count()
     return JsonResponse({'count': count})
+
+
+@login_required
+def poll_notifications(request):
+    """
+    Lightweight AJAX poll — returns unread count + latest unread notification
+    for the toast popup. Called every 30s by main.js.
+    Does NOT mark notifications as read (that only happens on the list page).
+    """
+    qs = Notification.objects.filter(
+        recipient=request.user, is_read=False
+    ).order_by('-created_at')
+    count = qs.count()
+    latest = qs.first()
+    return JsonResponse({
+        'count': count,
+        'latest': {
+            'id': latest.pk,
+            'title': latest.title,
+            'message': latest.message[:120],
+            'link': latest.link or '',
+            'priority': latest.priority,
+        } if latest else None,
+    })

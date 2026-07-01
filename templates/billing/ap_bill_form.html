@@ -1,0 +1,134 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Record Vendor Bill{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <a href="{% url 'billing:ap_bill_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Bills
+  </a>
+  <h4 class="fw-bold mb-0"><i class="bi bi-receipt me-2 text-primary"></i>Record Vendor Bill</h4>
+  <p class="text-muted small mb-0">Enter bill details to create an accounts payable liability</p>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-7">
+    <form method="post">
+      {% csrf_token %}
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 fw-semibold">Bill Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vendor <span class="text-danger">*</span></label>
+              <select name="vendor" class="form-select" required>
+                <option value="">— Select Vendor —</option>
+                {% for v in vendors %}
+                <option value="{{ v.pk }}" {% if request.GET.vendor == v.pk|stringformat:'s' %}selected{% endif %}>{{ v.name }}</option>
+                {% endfor %}
+              </select>
+              <div class="mt-1">
+                <a href="{% url 'billing:ap_vendor_create' %}" class="small text-muted">
+                  <i class="bi bi-plus-circle me-1"></i>Add new vendor
+                </a>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vendor Invoice # <span class="text-danger">*</span></label>
+              <input type="text" name="vendor_invoice_number" class="form-control"
+                     placeholder="Vendor's own invoice number" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Bill Date <span class="text-danger">*</span></label>
+              <input type="date" name="bill_date" class="form-control" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Due Date</label>
+              <input type="date" name="due_date" class="form-control">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Amount Due (XAF) <span class="text-danger">*</span></label>
+              <input type="number" name="amount_due" class="form-control text-end" min="0" step="1"
+                     placeholder="0" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Category</label>
+              <select name="category" class="form-select">
+                <option value="">— Uncategorized —</option>
+                <option value="PHARMACY">Pharmacy / Drugs</option>
+                <option value="EQUIPMENT">Medical Equipment</option>
+                <option value="CONSUMABLES">Consumables / Supplies</option>
+                <option value="UTILITIES">Utilities</option>
+                <option value="RENT">Rent / Premises</option>
+                <option value="MAINTENANCE">Maintenance / Repairs</option>
+                <option value="TRANSPORT">Transport / Logistics</option>
+                <option value="SERVICES">Professional Services</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">GL Expense Account</label>
+              <select name="expense_account" class="form-select">
+                <option value="">— Auto (from category) —</option>
+                {% for a in expense_accounts %}
+                <option value="{{ a.pk }}">{{ a.code }} — {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description</label>
+              <textarea name="description" class="form-control" rows="2"
+                        placeholder="Brief description of what was purchased / supplied"></textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Notes / Memo</label>
+              <textarea name="notes" class="form-control" rows="2"
+                        placeholder="Any additional notes…"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mb-4 border-warning">
+        <div class="card-body py-2">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="post_immediately" id="postImmediate" checked>
+            <label class="form-check-label fw-semibold" for="postImmediate">
+              Post to General Ledger immediately
+            </label>
+            <div class="text-muted small">
+              Creates Dr Expense / Cr Accounts Payable journal entry automatically.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-lg me-1"></i>Record Bill
+      </button>
+      <a href="{% url 'billing:ap_bill_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+    </form>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm bg-light">
+      <div class="card-header py-2 fw-semibold">How Bills Work</div>
+      <div class="card-body small text-muted">
+        <p><strong>Recording a bill</strong> creates a liability — the hospital owes money to the vendor.</p>
+        <p><strong>GL posting:</strong></p>
+        <ul>
+          <li>Dr Expense Account (increases expense)</li>
+          <li>Cr Accounts Payable (increases liability)</li>
+        </ul>
+        <p><strong>When you pay the bill:</strong></p>
+        <ul>
+          <li>Dr Accounts Payable (clears liability)</li>
+          <li>Cr Bank / Cash (reduces cash)</li>
+        </ul>
+        <p class="mb-0 text-info"><i class="bi bi-info-circle me-1"></i>
+          Bills start as <em>Pending</em> and become <em>Paid</em> once fully settled.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

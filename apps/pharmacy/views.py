@@ -81,22 +81,27 @@ def pharmacy_dashboard(request):
         pharmacy_work_orders = []
 
     # Patients currently waiting at pharmacy (visit status = PHARMACY, today)
+    # Exclude patients already in a work order (paid queue) to avoid duplication
     from apps.patients.models import Visit
     from apps.prescriptions.models import DrugPrescription
+    work_order_patient_ids = {wo.patient_id for wo in pharmacy_work_orders}
     waiting_visits = list(
         Visit.objects.filter(
             visit_date__date=today,
             status='PHARMACY',
             is_deleted=False,
+        ).exclude(
+            patient_id__in=work_order_patient_ids,
         ).select_related('patient', 'attending_doctor').order_by('visit_date')
     )
-    # Attach latest prescription to each visit so pharmacist can see what was prescribed
+    # Attach latest pending prescription to each visit
     if waiting_visits:
         patient_ids = [v.patient_id for v in waiting_visits]
         latest_rx = {
             rx.patient_id: rx
             for rx in DrugPrescription.objects.filter(
                 patient_id__in=patient_ids,
+                is_dispensed=False,
                 is_deleted=False,
             ).select_related('prescribed_by').prefetch_related('items')
             .order_by('-created_at')
@@ -317,6 +322,13 @@ def dispensing_detail(request, dispensing_id):
         ctx['available_drugs'] = Drug.objects.filter(
             is_active=True, is_deleted=False
         ).order_by('name')
+    # Drug interaction check
+    try:
+        from apps.prescriptions.models import DrugInteraction
+        drug_names = [item.drug.name for item in dispensing.items.all()]
+        ctx['drug_interactions'] = DrugInteraction.find_interactions(drug_names)
+    except Exception:
+        ctx['drug_interactions'] = []
     return render(request, 'pharmacy/dispensing_detail.html', ctx)
 
 
@@ -762,3 +774,18 @@ def start_rx_dispensing(request, rx_id):
         )
 
     return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+
+@login_required
+@require_POST
+def rx_declined(request, rx_id):
+    """Patient declined / bought elsewhere — remove from queue."""
+    rx = get_object_or_404(DrugPrescription, id=rx_id, is_deleted=False)
+    if not rx.is_dispensed:
+        rx.is_dispensed = True
+        rx.dispensed_by = request.user
+        rx.dispensed_at = timezone.now()
+        rx.notes = (rx.notes + '\n' if rx.notes else '') + 'Bought elsewhere / declined dispensing at pharmacy.'
+        rx.save(update_fields=['is_dispensed', 'dispensed_by', 'dispensed_at', 'notes'])
+        messages.info(request, 'Prescription marked as bought elsewhere and removed from queue.')
+    return redirect('pharmacy:patient_search')

@@ -1,0 +1,149 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}System Tools{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1">
+        <li class="breadcrumb-item"><a href="{% url 'dashboard:sysadmin' %}">System Admin</a></li>
+        <li class="breadcrumb-item active">System Tools</li>
+      </ol>
+    </nav>
+    <h2 class="fw-bold mb-0"><i class="bi bi-tools me-2 text-secondary"></i>System Tools</h2>
+  </div>
+  <a href="{% url 'dashboard:sysadmin' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+</div>
+
+{% include "components/alerts.html" %}
+
+<div class="row g-4">
+
+  {# ── Cache ──────────────────────────────────────────────────────────────── #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning-charge me-2 text-warning"></i>Cache Management</div>
+      <div class="card-body">
+        <p class="text-muted small">Dashboard stats and frequently queried data are cached in Redis for performance. Clear cache if you see stale data.</p>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_cache">
+          <button type="submit" class="btn btn-warning"
+                  onclick="return confirm('Clear all cached data? Pages will reload slower for the next minute.')">
+            <i class="bi bi-trash me-1"></i>Clear All Cache
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ── Sessions ───────────────────────────────────────────────────────────── #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-door-open me-2 text-info"></i>Session Management</div>
+      <div class="card-body">
+        <div class="row text-center mb-3">
+          <div class="col-6">
+            <div class="fw-bold fs-4 text-success">{{ active_sessions }}</div>
+            <div class="text-muted small">Active sessions</div>
+          </div>
+          <div class="col-6">
+            <div class="fw-bold fs-4 text-muted">{{ expired_sessions }}</div>
+            <div class="text-muted small">Expired (purgeable)</div>
+          </div>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="flush_sessions">
+          <button type="submit" class="btn btn-outline-danger"
+                  onclick="return confirm('Delete {{ expired_sessions }} expired session(s)?')">
+            <i class="bi bi-x-circle me-1"></i>Flush Expired Sessions
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ── Database ───────────────────────────────────────────────────────────── #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-database me-2 text-success"></i>Database Info</div>
+      <div class="card-body">
+        <table class="table table-sm mb-0" style="font-size:0.875rem;">
+          <tr><td class="text-muted">Engine</td><td>{% if 'postgresql' in db_engine %}PostgreSQL{% elif 'sqlite' in db_engine %}SQLite (dev only){% else %}{{ db_engine }}{% endif %}</td></tr>
+          {% if db_size %}
+          <tr><td class="text-muted">Database Size</td><td class="fw-semibold text-success">{{ db_size }}</td></tr>
+          {% endif %}
+        </table>
+        {% if 'sqlite' in db_engine %}
+        <div class="alert alert-danger py-2 small mt-3 mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          <strong>SQLite detected!</strong> This is for development only. Switch to PostgreSQL before going live.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Module Toggles ─────────────────────────────────────────────────────── #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-toggles me-2 text-primary"></i>System Modules</div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_modules">
+          {% for name, label, value in module_flags %}
+          <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+            <label class="form-check-label fw-semibold small" for="mod_{{ name }}">{{ label }}</label>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" name="{{ name }}" id="mod_{{ name }}"
+                     role="switch" {% if value %}checked{% endif %}>
+            </div>
+          </div>
+          {% endfor %}
+          <button type="submit" class="btn btn-primary btn-sm mt-3">
+            <i class="bi bi-check-lg me-1"></i>Save Module Settings
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ── Restart / Service Instructions ─────────────────────────────────────── #}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-terminal me-2"></i>Service Management (IT Staff)</div>
+      <div class="card-body">
+        <div class="row g-3" style="font-size:0.85rem;">
+          <div class="col-md-4">
+            <div class="fw-semibold mb-1">Restart Web Server</div>
+            <pre class="bg-dark text-light p-2 rounded mb-0" style="font-size:0.75rem;">sudo systemctl restart gunicorn</pre>
+          </div>
+          <div class="col-md-4">
+            <div class="fw-semibold mb-1">Restart Celery Worker</div>
+            <pre class="bg-dark text-light p-2 rounded mb-0" style="font-size:0.75rem;">sudo systemctl restart celery</pre>
+          </div>
+          <div class="col-md-4">
+            <div class="fw-semibold mb-1">Manual Backup Now</div>
+            <pre class="bg-dark text-light p-2 rounded mb-0" style="font-size:0.75rem;">python manage.py backup_db</pre>
+          </div>
+          <div class="col-md-4">
+            <div class="fw-semibold mb-1">Run Migrations</div>
+            <pre class="bg-dark text-light p-2 rounded mb-0" style="font-size:0.75rem;">python manage.py migrate</pre>
+          </div>
+          <div class="col-md-4">
+            <div class="fw-semibold mb-1">Collect Static Files</div>
+            <pre class="bg-dark text-light p-2 rounded mb-0" style="font-size:0.75rem;">python manage.py collectstatic --noinput</pre>
+          </div>
+          <div class="col-md-4">
+            <div class="fw-semibold mb-1">Check System Status</div>
+            <pre class="bg-dark text-light p-2 rounded mb-0" style="font-size:0.75rem;">sudo systemctl status gunicorn nginx redis</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

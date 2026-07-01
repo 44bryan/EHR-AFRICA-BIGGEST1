@@ -1,0 +1,202 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}System Audit Log{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-shield-lock me-2 text-primary"></i>System Audit Log</h4>
+    <p class="text-muted small mb-0">Every significant action taken in the system — who did what, when, from which IP.</p>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <span class="text-muted small"><i class="bi bi-database me-1"></i>{{ total_count|intcomma }} records</span>
+    <a href="{% url 'dashboard:export_audit_log' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}"
+       class="btn btn-sm btn-outline-success">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filters ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-3">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">Staff Member</label>
+        <select name="user" class="form-select form-select-sm">
+          <option value="">All Staff</option>
+          {% for u in all_users %}
+          <option value="{{ u.pk }}" {% if user_filter == u.pk|stringformat:'s' %}selected{% endif %}>
+            {{ u.get_full_name|default:u.username }} ({{ u.get_role_display }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold mb-1">Role</label>
+        <select name="role" class="form-select form-select-sm">
+          <option value="">All Roles</option>
+          {% for code, label in all_roles %}
+          <option value="{{ code }}" {% if role_filter == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold mb-1">Action</label>
+        <select name="action" class="form-select form-select-sm">
+          <option value="">All Actions</option>
+          {% for code, label in all_actions %}
+          <option value="{{ code }}" {% if action_filter == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold mb-1">Date</label>
+        <input type="date" name="date" value="{{ date_filter }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+        <a href="{% url 'dashboard:audit_log' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-x-circle me-1"></i>Clear
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Active filter summary ── #}
+{% if user_filter or action_filter or role_filter or date_filter %}
+<div class="alert alert-info py-2 d-flex align-items-center gap-2 mb-3 small">
+  <i class="bi bi-funnel-fill"></i>
+  <span>Filtered results — showing {{ logs.paginator.count|intcomma }} matching records.</span>
+</div>
+{% endif %}
+
+{# ── Log Table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-3">Timestamp</th>
+          <th>Staff</th>
+          <th>Role</th>
+          <th>Action</th>
+          <th>Record</th>
+          <th>Details</th>
+          <th class="pe-3">IP Address</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="ps-3 text-muted" style="white-space:nowrap;">
+            {{ log.timestamp|date:"d M Y" }}<br>
+            <span class="fw-semibold text-dark">{{ log.timestamp|time:"H:i:s" }}</span>
+          </td>
+          <td class="fw-semibold">
+            {{ log.user.get_full_name|default:log.user.username|default:"—" }}
+          </td>
+          <td>
+            <span class="badge bg-light text-dark border" style="font-size:.7rem;">
+              {{ log.user.get_role_display|default:"—" }}
+            </span>
+          </td>
+          <td>
+            {% if log.action == 'LOGIN' %}
+              <span class="badge bg-success">Login</span>
+            {% elif log.action == 'LOGOUT' %}
+              <span class="badge bg-secondary">Logout</span>
+            {% elif log.action == 'CREATE_RECORD' %}
+              <span class="badge bg-primary">Created</span>
+            {% elif log.action == 'UPDATE_RECORD' %}
+              <span class="badge bg-warning text-dark">Updated</span>
+            {% elif log.action == 'DELETE_RECORD' %}
+              <span class="badge bg-danger">Cancelled/Deleted</span>
+            {% elif log.action == 'VIEW_RECORD' %}
+              <span class="badge bg-info text-white">Viewed</span>
+            {% elif log.action == 'GENERATE_REPORT' %}
+              <span class="badge bg-primary">Report</span>
+            {% elif log.action == 'PASSWORD_CHANGE' %}
+              <span class="badge bg-warning text-dark">Password Changed</span>
+            {% elif log.action == 'FAILED_LOGIN' %}
+              <span class="badge bg-danger">Failed Login</span>
+            {% elif log.action == 'AI_QUERY' %}
+              <span class="badge bg-info text-white">AI Query</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ log.get_action_display }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ log.target_model|default:"—" }}</td>
+          <td style="max-width:280px;">
+            {% if log.extra_data %}
+              {% for key, val in log.extra_data.items %}
+                {% if key != 'patient_id' %}
+                <span class="text-muted" style="font-size:.72rem;">
+                  <strong>{{ key|title|cut:"_" }}:</strong> {{ val }}
+                </span>{% if not forloop.last %} &nbsp;{% endif %}
+                {% endif %}
+              {% endfor %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="pe-3 text-muted" style="font-size:.72rem;">
+            {{ log.ip_address|default:"—" }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-shield-check" style="font-size:2rem;"></i>
+            <p class="mt-2 mb-0">No audit records found for the selected filters.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Pagination ── #}
+  {% if logs.has_other_pages %}
+  <div class="card-footer bg-white d-flex justify-content-between align-items-center py-2">
+    <span class="small text-muted">
+      Page {{ logs.number }} of {{ logs.paginator.num_pages }}
+      &nbsp;&mdash;&nbsp; {{ logs.paginator.count|intcomma }} records
+    </span>
+    <nav>
+      <ul class="pagination pagination-sm mb-0">
+        {% if logs.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ logs.previous_page_number }}&user={{ user_filter }}&action={{ action_filter }}&role={{ role_filter }}&date={{ date_filter }}">
+            <i class="bi bi-chevron-left"></i>
+          </a>
+        </li>
+        {% endif %}
+        {% for num in logs.paginator.page_range %}
+          {% if logs.number == num %}
+          <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+          {% elif num > logs.number|add:"-3" and num < logs.number|add:"3" %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ num }}&user={{ user_filter }}&action={{ action_filter }}&role={{ role_filter }}&date={{ date_filter }}">{{ num }}</a>
+          </li>
+          {% endif %}
+        {% endfor %}
+        {% if logs.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ logs.next_page_number }}&user={{ user_filter }}&action={{ action_filter }}&role={{ role_filter }}&date={{ date_filter }}">
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

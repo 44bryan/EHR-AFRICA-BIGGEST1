@@ -78,6 +78,25 @@
         </select>
       </div>
 
+      <div class="col-md-6">
+        <label class="form-label fw-semibold small">Surgery Category</label>
+        <select name="surgery_category" class="form-select form-select-sm">
+          <option value="">— Select Category —</option>
+          <option value="CATARACT"    {% if booking.surgery_category == 'CATARACT'    %}selected{% endif %}>Cataract Surgery</option>
+          <option value="RETINA"      {% if booking.surgery_category == 'RETINA'      %}selected{% endif %}>Retina / Vitreoretinal</option>
+          <option value="GLAUCOMA"    {% if booking.surgery_category == 'GLAUCOMA'    %}selected{% endif %}>Glaucoma Surgery</option>
+          <option value="CORNEA"      {% if booking.surgery_category == 'CORNEA'      %}selected{% endif %}>Corneal Transplant / Keratoplasty</option>
+          <option value="OCULOPLASTY" {% if booking.surgery_category == 'OCULOPLASTY' %}selected{% endif %}>Oculoplastics / Lid Surgery</option>
+          <option value="STRABISMUS"  {% if booking.surgery_category == 'STRABISMUS'  %}selected{% endif %}>Strabismus / Squint</option>
+          <option value="PTERYGIUM"   {% if booking.surgery_category == 'PTERYGIUM'   %}selected{% endif %}>Pterygium Excision</option>
+          <option value="LACRIMAL"    {% if booking.surgery_category == 'LACRIMAL'    %}selected{% endif %}>Lacrimal / DCR</option>
+          <option value="CHALAZION"   {% if booking.surgery_category == 'CHALAZION'   %}selected{% endif %}>Chalazion / Lid Lesion</option>
+          <option value="TRAUMA"      {% if booking.surgery_category == 'TRAUMA'      %}selected{% endif %}>Ocular Trauma Repair</option>
+          <option value="TUMOUR"      {% if booking.surgery_category == 'TUMOUR'      %}selected{% endif %}>Tumour / Orbital</option>
+          <option value="OTHER"       {% if booking.surgery_category == 'OTHER'       %}selected{% endif %}>Other Procedure</option>
+        </select>
+      </div>
+
       <div class="col-md-5">
         <label class="form-label fw-semibold small">Surgeon</label>
         <select name="surgeon_id" class="form-select form-select-sm">
@@ -111,23 +130,179 @@
           <i class="bi bi-cash-coin me-1"></i>Payment
         </h6>
       </div>
-      <div class="col-md-3">
-        <label class="form-label fw-semibold small">Total Cost (XAF)</label>
-        <input type="number" name="total_amount" class="form-control form-control-sm"
-               value="{% if booking %}{{ booking.total_amount }}{% else %}0{% endif %}" min="0" step="500">
+      <!-- Ward / Room assignment -->
+      <div class="col-12">
+        <h6 class="fw-bold small text-uppercase text-muted border-bottom pb-1 mb-0">
+          <i class="bi bi-building me-1"></i>Ward &amp; Room Assignment
+        </h6>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold small">Ward</label>
+        <select name="ward_id" id="wardSelect" class="form-select form-select-sm">
+          <option value="">— No room admission —</option>
+          {% for w in wards %}
+          <option value="{{ w.pk }}" data-rate="{{ w.price_per_night }}">
+            {{ w.name }} ({{ w.get_ward_type_display }}) — {{ w.price_per_night|floatformat:0 }} XAF/night
+          </option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
+        <label class="form-label fw-semibold small">Bed</label>
+        <select name="bed_id" id="bedSelect" class="form-select form-select-sm">
+          <option value="">— Select ward first —</option>
+        </select>
+        <div class="form-text small" id="bedRateHint"></div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold small">Nights</label>
+        <input type="number" name="room_nights" id="roomNights" class="form-control form-control-sm"
+               value="1" min="1" max="365">
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <div class="border rounded px-3 py-2 bg-light w-100 text-center">
+          <div class="text-muted" style="font-size:.7rem;">Room subtotal</div>
+          <div class="fw-bold" id="roomSubtotal">0 XAF</div>
+        </div>
+      </div>
+
+      <!-- Costs -->
+      <div class="col-12 mt-2">
+        <h6 class="fw-bold small text-uppercase text-muted border-bottom pb-1 mb-0">
+          <i class="bi bi-cash-coin me-1"></i>Cost Breakdown
+          <span class="text-muted fw-normal ms-2" style="font-size:.7rem;">Prices set by Finance</span>
+        </h6>
+      </div>
+
+      {% if has_surgical_prices %}
+      <div class="col-md-5">
+        <label class="form-label fw-semibold small">Procedure Price (from Finance tariff)</label>
+        <select id="procedurePriceSelect" class="form-select form-select-sm" onchange="onPriceSelect()">
+          <option value="">— Select procedure price —</option>
+        </select>
+        <div class="form-text small text-success"><i class="bi bi-lock-fill me-1"></i>Rates approved by Finance</div>
+      </div>
+      {% else %}
+      <div class="col-12">
+        <div class="alert alert-warning py-2 small mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          No surgical prices configured yet. Ask Finance to add procedures to the
+          <strong>Service Price List</strong> (category: Surgical). You can enter the amount manually below.
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="col-md-3">
+        <label class="form-label fw-semibold small">
+          Surgery Cost (XAF)
+          {% if has_surgical_prices %}<span class="text-muted fw-normal">(auto-filled)</span>{% endif %}
+        </label>
+        <input type="number" name="total_amount" id="surgeryCost" class="form-control form-control-sm"
+               value="{% if booking %}{{ booking.total_amount }}{% else %}0{% endif %}" min="0" step="500"
+               oninput="recalcTotal()"
+               {% if has_surgical_prices %}readonly{% endif %}>
+        {% if has_surgical_prices %}
+        <div class="form-text small">Select procedure above to set price</div>
+        {% endif %}
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold small">Grand Total (XAF)</label>
+        <input type="number" id="grandTotal" class="form-control form-control-sm bg-light fw-bold"
+               readonly value="{% if booking %}{{ booking.total_amount }}{% else %}0{% endif %}">
+        <input type="hidden" name="grand_total" id="grandTotalHidden"
+               value="{% if booking %}{{ booking.total_amount }}{% else %}0{% endif %}">
+        <div class="form-text small">Surgery + room</div>
+      </div>
+      <div class="col-md-2">
         <label class="form-label fw-semibold small">Deposit Required (XAF)</label>
         <input type="number" name="deposit_required" class="form-control form-control-sm"
                value="{% if booking %}{{ booking.deposit_required }}{% else %}0{% endif %}" min="0" step="500">
-        <div class="form-text small">Amount patient must pay to confirm booking</div>
+        <div class="form-text small">Amount due now</div>
       </div>
-      <div class="col-md-6">
+      <div class="col-md-{% if has_surgical_prices %}2{% else %}4{% endif %}">
         <label class="form-label fw-semibold small">Payment Notes</label>
         <input type="text" name="payment_notes" class="form-control form-control-sm"
                value="{% if booking %}{{ booking.payment_notes }}{% endif %}"
-               placeholder="e.g. Balance of 150,000 XAF due on day of surgery...">
+               placeholder="e.g. Balance due on day of surgery...">
       </div>
+
+      <script>
+      var BEDS_BY_WARD = {{ beds_by_ward_json|safe }};
+      var SURGICAL_PRICES = {{ surgical_prices_json|safe }};
+
+      // Populate procedure price dropdown
+      (function() {
+        var sel = document.getElementById('procedurePriceSelect');
+        if (!sel) return;
+        SURGICAL_PRICES.forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = parseFloat(p.price);
+          opt.text  = p.name + ' — ' + parseFloat(p.price).toLocaleString() + ' XAF';
+          if (p.code) opt.text += ' [' + p.code + ']';
+          sel.appendChild(opt);
+        });
+      })();
+
+      function onPriceSelect() {
+        var sel = document.getElementById('procedurePriceSelect');
+        var costInput = document.getElementById('surgeryCost');
+        if (sel.value) {
+          costInput.value = parseFloat(sel.value).toFixed(0);
+        } else {
+          costInput.value = 0;
+        }
+        recalcTotal();
+      }
+
+      function updateBedList() {
+        var wardId = document.getElementById('wardSelect').value;
+        var bedSel = document.getElementById('bedSelect');
+        bedSel.innerHTML = '<option value="">— No specific bed —</option>';
+        document.getElementById('bedRateHint').textContent = '';
+        if (wardId && BEDS_BY_WARD[wardId]) {
+          BEDS_BY_WARD[wardId].forEach(function(b) {
+            var opt = document.createElement('option');
+            opt.value = b.id;
+            opt.text = 'Bed ' + b.number + ' — ' + b.rate.toLocaleString() + ' XAF/night';
+            opt.dataset.rate = b.rate;
+            bedSel.appendChild(opt);
+          });
+          if (BEDS_BY_WARD[wardId].length === 0) {
+            bedSel.innerHTML = '<option value="">No available beds</option>';
+          }
+        }
+        recalcTotal();
+      }
+
+      function recalcTotal() {
+        var bedSel  = document.getElementById('bedSelect');
+        var nights  = parseInt(document.getElementById('roomNights').value) || 0;
+        var surgery = parseFloat(document.getElementById('surgeryCost').value) || 0;
+        var bedRate = 0;
+
+        var chosen = bedSel.options[bedSel.selectedIndex];
+        if (chosen && chosen.dataset.rate) {
+          bedRate = parseFloat(chosen.dataset.rate) || 0;
+        } else {
+          // use ward default rate
+          var wardSel = document.getElementById('wardSelect');
+          var wardOpt = wardSel.options[wardSel.selectedIndex];
+          if (wardOpt && wardOpt.dataset.rate) bedRate = parseFloat(wardOpt.dataset.rate) || 0;
+        }
+
+        var roomTotal = bedRate * nights;
+        var grandTotal = (surgery + roomTotal).toFixed(0);
+        document.getElementById('roomSubtotal').textContent = roomTotal.toLocaleString() + ' XAF';
+        document.getElementById('grandTotal').value = grandTotal;
+        document.getElementById('grandTotalHidden').value = grandTotal;
+        document.getElementById('bedRateHint').textContent =
+          bedRate > 0 ? bedRate.toLocaleString() + ' XAF/night' : '';
+      }
+
+      document.getElementById('wardSelect').addEventListener('change', updateBedList);
+      document.getElementById('bedSelect').addEventListener('change', recalcTotal);
+      document.getElementById('roomNights').addEventListener('input', recalcTotal);
+      </script>
 
       <!-- Pre-op requirements -->
       <div class="col-12 mt-2">
@@ -147,7 +322,7 @@
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
     <button type="submit" class="btn btn-primary btn-sm">
-      <i class="bi bi-calendar2-check me-1"></i>Confirm Surgical Booking
+      <i class="bi bi-calendar2-check me-1"></i>Confirm &amp; Send to Cashier
     </button>
   </div>
 </div>

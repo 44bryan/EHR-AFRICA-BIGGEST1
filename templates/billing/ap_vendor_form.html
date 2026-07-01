@@ -1,0 +1,142 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}{% if vendor %}Edit Vendor{% else %}New Vendor{% endif %}{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <a href="{% url 'billing:ap_vendor_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Vendors
+  </a>
+  <h4 class="fw-bold mb-0">
+    <i class="bi bi-truck me-2 text-primary"></i>
+    {% if vendor %}Edit Vendor — {{ vendor.name }}{% else %}Add New Vendor{% endif %}
+  </h4>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-8">
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 fw-semibold">Basic Information</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Vendor Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" value="{{ vendor.name|default:'' }}" required
+                     placeholder="e.g. PharmaCo Cameroun SARL">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Tax / NINEA Number</label>
+              <input type="text" name="tax_number" class="form-control" value="{{ vendor.tax_number|default:'' }}"
+                     placeholder="Optional">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Contact Person</label>
+              <input type="text" name="contact_name" class="form-control" value="{{ vendor.contact_name|default:'' }}"
+                     placeholder="Name of contact">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Phone</label>
+              <input type="text" name="contact_phone" class="form-control" value="{{ vendor.contact_phone|default:'' }}"
+                     placeholder="+237 6XX XXX XXX">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email</label>
+              <input type="email" name="email" class="form-control" value="{{ vendor.email|default:'' }}"
+                     placeholder="vendor@example.cm">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Payment Terms</label>
+              <select name="payment_terms" class="form-select">
+                <option value="NET30" {% if vendor.payment_terms == 'NET30' %}selected{% endif %}>Net 30 days</option>
+                <option value="NET60" {% if vendor.payment_terms == 'NET60' %}selected{% endif %}>Net 60 days</option>
+                <option value="NET90" {% if vendor.payment_terms == 'NET90' %}selected{% endif %}>Net 90 days</option>
+                <option value="IMMEDIATE" {% if vendor.payment_terms == 'IMMEDIATE' %}selected{% endif %}>Immediate</option>
+                <option value="COD" {% if vendor.payment_terms == 'COD' %}selected{% endif %}>Cash on Delivery</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Address</label>
+              <textarea name="address" class="form-control" rows="2"
+                        placeholder="Physical/postal address">{{ vendor.address|default:'' }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 fw-semibold">Bank Details (for payments)</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Bank Name</label>
+              <input type="text" name="bank_name" class="form-control" value="{{ vendor.bank_name|default:'' }}"
+                     placeholder="e.g. Afriland First Bank">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Account Number</label>
+              <input type="text" name="bank_account_number" class="form-control"
+                     value="{{ vendor.bank_account_number|default:'' }}" placeholder="Bank account number">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Account Name</label>
+              <input type="text" name="bank_account_name" class="form-control"
+                     value="{{ vendor.bank_account_name|default:'' }}" placeholder="Account holder name">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">IBAN / SWIFT</label>
+              <input type="text" name="iban" class="form-control" value="{{ vendor.iban|default:'' }}"
+                     placeholder="Optional for international payments">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-header py-2 fw-semibold">Notes</div>
+        <div class="card-body">
+          <textarea name="notes" class="form-control" rows="3"
+                    placeholder="Any additional notes about this vendor…">{{ vendor.notes|default:'' }}</textarea>
+          {% if vendor %}
+          <div class="mt-3">
+            <label class="form-check">
+              <input type="checkbox" name="is_active" class="form-check-input"
+                     {% if vendor.is_active %}checked{% endif %}>
+              <span class="form-check-label">Active vendor</span>
+            </label>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-lg me-1"></i>{% if vendor %}Save Changes{% else %}Create Vendor{% endif %}
+      </button>
+      <a href="{% url 'billing:ap_vendor_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+    </form>
+  </div>
+
+  {% if vendor %}
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-header py-2 fw-semibold">Vendor Summary</div>
+      <div class="card-body">
+        <dl class="row small mb-0">
+          <dt class="col-6 text-muted">Code</dt>
+          <dd class="col-6 fw-bold text-primary">{{ vendor.vendor_code }}</dd>
+          <dt class="col-6 text-muted">Outstanding</dt>
+          <dd class="col-6 fw-bold text-danger">{{ vendor.outstanding_balance|floatformat:0 }} XAF</dd>
+          <dt class="col-6 text-muted">Open Bills</dt>
+          <dd class="col-6">{{ vendor.apbill_set.count }}</dd>
+        </dl>
+        <a href="{% url 'billing:ap_bill_list' %}?vendor={{ vendor.pk }}"
+           class="btn btn-sm btn-outline-primary w-100 mt-3">
+          <i class="bi bi-receipt me-1"></i>View Bills
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

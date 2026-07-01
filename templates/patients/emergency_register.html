@@ -1,0 +1,95 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Emergency Registration{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{% url 'patients:list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="fw-bold mb-0 text-danger"><i class="bi bi-exclamation-octagon-fill me-2"></i>Emergency Registration</h4>
+    <p class="text-muted small mb-0">Fast-track — minimal details required. Complete demographics after stabilisation.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6 col-md-8">
+
+    <div class="alert alert-danger border-start border-4 border-danger mb-4">
+      <strong><i class="bi bi-lightning-fill me-1"></i>Emergency Pathway</strong>
+      <p class="mb-0 small mt-1">
+        This form bypasses the normal registration queue and immediately creates an emergency visit routed to triage.
+        Only use this for patients who need immediate clinical attention.
+        Full demographics <strong>must</strong> be completed after the patient is stabilised.
+      </p>
+    </div>
+
+    {% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div class="card border-danger shadow-sm">
+      <div class="card-header bg-danger text-white py-3">
+        <h5 class="mb-0 fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Emergency Patient Details</h5>
+      </div>
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">First Name <span class="text-danger">*</span></label>
+              <input type="text" name="first_name" class="form-control form-control-lg"
+                     value="{{ post.first_name|default:'' }}" placeholder="Patient first name" required autofocus>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Last Name <span class="text-danger">*</span></label>
+              <input type="text" name="last_name" class="form-control form-control-lg"
+                     value="{{ post.last_name|default:'' }}" placeholder="Patient last name" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Gender</label>
+              <select name="gender" class="form-select form-select-lg">
+                <option value="Other">Unknown</option>
+                <option value="M" {% if post.gender == 'M' %}selected{% endif %}>Male</option>
+                <option value="F" {% if post.gender == 'F' %}selected{% endif %}>Female</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Phone Number <span class="text-muted fw-normal small">(optional)</span></label>
+              <input type="text" name="phone_number" class="form-control form-select-lg"
+                     value="{{ post.phone_number|default:'' }}" placeholder="Leave blank if unknown">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Chief Complaint / Presenting Emergency <span class="text-danger">*</span></label>
+              <textarea name="chief_complaint" rows="4" class="form-control"
+                        placeholder="Describe the emergency — e.g. Sudden vision loss right eye, chemical injury, trauma..."
+                        required>{{ post.chief_complaint|default:'' }}</textarea>
+            </div>
+          </div>
+          <hr class="my-4">
+          <div class="d-flex gap-3">
+            <button type="submit" class="btn btn-danger btn-lg fw-bold px-5">
+              <i class="bi bi-lightning-fill me-2"></i>Register &amp; Send to Triage Now
+            </button>
+            <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary btn-lg">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="text-muted small mt-3">
+      <i class="bi bi-info-circle me-1"></i>
+      After registration: patient demographics (date of birth, address, insurance) must be updated via the patient edit page.
+      A date of birth placeholder (1 Jan 1900) will be used until corrected.
+    </div>
+
+  </div>
+</div>
+{% endblock %}

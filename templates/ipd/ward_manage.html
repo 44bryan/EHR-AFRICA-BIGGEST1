@@ -1,0 +1,223 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Ward & Bed Management{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{% url 'ipd:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+    <div>
+      <h5 class="mb-0 fw-bold">Ward & Bed Management</h5>
+      <div class="text-muted small">Super Admin — add wards, rooms, and beds</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if messages %}
+{% for msg in messages %}
+<div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show py-2 small" role="alert">
+  {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endif %}
+
+<div class="row g-4">
+
+  <!-- ── Left: Create New Ward ── -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm sticky-top" style="top:80px;">
+      <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-plus-circle me-2"></i>Create New Ward / Room
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% url 'ipd:ward_create' %}">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Ward Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control form-control-sm" placeholder="e.g. General Ward A, VIP Room 1" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Ward Type</label>
+            <select name="ward_type" class="form-select form-select-sm">
+              {% for val, label in ward_types %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Floor / Location</label>
+            <input type="text" name="floor" class="form-control form-control-sm" placeholder="e.g. Ground Floor, Level 2">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Bed Rate per Night (FCFA)</label>
+            <input type="number" name="price_per_night" class="form-control form-control-sm" value="0" min="0" step="500">
+            <div class="form-text">Applied to all beds in this ward unless overridden per bed.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Description / Amenities</label>
+            <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="e.g. Air-conditioned, private bathroom..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm w-100">
+            <i class="bi bi-plus me-1"></i>Create Ward
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: Ward Cards ── -->
+  <div class="col-lg-8">
+
+    {% if not wards %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-building fs-2 d-block mb-2 opacity-40"></i>
+        <div class="fw-semibold">No wards created yet</div>
+        <div class="small">Use the form on the left to create your first ward.</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% for ward in wards %}
+    <div class="card border-0 shadow-sm mb-4">
+      <!-- Ward header -->
+      <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+        <div>
+          <span class="fw-bold">{{ ward.name }}</span>
+          <span class="badge bg-secondary ms-2">{{ ward.get_ward_type_display }}</span>
+          {% if ward.floor %}<span class="text-muted small ms-2"><i class="bi bi-geo-alt me-1"></i>{{ ward.floor }}</span>{% endif %}
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <span class="small text-muted"><strong>{{ ward.price_per_night|floatformat:0 }}</strong> FCFA/night</span>
+          <div class="d-flex gap-1">
+            <span class="badge bed-badge-available">{{ ward.available_beds }} free</span>
+            <span class="badge bed-badge-occupied">{{ ward.beds.all|length|add:"-0" }} — {{ ward.available_beds }} occupied</span>
+            <span class="badge bg-light text-dark border">{{ ward.beds.all|length }} total</span>
+          </div>
+          <form method="post" action="{% url 'ipd:ward_delete' ward.pk %}" class="d-inline"
+                onsubmit="return confirm('Delete ward {{ ward.name }} and all its beds? This cannot be undone.')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete ward">
+              <i class="bi bi-trash"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <!-- Legend -->
+        <div class="d-flex gap-3 mb-3 small">
+          <span><span class="badge bed-badge-available me-1">A</span> Available</span>
+          <span><span class="badge bed-badge-occupied me-1">B</span> Occupied</span>
+          <span><span class="badge bed-badge-maintenance text-dark me-1">C</span> Maintenance</span>
+        </div>
+
+        <!-- Bed grid -->
+        {% if ward.beds.all %}
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          {% for bed in ward.beds.all %}
+          {% if not bed.is_deleted %}
+          <div class="bed-card {% if bed.status == 'AVAILABLE' %}bed-avail{% elif bed.status == 'OCCUPIED' %}bed-occ{% else %}bed-maint{% endif %}"
+               title="{% if bed.status == 'OCCUPIED' %}OCCUPIED{% elif bed.status == 'MAINTENANCE' %}Under Maintenance{% else %}Available{% endif %}{% if bed.price_override %} | {{ bed.price_override|floatformat:0 }} FCFA/night{% endif %}">
+            <div class="bed-icon"><i class="bi bi-{% if bed.status == 'OCCUPIED' %}person-fill{% elif bed.status == 'MAINTENANCE' %}tools{% else %}check-lg{% endif %}"></i></div>
+            <div class="bed-number">{{ bed.bed_number }}</div>
+            {% if bed.status != 'OCCUPIED' %}
+            <div class="bed-actions">
+              <form method="post" action="{% url 'ipd:bed_toggle_status' bed.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-xs-custom {% if bed.status == 'AVAILABLE' %}btn-warning-sm{% else %}btn-success-sm{% endif %}"
+                        title="{% if bed.status == 'AVAILABLE' %}Set Maintenance{% else %}Set Available{% endif %}">
+                  <i class="bi bi-{% if bed.status == 'AVAILABLE' %}tools{% else %}check-circle{% endif %}"></i>
+                </button>
+              </form>
+              <form method="post" action="{% url 'ipd:bed_delete' bed.pk %}" class="d-inline"
+                    onsubmit="return confirm('Remove bed {{ bed.bed_number }}?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-xs-custom btn-danger-sm" title="Remove bed">
+                  <i class="bi bi-x"></i>
+                </button>
+              </form>
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted small">No beds added yet. Use the form below to add beds.</p>
+        {% endif %}
+
+        <!-- Add beds to this ward -->
+        <div class="border-top pt-3">
+          <form method="post" action="{% url 'ipd:bed_add' ward.pk %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-5">
+              <label class="form-label small fw-semibold mb-1">Add Bed Numbers</label>
+              <input type="text" name="bed_numbers" class="form-control form-control-sm"
+                     placeholder="e.g. 1, 2, 3  or  A1, A2, B1" required>
+              <div class="form-text" style="font-size:.7rem;">Comma-separated. e.g. <em>1, 2, 3</em> or <em>A1, A2</em></div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold mb-1">Per-Bed Rate Override (FCFA)</label>
+              <input type="number" name="price_override" class="form-control form-control-sm"
+                     placeholder="Leave blank = ward rate" min="0" step="500">
+            </div>
+            <div class="col-md-3">
+              <button type="submit" class="btn btn-outline-primary btn-sm w-100">
+                <i class="bi bi-plus me-1"></i>Add Beds
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
+</div>
+
+<style>
+.bed-badge-available   { background: #0891b2; color: #fff; }
+.bed-badge-occupied    { background: #dc3545; color: #fff; }
+.bed-badge-maintenance { background: #ffc107; color: #1f2937; }
+
+.bed-card {
+  position: relative;
+  width: 72px;
+  min-height: 72px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px 4px;
+  cursor: default;
+  border: 2px solid transparent;
+  transition: transform .15s, box-shadow .15s;
+}
+.bed-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+
+/* Available — system cyan/teal */
+.bed-avail { background: #ecfeff; border-color: #0891b2; color: #164e63; }
+/* Occupied — red */
+.bed-occ   { background: #fee2e2; border-color: #dc3545; color: #7f1d1d; }
+/* Maintenance — amber */
+.bed-maint { background: #fef9c3; border-color: #ffc107; color: #713f12; }
+
+.bed-icon   { font-size: 1.3rem; line-height: 1; }
+.bed-number { font-size: .75rem; font-weight: 700; margin-top: 2px; }
+.bed-actions { display: flex; gap: 2px; margin-top: 4px; }
+.btn-xs-custom {
+  width: 22px; height: 22px; padding: 0;
+  border-radius: 4px; font-size: .65rem;
+  display: flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer;
+}
+.btn-warning-sm { background: #ffc107; color: #1f2937; }
+.btn-success-sm { background: #0891b2; color: #fff; }
+.btn-danger-sm  { background: #dc3545; color: #fff; }
+</style>
+
+{% endblock %}

@@ -61,6 +61,44 @@
   </div>
 </div>
 
+{% if waiting_visits %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #0d6efd !important;">
+  <div class="card-header d-flex align-items-center justify-content-between py-2" style="background:#eff6ff;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-person-walking text-primary fs-5"></i>
+      <h6 class="mb-0 fw-bold text-primary">Patients Waiting at Lab</h6>
+      <span class="badge bg-primary">{{ waiting_visits|length }}</span>
+    </div>
+    <small class="text-muted">Sent here today — awaiting tests</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>#</th><th>Patient</th><th>Doctor</th><th>Arrived</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for v in waiting_visits %}
+        <tr>
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td class="text-muted">{{ v.attending_doctor.get_full_name|default:"—" }}</td>
+          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+          <td>
+            <a href="{% url 'laboratory:list' %}?status=ORDERED" class="btn btn-sm btn-primary">
+              <i class="bi bi-flask me-1"></i>View Orders
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <!-- Critical unverified results — urgent attention -->
 {% if critical_unverified %}
 <div class="alert alert-danger border-0 rounded-3 mb-4">
@@ -105,6 +143,7 @@
                 <th>Patient</th>
                 <th>Tests</th>
                 <th>Urgency</th>
+                <th>Payment</th>
                 <th>Status</th>
                 <th>Ordered</th>
                 <th></th>
@@ -112,7 +151,7 @@
             </thead>
             <tbody>
               {% for order in pending_orders %}
-              <tr class="{% if order.urgency == 'EMERGENCY' %}table-danger{% elif order.urgency == 'URGENT' %}table-warning{% endif %}">
+              <tr class="{% if order.urgency == 'EMERGENCY' %}table-danger{% elif order.urgency == 'URGENT' %}table-warning{% elif order.is_paid == False %}table-warning{% endif %}">
                 <td>
                   <div class="fw-semibold">{{ order.patient.full_name }}</div>
                   <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
@@ -126,6 +165,15 @@
                   {% if order.urgency == 'EMERGENCY' %}<span class="badge bg-danger">EMERGENCY</span>
                   {% elif order.urgency == 'URGENT' %}<span class="badge bg-warning text-dark">URGENT</span>
                   {% else %}<span class="badge bg-secondary">Routine</span>{% endif %}
+                </td>
+                <td>
+                  {% if order.is_paid == True %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                  {% elif order.is_paid == False %}
+                    <span class="badge bg-danger"><i class="bi bi-exclamation-circle me-1"></i>Unpaid</span>
+                  {% else %}
+                    <span class="badge bg-secondary">—</span>
+                  {% endif %}
                 </td>
                 <td>
                   {% if order.status == 'ORDERED' %}<span class="badge bg-primary">Ordered</span>
@@ -151,7 +199,7 @@
               </tr>
               {% empty %}
               <tr>
-                <td colspan="6" class="text-center text-muted py-4">
+                <td colspan="7" class="text-center text-muted py-4">
                   <i class="bi bi-check-circle-fill text-success fs-3 d-block mb-2"></i>
                   No pending lab orders — All clear!
                 </td>

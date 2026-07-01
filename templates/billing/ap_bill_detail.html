@@ -1,0 +1,186 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Bill {{ bill.bill_number }}{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <a href="{% url 'billing:ap_bill_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Bills
+  </a>
+  <div class="d-flex align-items-center gap-3">
+    <h4 class="fw-bold mb-0"><i class="bi bi-receipt me-2 text-primary"></i>{{ bill.bill_number }}</h4>
+    {% if bill.status == 'PAID' %}
+      <span class="badge bg-success fs-6">Paid</span>
+    {% elif bill.status == 'PARTIAL' %}
+      <span class="badge bg-info text-dark fs-6">Partially Paid</span>
+    {% elif bill.status == 'OVERDUE' %}
+      <span class="badge bg-danger fs-6">Overdue</span>
+    {% elif bill.status == 'DRAFT' %}
+      <span class="badge bg-secondary fs-6">Draft</span>
+    {% else %}
+      <span class="badge bg-warning text-dark fs-6">Pending</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <!-- Bill Details -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Bill Information</span>
+        {% if bill.status != 'PAID' and bill.status != 'VOID' %}
+        <a href="{% url 'billing:ap_bill_pay' bill.pk %}" class="btn btn-sm btn-success">
+          <i class="bi bi-cash me-1"></i>Record Payment
+        </a>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="text-muted small">Vendor</div>
+            <div class="fw-bold">
+              <a href="{% url 'billing:ap_vendor_edit' bill.vendor.pk %}" class="text-decoration-none">
+                {{ bill.vendor.name }}
+              </a>
+            </div>
+            <div class="small text-muted">{{ bill.vendor.vendor_code }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-muted small">Vendor Invoice #</div>
+            <div class="fw-semibold">{{ bill.vendor_invoice_number|default:"—" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-muted small">Bill Date</div>
+            <div class="fw-semibold">{{ bill.bill_date|date:"d/m/Y" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-muted small">Due Date</div>
+            <div class="fw-semibold {% if bill.is_overdue %}text-danger{% endif %}">
+              {{ bill.due_date|date:"d/m/Y"|default:"—" }}
+              {% if bill.is_overdue %}<i class="bi bi-exclamation-triangle-fill ms-1"></i>{% endif %}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-muted small">Category</div>
+            <div class="fw-semibold">{{ bill.get_category_display|default:"—" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-muted small">GL Account</div>
+            <div class="fw-semibold small">{{ bill.expense_account.code|default:"Auto" }}</div>
+          </div>
+          {% if bill.description %}
+          <div class="col-12">
+            <div class="text-muted small">Description</div>
+            <div>{{ bill.description }}</div>
+          </div>
+          {% endif %}
+          {% if bill.notes %}
+          <div class="col-12">
+            <div class="text-muted small">Notes</div>
+            <div class="small text-muted">{{ bill.notes }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Payments Made -->
+    <div class="card shadow-sm">
+      <div class="card-header py-2 fw-semibold">
+        <i class="bi bi-cash-coin me-2"></i>Payment History
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Date</th>
+              <th>Method</th>
+              <th>Reference</th>
+              <th>Paid By</th>
+              <th class="text-end">Amount (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pmt in payments %}
+            <tr>
+              <td class="small">{{ pmt.payment_date|date:"d/m/Y" }}</td>
+              <td><span class="badge bg-light text-dark border small">{{ pmt.get_payment_method_display }}</span></td>
+              <td class="small text-muted">{{ pmt.reference|default:"—" }}</td>
+              <td class="small">{{ pmt.paid_by.full_name|default:"—" }}</td>
+              <td class="text-end fw-semibold text-success">{{ pmt.amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-3 small">No payments recorded yet</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          {% if payments %}
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td colspan="4" class="text-end">Total Paid</td>
+              <td class="text-end text-success">{{ bill.total_paid|floatformat:0|intcomma }}</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary sidebar -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 fw-semibold">Payment Summary</div>
+      <div class="card-body">
+        <dl class="mb-0">
+          <div class="d-flex justify-content-between py-2 border-bottom">
+            <span class="text-muted">Bill Amount</span>
+            <span class="fw-bold">{{ bill.amount_due|floatformat:0|intcomma }} XAF</span>
+          </div>
+          <div class="d-flex justify-content-between py-2 border-bottom">
+            <span class="text-muted">Total Paid</span>
+            <span class="fw-bold text-success">{{ bill.total_paid|floatformat:0|intcomma }} XAF</span>
+          </div>
+          <div class="d-flex justify-content-between py-2">
+            <span class="fw-bold">Balance Due</span>
+            <span class="fw-bold fs-5 {% if bill.balance_due > 0 %}text-danger{% else %}text-success{% endif %}">
+              {{ bill.balance_due|floatformat:0|intcomma }} XAF
+            </span>
+          </div>
+        </dl>
+        {% if bill.status != 'PAID' and bill.status != 'VOID' %}
+        <a href="{% url 'billing:ap_bill_pay' bill.pk %}" class="btn btn-success w-100 mt-3">
+          <i class="bi bi-cash me-1"></i>Record Payment
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if bill.journal_entry %}
+    <div class="card shadow-sm">
+      <div class="card-header py-2 fw-semibold">GL Journal Entry</div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between">
+          <span class="text-muted">Entry #</span>
+          <a href="{% url 'billing:journal_entry_detail' bill.journal_entry.pk %}" class="text-decoration-none fw-semibold">
+            {{ bill.journal_entry.entry_number }}
+          </a>
+        </div>
+        <div class="d-flex justify-content-between mt-1">
+          <span class="text-muted">Date</span>
+          <span>{{ bill.journal_entry.entry_date|date:"d/m/Y" }}</span>
+        </div>
+        <div class="d-flex justify-content-between mt-1">
+          <span class="text-muted">Status</span>
+          <span class="badge {% if bill.journal_entry.is_posted %}bg-success{% else %}bg-warning text-dark{% endif %}">
+            {% if bill.journal_entry.is_posted %}Posted{% else %}Draft{% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

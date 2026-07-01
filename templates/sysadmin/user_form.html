@@ -1,0 +1,196 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1">
+        <li class="breadcrumb-item"><a href="{% url 'dashboard:sysadmin' %}">System Admin</a></li>
+        <li class="breadcrumb-item active">{{ title }}</li>
+      </ol>
+    </nav>
+    <h2 class="fw-bold mb-0">
+      <i class="bi bi-person-{% if edit_user %}gear{% else %}plus{% endif %} me-2 text-primary"></i>{{ title }}
+    </h2>
+    {% if edit_user %}<p class="text-muted small mb-0">Editing: {{ edit_user.get_full_name }} · {{ edit_user.username }}</p>{% endif %}
+  </div>
+  <a href="{% url 'dashboard:sysadmin' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Admin Panel
+  </a>
+</div>
+
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+
+          {% if form.non_field_errors %}
+          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+          {% endif %}
+
+          {# ── Identity ──────────────────────────────────────────────── #}
+          <h6 class="fw-bold text-muted text-uppercase small mb-3 border-bottom pb-2">Identity</h6>
+          <div class="row g-3 mb-4">
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">First Name <span class="text-danger">*</span></label>
+              {{ form.first_name }}
+              {% if form.first_name.errors %}<div class="text-danger small mt-1">{{ form.first_name.errors }}</div>{% endif %}
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Last Name <span class="text-danger">*</span></label>
+              {{ form.last_name }}
+              {% if form.last_name.errors %}<div class="text-danger small mt-1">{{ form.last_name.errors }}</div>{% endif %}
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Email <span class="text-danger">*</span></label>
+              {{ form.email }}
+              {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors }}</div>{% endif %}
+            </div>
+            {% if form.username %}
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Username <span class="text-danger">*</span></label>
+              {{ form.username }}
+              {% if form.username.errors %}<div class="text-danger small mt-1">{{ form.username.errors }}</div>{% endif %}
+            </div>
+            {% endif %}
+            {% if form.employee_id %}
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Employee ID</label>
+              {{ form.employee_id }}
+            </div>
+            {% endif %}
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Phone</label>
+              {{ form.phone_number }}
+            </div>
+          </div>
+
+          {# ── Role & Department ─────────────────────────────────────── #}
+          <h6 class="fw-bold text-muted text-uppercase small mb-3 border-bottom pb-2">Role & Access</h6>
+          <div class="row g-3 mb-4">
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Role <span class="text-danger">*</span></label>
+              {{ form.role }}
+              {% if form.role.errors %}<div class="text-danger small mt-1">{{ form.role.errors }}</div>{% endif %}
+              <div class="form-text">Determines which modules and dashboards this user can access.</div>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Department</label>
+              {{ form.department }}
+              <div class="form-text">Required for doctors and specialist roles.</div>
+            </div>
+
+            {# Cashier station — only shown for cashier/billing roles #}
+            <div class="col-sm-6" id="cashier-station-row" style="display:none;">
+              <label class="form-label fw-semibold">Cashier Station</label>
+              {{ form.cashier_station }}
+              <div class="form-text">Which POS counter this cashier is assigned to.</div>
+            </div>
+
+            {# Consultation unit — only shown for ophthalmologist roles #}
+            <div class="col-sm-6" id="consult-unit-row" style="display:none;">
+              <label class="form-label fw-semibold">Consultation Unit</label>
+              {{ form.consultation_unit }}
+              <div class="form-text">EXPRESS or INSURANCE queue routing for ophthalmologists.</div>
+            </div>
+
+            {% if form.is_active %}
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Account Status</label>
+              <div class="form-check form-switch mt-2">
+                {{ form.is_active }}
+                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">Active (can log in)</label>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          {# ── Password (create only) ────────────────────────────────── #}
+          {% if form.password1 %}
+          <h6 class="fw-bold text-muted text-uppercase small mb-3 border-bottom pb-2">Initial Password</h6>
+          <div class="alert alert-info small py-2 mb-3">
+            <i class="bi bi-info-circle me-1"></i>
+            The user will be prompted to change this on their first login.
+          </div>
+          <div class="row g-3 mb-4">
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Password <span class="text-danger">*</span></label>
+              {{ form.password1 }}
+              {% if form.password1.errors %}<div class="text-danger small mt-1">{{ form.password1.errors }}</div>{% endif %}
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Confirm Password <span class="text-danger">*</span></label>
+              {{ form.password2 }}
+              {% if form.password2.errors %}<div class="text-danger small mt-1">{{ form.password2.errors }}</div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'dashboard:sysadmin' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary fw-semibold">
+              <i class="bi bi-check-lg me-1"></i>{% if edit_user %}Save Changes{% else %}Create Account{% endif %}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# Sidebar help #}
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold small"><i class="bi bi-info-circle me-1 text-primary"></i>Role Guide</div>
+      <div class="card-body" style="font-size:0.8rem;">
+        <div class="mb-2"><span class="badge bg-dark me-1">Super Admin</span>Full system access, IT management</div>
+        <div class="mb-2"><span class="badge bg-danger me-1">CEO / Med. Director</span>Executive dashboards</div>
+        <div class="mb-2"><span class="badge bg-primary me-1">Ophthalmologist</span>Clinical consultation & workstation</div>
+        <div class="mb-2"><span class="badge bg-info text-dark me-1">Nurse</span>Triage, IPD, Theatre</div>
+        <div class="mb-2"><span class="badge bg-success me-1">Cashier / Finance</span>POS, billing, accounts</div>
+        <div class="mb-2"><span class="badge bg-secondary me-1">Reception / Records</span>Front desk, patient records</div>
+        <hr class="my-2">
+        <div class="text-muted">Password must be at least 12 characters. User will be forced to change it on first login.</div>
+      </div>
+    </div>
+    {% if edit_user %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold small text-danger"><i class="bi bi-shield-exclamation me-1"></i>Danger Zone</div>
+      <div class="card-body">
+        <a href="{% url 'dashboard:sysadmin_reset_password' edit_user.pk %}" class="btn btn-outline-warning btn-sm w-100 mb-2">
+          <i class="bi bi-key me-1"></i>Reset Password
+        </a>
+        {% if edit_user != request.user %}
+        <form method="post" action="{% url 'dashboard:sysadmin_user_toggle' edit_user.pk %}"
+              onsubmit="return confirm('{% if edit_user.is_active %}Lock{% else %}Unlock{% endif %} this account?')">
+          {% csrf_token %}
+          <button class="btn {% if edit_user.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %} btn-sm w-100">
+            <i class="bi bi-{% if edit_user.is_active %}lock{% else %}unlock{% endif %} me-1"></i>
+            {% if edit_user.is_active %}Lock Account{% else %}Unlock Account{% endif %}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+const CASHIER_ROLES = ['cashier','chief_cashier','billing_officer'];
+const OPH_ROLES = ['ophthalmologist','retina_specialist','glaucoma_specialist','pediatric_ophthalmologist',
+                   'cataract_surgeon','cornea_specialist','oculoplastics_surgeon','neuro_ophthalmologist',
+                   'uveitis_specialist','optometrist','pediatric_refractionist','low_vision_specialist'];
+const roleSelect = document.getElementById('id_role');
+function updateFieldVisibility() {
+  const role = roleSelect ? roleSelect.value : '';
+  const cashierRow = document.getElementById('cashier-station-row');
+  const consultRow = document.getElementById('consult-unit-row');
+  if (cashierRow) cashierRow.style.display = CASHIER_ROLES.includes(role) ? '' : 'none';
+  if (consultRow) consultRow.style.display = OPH_ROLES.includes(role) ? '' : 'none';
+}
+if (roleSelect) { roleSelect.addEventListener('change', updateFieldVisibility); updateFieldVisibility(); }
+</script>
+{% endblock %}

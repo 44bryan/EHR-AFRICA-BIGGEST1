@@ -1,0 +1,184 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+
+{% block title %}Wallet — {{ patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <nav aria-label="breadcrumb"><ol class="breadcrumb mb-1 small">
+      <li class="breadcrumb-item"><a href="{% url 'billing:wallet_list' %}">Wallets</a></li>
+      <li class="breadcrumb-item active">{{ patient.full_name }}</li>
+    </ol></nav>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-wallet-fill text-primary me-2"></i>{{ patient.full_name }}'s Wallet</h4>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#depositModal">
+      <i class="bi bi-plus-circle me-1"></i>Deposit
+    </button>
+    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deductModal">
+      <i class="bi bi-dash-circle me-1"></i>Deduct / Apply
+    </button>
+    <a href="{% url 'patients:detail' patient.patient_id %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-person me-1"></i>Patient File
+    </a>
+  </div>
+</div>
+
+{# Balance hero #}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #2563eb!important;">
+      <div class="card-body text-center py-4">
+        <div class="text-muted small mb-1">Current Balance</div>
+        <div class="display-6 fw-bold {% if wallet.balance > 0 %}text-success{% elif wallet.balance < 0 %}text-danger{% else %}text-muted{% endif %}">
+          {{ wallet.balance|floatformat:0|intcomma }} <small class="fs-6 fw-normal">XAF</small>
+        </div>
+        <div class="text-muted small mt-1">Patient ID: <strong>{{ patient.patient_id }}</strong></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body py-3">
+        <div class="text-muted small mb-2 fw-semibold text-uppercase" style="letter-spacing:.05em;">Patient Info</div>
+        <div class="mb-1"><span class="text-muted small">Phone:</span> <strong>{{ patient.phone_number|default:"—" }}</strong></div>
+        <div class="mb-1"><span class="text-muted small">DOB:</span> <strong>{{ patient.date_of_birth|date:"d M Y"|default:"—" }}</strong></div>
+        <div><span class="text-muted small">Registered:</span> <strong>{{ patient.created_at|date:"d M Y" }}</strong></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body py-3">
+        <div class="text-muted small mb-2 fw-semibold text-uppercase" style="letter-spacing:.05em;">Wallet Summary</div>
+        <div class="mb-1"><span class="text-muted small">Total Deposited:</span> <strong class="text-success">{{ total_deposited|floatformat:0|intcomma }} XAF</strong></div>
+        <div class="mb-1"><span class="text-muted small">Total Deducted:</span> <strong class="text-danger">{{ total_deducted|floatformat:0|intcomma }} XAF</strong></div>
+        <div><span class="text-muted small">Transactions:</span> <strong>{{ transactions.count }}</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Transaction history #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between">
+    <strong>Transaction History</strong>
+    <span class="badge bg-primary rounded-pill">{{ transactions.count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Invoice</th>
+          <th class="text-end">Amount (XAF)</th>
+          <th class="text-end">Balance After (XAF)</th>
+          <th>By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tx in transactions %}
+        <tr>
+          <td class="text-muted small">{{ tx.created_at|date:"d M Y H:i" }}</td>
+          <td>
+            {% if tx.transaction_type == 'DEPOSIT' %}
+            <span class="badge bg-success">Deposit</span>
+            {% elif tx.transaction_type == 'DEDUCTION' %}
+            <span class="badge bg-warning text-dark">Applied</span>
+            {% elif tx.transaction_type == 'REFUND' %}
+            <span class="badge bg-info">Refund</span>
+            {% elif tx.transaction_type == 'WITHDRAWAL' %}
+            <span class="badge bg-danger">Withdrawal</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ tx.get_transaction_type_display }}</span>
+            {% endif %}
+          </td>
+          <td>{{ tx.description|default:"—" }}</td>
+          <td>
+            {% if tx.invoice %}
+            <a href="{% url 'billing:invoice_detail' tx.invoice.id %}" class="text-decoration-none small">
+              {{ tx.invoice.invoice_number }}
+            </a>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-end fw-semibold {% if tx.transaction_type == 'DEPOSIT' or tx.transaction_type == 'REFUND' %}text-success{% else %}text-danger{% endif %}">
+            {% if tx.transaction_type == 'DEPOSIT' or tx.transaction_type == 'REFUND' %}+{% else %}-{% endif %}{{ tx.amount|floatformat:0|intcomma }}
+          </td>
+          <td class="text-end text-muted small">{{ tx.balance_after|floatformat:0|intcomma }}</td>
+          <td class="text-muted small">{{ tx.processed_by.get_full_name|default:tx.processed_by.username|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center py-4 text-muted">No transactions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Deposit Modal #}
+<div class="modal fade" id="depositModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{% url 'billing:wallet_deposit' patient.patient_id %}">
+        {% csrf_token %}
+        <div class="modal-header border-0">
+          <h5 class="modal-title text-success"><i class="bi bi-plus-circle me-2"></i>Deposit Funds</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-info small py-2">
+            Current balance: <strong>{{ wallet.balance|floatformat:0|intcomma }} XAF</strong>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Amount (XAF) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" class="form-control" min="1" step="1" required placeholder="e.g. 50000">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description / Reference</label>
+            <input type="text" name="description" class="form-control" placeholder="e.g. Pre-payment for cataract surgery">
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-check2 me-1"></i>Confirm Deposit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# Deduct Modal #}
+<div class="modal fade" id="deductModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{% url 'billing:wallet_deduct' patient.patient_id %}">
+        {% csrf_token %}
+        <div class="modal-header border-0">
+          <h5 class="modal-title text-danger"><i class="bi bi-dash-circle me-2"></i>Deduct / Apply Balance</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning small py-2">
+            Current balance: <strong>{{ wallet.balance|floatformat:0|intcomma }} XAF</strong>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Amount (XAF) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" class="form-control" min="1" max="{{ wallet.balance }}" step="1" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description / Reference</label>
+            <input type="text" name="description" class="form-control" placeholder="e.g. Applied to Invoice #INV-2026-001">
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-check2 me-1"></i>Confirm Deduction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

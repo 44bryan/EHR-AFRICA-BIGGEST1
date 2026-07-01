@@ -30,9 +30,13 @@ class DrugCreateForm(forms.ModelForm):
 class AddStockForm(forms.ModelForm):
     class Meta:
         model = DrugStock
-        fields = ['batch_number', 'expiry_date', 'quantity_received', 'supplier', 'purchase_price', 'notes']
+        fields = [
+            'batch_number', 'manufacture_date', 'expiry_date',
+            'quantity_received', 'supplier', 'purchase_price', 'notes',
+        ]
         widgets = {
             'batch_number': forms.TextInput(attrs={'class': 'form-control'}),
+            'manufacture_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'quantity_received': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
             'supplier': forms.TextInput(attrs={'class': 'form-control'}),

@@ -1,0 +1,160 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Pharmacy Patient Search{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold"><i class="bi bi-person-search me-2 text-primary"></i>Patient Search</h1>
+    <div class="text-muted small">Search by patient name or hospital ID to dispense from their prescription</div>
+  </div>
+  <a href="{% url 'dashboard:home' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Workstation
+  </a>
+</div>
+
+{# ── Search Box ── #}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #2563eb !important;">
+  <div class="card-body py-3">
+    <form method="get" class="d-flex gap-2 align-items-center flex-wrap" id="search-form">
+      <i class="bi bi-search text-primary fs-5 flex-shrink-0"></i>
+      <div class="flex-grow-1" style="min-width:260px;max-width:500px;">
+        <input type="text" name="q" value="{{ q }}"
+               id="search-input"
+               class="form-control"
+               placeholder="Patient name (e.g. Jean Paul) or Hospital ID (e.g. EHR-0037)"
+               autofocus autocomplete="off">
+      </div>
+      <button type="submit" class="btn btn-success px-4">
+        <i class="bi bi-search me-1"></i>Search
+      </button>
+      {% if q %}
+      <a href="{% url 'pharmacy:patient_search' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-x-circle me-1"></i>Clear
+      </a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+{# ── No Query Yet ── #}
+{% if not q %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-person-search fs-1 d-block mb-3" style="opacity:.3;"></i>
+  <div class="fw-semibold">Type a patient name or hospital ID above to get started</div>
+  <div class="small mt-1">You can search by first name, last name, or full hospital ID like EHR-0012</div>
+</div>
+
+{# ── No Results ── #}
+{% elif not results %}
+<div class="alert alert-warning d-flex align-items-center gap-2">
+  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+  <div>No patient found matching <strong>"{{ q }}"</strong>. Check the spelling or try a different name.</div>
+</div>
+
+{# ── Results ── #}
+{% else %}
+<div class="mb-2 text-muted small"><i class="bi bi-check-circle text-primary me-1"></i>{{ results|length }} patient{{ results|length|pluralize }} found</div>
+
+{% for row in results %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 d-flex align-items-center justify-content-between flex-wrap gap-2"
+       style="background:#eff6ff;border-left:4px solid #2563eb;">
+    <div class="d-flex align-items-center gap-3">
+      <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold"
+           style="width:38px;height:38px;font-size:.9rem;flex-shrink:0;">
+        {{ row.patient.first_name|first|upper }}{{ row.patient.last_name|first|upper }}
+      </div>
+      <div>
+        <div class="fw-bold fs-6">{{ row.patient.full_name }}</div>
+        <div class="text-muted small">
+          {{ row.patient.patient_id }}
+          {% if row.patient.date_of_birth %} &bull; {{ row.patient.date_of_birth|date:"d M Y" }}{% endif %}
+          {% if row.patient.get_gender_display %} &bull; {{ row.patient.get_gender_display }}{% endif %}
+        </div>
+      </div>
+    </div>
+    <a href="{% url 'patients:detail' patient_id=row.patient.patient_id %}" class="btn btn-sm btn-outline-secondary" target="_blank">
+      <i class="bi bi-person me-1"></i>View Record
+    </a>
+  </div>
+
+  <div class="card-body p-0">
+    {% if row.pending_rx %}
+    {# ── Pending Prescriptions ── #}
+    <div class="px-3 pt-3 pb-1">
+      <div class="fw-semibold small text-primary mb-2">
+        <i class="bi bi-file-medical me-1"></i>
+        {{ row.pending_rx|length }} Pending Prescription{{ row.pending_rx|length|pluralize }}
+      </div>
+    </div>
+    {% for rx in row.pending_rx %}
+    <div class="px-3 pb-3 {% if not forloop.last %}border-bottom mb-2{% endif %}">
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <span class="badge bg-warning text-dark">Pending Dispensing</span>
+            <span class="text-muted small">
+              {{ rx.prescription_date|date:"d M Y" }}
+              {% if rx.prescribed_by %}&bull; Dr. {{ rx.prescribed_by.get_full_name }}{% endif %}
+            </span>
+          </div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for item in rx.items.all %}
+            <span class="badge bg-light text-dark border" style="font-size:.8rem;">
+              <i class="bi bi-capsule me-1 text-primary"></i>
+              {{ item.drug_name }}
+              {% if item.concentration %} {{ item.concentration }}{% endif %}
+              &nbsp;&times;&nbsp;{{ item.quantity }}
+              {% if item.dose %}<span class="text-muted ms-1">— {{ item.dose }}</span>{% endif %}
+            </span>
+            {% endfor %}
+          </div>
+          {% if rx.notes %}
+          <div class="text-muted small mt-1 fst-italic">{{ rx.notes }}</div>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-1 flex-wrap">
+          <a href="{% url 'pharmacy:start_rx_dispensing' rx_id=rx.id %}"
+             class="btn btn-primary btn-sm px-3"
+             onclick="this.innerHTML='<span class=\'spinner-border spinner-border-sm me-1\'></span>Loading…';this.classList.add('disabled');">
+            <i class="bi bi-lightning-fill me-1"></i>Dispense Now
+          </a>
+          <a href="{% url 'reports:drug_prescription_pdf' pk=rx.id %}" target="_blank"
+             class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-file-medical me-1"></i>Print Rx
+          </a>
+          <form method="post" action="{% url 'pharmacy:rx_declined' rx_id=rx.id %}" class="d-inline"
+                onsubmit="return confirm('Mark this prescription as bought elsewhere? It will be removed from the queue.')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-secondary btn-sm">
+              <i class="bi bi-x-circle me-1"></i>Bought Elsewhere
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    {# ── No Pending Prescriptions ── #}
+    <div class="px-3 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div class="text-muted small fst-italic">
+        {% if row.last_dispensed %}
+          <i class="bi bi-check-circle-fill text-primary me-1"></i>
+          Last dispensed {{ row.last_dispensed.prescription_date|date:"d M Y" }} — no pending prescriptions.
+        {% else %}
+          <i class="bi bi-info-circle me-1"></i>No prescription on record for this patient.
+        {% endif %}
+      </div>
+      <a href="{% url 'pharmacy:dispense' %}?patient={{ row.patient.pk }}" class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-plus-circle me-1"></i>Manual Dispense
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% endblock %}

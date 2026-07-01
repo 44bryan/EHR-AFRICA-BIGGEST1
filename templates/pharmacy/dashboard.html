@@ -1,79 +1,249 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Pharmacy{% endblock %}
+
+{% block extra_css %}
+<style>
+  .expiry-badge-critical { background: #dc2626; color: #fff; }
+  .expiry-badge-warning  { background: #d97706; color: #fff; }
+  .expiry-badge-notice   { background: #2563eb; color: #fff; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Pharmacy</h1>
   <div>
-    <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary me-2">
+    <h4 class="fw-bold mb-0"><i class="bi bi-capsule-pill me-2 text-primary"></i>Pharmacy</h4>
+    <div class="text-muted small">Stock management &amp; dispensing overview</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm">
       <i class="bi bi-capsule me-1"></i>New Dispensing
     </a>
-    <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-outline-secondary">
+    <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-list-ul me-1"></i>Drug Formulary
     </a>
   </div>
 </div>
 
-<!-- KPI Cards -->
+{# ── EXPIRED STOCK STILL IN STOCK — highest priority alert ── #}
+{% if expired_in_stock %}
+<div class="alert alert-danger d-flex align-items-start gap-3 mb-4 shadow-sm" role="alert">
+  <i class="bi bi-x-octagon-fill fs-4 flex-shrink-0 mt-1"></i>
+  <div class="w-100">
+    <strong>EXPIRED STOCK STILL IN INVENTORY — Remove immediately</strong>
+    <div class="table-responsive mt-2">
+      <table class="table table-sm table-danger mb-0 small">
+        <thead><tr><th>Drug</th><th>Batch</th><th>Expired</th><th>Qty</th></tr></thead>
+        <tbody>
+          {% for s in expired_in_stock %}
+          <tr>
+            <td><a href="{% url 'pharmacy:drug_detail' s.drug.id %}" class="text-danger fw-bold">{{ s.drug.name }}</a></td>
+            <td>{{ s.batch_number }}</td>
+            <td class="fw-bold">{{ s.expiry_date|date:"d M Y" }}</td>
+            <td>{{ s.quantity_remaining }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Patients Waiting at Pharmacy ── #}
+{% if waiting_visits %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #0d6efd !important;">
+  <div class="card-header d-flex align-items-center justify-content-between py-2" style="background:#eff6ff;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-person-walking text-primary fs-5"></i>
+      <h6 class="mb-0 fw-bold text-primary">Patients Waiting at Pharmacy</h6>
+      <span class="badge bg-primary">{{ waiting_visits|length }}</span>
+    </div>
+    <small class="text-muted">Routed here by doctor &mdash; today</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>#</th><th>Patient</th><th>Prescription</th><th>Doctor</th><th>Arrived</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for v in waiting_visits %}
+        <tr>
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if v.latest_rx %}
+              {% for item in v.latest_rx.items.all|slice:":3" %}
+                <span class="badge bg-light text-dark border me-1">{{ item.drug_name }}{% if item.concentration %} {{ item.concentration }}{% endif %}</span>
+              {% endfor %}
+              {% if v.latest_rx.items.count > 3 %}
+                <span class="text-muted small">+{{ v.latest_rx.items.count|add:"-3" }} more</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted small">See patient record</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{% if v.attending_doctor %}Dr. {{ v.attending_doctor.last_name }}{% else %}—{% endif %}</td>
+          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+          <td>
+            <a href="{% url 'pharmacy:dispense' %}?patient={{ v.patient.pk }}" class="btn btn-sm btn-primary">
+              <i class="bi bi-capsule me-1"></i>Dispense
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Paid & Ready to Dispense ── #}
+{% if pharmacy_work_orders %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #16a34a !important;">
+  <div class="card-header d-flex align-items-center justify-content-between py-2" style="background:#f0fdf4;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-check-circle-fill text-success fs-5"></i>
+      <h6 class="mb-0 fw-bold text-success">Paid &amp; Waiting — Ready to Dispense</h6>
+      <span class="badge bg-success">{{ pharmacy_work_orders|length }}</span>
+    </div>
+    <small class="text-muted">Today &middot; Click <strong>Done</strong> when dispensed</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Time</th><th>Patient</th><th>Item</th><th>Invoice</th><th></th></tr>
+      </thead>
+      <tbody id="pharmacyWorkQueue">
+        {% for wo in pharmacy_work_orders %}
+        <tr id="wo-row-{{ wo.id }}">
+          <td class="text-muted">{{ wo.created_at|time:"H:i" }}</td>
+          <td class="fw-semibold">{{ wo.patient.full_name }}</td>
+          <td>{{ wo.description }}</td>
+          <td><code class="small">{{ wo.invoice.invoice_number }}</code></td>
+          <td>
+            <button class="btn btn-sm btn-success wo-done-btn" data-wo="{{ wo.id }}">
+              <i class="bi bi-check2 me-1"></i>Done
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── KPI Cards ── #}
 <div class="row g-3 mb-4">
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;">
       <div class="card-body py-3">
-        <div class="h2 fw-bold text-danger">{{ low_stock_count }}</div>
-        <div class="text-muted small">Low Stock Alerts</div>
+        <div class="h2 fw-bold">{{ low_stock_count }}</div>
+        <div class="small opacity-85">Low Stock Alerts</div>
       </div>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center" style="background:linear-gradient(135deg,#d97706,#b45309);color:#fff;">
       <div class="card-body py-3">
-        <div class="h2 fw-bold text-warning">{{ pending_dispensings }}</div>
-        <div class="text-muted small">Pending Dispensings</div>
+        <div class="h2 fw-bold">{{ pending_dispensings }}</div>
+        <div class="small opacity-85">Pending Dispensings</div>
       </div>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center" style="background:linear-gradient(135deg,#059669,#047857);color:#fff;">
       <div class="card-body py-3">
-        <div class="h2 fw-bold text-success">{{ today_dispensings }}</div>
-        <div class="text-muted small">Dispensings Today</div>
+        <div class="h2 fw-bold">{{ today_dispensings }}</div>
+        <div class="small opacity-85">Dispensings Today</div>
       </div>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="card border-0 shadow-sm text-center">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;">
       <div class="card-body py-3">
-        <div class="h2 fw-bold text-primary">{{ today_revenue|floatformat:0 }} FCFA</div>
-        <div class="text-muted small">Revenue Today</div>
+        <div class="h2 fw-bold">{{ total_drugs }}</div>
+        <div class="small opacity-85">Drugs in Formulary</div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="row g-3">
-  <!-- Low Stock Alert -->
+{# ── Expiry Summary Badges ── #}
+{% if expiring_critical or expiring_warning or expiring_notice %}
+<div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+  <span class="fw-semibold text-muted small">Expiry alerts:</span>
+  {% if expiring_critical %}
+  <span class="badge expiry-badge-critical fs-6 px-3 py-2">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    {{ expiring_critical|length }} batch{{ expiring_critical|length|pluralize:"es" }} &le; 30 days
+  </span>
+  {% endif %}
+  {% if expiring_warning %}
+  <span class="badge expiry-badge-warning fs-6 px-3 py-2">
+    <i class="bi bi-clock-fill me-1"></i>
+    {{ expiring_warning|length }} batch{{ expiring_warning|length|pluralize:"es" }} 31–60 days
+  </span>
+  {% endif %}
+  {% if expiring_notice %}
+  <span class="badge expiry-badge-notice fs-6 px-3 py-2">
+    <i class="bi bi-calendar2-week me-1"></i>
+    {{ expiring_notice|length }} batch{{ expiring_notice|length|pluralize:"es" }} 61–90 days
+  </span>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  {# ── Low Stock Alert ── #}
   <div class="col-md-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white d-flex justify-content-between">
-        <h6 class="mb-0 fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h6>
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold text-danger small">
+          <i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts
+          {% if low_stock_count %}<span class="badge bg-danger ms-1">{{ low_stock_count }}</span>{% endif %}
+        </h6>
         <a href="{% url 'pharmacy:drug_list' %}" class="small">View All</a>
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover mb-0 small">
             <thead class="table-light">
-              <tr><th>Drug</th><th>Form</th><th>Stock</th><th>Reorder Level</th></tr>
+              <tr><th>Drug</th><th>Form</th><th class="text-center">Stock</th><th class="text-center">Reorder</th><th></th></tr>
             </thead>
             <tbody>
               {% for drug in low_stock_drugs %}
               <tr>
-                <td><a href="{% url 'pharmacy:drug_detail' drug.id %}">{{ drug.name }}</a></td>
-                <td>{{ drug.get_form_display }}</td>
-                <td><span class="badge bg-danger">{{ drug.current_stock }}</span></td>
-                <td>{{ drug.reorder_level }}</td>
+                <td>
+                  <a href="{% url 'pharmacy:drug_detail' drug.id %}" class="fw-semibold text-decoration-none">{{ drug.name }}</a>
+                  {% if drug.current_stock == 0 %}
+                    <span class="badge bg-danger ms-1" style="font-size:.65rem;">OUT</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted">{{ drug.get_form_display }}</td>
+                <td class="text-center">
+                  <span class="badge {% if drug.current_stock == 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                    {{ drug.current_stock }}
+                  </span>
+                </td>
+                <td class="text-center text-muted">{{ drug.reorder_level }}</td>
+                <td>
+                  <a href="{% url 'pharmacy:add_stock' drug.id %}" class="btn btn-xs btn-outline-success" style="font-size:.75rem;padding:.2rem .5rem;">
+                    <i class="bi bi-plus-lg"></i> Add
+                  </a>
+                </td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted py-3">All stock levels are adequate</td></tr>
+              <tr>
+                <td colspan="5" class="text-center text-muted py-4">
+                  <i class="bi bi-check-circle-fill text-success me-1"></i>All stock levels adequate
+                </td>
+              </tr>
               {% endfor %}
             </tbody>
           </table>
@@ -82,32 +252,52 @@
     </div>
   </div>
 
-  <!-- Expiring Soon -->
+  {# ── Expiring Soon ── #}
   <div class="col-md-6">
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white">
-        <h6 class="mb-0 fw-semibold text-warning"><i class="bi bi-calendar-x me-2"></i>Expiring within 90 days</h6>
+        <h6 class="mb-0 fw-semibold text-warning small">
+          <i class="bi bi-calendar-x me-2"></i>Expiring within 90 days
+          {% if expiring_soon %}<span class="badge bg-warning text-dark ms-1">{{ expiring_soon|length }}</span>{% endif %}
+        </h6>
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover mb-0 small">
             <thead class="table-light">
-              <tr><th>Drug</th><th>Batch</th><th>Expiry</th><th>Qty</th></tr>
+              <tr><th>Drug</th><th>Batch</th><th>Expiry</th><th class="text-center">Days</th><th class="text-center">Qty</th></tr>
             </thead>
             <tbody>
               {% for stock in expiring_soon %}
               <tr>
-                <td>{{ stock.drug.name }}</td>
-                <td>{{ stock.batch_number }}</td>
                 <td>
-                  <span class="{% if stock.days_to_expiry <= 30 %}text-danger fw-bold{% else %}text-warning{% endif %}">
+                  <a href="{% url 'pharmacy:drug_detail' stock.drug.id %}" class="fw-semibold text-decoration-none">{{ stock.drug.name }}</a>
+                </td>
+                <td class="text-muted" style="font-size:.75rem;">{{ stock.batch_number }}</td>
+                <td>
+                  <span class="
+                    {% if stock.days_to_expiry <= 30 %}text-danger fw-bold
+                    {% elif stock.days_to_expiry <= 60 %}text-warning fw-semibold
+                    {% else %}text-primary{% endif %}">
                     {{ stock.expiry_date|date:"d M Y" }}
                   </span>
                 </td>
-                <td>{{ stock.quantity_remaining }}</td>
+                <td class="text-center">
+                  <span class="badge
+                    {% if stock.days_to_expiry <= 30 %}bg-danger
+                    {% elif stock.days_to_expiry <= 60 %}bg-warning text-dark
+                    {% else %}bg-primary{% endif %}">
+                    {{ stock.days_to_expiry }}d
+                  </span>
+                </td>
+                <td class="text-center fw-semibold">{{ stock.quantity_remaining }}</td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted py-3">No stock expiring soon</td></tr>
+              <tr>
+                <td colspan="5" class="text-center text-muted py-4">
+                  <i class="bi bi-check-circle-fill text-success me-1"></i>No stock expiring within 90 days
+                </td>
+              </tr>
               {% endfor %}
             </tbody>
           </table>
@@ -116,4 +306,26 @@
     </div>
   </div>
 </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.wo-done-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const woId = this.dataset.wo;
+    const row  = document.getElementById('wo-row-' + woId);
+    fetch(`/billing/work-orders/${woId}/done/`, {
+      method: 'POST',
+      headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json()).then(data => {
+      if (data.success) {
+        row.style.transition = 'opacity .3s';
+        row.style.opacity = '0';
+        setTimeout(() => row.remove(), 300);
+      }
+    });
+  });
+});
+</script>
 {% endblock %}

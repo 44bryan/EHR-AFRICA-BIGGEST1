@@ -1,0 +1,150 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{{ pro.proforma_number }}{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 no-print">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{% url 'billing:proforma_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+      <h1 class="h3 mb-0">{{ pro.proforma_number }}</h1>
+      <span class="badge
+        {% if pro.status == 'ISSUED' %}bg-primary
+        {% elif pro.status == 'CONVERTED' %}bg-success
+        {% elif pro.status == 'CANCELLED' %}bg-secondary
+        {% else %}bg-light text-dark border{% endif %}">
+        {{ pro.get_status_display }}
+      </span>
+      {% if pro.is_expired %}<span class="badge bg-danger ms-1">Expired</span>{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:proforma_pdf' pro.id %}" target="_blank"
+       class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-file-pdf me-1"></i>Print / PDF
+    </a>
+    {% if can_convert %}
+    <form method="post" action="{% url 'billing:proforma_convert' pro.id %}"
+          onsubmit="return confirm('Convert this proforma to a real invoice?')">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-success btn-sm">
+        <i class="bi bi-arrow-right-circle me-1"></i>Convert to Invoice
+      </button>
+    </form>
+    {% endif %}
+    {% if pro.status == 'ISSUED' %}
+    <form method="post" action="{% url 'billing:proforma_cancel' pro.id %}"
+          onsubmit="return confirm('Cancel this proforma?')">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
+    </form>
+    {% endif %}
+    {% if pro.invoice %}
+    <a href="{% url 'billing:invoice_detail' pro.invoice.id %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-receipt me-1"></i>View Invoice
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Patient</h6></div>
+      <div class="card-body">
+        <div class="fw-bold">{{ pro.patient.full_name }}</div>
+        <div class="text-muted small">{{ pro.patient.patient_id }}</div>
+        <div class="text-muted small">{{ pro.patient.phone_number|default:"—" }}</div>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Details</h6></div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Issued by</span>
+          <span>{{ pro.issued_by.get_full_name|default:pro.issued_by.username }}</span>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Issue date</span>
+          <span>{{ pro.issue_date|date:"d/m/Y" }}</span>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Valid for</span>
+          <span>{{ pro.valid_days }} day{{ pro.valid_days|pluralize }}</span>
+        </div>
+        {% if pro.notes %}
+        <div class="mt-2 text-muted">{{ pro.notes }}</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Financial Summary</h6></div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Subtotal</span>
+          <span>{{ pro.subtotal|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between mb-1" style="color:#0891b2;">
+          <span><i class="bi bi-shield-check me-1"></i>Insurance covers</span>
+          <span>{{ pro.insurance_amount|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between fw-bold fs-6" style="color:#16a34a;">
+          <span>Patient pays</span>
+          <span>{{ pro.patient_amount|floatformat:0|intcomma }} FCFA</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Services</h6></div>
+      <div class="table-responsive">
+        <table class="table mb-0" style="font-size:0.85rem;">
+          <thead class="table-light">
+            <tr>
+              <th>#</th>
+              <th>Description</th>
+              <th>Category</th>
+              <th class="text-center">Qty</th>
+              <th class="text-end">Unit Price</th>
+              <th class="text-end">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td class="text-muted">{{ forloop.counter }}</td>
+              <td>{{ item.description }}</td>
+              <td><small class="text-muted">{{ item.get_category_display }}</small></td>
+              <td class="text-center">{{ item.quantity }}</td>
+              <td class="text-end text-muted">{{ item.unit_price|floatformat:0|intcomma }}</td>
+              <td class="text-end fw-semibold">{{ item.line_total|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-3">No items.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td colspan="5" class="text-end">TOTAL</td>
+              <td class="text-end">{{ pro.subtotal|floatformat:0|intcomma }} FCFA</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

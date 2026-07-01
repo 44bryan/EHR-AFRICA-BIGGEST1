@@ -124,3 +124,90 @@ class LeaveRequest(AuditModel):
     @property
     def days_requested(self):
         return (self.end_date - self.start_date).days + 1
+
+
+# ── Payroll ──────────────────────────────────────────────────────────────────
+
+class PayrollStatus(models.TextChoices):
+    DRAFT     = 'DRAFT',     'Draft'
+    PROCESSED = 'PROCESSED', 'Processed'
+    PAID      = 'PAID',      'Paid'
+
+
+class PayrollRun(AuditModel):
+    """Represents a monthly payroll cycle (e.g., June 2026)."""
+    month        = models.PositiveSmallIntegerField(help_text='1=Jan … 12=Dec')
+    year         = models.PositiveSmallIntegerField()
+    status       = models.CharField(max_length=20, choices=PayrollStatus.choices, default=PayrollStatus.DRAFT)
+    processed_by = models.ForeignKey(
+        'accounts.User', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='payroll_runs_processed',
+    )
+    notes        = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ('month', 'year')
+        ordering = ['-year', '-month']
+
+    def __str__(self):
+        import calendar
+        return f"{calendar.month_name[self.month]} {self.year} Payroll ({self.get_status_display()})"
+
+    @property
+    def period_label(self):
+        import calendar
+        return f"{calendar.month_name[self.month]} {self.year}"
+
+    @property
+    def total_gross(self):
+        return sum(e.gross_pay for e in self.entries.filter(is_deleted=False))
+
+    @property
+    def total_deductions(self):
+        return sum(e.total_deductions for e in self.entries.filter(is_deleted=False))
+
+    @property
+    def total_net(self):
+        return sum(e.net_pay for e in self.entries.filter(is_deleted=False))
+
+
+class PayrollEntry(AuditModel):
+    """Per-staff payroll entry for one payroll run."""
+    run                = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name='entries')
+    staff              = models.ForeignKey(
+        'accounts.User', on_delete=models.CASCADE, related_name='payroll_entries',
+    )
+    basic_salary       = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    housing_allowance  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    transport_allowance= models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    other_allowances   = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tax_deduction      = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    pension_deduction  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    other_deductions   = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    days_absent        = models.PositiveSmallIntegerField(default=0)
+    days_worked        = models.PositiveSmallIntegerField(default=0)
+    notes              = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ('run', 'staff')
+        ordering = ['staff__last_name', 'staff__first_name']
+
+    def __str__(self):
+        return f"{self.staff.get_full_name()} — {self.run}"
+
+    @property
+    def gross_pay(self):
+        return (
+            self.basic_salary
+            + self.housing_allowance
+            + self.transport_allowance
+            + self.other_allowances
+        )
+
+    @property
+    def total_deductions(self):
+        return self.tax_deduction + self.pension_deduction + self.other_deductions
+
+    @property
+    def net_pay(self):
+        return max(0, self.gross_pay - self.total_deductions)

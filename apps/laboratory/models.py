@@ -18,15 +18,35 @@ class LabTestCategory(models.TextChoices):
     OCULAR = 'OCULAR', _('Ocular Specimens')
 
 
+class ResultType(models.TextChoices):
+    QUANTITATIVE   = 'QUANTITATIVE',   _('Quantitative — numeric value with unit')
+    QUALITATIVE    = 'QUALITATIVE',    _('Qualitative — e.g. Positive / Negative')
+    SEMI_QUANT     = 'SEMI_QUANT',     _('Semi-quantitative — e.g. + / ++ / +++')
+    TEXT           = 'TEXT',           _('Text / Narrative finding')
+    PANEL          = 'PANEL',          _('Panel — multiple sub-results (e.g. CBC)')
+
+
 class LabTestType(TimeStampedModel):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=20, unique=True)
     category = models.CharField(max_length=20, choices=LabTestCategory.choices)
+    result_type = models.CharField(
+        max_length=15, choices=ResultType.choices,
+        default=ResultType.QUANTITATIVE,
+        help_text='Determines the input format on the result entry form.',
+    )
+    result_options = models.JSONField(
+        default=list, blank=True,
+        help_text='For QUALITATIVE/SEMI_QUANT: list of valid result values. '
+                  'e.g. ["Positive","Negative"] or ["Negative","+","++","+++","++++"]',
+    )
     description = models.TextField(blank=True)
     normal_range = models.JSONField(
         default=dict,
         help_text='e.g. {"male": {"min": 13.5, "max": 17.5, "unit": "g/dL"}, "female": {...}}'
     )
+    sample_type = models.CharField(max_length=30, blank=True,
+        help_text='Default sample type e.g. Blood-EDTA, Urine, Swab')
     turnaround_hours = models.PositiveSmallIntegerField(default=24)
     is_active = models.BooleanField(default=True)
 

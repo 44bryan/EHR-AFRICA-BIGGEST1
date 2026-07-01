@@ -1,0 +1,161 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load static %}
+
+{% block title %}New Consent — {{ patient.full_name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'patients:list' %}">Patients</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'patients:detail' patient_id=patient.patient_id %}">{{ patient.full_name }}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'patients:consent_list' patient_id=patient.patient_id %}">Consents</a></li>
+    <li class="breadcrumb-item active">New Consent</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-file-earmark-check text-primary"></i>
+        <strong>Informed Consent — {{ patient.full_name }}</strong>
+        <span class="badge bg-primary bg-opacity-10 text-primary ms-2">JCI PFR.5</span>
+      </div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label">Consent Type <span class="text-danger">*</span></label>
+              <select name="consent_type" class="form-select" required>
+                {% for val, label in consent_types %}
+                  <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Procedure / Treatment <span class="text-danger">*</span></label>
+              <input type="text" name="procedure_name" class="form-control" required
+                     placeholder="e.g. Phacoemulsification Right Eye">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Date & Time Signed</label>
+              <input type="datetime-local" name="signed_at" class="form-control"
+                     value="{{ now|date:'Y-m-d' }}T{{ now|time:'H:i' }}">
+            </div>
+          </div>
+
+          <!-- Patient Capacity -->
+          <div class="card mb-3" style="border-color:#e2e8f0;">
+            <div class="card-header py-2" style="background:#f8fafc;">
+              <strong class="fs-7">Patient Capacity & Representative</strong>
+            </div>
+            <div class="card-body">
+              <div class="row g-3">
+                <div class="col-12">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="patient_has_capacity"
+                           id="has_capacity" checked
+                           onchange="document.getElementById('rep-fields').style.display=this.checked?'none':'flex'">
+                    <label class="form-check-label" for="has_capacity">
+                      Patient has mental capacity to consent
+                    </label>
+                  </div>
+                </div>
+                <div class="col-12" id="rep-fields" style="display:none;">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <label class="form-label">Representative Name</label>
+                      <input type="text" name="patient_representative" class="form-control"
+                             placeholder="Full name of guardian/representative">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Relationship to Patient</label>
+                      <input type="text" name="relationship_to_patient" class="form-control"
+                             placeholder="e.g. Spouse, Parent, Legal Guardian">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Consent Content -->
+          <div class="card mb-3" style="border-color:#e2e8f0;">
+            <div class="card-header py-2" style="background:#f8fafc;">
+              <strong class="fs-7">Consent Discussion Content</strong>
+            </div>
+            <div class="card-body">
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="form-label">Risks Explained <span class="text-danger">*</span></label>
+                  <textarea name="risks_explained" class="form-control" rows="3" required
+                            placeholder="Describe the risks discussed with the patient..."></textarea>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Benefits Explained</label>
+                  <textarea name="benefits_explained" class="form-control" rows="2"
+                            placeholder="Expected benefits of the procedure..."></textarea>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Alternatives Discussed</label>
+                  <textarea name="alternatives_explained" class="form-control" rows="2"
+                            placeholder="Alternative treatment options discussed..."></textarea>
+                </div>
+                <div class="col-md-4">
+                  <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" name="questions_answered" id="q_answered">
+                    <label class="form-check-label" for="q_answered">Patient questions answered satisfactorily</label>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" name="interpreter_used" id="interp_used"
+                           onchange="document.getElementById('interp-name').style.display=this.checked?'block':'none'">
+                    <label class="form-check-label" for="interp_used">Interpreter used</label>
+                  </div>
+                  <div id="interp-name" style="display:none;" class="mt-2">
+                    <input type="text" name="interpreter_name" class="form-control form-control-sm"
+                           placeholder="Interpreter name">
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Witness Name</label>
+                  <input type="text" name="witness_name" class="form-control"
+                         placeholder="Name of witness">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Document Upload -->
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label">Signed Consent Document (scan)</label>
+              <input type="file" name="consent_document" class="form-control"
+                     accept=".pdf,.jpg,.jpeg,.png">
+              <div class="form-text">Optional — upload scanned signed consent form</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="3"
+                        placeholder="Additional notes..."></textarea>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'patients:consent_list' patient_id=patient.patient_id %}"
+               class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>Save Consent Record
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -32,7 +32,7 @@ Include in create.html. Requires: CSRF token in page, form field names per Djang
 
     <!-- ── Step 1: Record ───────────────────────────────────────────────── -->
     <div class="row g-3 mb-3">
-      <div class="col-md-8">
+      <div class="col-12 col-lg-8">
         <label class="form-label fw-semibold small mb-1">
           <i class="bi bi-1-circle-fill me-1 text-primary"></i>Record or type consultation notes
         </label>
@@ -80,7 +80,7 @@ Include in create.html. Requires: CSRF token in page, form field names per Djang
         </div>
       </div>
 
-      <div class="col-md-4">
+      <div class="col-12 col-lg-4">
         <label class="form-label fw-semibold small mb-1">
           <i class="bi bi-info-circle me-1 text-muted"></i>Tips
         </label>
@@ -330,6 +330,28 @@ Include in create.html. Requires: CSRF token in page, form field names per Djang
   }
 
   window.vemrStartRecording = function() {
+    // Speech Recognition API requires HTTPS — on LAN HTTP it will silently fail or throw "not-allowed"
+    if (location.protocol !== 'https:') {
+      var badge = document.getElementById('voiceStatusBadge');
+      badge.textContent = 'HTTPS required';
+      badge.className = 'badge bg-warning text-dark';
+      var ta = document.getElementById('vemrTranscript');
+      ta.focus();
+      ta.placeholder = 'Live recording needs HTTPS (you are on HTTP).\n\n\u2714 Option 1: Type your notes directly here, then tap \u201cExtract & Review\u201d.\n\u2714 Option 2: Record audio on your phone, then tap \u201cUpload Audio\u201d \u2014 Whisper AI will transcribe it automatically.';
+      // Show a dismissible banner above the textarea
+      var existing = document.getElementById('vemrHttpsNotice');
+      if (!existing) {
+        var notice = document.createElement('div');
+        notice.id = 'vemrHttpsNotice';
+        notice.className = 'alert alert-warning alert-dismissible py-2 px-3 small mb-2';
+        notice.innerHTML = '<i class="bi bi-shield-exclamation me-1"></i><strong>Live recording requires HTTPS.</strong> ' +
+          'Type your notes directly in the box below and tap <strong>Extract &amp; Review</strong>, ' +
+          'or use <strong>Upload Audio</strong> to transcribe a voice memo from your phone.' +
+          '<button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>';
+        ta.parentElement.insertBefore(notice, ta);
+      }
+      return;
+    }
     _recognition = _initSpeechAPI();  // Re-init each time to pick up selected language
     if (!_recognition) {
       alert('Your browser does not support live recording. Please use Chrome or Edge, or type your notes directly.');

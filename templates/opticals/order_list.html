@@ -1,11 +1,98 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}Optical Orders{% endblock %}
+{% load humanize %}
+{% block title %}{% if show_unpaid %}Optical Billing — Outstanding Balance{% else %}All Optical Orders{% endif %}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Optical Orders</h1>
-  <a href="{% url 'opticals:create_order' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-circle me-1"></i>New Order
-  </a>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">
+      <i class="bi bi-eyeglasses me-2 text-primary"></i>
+      {% if show_unpaid %}Optical Billing — Outstanding Balance{% else %}All Optical Orders{% endif %}
+    </h4>
+    <small class="text-muted">
+      {% if show_unpaid %}Orders with balance still to collect — click Collect to open POS
+      {% else %}All optical dispensing orders{% endif %}
+    </small>
+  </div>
+  <div class="d-flex gap-2">
+    {% if show_unpaid %}
+    <a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary btn-sm">All Orders</a>
+    {% else %}
+    <a href="{% url 'opticals:order_list_unpaid' %}" class="btn btn-outline-warning btn-sm">
+      <i class="bi bi-hourglass-split me-1"></i>Outstanding Only
+    </a>
+    {% endif %}
+    <button onclick="window.print()" class="btn btn-outline-dark btn-sm">
+      <i class="bi bi-printer me-1"></i>Print / PDF
+    </button>
+    <a href="{% url 'opticals:create_order' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle me-1"></i>New Order
+    </a>
+  </div>
 </div>
-<div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Order No.</th><th>Patient</th><th>Frame</th><th>Lens</th><th>Status</th><th>Total</th><th>Date</th><th></th></tr></thead><tbody>{% for o in orders %}<tr><td>{{ o.order_number }}</td><td>{{ o.patient.full_name }}</td><td>{{ o.frame|default:"-" }}</td><td>{{ o.lens|default:"-" }}</td><td><span class="badge bg-secondary">{{ o.get_status_display }}</span></td><td>&#8358;{{ o.total_amount|floatformat:0 }}</td><td>{{ o.ordered_date|date:"d M Y" }}</td><td><a href="{% url 'opticals:order_detail' o.id %}" class="btn btn-sm btn-outline-primary">View</a></td></tr>{% empty %}<tr><td colspan="8" class="text-center text-muted py-4">No optical orders yet</td></tr>{% endfor %}</tbody></table></div></div></div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Order No.</th>
+            <th>Patient</th>
+            <th>Frame / Lens</th>
+            <th>Status</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">Deposit</th>
+            <th class="text-end">Balance</th>
+            <th>Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orders %}
+          <tr {% if o.balance_due > 0 %}class="table-warning-subtle"{% endif %}>
+            <td><code class="small">{{ o.order_number }}</code></td>
+            <td class="fw-semibold">{{ o.patient.full_name }}</td>
+            <td class="text-muted small">
+              {{ o.frame|default:"—" }}<br>{{ o.lens|default:"—" }}
+            </td>
+            <td>
+              <span class="badge
+                {% if o.status == 'ORDERED' %}bg-primary
+                {% elif o.status == 'LAB' %}bg-warning text-dark
+                {% elif o.status == 'READY' %}bg-success
+                {% elif o.status == 'DELIVERED' %}bg-secondary
+                {% else %}bg-danger{% endif %}">
+                {{ o.get_status_display }}
+              </span>
+            </td>
+            <td class="text-end">{{ o.total_amount|floatformat:0|intcomma }}</td>
+            <td class="text-end text-success">{{ o.deposit_paid|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-semibold {% if o.balance_due > 0 %}text-danger{% else %}text-success{% endif %}">
+              {% if o.balance_due > 0 %}{{ o.balance_due|floatformat:0|intcomma }}{% else %}<i class="bi bi-check-circle-fill text-success"></i>{% endif %}
+            </td>
+            <td class="text-muted">{{ o.ordered_date|date:"d M Y" }}</td>
+            <td class="text-nowrap">
+              {% if o.balance_due > 0 %}
+              <a href="{% url 'billing:patient_pos' o.patient.patient_id %}" class="btn btn-sm btn-success fw-semibold">
+                <i class="bi bi-cash-coin me-1"></i>Collect
+              </a>
+              {% endif %}
+              <a href="{% url 'opticals:order_detail' o.id %}" class="btn btn-sm btn-outline-primary">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-4">
+              {% if show_unpaid %}No optical orders with outstanding balance.
+              {% else %}No optical orders yet.{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 {% endblock %}

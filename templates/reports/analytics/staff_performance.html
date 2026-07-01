@@ -1,0 +1,151 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Staff Performance{% endblock %}
+
+{% block extra_css %}
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-people-fill me-2 text-primary"></i>Staff Performance</h4>
+    <div class="text-muted small">Doctor throughput &amp; queue wait times — last {{ period }} days</div>
+  </div>
+  <div class="d-flex gap-2">
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <select name="days" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="7" {% if period == 7 %}selected{% endif %}>Last 7 days</option>
+        <option value="30" {% if period == 30 %}selected{% endif %}>Last 30 days</option>
+        <option value="90" {% if period == 90 %}selected{% endif %}>Last 90 days</option>
+      </select>
+    </form>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">Doctor Consultations (Top 15)</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="doctorChart" height="320"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">Avg Wait Time by Service (minutes)</h6>
+      </div>
+      <div class="card-body">
+        {% if wait_by_dept %}
+        <canvas id="waitChart" height="280"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-5 small">No wait time data available.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">Doctor Consultation Details</h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Doctor</th><th>Department</th><th class="text-end">Consultations</th></tr>
+          </thead>
+          <tbody>
+            {% for d in doctor_stats %}
+            <tr>
+              <td class="fw-semibold">Dr. {{ d.consulting_doctor__first_name }} {{ d.consulting_doctor__last_name }}</td>
+              <td class="text-muted">{{ d.department__name|default:"—" }}</td>
+              <td class="text-end">
+                <span class="badge bg-primary">{{ d.consultations }}</span>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-4">No consultation data.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small">Wait Time by Department</h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Service</th><th class="text-end">Tokens</th><th class="text-end">Avg Wait (min)</th></tr>
+          </thead>
+          <tbody>
+            {% for w in wait_by_dept %}
+            <tr>
+              <td>{{ w.service_type }}</td>
+              <td class="text-end text-muted">{{ w.count }}</td>
+              <td class="text-end">
+                <span class="badge {% if w.avg_wait > 60 %}bg-danger{% elif w.avg_wait > 30 %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                  {{ w.avg_wait|floatformat:0 }} min
+                </span>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-4">No wait time data.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% block extra_js %}
+<script>
+const dLabels = [{% for d in doctor_stats %}"Dr. {{ d.consulting_doctor__first_name }} {{ d.consulting_doctor__last_name }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const dCounts = [{% for d in doctor_stats %}{{ d.consultations }}{% if not forloop.last %},{% endif %}{% endfor %}];
+
+new Chart(document.getElementById('doctorChart'), {
+  type: 'bar',
+  data: {
+    labels: dLabels,
+    datasets: [{ label: 'Consultations', data: dCounts, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4 }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+  }
+});
+
+{% if wait_by_dept %}
+const wLabels = [{% for w in wait_by_dept %}"{{ w.service_type }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const wValues = [{% for w in wait_by_dept %}{{ w.avg_wait|floatformat:0 }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const wColors = wValues.map(v => v > 60 ? 'rgba(239,68,68,.7)' : v > 30 ? 'rgba(245,158,11,.7)' : 'rgba(16,185,129,.7)');
+
+new Chart(document.getElementById('waitChart'), {
+  type: 'bar',
+  data: {
+    labels: wLabels,
+    datasets: [{ label: 'Avg Wait (min)', data: wValues, backgroundColor: wColors, borderRadius: 4 }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true } }
+  }
+});
+{% endif %}
+</script>
+{% endblock %}
+{% endblock %}

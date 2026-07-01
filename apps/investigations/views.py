@@ -7,6 +7,7 @@ from django.db.models import Q
 from .models import InvestigationOrder, InvestigationResult, InvestigationType, InvestigationFile
 from .forms import InvestigationOrderForm, InvestigationResultForm
 from apps.consultations.models import Consultation
+from apps.core.context_processors import qms_active as _qms_active
 
 
 @login_required
@@ -18,20 +19,43 @@ def investigation_workstation_view(request):
       - Pending/in-progress investigation orders
       - Completed today
     """
-    from apps.qms.models import QueueToken, TokenStatus
     from apps.patients.models import Visit
 
     today = timezone.localdate()
 
     # ── Patients queued via QMS (from ordering OR direct routing) ──────────
-    queued_tokens = list(
-        QueueToken.objects.filter(
-            service_type='INVEST',
-            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-            issued_at__date=today,
-        ).select_related('visit__patient', 'visit__attending_doctor')
-        .order_by('issued_at')
-    )
+    if _qms_active():
+        try:
+            from apps.qms.models import QueueToken, TokenStatus
+            queued_tokens = list(
+                QueueToken.objects.filter(
+                    service_type='INVEST',
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    issued_at__date=today,
+                ).select_related('visit__patient', 'visit__attending_doctor')
+                .order_by('issued_at')
+            )
+        except Exception:
+            queued_tokens = []
+    else:
+        queued_tokens = []
+    # Attach the first pending order to each token so the template can link directly
+    if queued_tokens:
+        pending_by_patient = {}
+        patient_ids = [t.visit.patient_id for t in queued_tokens if t.visit and t.visit.patient_id]
+        for order in InvestigationOrder.objects.filter(
+            patient__patient_id__in=patient_ids,
+            status__in=[InvestigationOrder.Status.ORDERED, InvestigationOrder.Status.IN_PROGRESS],
+            is_deleted=False,
+        ).select_related('patient').order_by('urgency', 'created_at'):
+            pid = order.patient.patient_id
+            if pid not in pending_by_patient:
+                pending_by_patient[pid] = order
+        for token in queued_tokens:
+            if token.visit and token.visit.patient_id:
+                token.pending_order = pending_by_patient.get(token.visit.patient_id)
+            else:
+                token.pending_order = None
     queued_no_order = queued_tokens  # Show all — technician calls & records
 
     pending_orders = list(
@@ -52,6 +76,40 @@ def investigation_workstation_view(request):
             'patient', 'investigation_type', 'ordered_by'
         ).prefetch_related('result__files').order_by('-updated_at')[:30]
     )
+
+    # ── Payment status — checked via ServiceWorkOrder ─────────────────────────
+    # PENDING_PAYMENT = doctor ordered, patient hasn't paid yet
+    # PENDING         = invoice paid → cleared for service
+    try:
+        from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+        patient_ids = [o.patient_id for o in pending_orders]
+        paid_patient_ids = set(
+            ServiceWorkOrder.objects.filter(
+                patient_id__in=patient_ids,
+                category=ServiceCategory.INVESTIGATION,
+                status=WorkOrderStatus.PENDING,
+                is_deleted=False,
+            ).values_list('patient_id', flat=True)
+        )
+        unpaid_patient_ids = set(
+            ServiceWorkOrder.objects.filter(
+                patient_id__in=patient_ids,
+                category=ServiceCategory.INVESTIGATION,
+                status=WorkOrderStatus.PENDING_PAYMENT,
+                is_deleted=False,
+            ).values_list('patient_id', flat=True)
+        )
+        for order in pending_orders:
+            pid = order.patient_id
+            if pid in paid_patient_ids:
+                order.is_paid = True
+            elif pid in unpaid_patient_ids:
+                order.is_paid = False
+            else:
+                order.is_paid = None  # No work order — legacy or direct order
+    except Exception:
+        for order in pending_orders:
+            order.is_paid = None
 
     urgent = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY')]
     routine = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY')]
@@ -104,51 +162,47 @@ def investigation_order_view(request, consultation_pk):
     consultation = get_object_or_404(Consultation, pk=consultation_pk)
     if request.method == 'POST':
         form = InvestigationOrderForm(request.POST)
+        payment_waived = request.POST.get('payment_waived') == '1'
+        waive_reason = request.POST.get('waive_reason', '').strip()
         if form.is_valid():
-            order = form.save(commit=False)
-            order.consultation = consultation
-            order.patient = consultation.patient
-            order.ordered_by = request.user
-            order.created_by = request.user
-            order.save()
-            # Auto-billing
-            try:
-                from apps.billing.utils import bill_investigation
-                bill_investigation(order, created_by=request.user)
-            except Exception:
-                pass
-
-            # Auto-create QMS token so patient appears in investigation queue
-            try:
-                from apps.qms.models import (
-                    QueueToken, DailyTokenSequence, IssuancePoint, TokenStatus
-                )
-                visit = consultation.visit
-                if visit:
-                    token_number = DailyTokenSequence.next_dept_token('INVEST')
-                    QueueToken.objects.create(
-                        token_number=token_number,
-                        service_type='INVEST',
+            # Strict: waive reason is mandatory when payment is waived
+            if payment_waived and not waive_reason:
+                messages.error(request, 'A reason is required when waiving payment. This is logged for audit.')
+            else:
+                order = form.save(commit=False)
+                order.consultation = consultation
+                order.patient = consultation.patient
+                order.ordered_by = request.user
+                order.created_by = request.user
+                order.save()
+                try:
+                    from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+                    wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
+                    wo_notes = f'Payment waived — {waive_reason}' if payment_waived else ''
+                    ServiceWorkOrder.objects.create(
                         patient=consultation.patient,
-                        visit=visit,
-                        service_tier=visit.service_tier if hasattr(visit, 'service_tier') else 'STANDARD',
-                        issuance_point=IssuancePoint.SYSTEM,
-                        status=TokenStatus.WAITING,
+                        consultation=consultation,
+                        category=ServiceCategory.INVESTIGATION,
+                        description=f'Investigation: {order.investigation_type.name}',
+                        status=wo_status,
+                        notes=wo_notes,
                         created_by=request.user,
                     )
-                    # Update visit status and department
-                    from apps.patients.models import VisitStatus
-                    from apps.departments.models import Department
-                    invest_dept = Department.objects.filter(code='INVEST', is_active=True).first()
-                    visit.status = 'INVESTIGATION'
-                    if invest_dept:
-                        visit.department = invest_dept
-                    visit.save(update_fields=['status', 'department', 'updated_at'] if invest_dept else ['status', 'updated_at'])
-            except Exception:
-                pass  # Never block the doctor if QMS fails
-
-            messages.success(request, f'Investigation ordered: {order.investigation_type.name}. Patient queued at Investigation.')
-            return redirect('consultations:detail', pk=consultation_pk)
+                except Exception:
+                    pass  # Never block the doctor
+                if payment_waived:
+                    messages.success(
+                        request,
+                        f'Investigation ordered: {order.investigation_type.name}. '
+                        f'Payment waived ({waive_reason}) — sent directly to investigation queue.'
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f'Investigation ordered: {order.investigation_type.name}. '
+                        'Direct patient to cashier — queue activates after payment.'
+                    )
+                return redirect('consultations:detail', pk=consultation_pk)
     else:
         form = InvestigationOrderForm()
 
@@ -171,6 +225,9 @@ def investigation_detail_view(request, pk):
 
 @login_required
 def add_result_view(request, pk):
+    if not request.user.can_record_investigation_results():
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Only Investigation Technicians can enter results.")
     order = get_object_or_404(InvestigationOrder, pk=pk)
     if hasattr(order, 'result'):
         messages.info(request, 'Result already recorded. Use edit instead.')
@@ -215,27 +272,196 @@ def add_result_view(request, pk):
                     file_type='IMAGE' if uploaded_file.content_type.startswith('image') else 'PDF',
                     uploaded_by=request.user,
                 )
+            # Notify the ordering doctor that the result is ready
+            try:
+                from apps.notifications.utils import notify
+                from apps.notifications.models import NotificationType, NotificationPriority
+                if order.ordered_by:
+                    file_note = ' (PDF attached)' if request.FILES.get('result_file') else ''
+                    notify(
+                        recipient=order.ordered_by,
+                        title=f'Result ready: {order.investigation_type.name} — {order.patient.full_name}',
+                        message=(
+                            f'{order.investigation_type.name} result entered by '
+                            f'{request.user.get_full_name() or request.user.username}{file_note}. '
+                            f'Patient: {order.patient.full_name} ({order.patient.patient_id})'
+                        ),
+                        link=f'/investigations/{order.pk}/',
+                        notification_type=NotificationType.GENERAL,
+                        priority=NotificationPriority.HIGH,
+                    )
+            except Exception:
+                pass  # Never block the technician
             messages.success(request, 'Investigation result recorded.')
             return redirect('investigations:workstation')
     else:
         form = InvestigationResultForm()
 
+    # Compute imaging sub-type so template shows the correct fields (not OCT for everything)
+    imaging_subtype = 'GENERIC'
+    if order.investigation_type.category == 'IMAGING':
+        code_up = order.investigation_type.code.upper()
+        name_up = order.investigation_type.name.upper()
+        if 'OCT' in code_up or 'OCT' in name_up:
+            imaging_subtype = 'OCT'
+        elif ('BSCAN' in code_up or 'B_SCAN' in code_up or
+              'B-SCAN' in name_up or 'B SCAN' in name_up or
+              'BSCAN' in name_up or 'ULTRASOUND' in name_up):
+            imaging_subtype = 'BSCAN'
+        elif 'FFA' in code_up or 'FLUORESCEIN' in name_up or 'ANGIOGRAPHY' in name_up:
+            imaging_subtype = 'FFA'
+        elif 'FUNDUS' in code_up or 'FUNDUS' in name_up or 'PHOTO' in name_up:
+            imaging_subtype = 'FUNDUS'
+
     return render(request, 'investigations/result_form.html', {
         'form': form,
         'order': order,
+        'imaging_subtype': imaging_subtype,
     })
 
 
 @login_required
 def verify_result_view(request, pk):
     order = get_object_or_404(InvestigationOrder, pk=pk)
-    if not (request.user.is_doctor or request.user.is_medical_director):
+    # Technician verifies to print & give to patient; doctor/MD can also verify
+    can_verify = (
+        request.user.can_record_investigation_results()
+        or request.user.is_doctor
+        or request.user.is_medical_director
+    )
+    if not can_verify:
         return HttpResponseForbidden()
 
     result = get_object_or_404(InvestigationResult, order=order)
+    if result.is_verified:
+        messages.info(request, 'This result has already been verified.')
+        return redirect('investigations:detail', pk=pk)
     result.is_verified = True
     result.verified_by = request.user
     result.verified_at = timezone.now()
-    result.save(update_fields=['is_verified', 'verified_by', 'verified_at'])
-    messages.success(request, 'Investigation result verified.')
+    result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'updated_at'])
+    messages.success(request, f'Result verified by {request.user.get_full_name()}.')
     return redirect('investigations:detail', pk=pk)
+
+
+# ── DICOM Imaging Studies ──────────────────────────────────────────────────────
+
+@login_required
+def imaging_study_list(request):
+    """All imaging studies — filterable by modality, patient, date range."""
+    from .models import ImagingStudy, ImagingModality
+    from django.db.models import Q
+
+    qs = ImagingStudy.objects.filter(is_deleted=False).select_related('patient', 'ordered_by')
+    q = request.GET.get('q', '')
+    modality = request.GET.get('modality', '')
+    reported = request.GET.get('reported', '')
+
+    if q:
+        qs = qs.filter(Q(patient__first_name__icontains=q) | Q(patient__last_name__icontains=q)
+                       | Q(description__icontains=q) | Q(accession_number__icontains=q))
+    if modality:
+        qs = qs.filter(modality=modality)
+    if reported == '1':
+        qs = qs.filter(is_reported=True)
+    elif reported == '0':
+        qs = qs.filter(is_reported=False)
+
+    from django.core.paginator import Paginator
+    page_obj = Paginator(qs.order_by('-study_date', '-created_at'), 25).get_page(request.GET.get('page'))
+    return render(request, 'investigations/imaging_list.html', {
+        'page_obj': page_obj,
+        'modalities': ImagingModality.choices,
+        'q': q, 'modality': modality, 'reported': reported,
+    })
+
+
+@login_required
+def imaging_study_create(request):
+    """Create a new imaging study record and link to viewer."""
+    from .models import ImagingStudy, ImagingModality
+    from apps.patients.models import Patient
+    from apps.consultations.models import Consultation
+
+    if request.method == 'POST':
+        patient_id = request.POST.get('patient_id', '').strip()
+        patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+        consultation_id = request.POST.get('consultation_id', '').strip()
+        consultation = None
+        if consultation_id:
+            from django.core.exceptions import ValidationError
+            try:
+                consultation = Consultation.objects.get(id=consultation_id, is_deleted=False)
+            except (Consultation.DoesNotExist, ValidationError):
+                pass
+
+        study = ImagingStudy.objects.create(
+            patient=patient,
+            consultation=consultation,
+            modality=request.POST.get('modality', 'OTHER'),
+            description=request.POST.get('description', '').strip(),
+            study_uid=request.POST.get('study_uid', '').strip(),
+            accession_number=request.POST.get('accession_number', '').strip(),
+            series_count=int(request.POST.get('series_count', 1) or 1),
+            viewer_url=request.POST.get('viewer_url', '').strip(),
+            study_date=request.POST.get('study_date') or timezone.localdate(),
+            ordered_by=request.user,
+            created_by=request.user,
+        )
+        messages.success(request, f'Imaging study registered: {study}')
+        return redirect('investigations:imaging_detail', study_id=study.id)
+
+    # GET — patient pre-fill from query param
+    patient_id = request.GET.get('patient', '')
+    consultation_id = request.GET.get('consultation', '')
+    patient = None
+    if patient_id:
+        try:
+            patient = Patient.objects.get(patient_id=patient_id, is_deleted=False)
+        except Patient.DoesNotExist:
+            pass
+
+    from .models import ImagingModality
+    return render(request, 'investigations/imaging_create.html', {
+        'modalities': ImagingModality.choices,
+        'patient': patient,
+        'consultation_id': consultation_id,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def imaging_study_detail(request, study_id):
+    from .models import ImagingStudy
+    study = get_object_or_404(ImagingStudy, id=study_id, is_deleted=False)
+    return render(request, 'investigations/imaging_detail.html', {'study': study})
+
+
+@login_required
+def imaging_study_report(request, study_id):
+    """Save / update the radiology/imaging report for a study."""
+    from .models import ImagingStudy
+    study = get_object_or_404(ImagingStudy, id=study_id, is_deleted=False)
+    if request.method == 'POST':
+        study.report = request.POST.get('report', '').strip()
+        study.is_reported = True
+        study.reported_by = request.user
+        study.save(update_fields=['report', 'is_reported', 'reported_by', 'updated_at'])
+        messages.success(request, 'Imaging report saved.')
+        return redirect('investigations:imaging_detail', study_id=study.id)
+    return redirect('investigations:imaging_detail', study_id=study.id)
+
+
+@login_required
+def patient_imaging_list(request, patient_id):
+    """All imaging studies for a specific patient — used in patient detail tab."""
+    from .models import ImagingStudy
+    from apps.patients.models import Patient
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+    studies = ImagingStudy.objects.filter(
+        patient=patient, is_deleted=False
+    ).select_related('ordered_by', 'consultation').order_by('-study_date', '-created_at')
+    return render(request, 'investigations/patient_imaging.html', {
+        'patient': patient,
+        'studies': studies,
+    })

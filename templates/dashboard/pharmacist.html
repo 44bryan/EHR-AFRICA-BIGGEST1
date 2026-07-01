@@ -1,38 +1,155 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Pharmacy Workstation{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4">
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
   <div>
-    <h1 class="h3 mb-1">Pharmacy Workstation</h1>
-    <div class="text-muted">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+    <h1 class="h3 mb-1 fw-bold"><i class="bi bi-capsule-pill me-2 text-success"></i>Pharmacy Workstation</h1>
+    <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
   </div>
-  <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-primary btn-sm">Full Pharmacy</a>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:patient_search' %}" class="btn btn-success btn-sm px-3">
+      <i class="bi bi-person-search me-1"></i>Search Patient
+    </a>
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-grid me-1"></i>Full Dashboard
+    </a>
+  </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white py-3 d-flex justify-content-between">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-capsule me-2 text-success"></i>Prescriptions to Dispense</h6>
-    <span class="badge bg-success">{{ pending_count }}</span>
+{# ── KPI Summary Row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-primary mb-0">{{ waiting_visits|length }}</div>
+      <div class="text-muted small">Waiting Now</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ pending_count }}</div>
+      <div class="text-muted small">Pending Prescriptions</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <a href="{% url 'pharmacy:dashboard' %}" class="text-decoration-none">
+        <div class="h2 fw-bold {% if low_stock_count > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ low_stock_count }}</div>
+        <div class="text-muted small">Low Stock</div>
+      </a>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <a href="{% url 'pharmacy:dashboard' %}" class="text-decoration-none">
+        <div class="h2 fw-bold {% if expiring_critical_count > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ expiring_critical_count }}</div>
+        <div class="text-muted small">Expiring &le;30 Days</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+{# ── Patients Physically Waiting at Pharmacy Counter ── #}
+{% if waiting_visits %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #0d6efd !important;">
+  <div class="card-header d-flex align-items-center justify-content-between py-2" style="background:#eff6ff;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-person-walking text-primary fs-5"></i>
+      <h6 class="mb-0 fw-bold text-primary">Patients at the Counter Now</h6>
+      <span class="badge bg-primary">{{ waiting_visits|length }}</span>
+    </div>
+    <small class="text-muted">Routed from consultation today</small>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Patient</th><th>Prescribed By</th><th>Date</th><th>Status</th><th></th></tr>
+        <tr><th>#</th><th>Patient</th><th>Prescribed Drugs</th><th>Doctor</th><th>Arrived</th><th></th></tr>
       </thead>
       <tbody>
-        {% for rx in pending_rx %}
+        {% for v in waiting_visits %}
         <tr>
-          <td class="fw-semibold">{{ rx.patient.full_name }}<br><span class="text-muted">{{ rx.patient.patient_id }}</span></td>
-          <td class="text-muted">Dr. {{ rx.consultation.consulting_doctor.full_name|default:"—" }}</td>
-          <td class="text-muted">{{ rx.prescribed_date|date:"d M Y" }}</td>
-          <td><span class="badge bg-warning text-dark">{{ rx.get_status_display }}</span></td>
-          <td><a href="{% url 'prescriptions:drug_detail' pk=rx.pk %}" class="btn btn-sm btn-success">Dispense</a></td>
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if v.latest_rx %}
+              {% for item in v.latest_rx.items.all|slice:":3" %}
+                <span class="badge bg-light text-dark border me-1">{{ item.drug_name }}{% if item.concentration %} {{ item.concentration }}{% endif %}</span>
+              {% endfor %}
+              {% if v.latest_rx.items.count > 3 %}
+                <span class="text-muted small">+{{ v.latest_rx.items.count|add:"-3" }} more</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted small fst-italic">See patient record</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">
+            {% if v.attending_doctor %}Dr. {{ v.attending_doctor.last_name }}{% else %}—{% endif %}
+          </td>
+          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+          <td>
+            <a href="{% url 'pharmacy:dispense' %}?patient={{ v.patient.pk }}" class="btn btn-sm btn-primary">
+              <i class="bi bi-capsule me-1"></i>Dispense
+            </a>
+          </td>
         </tr>
-        {% empty %}
-        <tr><td colspan="5" class="text-center text-muted py-4">No pending prescriptions.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% endif %}
+
+{# ── All Pending Prescriptions ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-bold"><i class="bi bi-file-medical text-success me-2"></i>Pending Prescriptions</h6>
+    <span class="badge bg-warning text-dark">{{ pending_count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Drugs Prescribed</th><th>Prescribed By</th><th>Date</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for rx in pending_rx %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ rx.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ rx.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% for item in rx.items.all|slice:":3" %}
+              <span class="badge bg-light text-dark border me-1">{{ item.drug_name }}{% if item.concentration %} {{ item.concentration }}{% endif %}</span>
+            {% endfor %}
+            {% if rx.items.count > 3 %}
+              <span class="text-muted small">+{{ rx.items.count|add:"-3" }} more</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">
+            {% if rx.prescribed_by %}Dr. {{ rx.prescribed_by.get_full_name }}{% else %}—{% endif %}
+          </td>
+          <td class="text-muted">{{ rx.prescription_date|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'pharmacy:dispense' %}?patient={{ rx.patient.pk }}" class="btn btn-sm btn-outline-success">
+              <i class="bi bi-capsule me-1"></i>Dispense
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-5">
+            <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
+            No pending prescriptions.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 {% endblock %}

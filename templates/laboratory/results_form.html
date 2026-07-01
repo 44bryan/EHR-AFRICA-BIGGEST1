@@ -1,41 +1,428 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load static %}
 {% block title %}Enter Lab Results{% endblock %}
-{% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-9">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white py-3">
-        <h5 class="mb-0 fw-semibold">Enter Lab Results — {{ order.patient.full_name }}</h5>
-      </div>
-      <div class="card-body">
-        <form method="post">
-          {% csrf_token %}
-          <div class="table-responsive">
-            <table class="table table-sm">
-              <thead class="table-light">
-                <tr><th>Test</th><th>Result Value</th><th>Unit</th><th>Reference Range</th><th class="text-center">Abnormal</th><th class="text-center">Critical</th></tr>
-              </thead>
-              <tbody>
-                {% for item in items %}
-                <tr>
-                  <td class="fw-semibold align-middle">{{ item.test_type.name }}</td>
-                  <td><input type="text" name="result_value_{{ item.pk }}" class="form-control form-control-sm" placeholder="Enter result" {% if item.result %}value="{{ item.result.result_value }}"{% endif %}></td>
-                  <td><input type="text" name="result_unit_{{ item.pk }}" class="form-control form-control-sm" placeholder="e.g. g/dL" {% if item.result %}value="{{ item.result.result_unit }}"{% endif %}></td>
-                  <td><input type="text" name="ref_range_{{ item.pk }}" class="form-control form-control-sm" placeholder="e.g. 12–17" {% if item.result %}value="{{ item.result.reference_range }}"{% endif %}></td>
-                  <td class="text-center"><input type="checkbox" name="is_abnormal_{{ item.pk }}" class="form-check-input" {% if item.result and item.result.is_abnormal %}checked{% endif %}></td>
-                  <td class="text-center"><input type="checkbox" name="is_critical_{{ item.pk }}" class="form-check-input" {% if item.result and item.result.is_critical %}checked{% endif %}></td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          <div class="d-flex gap-2 justify-content-end mt-3">
-            <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Results</button>
-          </div>
-        </form>
-      </div>
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-flask text-primary fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">Enter Lab Results</h5>
+    <div class="text-muted small">{{ order.patient.full_name }} — {{ order.created_at|date:"d M Y" }}
+      <span class="badge {% if order.urgency == 'URGENT' or order.urgency == 'EMERGENCY' %}bg-danger{% else %}bg-secondary{% endif %} ms-1">{{ order.urgency }}</span>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+
+    {% if order.clinical_indication %}
+    <div class="alert alert-info py-2 mb-3 small">
+      <i class="bi bi-info-circle me-1"></i><strong>Clinical indication:</strong> {{ order.clinical_indication }}
+    </div>
+    {% endif %}
+
+    <form method="post" id="resultsForm">
+      {% csrf_token %}
+
+      {% for item in items %}
+      {% with tt=item.test_type nr=item.test_type.normal_range %}
+      <div class="card border-0 shadow-sm mb-3 result-card" data-item-id="{{ item.pk }}"
+           data-result-type="{{ tt.result_type }}"
+           data-normal-range="{{ nr|default:'{}' }}">
+
+        {# ── Card header ── #}
+        <div class="card-header py-2 d-flex align-items-center justify-content-between"
+             style="background:{% if item.result and item.result.is_critical %}#fff5f5{% elif item.result and item.result.is_abnormal %}#fffbf0{% else %}#f8fafc{% endif %};">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge bg-primary-subtle text-primary small">{{ tt.get_category_display }}</span>
+            <span class="fw-semibold">{{ tt.name }}</span>
+            <code class="small text-muted">{{ tt.code }}</code>
+            {% if tt.sample_type %}
+            <span class="badge bg-light text-muted border small">
+              <i class="bi bi-droplet me-1"></i>{{ tt.sample_type }}
+            </span>
+            {% endif %}
+            <span class="badge bg-secondary-subtle text-secondary small">
+              {% if tt.result_type == 'QUALITATIVE' %}Qualitative
+              {% elif tt.result_type == 'SEMI_QUANT' %}Semi-quantitative
+              {% elif tt.result_type == 'TEXT' %}Free text
+              {% elif tt.result_type == 'PANEL' %}Panel
+              {% else %}Quantitative{% endif %}
+            </span>
+          </div>
+          {% if item.result %}
+          <span class="badge {% if item.result.is_critical %}bg-danger{% elif item.result.is_abnormal %}bg-warning text-dark{% else %}bg-success{% endif %}">
+            {% if item.result.is_critical %}Critical{% elif item.result.is_abnormal %}Abnormal{% else %}Normal{% endif %}
+          </span>
+          {% else %}
+          <span class="badge bg-light text-muted border">Pending</span>
+          {% endif %}
+        </div>
+
+        <div class="card-body py-3">
+
+          {# ══════════════════════════════════════════════════════
+             QUALITATIVE — radio buttons from result_options
+             e.g. Malaria RDT: Negative / Positive P.falciparum / Positive Mixed
+          ═══════════════════════════════════════════════════════ #}
+          {% if tt.result_type == 'QUALITATIVE' %}
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-2">Result <span class="text-danger">*</span></label>
+            <div class="d-flex flex-wrap gap-2">
+              {% for option in tt.result_options %}
+              <div class="form-check me-3">
+                <input type="radio"
+                       name="result_value_{{ item.pk }}"
+                       id="opt_{{ item.pk }}_{{ forloop.counter }}"
+                       class="form-check-input qualitative-radio"
+                       value="{{ option }}"
+                       data-item="{{ item.pk }}"
+                       {% if item.result and item.result.result_value == option %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="opt_{{ item.pk }}_{{ forloop.counter }}">
+                  {% if 'Positive' in option or 'Reactive' in option or 'Present' in option %}
+                    <span class="text-danger">{{ option }}</span>
+                  {% elif 'Negative' in option or 'Non-reactive' in option or 'Absent' in option %}
+                    <span class="text-success">{{ option }}</span>
+                  {% else %}
+                    {{ option }}
+                  {% endif %}
+                </label>
+              </div>
+              {% empty %}
+              {# Fallback if result_options is empty #}
+              {% for dflt in "Negative,Positive"|split:"," %}
+              <div class="form-check me-3">
+                <input type="radio"
+                       name="result_value_{{ item.pk }}"
+                       id="opt_{{ item.pk }}_{{ forloop.counter }}"
+                       class="form-check-input qualitative-radio"
+                       value="{{ dflt }}"
+                       data-item="{{ item.pk }}"
+                       {% if item.result and item.result.result_value == dflt %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="opt_{{ item.pk }}_{{ forloop.counter }}">
+                  <span class="{% if dflt == 'Positive' %}text-danger{% else %}text-success{% endif %}">{{ dflt }}</span>
+                </label>
+              </div>
+              {% endfor %}
+              {% endfor %}
+            </div>
+          </div>
+          {# Hidden unit — not needed for qualitative #}
+          <input type="hidden" name="result_unit_{{ item.pk }}" value="">
+
+          {# ══════════════════════════════════════════════════════
+             SEMI-QUANTITATIVE — graded radio buttons  +/++/+++/++++
+          ═══════════════════════════════════════════════════════ #}
+          {% elif tt.result_type == 'SEMI_QUANT' %}
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-2">Result Grade <span class="text-danger">*</span></label>
+            <div class="d-flex flex-wrap gap-2">
+              {% for option in tt.result_options %}
+              <div class="form-check me-3">
+                <input type="radio"
+                       name="result_value_{{ item.pk }}"
+                       id="sq_{{ item.pk }}_{{ forloop.counter }}"
+                       class="form-check-input semi-quant-radio"
+                       value="{{ option }}"
+                       data-item="{{ item.pk }}"
+                       {% if item.result and item.result.result_value == option %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="sq_{{ item.pk }}_{{ forloop.counter }}">
+                  {% if option == 'Negative' or option == '0' %}
+                    <span class="badge bg-success-subtle text-success border">{{ option }}</span>
+                  {% elif '++++' in option %}
+                    <span class="badge bg-danger">{{ option }}</span>
+                  {% elif '+++' in option %}
+                    <span class="badge bg-danger-subtle text-danger border">{{ option }}</span>
+                  {% elif '++' in option %}
+                    <span class="badge bg-warning text-dark">{{ option }}</span>
+                  {% elif '+' in option %}
+                    <span class="badge bg-warning-subtle text-warning border">{{ option }}</span>
+                  {% else %}
+                    <span class="badge bg-light text-dark border">{{ option }}</span>
+                  {% endif %}
+                </label>
+              </div>
+              {% empty %}
+              {% for grade in "Negative,+,++,+++,++++"|split:"," %}
+              <div class="form-check me-3">
+                <input type="radio"
+                       name="result_value_{{ item.pk }}"
+                       id="sq_{{ item.pk }}_{{ forloop.counter }}"
+                       class="form-check-input semi-quant-radio"
+                       value="{{ grade }}"
+                       data-item="{{ item.pk }}"
+                       {% if item.result and item.result.result_value == grade %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="sq_{{ item.pk }}_{{ forloop.counter }}">
+                  <span class="badge {% if grade == 'Negative' %}bg-success{% elif grade == '++++' %}bg-danger{% elif grade == '+++' %}bg-warning text-dark{% elif grade == '++' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ grade }}</span>
+                </label>
+              </div>
+              {% endfor %}
+              {% endfor %}
+            </div>
+          </div>
+          <input type="hidden" name="result_unit_{{ item.pk }}" value="">
+
+          {# ══════════════════════════════════════════════════════
+             TEXT — free text / narrative (e.g. Histology, microbiology sensitivity)
+          ═══════════════════════════════════════════════════════ #}
+          {% elif tt.result_type == 'TEXT' %}
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Result / Finding <span class="text-danger">*</span></label>
+            <textarea name="result_value_{{ item.pk }}"
+                      class="form-control"
+                      rows="4"
+                      placeholder="Describe findings, sensitivity pattern, or narrative result...">{% if item.result %}{{ item.result.result_value }}{% endif %}</textarea>
+          </div>
+          <input type="hidden" name="result_unit_{{ item.pk }}" value="">
+
+          {# ══════════════════════════════════════════════════════
+             PANEL — multiple sub-results (e.g. CBC, LFT, U&E)
+             Show a textarea for structured sub-results + numeric summary
+          ═══════════════════════════════════════════════════════ #}
+          {% elif tt.result_type == 'PANEL' %}
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Panel Results <span class="text-danger">*</span></label>
+            <div class="mb-2">
+              <textarea name="result_value_{{ item.pk }}"
+                        class="form-control font-monospace"
+                        rows="6"
+                        placeholder="Enter each sub-result on a new line, e.g.:&#10;WBC: 7.2 x10³/µL (Normal)&#10;RBC: 4.8 x10⁶/µL (Normal)&#10;HGB: 13.5 g/dL (Normal)&#10;HCT: 41% (Normal)&#10;PLT: 220 x10³/µL (Normal)">{% if item.result %}{{ item.result.result_value }}{% endif %}</textarea>
+            </div>
+            <div class="form-text small text-muted">
+              <i class="bi bi-info-circle me-1"></i>Enter each sub-result on a separate line. Include value, unit, and flag (Normal/Abnormal/Critical).
+            </div>
+          </div>
+          <input type="hidden" name="result_unit_{{ item.pk }}" value="Panel">
+
+          {# ══════════════════════════════════════════════════════
+             QUANTITATIVE — default: numeric input with unit
+          ═══════════════════════════════════════════════════════ #}
+          {% else %}
+          <div class="row g-2 align-items-end">
+            <div class="col-sm-4">
+              <label class="form-label small fw-semibold mb-1">Result Value <span class="text-danger">*</span></label>
+              <input type="number"
+                     step="any"
+                     name="result_value_{{ item.pk }}"
+                     id="val_{{ item.pk }}"
+                     class="form-control result-value"
+                     placeholder="e.g. 14.5"
+                     autocomplete="off"
+                     {% if item.result %}value="{{ item.result.result_value }}"{% endif %}>
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label small fw-semibold mb-1">Unit</label>
+              <input type="text"
+                     name="result_unit_{{ item.pk }}"
+                     id="unit_{{ item.pk }}"
+                     class="form-control"
+                     placeholder="e.g. g/dL"
+                     {% if item.result %}value="{{ item.result.result_unit }}"
+                     {% elif nr.unit %}value="{{ nr.unit }}"
+                     {% elif nr.male.unit %}value="{{ nr.male.unit }}"{% endif %}>
+            </div>
+            <div class="col-sm-5">
+              <label class="form-label small fw-semibold mb-1">Reference Range</label>
+              <input type="text"
+                     name="ref_range_{{ item.pk }}"
+                     id="ref_{{ item.pk }}"
+                     class="form-control"
+                     placeholder="e.g. 12–17"
+                     {% if item.result %}value="{{ item.result.reference_range }}"
+                     {% elif nr.male.min and nr.male.max %}value="{{ nr.male.min }}–{{ nr.male.max }}"
+                     {% elif nr.min and nr.max %}value="{{ nr.min }}–{{ nr.max }}"{% endif %}>
+              {% if nr %}
+              <div class="text-muted" style="font-size:.7rem;margin-top:2px;">
+                <i class="bi bi-info-circle me-1"></i>
+                {% if nr.male.min %}M: {{ nr.male.min }}–{{ nr.male.max }} / F: {{ nr.female.min }}–{{ nr.female.max }}
+                {% elif nr.min %}{{ nr.min }}–{{ nr.max }}{% endif %}
+                {% if nr.unit or nr.male.unit %} ({{ nr.unit|default:nr.male.unit }}){% endif %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+          {# END result type blocks #}
+
+          {# ── Abnormal / Critical flags (not shown for qualitative — auto-set by JS) ── #}
+          <div class="row g-2 mt-1 align-items-center">
+            {% if tt.result_type != 'QUALITATIVE' and tt.result_type != 'SEMI_QUANT' %}
+            <div class="col-auto">
+              <div class="form-check form-switch d-flex align-items-center gap-2">
+                <input type="checkbox"
+                       name="is_abnormal_{{ item.pk }}"
+                       id="abn_{{ item.pk }}"
+                       class="form-check-input abnormal-check"
+                       role="switch"
+                       {% if item.result and item.result.is_abnormal %}checked{% endif %}>
+                <label class="form-check-label small fw-semibold" for="abn_{{ item.pk }}">Abnormal</label>
+              </div>
+            </div>
+            <div class="col-auto">
+              <div class="form-check form-switch d-flex align-items-center gap-2">
+                <input type="checkbox"
+                       name="is_critical_{{ item.pk }}"
+                       id="crit_{{ item.pk }}"
+                       class="form-check-input critical-check"
+                       role="switch"
+                       {% if item.result and item.result.is_critical %}checked{% endif %}>
+                <label class="form-check-label small fw-semibold text-danger" for="crit_{{ item.pk }}">
+                  <i class="bi bi-exclamation-triangle-fill me-1"></i>Critical
+                </label>
+              </div>
+            </div>
+            {% else %}
+            {# Hidden inputs — JS will set based on radio selection #}
+            <input type="hidden" name="is_abnormal_{{ item.pk }}" id="abn_hidden_{{ item.pk }}" value="">
+            <input type="hidden" name="is_critical_{{ item.pk }}" id="crit_hidden_{{ item.pk }}" value="">
+            <div class="col-auto" id="qual_flag_{{ item.pk }}"></div>
+            {% endif %}
+            <div class="col-auto ms-auto">
+              <div class="form-check form-switch d-flex align-items-center gap-2">
+                <input type="checkbox"
+                       name="is_critical_{{ item.pk }}"
+                       id="crit2_{{ item.pk }}"
+                       class="form-check-input critical-check2"
+                       role="switch" style="display:none;"
+                       {% if item.result and item.result.is_critical %}checked{% endif %}>
+              </div>
+            </div>
+          </div>
+
+          {# ── Comment ── #}
+          <div class="mt-2">
+            <label class="form-label small fw-semibold mb-1">Comment (optional)</label>
+            <input type="text"
+                   name="comment_{{ item.pk }}"
+                   class="form-control form-control-sm"
+                   placeholder="Additional notes or interpretation..."
+                   {% if item.result and item.result.comment %}value="{{ item.result.comment }}"{% endif %}>
+          </div>
+
+        </div>{# card-body #}
+      </div>{# card #}
+      {% endwith %}
+      {% endfor %}
+
+      <div class="d-flex gap-2 justify-content-end mt-2 pb-4">
+        <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-secondary">
+          <i class="bi bi-x me-1"></i>Cancel
+        </a>
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-save me-1"></i>Save All Results
+        </button>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+<script>
+// ── Auto-flag critical → also sets abnormal ──
+document.querySelectorAll('.critical-check').forEach(crit => {
+  crit.addEventListener('change', function() {
+    const itemId = this.name.replace('is_critical_', '');
+    const abnCheck = document.getElementById('abn_' + itemId);
+    if (this.checked && abnCheck) abnCheck.checked = true;
+  });
+});
+
+// ── QUALITATIVE / SEMI_QUANT: set hidden abnormal/critical based on selected value ──
+function setQualFlag(radio) {
+  const itemId = radio.dataset.item;
+  const val = radio.value.toLowerCase();
+  const abnInput = document.getElementById('abn_hidden_' + itemId);
+  const critInput = document.getElementById('crit_hidden_' + itemId);
+  const flagDiv = document.getElementById('qual_flag_' + itemId);
+  if (!abnInput) return;
+
+  const isPositive = val.includes('positive') || val.includes('reactive') ||
+                     val.includes('present') || val.includes('detected') ||
+                     val.includes('+');
+  const isCritical = val.includes('critical') || val.includes('++++');
+
+  abnInput.value = isPositive ? 'on' : '';
+  critInput.value = isCritical ? 'on' : '';
+
+  if (flagDiv) {
+    if (isCritical) {
+      flagDiv.innerHTML = '<span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>Critical</span>';
+    } else if (isPositive) {
+      flagDiv.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle me-1"></i>Abnormal</span>';
+    } else {
+      flagDiv.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Normal</span>';
+    }
+  }
+}
+
+document.querySelectorAll('.qualitative-radio, .semi-quant-radio').forEach(radio => {
+  radio.addEventListener('change', function() { setQualFlag(this); });
+  // Set initial state for pre-filled values
+  if (radio.checked) setQualFlag(radio);
+});
+
+// ── QUANTITATIVE: auto-flag abnormal based on value vs reference range ──
+document.querySelectorAll('.result-value').forEach(input => {
+  input.addEventListener('blur', function() {
+    const card = this.closest('.result-card');
+    const itemId = card.dataset.itemId;
+    let nr = {};
+    try { nr = JSON.parse(card.dataset.normalRange || '{}'); } catch(e) {}
+    const val = parseFloat(this.value);
+    if (isNaN(val)) return;
+
+    let min = null, max = null;
+    if (nr.min !== undefined && nr.max !== undefined) {
+      min = parseFloat(nr.min); max = parseFloat(nr.max);
+    } else if (nr.male && nr.male.min !== undefined) {
+      min = parseFloat(nr.male.min); max = parseFloat(nr.male.max);
+    }
+    if (min !== null && max !== null && !isNaN(min) && !isNaN(max)) {
+      const abnCheck = document.getElementById('abn_' + itemId);
+      const critCheck = document.getElementById('crit_' + itemId);
+      if (val < min || val > max) {
+        if (abnCheck) abnCheck.checked = true;
+        const range = max - min;
+        if (range > 0 && (val < min - range * 0.25 || val > max + range * 0.25)) {
+          if (critCheck) critCheck.checked = true;
+        }
+      } else {
+        if (abnCheck) abnCheck.checked = false;
+        if (critCheck) critCheck.checked = false;
+      }
+    }
+  });
+});
+
+// ── Form validation: ensure all items have a value ──
+document.getElementById('resultsForm').addEventListener('submit', function(e) {
+  let missing = 0;
+  document.querySelectorAll('.result-card').forEach(card => {
+    const itemId = card.dataset.itemId;
+    const rtype = card.dataset.resultType;
+    let filled = false;
+
+    if (rtype === 'QUALITATIVE' || rtype === 'SEMI_QUANT') {
+      filled = !!card.querySelector(`input[name="result_value_${itemId}"]:checked`);
+    } else {
+      const txt = card.querySelector(`[name="result_value_${itemId}"]`);
+      filled = txt && txt.value.trim() !== '';
+    }
+    if (!filled) {
+      card.style.border = '2px solid #dc3545';
+      missing++;
+    } else {
+      card.style.border = '';
+    }
+  });
+  if (missing > 0) {
+    e.preventDefault();
+    alert(`Please enter results for all ${missing} test(s) highlighted in red.`);
+    document.querySelector('.result-card[style*="border"]').scrollIntoView({behavior:'smooth'});
+  }
+});
+</script>
 {% endblock %}

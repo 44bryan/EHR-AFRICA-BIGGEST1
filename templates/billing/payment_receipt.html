@@ -1,0 +1,186 @@
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Receipt {{ payment.receipt_number }}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    .receipt-wrapper {
+      background: #fff;
+      width: 340px;
+      padding: 24px 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      border-radius: 4px;
+    }
+    .header { text-align: center; margin-bottom: 12px; }
+    .hospital-name { font-size: 15px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; }
+    .hospital-sub { font-size: 11px; color: #555; margin-top: 2px; }
+    .divider { border: none; border-top: 1px dashed #aaa; margin: 10px 0; }
+    .divider-solid { border: none; border-top: 2px solid #333; margin: 10px 0; }
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .meta-row .label { color: #555; }
+    .meta-row .value { font-weight: bold; }
+    .receipt-num-box {
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      background: #f0f4ff;
+      border: 1px solid #c7d2fe;
+      padding: 8px;
+      margin: 8px 0;
+      border-radius: 4px;
+    }
+    .amount-box {
+      text-align: center;
+      font-size: 22px;
+      font-weight: bold;
+      color: #155724;
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      padding: 10px;
+      margin: 8px 0;
+      border-radius: 4px;
+    }
+    .item-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .item-row .item-name { flex: 1; padding-right: 8px; }
+    .item-row .item-amount { white-space: nowrap; text-align: right; min-width: 70px; }
+    .footer { text-align: center; margin-top: 12px; font-size: 11px; color: #555; }
+    .footer .thank-you { font-size: 12px; font-weight: bold; color: #333; margin-bottom: 4px; }
+    .action-bar { width: 340px; margin-top: 16px; display: flex; gap: 8px; }
+    .btn-print { flex: 1; background: #1d4ed8; color: white; border: none; border-radius: 6px;
+                 padding: 10px; font-size: 13px; cursor: pointer; font-family: inherit; }
+    .btn-back  { flex: 1; background: #6b7280; color: white; border: none; border-radius: 6px;
+                 padding: 10px; font-size: 13px; cursor: pointer; font-family: inherit; }
+    @media print {
+      body { background: white; padding: 0; }
+      .receipt-wrapper { box-shadow: none; border-radius: 0; width: 100%; padding: 4mm; }
+      .action-bar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="receipt-wrapper">
+  <div class="header">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo"
+         style="width:50px;height:50px;border-radius:50%;margin-bottom:6px;" />
+    <div class="hospital-name">{{ HOSPITAL_NAME }}</div>
+    <div class="hospital-sub">Specialist Eye Hospital</div>
+  </div>
+
+  <div class="divider-solid"></div>
+
+  <div style="text-align:center;font-weight:bold;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">
+    Official Payment Receipt
+  </div>
+
+  <div class="receipt-num-box">{{ payment.receipt_number }}</div>
+
+  <div class="divider"></div>
+
+  <div class="meta-row">
+    <span class="label">Invoice #:</span>
+    <span class="value">{{ invoice.invoice_number }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Date:</span>
+    <span class="value">{{ payment.payment_date|date:"d/m/Y" }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Time:</span>
+    <span class="value">{{ payment.payment_date|time:"H:i" }}</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="meta-row">
+    <span class="label">Patient:</span>
+    <span class="value">{{ invoice.patient.full_name|upper }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Patient ID:</span>
+    <span class="value">{{ invoice.patient.patient_id }}</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <div style="font-weight:bold;font-size:11px;text-transform:uppercase;margin-bottom:4px;">Services</div>
+  {% for item in items %}
+  <div class="item-row">
+    <span class="item-name">{{ item.description }}{% if item.quantity > 1 %} ×{{ item.quantity }}{% endif %}</span>
+    <span class="item-amount">{{ item.line_total|floatformat:0|intcomma }}</span>
+  </div>
+  {% endfor %}
+
+  <div class="divider"></div>
+
+  <div class="meta-row" style="font-size:11px;">
+    <span class="label">Invoice Total</span>
+    <span>{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  {% if invoice.discount_amount > 0 %}
+  <div class="meta-row" style="font-size:11px;">
+    <span class="label">Discount</span>
+    <span>-{{ invoice.discount_amount|floatformat:0|intcomma }}</span>
+  </div>
+  {% endif %}
+
+  <div class="divider"></div>
+
+  <div style="font-weight:bold;font-size:11px;text-transform:uppercase;margin-bottom:4px;">This Payment</div>
+  <div class="amount-box">{{ payment.amount|floatformat:0|intcomma }} FCFA</div>
+
+  <div class="meta-row">
+    <span class="label">Method:</span>
+    <span class="value">{{ payment.get_payment_method_display }}</span>
+  </div>
+  {% if payment.reference %}
+  <div class="meta-row">
+    <span class="label">Ref:</span>
+    <span class="value">{{ payment.reference }}</span>
+  </div>
+  {% endif %}
+
+  <div class="divider"></div>
+
+  <div class="meta-row" style="font-weight:bold;">
+    <span>Balance Due After</span>
+    <span>{{ invoice.balance_due|floatformat:0|intcomma }} FCFA</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <div style="text-align:center;font-size:11px;color:#666;margin-top:4px;">
+    Received by: <strong>{{ payment.received_by.get_full_name|default:payment.received_by.username }}</strong>
+  </div>
+
+  <div class="footer">
+    <div class="thank-you">Thank you for choosing {{ HOSPITAL_NAME }}!</div>
+    <div>Keep this receipt as proof of payment.</div>
+  </div>
+</div>
+
+<div class="action-bar">
+  <button class="btn-print" onclick="window.print()">&#128438; Print Receipt</button>
+  <button class="btn-back" onclick="history.back()">&#8592; Back</button>
+</div>
+
+<script>
+  window.addEventListener('load', function() {
+    setTimeout(function() { window.print(); }, 400);
+  });
+</script>
+
+</body>
+</html>

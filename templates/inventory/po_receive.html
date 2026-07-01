@@ -1,0 +1,58 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Receive Goods — PO {{ po.po_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-0"><i class="bi bi-box-arrow-in-down me-2 text-success"></i>Receive Goods</h1>
+    <small class="text-muted">PO {{ po.po_number }} · {{ po.vendor.name }}</small>
+  </div>
+  <a href="{% url 'inventory:po_detail' po.id %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white">
+    <div class="small text-muted">Enter actual quantities received for each item. Leave 0 if not received.</div>
+  </div>
+  <form method="post">
+    {% csrf_token %}
+    <div class="table-responsive">
+      <table class="table mb-0" style="font-size:0.875rem;">
+        <thead class="table-light">
+          <tr>
+            <th>Item</th>
+            <th class="text-end">Ordered</th>
+            <th class="text-end">Current Stock</th>
+            <th style="width:150px;">Qty Received</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in po_items %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ line.item.name }}</div>
+              <small class="text-muted">{{ line.item.item_code }}</small>
+            </td>
+            <td class="text-end">{{ line.quantity_ordered }} {{ line.item.unit }}</td>
+            <td class="text-end text-muted">{{ line.item.current_stock }}</td>
+            <td>
+              <input type="number" name="received_{{ line.id }}"
+                     class="form-control form-control-sm"
+                     min="0" max="{{ line.quantity_ordered }}"
+                     value="{{ line.quantity_ordered }}" />
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer bg-white d-flex justify-content-end gap-2">
+      <a href="{% url 'inventory:po_detail' po.id %}" class="btn btn-outline-secondary">Cancel</a>
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-check-circle me-1"></i>Confirm Receipt &amp; Update Stock
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,7 +1,8 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Surgical Booking — Admission{% endblock %}
 {% block content %}
-<div class="d-flex align-items-center gap-3 mb-4">
+
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
   <div class="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center flex-shrink-0" style="width:48px;height:48px;">
     <i class="bi bi-calendar2-plus text-primary fs-4"></i>
   </div>
@@ -9,17 +10,173 @@
     <h4 class="fw-bold mb-0">Surgical Booking</h4>
     <p class="text-muted small mb-0">Schedule surgery, confirm payment, and issue booking slip</p>
   </div>
-  <div class="ms-auto">
-    <span class="badge bg-primary fs-6">{{ waiting.count }} Waiting</span>
+  <div class="ms-auto d-flex gap-2 flex-wrap align-items-center">
+    {% if waiting %}<span class="badge bg-primary fs-6">{{ waiting|length }} Waiting Now</span>{% endif %}
+    {% if today_surgeries %}<span class="badge bg-success fs-6">{{ today_surgeries|length }} Surgeries Today</span>{% endif %}
+    <a href="{% url 'ipd:nursing_stats' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-journal-text me-1"></i>Bookings Register
+    </a>
   </div>
 </div>
 
-<!-- Waiting patients -->
+{# ── Search bar ─────────────────────────────────────────────────────────── #}
+<form method="get" class="mb-4">
+  <div class="input-group">
+    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+    <input type="text" name="q" class="form-control"
+           placeholder="Search patient name, Patient ID, or booking number…"
+           value="{{ q }}" autofocus>
+    {% if q %}
+    <a href="{% url 'ipd:surgical_booking_queue' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-x-lg"></i> Clear
+    </a>
+    {% else %}
+    <button type="submit" class="btn btn-primary">Search</button>
+    {% endif %}
+  </div>
+</form>
+
+{# ── Search results ─────────────────────────────────────────────────────── #}
+{% if q %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-bold small text-primary">
+      <i class="bi bi-search me-1"></i>Search Results for "{{ q }}"
+    </h6>
+    <span class="badge bg-secondary">{{ search_results|length }} found</span>
+  </div>
+  {% if search_results %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Booking #</th>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Surgery Date</th>
+          <th>Status</th>
+          <th>Deposit</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in search_results %}
+        <tr>
+          <td><span class="badge bg-secondary">{{ b.booking_number }}</span></td>
+          <td>
+            <div class="fw-bold">{{ b.patient.full_name }}</div>
+            <div class="text-muted">{{ b.patient.patient_id }}</div>
+          </td>
+          <td>{{ b.procedure|truncatechars:30 }}</td>
+          <td>{% if b.surgery_date %}{{ b.surgery_date|date:"d M Y" }}{% else %}<span class="text-muted">Not set</span>{% endif %}</td>
+          <td>
+            {% if b.status == 'CONFIRMED' %}<span class="badge bg-success">Confirmed</span>
+            {% elif b.status == 'PENDING_PAYMENT' %}<span class="badge bg-warning text-dark">Pending Payment</span>
+            {% elif b.status == 'SCHEDULED' %}<span class="badge bg-info text-dark">Scheduled</span>
+            {% elif b.status == 'COMPLETED' %}<span class="badge bg-primary">Completed</span>
+            {% elif b.status == 'CANCELLED' %}<span class="badge bg-danger">Cancelled</span>
+            {% else %}<span class="badge bg-secondary">{{ b.get_status_display }}</span>{% endif %}
+          </td>
+          <td>
+            {% if b.deposit_required %}
+              {% if b.is_fully_deposited %}
+                <span class="badge bg-success">Paid ✓</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">{{ b.deposit_paid|floatformat:0 }} / {{ b.deposit_required|floatformat:0 }}</span>
+              {% endif %}
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'ipd:surgical_booking_detail' booking_id=b.pk %}" class="btn btn-sm btn-outline-primary">View</a>
+            {% if b.status == 'CONFIRMED' or b.status == 'SCHEDULED' %}
+            <a href="{% url 'ipd:admit_from_booking' booking_id=b.pk %}" class="btn btn-sm btn-success">Admit</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-center text-muted py-4">
+    <i class="bi bi-search fs-3 d-block mb-2 opacity-25"></i>
+    No bookings found for "{{ q }}"
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not q %}
+
+{# ── Today's scheduled surgeries ────────────────────────────────────────── #}
+{% if today_surgeries %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #16a34a !important;">
+  <div class="card-header bg-success bg-opacity-10 py-2">
+    <h6 class="mb-0 fw-bold small text-success">
+      <i class="bi bi-scissors me-2"></i>Today's Scheduled Surgeries — {{ today|date:"d M Y" }}
+    </h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Booking #</th>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Surgeon</th>
+          <th>Time</th>
+          <th>Payment</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in today_surgeries %}
+        <tr class="{% if b.is_fully_deposited %}table-success{% else %}table-warning{% endif %}">
+          <td><span class="badge bg-success">{{ b.booking_number }}</span></td>
+          <td>
+            <div class="fw-bold">{{ b.patient.full_name }}</div>
+            <div class="text-muted">{{ b.patient.patient_id }}</div>
+          </td>
+          <td>{{ b.procedure|truncatechars:28 }}</td>
+          <td>{% if b.surgeon %}Dr. {{ b.surgeon.last_name }}{% else %}<span class="text-muted">TBD</span>{% endif %}</td>
+          <td class="fw-semibold">{{ b.surgery_date|time:"H:i" }}</td>
+          <td>
+            {% if b.is_fully_deposited %}
+              <span class="badge bg-success"><i class="bi bi-check2 me-1"></i>Paid</span>
+            {% else %}
+              <span class="badge bg-danger">Unpaid</span>
+              <div class="text-muted" style="font-size:.65rem;">{{ b.deposit_paid|floatformat:0 }} / {{ b.deposit_required|floatformat:0 }} XAF</div>
+            {% endif %}
+          </td>
+          <td>
+            {% if b.status == 'CONFIRMED' %}<span class="badge bg-primary">Confirmed</span>
+            {% elif b.status == 'SCHEDULED' %}<span class="badge bg-info text-dark">Scheduled</span>
+            {% else %}<span class="badge bg-secondary">{{ b.get_status_display }}</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'ipd:surgical_booking_detail' booking_id=b.pk %}" class="btn btn-sm btn-outline-secondary">View</a>
+            {% if b.status == 'CONFIRMED' or b.status == 'SCHEDULED' %}
+            <a href="{% url 'ipd:admit_from_booking' booking_id=b.pk %}" class="btn btn-sm btn-success">
+              <i class="bi bi-hospital me-1"></i>Admit
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── QMS Waiting patients ─────────────────────────────────────────────── #}
 {% if waiting %}
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-primary bg-opacity-10 py-2">
     <h6 class="mb-0 fw-bold small text-primary">
       <i class="bi bi-people me-1"></i>Patients Waiting for Surgical Booking
+      <span class="badge bg-primary ms-2">{{ waiting|length }}</span>
     </h6>
   </div>
   <div class="table-responsive">
@@ -37,18 +194,18 @@
       <tbody>
         {% for token in waiting %}
         <tr>
-          <td><span class="badge bg-primary">{{ token.token_number }}</span></td>
+          <td><span class="badge bg-primary fs-6">{{ token.token_number }}</span></td>
           <td>
             <div class="fw-bold">{{ token.display_name }}</div>
             {% if token.patient %}<div class="text-muted">{{ token.patient.patient_id }}</div>{% endif %}
           </td>
           <td>
             {% if token.service_tier == 'VIP' %}<span class="badge bg-danger">VIP</span>
-            {% elif token.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">FT</span>
-            {% elif token.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">E</span>
-            {% else %}<span class="badge bg-secondary">S</span>{% endif %}
+            {% elif token.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
+            {% elif token.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
+            {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
           </td>
-          <td class="text-muted" style="max-width:250px;">{{ token.notes|truncatechars:80 }}</td>
+          <td class="text-muted" style="max-width:260px;">{{ token.notes|truncatechars:90 }}</td>
           <td class="text-muted">{{ token.issued_at|timesince }}</td>
           <td>
             {% if token.visit %}
@@ -65,19 +222,32 @@
   </div>
 </div>
 {% else %}
-<div class="alert alert-info mb-4">
-  <i class="bi bi-info-circle me-1"></i>No patients currently waiting for surgical booking.
+<div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+  <i class="bi bi-info-circle fs-5"></i>
+  <span>No patients currently waiting in the Admission queue.</span>
 </div>
 {% endif %}
 
-<!-- Recent bookings -->
-{% if recent_bookings %}
+{# ── Recent / Filtered bookings ──────────────────────────────────────── #}
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-light py-2">
+  <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
     <h6 class="mb-0 fw-bold small text-muted text-uppercase">
-      <i class="bi bi-clock-history me-1"></i>Recent Surgical Bookings
+      <i class="bi bi-clock-history me-1"></i>Recent Bookings
     </h6>
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <select name="status" class="form-select form-select-sm" style="width:auto;"
+              onchange="this.form.submit()">
+        <option value="">All Statuses</option>
+        {% for val, label in booking_statuses %}
+        <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {% if status_filter %}
+      <a href="{% url 'ipd:surgical_booking_queue' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+      {% endif %}
+    </form>
   </div>
+  {% if recent_bookings %}
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
@@ -96,33 +266,52 @@
         {% for b in recent_bookings %}
         <tr>
           <td><span class="badge bg-secondary">{{ b.booking_number }}</span></td>
-          <td class="fw-bold">{{ b.patient.full_name }}</td>
-          <td>{{ b.procedure }}</td>
+          <td>
+            <div class="fw-bold">{{ b.patient.full_name }}</div>
+            <div class="text-muted">{{ b.patient.patient_id }}</div>
+          </td>
+          <td>{{ b.procedure|truncatechars:28 }}</td>
           <td>{% if b.surgeon %}Dr. {{ b.surgeon.last_name }}{% else %}<span class="text-muted">TBD</span>{% endif %}</td>
           <td>{% if b.surgery_date %}{{ b.surgery_date|date:"d M Y H:i" }}{% else %}<span class="text-muted">Not scheduled</span>{% endif %}</td>
           <td>
             {% if b.status == 'CONFIRMED' %}<span class="badge bg-success">Confirmed</span>
             {% elif b.status == 'PENDING_PAYMENT' %}<span class="badge bg-warning text-dark">Pending Payment</span>
+            {% elif b.status == 'SCHEDULED' %}<span class="badge bg-info text-dark">Scheduled</span>
             {% elif b.status == 'COMPLETED' %}<span class="badge bg-primary">Completed</span>
             {% elif b.status == 'CANCELLED' %}<span class="badge bg-danger">Cancelled</span>
+            {% elif b.status == 'RESCHEDULED' %}<span class="badge bg-secondary">Rescheduled</span>
             {% else %}<span class="badge bg-secondary">{{ b.get_status_display }}</span>{% endif %}
           </td>
           <td>
             {% if b.deposit_required %}
-            <div>{{ b.deposit_required|floatformat:0 }} XAF req.</div>
-            {% if b.deposit_paid %}<div class="text-success small">{{ b.deposit_paid|floatformat:0 }} paid</div>{% endif %}
-            {% if b.balance_due %}<div class="text-danger small">{{ b.balance_due|floatformat:0 }} balance</div>{% endif %}
+              {% if b.is_fully_deposited %}
+                <span class="badge bg-success">Paid</span>
+              {% else %}
+                <div class="text-danger small fw-semibold">{{ b.deposit_paid|floatformat:0 }} / {{ b.deposit_required|floatformat:0 }}</div>
+              {% endif %}
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
-          <td>
+          <td class="text-end">
             <a href="{% url 'ipd:surgical_booking_detail' booking_id=b.pk %}"
                class="btn btn-sm btn-outline-secondary">View</a>
+            {% if b.status == 'CONFIRMED' or b.status == 'SCHEDULED' %}
+            <a href="{% url 'ipd:admit_from_booking' booking_id=b.pk %}"
+               class="btn btn-sm btn-success">Admit</a>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% else %}
+  <div class="card-body text-center text-muted py-4">
+    <i class="bi bi-calendar-x fs-2 d-block mb-2 opacity-25"></i>
+    No bookings found{% if status_filter %} with status "{{ status_filter }}"{% endif %}.
+  </div>
+  {% endif %}
 </div>
-{% endif %}
+
+{% endif %}{# end not q #}
+
 {% endblock %}

@@ -1,0 +1,110 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Cashier Queue{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-cash-coin text-success fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Cashier Queue</h5>
+      <div class="text-muted small">{{ today|date:"l, d F Y" }} — patients waiting to pay</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'dashboard:home' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>My Dashboard
+    </a>
+    <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if not waiting %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-check-circle-fill fs-1 text-success d-block mb-3 opacity-50"></i>
+    <h5>No patients waiting at the cashier</h5>
+    <p class="small">The queue is empty right now. Check back shortly.</p>
+  </div>
+</div>
+{% else %}
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="bi bi-people-fill me-2"></i>Waiting — {{ waiting|length }} patient{{ waiting|length|pluralize }}</h6>
+    <small class="opacity-75">Ordered by priority then arrival time</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:3rem;" class="text-center">#</th>
+            <th>Token</th>
+            <th>Patient</th>
+            <th>Tier</th>
+            <th>Arrived</th>
+            <th>Notes</th>
+            <th style="width:160px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for token in waiting %}
+          <tr>
+            <td class="text-center text-muted small fw-bold">{{ forloop.counter }}</td>
+            <td>
+              <span class="badge bg-success fs-6 px-3">{{ token.display_token_number }}</span>
+              <div class="small text-muted mt-1">{{ token.get_status_display }}</div>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ token.display_name }}</div>
+              {% if token.patient %}
+              <small class="text-muted">{{ token.patient.patient_id }}</small>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge bg-primary">{{ token.tier_label.0 }}</span>
+              {% if token.is_insured %}
+              <span class="badge bg-info ms-1" title="{{ token.insurance_company|default:'Insured' }}">
+                <i class="bi bi-shield-check"></i>
+              </span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="small">{{ token.issued_at|time:"H:i" }}</span>
+            </td>
+            <td>
+              <span class="small text-muted fst-italic">{{ token.notes|default:"—"|truncatechars:40 }}</span>
+            </td>
+            <td class="text-end">
+              {% if token.patient %}
+              <a href="{% url 'billing:cashier_pos' token.id %}"
+                 class="btn btn-success btn-sm fw-semibold">
+                <i class="bi bi-receipt me-1"></i>Open POS
+              </a>
+              {% else %}
+              <span class="text-muted small">No patient linked</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh every 20 seconds
+let _t = 20;
+setInterval(() => { _t--; if (_t <= 0) location.reload(); }, 1000);
+</script>
+{% endblock %}

@@ -6,8 +6,8 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <h4 class="mb-0 fw-bold">
-      <i class="bi bi-star-fill me-2 text-danger"></i>VIP Reception
-      <span class="badge bg-danger ms-2">Back Entrance</span>
+      <i class="bi bi-star-fill me-2 text-primary"></i>VIP Reception
+      <span class="badge bg-primary ms-2">Back Entrance</span>
     </h4>
     <small class="text-muted">VIP patients are not required to take a gate ticket. Issue here directly.</small>
   </div>
@@ -16,8 +16,8 @@
 <div class="row g-4">
   <div class="col-lg-5">
     <!-- VIP Info Card -->
-    <div class="card border-0 shadow-sm mb-3" style="background: linear-gradient(135deg,#7f0000,#c62828);">
-      <div class="card-body text-white text-center py-4">
+    <div class="card border-0 shadow-sm mb-3 bg-primary text-white">
+      <div class="card-body text-center py-4">
         <i class="bi bi-star-fill fs-1 mb-2 d-block opacity-75"></i>
         <h5 class="fw-bold mb-1">VIP Service</h5>
         <div class="opacity-75 small mb-3">Highest priority — served first in all queues</div>
@@ -50,8 +50,8 @@
 
   <div class="col-lg-7">
     <div class="card shadow-sm border-0">
-      <div class="card-header" style="background:#7f0000;">
-        <h6 class="mb-0 text-white"><i class="bi bi-person-search me-2"></i>VIP Patient Details</h6>
+      <div class="card-header bg-primary text-white">
+        <h6 class="mb-0"><i class="bi bi-person-search me-2"></i>VIP Patient Details</h6>
       </div>
       <div class="card-body">
         <form method="post" action="{% url 'qms:vip_reception' %}" id="vipForm">
@@ -59,6 +59,8 @@
           <input type="hidden" name="patient_id" id="selectedPatientId">
           <input type="hidden" name="patient_uuid" id="selectedPatientUuid">
           <input type="hidden" name="visit_id" id="selectedVisitId">
+          <input type="hidden" name="is_insured" id="vipIsInsuredHidden" value="0">
+          <input type="hidden" name="insurance_company" id="vipInsuranceCompanyHidden" value="">
 
           <div class="mb-3">
             <label class="form-label fw-semibold">Patient Search</label>
@@ -71,9 +73,9 @@
                  style="display:none; max-height:220px; overflow-y:auto; position:absolute; z-index:1050; width:calc(100% - 2rem);"></div>
           </div>
 
-          <div id="selectedPatientCard" class="alert alert-danger d-none mb-3 p-2">
+          <div id="selectedPatientCard" class="alert alert-primary d-none mb-3 p-2">
             <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-star-fill fs-4 text-danger"></i>
+              <i class="bi bi-star-fill fs-4 text-primary"></i>
               <div>
                 <div class="fw-bold" id="selectedPatientName"></div>
                 <small id="selectedPatientMeta" class="text-muted"></small>
@@ -91,14 +93,46 @@
 
           <div class="mb-3">
             <label class="form-label fw-semibold">Priority</label>
-            <div class="p-2 rounded border d-flex align-items-center gap-2" style="background:#fff5f5;">
-              <span class="badge bg-danger px-3 py-2">VIP — Priority 30 (Highest)</span>
+            <div class="p-2 rounded border bg-light d-flex align-items-center gap-2">
+              <span class="badge bg-primary px-3 py-2">VIP — Priority 30 (Highest)</span>
               <small class="text-muted">Served before all other tiers</small>
             </div>
           </div>
 
+          <!-- Insurance / HMO -->
+          <div class="mb-3">
+            <div class="card border-0 shadow-sm">
+              <div class="card-header bg-white border-bottom py-2">
+                <h6 class="mb-0 small fw-semibold"><i class="bi bi-shield-check me-2"></i>Insurance / HMO</h6>
+              </div>
+              <div class="card-body p-2">
+                <div class="form-check form-switch mb-2">
+                  <input class="form-check-input" type="checkbox" id="vipInsuredToggle">
+                  <label class="form-check-label small fw-semibold" for="vipInsuredToggle">Patient is insured</label>
+                </div>
+                <div id="vipInsuranceFields" class="d-none">
+                  <div class="alert alert-primary py-1 small mb-2">
+                    <i class="bi bi-info-circle-fill me-1"></i>
+                    Ticket flagged as insured. Billing handled by insurer at VIP Cashier.
+                  </div>
+                  <input type="text" id="vipInsuranceCompanyInput" class="form-control form-control-sm"
+                         placeholder="Insurance company (e.g. CNPS, Activa...)" list="vipInsuranceList">
+                  <datalist id="vipInsuranceList">
+                    <option value="CNPS">
+                    <option value="Activa Assurances">
+                    <option value="Sanlam">
+                    <option value="Prudential Life">
+                    <option value="Allianz Cameroon">
+                    <option value="AXA Assurances">
+                    <option value="GIC Group">
+                  </datalist>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="d-grid">
-            <button type="submit" class="btn btn-danger btn-lg">
+            <button type="submit" class="btn btn-primary btn-lg">
               <i class="bi bi-star-fill me-2"></i>Issue VIP Ticket
             </button>
           </div>
@@ -165,6 +199,22 @@ document.addEventListener('click', e => {
   if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
     resultsDiv.style.display = 'none';
   }
+});
+
+// Insurance toggle
+const vipInsuredToggle = document.getElementById('vipInsuredToggle');
+const vipInsuranceFields = document.getElementById('vipInsuranceFields');
+vipInsuredToggle.addEventListener('change', () => {
+  const checked = vipInsuredToggle.checked;
+  vipInsuranceFields.classList.toggle('d-none', !checked);
+  document.getElementById('vipIsInsuredHidden').value = checked ? '1' : '0';
+  if (!checked) {
+    document.getElementById('vipInsuranceCompanyInput').value = '';
+    document.getElementById('vipInsuranceCompanyHidden').value = '';
+  }
+});
+document.getElementById('vipInsuranceCompanyInput').addEventListener('input', function() {
+  document.getElementById('vipInsuranceCompanyHidden').value = this.value;
 });
 </script>
 {% endblock %}

@@ -1,0 +1,296 @@
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Optical Receipt — {{ order.order_number }}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .receipt-wrapper {
+      background: #fff;
+      width: 360px;
+      padding: 24px 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      border-radius: 4px;
+    }
+
+    .header { text-align: center; margin-bottom: 10px; }
+    .header .hospital-name {
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .header .hospital-sub { font-size: 11px; color: #555; margin-top: 2px; }
+    .header .receipt-type {
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 6px;
+      color: #1d4ed8;
+    }
+
+    .divider { border: none; border-top: 1px dashed #aaa; margin: 10px 0; }
+    .divider-solid { border: none; border-top: 2px solid #333; margin: 10px 0; }
+
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .meta-row .label { color: #555; }
+    .meta-row .value { font-weight: bold; }
+
+    .section-title {
+      text-align: center;
+      font-weight: bold;
+      letter-spacing: 1px;
+      font-size: 11px;
+      margin: 8px 0 4px;
+      text-transform: uppercase;
+      color: #444;
+    }
+
+    .item-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .item-row .item-name { flex: 1; padding-right: 8px; }
+    .item-row .item-amount { white-space: nowrap; text-align: right; min-width: 80px; }
+
+    .rx-block { background: #f8f9fa; padding: 8px; margin: 6px 0; font-size: 11px; }
+    .rx-block .rx-title { font-weight: bold; margin-bottom: 4px; text-transform: uppercase; font-size: 10px; }
+    .rx-row { display: flex; gap: 16px; margin-bottom: 2px; }
+    .rx-row .rx-eye { font-weight: bold; width: 26px; }
+    .rx-row .rx-val { color: #333; }
+
+    .totals-section { margin-top: 4px; }
+    .totals-section .total-row {
+      display: flex; justify-content: space-between;
+      margin-bottom: 2px; font-size: 12px;
+    }
+    .grand-total-row {
+      display: flex; justify-content: space-between;
+      font-size: 14px; font-weight: bold;
+      border-top: 1px solid #333;
+      padding-top: 4px; margin-top: 4px;
+    }
+    .balance-row {
+      display: flex; justify-content: space-between;
+      font-size: 13px; font-weight: bold;
+      margin-top: 3px;
+    }
+
+    .status-badge {
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      padding: 6px;
+      margin: 8px 0;
+    }
+    .status-paid    { color: #155724; background: #d4edda; border: 1px solid #c3e6cb; }
+    .status-partial { color: #856404; background: #fff3cd; border: 1px solid #ffc107; }
+    .status-pending { color: #721c24; background: #f8d7da; border: 1px solid #f5c6cb; }
+
+    .footer { text-align: center; margin-top: 14px; font-size: 11px; color: #555; }
+    .footer .thank-you { font-size: 12px; font-weight: bold; color: #333; margin-bottom: 4px; }
+
+    .staff-line { text-align: center; font-size: 11px; color: #666; margin-top: 8px; }
+
+    /* Screen action bar */
+    .action-bar {
+      width: 360px;
+      margin-top: 16px;
+      display: flex;
+      gap: 8px;
+    }
+    .btn-print {
+      flex: 1;
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-print:hover { background: #1e40af; }
+    .btn-back {
+      flex: 1;
+      background: #6b7280;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      text-decoration: none;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn-back:hover { background: #4b5563; }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .receipt-wrapper { box-shadow: none; border-radius: 0; width: 100%; padding: 10px; }
+      .action-bar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="receipt-wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="hospital-name">{{ config.hospital_name|default:"Eye Care Hospital" }}</div>
+    <div class="hospital-sub">Optical Shop</div>
+    <div class="receipt-type">&#x1F453; Optical Order Receipt</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Order Meta -->
+  <div class="meta-row"><span class="label">Order No.:</span><span class="value">{{ order.order_number }}</span></div>
+  <div class="meta-row"><span class="label">Date:</span><span class="value">{{ order.ordered_date|date:"d M Y" }}</span></div>
+  <div class="meta-row"><span class="label">Patient:</span><span class="value">{{ order.patient.full_name }}</span></div>
+  <div class="meta-row"><span class="label">Patient ID:</span><span class="value">{{ order.patient.patient_number }}</span></div>
+  <div class="meta-row"><span class="label">Status:</span><span class="value">{{ order.get_status_display }}</span></div>
+  {% if order.expected_date %}
+  <div class="meta-row"><span class="label">Expected Ready:</span><span class="value">{{ order.expected_date|date:"d M Y" }}</span></div>
+  {% endif %}
+
+  <hr class="divider">
+
+  <!-- Prescription Summary -->
+  {% if order.optical_prescription %}
+  {% with rx=order.optical_prescription %}
+  <div class="rx-block">
+    <div class="rx-title">Rx — {{ rx.prescription_date|date:"d M Y" }}{% if rx.prescribed_by %} · Dr. {{ rx.prescribed_by.get_full_name }}{% endif %}</div>
+    {% if rx.sphere_re or rx.cylinder_re or rx.axis_re %}
+    <div class="rx-row">
+      <span class="rx-eye">OD:</span>
+      <span class="rx-val">
+        Sph {% if rx.sphere_re %}{{ rx.sphere_re }}{% else %}—{% endif %}
+        Cyl {% if rx.cylinder_re %}{{ rx.cylinder_re }}{% else %}—{% endif %}
+        Ax {% if rx.axis_re %}{{ rx.axis_re }}&deg;{% else %}—{% endif %}
+        {% if rx.add_re %}Add +{{ rx.add_re }}{% endif %}
+      </span>
+    </div>
+    {% endif %}
+    {% if rx.sphere_le or rx.cylinder_le or rx.axis_le %}
+    <div class="rx-row">
+      <span class="rx-eye">OS:</span>
+      <span class="rx-val">
+        Sph {% if rx.sphere_le %}{{ rx.sphere_le }}{% else %}—{% endif %}
+        Cyl {% if rx.cylinder_le %}{{ rx.cylinder_le }}{% else %}—{% endif %}
+        Ax {% if rx.axis_le %}{{ rx.axis_le }}&deg;{% else %}—{% endif %}
+        {% if rx.add_le %}Add +{{ rx.add_le }}{% endif %}
+      </span>
+    </div>
+    {% endif %}
+    {% if rx.ipd %}
+    <div class="rx-row"><span class="rx-eye">IPD:</span><span class="rx-val">{{ rx.ipd }} mm</span></div>
+    {% endif %}
+  </div>
+  {% endwith %}
+  {% endif %}
+
+  <!-- Items -->
+  <div class="section-title">Order Items</div>
+  <hr class="divider-solid">
+
+  {% if order.frame %}
+  <div class="item-row">
+    <span class="item-name">Frame — {{ order.frame.brand }} {{ order.frame.model }}{% if order.frame.color %} ({{ order.frame.color }}){% endif %}</span>
+    <span class="item-amount">{{ order.frame_price|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  {% endif %}
+
+  {% if order.lens %}
+  <div class="item-row">
+    <span class="item-name">Lenses — {{ order.lens.name }}</span>
+    <span class="item-amount">{{ order.lens_price|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  {% endif %}
+
+  {% if order.fitting_charge and order.fitting_charge > 0 %}
+  <div class="item-row">
+    <span class="item-name">Lens Fitting Charge</span>
+    <span class="item-amount">{{ order.fitting_charge|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  {% endif %}
+
+  {% if order.special_instructions %}
+  <div style="font-size:11px;color:#555;margin-top:4px;">Note: {{ order.special_instructions }}</div>
+  {% endif %}
+
+  <hr class="divider-solid">
+
+  <!-- Totals -->
+  <div class="totals-section">
+    <div class="grand-total-row">
+      <span>TOTAL</span>
+      <span>{{ order.total_amount|floatformat:0|intcomma }} FCFA</span>
+    </div>
+    <div class="total-row" style="margin-top:4px;">
+      <span>Deposit Paid</span>
+      <span>{{ order.deposit_paid|floatformat:0|intcomma }} FCFA</span>
+    </div>
+    <div class="balance-row" style="color:{% if order.balance_due == 0 %}#155724{% else %}#721c24{% endif %};">
+      <span>Balance Due</span>
+      <span>{{ order.balance_due|floatformat:0|intcomma }} FCFA</span>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Payment Status Badge -->
+  {% if order.balance_due == 0 %}
+  <div class="status-badge status-paid">&#10003; FULLY PAID</div>
+  {% elif order.deposit_paid > 0 %}
+  <div class="status-badge status-partial">DEPOSIT PAID — BALANCE DUE</div>
+  {% else %}
+  <div class="status-badge status-pending">PAYMENT PENDING</div>
+  {% endif %}
+
+  <hr class="divider">
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="thank-you">Thank you for choosing our Optical Shop!</div>
+    <div>Please keep this receipt for collection.</div>
+    {% if order.expected_date and order.status != 'DELIVERED' %}
+    <div style="margin-top:6px;font-weight:bold;">Your glasses will be ready by {{ order.expected_date|date:"d M Y" }}.</div>
+    <div>We will contact you when ready.</div>
+    {% endif %}
+    {% if order.status == 'DELIVERED' and order.delivered_date %}
+    <div style="margin-top:6px;">Collected on: {{ order.delivered_date|date:"d M Y" }}</div>
+    {% endif %}
+  </div>
+
+  <div class="staff-line">
+    Served by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;|&nbsp; {{ order.ordered_date|date:"d/m/Y" }}
+  </div>
+
+</div>
+
+<!-- Screen Action Bar -->
+<div class="action-bar">
+  <button class="btn-print" onclick="window.print()">&#128424; Print Receipt</button>
+  <a href="{% url 'opticals:order_detail' order.id %}" class="btn-back">&#8592; Back to Order</a>
+</div>
+
+</body>
+</html>

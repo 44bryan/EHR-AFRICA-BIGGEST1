@@ -1,29 +1,240 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}Optical Workstation{% endblock %}
+{% load humanize %}
+{% block title %}Optical Dispensing Workstation{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-eyeglasses text-info fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Optical Dispensing Workstation</h5>
+      <div class="text-muted small">Prescriptions, orders, and dispensing</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'opticals:create_order' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus me-1"></i>New Order
+    </a>
+    <a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list-ul me-1"></i>All Orders
+    </a>
+  </div>
+</div>
+{% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">Optical Dispensing Workstation</h1>
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white py-3">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-eyeglasses me-2 text-primary"></i>Optical Prescriptions</h6>
+
+{# ── Patients waiting at optical ── #}
+{% if waiting_visits %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #0891b2 !important;">
+  <div class="card-header d-flex align-items-center justify-content-between py-2" style="background:#ecfeff;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-person-walking text-info fs-5"></i>
+      <h6 class="mb-0 fw-bold text-info">Patients Waiting at Optical</h6>
+      <span class="badge bg-info text-dark">{{ waiting_visits|length }}</span>
+    </div>
+    <small class="text-muted">Sent here today — needs optical order</small>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Patient</th><th>Prescribed By</th><th>Date</th><th></th></tr>
+        <tr><th>#</th><th>Patient</th><th>Referred by</th><th>Arrived</th><th>Prescription</th><th></th></tr>
       </thead>
       <tbody>
-        {% for rx in pending_optical %}
+        {% for v in waiting_visits %}
         <tr>
-          <td class="fw-semibold">{{ rx.patient.full_name }}</td>
-          <td class="text-muted">Dr. {{ rx.consultation.consulting_doctor.full_name|default:"—" }}</td>
-          <td class="text-muted">{{ rx.prescription_date|date:"d M Y" }}</td>
-          <td><a href="{% url 'prescriptions:optical_detail' pk=rx.pk %}" class="btn btn-sm btn-primary">View</a></td>
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td class="text-muted">{{ v.attending_doctor.get_full_name|default:"—" }}</td>
+          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+          <td>
+            {% if v.latest_rx %}
+              <span class="badge bg-success">Rx available</span>
+            {% else %}
+              <span class="badge bg-secondary">No Rx</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if v.latest_rx %}
+            <a href="{% url 'opticals:create_order' %}?patient={{ v.patient.pk }}&prescription={{ v.latest_rx.pk }}"
+               class="btn btn-sm btn-info text-white">
+              <i class="bi bi-eyeglasses me-1"></i>Create Order
+            </a>
+            {% else %}
+            <a href="{% url 'opticals:create_order' %}?patient={{ v.patient.pk }}"
+               class="btn btn-sm btn-outline-info">
+              <i class="bi bi-eyeglasses me-1"></i>Create Order
+            </a>
+            {% endif %}
+          </td>
         </tr>
-        {% empty %}
-        <tr><td colspan="4" class="text-center text-muted py-4">No pending optical prescriptions.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% endif %}
+
+{# ── Ready for collection alert ── #}
+{% if ready_orders %}
+<div class="alert alert-success border-0 d-flex align-items-center gap-2 mb-3 shadow-sm">
+  <i class="bi bi-bell-fill fs-5"></i>
+  <div>
+    <strong>{{ ready_orders|length }} order{{ ready_orders|pluralize }} ready for collection.</strong>
+    Notify the patient and hand over the glasses.
+  </div>
+</div>
+{% endif %}
+
+{# ── KPI row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-warning mb-0">{{ pending_optical|length }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-prescription2 me-1"></i>Pending Prescriptions</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-primary mb-0">{{ new_orders_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-bag me-1"></i>New Orders</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-secondary mb-0">{{ lab_orders_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-tools me-1"></i>At Lab</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-success mb-0">{{ ready_orders|length }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Ready for Collection</div>
+    </div>
+  </div>
+</div>
+
+{# ── Pending Optical Prescriptions ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-warning bg-opacity-10 border-bottom d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold text-warning">
+      <i class="bi bi-prescription2 me-2"></i>Pending Optical Prescriptions
+    </h6>
+    <span class="badge bg-warning text-dark">{{ pending_optical|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Type</th><th>Prescribed By</th><th>Date</th><th>Rx Summary</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for rx in pending_optical %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ rx.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ rx.patient.patient_id }}</div>
+          </td>
+          <td><span class="badge bg-secondary">{{ rx.get_prescription_type_display }}</span></td>
+          <td class="text-muted">Dr. {{ rx.prescribed_by.get_full_name|default:"—" }}</td>
+          <td class="text-muted">{{ rx.prescription_date|date:"d M Y" }}</td>
+          <td class="text-muted small">
+            OD: {{ rx.re_sphere|default:"—" }} / {{ rx.re_cylinder|default:"—" }} x {{ rx.re_axis|default:"—" }}&deg;<br>
+            OS: {{ rx.le_sphere|default:"—" }} / {{ rx.le_cylinder|default:"—" }} x {{ rx.le_axis|default:"—" }}&deg;
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{% url 'prescriptions:optical_detail' pk=rx.pk %}"
+                 class="btn btn-sm btn-outline-secondary py-0">View Rx</a>
+              <a href="{% url 'opticals:create_order' %}?patient={{ rx.patient.pk }}&prescription={{ rx.pk }}"
+                 class="btn btn-sm btn-primary py-0">
+                <i class="bi bi-eyeglasses me-1"></i>Dispense
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-3">No pending prescriptions.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Orders ready for collection ── #}
+{% if ready_orders %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #059669 !important;">
+  <div class="card-header bg-success bg-opacity-10 border-bottom d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold text-success">
+      <i class="bi bi-check-circle me-2"></i>Ready for Collection — Hand Over
+    </h6>
+    <span class="badge bg-success">{{ ready_orders|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Order No.</th><th>Patient</th><th>Frame</th><th>Balance</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for order in ready_orders %}
+        <tr>
+          <td><code class="small">{{ order.order_number }}</code></td>
+          <td class="fw-semibold">{{ order.patient.full_name }}</td>
+          <td class="text-muted">{{ order.frame|default:"—" }}</td>
+          <td>
+            {% if order.balance_due > 0 %}
+              <span class="badge bg-danger">{{ order.balance_due|floatformat:0|intcomma }} FCFA due</span>
+            {% else %}
+              <span class="badge bg-success">Paid</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'opticals:order_detail' order.pk %}"
+               class="btn btn-sm btn-success py-0 px-2">
+              <i class="bi bi-box-arrow-in-down me-1"></i>Hand Over
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Orders at lab ── #}
+{% if lab_orders %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold text-warning">
+      <i class="bi bi-tools me-2"></i>Orders at Lab / Processing
+    </h6>
+    <span class="badge bg-warning text-dark">{{ lab_orders|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Order No.</th><th>Patient</th><th>Lens</th><th>Expected</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for order in lab_orders %}
+        <tr>
+          <td><code class="small">{{ order.order_number }}</code></td>
+          <td class="fw-semibold">{{ order.patient.full_name }}</td>
+          <td class="text-muted">{{ order.lens|default:"—" }}</td>
+          <td class="text-muted">{{ order.expected_date|date:"d M Y"|default:"—" }}</td>
+          <td>
+            <a href="{% url 'opticals:order_detail' order.pk %}"
+               class="btn btn-sm btn-outline-warning py-0 px-2">Update</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

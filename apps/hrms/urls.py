@@ -13,4 +13,9 @@ urlpatterns = [
     path('leave/<uuid:leave_id>/action/', views.approve_leave, name='approve_leave'),
     path('attendance/', views.attendance_register, name='attendance'),
     path('clock/', views.clock_in_out, name='clock_in_out'),
+    # Payroll
+    path('payroll/', views.payroll_list, name='payroll_list'),
+    path('payroll/create/', views.payroll_create, name='payroll_create'),
+    path('payroll/<uuid:run_id>/', views.payroll_detail, name='payroll_detail'),
+    path('payroll/payslip/<uuid:entry_id>/', views.payslip, name='payslip'),
 ]

@@ -1,0 +1,181 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Medical Records Dashboard{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h4 class="fw-bold mb-0">
+      <i class="bi bi-folder2-open me-2 text-primary"></i>Medical Records Dashboard
+    </h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} &mdash; Patient records &amp; data management</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-person-plus me-1"></i>Register Patient
+    </a>
+    <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-search me-1"></i>Search Records
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPIs ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Registered Today</div>
+        <div class="fs-3 fw-bold text-primary">{{ today_registrations|default:"0" }}</div>
+        <div class="text-muted" style="font-size:.72rem;">new patients today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Appointments Today</div>
+        <div class="fs-3 fw-bold text-success">{{ today_appointments|default:"0" }}</div>
+        <div class="text-muted" style="font-size:.72rem;">scheduled visits</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-info">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Total Patients</div>
+        <div class="fs-3 fw-bold text-info">{{ total_patients|default:"0" }}</div>
+        <div class="text-muted" style="font-size:.72rem;">in the system</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Quick Actions</div>
+        <div class="d-flex flex-column gap-1 pt-1">
+          <a href="{% url 'appointments:book' %}" class="btn btn-sm btn-outline-primary py-0">
+            <i class="bi bi-calendar-plus me-1"></i>Book Appointment
+          </a>
+          <a href="{% url 'reports:disease_burden' %}" class="btn btn-sm btn-outline-secondary py-0">
+            <i class="bi bi-bar-chart me-1"></i>Disease Burden
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Two-column layout ── #}
+<div class="row g-3">
+
+  {# Recent Registrations #}
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-person-badge me-2 text-primary"></i>Recent Registrations</h6>
+        <a href="{% url 'patients:list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Patient ID</th>
+              <th>Name</th>
+              <th>Registered</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for patient in recent_registrations %}
+            <tr>
+              <td><code class="small">{{ patient.patient_id }}</code></td>
+              <td class="fw-semibold">{{ patient.full_name }}</td>
+              <td class="text-muted">{{ patient.registration_date|date:"d M Y" }}</td>
+              <td>
+                <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-sm btn-outline-primary">
+                  Open
+                </a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-4">No recent registrations.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# Tools & Reports #}
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-tools me-2 text-secondary"></i>Records Management</h6>
+      </div>
+      <div class="list-group list-group-flush">
+        <a href="{% url 'patients:register' %}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2">
+          <i class="bi bi-person-plus text-primary"></i>
+          <div>
+            <div class="small fw-semibold">Register New Patient</div>
+            <div class="text-muted" style="font-size:.7rem;">Create a new patient record</div>
+          </div>
+        </a>
+        <a href="{% url 'patients:list' %}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2">
+          <i class="bi bi-search text-info"></i>
+          <div>
+            <div class="small fw-semibold">Search Patient Records</div>
+            <div class="text-muted" style="font-size:.7rem;">Find by name, ID, or phone</div>
+          </div>
+        </a>
+        <a href="{% url 'appointments:list' %}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2">
+          <i class="bi bi-calendar3 text-success"></i>
+          <div>
+            <div class="small fw-semibold">Appointment Schedule</div>
+            <div class="text-muted" style="font-size:.7rem;">View and manage appointments</div>
+          </div>
+        </a>
+        <a href="{% url 'appointments:book' %}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2">
+          <i class="bi bi-calendar-plus text-warning"></i>
+          <div>
+            <div class="small fw-semibold">Book Appointment</div>
+            <div class="text-muted" style="font-size:.7rem;">Schedule a new patient visit</div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-file-earmark-bar-graph me-2 text-secondary"></i>Reports &amp; Analytics</h6>
+      </div>
+      <div class="list-group list-group-flush">
+        <a href="{% url 'reports:disease_burden' %}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2">
+          <i class="bi bi-bar-chart text-primary"></i>
+          <div>
+            <div class="small fw-semibold">Disease Burden Analysis</div>
+            <div class="text-muted" style="font-size:.7rem;">Diagnosis frequency &amp; trends</div>
+          </div>
+        </a>
+        <a href="{% url 'reports:moh_disease_export' %}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2">
+          <i class="bi bi-download text-success"></i>
+          <div>
+            <div class="small fw-semibold">MoH Disease Export</div>
+            <div class="text-muted" style="font-size:.7rem;">Ministry of Health reporting data</div>
+          </div>
+        </a>
+        <a href="{% url 'reports:staff_performance' %}" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2">
+          <i class="bi bi-people text-info"></i>
+          <div>
+            <div class="small fw-semibold">Staff Performance</div>
+            <div class="text-muted" style="font-size:.7rem;">Consultations, throughput by doctor</div>
+          </div>
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

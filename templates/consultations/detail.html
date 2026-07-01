@@ -2,8 +2,79 @@
 
 {% block title %}Consultation — {{ consultation.patient.full_name }} — {{ HOSPITAL_NAME }}{% endblock %}
 
+{% block extra_css %}
+<style>
+/* ── Consultation detail — readable typography ─────────────────────────── */
+.tab-content .card-body p,
+.tab-content .card-body li,
+.tab-content .card-body dd {
+  font-size: .93rem;
+  line-height: 1.65;
+}
+.tab-content h6.fw-bold {
+  font-size: .8rem;
+  letter-spacing: .04em;
+}
+.tab-content .card-header h6 {
+  font-size: .9rem;
+}
+/* Nav tabs — slightly larger */
+.nav-tabs .nav-link {
+  font-size: .82rem;
+  padding: .45rem .85rem;
+}
+/* Section labels inside cards */
+.section-label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: .25rem;
+}
+/* Investigation result interpretation — larger readable text */
+#tabInvestigations .result-text {
+  font-size: .93rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+/* Patient header in meta strip */
+.consult-meta .fw-semibold { font-size: .88rem; }
+</style>
+{% endblock %}
+
 {% block page_header %}
 {% include 'components/patient_card.html' with patient=consultation.patient %}
+
+{% if consultation.needs_cosign %}
+<div class="alert alert-warning border-warning d-flex align-items-center gap-3 mb-3" role="alert">
+  <i class="bi bi-exclamation-triangle-fill fs-4 text-warning flex-shrink-0"></i>
+  <div class="flex-grow-1">
+    <strong>Intern Note — Awaiting Supervisor Co-Signature</strong>
+    <div class="small mt-1">
+      This consultation was written by an intern ({{ consultation.consulting_doctor.get_full_name }}).
+      A supervising doctor must countersign before it is considered complete. <strong>(JCI ACC.3 / COP)</strong>
+    </div>
+  </div>
+  {% if request.user.is_doctor and request.user.role != 'intern' or request.user.is_medical_director %}
+  <form method="post" action="{% url 'consultations:cosign' pk=consultation.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-warning btn-sm"
+            onclick="return confirm('Co-sign and countersign this intern consultation?')">
+      <i class="bi bi-pen me-1"></i>Co-Sign Now
+    </button>
+  </form>
+  {% endif %}
+</div>
+{% elif consultation.co_signed_by %}
+<div class="alert alert-success border-success d-flex align-items-center gap-2 mb-3 py-2" role="alert">
+  <i class="bi bi-patch-check-fill text-success"></i>
+  <div class="small">
+    Countersigned by <strong>Dr. {{ consultation.co_signed_by.get_full_name }}</strong>
+    on {{ consultation.co_signed_at|date:"d M Y, H:i" }}
+  </div>
+</div>
+{% endif %}
 
 <!-- Consultation Meta -->
 <div class="card border-0 shadow-sm mb-3">
@@ -32,7 +103,8 @@
           </button>
         </form>
         {% endif %}
-        <!-- Quick actions -->
+        <!-- Quick actions — only for completed consultations; IN_PROGRESS uses compact bar below -->
+        {% if consultation.status == 'COMPLETED' %}
         {% if request.user.can_create_consultation %}
         <a href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-capsule me-1"></i>Prescribe
@@ -52,6 +124,7 @@
           <i class="bi bi-robot me-1"></i>AI Assist
         </a>
         {% endif %}
+        {% endif %}
         <div class="dropdown">
           <button class="btn btn-sm btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">
             <i class="bi bi-file-pdf me-1"></i>PDF
@@ -70,7 +143,7 @@
           <button class="btn btn-sm btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown">
             <i class="bi bi-signpost-split me-1"></i>Route
           </button>
-          <div class="dropdown-menu p-2" style="min-width:280px;">
+          <div class="dropdown-menu p-2" style="min-width:300px;">
             <form method="post" action="{% url 'qms:route_to_dept' %}">
               {% csrf_token %}
               <input type="hidden" name="visit_id" value="{{ consultation.visit.pk }}">
@@ -78,11 +151,19 @@
               <div class="mb-2">
                 <label class="form-label small mb-1 fw-semibold">Route patient to:</label>
                 <select name="service_type" class="form-select form-select-sm" required>
-                  <option value="">— Select —</option>
+                  <option value="">— Select department —</option>
                   {% for code, label in service_types %}
                   <option value="{{ code }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small mb-1 fw-semibold">
+                  Instructions for receiving staff <span class="text-danger">*</span>
+                </label>
+                <textarea name="notes" class="form-control form-control-sm" rows="3" required
+                          placeholder="e.g. Check VA + refraction for pre-op. Return to Dr. {{ consultation.consulting_doctor.last_name }} after."></textarea>
+                <div class="text-muted mt-1" style="font-size:.68rem;">Shown on the receiving workstation so staff know what to do.</div>
               </div>
               <button type="submit" class="btn btn-dark btn-sm w-100">
                 <i class="bi bi-arrow-right-circle me-1"></i>Send Patient
@@ -98,6 +179,24 @@
 {% endblock %}
 
 {% block content %}
+
+{# ── In-Progress notice bar ── #}
+{% if consultation.status == 'IN_PROGRESS' %}
+<div class="d-flex align-items-center gap-3 px-3 py-2 mb-3 rounded" style="background:#fffbf0;border:1px solid #fd7e14;border-left:4px solid #fd7e14;">
+  <i class="bi bi-hourglass-split text-warning fs-5 flex-shrink-0"></i>
+  <div class="text-warning-emphasis fw-semibold small flex-grow-1">Draft — saved {{ consultation.consultation_date|time:"H:i" }}</div>
+  <div class="d-flex gap-2 flex-shrink-0">
+    <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-success btn-sm">
+      <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit Clinical Notes
+    </a>
+    {% if request.user.can_use_ai_assistant %}
+    <a href="{% url 'ai_assistant:new_conversation' %}?consultation={{ consultation.pk }}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-robot me-1"></i>AI
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 {# ── Tier / Insurance banner ── #}
 {% with v=consultation.visit %}
@@ -135,6 +234,7 @@
 </div>
 {% endif %}
 {% endwith %}
+
 
 {# ── Triage Vitals Strip — always visible at top of consultation ── #}
 {% if consultation.visit and consultation.visit.vital_signs %}
@@ -215,8 +315,15 @@
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabPrescriptions">Prescriptions</a></li>
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tabInvestigations">
-      Investigations
-      {% for order in consultation.investigation_orders.all %}{% if order.status == 'COMPLETED' and order.result and not order.result.is_verified %}<span class="badge bg-success ms-1" style="font-size:.6rem;" title="Results ready">Ready</span>{% endif %}{% endfor %}
+      <i class="bi bi-search-heart me-1"></i>Investigations
+      {% with inv_count=consultation.investigation_orders.count %}
+      {% if inv_count %}<span class="badge bg-primary ms-1" style="font-size:.6rem;">{{ inv_count }}</span>{% endif %}
+      {% endwith %}
+      {% for order in consultation.investigation_orders.all %}
+        {% if order.status == 'COMPLETED' and order.result and not order.result.is_verified %}
+          <span class="badge bg-warning text-dark ms-1" style="font-size:.6rem;" title="Result awaiting verification">!</span>
+        {% endif %}
+      {% endfor %}
     </a>
   </li>
   <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabNotes">Notes</a></li>
@@ -245,42 +352,48 @@
   <!-- History Tab -->
   <div class="tab-pane fade show active" id="tabHistory">
     <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-12">
-            <h6 class="fw-bold text-muted small text-uppercase">Chief Complaint</h6>
-            <p>{{ consultation.presenting_complaint }}</p>
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between" role="button" data-bs-toggle="collapse" data-bs-target="#collapseHistory" aria-expanded="true" style="cursor:pointer;">
+        <h6 class="fw-bold mb-0 small"><i class="bi bi-journal-text me-2 text-primary"></i>Patient History</h6>
+        <i class="bi bi-chevron-up section-chevron" style="font-size:.85rem;color:#94a3b8;transition:transform .2s;"></i>
+      </div>
+      <div class="collapse show" id="collapseHistory">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <h6 class="fw-bold text-muted small text-uppercase">Chief Complaint</h6>
+              <p>{{ consultation.presenting_complaint }}</p>
+            </div>
+            {% if consultation.history_of_presenting_complaint %}
+            <div class="col-12">
+              <h6 class="fw-bold text-muted small text-uppercase">History of Presenting Complaint</h6>
+              <p>{{ consultation.history_of_presenting_complaint|linebreaksbr }}</p>
+            </div>
+            {% endif %}
+            {% if consultation.ocular_history %}
+            <div class="col-md-6">
+              <h6 class="fw-bold text-muted small text-uppercase">Ocular History</h6>
+              <p>{{ consultation.ocular_history|linebreaksbr }}</p>
+            </div>
+            {% endif %}
+            {% if consultation.systemic_history %}
+            <div class="col-md-6">
+              <h6 class="fw-bold text-muted small text-uppercase">Systemic History</h6>
+              <p>{{ consultation.systemic_history|linebreaksbr }}</p>
+            </div>
+            {% endif %}
+            {% if consultation.drug_history %}
+            <div class="col-md-6">
+              <h6 class="fw-bold text-muted small text-uppercase">Drug History</h6>
+              <p>{{ consultation.drug_history|linebreaksbr }}</p>
+            </div>
+            {% endif %}
+            {% if consultation.family_history %}
+            <div class="col-md-6">
+              <h6 class="fw-bold text-muted small text-uppercase">Family History</h6>
+              <p>{{ consultation.family_history|linebreaksbr }}</p>
+            </div>
+            {% endif %}
           </div>
-          {% if consultation.history_of_presenting_complaint %}
-          <div class="col-12">
-            <h6 class="fw-bold text-muted small text-uppercase">History of Presenting Complaint</h6>
-            <p>{{ consultation.history_of_presenting_complaint|linebreaksbr }}</p>
-          </div>
-          {% endif %}
-          {% if consultation.ocular_history %}
-          <div class="col-md-6">
-            <h6 class="fw-bold text-muted small text-uppercase">Ocular History</h6>
-            <p>{{ consultation.ocular_history|linebreaksbr }}</p>
-          </div>
-          {% endif %}
-          {% if consultation.systemic_history %}
-          <div class="col-md-6">
-            <h6 class="fw-bold text-muted small text-uppercase">Systemic History</h6>
-            <p>{{ consultation.systemic_history|linebreaksbr }}</p>
-          </div>
-          {% endif %}
-          {% if consultation.drug_history %}
-          <div class="col-md-6">
-            <h6 class="fw-bold text-muted small text-uppercase">Drug History</h6>
-            <p>{{ consultation.drug_history|linebreaksbr }}</p>
-          </div>
-          {% endif %}
-          {% if consultation.family_history %}
-          <div class="col-md-6">
-            <h6 class="fw-bold text-muted small text-uppercase">Family History</h6>
-            <p>{{ consultation.family_history|linebreaksbr }}</p>
-          </div>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -290,9 +403,11 @@
   <div class="tab-pane fade" id="tabExam">
     {% with exam=consultation.examination_findings %}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom py-2">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between" role="button" data-bs-toggle="collapse" data-bs-target="#collapseVA" aria-expanded="true" style="cursor:pointer;">
         <h6 class="fw-bold mb-0 small">Visual Acuity &amp; IOP</h6>
+        <i class="bi bi-chevron-up section-chevron" style="font-size:.85rem;color:#94a3b8;transition:transform .2s;"></i>
       </div>
+      <div class="collapse show" id="collapseVA">
       <div class="card-body">
         <div class="table-responsive">
           <table class="table table-bordered table-sm align-middle mb-0">
@@ -324,11 +439,95 @@
           </table>
         </div>
       </div>
+      </div>{# /collapseVA #}
     </div>
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom py-2">
-        <h6 class="fw-bold mb-0 small">Clinical Examination</h6>
+
+    {# ── Quick Edit: Examination Findings ── #}
+    {% if request.user.can_create_consultation or request.user.is_medical_director %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between">
+        <h6 class="fw-bold mb-0 small"><i class="bi bi-pencil-square me-1 text-secondary"></i>Update Examination Findings</h6>
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" type="button"
+                data-bs-toggle="collapse" data-bs-target="#examEditForm" style="font-size:.75rem;">
+          <i class="bi bi-chevron-down"></i> Edit
+        </button>
       </div>
+      <div class="collapse" id="examEditForm">
+        <div class="card-body">
+          <form method="post" action="{% url 'consultations:update_exam' pk=consultation.pk %}">
+            {% csrf_token %}
+            {# VA #}
+            <div class="fw-semibold small text-muted mb-2 mt-1">Visual Acuity</div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-2"><label class="form-label small mb-0">VA RE (Unaided)</label>
+                <input type="text" name="va_re_unaided" class="form-control form-control-sm" value="{{ exam.visual_acuity.right_unaided }}" placeholder="6/6"></div>
+              <div class="col-md-2"><label class="form-label small mb-0">VA RE (PH)</label>
+                <input type="text" name="va_re_ph" class="form-control form-control-sm" value="{{ exam.visual_acuity.right_pinhole }}" placeholder="6/6"></div>
+              <div class="col-md-2"><label class="form-label small mb-0">VA RE (BCVA)</label>
+                <input type="text" name="va_re_bcva" class="form-control form-control-sm" value="{{ exam.visual_acuity.right_best_corrected }}" placeholder="6/6"></div>
+              <div class="col-md-2"><label class="form-label small mb-0">VA LE (Unaided)</label>
+                <input type="text" name="va_le_unaided" class="form-control form-control-sm" value="{{ exam.visual_acuity.left_unaided }}" placeholder="6/6"></div>
+              <div class="col-md-2"><label class="form-label small mb-0">VA LE (PH)</label>
+                <input type="text" name="va_le_ph" class="form-control form-control-sm" value="{{ exam.visual_acuity.left_pinhole }}" placeholder="6/6"></div>
+              <div class="col-md-2"><label class="form-label small mb-0">VA LE (BCVA)</label>
+                <input type="text" name="va_le_bcva" class="form-control form-control-sm" value="{{ exam.visual_acuity.left_best_corrected }}" placeholder="6/6"></div>
+            </div>
+            {# IOP #}
+            <div class="fw-semibold small text-muted mb-2">Intraocular Pressure</div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-2"><label class="form-label small mb-0">IOP RE (mmHg)</label>
+                <input type="text" name="iop_re" class="form-control form-control-sm" value="{{ exam.intraocular_pressure.right }}" placeholder="14"></div>
+              <div class="col-md-2"><label class="form-label small mb-0">IOP LE (mmHg)</label>
+                <input type="text" name="iop_le" class="form-control form-control-sm" value="{{ exam.intraocular_pressure.left }}" placeholder="14"></div>
+              <div class="col-md-4"><label class="form-label small mb-0">Method</label>
+                <select name="iop_method" class="form-select form-select-sm">
+                  {% for opt in "Non-Contact Tonometry,Goldmann Applanation,iCare,Tono-Pen,Schiötz,Digital"|split:"," %}
+                  <option value="{{ opt }}" {% if exam.intraocular_pressure.method == opt %}selected{% endif %}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            {# Segments & Other #}
+            <div class="fw-semibold small text-muted mb-2">Segments &amp; Other</div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-3"><label class="form-label small mb-0">Anterior Seg. OD</label>
+                <input type="text" name="anterior_re" class="form-control form-control-sm" value="{{ exam.anterior_segment.right }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Anterior Seg. OS</label>
+                <input type="text" name="anterior_le" class="form-control form-control-sm" value="{{ exam.anterior_segment.left }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Posterior Seg. OD</label>
+                <input type="text" name="posterior_re" class="form-control form-control-sm" value="{{ exam.posterior_segment.right }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Posterior Seg. OS</label>
+                <input type="text" name="posterior_le" class="form-control form-control-sm" value="{{ exam.posterior_segment.left }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Pupils</label>
+                <input type="text" name="pupils" class="form-control form-control-sm" value="{{ exam.pupils }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Ocular Motility</label>
+                <input type="text" name="ocular_motility" class="form-control form-control-sm" value="{{ exam.ocular_motility }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Cover Test</label>
+                <input type="text" name="cover_test" class="form-control form-control-sm" value="{{ exam.cover_test }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Colour Vision</label>
+                <input type="text" name="color_vision" class="form-control form-control-sm" value="{{ exam.color_vision }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Slit Lamp — Cornea</label>
+                <input type="text" name="sl_cornea" class="form-control form-control-sm" value="{{ exam.slit_lamp.cornea }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Slit Lamp — AC</label>
+                <input type="text" name="sl_ac" class="form-control form-control-sm" value="{{ exam.slit_lamp.anterior_chamber }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Slit Lamp — Lens</label>
+                <input type="text" name="sl_lens" class="form-control form-control-sm" value="{{ exam.slit_lamp.lens }}"></div>
+              <div class="col-md-3"><label class="form-label small mb-0">Slit Lamp — Conj.</label>
+                <input type="text" name="sl_conj" class="form-control form-control-sm" value="{{ exam.slit_lamp.conjunctiva }}"></div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Save Examination</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between" role="button" data-bs-toggle="collapse" data-bs-target="#collapseExam" aria-expanded="true" style="cursor:pointer;">
+        <h6 class="fw-bold mb-0 small">Clinical Examination</h6>
+        <i class="bi bi-chevron-up section-chevron" style="font-size:.85rem;color:#94a3b8;transition:transform .2s;"></i>
+      </div>
+      <div class="collapse show" id="collapseExam">
       <div class="card-body">
         <div class="row g-3">
           {% if exam.pupils %}<div class="col-md-6"><div class="text-muted small fw-medium">Pupils</div><div class="small">{{ exam.pupils }}</div></div>{% endif %}
@@ -349,6 +548,7 @@
           {% endif %}
         </div>
       </div>
+      </div>{# /collapseExam #}
     </div>
     {% endwith %}
   </div>
@@ -478,13 +678,125 @@
 
   <!-- Prescriptions Tab -->
   <div class="tab-pane fade" id="tabPrescriptions">
+
+    {% if patient_allergies %}
+    <div class="alert alert-danger border-start border-4 border-danger py-2 px-3 mb-3">
+      <strong><i class="bi bi-exclamation-octagon-fill me-1"></i>ALLERGY ALERT — Check before prescribing</strong>
+      <div class="d-flex flex-wrap gap-2 mt-1 small">
+        {% for a in patient_allergies %}
+        <span class="badge {% if a.severity == 'SEVERE' or a.severity == 'ANAPHYLAXIS' %}bg-danger{% elif a.severity == 'MODERATE' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+          {{ a.allergen }} — {{ a.get_severity_display }}{% if a.reaction %} ({{ a.reaction }}){% endif %}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if request.user.can_create_consultation %}
+    {# ── Inline Quick Prescribe Form ── #}
+    <div class="card border-primary border-opacity-25 shadow-sm mb-3">
+      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold small text-primary"><i class="bi bi-capsule-pill me-1"></i>Quick Prescribe</h6>
+        <button class="btn btn-sm btn-link py-0 text-secondary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#quickRxForm">
+          <i class="bi bi-chevron-down" id="quickRxChevron"></i>
+        </button>
+      </div>
+      <div class="collapse show" id="quickRxForm">
+        <div class="card-body pb-2">
+          <form method="post" action="{% url 'prescriptions:drug_inline' consultation_pk=consultation.pk %}">
+            {% csrf_token %}
+            <div class="row g-2 align-items-end">
+              <div class="col-md-3 position-relative">
+                <label class="form-label small fw-semibold mb-1">Drug Name <span class="text-danger">*</span></label>
+                <input type="text" name="drug_name" id="drugNameInput" class="form-control form-control-sm"
+                       placeholder="Start typing drug name..." autocomplete="off" required>
+                <div id="drugSuggestions" class="list-group position-absolute shadow" style="z-index:1050;display:none;width:100%;max-height:160px;overflow-y:auto;top:100%;"></div>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-semibold mb-1">Form</label>
+                <select name="drug_form" class="form-select form-select-sm">
+                  <option value="EYE_DROP">Eye Drop</option>
+                  <option value="EYE_OINTMENT">Eye Ointment</option>
+                  <option value="EYE_GEL">Eye Gel</option>
+                  <option value="TABLET">Tablet</option>
+                  <option value="CAPSULE">Capsule</option>
+                  <option value="INJECTION">Injection</option>
+                  <option value="SYRUP">Syrup</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+              <div class="col-md-1">
+                <label class="form-label small fw-semibold mb-1">Conc.</label>
+                <input type="text" name="concentration" class="form-control form-control-sm" placeholder="0.5%">
+              </div>
+              <div class="col-md-1">
+                <label class="form-label small fw-semibold mb-1">Dose</label>
+                <input type="text" name="dose" class="form-control form-control-sm" placeholder="1 drop">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-semibold mb-1">Frequency</label>
+                <select name="frequency" class="form-select form-select-sm">
+                  <option value="OD (Once daily)">OD – Once daily</option>
+                  <option value="BD (Twice daily)">BD – Twice daily</option>
+                  <option value="TDS (Three times daily)">TDS – Three times daily</option>
+                  <option value="QID (Four times daily)">QID – Four times daily</option>
+                  <option value="QHS (At bedtime)">QHS – At bedtime</option>
+                  <option value="PRN (As needed)">PRN – As needed</option>
+                  <option value="Stat (Immediately)">Stat – Immediately</option>
+                </select>
+              </div>
+              <div class="col-md-1">
+                <label class="form-label small fw-semibold mb-1">Eye</label>
+                <select name="eye" class="form-select form-select-sm">
+                  <option value="BE">OU (Both)</option>
+                  <option value="RE">OD (Right)</option>
+                  <option value="LE">OS (Left)</option>
+                  <option value="NA">N/A</option>
+                </select>
+              </div>
+              <div class="col-md-1">
+                <label class="form-label small fw-semibold mb-1">Duration</label>
+                <input type="text" name="duration" class="form-control form-control-sm" placeholder="2 wks">
+              </div>
+              <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary btn-sm w-100" title="Add prescription">
+                  <i class="bi bi-plus-circle-fill"></i>
+                </button>
+              </div>
+            </div>
+            <div class="row g-2 mt-1 align-items-center">
+              <div class="col-md-5">
+                <input type="text" name="special_instructions" class="form-control form-control-sm"
+                       placeholder="Special instructions (e.g. shake well, avoid driving, taper dose)">
+              </div>
+              <div class="col-md-2">
+                <input type="number" name="quantity" class="form-control form-control-sm"
+                       placeholder="Qty" min="1" value="1">
+              </div>
+              <div class="col-md-5 text-end">
+                <a href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}" class="btn btn-outline-secondary btn-sm">
+                  <i class="bi bi-list-ul me-1"></i>Full Prescription Form (multi-drug)
+                </a>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="row g-3">
       <div class="col-md-6">
         <div class="card border-0 shadow-sm">
           <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-            <h6 class="fw-bold mb-0 small"><i class="bi bi-capsule me-1 text-primary"></i>Drug Prescriptions</h6>
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-capsule me-1 text-primary"></i>Drug Prescriptions
+              {% if consultation.drug_prescriptions.count %}
+              <span class="badge bg-primary ms-1" style="font-size:.65rem;">{{ consultation.drug_prescriptions.count }}</span>
+              {% endif %}
+            </h6>
             {% if request.user.can_create_consultation %}
-            <a href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;">+ Add</a>
+            <a href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;">+ Full Form</a>
             {% endif %}
           </div>
           <div class="list-group list-group-flush">
@@ -587,7 +899,7 @@
                   {% endif %}
                 </div>
                 {% if result.interpretation %}
-                <div class="small text-dark mb-2" style="white-space:pre-wrap;">{{ result.interpretation }}</div>
+                <div class="result-text text-dark mb-2">{{ result.interpretation }}</div>
                 {% endif %}
                 {# ── File attachments — images shown inline, PDFs as download button ── #}
                 {% if result.files.exists %}
@@ -705,9 +1017,9 @@
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
         <h6 class="fw-bold mb-0 small"><i class="bi bi-clipboard2-heart me-1 text-success"></i>{{ consultation.department.name }} — Specialist Examination</h6>
-        {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
-        <button class="btn btn-sm btn-outline-success" onclick="document.getElementById('clinicalForm').classList.toggle('d-none')">
-          <i class="bi bi-pencil me-1"></i>Edit
+        {% if request.user.can_create_consultation and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
+        <button class="btn btn-sm btn-outline-success" onclick="document.getElementById('clinicalForm').classList.toggle('d-none');document.getElementById('clinicalView').classList.toggle('d-none')">
+          <i class="bi bi-pencil me-1"></i>Edit Exam
         </button>
         {% endif %}
       </div>
@@ -716,13 +1028,13 @@
         <div id="clinicalView">
           {% include 'consultations/clinical/_dispatcher.html' %}
         </div>
-        <!-- Edit form (hidden by default) -->
-        {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+        <!-- Edit form (hidden by default) — available to the owning doctor always -->
+        {% if request.user.can_create_consultation and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
         <form method="post" action="{% url 'consultations:save_clinical' pk=consultation.pk %}" class="d-none mt-3 pt-3 border-top" id="clinicalForm">
           {% csrf_token %}
           {% include 'consultations/clinical/_dispatcher_form.html' %}
           <div class="d-flex gap-2 justify-content-end mt-3">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('clinicalForm').classList.add('d-none')">Cancel</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('clinicalForm').classList.add('d-none');document.getElementById('clinicalView').classList.remove('d-none')">Cancel</button>
             <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-save me-1"></i>Save Clinical Data</button>
           </div>
         </form>
@@ -745,8 +1057,13 @@
 
     {% for other in other_consultations %}
     <div class="card border-0 shadow-sm mb-3" style="opacity:0.92;">
-      {# ── Header: doctor, department, date, status ── #}
-      <div class="card-header bg-light border-bottom py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+      {# ── Header: doctor, department, date, status (click to expand) ── #}
+      <div class="card-header bg-light border-bottom py-2 d-flex flex-wrap justify-content-between align-items-center gap-2"
+           role="button"
+           data-bs-toggle="collapse"
+           data-bs-target="#otherConsult{{ forloop.counter }}"
+           aria-expanded="false"
+           style="cursor:pointer;">
         <div class="d-flex flex-wrap align-items-center gap-3">
           <span class="fw-semibold small">
             <i class="bi bi-building me-1 text-muted"></i>{{ other.department }}
@@ -758,11 +1075,15 @@
             <i class="bi bi-calendar3 me-1"></i>{{ other.consultation_date|date:"d M Y, H:i" }}
           </span>
         </div>
-        <span class="badge {% if other.status == 'COMPLETED' %}bg-success{% elif other.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
-          {{ other.get_status_display }}
-        </span>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge {% if other.status == 'COMPLETED' %}bg-success{% elif other.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+            {{ other.get_status_display }}
+          </span>
+          <i class="bi bi-chevron-down section-chevron" style="font-size:.85rem;color:#64748b;transition:transform .2s;" title="Click to expand"></i>
+        </div>
       </div>
 
+      <div class="collapse" id="otherConsult{{ forloop.counter }}">
       <div class="card-body" style="pointer-events:none; user-select:text;">
 
         {# ── History summary ── #}
@@ -834,6 +1155,7 @@
           <i class="bi bi-lock me-1"></i>Read-only — written by Dr. {{ other.consulting_doctor.full_name }}
         </span>
       </div>
+      </div>{# /collapse #}
     </div>
     {% endfor %}
   </div>
@@ -852,6 +1174,97 @@
 
 {% block extra_js %}
 <script>
+// ── Collapsible section chevron rotation ──────────────────────────────────────
+document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(trigger => {
+  const targetId = trigger.getAttribute('data-bs-target');
+  if (!targetId) return;
+  const target = document.querySelector(targetId);
+  if (!target) return;
+  const chevron = trigger.querySelector('.section-chevron');
+  if (!chevron) return;
+  // Set initial state
+  if (!target.classList.contains('show')) {
+    chevron.style.transform = 'rotate(-90deg)';
+  }
+  target.addEventListener('show.bs.collapse', () => { chevron.style.transform = 'rotate(0deg)'; });
+  target.addEventListener('hide.bs.collapse', () => { chevron.style.transform = 'rotate(-90deg)'; });
+});
+
+// ── Clinical Form: auto-collapsible sections ──────────────────────────────────
+// Automatically wires every numbered section inside any clinical exam form.
+// Works for ALL departments — no changes needed to individual form templates.
+function initClinicalFormCollapse() {
+  const form = document.getElementById('clinicalForm');
+  if (!form) return;
+
+  // Section wrappers: <div class="mb-4"> or <div class="mb-2"> that contain
+  // a direct child section header (fw-bold text-uppercase).
+  // Exclude read-only zone wrappers (they have .rounded.border).
+  const sections = Array.from(form.querySelectorAll('.mb-4, .mb-2')).filter(sec => {
+    const hdr = sec.querySelector(':scope > div.fw-bold.text-uppercase');
+    const isReadOnly = sec.classList.contains('rounded') && sec.classList.contains('border');
+    return hdr && !isReadOnly && !sec.dataset.cfmWired;
+  });
+
+  sections.forEach(function(sec, idx) {
+    const header = sec.querySelector(':scope > div.fw-bold.text-uppercase');
+    if (!header || header.dataset.cfmWired) return;
+    header.dataset.cfmWired = '1';
+    sec.dataset.cfmWired = '1';
+
+    // Gather everything after the header to collapse
+    const contentDivs = Array.from(sec.children).filter(ch => ch !== header);
+    if (!contentDivs.length) return;
+
+    // Wrap content in a collapse container
+    const wrapper = document.createElement('div');
+    wrapper.style.overflow = 'hidden';
+    wrapper.style.transition = 'max-height 0.25s ease, opacity 0.2s ease';
+    contentDivs.forEach(ch => wrapper.appendChild(ch));
+    sec.appendChild(wrapper);
+
+    // First section open, rest collapsed
+    const startOpen = (idx === 0);
+    wrapper.style.maxHeight = startOpen ? '2000px' : '0';
+    wrapper.style.opacity  = startOpen ? '1' : '0';
+    wrapper.style.marginTop = startOpen ? '0.5rem' : '0';
+
+    // Style header as toggle
+    header.style.cursor = 'pointer';
+    header.style.userSelect = 'none';
+    header.style.paddingBottom = '0.35rem';
+    header.style.borderBottom = '1px solid rgba(128,128,128,0.15)';
+    header.style.marginBottom = '0';
+    header.classList.add('d-flex', 'align-items-center', 'justify-content-between');
+
+    // Chevron
+    const chevron = document.createElement('i');
+    chevron.className = startOpen ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+    chevron.style.cssText = 'font-size:.75rem;transition:transform .25s;opacity:.6;flex-shrink:0;';
+    header.appendChild(chevron);
+
+    // Toggle on click
+    let isOpen = startOpen;
+    header.addEventListener('click', function() {
+      isOpen = !isOpen;
+      wrapper.style.maxHeight = isOpen ? '2000px' : '0';
+      wrapper.style.opacity   = isOpen ? '1' : '0';
+      wrapper.style.marginTop = isOpen ? '0.5rem' : '0';
+      chevron.className = isOpen ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+    });
+  });
+}
+
+// Run immediately (in case form is already visible on page load)
+initClinicalFormCollapse();
+
+// Re-run when the Edit button shows the clinical form (it's hidden by default)
+document.querySelectorAll('[onclick*="clinicalForm"]').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    setTimeout(initClinicalFormCollapse, 60);
+  });
+});
+
 // ── ICD-10 Diagnosis live search ──────────────────────────────────────────────
 (function () {
   const searchInput  = document.getElementById('diagnosisSearch');
@@ -909,5 +1322,49 @@
     setTimeout(() => resultsBox.classList.add('d-none'), 200);
   });
 })();
+
+// ── Drug name autocomplete for inline Quick Prescribe ──────────────────────
+(function() {
+  const drugInput = document.getElementById('drugNameInput');
+  const suggestions = document.getElementById('drugSuggestions');
+  if (!drugInput || !suggestions) return;
+  let timer;
+  drugInput.addEventListener('input', function() {
+    clearTimeout(timer);
+    const q = this.value.trim();
+    if (q.length < 2) { suggestions.style.display = 'none'; return; }
+    timer = setTimeout(() => {
+      fetch(`{% url 'prescriptions:drug_search' %}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!data.results || !data.results.length) { suggestions.style.display = 'none'; return; }
+          suggestions.innerHTML = data.results.map(d =>
+            `<button type="button" class="list-group-item list-group-item-action py-1 small"
+                     data-name="${d.name}" data-form="${d.form || ''}" data-strength="${d.strength || ''}" data-conc="${d.concentration || d.strength || ''}">
+               <strong>${d.name}</strong>${d.generic_name ? ' <small class="text-muted">(' + d.generic_name + ')</small>' : ''} <span class="badge bg-secondary ms-1 fw-normal">${(d.strength||'')}${d.form ? ' · ' + d.form.replace('_',' ') : ''}</span>
+               ${d.in_stock===false ? '<span class="badge bg-danger ms-1">Out of Stock</span>' : ''}
+             </button>`
+          ).join('');
+          suggestions.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', function(e) {
+              e.preventDefault();
+              drugInput.value = this.dataset.name;
+              // Auto-fill form type if possible
+              const formSel = document.querySelector('[name="drug_form"]');
+              if (formSel && this.dataset.form) formSel.value = this.dataset.form;
+              // Auto-fill concentration
+              const concIn = document.querySelector('[name="concentration"]');
+              if (concIn && this.dataset.conc) concIn.value = this.dataset.conc;
+              suggestions.style.display = 'none';
+            });
+          });
+          suggestions.style.display = 'block';
+        })
+        .catch(() => { suggestions.style.display = 'none'; });
+    }, 300);
+  });
+  drugInput.addEventListener('blur', () => setTimeout(() => { suggestions.style.display = 'none'; }, 200));
+})();
+
 </script>
 {% endblock %}

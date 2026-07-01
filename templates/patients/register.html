@@ -17,13 +17,52 @@
 
 {% block content %}
 
-{% if form.errors or nok_form.errors %}
+{% if duplicate %}
+<div class="alert alert-danger border-danger mb-4" role="alert">
+  <div class="d-flex align-items-start gap-3">
+    <i class="bi bi-person-x-fill fs-3 text-danger flex-shrink-0 mt-1"></i>
+    <div class="flex-grow-1">
+      <strong class="d-block mb-1">Patient Already Registered — Cannot Register Twice</strong>
+      <div class="small">
+        A patient matching this phone number or name + date of birth already exists in the system.
+        Do <strong>not</strong> create a duplicate record.
+      </div>
+      <div class="mt-2 p-2 bg-white rounded border">
+        <div class="fw-bold">{{ duplicate.full_name }}</div>
+        <div class="small text-muted">ID: {{ duplicate.patient_id }} &bull; {{ duplicate.get_gender_display }} &bull; DOB: {{ duplicate.date_of_birth|date:"d M Y" }}</div>
+        <div class="small text-muted">Phone: {{ duplicate.phone_number }}</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 mt-2">
+        {% if qms_token_id %}
+        {# QMS flow — complete the receptionist token and send to cashier queue #}
+        <form method="post" action="{% url 'patients:checkin_existing' %}">
+          {% csrf_token %}
+          <input type="hidden" name="patient_id" value="{{ duplicate.patient_id }}">
+          <input type="hidden" name="qms_token_id" value="{{ qms_token_id }}">
+          <button type="submit" class="btn btn-success btn-sm">
+            <i class="bi bi-check-circle me-1"></i>Check In Existing Patient &amp; Send to Cashier
+          </button>
+        </form>
+        {% else %}
+        <a href="{% url 'patients:detail' patient_id=duplicate.patient_id %}" class="btn btn-danger btn-sm">
+          <i class="bi bi-arrow-right-circle me-1"></i>Open Existing Patient Record
+        </a>
+        {% endif %}
+        <a href="{% url 'patients:detail' patient_id=duplicate.patient_id %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-person me-1"></i>View Record Only
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if form.errors and not duplicate %}
 <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
   <strong><i class="bi bi-exclamation-circle me-1"></i>Please fix the errors below before registering:</strong>
   <ul class="mb-0 mt-2 small">
     {% for field in form %}{% for error in field.errors %}<li><strong>{{ field.label }}:</strong> {{ error }}</li>{% endfor %}{% endfor %}
     {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
-    {% for field in nok_form %}{% for error in field.errors %}<li><strong>Next of Kin — {{ field.label }}:</strong> {{ error }}</li>{% endfor %}{% endfor %}
   </ul>
   <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
@@ -79,15 +118,55 @@
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-medium">Nationality</label>
-              {% render_field form.nationality class="form-control" %}
+              <input type="text" name="nationality" class="form-control" list="nationality-list"
+                     placeholder="Type to search nationality..."
+                     value="{{ form.nationality.value|default:'' }}">
+              <datalist id="nationality-list">
+                <option value="Cameroonian"><option value="Nigerian"><option value="Chadian">
+                <option value="Central African"><option value="Congolese (DRC)"><option value="Congolese (Republic)">
+                <option value="Gabonese"><option value="Equatorial Guinean"><option value="Ghanaian">
+                <option value="Senegalese"><option value="Ivorian"><option value="Burkinabe">
+                <option value="Malian"><option value="Nigerien"><option value="Togolese">
+                <option value="Beninese"><option value="Liberian"><option value="Sierra Leonean">
+                <option value="Guinean"><option value="South African"><option value="Kenyan">
+                <option value="Tanzanian"><option value="Ugandan"><option value="Rwandan">
+                <option value="Ethiopian"><option value="Sudanese"><option value="Eritrean">
+                <option value="Somali"><option value="Mozambican"><option value="Zimbabwean">
+                <option value="Zambian"><option value="Angolan"><option value="Namibian">
+                <option value="Malawian"><option value="Malagasy"><option value="Mauritian">
+                <option value="Algerian"><option value="Moroccan"><option value="Tunisian">
+                <option value="Egyptian"><option value="Libyan"><option value="Cape Verdean">
+                <option value="French"><option value="British"><option value="American">
+                <option value="German"><option value value="Italian"><option value="Spanish">
+                <option value="Portuguese"><option value="Dutch"><option value="Belgian">
+                <option value="Swiss"><option value="Swedish"><option value="Norwegian">
+                <option value="Danish"><option value="Finnish"><option value="Greek">
+                <option value="Turkish"><option value="Russian"><option value="Chinese">
+                <option value="Indian"><option value="Pakistani"><option value="Bangladeshi">
+                <option value="Lebanese"><option value="Saudi"><option value="Emirati">
+                <option value="Brazilian"><option value="Argentine"><option value="Colombian">
+                <option value="Venezuelan"><option value="Peruvian"><option value="Chilean">
+                <option value="Mexican"><option value="Cuban"><option value="Haitian">
+                <option value="Jamaican"><option value="Dominican"><option value="Canadian">
+                <option value="Australian"><option value="Japanese"><option value="Korean">
+                <option value="Vietnamese"><option value="Indonesian"><option value="Philippine">
+                <option value="Malaysian"><option value="Singaporean"><option value="Thai">
+                <option value="Iranian"><option value="Iraqi"><option value="Syrian">
+                <option value="Jordanian"><option value="Israeli"><option value="Palestinian">
+                <option value="Ukrainian"><option value="Polish"><option value="Romanian">
+                <option value="Hungarian"><option value="Czech"><option value="Slovak">
+                <option value="Croatian"><option value="Serbian"><option value="Bulgarian">
+              </datalist>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Country</label>
+              <input type="text" name="country" class="form-control"
+                     placeholder="Country"
+                     value="{{ form.country.value|default:'Cameroon' }}">
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-medium">Occupation</label>
               {% render_field form.occupation class="form-control" %}
-            </div>
-            <div class="col-md-4">
-              <label class="form-label small fw-medium">Religion</label>
-              {% render_field form.religion class="form-control" placeholder="e.g. Christianity, Islam" %}
             </div>
           </div>
         </div>
@@ -121,29 +200,60 @@
         </div>
         <div class="card-body">
           <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Postal Address</label>
-              {% render_field form.post_address class="form-control" placeholder="P.O. Box / Postal Address" %}
-            </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <label class="form-label small fw-medium">Quarter / Neighbourhood</label>
               {% render_field form.quarter class="form-control" placeholder="Quartier / Neighbourhood" %}
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <label class="form-label small fw-medium">Village / Town</label>
               {% render_field form.village_town class="form-control" placeholder="Village or Town" %}
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <label class="form-label small fw-medium">Division</label>
-              {% render_field form.division class="form-control" placeholder="Division" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Region</label>
-              {% render_field form.region class="form-select" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Country</label>
-              {% render_field form.country class="form-control" %}
+              <input type="text" name="division" class="form-control" list="division-list"
+                     placeholder="Type to search division..."
+                     value="{{ form.division.value|default:'' }}">
+              <datalist id="division-list">
+                {# Adamawa #}
+                <option value="Djerem (Adamawa)"><option value="Faro-et-Déo (Adamawa)">
+                <option value="Mayo-Banyo (Adamawa)"><option value="Mbéré (Adamawa)"><option value="Vina (Adamawa)">
+                {# Centre #}
+                <option value="Haute-Sanaga (Centre)"><option value="Lekié (Centre)">
+                <option value="Mbam-et-Inoubou (Centre)"><option value="Mbam-et-Kim (Centre)">
+                <option value="Méfou-et-Afamba (Centre)"><option value="Méfou-et-Akono (Centre)">
+                <option value="Mfoundi (Centre)"><option value="Nyong-et-Kellé (Centre)">
+                <option value="Nyong-et-Mfoumou (Centre)"><option value="Nyong-et-So'o (Centre)">
+                {# East #}
+                <option value="Boumba-et-Ngoko (East)"><option value="Haut-Nyong (East)">
+                <option value="Kadey (East)"><option value="Lom-et-Djérem (East)">
+                {# Far North #}
+                <option value="Diamaré (Far North)"><option value="Logone-et-Chari (Far North)">
+                <option value="Mayo-Danay (Far North)"><option value="Mayo-Kani (Far North)">
+                <option value="Mayo-Sava (Far North)"><option value="Mayo-Tsanaga (Far North)">
+                {# Littoral #}
+                <option value="Moungo (Littoral)"><option value="Nkam (Littoral)">
+                <option value="Sanaga-Maritime (Littoral)"><option value="Wouri (Littoral)">
+                {# North #}
+                <option value="Bénoué (North)"><option value="Faro (North)">
+                <option value="Mayo-Louti (North)"><option value="Mayo-Rey (North)">
+                {# Northwest #}
+                <option value="Boyo (Northwest)"><option value="Bui (Northwest)">
+                <option value="Donga-Mantung (Northwest)"><option value="Menchum (Northwest)">
+                <option value="Mezam (Northwest)"><option value="Momo (Northwest)">
+                <option value="Ngo-Ketunjia (Northwest)">
+                {# South #}
+                <option value="Dja-et-Lobo (South)"><option value="Mvila (South)">
+                <option value="Océan (South)"><option value="Vallée-du-Ntem (South)">
+                {# Southwest #}
+                <option value="Fako (Southwest)"><option value="Koupe-Manengouba (Southwest)">
+                <option value="Lebialem (Southwest)"><option value="Manyu (Southwest)">
+                <option value="Meme (Southwest)"><option value="Ndian (Southwest)">
+                {# West #}
+                <option value="Bamboutos (West)"><option value="Haut-Nkam (West)">
+                <option value="Hauts-Plateaux (West)"><option value="Koung-Khi (West)">
+                <option value="Menoua (West)"><option value="Mifi (West)">
+                <option value="Ndé (West)"><option value="Noun (West)">
+              </datalist>
             </div>
           </div>
         </div>
@@ -249,32 +359,6 @@
         </div>
       </div>
 
-      <!-- NEXT OF KIN -->
-      <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white border-bottom py-3">
-          <h6 class="fw-bold mb-0"><i class="bi bi-people me-2 text-secondary"></i>Next of Kin</h6>
-        </div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Full Name</label>
-              {% render_field nok_form.full_name class="form-control" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Relationship</label>
-              {% render_field nok_form.relationship class="form-control" placeholder="e.g. Spouse, Parent, Sibling" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Phone Number</label>
-              {% render_field nok_form.phone_number class="form-control" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Email</label>
-              {% render_field nok_form.email class="form-control" %}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- ── RIGHT COLUMN ── -->
@@ -317,6 +401,17 @@
           <div class="small text-muted mb-1">Consultation Type Selected</div>
           <span id="tier_badge" class="badge fs-6 px-4 py-2 bg-secondary">Standard</span>
         </div>
+      </div>
+
+      <!-- Duplicate patient warning panel (shown by JS when a match is found) -->
+      <div id="duplicateWarning" class="alert alert-warning border-start border-4 border-warning mb-3" style="display:none;">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+          <strong>Possible Duplicate Patient Found</strong>
+        </div>
+        <p class="small mb-2">The following patient(s) match the name, date of birth, or phone number you entered. Please check before registering a new record.</p>
+        <div id="duplicateList" class="mb-2"></div>
+        <p class="small text-muted mb-0">If this is genuinely a new patient, you may proceed with registration below.</p>
       </div>
 
       <!-- Submit -->
@@ -376,5 +471,61 @@ function onBillingChange(val) {
   if (row) row.style.display = (val === 'HMO' || val === 'INSURANCE') ? 'block' : 'none';
 }
 (function(){ const b = document.getElementById('id_billing_type'); if(b) onBillingChange(b.value); })();
+
+// ── Duplicate patient detection ──────────────────────────────────────────────
+(function() {
+  const firstEl  = document.getElementById('id_first_name');
+  const lastEl   = document.getElementById('id_last_name');
+  const dobEl    = document.getElementById('id_dob');
+  const phoneEl  = document.getElementById('id_phone_number');
+  const panel    = document.getElementById('duplicateWarning');
+  const list     = document.getElementById('duplicateList');
+  if (!panel || !list) return;
+
+  let timer;
+
+  function checkDuplicates() {
+    clearTimeout(timer);
+    const first = firstEl?.value.trim() || '';
+    const last  = lastEl?.value.trim() || '';
+    const dob   = dobEl?.value || '';
+    const phone = phoneEl?.value.trim() || '';
+    if (phone.length < 8 && !(first && last)) return;
+
+    timer = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (phone) params.set('phone', phone);
+      if (first) params.set('first_name', first);
+      if (last)  params.set('last_name', last);
+      if (dob)   params.set('dob', dob);
+
+      fetch(`{% url 'patients:duplicate_check' %}?${params}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!data.duplicates || data.duplicates.length === 0) {
+            panel.style.display = 'none'; return;
+          }
+          list.innerHTML = data.duplicates.map(p =>
+            `<div class="d-flex align-items-center justify-content-between py-1 border-bottom">
+               <div class="small">
+                 <strong>${p.name}</strong>
+                 <span class="text-muted ms-2">${p.gender}, ${p.age} yrs &bull; DOB: ${p.dob} &bull; Phone: ${p.phone}</span>
+               </div>
+               <a href="${p.url}" target="_blank" class="btn btn-sm btn-outline-primary py-0 px-2 ms-2">
+                 View <i class="bi bi-box-arrow-up-right ms-1"></i>
+               </a>
+             </div>`
+          ).join('');
+          panel.style.display = 'block';
+        })
+        .catch(() => {});
+    }, 600);
+  }
+
+  firstEl?.addEventListener('blur', checkDuplicates);
+  lastEl?.addEventListener('blur', checkDuplicates);
+  dobEl?.addEventListener('change', checkDuplicates);
+  phoneEl?.addEventListener('blur', checkDuplicates);
+})();
 </script>
 {% endblock %}

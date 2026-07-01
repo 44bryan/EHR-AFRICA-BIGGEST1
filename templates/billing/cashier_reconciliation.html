@@ -1,0 +1,234 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Cashier Reconciliation — {{ report_date|date:"d M Y" }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-calculator text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Daily Cashier Reconciliation</h5>
+      <div class="text-muted small">{{ report_date|date:"l, d F Y" }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <a href="?date={{ prev_date }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></a>
+    <form method="get" class="d-flex gap-1">
+      <input type="date" name="date" value="{{ report_date|date:'Y-m-d' }}" class="form-control form-control-sm">
+      <button type="submit" class="btn btn-primary btn-sm">Go</button>
+    </form>
+    <a href="?date={{ next_date }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></a>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Alerts #}
+{% if unsubmitted_count %}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+  <div><strong>{{ unsubmitted_count }} shift{{ unsubmitted_count|pluralize }}</strong> not yet submitted to Chief Cashier. Reconciliation totals may be incomplete.</div>
+</div>
+{% endif %}
+{% if orphan_payments %}
+<div class="alert alert-danger d-flex align-items-center gap-2 py-2 mb-3">
+  <i class="bi bi-exclamation-circle-fill fs-5"></i>
+  <div><strong>{{ orphan_payments|length }} orphaned payment{{ orphan_payments|length|pluralize }}</strong> found — cashier had no open shift. Total: <strong>{{ orphan_total|floatformat:0|intcomma }} FCFA</strong>.</div>
+</div>
+{% endif %}
+
+{# Day Summary KPIs #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3" style="background:linear-gradient(135deg,#059669,#047857);color:#fff;">
+      <div class="small opacity-80 mb-1">System Total</div>
+      <div class="fw-bold fs-5">{{ total_system|floatformat:0|intcomma }}</div>
+      <div class="small opacity-70">FCFA collected</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;">
+      <div class="small opacity-80 mb-1">Total Declared</div>
+      <div class="fw-bold fs-5">{{ total_declared|floatformat:0|intcomma }}</div>
+      <div class="small opacity-70">FCFA (cashier count)</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3"
+      {% if total_variance == 0 %}style="background:linear-gradient(135deg,#059669,#047857);color:#fff;"
+      {% elif total_variance > 0 %}style="background:linear-gradient(135deg,#d97706,#b45309);color:#fff;"
+      {% else %}style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;"{% endif %}>
+      <div class="small opacity-80 mb-1">Total Variance</div>
+      <div class="fw-bold fs-5">
+        {% if total_variance >= 0 %}+{% endif %}{{ total_variance|floatformat:0|intcomma }}
+      </div>
+      <div class="small opacity-70">FCFA{% if total_variance == 0 %} — balanced{% endif %}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center p-3" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">
+      <div class="small opacity-80 mb-1">Cashiers On Shift</div>
+      <div class="fw-bold fs-5">{{ shift_count }}</div>
+      <div class="small opacity-70">shifts today</div>
+    </div>
+  </div>
+</div>
+
+{# Per-cashier shift reconciliation #}
+{% if rows %}
+<h6 class="fw-bold text-muted mb-3 text-uppercase" style="font-size:.75rem;letter-spacing:.05em;">Per-Cashier Reconciliation</h6>
+{% for cd in rows %}
+<div class="card border-0 shadow-sm mb-3 {% if cd.clean == False %}border-start border-4 border-danger{% elif cd.clean %}border-start border-4 border-success{% endif %}">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span class="fw-semibold">
+      <i class="bi bi-person-badge me-2 text-primary"></i>
+      {{ cd.cashier.get_full_name|default:cd.cashier.username }}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="badge
+        {% if cd.status == 'OPEN' %}bg-success
+        {% elif cd.status == 'CLOSED' %}bg-warning text-dark
+        {% elif cd.status == 'SUBMITTED' %}bg-info text-dark
+        {% else %}bg-secondary{% endif %}">
+        {{ cd.shift.get_status_display }}
+      </span>
+      <span class="badge bg-primary px-3 py-2">{{ cd.sys_total|floatformat:0|intcomma }} FCFA system</span>
+    </div>
+  </div>
+  <div class="card-body py-3">
+    <div class="row g-3 align-items-center">
+      {# Figures row #}
+      <div class="col-6 col-md-2 text-center">
+        <div class="small text-muted mb-1">Opening Float</div>
+        <div class="fw-semibold">{{ cd.shift.opening_cash|floatformat:0|intcomma }}</div>
+      </div>
+      <div class="col-6 col-md-2 text-center">
+        <div class="small text-muted mb-1">Cash Collected</div>
+        <div class="fw-semibold text-primary">{{ cd.cash_sys|floatformat:0|intcomma }}</div>
+      </div>
+      <div class="col-6 col-md-2 text-center">
+        <div class="small text-muted mb-1">Expected in Drawer</div>
+        <div class="fw-semibold">{{ cd.expected|floatformat:0|intcomma }}</div>
+      </div>
+      <div class="col-6 col-md-2 text-center">
+        <div class="small text-muted mb-1">Declared by Cashier</div>
+        {% if cd.declared is not None %}
+        <div class="fw-semibold">{{ cd.declared|floatformat:0|intcomma }}</div>
+        {% else %}
+        <div class="text-muted fst-italic small">not yet</div>
+        {% endif %}
+      </div>
+      <div class="col-6 col-md-2 text-center">
+        <div class="small text-muted mb-1">Variance</div>
+        {% if cd.variance is not None %}
+        <div class="fw-bold
+          {% if cd.variance == 0 %}text-success
+          {% elif cd.variance > 0 %}text-warning
+          {% else %}text-danger{% endif %}">
+          {% if cd.variance >= 0 %}+{% endif %}{{ cd.variance|floatformat:0|intcomma }}
+          {% if cd.variance == 0 %}<i class="bi bi-check-circle-fill ms-1"></i>{% endif %}
+        </div>
+        {% else %}
+        <div class="text-muted fst-italic small">—</div>
+        {% endif %}
+      </div>
+      <div class="col-6 col-md-2 text-center">
+        <div class="small text-muted mb-1">Transactions</div>
+        <div class="fw-semibold">{{ cd.txn_count }}</div>
+      </div>
+    </div>
+
+    {# By-method breakdown for this cashier #}
+    {% if cd.by_method %}
+    <div class="d-flex flex-wrap gap-2 mt-3 pt-3 border-top">
+      {% for method, amount in cd.by_method.items %}
+      <span class="badge bg-secondary px-3 py-2" style="font-size:.8rem;">
+        {% if method == 'CASH' %}<i class="bi bi-cash me-1"></i>
+        {% elif method == 'MOBILE' %}<i class="bi bi-phone me-1"></i>
+        {% elif method == 'CARD' %}<i class="bi bi-credit-card me-1"></i>
+        {% elif method == 'TRANSFER' %}<i class="bi bi-bank me-1"></i>
+        {% elif method == 'INSURANCE' %}<i class="bi bi-shield-check me-1"></i>
+        {% else %}<i class="bi bi-currency-exchange me-1"></i>{% endif %}
+        {% for k, v in method_labels.items %}{% if k == method %}{{ v }}{% endif %}{% endfor %}:
+        {{ amount|floatformat:0|intcomma }} FCFA
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+  No shifts found on {{ report_date|date:"d M Y" }}.
+</div>
+{% endif %}
+
+{# Orphaned Payments (no shift) #}
+{% if orphan_payments %}
+<div class="card border-0 shadow-sm border-start border-4 border-danger mt-2 mb-4">
+  <div class="card-header bg-white">
+    <span class="fw-semibold text-danger">
+      <i class="bi bi-exclamation-circle me-2"></i>Orphaned Payments (no shift opened) — {{ orphan_total|floatformat:0|intcomma }} FCFA
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 small">
+      <thead class="table-light">
+        <tr><th>Time</th><th>Cashier</th><th>Invoice #</th><th>Patient</th><th>Method</th><th class="text-end">Amount</th></tr>
+      </thead>
+      <tbody>
+        {% for p in orphan_payments %}
+        <tr>
+          <td class="text-muted">{{ p.payment_date|date:"H:i" }}</td>
+          <td>{{ p.received_by.get_full_name|default:p.received_by.username|default:"—" }}</td>
+          <td><code class="small">{{ p.invoice.invoice_number }}</code></td>
+          <td>{{ p.invoice.patient.full_name }}</td>
+          <td>{{ p.get_payment_method_display }}</td>
+          <td class="text-end text-danger fw-semibold">{{ p.amount|floatformat:0|intcomma }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# Signature block for shift close #}
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-md-4 text-center">
+        <div style="border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:.8rem;">
+          Cashier / Supervisor Signature
+        </div>
+      </div>
+      <div class="col-md-4 text-center">
+        <div style="border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:.8rem;">
+          Finance Manager Signature
+        </div>
+      </div>
+      <div class="col-md-4 text-center">
+        <div style="border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:.8rem;">
+          Date &amp; Stamp
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .btn, nav, .sidebar { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+}
+</style>
+{% endblock %}

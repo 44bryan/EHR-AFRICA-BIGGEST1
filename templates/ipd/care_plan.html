@@ -1,0 +1,179 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load static %}
+
+{% block title %}Nursing Care Plan — {{ patient.full_name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'ipd:dashboard' %}">IPD</a></li>
+    {% if admission %}
+    <li class="breadcrumb-item"><a href="{% url 'ipd:admission_detail' admission_id=admission.pk %}">Admission</a></li>
+    {% endif %}
+    <li class="breadcrumb-item active">Nursing Care Plan</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+  <div>
+    <h1 class="h4 mb-0">Nursing Care Plan</h1>
+    <p class="text-muted mb-0">{{ patient.full_name }} · {{ patient.patient_id }}
+      <span class="badge bg-primary bg-opacity-10 text-primary ms-2">JCI COP.8</span>
+    </p>
+  </div>
+  {% if mode == 'detail' %}
+  <div>
+    <span class="badge {% if plan.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+      {% if plan.is_active %}Active{% else %}Inactive{% endif %}
+    </span>
+    {% if plan.next_review_date %}
+    <span class="badge bg-warning text-dark ms-2">
+      Review: {{ plan.next_review_date|date:"d M Y" }}
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="row g-4">
+
+    <!-- Nursing Diagnosis & Goals -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header py-2" style="background:#f8fafc;">
+          <strong class="fs-7 text-uppercase">Nursing Diagnosis & Goals (NANDA)</strong>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Nursing Diagnoses</label>
+            <textarea name="nursing_diagnoses" class="form-control" rows="4"
+                      placeholder="e.g. Impaired visual acuity related to cataract surgery&#10;Risk for infection r/t post-op eye wound">{{ plan.nursing_diagnoses|default:'' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Short-Term Goals (24–48h)</label>
+            <textarea name="short_term_goals" class="form-control" rows="3"
+                      placeholder="Patient will demonstrate correct eye drop administration technique by Day 1 post-op">{{ plan.short_term_goals|default:'' }}</textarea>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">Long-Term Goals (discharge)</label>
+            <textarea name="long_term_goals" class="form-control" rows="3"
+                      placeholder="Patient will achieve best-corrected visual acuity of 6/12 or better by 6-week follow-up">{{ plan.long_term_goals|default:'' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interventions -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header py-2" style="background:#f8fafc;">
+          <strong class="fs-7 text-uppercase">Nursing Interventions</strong>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Eye Drop / Medication Schedule</label>
+            <textarea name="medication_eye_drop_schedule" class="form-control" rows="3"
+                      placeholder="e.g. Prednisolone 1% — 4x/day RE&#10;Moxifloxacin — 4x/day RE">{{ plan.medication_eye_drop_schedule|default:'' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Wound / Eye Dressing Care</label>
+            <textarea name="wound_eye_dressing_care" class="form-control" rows="2"
+                      placeholder="Eye shield at night, avoid rubbing, keep clean...">{{ plan.wound_eye_dressing_care|default:'' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Vital Signs Monitoring</label>
+            <textarea name="vital_signs_monitoring" class="form-control" rows="2"
+                      placeholder="Q4h BP, HR, SpO2. Assess pain score Q2h...">{{ plan.vital_signs_monitoring|default:'' }}</textarea>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">Safety Measures</label>
+            <textarea name="safety_measures" class="form-control" rows="2"
+                      placeholder="Fall prevention, bed rails up, call bell within reach...">{{ plan.safety_measures|default:'' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Education & Support -->
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header py-2" style="background:#f8fafc;">
+          <strong class="fs-7 text-uppercase">Education & Psychosocial Support</strong>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Hygiene & Mobility Care</label>
+            <textarea name="hygiene_mobility_care" class="form-control" rows="2"
+                      placeholder="Assisted bathing, ambulation restrictions...">{{ plan.hygiene_mobility_care|default:'' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nutrition & Hydration</label>
+            <textarea name="nutrition_hydration_plan" class="form-control" rows="2"
+                      placeholder="Regular diet, encourage 2L oral fluids unless contraindicated...">{{ plan.nutrition_hydration_plan|default:'' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Patient & Family Education</label>
+            <textarea name="patient_family_education" class="form-control" rows="2"
+                      placeholder="Teach eye drop technique, activity restrictions, warning signs...">{{ plan.patient_family_education|default:'' }}</textarea>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">Psychological Support</label>
+            <textarea name="psychological_support" class="form-control" rows="2"
+                      placeholder="Address anxiety about vision loss, involve chaplain if requested...">{{ plan.psychological_support|default:'' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Discharge Planning & Evaluation -->
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header py-2" style="background:#f8fafc;">
+          <strong class="fs-7 text-uppercase">Discharge Planning & Evaluation</strong>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Discharge Planning</label>
+            <textarea name="discharge_planning" class="form-control" rows="3"
+                      placeholder="Anticipated discharge Day 1 post-op&#10;Ensure caregiver trained on eye drops&#10;Follow-up appointment Day 3 at clinic...">{{ plan.discharge_planning|default:'' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Evaluation Notes</label>
+            <textarea name="evaluation_notes" class="form-control" rows="3"
+                      placeholder="Record progress against goals here (updated by nursing each shift)...">{{ plan.evaluation_notes|default:'' }}</textarea>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">Next Review Date</label>
+            <input type="date" name="next_review_date" class="form-control"
+                   value="{{ plan.next_review_date|date:'Y-m-d'|default:'' }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 d-flex justify-content-end gap-2">
+      {% if admission %}
+      <a href="{% url 'ipd:admission_detail' admission_id=admission.pk %}" class="btn btn-outline-secondary">Cancel</a>
+      {% else %}
+      <a href="{% url 'ipd:dashboard' %}" class="btn btn-outline-secondary">Cancel</a>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-lg me-1"></i>
+        {% if mode == 'create' %}Create Care Plan{% else %}Update Care Plan{% endif %}
+      </button>
+    </div>
+
+  </div>
+</form>
+
+{% if mode == 'detail' and plan %}
+<div class="mt-4 text-muted fs-7">
+  Created: {{ plan.created_at|date:"d M Y H:i" }} by {{ plan.created_by.full_name|default:"System" }}
+  {% if plan.updated_at %}· Last updated: {{ plan.updated_at|date:"d M Y H:i" }}{% endif %}
+</div>
+{% endif %}
+{% endblock %}

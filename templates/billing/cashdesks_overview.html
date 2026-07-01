@@ -1,0 +1,123 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}All Cash Desks — {{ today|date:"d M Y" }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-0"><i class="bi bi-grid-3x3-gap me-2 text-primary"></i>All Cash Desks</h1>
+    <small class="text-muted">Live overview — {{ today|date:"l, d F Y" }}</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:reconciliation' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-clipboard-check me-1"></i>Reconciliation
+    </a>
+    <a href="{% url 'billing:shift_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list me-1"></i>All Shifts
+    </a>
+  </div>
+</div>
+
+{# ── Grand totals row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1">Total Revenue Today</div>
+      <div class="fw-bold fs-4 text-primary">{{ grand_total|floatformat:0|intcomma }} <small class="fs-6 fw-normal">FCFA</small></div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1">Cash Collected</div>
+      <div class="fw-bold fs-4 text-success">{{ grand_cash|floatformat:0|intcomma }} <small class="fs-6 fw-normal">FCFA</small></div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1">Active Desks</div>
+      <div class="fw-bold fs-4">{{ desk_rows|length }}</div>
+    </div>
+  </div>
+</div>
+
+{# ── Desk cards ── #}
+{% if desk_rows %}
+<div class="row g-3">
+  {% for row in desk_rows %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <div>
+          <div class="fw-bold">{{ row.cashier.get_full_name|default:row.cashier.username }}</div>
+          <small class="text-muted">{{ row.shift.get_status_display }}</small>
+        </div>
+        <span class="badge
+          {% if row.status == 'OPEN' %}bg-success
+          {% elif row.status == 'SUBMITTED' %}bg-warning text-dark
+          {% elif row.status == 'VERIFIED' %}bg-primary
+          {% else %}bg-secondary{% endif %}">
+          {{ row.shift.get_status_display }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted small">Total collected</span>
+          <span class="fw-bold text-primary">{{ row.total_collected|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted small">Cash in hand</span>
+          <span class="fw-semibold text-success">{{ row.cash_collected|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span class="text-muted small">Expected cash (float+cash)</span>
+          <span class="text-muted small">{{ row.expected_cash|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="d-flex justify-content-between mb-3">
+          <span class="text-muted small">Transactions</span>
+          <span class="badge bg-light text-dark border">{{ row.txn_count }}</span>
+        </div>
+
+        {# Payment breakdown by method #}
+        {% if row.by_method %}
+        <div class="border-top pt-2">
+          <div class="small text-muted mb-1" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;">By method</div>
+          {% for method, amount in row.by_method.items %}
+          <div class="d-flex justify-content-between" style="font-size:0.8rem;">
+            <span class="text-muted">{{ method }}</span>
+            <span>{{ amount|floatformat:0|intcomma }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-white py-2">
+        <a href="{% url 'billing:shift_detail' shift_id=row.shift.id %}" class="btn btn-outline-primary btn-sm w-100">
+          View Shift Detail
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+  No cashier shifts opened today yet.
+</div>
+{% endif %}
+
+{# ── Orphan payments (no shift) ── #}
+{% if orphan_cashiers %}
+<div class="mt-4">
+  <div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    <strong>{{ orphan_cashiers|length }} cashier(s)</strong> collected payments today without opening a shift:
+    {% for oc in orphan_cashiers %}
+    <span class="ms-2">{{ oc.received_by__first_name }} {{ oc.received_by__last_name }}
+      — <strong>{{ oc.total|floatformat:0|intcomma }} FCFA</strong>
+    </span>{% if not forloop.last %},{% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

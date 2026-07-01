@@ -1,0 +1,235 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{{ account.name }} — Corporate Account{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-building text-info fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ account.name }}</h5>
+      <div class="text-muted small">
+        {% if account.account_code %}<span class="font-monospace me-2">{{ account.account_code }}</span>{% endif %}
+        Net-{{ account.payment_terms_days }} &middot;
+        {% if account.credit_limit > 0 %}Limit: {{ account.credit_limit|floatformat:0|intcomma }} FCFA{% else %}No credit limit{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:corporate_statement' account.id %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-file-earmark-text me-1"></i>Statement
+    </a>
+    <button class="btn btn-info btn-sm text-white" data-bs-toggle="modal" data-bs-target="#addMemberModal">
+      <i class="bi bi-person-plus me-1"></i>Add Member
+    </button>
+    <a href="{% url 'billing:corporate_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats Row -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Members</div>
+      <div class="fs-3 fw-bold text-info">{{ account.member_count }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Outstanding</div>
+      <div class="fs-3 fw-bold text-danger">{{ account.outstanding_balance|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Discount</div>
+      <div class="fs-3 fw-bold text-success">{{ account.discount_pct }}%</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Status</div>
+      <div class="fs-5 fw-bold {% if account.is_active %}text-success{% else %}text-secondary{% endif %}">
+        {% if account.is_active %}Active{% else %}Inactive{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Members -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom fw-semibold small">
+        <i class="bi bi-people me-1 text-info"></i>Members ({{ members|length }})
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr><th>Patient</th><th>Employee ID</th><th>Coverage</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for m in members %}
+              <tr>
+                <td class="fw-semibold">{{ m.patient.full_name }}
+                  <div class="text-muted" style="font-size:.7rem;">{{ m.patient.patient_id }}</div>
+                </td>
+                <td class="text-muted font-monospace">{{ m.employee_id|default:"—" }}</td>
+                <td class="text-muted">
+                  {% if m.coverage_limit > 0 %}{{ m.coverage_limit|floatformat:0|intcomma }}{% else %}—{% endif %}
+                </td>
+                <td>
+                  <form method="post" action="{% url 'billing:corporate_remove_member' m.id %}"
+                        onsubmit="return confirm('Remove this member?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1">
+                      <i class="bi bi-x"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-4">No members yet</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoices -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-receipt me-1 text-primary"></i>Recent Invoices</span>
+        <a href="{% url 'billing:corporate_statement' account.id %}" class="btn btn-xs btn-outline-info" style="font-size:.75rem;padding:2px 10px;">Full Statement</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr><th>Invoice #</th><th>Patient</th><th>Date</th><th class="text-end">Total</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% for inv in invoices %}
+              <tr>
+                <td><a href="{% url 'billing:invoice_detail' inv.id %}" class="text-decoration-none font-monospace small">{{ inv.invoice_number }}</a></td>
+                <td class="fw-semibold">{{ inv.patient.full_name }}</td>
+                <td class="text-muted">{{ inv.issue_date|date:"d M Y" }}</td>
+                <td class="text-end">{{ inv.total|floatformat:0|intcomma }}</td>
+                <td>
+                  <span class="badge {% if inv.status == 'PAID' %}bg-success{% elif inv.status == 'PARTIAL' %}bg-warning text-dark{% elif inv.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %}">
+                    {{ inv.get_status_display }}
+                  </span>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-4">No invoices yet</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Member Modal -->
+<div class="modal fade" id="addMemberModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'billing:corporate_add_member' account.id %}">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="bi bi-person-plus me-1 text-info"></i>Add Member to {{ account.name }}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Patient *</label>
+            <div class="position-relative">
+              <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-person-search"></i></span>
+                <input type="text" id="memberSearch" class="form-control" placeholder="Search patient by name or ID…" autocomplete="off">
+              </div>
+              <div id="memberDrop" class="list-group position-absolute w-100 shadow-sm"
+                   style="display:none;z-index:1055;max-height:180px;overflow-y:auto;"></div>
+            </div>
+            <input type="hidden" name="patient_id" id="memberPatientId">
+            <div id="memberSelected" class="mt-2 d-none">
+              <span class="badge bg-success" id="memberSelectedName"></span>
+              <button type="button" class="btn btn-link btn-sm text-danger py-0" onclick="clearMember()">Remove</button>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Employee / Member ID</label>
+              <input type="text" name="employee_id" class="form-control" placeholder="Company employee #">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Coverage Limit (FCFA)</label>
+              <input type="number" name="coverage_limit" class="form-control" value="0" min="0" step="1000" placeholder="0 = use account default">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-info btn-sm text-white">Add Member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const inp  = document.getElementById('memberSearch');
+const drop = document.getElementById('memberDrop');
+let timer;
+inp.addEventListener('input', function () {
+  clearTimeout(timer);
+  const q = this.value.trim();
+  if (q.length < 2) { drop.style.display = 'none'; return; }
+  timer = setTimeout(() => {
+    fetch('/patients/search/?q=' + encodeURIComponent(q))
+      .then(r => r.json()).then(data => {
+        const results = data.results || data.patients || [];
+        drop.innerHTML = '';
+        results.forEach(p => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'list-group-item list-group-item-action py-2 px-3 small';
+          btn.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted ms-2">${p.patient_id}</span>`;
+          btn.addEventListener('mousedown', e => {
+            e.preventDefault();
+            document.getElementById('memberPatientId').value = p.patient_id;
+            document.getElementById('memberSelectedName').textContent = p.full_name + ' (' + p.patient_id + ')';
+            document.getElementById('memberSelected').classList.remove('d-none');
+            inp.style.display = 'none';
+            drop.style.display = 'none';
+          });
+          drop.appendChild(btn);
+        });
+        if (!results.length) drop.innerHTML = '<div class="list-group-item text-muted small py-2">No results</div>';
+        drop.style.display = 'block';
+      });
+  }, 300);
+});
+inp.addEventListener('blur', () => setTimeout(() => { drop.style.display = 'none'; }, 150));
+
+function clearMember() {
+  document.getElementById('memberPatientId').value = '';
+  document.getElementById('memberSelected').classList.add('d-none');
+  inp.style.display = '';
+  inp.value = '';
+}
+</script>
+{% endblock %}

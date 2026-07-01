@@ -24,4 +24,10 @@ urlpatterns = [
     path('drug-interactions/', views.drug_interaction_view, name='drug_interactions'),
     # Patient AI Risk Summary
     path('patient-risk/<str:patient_id>/', views.patient_risk_summary_view, name='patient_risk'),
+    # AI Triage Scoring
+    path('triage/', views.ai_triage_view, name='triage'),
+    # AI Imaging / Investigation Analysis
+    path('imaging-analysis/<int:result_id>/', views.ai_imaging_analysis_view, name='imaging_analysis'),
+    # AI SOAP Note Generator
+    path('soap-note/', views.ai_soap_note_view, name='soap_note'),
 ]

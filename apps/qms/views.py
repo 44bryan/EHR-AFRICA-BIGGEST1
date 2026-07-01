@@ -29,6 +29,7 @@ from .models import (
     TIER_PRIORITY,
 )
 from apps.patients.models import Patient, Visit, VisitStatus, VisitType, VISIT_STATUS_TO_SERVICE_TYPE
+from apps.core.context_processors import qms_active as _qms_active
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -58,6 +59,9 @@ def queue_dashboard(request):
       redirected straight to their own counter — they have no business
       on the global overview page.
     """
+    if not _qms_active():
+        return redirect('dashboard:home')
+
     user = request.user
 
     # Gatekeeper — always goes to gate entry (no counter for them)
@@ -70,10 +74,12 @@ def queue_dashboard(request):
 
     # Counter staff — go straight to their own counter
     _COUNTER_ROLES = {
-        'receptionist', 'cashier', 'billing_officer',
-        'nurse', 'pharmacist', 'optical_dispenser',
+        'receptionist', 'medical_records',
+        'cashier', 'chief_cashier', 'billing_officer',
+        'nurse', 'consultation_nurse',
+        'pharmacist', 'optical_dispenser',
         'counseling_nurse', 'investigation_technician', 'lab_technician',
-        'admission_officer',
+        'admission_officer', 'cssd_technician',
     }
     if user.role in _COUNTER_ROLES:
         my = ServiceCounter.objects.filter(
@@ -110,6 +116,7 @@ def queue_dashboard(request):
             'waiting': tokens.filter(service_type=code, status=TokenStatus.WAITING).count(),
         }
 
+    all_today = _active_tokens_today()
     context = {
         'tokens': tokens,
         'counters': counters,
@@ -119,6 +126,7 @@ def queue_dashboard(request):
         'service_types': ServiceType.choices,
         'service_tiers': ServiceTier.choices,
         'today': today,
+        'total_today': all_today.count(),
     }
     return render(request, 'qms/dashboard.html', context)
 
@@ -183,15 +191,38 @@ def gate_issue(request):
         if visit_id:
             visit = Visit.objects.filter(id=visit_id).first()
 
-        if not patient and not patient_name:
-            messages.error(request, 'Please search and select a patient or enter a walk-in name.')
-            return redirect('qms:gate_issue')
-
         is_new_patient = request.POST.get('patient_type') == 'NEW'
 
-        # NEW patient → goes to RECEPTIONIST first (to be registered)
-        # RETURNING patient → goes directly to CASHIER queue
-        first_service = ServiceType.RECEPTIONIST if is_new_patient else ServiceType.CASHIER
+        # NEW patients don't need a name yet — reception will register them.
+        # RETURNING walk-ins must have either a linked record or a typed name.
+        if not is_new_patient and not patient and not patient_name:
+            messages.error(request, 'Please search and select a patient or enter a walk-in name.')
+            return redirect('qms:gate_issue')
+        is_insured = request.POST.get('is_insured') == '1'
+        insurance_company = request.POST.get('insurance_company', '').strip()
+
+        # Determine visit category based on consultation window:
+        #   NEW            → RECEPTIONIST queue (register first)
+        #   FREE FOLLOW-UP (within 15 days since last consultation) → TRIAGE (skip cashier)
+        #   RETURNING past window → CASHIER queue (pay new consultation)
+        #   EXPIRED        → CASHIER queue (pay new consultation)
+        is_free_followup = (not is_new_patient) and patient and patient.is_free_followup
+
+        if is_new_patient:
+            first_service = ServiceType.RECEPTIONIST
+            base_notes = 'NEW PATIENT — register first'
+            if not patient_name:
+                patient_name = 'New Patient'  # placeholder until receptionist registers
+        elif is_free_followup:
+            first_service = ServiceType.PARAMETERS
+            base_notes = f'FREE FOLLOW-UP — {patient.consultation_visit_label} — go directly to Triage'
+        else:
+            first_service = ServiceType.CASHIER
+            base_notes = ''
+
+        if is_insured:
+            ins_note = f'Insured: {insurance_company}' if insurance_company else 'Insured patient'
+            base_notes = f'{base_notes} | {ins_note}'.strip(' |')
 
         with transaction.atomic():
             token_number = DailyTokenSequence.next_entry_token(tier)
@@ -204,31 +235,145 @@ def gate_issue(request):
                 service_tier=tier,
                 issuance_point=IssuancePoint.GATE,
                 priority=TIER_PRIORITY.get(tier, 0),
+                is_insured=is_insured,
+                insurance_company=insurance_company,
                 issued_by=request.user,
-                notes='NEW PATIENT — register first' if is_new_patient else '',
+                notes=base_notes,
             )
+            # Auto-check-in any appointment booked for today
+            # so the receptionist dashboard shows accurate checked-in counts
+            if patient and not is_new_patient:
+                from apps.appointments.models import Appointment
+                Appointment.objects.filter(
+                    patient=patient,
+                    appointment_date=timezone.localdate(),
+                    status__in=[Appointment.Status.SCHEDULED, Appointment.Status.CONFIRMED],
+                    is_deleted=False,
+                ).update(status=Appointment.Status.CHECKED_IN)
 
-        dest = 'Receptionist (new patient registration)' if is_new_patient else 'Cashier'
+        if is_new_patient:
+            dest = 'Receptionist (new patient registration)'
+        elif is_free_followup:
+            dest = 'Triage directly — FREE FOLLOW-UP (no cashier payment required)'
+        else:
+            dest = 'Cashier'
         messages.success(request, f'Standard ticket {token_number} issued. Patient directed to: {dest}.')
         return render(request, 'qms/ticket_slip.html', {
             'token': token,
             'printed': True,
             'is_new_patient': is_new_patient,
+            'is_free_followup': is_free_followup,
             'base_layout': _slip_layout(request.user),
             'today_count': _active_tokens_today().count(),
         })
 
-    last_5 = (
+    tickets_today = (
         _active_tokens_today()
-        .filter(issuance_point=IssuancePoint.GATE)
+        .filter(issuance_point__in=[
+            IssuancePoint.GATE,
+            IssuancePoint.VIP_RECEPTION,
+            IssuancePoint.EXPRESS_DESK,
+        ])
         .select_related('patient')
-        .order_by('-issued_at')[:5]
+        .order_by('-issued_at')
     )
+    # Expected pre-registrations for today — gatekeeper confirms arrivals here
+    from apps.patients.models import PreRegistration
+    expected_today = PreRegistration.objects.filter(
+        visit_date=timezone.localdate(),
+        status__in=['PENDING', 'ARRIVED'],
+    ).order_by('status', 'created_at')
+
     return render(request, 'qms/gate_issue.html', {
         'tiers': ServiceTier.choices,
         'default_tier': ServiceTier.STANDARD,
         'today_count': _active_tokens_today().count(),
-        'last_5_tokens': last_5,
+        'tickets_today': tickets_today,
+        'expected_today': expected_today,
+    })
+
+
+@login_required
+@require_POST
+def prereg_mark_arrived(request, code):
+    """
+    Gatekeeper confirms pre-registered patient has physically arrived.
+    Marks as ARRIVED and auto-issues a gate ticket in one step.
+    Renders the ticket slip immediately so it can be printed.
+    """
+    from apps.patients.models import PreRegistration, Patient
+    prereg = get_object_or_404(PreRegistration, code=code.upper())
+
+    first_name = prereg.data.get('first_name', '')
+    last_name  = prereg.data.get('last_name', '')
+    full_name  = f'{first_name} {last_name}'.strip()
+
+    if prereg.status == PreRegistration.Status.ARRIVED:
+        messages.info(request, f'{full_name} already confirmed as arrived.')
+        return redirect('qms:gate_issue')
+
+    if prereg.status != PreRegistration.Status.PENDING:
+        messages.warning(request, f'Pre-registration status: {prereg.get_status_display()} — cannot process.')
+        return redirect('qms:gate_issue')
+
+    # Mark arrived
+    prereg.mark_arrived(confirmed_by_user=request.user)
+
+    # Check if patient already has a patient record (returning pre-reg)
+    phone = prereg.data.get('phone_number', '').strip()
+    patient = None
+    if phone:
+        patient = Patient.objects.filter(phone_number=phone, is_deleted=False).first()
+
+    # Determine routing: if patient exists check follow-up, else new patient → Reception
+    is_insured    = str(prereg.data.get('is_insured', '')).upper() in ('1', 'TRUE', 'YES')
+    insurance_co  = prereg.data.get('insurance_company', '').strip()
+    tier_raw      = prereg.data.get('service_tier', 'STANDARD').upper()
+    tier          = tier_raw if tier_raw in dict(ServiceTier.choices) else ServiceTier.STANDARD
+
+    if patient and patient.is_free_followup:
+        first_service = ServiceType.PARAMETERS
+        route_note    = 'FREE FOLLOW-UP — go directly to Triage (skip cashier)'
+    elif patient:
+        first_service = ServiceType.CASHIER
+        route_note    = 'Returning patient — go to Cashier'
+    else:
+        first_service = ServiceType.RECEPTIONIST
+        route_note    = 'Pre-registered new patient — go to Reception for full registration'
+
+    notes = f'PRE-REG {prereg.code} | {route_note}'
+    if is_insured:
+        ins_note = f'Insured: {insurance_co}' if insurance_co else 'Insured patient'
+        notes = f'{notes} | {ins_note}'
+
+    with transaction.atomic():
+        token_number = DailyTokenSequence.next_entry_token(tier)
+        token = QueueToken.objects.create(
+            token_number=token_number,
+            patient=patient,
+            patient_name=full_name,
+            service_type=first_service,
+            service_tier=tier,
+            issuance_point=IssuancePoint.GATE,
+            priority=TIER_PRIORITY.get(tier, 0),
+            is_insured=is_insured,
+            insurance_company=insurance_co,
+            issued_by=request.user,
+            notes=notes,
+        )
+
+    messages.success(
+        request,
+        f'Arrival confirmed + ticket {token_number} issued for {full_name}.'
+    )
+    return render(request, 'qms/ticket_slip.html', {
+        'token': token,
+        'printed': True,
+        'is_new_patient': first_service == ServiceType.RECEPTIONIST,
+        'is_free_followup': first_service == ServiceType.PARAMETERS,
+        'base_layout': _slip_layout(request.user),
+        'today_count': _active_tokens_today().count(),
+        'prereg': prereg,
     })
 
 
@@ -284,6 +429,12 @@ def vip_reception_issue(request):
                     'today_count': _active_tokens_today().count(),
                 })
 
+        is_insured = request.POST.get('is_insured') == '1'
+        insurance_company = request.POST.get('insurance_company', '').strip()
+        ins_note = ''
+        if is_insured:
+            ins_note = f'Insured: {insurance_company}' if insurance_company else 'Insured patient'
+
         with transaction.atomic():
             token_number = DailyTokenSequence.next_entry_token(ServiceTier.VIP)
             token = QueueToken.objects.create(
@@ -295,7 +446,10 @@ def vip_reception_issue(request):
                 service_tier=ServiceTier.VIP,
                 issuance_point=IssuancePoint.VIP_RECEPTION,
                 priority=TIER_PRIORITY[ServiceTier.VIP],
+                is_insured=is_insured,
+                insurance_company=insurance_company,
                 issued_by=request.user,
+                notes=ins_note,
             )
 
         messages.success(request, f'VIP ticket {token_number} issued. Directing to VIP Cashier.')
@@ -369,9 +523,11 @@ def express_desk_issue(request):
                     'today_count': _active_tokens_today().count(),
                 })
 
-        # Insured → Insurance Consultation Room; others → Cashier first
-        first_service = ServiceType.INSURANCE_CONSULT if is_insured else ServiceType.CASHIER
-        notes = f'Insured: {insurance_company}' if is_insured and insurance_company else ''
+        # All patients proceed to Cashier first; insurance is a billing flag only
+        first_service = ServiceType.CASHIER
+        notes = f'Insured: {insurance_company}' if is_insured and insurance_company else (
+            'Insured patient' if is_insured else ''
+        )
 
         with transaction.atomic():
             token_number = DailyTokenSequence.next_entry_token(tier)
@@ -384,17 +540,18 @@ def express_desk_issue(request):
                 service_tier=tier,
                 issuance_point=IssuancePoint.EXPRESS_DESK,
                 priority=TIER_PRIORITY.get(tier, 10),
+                is_insured=is_insured,
+                insurance_company=insurance_company,
                 notes=notes,
                 issued_by=request.user,
             )
 
-        dest = 'Insurance Consultation Room' if is_insured else 'Cashier'
+        tier_label = 'Fast Track' if tier == ServiceTier.FAST_TRACK else 'Express'
+        dest = f'{tier_label} Cashier'
         messages.success(request, f'Ticket {token_number} issued. Directing to {dest}.')
         return render(request, 'qms/ticket_slip.html', {
             'token': token,
             'printed': True,
-            'is_insured': is_insured,
-            'insurance_company': insurance_company,
             'base_layout': _slip_layout(request.user),
             'today_count': _active_tokens_today().count(),
         })
@@ -417,6 +574,8 @@ def cashier_issue(request):
         patient_id = request.POST.get('patient_id', '').strip()
         patient_name = request.POST.get('patient_name', '').strip()
         visit_id = request.POST.get('visit_id', '').strip()
+        is_insured = request.POST.get('is_insured') == '1'
+        insurance_company = request.POST.get('insurance_company', '').strip()
 
         patient = None
         visit = None
@@ -455,6 +614,10 @@ def cashier_issue(request):
                 'existing_token': existing,
             })
 
+        ins_note = ''
+        if is_insured:
+            ins_note = f'Insured: {insurance_company}' if insurance_company else 'Insured patient'
+
         with transaction.atomic():
             token_number = DailyTokenSequence.next_entry_token(tier)
             token = QueueToken.objects.create(
@@ -466,6 +629,9 @@ def cashier_issue(request):
                 service_tier=tier,
                 issuance_point=IssuancePoint.CASHIER,
                 priority=TIER_PRIORITY.get(tier, 0),
+                is_insured=is_insured,
+                insurance_company=insurance_company,
+                notes=ins_note,
                 issued_by=request.user,
             )
 
@@ -486,22 +652,57 @@ def cashier_issue(request):
 def receptionist_queue(request):
     """
     Receptionist counter view.
-    Shows the queue of NEW patients waiting to be registered.
-    After registration, staff clicks "Done — Send to Cashier" which calls
-    receptionist_complete_registration to insert the patient into the cashier
-    queue at position 4 (after the next 3 patients already waiting).
+    Shows NEW patients waiting to be registered, filtered by tier if ?tier= is set.
+    Each registration desk can bookmark their tier:
+      /qms/receptionist/          → all tiers
+      /qms/receptionist/?tier=STANDARD    → standard desk
+      /qms/receptionist/?tier=VIP         → VIP desk
+      /qms/receptionist/?tier=EXPRESS     → express/fast-track desk
     """
     today = timezone.localdate()
-    waiting = QueueToken.objects.filter(
+    selected_tier = request.GET.get('tier', '').upper().strip()
+
+    # Map shorthand: EXPRESS covers both EXPRESS and FAST_TRACK
+    TIER_GROUPS = {
+        'STANDARD':  [ServiceTier.STANDARD],
+        'VIP':       [ServiceTier.VIP],
+        'EXPRESS':   [ServiceTier.EXPRESS, ServiceTier.FAST_TRACK],
+    }
+
+    qs = QueueToken.objects.filter(
         service_type=ServiceType.RECEPTIONIST,
         status=TokenStatus.WAITING,
         issued_at__date=today,
         is_deleted=False,
-    ).select_related('patient').order_by('-priority', 'issued_at')
+    ).select_related('patient')
+
+    if selected_tier in TIER_GROUPS:
+        qs = qs.filter(service_tier__in=TIER_GROUPS[selected_tier])
+
+    waiting = qs.order_by('-priority', 'issued_at')
+
+    # Counts per tier for the filter buttons
+    def _count(tiers):
+        return QueueToken.objects.filter(
+            service_type=ServiceType.RECEPTIONIST,
+            status=TokenStatus.WAITING,
+            issued_at__date=today,
+            is_deleted=False,
+            service_tier__in=tiers,
+        ).count()
+
+    tier_counts = {
+        'ALL':      QueueToken.objects.filter(service_type=ServiceType.RECEPTIONIST, status=TokenStatus.WAITING, issued_at__date=today, is_deleted=False).count(),
+        'STANDARD': _count([ServiceTier.STANDARD]),
+        'VIP':      _count([ServiceTier.VIP]),
+        'EXPRESS':  _count([ServiceTier.EXPRESS, ServiceTier.FAST_TRACK]),
+    }
 
     return render(request, 'qms/receptionist.html', {
         'waiting': waiting,
         'waiting_count': waiting.count(),
+        'selected_tier': selected_tier,
+        'tier_counts': tier_counts,
         'today': today,
     })
 
@@ -777,6 +978,8 @@ def route_to_dept(request):
 @login_required
 def counter_view(request, counter_id):
     """Counter staff view — waiting list, call next, complete."""
+    if not _qms_active():
+        return redirect('dashboard:home')
     counter = get_object_or_404(ServiceCounter, id=counter_id, is_active=True)
     today = timezone.localdate()
 
@@ -925,12 +1128,15 @@ def doctor_queue(request):
     Shows WAITING patients in the doctor's specialty service type.
     Doctor can call next and proceed to open a consultation.
     """
+    if not _qms_active():
+        return redirect('consultations:list')
+
     today = timezone.localdate()
     user = request.user
 
     # Map doctor role → QMS ServiceType
+    # Ophthalmologists use consultation_unit to determine their specific desk.
     _ROLE_TO_SERVICE = {
-        'ophthalmologist':           'GENERAL',
         'retina_specialist':         'RETINA',
         'glaucoma_specialist':       'GLAUCOMA',
         'pediatric_ophthalmologist': 'PEDIATRIC',
@@ -941,12 +1147,16 @@ def doctor_queue(request):
         'uveitis_specialist':        'UVEITIS',
         'optometrist':               'REFRACTION',
         'pediatric_refractionist':   'PEDIATRIC',
-        'express_ophthalmologist':   'EXP_CONSULT',
-        'insurance_ophthalmologist': 'INSUR_CONSULT',
+        'low_vision_specialist':     'LOW_VISION',
         'intern':                    'GENERAL',
         'medical_director':          'GENERAL',
     }
-    service_type = _ROLE_TO_SERVICE.get(user.role)
+    if user.role == 'ophthalmologist':
+        # Use the assigned consultation_unit (EXP_CONSULT, VIP_CONSULT, etc.)
+        # Falls back to GENERAL if unit not set
+        service_type = getattr(user, 'consultation_unit', None) or 'GENERAL'
+    else:
+        service_type = _ROLE_TO_SERVICE.get(user.role)
 
     waiting = QueueToken.objects.none()
     dept_name = 'Your Clinic'
@@ -1288,17 +1498,17 @@ def names_board(request):
     zone  = request.GET.get('zone', '').strip().lower()
 
     ZONE_CONFIGS = {
-        'entry':         {'label': 'Registration & Cashier',              'color': '#0ea5e9', 'q': Q(service_type__in=['RECEPTIONIST','CASHIER'], service_tier='STANDARD')},
-        'triage':        {'label': 'Parameters / Triage',                 'color': '#ef4444', 'q': Q(service_type='PARAMETERS', service_tier='STANDARD')},
-        'general':       {'label': 'General Ophthalmology',               'color': '#3b82f6', 'q': Q(service_type__in=['GENERAL','REFRACTION','CATARACT'])},
-        'retina':        {'label': 'Retina Clinic',                       'color': '#f97316', 'q': Q(service_type='RETINA')},
-        'glaucoma':      {'label': 'Glaucoma Clinic',                     'color': '#06b6d4', 'q': Q(service_type='GLAUCOMA')},
-        'pediatric':     {'label': 'Paediatric Ophthalmology',            'color': '#ec4899', 'q': Q(service_type='PEDIATRIC')},
-        'investigation': {'label': 'Eye Investigations',                  'color': '#f59e0b', 'q': Q(service_type='INVEST')},
-        'laboratory':    {'label': 'Laboratory',                          'color': '#14b8a6', 'q': Q(service_type='LAB')},
-        'express':       {'label': 'Express · Fast Track · Insurance',    'color': '#8b5cf6', 'q': Q(service_tier__in=['EXPRESS','FAST_TRACK','INSURANCE'])},
-        'vip':           {'label': 'VIP Services',                        'color': '#d97706', 'q': Q(service_tier='VIP')},
-        'pharmacy':      {'label': 'Pharmacy',                            'color': '#10b981', 'q': Q(service_type='PHARMACY', service_tier='STANDARD')},
+        'entry':         {'label': 'Registration & Cashier',           'serving_label': 'At Reception / Cashier',     'color': '#0ea5e9', 'q': Q(service_type__in=['RECEPTIONIST','CASHIER'], service_tier='STANDARD')},
+        'triage':        {'label': 'Parameters / Triage',              'serving_label': 'At Triage / Parameters',     'color': '#ef4444', 'q': Q(service_type='PARAMETERS', service_tier='STANDARD')},
+        'general':       {'label': 'General Ophthalmology',            'serving_label': 'Currently with Doctor',      'color': '#3b82f6', 'q': Q(service_type__in=['GENERAL','REFRACTION','CATARACT'])},
+        'retina':        {'label': 'Retina Clinic',                    'serving_label': 'Currently with Doctor',      'color': '#f97316', 'q': Q(service_type='RETINA')},
+        'glaucoma':      {'label': 'Glaucoma Clinic',                  'serving_label': 'Currently with Doctor',      'color': '#06b6d4', 'q': Q(service_type='GLAUCOMA')},
+        'pediatric':     {'label': 'Paediatric Ophthalmology',         'serving_label': 'Currently with Doctor',      'color': '#ec4899', 'q': Q(service_type='PEDIATRIC')},
+        'investigation': {'label': 'Eye Investigations',               'serving_label': 'At Investigations',          'color': '#f59e0b', 'q': Q(service_type='INVEST')},
+        'laboratory':    {'label': 'Laboratory',                       'serving_label': 'At Laboratory',              'color': '#14b8a6', 'q': Q(service_type='LAB')},
+        'express':       {'label': 'Express · Fast Track · Insurance', 'serving_label': 'Currently Serving',          'color': '#8b5cf6', 'q': Q(service_tier__in=['EXPRESS','FAST_TRACK','INSURANCE'])},
+        'vip':           {'label': 'VIP Services',                     'serving_label': 'Currently Serving — VIP',    'color': '#d97706', 'q': Q(service_tier='VIP')},
+        'pharmacy':      {'label': 'Pharmacy',                         'serving_label': 'At Pharmacy',                'color': '#10b981', 'q': Q(service_type='PHARMACY', service_tier='STANDARD')},
     }
 
     ZONE_LABELS = {k: v['label'] for k, v in ZONE_CONFIGS.items()}
@@ -1350,6 +1560,7 @@ def names_board(request):
             'zone': zone,
             'zone_label': zone_label,
             'zone_color': zone_color,
+            'serving_label': cfg.get('serving_label', 'Currently Serving'),
             'patients_serving': patients_serving,
             'patients_waiting': patients_waiting,
             'waiting_count': waiting.count(),

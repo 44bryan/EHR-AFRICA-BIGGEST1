@@ -16,7 +16,7 @@
 
           <!-- Patient selection -->
           {% if patient %}
-          <div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+          <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
             <i class="bi bi-person-check-fill fs-5"></i>
             <div>
               <strong>{{ patient.full_name }}</strong> &bull; {{ patient.patient_id }}
@@ -25,6 +25,36 @@
           </div>
           <input type="hidden" name="patient_id" value="{{ patient.id }}">
           {% if rx %}<input type="hidden" name="prescription_id" value="{{ rx.id }}">{% endif %}
+
+          {# ── Prescription box ── #}
+          {% if rx %}
+          <div class="card border-0 bg-light mb-4">
+            <div class="card-body py-2 px-3">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="fw-semibold small text-primary"><i class="bi bi-prescription2 me-1"></i>Optical Prescription — {{ rx.get_prescription_type_display }}</span>
+                <span class="text-muted small">{{ rx.prescription_date|date:"d M Y" }} &bull; Dr. {{ rx.prescribed_by.get_full_name|default:"—" }}</span>
+              </div>
+              <div class="row g-2 small">
+                <div class="col-md-5">
+                  <table class="table table-bordered table-sm mb-0 bg-white">
+                    <thead class="table-light"><tr><th></th><th class="text-center">SPH</th><th class="text-center">CYL</th><th class="text-center">AXIS</th>{% if rx.re_add or rx.le_add %}<th class="text-center">ADD</th>{% endif %}</tr></thead>
+                    <tbody>
+                      <tr><td class="fw-semibold">OD</td><td class="text-center">{{ rx.re_sphere|default:"—" }}</td><td class="text-center">{{ rx.re_cylinder|default:"—" }}</td><td class="text-center">{{ rx.re_axis|default:"—" }}&deg;</td>{% if rx.re_add or rx.le_add %}<td class="text-center">{{ rx.re_add|default:"—" }}</td>{% endif %}</tr>
+                      <tr><td class="fw-semibold">OS</td><td class="text-center">{{ rx.le_sphere|default:"—" }}</td><td class="text-center">{{ rx.le_cylinder|default:"—" }}</td><td class="text-center">{{ rx.le_axis|default:"—" }}&deg;</td>{% if rx.re_add or rx.le_add %}<td class="text-center">{{ rx.le_add|default:"—" }}</td>{% endif %}</tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="col-md-7 small text-muted d-flex flex-column justify-content-center gap-1">
+                  {% if rx.interpupillary_distance %}<div>IPD: <strong>{{ rx.interpupillary_distance }} mm</strong></div>{% endif %}
+                  {% if rx.lens_type %}<div>Lens Type: <strong>{{ rx.lens_type }}</strong></div>{% endif %}
+                  {% if rx.frame_advice %}<div>Frame Advice: <strong>{{ rx.frame_advice }}</strong></div>{% endif %}
+                  {% if rx.notes %}<div class="fst-italic">{{ rx.notes }}</div>{% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+
           {% else %}
           <div class="mb-4">
             <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
@@ -44,11 +74,25 @@
               <select name="frame_id" id="frame-select" class="form-select">
                 <option value="">— No Frame / Patient's Own —</option>
                 {% for frame in frames %}
-                <option value="{{ frame.id }}" data-price="{{ frame.selling_price }}">
-                  {{ frame.brand }} {{ frame.model }} {% if frame.color %}({{ frame.color }}){% endif %} — {{ frame.selling_price|floatformat:0 }} FCFA ({{ frame.quantity_in_stock }} in stock)
+                <option value="{{ frame.id }}"
+                        data-price="{{ frame.selling_price }}"
+                        data-sku="{{ frame.sku|default:'' }}"
+                        data-color="{{ frame.color|default:'' }}"
+                        data-shape="{{ frame.get_shape_display|default:'' }}"
+                        data-stock="{{ frame.quantity_in_stock }}">
+                  {{ frame.brand }} {{ frame.model }}{% if frame.color %} · {{ frame.color }}{% endif %}{% if frame.sku %} [{{ frame.sku }}]{% endif %} — {{ frame.selling_price|floatformat:0 }} FCFA ({{ frame.quantity_in_stock }} left)
                 </option>
                 {% endfor %}
               </select>
+              <!-- Frame info panel (shown when a frame is selected) -->
+              <div id="frame-info" class="mt-2 p-2 rounded bg-light border small d-none">
+                <div class="d-flex flex-wrap gap-3">
+                  <span><span class="text-muted">SKU:</span> <strong id="fi-sku">—</strong></span>
+                  <span><span class="text-muted">Color:</span> <strong id="fi-color">—</strong></span>
+                  <span><span class="text-muted">Shape:</span> <strong id="fi-shape">—</strong></span>
+                  <span><span class="text-muted">In Stock:</span> <strong id="fi-stock">—</strong></span>
+                </div>
+              </div>
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold small">Frame Price (FCFA)</label>
@@ -73,21 +117,22 @@
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold small">Lens Price (FCFA)</label>
-              <input type="number" name="lens_price" id="lens-price" class="form-control" min="0" step="0.01" value="0">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label fw-semibold small">Deposit Paid (FCFA)</label>
-              <input type="number" name="deposit_paid" class="form-control" min="0" step="0.01" value="0">
+              <input type="number" name="lens_price" id="lens-price" class="form-control" min="0" step="100" value="0">
             </div>
 
-            <!-- Order info -->
-            <div class="col-md-6">
+            <!-- Totals row -->
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Total Amount (FCFA)</label>
+              <input type="text" id="total-display" class="form-control bg-light fw-bold text-primary" readonly value="0">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Deposit / Payment Now (FCFA)</label>
+              <input type="number" name="deposit_paid" id="deposit-paid" class="form-control fw-bold" min="0" step="100" value="0">
+              <div class="form-text" id="balance-hint"></div>
+            </div>
+            <div class="col-md-4">
               <label class="form-label fw-semibold small">Expected Ready Date</label>
               <input type="date" name="expected_date" class="form-control">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold small">Estimated Total (FCFA)</label>
-              <input type="text" id="total-display" class="form-control bg-light fw-bold" readonly value="0.00">
             </div>
 
             <div class="col-12">
@@ -95,6 +140,39 @@
               <textarea name="special_instructions" class="form-control" rows="2"
                         placeholder="Tint, coatings, prism, reading segment height…"></textarea>
             </div>
+
+            <!-- Collection mode -->
+            <div class="col-12">
+              <div class="card border-0 bg-light">
+                <div class="card-body py-3">
+                  <div class="fw-semibold small mb-2"><i class="bi bi-cash-coin me-1 text-success"></i>How is payment being handled?</div>
+                  <div class="d-flex flex-wrap gap-3">
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="collection_mode" id="mode-now" value="now">
+                      <label class="form-check-label small" for="mode-now">
+                        <strong>Pay in Full &amp; Take Now</strong><br>
+                        <span class="text-muted">Glasses in stock — patient pays full amount and collects today</span>
+                      </label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="collection_mode" id="mode-deposit" value="deposit" checked>
+                      <label class="form-check-label small" for="mode-deposit">
+                        <strong>Deposit Only</strong><br>
+                        <span class="text-muted">Glasses being ordered — patient pays deposit, collects later</span>
+                      </label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="collection_mode" id="mode-later" value="later">
+                      <label class="form-check-label small" for="mode-later">
+                        <strong>Pay on Collection</strong><br>
+                        <span class="text-muted">No payment now — patient will pay when glasses are ready</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           <hr class="my-4">
@@ -112,17 +190,67 @@ function calcTotal() {
   const fp = parseFloat(document.getElementById('frame-price').value) || 0;
   const lp = parseFloat(document.getElementById('lens-price').value) || 0;
   const fc = parseFloat(document.querySelector('[name=fitting_charge]').value) || 0;
-  document.getElementById('total-display').value = (fp + lp + fc).toFixed(2);
+  const total = Math.round(fp + lp + fc);
+  document.getElementById('total-display').value = total.toLocaleString();
+  updateDepositHint(total);
+}
+function updateDepositHint(total) {
+  const mode = document.querySelector('[name=collection_mode]:checked');
+  const depositField = document.getElementById('deposit-paid');
+  const hint = document.getElementById('balance-hint');
+  const submitBtn = document.getElementById('submit-btn');
+  if (!mode) return;
+  if (mode.value === 'now') {
+    depositField.value = total;
+    depositField.readOnly = true;
+    hint.innerHTML = '<span class="text-success fw-semibold">Full payment — patient takes glasses immediately</span>';
+    submitBtn.textContent = '';
+    submitBtn.innerHTML = '<i class="bi bi-bag-check me-1"></i>Pay & Create Order';
+    submitBtn.className = 'btn btn-success px-4';
+  } else if (mode.value === 'later') {
+    depositField.value = 0;
+    depositField.readOnly = true;
+    hint.innerHTML = '<span class="text-muted">No payment now — balance of ' + total.toLocaleString() + ' FCFA due on collection</span>';
+    submitBtn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Create Order (Pay Later)';
+    submitBtn.className = 'btn btn-outline-primary px-4';
+  } else {
+    depositField.readOnly = false;
+    const dep = parseFloat(depositField.value) || 0;
+    const bal = Math.max(0, total - dep);
+    hint.innerHTML = bal > 0
+      ? '<span class="text-warning">Balance due on collection: <strong>' + bal.toLocaleString() + ' FCFA</strong></span>'
+      : '<span class="text-success">Fully paid</span>';
+    submitBtn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Create Optical Order';
+    submitBtn.className = 'btn btn-primary px-4';
+  }
 }
 document.getElementById('frame-select').addEventListener('change', function () {
-  const price = this.options[this.selectedIndex].dataset.price;
-  if (price !== undefined) { document.getElementById('frame-price').value = price; calcTotal(); }
+  const opt = this.options[this.selectedIndex];
+  if (opt.value) {
+    document.getElementById('frame-price').value = opt.dataset.price || 0;
+    document.getElementById('fi-sku').textContent   = opt.dataset.sku   || '—';
+    document.getElementById('fi-color').textContent = opt.dataset.color || '—';
+    document.getElementById('fi-shape').textContent = opt.dataset.shape || '—';
+    document.getElementById('fi-stock').textContent = opt.dataset.stock || '—';
+    document.getElementById('frame-info').classList.remove('d-none');
+  } else {
+    document.getElementById('frame-info').classList.add('d-none');
+  }
+  calcTotal();
 });
 document.getElementById('lens-select').addEventListener('change', function () {
   const price = this.options[this.selectedIndex].dataset.price;
   if (price !== undefined) { document.getElementById('lens-price').value = price; calcTotal(); }
 });
 document.querySelectorAll('[type=number]').forEach(el => el.addEventListener('input', calcTotal));
+document.querySelectorAll('[name=collection_mode]').forEach(el => el.addEventListener('change', () => {
+  const total = parseFloat(document.getElementById('total-display').value.replace(/,/g, '')) || 0;
+  updateDepositHint(total);
+}));
+document.getElementById('deposit-paid').addEventListener('input', () => {
+  const total = parseFloat(document.getElementById('total-display').value.replace(/,/g, '')) || 0;
+  updateDepositHint(total);
+});
 
 {% if not patient %}
 const searchInput = document.getElementById('patient-search');

@@ -4,19 +4,17 @@
 {% block extra_css %}
 <style>
 .now-serving-card {
-  background: linear-gradient(135deg, #1e293b, #334155);
+  background: var(--bs-primary);
   color: white;
   border-radius: 16px;
 }
-.token-mega { font-size: 5rem; font-weight: 900; letter-spacing: -2px; line-height: 1; }
-.tier-vip    { color: #a78bfa; }
-.tier-ft     { color: #fbbf24; }
-.tier-exp    { color: #22d3ee; }
-.tier-std    { color: #94a3b8; }
+.token-mega { font-size: 5rem; font-weight: 900; letter-spacing: -2px; line-height: 1; color: white; }
 </style>
 {% endblock %}
 
 {% block content %}
+{# Keep "My Counter" sidebar link active while on this counter page #}
+<span id="sidebar-active-url" data-url="{% url 'qms:my_counter' %}" style="display:none"></span>
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <h4 class="fw-bold mb-0">{{ counter.name }}</h4>
@@ -47,28 +45,20 @@
   <div class="text-uppercase small opacity-75 mb-2 letter-spacing-wide">Now Serving</div>
   {% if counter.current_serving %}
     {% with t=counter.current_serving %}
-      {% if t.service_tier == 'VIP' %}
-        <div class="token-mega tier-vip">{{ t.display_token_number }}</div>
-      {% elif t.service_tier == 'FAST_TRACK' %}
-        <div class="token-mega tier-ft">{{ t.display_token_number }}</div>
-      {% elif t.service_tier == 'EXPRESS' %}
-        <div class="token-mega tier-exp">{{ t.display_token_number }}</div>
-      {% else %}
-        <div class="token-mega tier-std">{{ t.display_token_number }}</div>
-      {% endif %}
+      <div class="token-mega">{{ t.display_token_number }}</div>
       <div class="fs-4 mt-2">{{ t.display_name }}</div>
       <div class="opacity-75 small">{{ t.get_service_type_display }}</div>
       <div class="mt-1">
-        {% if t.service_tier == 'VIP' %}
-          <span class="badge" style="background:#7c3aed">VIP</span>
-        {% elif t.service_tier == 'FAST_TRACK' %}
-          <span class="badge bg-warning text-dark">Fast Track</span>
-        {% elif t.service_tier == 'EXPRESS' %}
-          <span class="badge bg-info text-dark">Express</span>
-        {% else %}
-          <span class="badge bg-secondary">Standard</span>
+        <span class="badge bg-white text-primary">{{ t.tier_label.0 }}</span>
+        {% if t.is_insured %}
+          <span class="badge bg-white text-primary ms-1"><i class="bi bi-shield-check me-1"></i>INSURED{% if t.insurance_company %} — {{ t.insurance_company }}{% endif %}</span>
         {% endif %}
       </div>
+      {% if t.is_insured %}
+      <div class="mt-2 px-3 py-1 rounded opacity-75" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);display:inline-block;">
+        <small class="fw-semibold"><i class="bi bi-shield-check me-1"></i>Insurance billing — process with insurer</small>
+      </div>
+      {% endif %}
     {% endwith %}
   {% else %}
     <div class="token-mega opacity-25">---</div>
@@ -76,7 +66,7 @@
   {% endif %}
 
   <div class="mt-4 d-flex gap-2 justify-content-center flex-wrap">
-    <button class="btn btn-success btn-lg px-5" id="callNextBtn" onclick="callNext()">
+    <button class="btn btn-light btn-lg px-5 fw-bold" id="callNextBtn" onclick="callNext()">
       <i class="bi bi-person-check-fill me-2"></i>
       {% if counter.current_serving %}Call Next{% else %}Call First Patient{% endif %}
     </button>
@@ -94,7 +84,7 @@
            class="btn btn-primary btn-lg">
           <i class="bi bi-person-plus-fill me-1"></i>Register New Patient
         </a>
-        <button class="btn btn-outline-info btn-lg"
+        <button class="btn btn-outline-light btn-lg"
                 data-bs-toggle="modal"
                 data-bs-target="#quickRegisterModal"
                 data-token="{{ counter.current_serving.id }}"
@@ -121,7 +111,7 @@
       {% with t=counter.current_serving %}
       {% if t.visit %}
         <a href="{% url 'patients:triage' t.visit.visit_number %}"
-           class="btn btn-warning btn-lg text-dark">
+           class="btn btn-primary btn-lg">
           <i class="bi bi-clipboard2-pulse-fill me-1"></i>Start Triage
         </a>
       {% elif t.patient %}
@@ -140,7 +130,7 @@
       <i class="bi bi-person-x me-1"></i>No Show
     </button>
     {% endif %}
-    <button class="btn btn-outline-warning btn-lg ms-auto" onclick="clearCounter()" title="Clear this counter — mark current patient done and reset desk">
+    <button class="btn btn-outline-light btn-lg ms-auto" onclick="clearCounter()" title="Clear this counter — mark current patient done and reset desk">
       <i class="bi bi-x-circle me-1"></i>Clear Counter
     </button>
   </div>
@@ -150,13 +140,13 @@
 <div class="modal fade" id="quickRegisterModal" tabindex="-1" aria-labelledby="quickRegisterLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content shadow-lg" style="border-radius:14px;overflow:hidden;">
-      <div class="modal-header" style="background:linear-gradient(135deg,#1e293b,#334155);border-bottom:none;">
-        <h5 class="modal-title text-white" id="quickRegisterLabel">
-          <i class="bi bi-person-plus-fill me-2 text-info"></i>Quick Patient Registration
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="quickRegisterLabel">
+          <i class="bi bi-person-plus-fill me-2"></i>Quick Patient Registration
         </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body" style="background:#f8fafc;">
+      <div class="modal-body">
 
         <div id="qrSuccessAlert" class="alert alert-success d-none">
           <strong><i class="bi bi-check-circle-fill me-1"></i>Registered!</strong>
@@ -217,7 +207,7 @@
           </div>
         </form>
       </div>
-      <div class="modal-footer" style="background:#f1f5f9;border-top:1px solid #e2e8f0;">
+      <div class="modal-footer">
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm px-4" id="qrSubmitBtn" onclick="submitQuickReg()">
           <i class="bi bi-person-check me-1"></i>Register &amp; Send to Cashier
@@ -227,16 +217,34 @@
   </div>
 </div>
 
+{% if counter.service_type == 'CASHIER' or counter.service_type == 'RECEPTIONIST' %}
+<!-- Patient Quick Search (Cashier / Receptionist) -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom d-flex align-items-center gap-2 py-2">
+    <i class="bi bi-person-search text-primary"></i>
+    <span class="fw-semibold small">Patient Lookup — Search by name, ID or phone</span>
+  </div>
+  <div class="card-body py-2">
+    <div style="position:relative;">
+      <input type="text" id="counterPatientSearch" class="form-control form-control-sm"
+             placeholder="Type name, patient ID or phone number…" autocomplete="off">
+      <div id="counterPatientResults" class="list-group shadow"
+           style="display:none;position:absolute;top:100%;left:0;width:100%;z-index:1055;max-height:220px;overflow-y:auto;border-radius:8px;border:1px solid #dee2e6;"></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Waiting Queue -->
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-light d-flex justify-content-between align-items-center">
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
     <h6 class="mb-0"><i class="bi bi-list-ol me-2"></i>Waiting Queue</h6>
-    <small class="text-muted" id="countdown">Auto-refresh 15s</small>
+    <small class="opacity-75" id="countdown">Auto-refresh 15s</small>
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0 align-middle">
-        <thead class="table-dark">
+        <thead class="table-light">
           <tr>
             <th class="text-center" style="width:3rem;">#</th>
             <th>Token</th>
@@ -259,14 +267,9 @@
               {% endif %}
             </td>
             <td>
-              {% if token.service_tier == 'VIP' %}
-                <span class="badge" style="background:#7c3aed">VIP</span>
-              {% elif token.service_tier == 'FAST_TRACK' %}
-                <span class="badge bg-warning text-dark">Fast Track</span>
-              {% elif token.service_tier == 'EXPRESS' %}
-                <span class="badge bg-info text-dark">Express</span>
-              {% else %}
-                <span class="badge bg-secondary">Standard</span>
+              <span class="badge bg-primary">{{ token.tier_label.0 }}</span>
+              {% if token.is_insured %}
+                <span class="badge bg-primary ms-1" title="{{ token.insurance_company|default:'Insured' }}"><i class="bi bi-shield-check"></i></span>
               {% endif %}
             </td>
             <td>
@@ -301,15 +304,8 @@ function callNext() {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      // Brief announcement then reload
-      const msg = `Calling: ${data.token} — ${data.patient}`;
-      if ('speechSynthesis' in window) {
-        const u = new SpeechSynthesisUtterance(`Token ${data.token}, ${data.patient}, please proceed to ${data.counter}`);
-        speechSynthesis.speak(u);
-        setTimeout(() => location.reload(), 2500);
-      } else {
-        location.reload();
-      }
+      // Reload — the display board (TV) will announce via its own speechSynthesis
+      location.reload();
     } else {
       alert(data.message || 'No waiting patients');
       document.getElementById('callNextBtn').disabled = false;
@@ -332,10 +328,61 @@ function noShow(tokenId) {
   }).then(() => location.reload());
 }
 
-// Auto-refresh countdown
-let secs = 15;
+// ── Patient Quick Search (Cashier / Receptionist) ────────────────────────────
+(function () {
+  var searchEl = document.getElementById('counterPatientSearch');
+  var dropEl   = document.getElementById('counterPatientResults');
+  if (!searchEl || !dropEl) return;
+  var timer;
+
+  searchEl.addEventListener('input', function () {
+    clearTimeout(timer);
+    var q = this.value.trim();
+    if (q.length < 2) { dropEl.style.display = 'none'; return; }
+    timer = setTimeout(function () {
+      fetch('/patients/search/?q=' + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var results = data.results || [];
+          dropEl.innerHTML = '';
+          if (!results.length) {
+            dropEl.innerHTML = '<div class="list-group-item text-muted small py-2">No patients found</div>';
+          } else {
+            results.forEach(function (p) {
+              var btn = document.createElement('a');
+              btn.className = 'list-group-item list-group-item-action py-2 d-flex justify-content-between align-items-center';
+              btn.style.fontSize = '0.85rem';
+              btn.href = '/patients/' + p.patient_id + '/';
+              btn.innerHTML = '<div><strong>' + (p.full_name || p.name) + '</strong>'
+                + '<small class="text-muted ms-2">' + p.patient_id + '</small>'
+                + (p.phone ? '<small class="text-muted ms-1">· ' + p.phone + '</small>' : '') + '</div>'
+                + '<div class="d-flex gap-1">'
+                + '<a href="/patients/' + p.patient_id + '/" class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size:.7rem;" onclick="event.stopPropagation()"><i class="bi bi-folder2-open"></i> Record</a>'
+                + '<a href="/billing/invoices/new/?patient=' + p.patient_id + '" class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:.7rem;" onclick="event.stopPropagation()"><i class="bi bi-receipt"></i> Bill</a>'
+                + '</div>';
+              dropEl.appendChild(btn);
+            });
+          }
+          dropEl.style.display = 'block';
+        })
+        .catch(function () { dropEl.style.display = 'none'; });
+    }, 300);
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!searchEl.contains(e.target) && !dropEl.contains(e.target)) {
+      dropEl.style.display = 'none';
+    }
+  });
+})();
+
+// Auto-refresh countdown — paused whenever any Bootstrap modal is open
+let secs = 15, _refreshPaused = false;
+document.addEventListener('show.bs.modal',  () => { _refreshPaused = true;  secs = 15; });
+document.addEventListener('hide.bs.modal',  () => { _refreshPaused = false; secs = 15; });
 const cdEl = document.getElementById('countdown');
 setInterval(() => {
+  if (_refreshPaused) return;
   secs--;
   if (cdEl) cdEl.textContent = `Auto-refresh ${secs}s`;
   if (secs <= 0) location.reload();

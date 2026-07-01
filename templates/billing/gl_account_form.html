@@ -1,0 +1,79 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}{{ action }} — Chart of Accounts{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Back to Chart of Accounts
+  </a>
+  <h4 class="fw-bold mb-0">{{ action }}</h4>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+          {% if not account %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Account Code <span class="text-danger">*</span></label>
+            <input type="text" name="code" class="form-control font-monospace" placeholder="e.g. 572000" required>
+            <div class="form-text">OHADA account code (6 digits recommended)</div>
+          </div>
+          {% else %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Account Code</label>
+            <input type="text" class="form-control font-monospace" value="{{ account.code }}" disabled>
+          </div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Account Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control" value="{{ account.name|default:'' }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Account Type <span class="text-danger">*</span></label>
+            <select name="account_type" class="form-select" required>
+              <option value="">— Select —</option>
+              {% for val, label in account_types %}
+              <option value="{{ val }}" {% if account.account_type == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Parent Account</label>
+            <select name="parent_id" class="form-select">
+              <option value="">— None (Top-level account) —</option>
+              {% for pa in parent_accounts %}
+              <option value="{{ pa.pk }}" {% if account.parent_id == pa.pk %}selected{% endif %}>{{ pa.code }} — {{ pa.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            <textarea name="description" class="form-control" rows="2">{{ account.description|default:'' }}</textarea>
+          </div>
+          {% if account %}
+          <div class="mb-3 d-flex gap-4">
+            <div class="form-check">
+              <input type="checkbox" name="is_active" class="form-check-input" id="is_active" {% if account.is_active %}checked{% endif %}>
+              <label class="form-check-label" for="is_active">Active</label>
+            </div>
+            <div class="form-check">
+              <input type="checkbox" name="allow_manual_posting" class="form-check-input" id="allow_manual" {% if account.allow_manual_posting %}checked{% endif %}>
+              <label class="form-check-label" for="allow_manual">Allow Manual Posting</label>
+            </div>
+          </div>
+          {% endif %}
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>{{ action }}
+            </button>
+            <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

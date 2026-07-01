@@ -37,6 +37,9 @@ class AuditMiddleware:
     """
     CLINICAL_PATHS = ['/patients/', '/consultations/', '/prescriptions/',
                       '/investigations/', '/laboratory/', '/pharmacy/', '/ipd/']
+    # GET requests to these paths are PHI reads — must be logged for HIPAA compliance
+    PHI_READ_PATHS = ['/patients/', '/consultations/', '/prescriptions/',
+                      '/investigations/', '/laboratory/', '/ipd/']
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -44,16 +47,25 @@ class AuditMiddleware:
     def __call__(self, request):
         response = self.get_response(request)
 
-        if request.user.is_authenticated and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        if not request.user.is_authenticated:
+            return response
+
+        method = request.method
+        is_write = method in ('POST', 'PUT', 'PATCH', 'DELETE')
+        is_phi_read = (method == 'GET' and
+                       any(p in request.path for p in self.PHI_READ_PATHS) and
+                       response.status_code == 200)
+
+        if is_write or is_phi_read:
             is_clinical = any(p in request.path for p in self.CLINICAL_PATHS)
-            tag = 'CLINICAL' if is_clinical else 'ADMIN'
+            tag = 'PHI_READ' if (is_phi_read and not is_write) else ('CLINICAL' if is_clinical else 'ADMIN')
             uid = getattr(request.user, 'employee_id', None) or str(request.user.pk)
             role = getattr(request.user, 'role', 'unknown')
 
             audit_logger.info(
                 '[%s] user=%s role=%s method=%s path=%s status=%s ip=%s ts=%s',
                 tag, uid, role,
-                request.method, request.path,
+                method, request.path,
                 response.status_code,
                 _get_client_ip(request),
                 timezone.now().isoformat(),

@@ -65,7 +65,7 @@ class Consultation(AuditModel):
     )
 
     # ── History ──────────────────────────────────────────────────────────────
-    presenting_complaint = models.TextField(help_text='Chief complaint in patient\'s words')
+    presenting_complaint = models.TextField(blank=True, help_text='Chief complaint in patient\'s words')
     history_of_presenting_complaint = models.TextField(blank=True)
     ocular_history = models.TextField(blank=True)
     systemic_history = models.TextField(blank=True)
@@ -105,6 +105,24 @@ class Consultation(AuditModel):
         related_name='received_referrals',
     )
     referral_reason = models.TextField(blank=True)
+
+    # ── Intern supervision (JCI ACC.3 / COP) ─────────────────────────────────
+    co_signed_by = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='cosigned_consultations',
+    )
+    co_signed_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def needs_cosign(self):
+        """True when written by an intern and not yet co-signed by a supervisor."""
+        return (
+            self.consulting_doctor_id is not None
+            and getattr(self.consulting_doctor, 'role', None) == 'intern'
+            and self.co_signed_by_id is None
+        )
 
     class Meta:
         ordering = ['-consultation_date']

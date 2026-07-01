@@ -1,0 +1,191 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}P&L — {{ month_label }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.pl-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f3f4f6; font-size:.9rem; }
+.pl-row:last-child { border-bottom:none; }
+.pl-section { background:#fff; border-radius:10px; border:1px solid #dee2e6; padding:1rem; margin-bottom:1rem; }
+.pl-section-title { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; font-weight:700; margin-bottom:.5rem; }
+@media print { .no-print { display:none !important; } }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-graph-up-arrow text-success fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Profit & Loss Statement</h5>
+      <div class="text-muted small">{{ month_label }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center no-print">
+    <a href="?month={{ prev_month }}" class="btn btn-sm btn-outline-secondary">‹ {{ prev_month }}</a>
+    <form method="get" class="d-flex gap-1">
+      <input type="month" name="month" class="form-control form-control-sm" value="{{ month_str }}" style="width:160px;">
+      <button type="submit" class="btn btn-sm btn-primary">Go</button>
+    </form>
+    <a href="?month={{ next_month }}" class="btn btn-sm btn-outline-secondary">{{ next_month }} ›</a>
+    <button class="btn btn-sm btn-dark" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Top Summary Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Gross Revenue</div>
+      <div class="fs-3 fw-bold text-success">{{ rev_total|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Total Expenses</div>
+      <div class="fs-3 fw-bold text-danger">{{ exp_total|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Net Profit</div>
+      <div class="fs-3 fw-bold {% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+        {{ gross_profit|floatformat:0|intcomma }}
+      </div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Margin</div>
+      <div class="fs-3 fw-bold {% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+        {% if net_revenue %}{% widthratio gross_profit net_revenue 100 %}%{% else %}—{% endif %}
+      </div>
+      <div class="text-muted small">Net margin</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- P&L Statement -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom fw-semibold">
+        <i class="bi bi-file-text me-1 text-primary"></i>P&L Statement — {{ month_label }}
+      </div>
+      <div class="card-body">
+        <!-- Revenue Section -->
+        <div class="pl-section-title text-success">REVENUE</div>
+        <div class="pl-row">
+          <span class="text-muted">Gross Collections</span>
+          <span class="fw-semibold">{{ rev_total|floatformat:0|intcomma }}</span>
+        </div>
+        <div class="pl-row">
+          <span class="text-muted">Less: Refunds</span>
+          <span class="text-danger">({{ ref_total|floatformat:0|intcomma }})</span>
+        </div>
+        <div class="pl-row fw-bold" style="background:#f0fdf4;padding:6px 8px;border-radius:4px;">
+          <span>Net Revenue</span>
+          <span class="text-success">{{ net_revenue|floatformat:0|intcomma }}</span>
+        </div>
+        <br>
+        <!-- Expense Section -->
+        <div class="pl-section-title text-danger">OPERATING EXPENSES</div>
+        {% for row in exp_by_cat %}
+        <div class="pl-row">
+          <span class="text-muted">{% for k, v in exp_cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}</span>
+          <span>({{ row.total|floatformat:0|intcomma }})</span>
+        </div>
+        {% empty %}
+        <div class="pl-row"><span class="text-muted">No expenses recorded</span><span>0</span></div>
+        {% endfor %}
+        <div class="pl-row fw-bold" style="background:#fef2f2;padding:6px 8px;border-radius:4px;">
+          <span>Total Expenses</span>
+          <span class="text-danger">({{ exp_total|floatformat:0|intcomma }})</span>
+        </div>
+        <br>
+        <!-- Net Profit -->
+        <div class="pl-row fw-bold fs-6" style="background:{% if gross_profit >= 0 %}#f0fdf4{% else %}#fef2f2{% endif %};padding:8px;border-radius:6px;border:1px solid {% if gross_profit >= 0 %}#86efac{% else %}#fca5a5{% endif %};">
+          <span>NET {% if gross_profit >= 0 %}PROFIT{% else %}LOSS{% endif %}</span>
+          <span class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ gross_profit|floatformat:0|intcomma }} FCFA
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revenue Breakdown -->
+  <div class="col-lg-7">
+    <div class="row g-3">
+      <!-- By Category -->
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom fw-semibold small">
+            <i class="bi bi-grid me-1 text-info"></i>Revenue by Service Category
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0 small">
+                <thead class="table-light">
+                  <tr><th>Category</th><th class="text-end">Revenue (FCFA)</th><th class="text-end">%</th></tr>
+                </thead>
+                <tbody>
+                  {% for row in rev_by_cat %}
+                  <tr>
+                    <td>{% for k, v in cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}</td>
+                    <td class="text-end fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
+                    <td class="text-end text-muted">
+                      {% if net_revenue %}{% widthratio row.total net_revenue 100 %}%{% else %}—{% endif %}
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr><td colspan="3" class="text-center text-muted py-3">No revenue data</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- By Payment Method -->
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom fw-semibold small">
+            <i class="bi bi-credit-card me-1 text-primary"></i>Collections by Payment Method
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0 small">
+                <thead class="table-light">
+                  <tr><th>Method</th><th class="text-end">Amount (FCFA)</th><th class="text-end">%</th></tr>
+                </thead>
+                <tbody>
+                  {% for row in rev_by_method %}
+                  <tr>
+                    <td>{% for k, v in method_labels.items %}{% if k == row.payment_method %}{{ v }}{% endif %}{% endfor %}</td>
+                    <td class="text-end fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
+                    <td class="text-end text-muted">
+                      {% if rev_total %}{% widthratio row.total rev_total 100 %}%{% else %}—{% endif %}
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr><td colspan="3" class="text-center text-muted py-3">No data</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

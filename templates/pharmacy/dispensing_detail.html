@@ -1,4 +1,5 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Dispensing {{ dispensing.dispensing_number }}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -6,21 +7,43 @@
     <h1 class="h3 mb-0">Dispensing: {{ dispensing.dispensing_number }}</h1>
     <small class="text-muted">{{ dispensing.dispensed_at|date:"d M Y H:i" }} &bull; by {{ dispensing.dispensed_by.get_full_name }}</small>
   </div>
-  <div class="d-flex gap-2">
-    {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
-    <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-success btn-sm"
-              onclick="return confirm('Complete dispensing and generate billing?')">
-        <i class="bi bi-check-circle me-1"></i>Complete &amp; Bill Patient
-      </button>
-    </form>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if dispensing.prescription %}
+    <a href="{% url 'reports:drug_prescription_pdf' pk=dispensing.prescription.pk %}" target="_blank"
+       class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-file-medical me-1"></i>Print Prescription
+    </a>
+    {% endif %}
+    {% if dispensing.status != 'CANCELLED' %}
+    <a href="{% url 'pharmacy:dispensing_receipt' dispensing_id=dispensing.id %}" target="_blank"
+       class="btn btn-outline-{% if dispensing.status == 'DISPENSED' %}success{% else %}secondary{% endif %} btn-sm">
+      <i class="bi bi-printer me-1"></i>{% if dispensing.status == 'DISPENSED' %}Print Receipt{% else %}Preview Receipt{% endif %}
+    </a>
     {% endif %}
     <a href="{% url 'pharmacy:dispensing_list' %}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-arrow-left me-1"></i>All Dispensings
     </a>
   </div>
 </div>
+
+{# ── Drug Interaction Check ── #}
+{% if drug_interactions %}
+<div class="alert alert-danger d-flex align-items-start gap-3 mb-3 shadow-sm" role="alert">
+  <i class="bi bi-exclamation-triangle-fill fs-4 flex-shrink-0 mt-1"></i>
+  <div>
+    <strong>Drug Interaction Warning</strong>
+    <ul class="mb-0 mt-1 small">
+      {% for ix in drug_interactions %}
+      <li>
+        <span class="badge {% if ix.severity == 'CONTRA' %}bg-danger{% elif ix.severity == 'MAJOR' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %} me-1">{{ ix.get_severity_display }}</span>
+        <strong>{{ ix.drug_a }}</strong> ↔ <strong>{{ ix.drug_b }}</strong>
+        {% if ix.description %} — {{ ix.description }}{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
 
 <div class="row g-3">
   <!-- Left: Summary card -->
@@ -39,8 +62,8 @@
           {% if dispensing.prescription %}
           <div class="col"><dt class="text-muted small">Prescription</dt><dd class="mb-1">Linked</dd></div>
           {% endif %}
-          <div class="col border-top pt-2 mt-2"><dt class="text-muted small">Total Amount</dt><dd class="mb-1 fw-bold fs-5 text-primary">&#8358;{{ dispensing.total_amount|floatformat:2 }}</dd></div>
-          <div class="col"><dt class="text-muted small">Amount Paid</dt><dd class="mb-1 text-success fw-bold">&#8358;{{ dispensing.amount_paid|floatformat:2 }}</dd></div>
+          <div class="col border-top pt-2 mt-2"><dt class="text-muted small">Total Amount</dt><dd class="mb-1 fw-bold fs-5 text-primary">{{ dispensing.total_amount|floatformat:0|intcomma }} FCFA</dd></div>
+          <div class="col"><dt class="text-muted small">Amount Paid</dt><dd class="mb-1 text-success fw-bold">{{ dispensing.amount_paid|floatformat:0|intcomma }} FCFA</dd></div>
         </dl>
         {% if dispensing.notes %}
         <div class="mt-2 p-2 bg-light rounded small">{{ dispensing.notes }}</div>
@@ -80,8 +103,8 @@
                   {% if item.stock_batch %}{{ item.stock_batch.batch_number }}<br><span class="text-danger-emphasis">Exp: {{ item.stock_batch.expiry_date }}</span>{% else %}—{% endif %}
                 </td>
                 <td class="text-center">{{ item.quantity_dispensed }}</td>
-                <td class="text-end">&#8358;{{ item.unit_price|floatformat:2 }}</td>
-                <td class="text-end fw-semibold">&#8358;{{ item.subtotal|floatformat:2 }}</td>
+                <td class="text-end">{{ item.unit_price|floatformat:0|intcomma }} XAF</td>
+                <td class="text-end fw-semibold">{{ item.subtotal|floatformat:0|intcomma }} XAF</td>
                 <td class="small">{{ item.instructions|default:"—" }}</td>
               </tr>
               {% empty %}
@@ -97,7 +120,7 @@
             <tfoot class="table-light">
               <tr>
                 <td colspan="4" class="text-end fw-bold">Total:</td>
-                <td class="text-end fw-bold text-primary">&#8358;{{ dispensing.total_amount|floatformat:2 }}</td>
+                <td class="text-end fw-bold text-primary">{{ dispensing.total_amount|floatformat:0|intcomma }} XAF</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -107,8 +130,54 @@
       </div>
     </div>
 
-    <!-- Add item form (only when open) -->
-    {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+    {% if request.user.can_dispense_pharmacy and dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' and request.user.can_dispense_pharmacy %}
+
+    {# ── Prescription Quick-Add (if Rx linked) ── #}
+    {% if dispensing.prescription %}
+    <div class="card border-0 shadow-sm border-start border-info border-3 mb-3">
+      <div class="card-header bg-white fw-semibold py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-file-medical text-info fs-5"></i>
+        <span>Doctor's Prescription — {{ dispensing.prescription.prescription_date|date:"d M Y" }}</span>
+        {% if dispensing.prescription.prescribed_by %}
+        <span class="text-muted small ms-auto">Dr. {{ dispensing.prescription.prescribed_by.get_full_name }}</span>
+        {% endif %}
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Drug</th><th>Form</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Eye</th><th>Qty</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for rx_item in dispensing.prescription.items.all %}
+            <tr>
+              <td class="fw-semibold">{{ rx_item.drug_name }}{% if rx_item.concentration %} <span class="text-muted">{{ rx_item.concentration }}</span>{% endif %}</td>
+              <td class="text-muted">{{ rx_item.get_drug_form_display }}</td>
+              <td>{{ rx_item.dose }}</td>
+              <td><span class="badge bg-light text-dark border">{{ rx_item.frequency }}</span></td>
+              <td class="text-muted">{{ rx_item.duration }}</td>
+              <td class="text-muted">{{ rx_item.get_route_display }}</td>
+              <td class="text-muted">{% if rx_item.eye != 'NA' %}{{ rx_item.get_eye_display }}{% else %}—{% endif %}</td>
+              <td class="fw-semibold">{{ rx_item.quantity }}</td>
+              <td>
+                <button type="button" class="btn btn-success btn-sm py-0 rx-quick-add"
+                        data-name="{{ rx_item.drug_name }}"
+                        data-qty="{{ rx_item.quantity }}"
+                        data-instructions="{{ rx_item.dose }} {{ rx_item.frequency }} × {{ rx_item.duration }}{% if rx_item.eye != 'NA' %} — {{ rx_item.get_eye_display }}{% endif %}{% if rx_item.special_instructions %} — {{ rx_item.special_instructions }}{% endif %}">
+                  <i class="bi bi-plus"></i> Add
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="px-3 pb-2 pt-1">
+          <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Click <strong>Add</strong> to pre-fill the form below. Verify quantity and price, then submit.</small>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Add item form -->
     <div class="card border-0 shadow-sm border-start border-primary border-3">
       <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-1 text-primary"></i>Add Drug Item</div>
       <div class="card-body">
@@ -120,27 +189,84 @@
               <select name="drug" id="drug-select" class="form-select form-select-sm" required>
                 <option value="">— Select Drug —</option>
                 {% for drug in available_drugs %}
-                <option value="{{ drug.id }}" data-price="{{ drug.selling_price }}">{{ drug.name }} {% if drug.strength %}({{ drug.strength }}){% endif %} — Stock: {{ drug.current_stock }}</option>
+                <option value="{{ drug.id }}" data-price="{{ drug.selling_price }}" data-name="{{ drug.name }}">{{ drug.name }} {% if drug.strength %}({{ drug.strength }}){% endif %} — Stock: {{ drug.current_stock }}</option>
                 {% endfor %}
               </select>
             </div>
             <div class="col-md-3">
-              <label class="form-label fw-semibold small">Batch <span class="text-muted fw-normal">(optional)</span></label>
+              <label class="form-label fw-semibold small">Batch</label>
               <select name="stock_batch" id="batch-select" class="form-select form-select-sm">
                 <option value="">Auto (FEFO)</option>
               </select>
             </div>
             <div class="col-md-2">
               <label class="form-label fw-semibold small">Qty <span class="text-danger">*</span></label>
-              <input type="number" name="quantity_dispensed" class="form-control form-control-sm" min="1" value="1" required>
+              <input type="number" name="quantity_dispensed" id="qty-input" class="form-control form-control-sm" min="1" value="1" required>
             </div>
             <div class="col-md-2">
               <label class="form-label fw-semibold small">Unit Price <span class="text-danger">*</span></label>
               <input type="number" name="unit_price" id="unit-price" class="form-control form-control-sm" min="0" step="0.01" required>
             </div>
+            <!-- Structured instruction selects -->
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Frequency</label>
+              <select id="freq-sel" class="form-select form-select-sm">
+                <option value="">—</option>
+                <option>OD (Once daily)</option>
+                <option>BD (Twice daily)</option>
+                <option>TDS (Three times daily)</option>
+                <option>QID (Four times daily)</option>
+                <option>Q2H (Every 2 hours)</option>
+                <option>Q4H (Every 4 hours)</option>
+                <option>Q6H (Every 6 hours)</option>
+                <option>PRN (As needed)</option>
+                <option>STAT (Immediately)</option>
+                <option>Nocte (At night)</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Duration</label>
+              <select id="dur-sel" class="form-select form-select-sm">
+                <option value="">—</option>
+                <option>3 days</option>
+                <option>5 days</option>
+                <option>7 days</option>
+                <option>10 days</option>
+                <option>14 days</option>
+                <option>1 month</option>
+                <option>3 months</option>
+                <option>Indefinite</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-semibold small">Route</label>
+              <select id="route-sel" class="form-select form-select-sm">
+                <option value="">—</option>
+                <option>Topical</option>
+                <option>Oral</option>
+                <option>IV</option>
+                <option>IM</option>
+                <option>Intravitreal</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-semibold small">Eye</label>
+              <select id="eye-sel" class="form-select form-select-sm">
+                <option value="">N/A</option>
+                <option>OD (Right)</option>
+                <option>OS (Left)</option>
+                <option>OU (Both)</option>
+              </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button type="button" id="build-instr-btn" class="btn btn-outline-secondary btn-sm w-100">
+                <i class="bi bi-arrow-down me-1"></i>Build
+              </button>
+            </div>
             <div class="col-12">
               <label class="form-label fw-semibold small">Instructions</label>
-              <input type="text" name="instructions" class="form-control form-control-sm" placeholder="e.g. 1 drop OD twice daily × 7 days">
+              <input type="text" name="instructions" id="instructions-input" class="form-control form-control-sm"
+                     placeholder="Select fields above and click Build — or type manually">
             </div>
             <div class="col-12">
               <button type="submit" class="btn btn-primary btn-sm">
@@ -155,12 +281,70 @@
   </div>
 </div>
 
+{# ── Pharmacy Payment POS ─────────────────────────────────────────────────── #}
+{% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+{% if dispensing.items.count %}
+<div class="card border-0 shadow-sm border-start border-5 border-success mt-4" id="pharmacyPayPanel">
+  <div class="card-header bg-success text-white d-flex align-items-center gap-2">
+    <i class="bi bi-cash-coin fs-5"></i>
+    <span class="fw-semibold">Collect Payment &amp; Dispense</span>
+    <span class="ms-auto badge bg-white text-success fs-6">Total: {{ dispensing.total_amount|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}"
+          onsubmit="return confirm('Confirm payment collected and dispense drugs to patient?')">
+      {% csrf_token %}
+      <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Payment Method</label>
+          <select name="payment_method" class="form-select form-select-sm" required>
+            <option value="CASH">Cash</option>
+            <option value="MOBILE">Mobile Money</option>
+            <option value="CARD">Card</option>
+            <option value="INSURANCE">Insurance</option>
+            <option value="TRANSFER">Bank Transfer</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Amount Received (FCFA)</label>
+          <input type="number" name="amount" class="form-control form-control-sm fw-bold"
+                 value="{{ dispensing.total_amount|floatformat:0 }}" min="0" step="100" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Reference / Receipt No.</label>
+          <input type="text" name="reference" class="form-control form-control-sm"
+                 placeholder="Mobile money ref, card approval…">
+        </div>
+        <div class="col-md-3">
+          <button type="submit" class="btn btn-success fw-bold w-100">
+            <i class="bi bi-send-check me-2"></i>Collect &amp; Dispense
+          </button>
+        </div>
+      </div>
+      <div class="form-text mt-2">
+        <i class="bi bi-info-circle me-1"></i>
+        Payment will be recorded in the patient's billing account. Drugs will be marked as dispensed.
+      </div>
+    </form>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-warning mt-3">
+  <i class="bi bi-exclamation-triangle me-2"></i>
+  Add at least one drug item before collecting payment.
+</div>
+{% endif %}
+{% endif %}
+
 {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
 <script>
 const drugSelect = document.getElementById('drug-select');
 const batchSelect = document.getElementById('batch-select');
 const unitPriceInput = document.getElementById('unit-price');
+const qtyInput = document.getElementById('qty-input');
+const instrInput = document.getElementById('instructions-input');
 
+// Drug select → fetch price + batches
 drugSelect.addEventListener('change', function () {
   const drugId = this.value;
   const price = this.options[this.selectedIndex].dataset.price;
@@ -180,6 +364,47 @@ drugSelect.addEventListener('change', function () {
         batchSelect.appendChild(opt);
       });
     });
+});
+
+// Build instruction string from structured selects
+function buildInstructions() {
+  const freq  = document.getElementById('freq-sel')?.value  || '';
+  const dur   = document.getElementById('dur-sel')?.value   || '';
+  const route = document.getElementById('route-sel')?.value || '';
+  const eye   = document.getElementById('eye-sel')?.value   || '';
+  let parts = [];
+  if (freq)  parts.push(freq);
+  if (dur)   parts.push('× ' + dur);
+  if (route) parts.push(route);
+  if (eye)   parts.push(eye);
+  instrInput.value = parts.join(' — ');
+}
+document.getElementById('build-instr-btn')?.addEventListener('click', buildInstructions);
+['freq-sel','dur-sel','route-sel','eye-sel'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', buildInstructions);
+});
+
+// Prescription quick-add: pre-fill form from Rx item
+document.querySelectorAll('.rx-quick-add').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const name  = this.dataset.name;
+    const qty   = this.dataset.qty;
+    const instr = this.dataset.instructions;
+
+    // Find matching drug in select by name (case-insensitive contains)
+    const opts = Array.from(drugSelect.options);
+    const match = opts.find(o => o.dataset.name && o.dataset.name.toLowerCase().includes(name.toLowerCase().split(' ')[0]));
+    if (match) {
+      drugSelect.value = match.value;
+      drugSelect.dispatchEvent(new Event('change'));
+    }
+
+    if (qty) qtyInput.value = qty;
+    if (instr) instrInput.value = instr;
+
+    // Scroll to the add-item form
+    document.getElementById('add-item-form')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+  });
 });
 </script>
 {% endif %}

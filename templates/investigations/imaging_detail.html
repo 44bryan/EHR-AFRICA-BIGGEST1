@@ -1,0 +1,116 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ study.get_modality_display }} — {{ study.patient.full_name }}{% endblock %}
+
+{% block extra_css %}
+<style>@media print { .no-print { display:none!important; } }</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 no-print flex-wrap gap-2">
+  <h1 class="h3 mb-0">
+    <i class="bi bi-camera me-2 text-primary"></i>
+    {{ study.get_modality_display }}
+  </h1>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if study.viewer_url %}
+    <a href="{{ study.viewer_url }}" target="_blank" class="btn btn-primary btn-sm">
+      <i class="bi bi-display me-1"></i>Open in Viewer
+    </a>
+    {% endif %}
+    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-printer me-1"></i>Print Report
+    </button>
+    <a href="{% url 'investigations:imaging_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  {# Left: study info #}
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">Patient</div>
+      <div class="card-body">
+        <div class="fw-bold">{{ study.patient.full_name }}</div>
+        <div class="text-muted small">{{ study.patient.patient_id }}</div>
+        <div class="text-muted small mt-1">DOB: {{ study.patient.date_of_birth|date:"d/m/Y" }}</div>
+        <a href="{% url 'patients:detail' study.patient.patient_id %}"
+           class="btn btn-sm btn-outline-primary mt-2">View Patient</a>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">Study Info</div>
+      <div class="card-body" style="font-size:0.875rem;">
+        <dl class="mb-0">
+          <dt class="text-muted small">Modality</dt>
+          <dd><span class="badge bg-primary">{{ study.get_modality_display }}</span></dd>
+          <dt class="text-muted small">Study Date</dt>
+          <dd>{{ study.study_date|date:"d M Y" }}</dd>
+          <dt class="text-muted small">Description</dt>
+          <dd>{{ study.description }}</dd>
+          {% if study.accession_number %}
+          <dt class="text-muted small">Accession #</dt>
+          <dd>{{ study.accession_number }}</dd>
+          {% endif %}
+          {% if study.study_uid %}
+          <dt class="text-muted small">DICOM Study UID</dt>
+          <dd style="word-break:break-all;font-size:0.75rem;">{{ study.study_uid }}</dd>
+          {% endif %}
+          <dt class="text-muted small">Series</dt>
+          <dd>{{ study.series_count }}</dd>
+          <dt class="text-muted small">Ordered by</dt>
+          <dd>{{ study.ordered_by.get_full_name|default:"—" }}</dd>
+          {% if study.consultation %}
+          <dt class="text-muted small">Consultation</dt>
+          <dd><a href="{% url 'consultations:detail' study.consultation.id %}">View</a></dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    {% if study.viewer_url %}
+    <div class="card border-0 shadow-sm mb-3 no-print">
+      <div class="card-body text-center py-3">
+        <a href="{{ study.viewer_url }}" target="_blank" class="btn btn-primary w-100">
+          <i class="bi bi-display me-2"></i>Open DICOM Viewer
+        </a>
+        <div class="text-muted small mt-1" style="word-break:break-all;">{{ study.viewer_url }}</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Right: report #}
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Imaging Report</span>
+        {% if study.is_reported %}
+        <span class="badge bg-success">Reported by {{ study.reported_by.get_full_name|default:"?" }}</span>
+        {% else %}
+        <span class="badge bg-warning text-dark">Pending Report</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if study.report %}
+        <div class="p-3 bg-light rounded mb-3" style="white-space:pre-wrap;font-size:0.9rem;">{{ study.report }}</div>
+        {% else %}
+        <div class="text-muted fst-italic mb-3">No report entered yet.</div>
+        {% endif %}
+
+        <form method="post" action="{% url 'investigations:imaging_report' study.id %}" class="no-print">
+          {% csrf_token %}
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Enter / Update Report</label>
+            <textarea name="report" class="form-control" rows="8"
+                      placeholder="Enter imaging findings, interpretation, and recommendations…">{{ study.report }}</textarea>
+          </div>
+          <button type="submit" class="btn btn-success btn-sm">
+            <i class="bi bi-save me-1"></i>Save Report
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

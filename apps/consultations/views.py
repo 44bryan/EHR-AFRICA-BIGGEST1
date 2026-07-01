@@ -31,7 +31,7 @@ _DEPT_TO_SERVICE_TYPES = {
 
 # Maps department code → Visit statuses that mean "patient is waiting here" (used when QMS is OFF)
 _DEPT_TO_VISIT_STATUSES = {
-    'GEN_OPH':     ['WAITING', 'IN_CONSULTATION', 'PARAMETERS'],
+    'GEN_OPH':     ['WAITING', 'IN_CONSULTATION'],
     'RETINA':      ['AT_RETINA'],
     'GLAUC':       ['AT_GLAUCOMA'],
     'PEDS_OPH':    ['AT_PEDIATRIC'],
@@ -175,37 +175,38 @@ def consultation_create_view(request, patient_id):
     ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
 
     if request.method == 'POST':
+        _dept = request.user.department
+
         # ── Draft mode: save minimal record so doctor can order tests first ──
         if request.POST.get('save_mode') == 'draft':
-            complaint = request.POST.get('presenting_complaint', '').strip()
-            if not complaint:
-                messages.error(request, 'Presenting complaint is required to save a draft.')
-            else:
-                dept = request.user.department
-                consultation = Consultation.objects.create(
-                    patient=patient,
-                    visit=visit,
-                    department=dept,
-                    consulting_doctor=request.user,
-                    presenting_complaint=complaint,
-                    history_of_presenting_complaint=request.POST.get('history_of_presenting_complaint', '').strip(),
-                    ocular_history=request.POST.get('ocular_history', '').strip(),
-                    systemic_history=request.POST.get('systemic_history', '').strip(),
-                    drug_history=request.POST.get('drug_history', '').strip(),
-                    status=ConsultationStatus.IN_PROGRESS,
-                    created_by=request.user,
-                )
-                visit.status = 'IN_CONSULTATION'
-                visit.attending_doctor = request.user
-                visit.save(update_fields=['status', 'attending_doctor'])
-                messages.success(
-                    request,
-                    'Consultation draft saved. You can now order investigations or route the patient. '
-                    'Return here to complete the clinical notes when ready.'
-                )
-                return redirect('consultations:detail', pk=consultation.pk)
+            consultation = Consultation.objects.create(
+                patient=patient,
+                visit=visit,
+                department=_dept,
+                consulting_doctor=request.user,
+                presenting_complaint=request.POST.get('presenting_complaint', '').strip(),
+                history_of_presenting_complaint=request.POST.get('history_of_presenting_complaint', '').strip(),
+                ocular_history=request.POST.get('ocular_history', '').strip(),
+                systemic_history=request.POST.get('systemic_history', '').strip(),
+                drug_history=request.POST.get('drug_history', '').strip(),
+                status=ConsultationStatus.IN_PROGRESS,
+                created_by=request.user,
+            )
+            visit.status = 'IN_CONSULTATION'
+            visit.attending_doctor = request.user
+            visit.save(update_fields=['status', 'attending_doctor'])
+            messages.success(
+                request,
+                'Consultation draft saved. Order investigations, then return here to complete the notes.'
+            )
+            return redirect('consultations:detail', pk=consultation.pk)
 
         form = ConsultationForm(request.POST)
+        # Inject the doctor's department so the hidden field never fails validation
+        if not form.data.get('department') and _dept:
+            _mutable = form.data.copy()
+            _mutable['department'] = str(_dept.pk)
+            form.data = _mutable
         if form.is_valid():
             consultation = form.save(commit=False)
             consultation.patient = patient
@@ -264,44 +265,11 @@ def consultation_create_view(request, patient_id):
             ef['pupils'] = dept_data.get('pupils', '')
             ef['ocular_motility'] = dept_data.get('ocular_motility', '')
             consultation.examination_findings = ef
-            consultation.status = ConsultationStatus.COMPLETED
+            consultation.status = ConsultationStatus.IN_PROGRESS
             consultation.save()
             visit.status = 'IN_CONSULTATION'
             visit.attending_doctor = request.user
             visit.save(update_fields=['status', 'attending_doctor'])
-
-            # Complete the QueueToken so patient leaves this doctor's waiting queue
-            if _qms_active():
-                _doctor_service_types = {
-                    'GEN_OPH':     ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
-                    'RETINA':      ['RETINA'],
-                    'GLAUC':       ['GLAUCOMA'],
-                    'PEDS_OPH':    ['PEDIATRIC'],
-                    'PEDS_REFRAC': ['PEDIATRIC'],
-                    'REFRAC':      ['REFRACTION'],
-                    'CORNEA':      ['CORNEA'],
-                    'OCULOPLASTY': ['OCULOPLASTY'],
-                    'NEURO_OPH':   ['NEURO'],
-                    'CATARACT':    ['CATARACT'],
-                    'UVEITIS':     ['UVEITIS'],
-                    'LOW_VIS':     ['LOW_VISION'],
-                }
-                from apps.qms.models import QueueToken, TokenStatus
-                dept_code = request.user.role_department_code
-                svc_types = _doctor_service_types.get(dept_code, [])
-                if svc_types:
-                    active_token = QueueToken.objects.filter(
-                        visit=visit,
-                        service_type__in=svc_types,
-                        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                        is_deleted=False,
-                    ).first()
-                    if active_token:
-                        active_token.complete()
-                        if (active_token.counter and
-                                active_token.counter.current_serving_id == active_token.pk):
-                            active_token.counter.current_serving = None
-                            active_token.counter.save(update_fields=['current_serving', 'updated_at'])
 
             # ── Surgery recommended → auto-create COUNSELING queue token ──────
             surgery_recommended = dept_data.get('surgery_recommended', '') == 'on'
@@ -356,7 +324,7 @@ def consultation_create_view(request, patient_id):
                 except Exception:
                     pass  # Never block the doctor
 
-            messages.success(request, 'Consultation saved and completed.')
+            messages.success(request, 'Consultation saved. Click "Complete" on the detail page when you are done.')
             return redirect('consultations:detail', pk=consultation.pk)
     else:
         dept = request.user.department
@@ -544,7 +512,7 @@ def consultation_edit_view(request, pk):
                         pass
                 messages.success(request, 'Consultation completed.')
             else:
-                messages.success(request, 'Consultation saved. Click "Save & Complete" when clinical notes are fully done.')
+                messages.success(request, 'Consultation saved. Open the consultation and click "Complete" when you are done.')
             return redirect('consultations:detail', pk=pk)
     else:
         form = ConsultationForm(instance=consultation)
@@ -587,6 +555,44 @@ def consultation_complete_view(request, pk):
     consultation.status = ConsultationStatus.COMPLETED
     consultation.updated_by = request.user
     consultation.save(update_fields=['status', 'updated_by', 'updated_at'])
+
+    # Complete the QueueToken so patient leaves this doctor's waiting queue
+    visit = consultation.visit
+    if visit and _qms_active():
+        _doctor_service_types = {
+            'GEN_OPH':     ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
+            'RETINA':      ['RETINA'],
+            'GLAUC':       ['GLAUCOMA'],
+            'PEDS_OPH':    ['PEDIATRIC'],
+            'PEDS_REFRAC': ['PEDIATRIC'],
+            'REFRAC':      ['REFRACTION'],
+            'CORNEA':      ['CORNEA'],
+            'OCULOPLASTY': ['OCULOPLASTY'],
+            'NEURO_OPH':   ['NEURO'],
+            'CATARACT':    ['CATARACT'],
+            'UVEITIS':     ['UVEITIS'],
+            'LOW_VIS':     ['LOW_VISION'],
+        }
+        try:
+            from apps.qms.models import QueueToken, TokenStatus
+            dept_code = request.user.role_department_code
+            svc_types = _doctor_service_types.get(dept_code, [])
+            if svc_types:
+                active_token = QueueToken.objects.filter(
+                    visit=visit,
+                    service_type__in=svc_types,
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    is_deleted=False,
+                ).first()
+                if active_token:
+                    active_token.complete()
+                    if (active_token.counter and
+                            active_token.counter.current_serving_id == active_token.pk):
+                        active_token.counter.current_serving = None
+                        active_token.counter.save(update_fields=['current_serving', 'updated_at'])
+        except Exception:
+            pass
+
     messages.success(request, 'Consultation marked as completed.')
     return redirect('consultations:detail', pk=pk)
 
@@ -832,9 +838,10 @@ def workstation_view(request):
             ).order_by('-visit_date')
         }
         for token in waiting_tokens:
-            token.active_visit = active_visits.get(token.patient_id) if token.patient_id else None
-            visit = active_visits.get(token.patient_id) if token.patient_id else None
-            token.visit_type_label = getattr(visit, 'visit_type', None)
+            # Use ws_visit / ws_visit_type to avoid overwriting read-only properties
+            _v = active_visits.get(token.patient_id) if token.patient_id else None
+            token.ws_visit = _v
+            token.ws_visit_type = getattr(_v, 'visit_type', None)
 
     service_type_choices = []
     if _qms_active():

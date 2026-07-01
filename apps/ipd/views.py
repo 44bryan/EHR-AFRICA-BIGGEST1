@@ -1,3 +1,4 @@
+import json
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -7,7 +8,9 @@ from .models import (
     Ward, Bed, Admission, NursingNote, MAREntry, BedStatus, AdmissionStatus,
     SurgicalBooking, SurgicalBookingStatus, SurgeryType,
     TheatreSession, TheatreSessionStatus, TheatreProcedure, ProcedureOutcome, WardRound,
+    WardType,
 )
+from apps.core.context_processors import qms_active as _qms_active
 
 
 @login_required
@@ -138,22 +141,26 @@ def counseling_queue(request):
             or request.user.is_medical_director):
         return HttpResponseForbidden()
 
-    from apps.qms.models import QueueToken, TokenStatus
     today = timezone.localdate()
-
-    waiting = QueueToken.objects.filter(
-        service_type='COUNSEL',
-        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-        issued_at__date=today,
-        is_deleted=False,
-    ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
-
-    completed_today = QueueToken.objects.filter(
-        service_type='COUNSEL',
-        status=TokenStatus.COMPLETED,
-        issued_at__date=today,
-        is_deleted=False,
-    ).count()
+    waiting = []
+    completed_today = 0
+    if _qms_active():
+        try:
+            from apps.qms.models import QueueToken, TokenStatus
+            waiting = QueueToken.objects.filter(
+                service_type='COUNSEL',
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                issued_at__date=today,
+                is_deleted=False,
+            ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
+            completed_today = QueueToken.objects.filter(
+                service_type='COUNSEL',
+                status=TokenStatus.COMPLETED,
+                issued_at__date=today,
+                is_deleted=False,
+            ).count()
+        except Exception:
+            pass
 
     return render(request, 'ipd/counseling_queue.html', {
         'waiting': waiting,
@@ -174,8 +181,6 @@ def counseling_record(request, visit_id):
         return HttpResponseForbidden()
 
     from apps.patients.models import Visit
-    from apps.qms.models import QueueToken, TokenStatus, ServiceType, IssuancePoint, TIER_PRIORITY
-    from apps.qms.models import DailyTokenSequence
     from apps.consultations.models import Consultation
 
     visit = get_object_or_404(Visit, pk=visit_id, is_deleted=False)
@@ -231,36 +236,42 @@ def counseling_record(request, visit_id):
                 created_by=request.user,
             )
 
-        # Mark COUNSEL token as completed
+        # Mark COUNSEL token as completed and route to Admission (QMS only)
         today = timezone.localdate()
-        counsel_token = QueueToken.objects.filter(
-            visit=visit,
-            service_type='COUNSEL',
-            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-            issued_at__date=today,
-            is_deleted=False,
-        ).first()
-        if counsel_token:
-            counsel_token.status = TokenStatus.COMPLETED
-            counsel_token.completed_at = timezone.now()
-            counsel_token.save()
+        if _qms_active():
+            try:
+                from apps.qms.models import QueueToken, TokenStatus, IssuancePoint, TIER_PRIORITY, DailyTokenSequence
+                counsel_token = QueueToken.objects.filter(
+                    visit=visit,
+                    service_type='COUNSEL',
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    issued_at__date=today,
+                    is_deleted=False,
+                ).first()
+                if counsel_token:
+                    counsel_token.status = TokenStatus.COMPLETED
+                    counsel_token.completed_at = timezone.now()
+                    counsel_token.save()
+
+                if consent_signed:
+                    tier = visit.service_tier
+                    token_number = DailyTokenSequence.next_dept_token('ADMISSION')
+                    QueueToken.objects.create(
+                        token_number=token_number,
+                        patient=patient,
+                        visit=visit,
+                        patient_name=patient.full_name,
+                        service_type='ADMISSION',
+                        service_tier=tier,
+                        issuance_point=IssuancePoint.SYSTEM,
+                        priority=TIER_PRIORITY.get(tier, 0),
+                        notes=f'Consent signed — {booking.procedure} | Booking: {booking.booking_number}',
+                        issued_by=request.user,
+                    )
+            except Exception:
+                pass
 
         if consent_signed:
-            # Patient agreed — route to Admission queue
-            tier = visit.service_tier
-            token_number = DailyTokenSequence.next_dept_token('ADMISSION')
-            QueueToken.objects.create(
-                token_number=token_number,
-                patient=patient,
-                visit=visit,
-                patient_name=patient.full_name,
-                service_type='ADMISSION',
-                service_tier=tier,
-                issuance_point=IssuancePoint.SYSTEM,
-                priority=TIER_PRIORITY.get(tier, 0),
-                notes=f'Consent signed — {booking.procedure} | Booking: {booking.booking_number}',
-                issued_by=request.user,
-            )
             visit.status = 'WAITING_ADMISSION'
             visit.save(update_fields=['status', 'updated_at'])
             messages.success(
@@ -317,23 +328,59 @@ def surgical_booking_queue(request):
             or request.user.is_medical_director):
         return HttpResponseForbidden()
 
-    from apps.qms.models import QueueToken, TokenStatus
+    from django.db.models import Q as _Q
+
     today = timezone.localdate()
+    waiting = []
+    if _qms_active():
+        try:
+            from apps.qms.models import QueueToken, TokenStatus
+            waiting = QueueToken.objects.filter(
+                service_type='ADMISSION',
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                issued_at__date=today,
+                is_deleted=False,
+            ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
+        except Exception:
+            pass
 
-    waiting = QueueToken.objects.filter(
-        service_type='ADMISSION',
-        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-        issued_at__date=today,
+    # ── Search ──────────────────────────────────────────────────────────────
+    q = request.GET.get('q', '').strip()
+    search_results = None
+    if q:
+        search_results = SurgicalBooking.objects.filter(
+            is_deleted=False
+        ).filter(
+            _Q(patient__first_name__icontains=q) |
+            _Q(patient__last_name__icontains=q) |
+            _Q(patient__patient_id__icontains=q) |
+            _Q(booking_number__icontains=q)
+        ).select_related('patient', 'surgeon').order_by('-created_at')[:40]
+
+    # ── Today's scheduled surgeries ─────────────────────────────────────────
+    today_surgeries = SurgicalBooking.objects.filter(
         is_deleted=False,
-    ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
+        surgery_date__date=today,
+    ).exclude(status=SurgicalBookingStatus.CANCELLED).select_related(
+        'patient', 'surgeon'
+    ).order_by('surgery_date')
 
-    recent_bookings = SurgicalBooking.objects.filter(
-        is_deleted=False
-    ).select_related('patient', 'surgeon').order_by('-created_at')[:10]
+    # ── Recent bookings (all statuses, last 20) ─────────────────────────────
+    status_filter = request.GET.get('status', '').strip()
+    recent_qs = SurgicalBooking.objects.filter(is_deleted=False).select_related('patient', 'surgeon')
+    if status_filter:
+        recent_qs = recent_qs.filter(status=status_filter)
+    recent_bookings = recent_qs.order_by('-created_at')[:20]
 
     return render(request, 'ipd/surgical_booking_queue.html', {
         'waiting': waiting,
         'recent_bookings': recent_bookings,
+        'search_results': search_results,
+        'today_surgeries': today_surgeries,
+        'q': q,
+        'status_filter': status_filter,
+        'booking_statuses': SurgicalBookingStatus.choices,
+        'today': today,
     })
 
 
@@ -348,7 +395,6 @@ def surgical_booking_create(request, visit_id):
         return HttpResponseForbidden()
 
     from apps.patients.models import Visit
-    from apps.qms.models import QueueToken, TokenStatus
     from apps.accounts.models import User, UserRole
     from apps.consultations.models import Consultation
 
@@ -381,13 +427,21 @@ def surgical_booking_create(request, visit_id):
         procedure = request.POST.get('procedure', '').strip()
         eye = request.POST.get('eye_laterality', '').strip()
         anaesthesia = request.POST.get('anaesthesia_type', '').strip()
+        surgery_category = request.POST.get('surgery_category', '').strip()
         surgeon_id = request.POST.get('surgeon_id')
         surgery_date_str = request.POST.get('surgery_date', '').strip()
         theatre = request.POST.get('theatre', '').strip()
-        total_amount = request.POST.get('total_amount', '0').strip() or '0'
+        # grand_total includes surgery + room cost; falls back to surgery-only total_amount
+        grand_total = request.POST.get('grand_total', '').strip()
+        surgery_cost = request.POST.get('total_amount', '0').strip() or '0'
+        total_amount = grand_total if grand_total else surgery_cost
         deposit_required = request.POST.get('deposit_required', '0').strip() or '0'
         pre_op = request.POST.get('pre_op_requirements', '').strip()
         payment_notes = request.POST.get('payment_notes', '').strip()
+        # Ward/room info for notes (stored as text; bed assigned at actual admission)
+        ward_id = request.POST.get('ward_id', '').strip()
+        bed_id = request.POST.get('bed_id', '').strip()
+        room_nights = request.POST.get('room_nights', '').strip()
 
         surgeon = None
         if surgeon_id:
@@ -407,10 +461,29 @@ def surgical_booking_create(request, visit_id):
                 ) if parse_date(surgery_date_str) else None
             )
 
+        # Build ward/room note if selected
+        ward_note = ''
+        if ward_id or bed_id:
+            try:
+                from .models import Ward, Bed
+                ward_obj = Ward.objects.filter(pk=ward_id).first() if ward_id else None
+                bed_obj = Bed.objects.filter(pk=bed_id).first() if bed_id else None
+                parts = []
+                if ward_obj:
+                    parts.append(f"Ward: {ward_obj.name}")
+                if bed_obj:
+                    parts.append(f"Bed: {bed_obj.bed_number}")
+                if room_nights:
+                    parts.append(f"Nights: {room_nights}")
+                ward_note = ' | '.join(parts)
+            except Exception:
+                pass
+
         if booking:
             booking.procedure = procedure or booking.procedure
             booking.eye_laterality = eye or booking.eye_laterality
             booking.anaesthesia_type = anaesthesia or booking.anaesthesia_type
+            booking.surgery_category = surgery_category or booking.surgery_category
             booking.surgeon = surgeon
             booking.surgery_date = surgery_date
             booking.theatre = theatre
@@ -418,6 +491,8 @@ def surgical_booking_create(request, visit_id):
             booking.deposit_required = deposit_required
             booking.pre_op_requirements = pre_op
             booking.payment_notes = payment_notes
+            if ward_note:
+                booking.notes = ward_note
             booking.status = SurgicalBookingStatus.CONFIRMED
             booking.admission_officer = request.user
             booking.save()
@@ -428,6 +503,7 @@ def surgical_booking_create(request, visit_id):
                 procedure=procedure or 'To be determined',
                 eye_laterality=eye,
                 anaesthesia_type=anaesthesia,
+                surgery_category=surgery_category,
                 surgeon=surgeon,
                 surgery_date=surgery_date,
                 theatre=theatre,
@@ -435,29 +511,36 @@ def surgical_booking_create(request, visit_id):
                 deposit_required=deposit_required,
                 pre_op_requirements=pre_op,
                 payment_notes=payment_notes,
+                notes=ward_note,
                 status=SurgicalBookingStatus.CONFIRMED,
                 admission_officer=request.user,
                 created_by=request.user,
             )
 
-        # Mark ADMISSION token complete
+        # Mark ADMISSION token complete (QMS only)
         today = timezone.localdate()
-        adm_token = QueueToken.objects.filter(
-            visit=visit,
-            service_type='ADMISSION',
-            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-            issued_at__date=today,
-            is_deleted=False,
-        ).first()
-        if adm_token:
-            adm_token.status = TokenStatus.COMPLETED
-            adm_token.completed_at = timezone.now()
-            adm_token.save()
+        if _qms_active():
+            try:
+                from apps.qms.models import QueueToken, TokenStatus
+                adm_token = QueueToken.objects.filter(
+                    visit=visit,
+                    service_type='ADMISSION',
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    issued_at__date=today,
+                    is_deleted=False,
+                ).first()
+                if adm_token:
+                    adm_token.status = TokenStatus.COMPLETED
+                    adm_token.completed_at = timezone.now()
+                    adm_token.save()
+            except Exception:
+                pass
 
         visit.status = 'WAITING_ADMISSION'
         visit.save(update_fields=['status', 'updated_at'])
 
-        # ── Auto-generate Invoice for surgery + room ─────────────────────────
+        # ── Auto-generate Proforma (cost estimate given to patient) ──────────
+        # Patient takes proforma to Cashier who converts it to a real invoice.
         surgery_category = request.POST.get('surgery_category', '').strip()
         bed_id = request.POST.get('bed_id', '').strip()
         room_nights = int(request.POST.get('room_nights', 1) or 1)
@@ -465,36 +548,39 @@ def surgical_booking_create(request, visit_id):
             booking.surgery_category = surgery_category
             booking.save(update_fields=['surgery_category', 'updated_at'])
 
-        if not booking.invoice:
-            try:
-                from apps.billing.models import Invoice, InvoiceItem
-                invoice = Invoice.objects.create(
+        try:
+            from apps.billing.models import Proforma, ProformaItem, ServiceCategory
+            existing_proforma = Proforma.objects.filter(
+                patient=patient,
+                notes__icontains=booking.booking_number,
+                is_deleted=False,
+            ).exclude(status='CANCELLED').first()
+            if not existing_proforma:
+                proforma = Proforma.objects.create(
                     patient=patient,
-                    consultation=consultation,
-                    status='UNPAID',
-                    issue_date=timezone.localdate(),
+                    issued_by=request.user,
+                    status='ISSUED',
+                    valid_days=7,
                     notes=f'Surgical booking {booking.booking_number}',
                     created_by=request.user,
                 )
-                # Surgery procedure line
                 if float(total_amount) > 0:
-                    InvoiceItem.objects.create(
-                        invoice=invoice,
-                        category='SURGICAL',
+                    ProformaItem.objects.create(
+                        proforma=proforma,
+                        category=ServiceCategory.SURGICAL,
                         description=f'{procedure} ({booking.get_eye_laterality_display() if booking.eye_laterality else ""})',
                         quantity=1,
                         unit_price=total_amount,
                         created_by=request.user,
                     )
-                # Room/bed line
                 if bed_id:
                     try:
                         bed_obj = Bed.objects.get(pk=bed_id)
                         room_rate = bed_obj.nightly_rate
                         if room_rate > 0 and room_nights > 0:
-                            InvoiceItem.objects.create(
-                                invoice=invoice,
-                                category='ADMISSION',
+                            ProformaItem.objects.create(
+                                proforma=proforma,
+                                category=ServiceCategory.ADMISSION,
                                 description=f'{bed_obj} — {room_nights} night(s)',
                                 quantity=room_nights,
                                 unit_price=room_rate,
@@ -502,19 +588,75 @@ def surgical_booking_create(request, visit_id):
                             )
                     except Bed.DoesNotExist:
                         pass
-                booking.invoice = invoice
-                booking.save(update_fields=['invoice', 'updated_at'])
+        except Exception:
+            pass  # Billing not blocking surgical flow
+
+        # ── Route patient to Cashier (QMS) ─────────────────────────────────────
+        if _qms_active():
+            try:
+                from apps.qms.models import QueueToken, TokenStatus, IssuancePoint, TIER_PRIORITY, DailyTokenSequence
+                # Mark ADMISSION token complete
+                adm_token2 = QueueToken.objects.filter(
+                    visit=visit,
+                    service_type='ADMISSION',
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    issued_at__date=timezone.localdate(),
+                    is_deleted=False,
+                ).first()
+                if adm_token2:
+                    adm_token2.status = TokenStatus.COMPLETED
+                    adm_token2.completed_at = timezone.now()
+                    adm_token2.save()
+
+                # Create Cashier token
+                tier = visit.service_tier
+                cash_token = DailyTokenSequence.next_dept_token('CASHIER')
+                QueueToken.objects.create(
+                    token_number=cash_token,
+                    patient=patient,
+                    visit=visit,
+                    patient_name=patient.full_name,
+                    service_type='CASHIER',
+                    service_tier=tier,
+                    issuance_point=IssuancePoint.SYSTEM,
+                    priority=TIER_PRIORITY.get(tier, 0),
+                    notes=(
+                        f'Surgery payment — {booking.procedure} | '
+                        f'Total: {booking.total_amount:,.0f} XAF | '
+                        f'Deposit: {booking.deposit_required:,.0f} XAF | '
+                        f'Booking: {booking.booking_number}'
+                    ),
+                    issued_by=request.user,
+                )
             except Exception:
-                pass  # Billing not blocking surgical flow
+                pass
 
         messages.success(
             request,
             f'Surgical booking {booking.booking_number} confirmed for {patient.full_name}. '
-            f'Deposit required: {booking.deposit_required:,.0f} XAF. Invoice generated.'
+            f'Deposit required: {booking.deposit_required:,.0f} XAF. Invoice generated. Patient sent to Cashier.'
         )
         return redirect('ipd:surgical_booking_detail', booking_id=booking.pk)
 
     dept_data = (consultation.department_specific_data or {}) if consultation else {}
+
+    # Available wards/beds for room assignment
+    wards = Ward.objects.filter(is_deleted=False).prefetch_related('beds')
+    beds_by_ward = {}
+    for w in wards:
+        beds_by_ward[str(w.pk)] = [
+            {'id': str(b.pk), 'number': b.bed_number, 'rate': float(b.nightly_rate)}
+            for b in w.beds.filter(status=BedStatus.AVAILABLE, is_deleted=False)
+        ]
+
+    # Finance-set surgical procedure prices
+    from apps.billing.models import ServicePrice, ServiceCategory
+    surgical_prices = list(
+        ServicePrice.objects.filter(
+            category=ServiceCategory.SURGICAL, is_active=True, is_deleted=False
+        ).order_by('name').values('id', 'name', 'price', 'code')
+    )
+
     return render(request, 'ipd/surgical_booking_create.html', {
         'visit': visit,
         'patient': patient,
@@ -523,6 +665,10 @@ def surgical_booking_create(request, visit_id):
         'surgeons': surgeons,
         'dept_data': dept_data,
         'surgery_type_choices': SurgeryType.choices,
+        'wards': wards,
+        'beds_by_ward_json': json.dumps(beds_by_ward),
+        'surgical_prices_json': json.dumps(surgical_prices),
+        'has_surgical_prices': bool(surgical_prices),
     })
 
 
@@ -557,14 +703,25 @@ def surgical_booking_detail(request, booking_id):
         return redirect('ipd:surgical_booking_detail', booking_id=booking.pk)
 
     checklist = booking.pre_op_checklist or {}
-    # Enrich with checked state so template avoids unsupported 'contains' filter
     preop_items_with_state = [
         (item, label, bool(checklist.get(item, False)))
         for item, label in preop_items
     ]
+    # Find proforma issued for this booking (cost estimate given to patient)
+    proforma = None
+    try:
+        from apps.billing.models import Proforma
+        proforma = Proforma.objects.filter(
+            patient=booking.patient,
+            notes__icontains=booking.booking_number,
+            is_deleted=False,
+        ).exclude(status='CANCELLED').first()
+    except Exception:
+        pass
     return render(request, 'ipd/surgical_booking_detail.html', {
         'booking': booking,
         'preop_items': preop_items_with_state,
+        'proforma': proforma,
     })
 
 
@@ -705,14 +862,16 @@ def admit_from_booking(request, booking_id):
 @login_required
 def ipd_nursing_stats(request):
     """
-    Inpatient Nurse Statistics:
+    Inpatient Nurse Statistics / Surgical Bookings Register:
     - All surgical bookings (prescribed by doctors)
     - Which ones have paid (deposit >= deposit_required)
     - Which ones came back and were admitted
     - Surgery type breakdown
+    Supports date range and status filtering via GET params.
     """
     from datetime import timedelta
     from django.db.models import Count, Sum, Q
+    from django.utils.dateparse import parse_date
 
     today = timezone.localdate()
     month_start = today.replace(day=1)
@@ -721,26 +880,49 @@ def ipd_nursing_stats(request):
             or request.user.is_admin_staff or request.user.role in ['ipd_nurse', 'admission_officer']):
         return HttpResponseForbidden()
 
-    # All bookings this month
-    bookings = SurgicalBooking.objects.filter(
-        is_deleted=False,
-        created_at__date__gte=month_start,
-    ).select_related('patient', 'surgeon', 'consultation__department').order_by('-created_at')
+    # ── Date range + status filters ─────────────────────────────────────────
+    date_from_str = request.GET.get('date_from', '').strip()
+    date_to_str   = request.GET.get('date_to', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    show_all      = request.GET.get('all', '').strip()
 
-    # Statistics
+    if date_from_str:
+        date_from = parse_date(date_from_str) or month_start
+    elif show_all:
+        date_from = None  # no lower bound
+    else:
+        date_from = month_start
+
+    if date_to_str:
+        date_to = parse_date(date_to_str) or today
+    else:
+        date_to = today
+
+    bookings_qs = SurgicalBooking.objects.filter(is_deleted=False)
+    if date_from:
+        bookings_qs = bookings_qs.filter(created_at__date__gte=date_from)
+    bookings_qs = bookings_qs.filter(created_at__date__lte=date_to)
+    if status_filter:
+        bookings_qs = bookings_qs.filter(status=status_filter)
+
+    bookings = bookings_qs.select_related(
+        'patient', 'surgeon', 'consultation__department'
+    ).order_by('-created_at')
+
+    # ── Statistics (always over the filtered range) ─────────────────────────
     total_prescribed = bookings.count()
     paid = bookings.filter(deposit_paid__gte=models.F('deposit_required'), deposit_required__gt=0).count()
     confirmed = bookings.filter(status=SurgicalBookingStatus.CONFIRMED).count()
     scheduled = bookings.filter(status=SurgicalBookingStatus.SCHEDULED).count()
     completed = bookings.filter(status=SurgicalBookingStatus.COMPLETED).count()
     cancelled = bookings.filter(status=SurgicalBookingStatus.CANCELLED).count()
+    pending_payment = bookings.filter(status=SurgicalBookingStatus.PENDING_PAYMENT).count()
 
-    # Patients actually admitted this month
-    admitted_this_month = Admission.objects.filter(
-        surgical_booking__isnull=False,
-        admission_date__date__gte=month_start,
-        is_deleted=False,
-    ).count()
+    # Patients actually admitted in the same period
+    admit_qs = Admission.objects.filter(surgical_booking__isnull=False, is_deleted=False)
+    if date_from:
+        admit_qs = admit_qs.filter(admission_date__date__gte=date_from)
+    admitted_count = admit_qs.filter(admission_date__date__lte=date_to).count()
 
     # Surgery category breakdown
     category_breakdown = (
@@ -750,7 +932,7 @@ def ipd_nursing_stats(request):
         .order_by('-count')
     )
 
-    # Current IPD census
+    # Current IPD census (always live)
     current_admissions = Admission.objects.filter(
         status=AdmissionStatus.ADMITTED, is_deleted=False
     ).select_related('patient', 'bed__ward', 'surgical_booking', 'admitting_doctor')
@@ -763,9 +945,18 @@ def ipd_nursing_stats(request):
         'scheduled': scheduled,
         'completed': completed,
         'cancelled': cancelled,
-        'admitted_this_month': admitted_this_month,
+        'pending_payment': pending_payment,
+        'admitted_count': admitted_count,
         'category_breakdown': category_breakdown,
         'current_admissions': current_admissions,
+        # filter state
+        'date_from': date_from,
+        'date_to': date_to,
+        'date_from_str': date_from_str or (month_start.isoformat() if not show_all else ''),
+        'date_to_str': date_to_str or today.isoformat(),
+        'status_filter': status_filter,
+        'show_all': show_all,
+        'booking_statuses': SurgicalBookingStatus.choices,
         'month_start': month_start,
         'today': today,
     }
@@ -871,7 +1062,7 @@ def theatre_board(request):
         status__in=[SurgicalBookingStatus.CANCELLED]
     ).select_related(
         'patient', 'surgeon', 'consultation__visit'
-    ).order_by('surgery_date', 'theatre')
+    ).prefetch_related('anaesthetic_records').order_by('surgery_date', 'theatre')
 
     # Group by theatre
     theatre_groups = {}
@@ -906,6 +1097,10 @@ def theatre_update_status(request):
     from django.http import JsonResponse
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
+    if not _can_manage_anaesthetics(request.user) and not (
+        request.user.is_theatre_nurse or request.user.is_ward_nurse
+    ):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
 
     booking_id = request.POST.get('booking_id')
     new_status = request.POST.get('status')
@@ -958,7 +1153,6 @@ def theatre_session_create(request):
         UserRole.CATARACT_SURGEON, UserRole.CORNEA_SPECIALIST,
         UserRole.OCULOPLASTICS_SURGEON, UserRole.NEURO_OPHTHALMOLOGIST,
         UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN,
-        UserRole.EXPRESS_OPHTHALMOLOGIST, UserRole.INSURANCE_OPHTHALMOLOGIST,
     ]).order_by('last_name')
     nurses = User.objects.filter(is_active=True, role__in=[
         UserRole.NURSE, UserRole.THEATRE_NURSE, UserRole.WARD_NURSE,
@@ -1031,7 +1225,7 @@ def theatre_session_detail(request, session_id):
         UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST, UserRole.GLAUCOMA_SPECIALIST,
         UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.CATARACT_SURGEON, UserRole.CORNEA_SPECIALIST,
         UserRole.OCULOPLASTICS_SURGEON, UserRole.NEURO_OPHTHALMOLOGIST, UserRole.MEDICAL_DIRECTOR,
-        UserRole.EXPRESS_OPHTHALMOLOGIST, UserRole.SUPER_ADMIN,
+        UserRole.SUPER_ADMIN,
     ]).order_by('last_name')
 
     # Available confirmed bookings to add ad-hoc
@@ -1141,7 +1335,7 @@ def theatre_procedure_record(request, procedure_id):
         UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST, UserRole.GLAUCOMA_SPECIALIST,
         UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.CATARACT_SURGEON, UserRole.CORNEA_SPECIALIST,
         UserRole.OCULOPLASTICS_SURGEON, UserRole.NEURO_OPHTHALMOLOGIST,
-        UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN, UserRole.EXPRESS_OPHTHALMOLOGIST,
+        UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN,
     ]).order_by('last_name')
 
     return render(request, 'ipd/theatre_procedure_form.html', {
@@ -1258,3 +1452,352 @@ def discharge_summary_pdf(request, admission_id):
         'pdf_filename': f'discharge_summary_{admission.patient.patient_id}_{admission.admission_number}.pdf',
     }
     return render_pdf('reports/pdf/discharge_summary.html', context)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WARD & BED MANAGEMENT  (Super Admin only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def ward_manage(request):
+    """Super Admin — view all wards with their beds and manage them."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden()
+    wards = Ward.objects.filter(is_deleted=False).prefetch_related('beds').order_by('name')
+    return render(request, 'ipd/ward_manage.html', {
+        'wards': wards,
+        'ward_types': WardType.choices,
+    })
+
+
+@login_required
+def ward_create(request):
+    """Super Admin — create a new ward."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        ward_type = request.POST.get('ward_type', 'GENERAL')
+        floor = request.POST.get('floor', '').strip()
+        price_per_night = request.POST.get('price_per_night', '0').strip() or '0'
+        description = request.POST.get('description', '').strip()
+        if not name:
+            messages.error(request, 'Ward name is required.')
+        else:
+            Ward.objects.create(
+                name=name, ward_type=ward_type, floor=floor,
+                price_per_night=price_per_night, description=description,
+                created_by=request.user,
+            )
+            messages.success(request, f'Ward "{name}" created.')
+    return redirect('ipd:ward_manage')
+
+
+@login_required
+def bed_add(request, ward_id):
+    """Super Admin — add beds to a ward (comma-separated numbers)."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden()
+    ward = get_object_or_404(Ward, pk=ward_id, is_deleted=False)
+    if request.method == 'POST':
+        bed_numbers_raw = request.POST.get('bed_numbers', '').strip()
+        price_raw = request.POST.get('price_override', '').strip()
+        price_override = price_raw if price_raw else None
+        created = skipped = 0
+        for num in [b.strip() for b in bed_numbers_raw.replace('\n', ',').split(',') if b.strip()]:
+            if Bed.objects.filter(ward=ward, bed_number=num, is_deleted=False).exists():
+                skipped += 1
+            else:
+                Bed.objects.create(
+                    ward=ward, bed_number=num,
+                    price_override=price_override,
+                    created_by=request.user,
+                )
+                created += 1
+        ward.total_beds = ward.beds.filter(is_deleted=False).count()
+        ward.save(update_fields=['total_beds', 'updated_at'])
+        msg = f'{created} bed(s) added to {ward.name}.'
+        if skipped:
+            msg += f' {skipped} skipped (already exist).'
+        messages.success(request, msg)
+    return redirect('ipd:ward_manage')
+
+
+@login_required
+def bed_toggle_status(request, bed_id):
+    """Super Admin — toggle bed between AVAILABLE and MAINTENANCE."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden()
+    bed = get_object_or_404(Bed, pk=bed_id, is_deleted=False)
+    if request.method == 'POST':
+        if bed.status == BedStatus.OCCUPIED:
+            messages.warning(request, f'Bed {bed.bed_number} is occupied — cannot change status.')
+        elif bed.status == BedStatus.AVAILABLE:
+            bed.status = BedStatus.MAINTENANCE
+            bed.save(update_fields=['status', 'updated_at'])
+            messages.success(request, f'Bed {bed.bed_number} set to Maintenance.')
+        else:
+            bed.status = BedStatus.AVAILABLE
+            bed.save(update_fields=['status', 'updated_at'])
+            messages.success(request, f'Bed {bed.bed_number} set to Available.')
+    return redirect('ipd:ward_manage')
+
+
+@login_required
+def ward_delete(request, ward_id):
+    """Super Admin — soft-delete a ward (only if no beds are occupied)."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden()
+    ward = get_object_or_404(Ward, pk=ward_id, is_deleted=False)
+    if request.method == 'POST':
+        occupied = ward.beds.filter(status=BedStatus.OCCUPIED, is_deleted=False).count()
+        if occupied:
+            messages.error(request, f'Cannot delete "{ward.name}" — {occupied} bed(s) currently occupied.')
+        else:
+            ward.beds.filter(is_deleted=False).update(is_deleted=True)
+            ward.is_deleted = True
+            ward.save(update_fields=['is_deleted', 'updated_at'])
+            messages.success(request, f'Ward "{ward.name}" deleted.')
+    return redirect('ipd:ward_manage')
+
+
+@login_required
+def bed_delete(request, bed_id):
+    """Super Admin — soft-delete a bed (only if not occupied)."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden()
+    bed = get_object_or_404(Bed, pk=bed_id, is_deleted=False)
+    if request.method == 'POST':
+        if bed.status == BedStatus.OCCUPIED:
+            messages.error(request, f'Cannot delete bed {bed.bed_number} — currently occupied.')
+        else:
+            ward = bed.ward
+            bed.is_deleted = True
+            bed.save(update_fields=['is_deleted', 'updated_at'])
+            ward.total_beds = ward.beds.filter(is_deleted=False).count()
+            ward.save(update_fields=['total_beds', 'updated_at'])
+            messages.success(request, f'Bed {bed.bed_number} removed from {ward.name}.')
+    return redirect('ipd:ward_manage')
+
+
+# ── Anaesthetic Record (JCI ASC.5 / ASC.6) ───────────────────────────────────
+
+def _can_manage_anaesthetics(user):
+    return (user.is_super_admin or user.is_medical_director or
+            user.role == 'anaesthetist' or
+            user.role in ('doctor', 'specialist', 'ophthalmologist'))
+
+
+@login_required
+def anaesthetic_record_create(request, booking_id):
+    """Create a pre-operative anaesthetic assessment for a surgical booking."""
+    from .models import AnaestheticRecord, ASAGrade
+    booking = get_object_or_404(SurgicalBooking, pk=booking_id, is_deleted=False)
+
+    if not _can_manage_anaesthetics(request.user):
+        return HttpResponseForbidden()
+
+    existing = AnaestheticRecord.objects.filter(
+        surgical_booking=booking, is_deleted=False
+    ).first()
+    if existing:
+        return redirect('ipd:anaesthetic_record_detail', record_id=existing.pk)
+
+    if request.method == 'POST':
+        from django.utils.dateparse import parse_datetime
+        pre_op_dt = parse_datetime(request.POST.get('pre_op_assessment_completed', '') or '')
+        last_oral = parse_datetime(request.POST.get('last_oral_intake', '') or '')
+
+        fasting_val = request.POST.get('fasting_adequate')
+        fasting_adequate = True if fasting_val == 'on' else (False if fasting_val == 'off' else None)
+
+        record = AnaestheticRecord.objects.create(
+            surgical_booking=booking,
+            patient=booking.patient,
+            anaesthetist=request.user,
+            asa_grade=request.POST.get('asa_grade', ''),
+            weight_kg=request.POST.get('weight_kg') or None,
+            height_cm=request.POST.get('height_cm') or None,
+            mallampati_score=request.POST.get('mallampati_score', ''),
+            mouth_opening=request.POST.get('mouth_opening', ''),
+            neck_mobility=request.POST.get('neck_mobility', ''),
+            thyromental_distance=request.POST.get('thyromental_distance', ''),
+            difficult_airway_predicted=request.POST.get('difficult_airway_predicted') == 'on',
+            airway_notes=request.POST.get('airway_notes', ''),
+            last_oral_intake=last_oral,
+            fasting_adequate=fasting_adequate,
+            allergies_reviewed=request.POST.get('allergies_reviewed') == 'on',
+            anaesthetic_allergies=request.POST.get('anaesthetic_allergies', ''),
+            current_medications_reviewed=request.POST.get('current_medications_reviewed') == 'on',
+            medications_to_continue=request.POST.get('medications_to_continue', ''),
+            medications_to_stop=request.POST.get('medications_to_stop', ''),
+            premedication_given=request.POST.get('premedication_given', ''),
+            anaesthetic_consent_obtained=request.POST.get('anaesthetic_consent_obtained') == 'on',
+            pre_op_assessment_completed=pre_op_dt or timezone.now(),
+            anaesthesia_type=request.POST.get('anaesthesia_type', ''),
+            planned_agents=request.POST.get('planned_agents', ''),
+            created_by=request.user,
+        )
+        messages.success(request, 'Pre-operative anaesthetic assessment saved.')
+        return redirect('ipd:anaesthetic_record_detail', record_id=record.pk)
+
+    from .models import ASAGrade
+    return render(request, 'ipd/anaesthetic_chart.html', {
+        'booking': booking,
+        'patient': booking.patient,
+        'asa_grades': ASAGrade.choices,
+        'mode': 'create',
+    })
+
+
+@login_required
+def anaesthetic_record_detail(request, record_id):
+    """View / update an anaesthetic record (add intraop + postop data)."""
+    from .models import AnaestheticRecord
+    record = get_object_or_404(AnaestheticRecord, pk=record_id, is_deleted=False)
+
+    if not _can_manage_anaesthetics(request.user):
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        fields_to_update = [
+            'induction_agent', 'induction_dose', 'maintenance_agent',
+            'airway_management', 'analgesics_used', 'muscle_relaxants_used',
+            'reversal_agents', 'monitoring_notes', 'intraoperative_complications',
+            'post_op_instructions', 'post_op_complications', 'iv_fluids_given',
+        ]
+        for f in fields_to_update:
+            val = request.POST.get(f)
+            if val is not None:
+                setattr(record, f, val)
+        for int_field in [
+            'total_duration_minutes', 'estimated_blood_loss_ml',
+            'recovery_time_mins', 'pain_score_on_discharge',
+        ]:
+            val = request.POST.get(int_field)
+            setattr(record, int_field, int(val) if val else None)
+        record.post_op_nausea_vomiting = request.POST.get('post_op_nausea_vomiting') == 'on'
+        record.updated_by = request.user
+        record.save()
+        messages.success(request, 'Anaesthetic record updated.')
+        return redirect('ipd:anaesthetic_record_detail', record_id=record.pk)
+
+    from .models import ASAGrade
+    return render(request, 'ipd/anaesthetic_chart.html', {
+        'record': record,
+        'patient': record.patient,
+        'booking': record.surgical_booking,
+        'asa_grades': ASAGrade.choices,
+        'mode': 'detail',
+    })
+
+
+@login_required
+def anaesthetic_record_list(request):
+    """List all anaesthetic records — for anaesthetists and medical directors."""
+    from .models import AnaestheticRecord
+    if not _can_manage_anaesthetics(request.user):
+        return HttpResponseForbidden()
+
+    qs = AnaestheticRecord.objects.filter(is_deleted=False).select_related(
+        'patient', 'anaesthetist', 'surgical_booking'
+    ).order_by('-created_at')
+
+    date_from = request.GET.get('date_from')
+    date_to   = request.GET.get('date_to')
+    if date_from:
+        qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(created_at__date__lte=date_to)
+
+    return render(request, 'ipd/anaesthetic_list.html', {
+        'records': qs[:200],
+        'date_from': date_from or '',
+        'date_to':   date_to   or '',
+        'today': timezone.localdate(),
+    })
+
+
+# ── Nursing Care Plan (JCI COP.8) ─────────────────────────────────────────────
+
+def _can_manage_care_plan(user):
+    return (user.is_super_admin or user.is_medical_director or
+            user.is_nurse or user.role == 'nurse_director')
+
+
+@login_required
+def care_plan_create(request, admission_id):
+    """Create a nursing care plan for an inpatient admission."""
+    from .models import NursingCarePlan
+    admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
+
+    if not _can_manage_care_plan(request.user):
+        return HttpResponseForbidden()
+
+    existing = NursingCarePlan.objects.filter(
+        admission=admission, is_active=True, is_deleted=False
+    ).first()
+    if existing:
+        return redirect('ipd:care_plan_detail', plan_id=existing.pk)
+
+    if request.method == 'POST':
+        plan = NursingCarePlan.objects.create(
+            admission=admission,
+            nurse=request.user,
+            nursing_diagnoses=request.POST.get('nursing_diagnoses', ''),
+            short_term_goals=request.POST.get('short_term_goals', ''),
+            long_term_goals=request.POST.get('long_term_goals', ''),
+            hygiene_mobility_care=request.POST.get('hygiene_mobility_care', ''),
+            medication_eye_drop_schedule=request.POST.get('medication_eye_drop_schedule', ''),
+            wound_eye_dressing_care=request.POST.get('wound_eye_dressing_care', ''),
+            nutrition_hydration_plan=request.POST.get('nutrition_hydration_plan', ''),
+            vital_signs_monitoring=request.POST.get('vital_signs_monitoring', ''),
+            patient_family_education=request.POST.get('patient_family_education', ''),
+            psychological_support=request.POST.get('psychological_support', ''),
+            discharge_planning=request.POST.get('discharge_planning', ''),
+            safety_measures=request.POST.get('safety_measures', ''),
+            evaluation_notes=request.POST.get('evaluation_notes', ''),
+            next_review_date=request.POST.get('next_review_date') or None,
+            created_by=request.user,
+        )
+        messages.success(request, 'Nursing care plan created.')
+        return redirect('ipd:care_plan_detail', plan_id=plan.pk)
+
+    return render(request, 'ipd/care_plan.html', {
+        'admission': admission,
+        'patient': admission.patient,
+        'mode': 'create',
+    })
+
+
+@login_required
+def care_plan_detail(request, plan_id):
+    """View / update a nursing care plan."""
+    from .models import NursingCarePlan
+    plan = get_object_or_404(NursingCarePlan, pk=plan_id, is_deleted=False)
+
+    if not _can_manage_care_plan(request.user):
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        for field in [
+            'nursing_diagnoses', 'short_term_goals', 'long_term_goals',
+            'hygiene_mobility_care', 'medication_eye_drop_schedule',
+            'wound_eye_dressing_care', 'nutrition_hydration_plan',
+            'vital_signs_monitoring', 'patient_family_education',
+            'psychological_support', 'discharge_planning',
+            'safety_measures', 'evaluation_notes',
+        ]:
+            setattr(plan, field, request.POST.get(field, getattr(plan, field)))
+        plan.next_review_date = request.POST.get('next_review_date') or plan.next_review_date
+        plan.updated_by = request.user
+        plan.save()
+        messages.success(request, 'Care plan updated.')
+        return redirect('ipd:care_plan_detail', plan_id=plan.pk)
+
+    return render(request, 'ipd/care_plan.html', {
+        'plan': plan,
+        'admission': plan.admission,
+        'patient': plan.admission.patient,
+        'mode': 'detail',
+    })

@@ -9,6 +9,7 @@ urlpatterns = [
 
     # Entry ticket issuance — per entrance point
     path('gate/', views.gate_issue, name='gate_issue'),                       # Standard patients only
+    path('gate/prereg/<str:code>/arrive/', views.prereg_mark_arrived, name='prereg_arrive'),  # Gatekeeper confirms pre-reg arrival
     path('vip-reception/', views.vip_reception_issue, name='vip_reception'),  # VIP back entrance
     path('express-desk/', views.express_desk_issue, name='express_desk'),     # Express/FT side entrance
     path('cashier/', views.cashier_issue, name='cashier_issue'),              # Fallback / walk-in

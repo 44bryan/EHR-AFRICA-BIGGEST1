@@ -1,0 +1,313 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Service Price Catalog{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-tags text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Service Price Catalog</h5>
+      <div class="text-muted small">Charge Description Master — all billable services & prices</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'billing:export_service_prices' %}?q={{ search }}&cat={{ filter_cat }}" class="btn btn-success btn-sm">
+      <i class="bi bi-download me-1"></i>Download CSV
+    </a>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPriceModal">
+      <i class="bi bi-plus me-1"></i>Add Service
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-4">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+          <input type="text" name="q" class="form-control" placeholder="Search name or code…" value="{{ search }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <select name="cat" class="form-select form-select-sm">
+          <option value="">All Categories</option>
+          {% for val, label in categories %}
+          <option value="{{ val }}" {% if filter_cat == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <select name="tier" class="form-select form-select-sm">
+          {% for val, label in tiers %}
+          <option value="{{ val }}" {% if filter_tier == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+        <a href="{% url 'billing:service_price_list' %}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+      </div>
+      <div class="col-auto ms-auto text-muted small">{{ prices|length }} service{% if prices|length != 1 %}s{% endif %}</div>
+    </form>
+  </div>
+</div>
+
+<!-- Prices Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Service Name</th>
+            <th>Code</th>
+            <th>Category</th>
+            <th>Desk Tier</th>
+            <th class="text-end">Standard (FCFA)</th>
+            <th class="text-end">NHIS Rate</th>
+            <th class="text-end">Insurance Rate</th>
+            <th class="text-center">Active</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sp in prices %}
+          <tr id="row-{{ sp.id }}">
+            <td class="fw-semibold">{{ sp.name }}
+              {% if sp.requires_price_entry %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">Manual Price</span>{% endif %}
+            </td>
+            <td class="text-muted font-monospace">{{ sp.code|default:"—" }}</td>
+            <td><span class="badge bg-light text-dark border">{{ sp.get_category_display }}</span></td>
+            <td>
+              {% if sp.tier == 'VIP' %}
+                <span class="badge bg-danger">VIP Desk</span>
+              {% elif sp.tier == 'FAST_TRACK' %}
+                <span class="badge bg-warning text-dark">Fast Track</span>
+              {% elif sp.tier == 'INSURED' %}
+                <span class="badge bg-info text-dark">Insured/HMO</span>
+              {% elif sp.tier == 'STANDARD' %}
+                <span class="badge bg-secondary">Standard</span>
+              {% else %}
+                <span class="badge bg-light text-muted border">All Desks</span>
+              {% endif %}
+            </td>
+            <td class="text-end fw-semibold text-primary">{{ sp.price|floatformat:0|intcomma }}</td>
+            <td class="text-end text-muted">{% if sp.nhis_price %}{{ sp.nhis_price|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end text-muted">{% if sp.insurance_price %}{{ sp.insurance_price|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-center">
+              <button class="btn btn-sm py-0 px-2 {% if sp.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                      onclick="togglePrice('{{ sp.id }}', this)" title="Toggle active">
+                {% if sp.is_active %}Active{% else %}Inactive{% endif %}
+              </button>
+            </td>
+            <td>
+              <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                      onclick="openEdit('{{ sp.id }}','{{ sp.name|escapejs }}','{{ sp.code|escapejs }}','{{ sp.category }}','{{ sp.tier }}',{{ sp.price }},{% if sp.nhis_price %}{{ sp.nhis_price }}{% else %}''{% endif %},{% if sp.insurance_price %}{{ sp.insurance_price }}{% else %}''{% endif %},{% if sp.requires_price_entry %}true{% else %}false{% endif %})">
+                Edit
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9" class="text-center text-muted py-5">
+            No services yet. <a href="#" data-bs-toggle="modal" data-bs-target="#addPriceModal">Add the first one.</a>
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Add Price Modal -->
+<div class="modal fade" id="addPriceModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'billing:service_price_create' %}">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-1 text-primary"></i>Add Service to Price Catalog</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Service Name *</label>
+              <input type="text" name="name" class="form-control" required placeholder="e.g. General Eye Consultation">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Category *</label>
+              <select name="category" class="form-select" required>
+                <option value="">— select —</option>
+                {% for val, label in categories %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Desk Tier Restriction</label>
+              <select name="tier" class="form-select">
+                {% for val, label in tiers %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Leave "All Tiers" if this service applies to every cashier desk.</div>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Internal Code</label>
+              <input type="text" name="code" class="form-control" placeholder="e.g. CONS-STD">
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Standard Price (FCFA) *</label>
+              <input type="number" name="price" class="form-control" required min="0" step="100">
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">NHIS Rate</label>
+              <input type="number" name="nhis_price" class="form-control" min="0" step="100" placeholder="optional">
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Insurance Rate</label>
+              <input type="number" name="insurance_price" class="form-control" min="0" step="100" placeholder="optional">
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input type="checkbox" name="requires_price_entry" class="form-check-input" id="reqPrice">
+                <label class="form-check-label small" for="reqPrice">
+                  Cashier must enter price manually (e.g. glasses frames with variable price)
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Service</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Price Modal -->
+<div class="modal fade" id="editPriceModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold"><i class="bi bi-pencil me-1 text-warning"></i>Edit Service Price</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Service Name *</label>
+            <input type="text" id="editName" class="form-control" required>
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Category *</label>
+            <select id="editCategory" class="form-select" required>
+              {% for val, label in categories %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Desk Tier Restriction</label>
+            <select id="editTier" class="form-select">
+              {% for val, label in tiers %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Internal Code</label>
+            <input type="text" id="editCode" class="form-control">
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-semibold">Standard Price (FCFA) *</label>
+            <input type="number" id="editPrice" class="form-control" required min="0" step="100">
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-semibold">NHIS Rate</label>
+            <input type="number" id="editNhis" class="form-control" min="0" step="100">
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-semibold">Insurance Rate</label>
+            <input type="number" id="editIns" class="form-control" min="0" step="100">
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input type="checkbox" id="editReqPrice" class="form-check-input">
+              <label class="form-check-label small" for="editReqPrice">Cashier must enter price manually</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning btn-sm" onclick="saveEdit()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentEditId = null;
+
+function openEdit(id, name, code, cat, tier, price, nhis, ins, reqPrice) {
+  currentEditId = id;
+  document.getElementById('editName').value     = name;
+  document.getElementById('editCode').value     = code;
+  document.getElementById('editCategory').value = cat;
+  document.getElementById('editTier').value     = tier || '';
+  document.getElementById('editPrice').value    = price;
+  document.getElementById('editNhis').value     = nhis || '';
+  document.getElementById('editIns').value      = ins  || '';
+  document.getElementById('editReqPrice').checked = reqPrice;
+  new bootstrap.Modal(document.getElementById('editPriceModal')).show();
+}
+
+function saveEdit() {
+  if (!currentEditId) return;
+  const data = new FormData();
+  data.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+  data.append('name',     document.getElementById('editName').value);
+  data.append('code',     document.getElementById('editCode').value);
+  data.append('category', document.getElementById('editCategory').value);
+  data.append('tier',     document.getElementById('editTier').value);
+  data.append('price',    document.getElementById('editPrice').value);
+  data.append('nhis_price',      document.getElementById('editNhis').value);
+  data.append('insurance_price', document.getElementById('editIns').value);
+  if (document.getElementById('editReqPrice').checked) data.append('requires_price_entry', '1');
+
+  fetch(`/billing/service-prices/${currentEditId}/edit/`, { method: 'POST', body: data })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) { location.reload(); }
+      else { alert(d.error || 'Error saving.'); }
+    });
+}
+
+function togglePrice(id, btn) {
+  fetch(`/billing/service-prices/${id}/toggle/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+  }).then(r => r.json()).then(d => {
+    if (d.success) {
+      btn.textContent = d.is_active ? 'Active' : 'Inactive';
+      btn.className   = 'btn btn-sm py-0 px-2 ' + (d.is_active ? 'btn-success' : 'btn-outline-secondary');
+    }
+  });
+}
+</script>
+{% endblock %}

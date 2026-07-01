@@ -441,6 +441,7 @@ def patient_detail_view(request, patient_id):
         patient=patient, is_active=True
     ).order_by('severity', 'allergen'))
 
+    ProblemStatus = None
     try:
         from .models import PatientProblem, ProblemStatus
         problems = list(PatientProblem.objects.filter(patient=patient).select_related('recorded_by'))
@@ -603,7 +604,7 @@ def patient_detail_view(request, patient_id):
         'chronic_medications': chronic_medications,
         'allergies': allergies,
         'problems': problems,
-        'problem_status_choices': ProblemStatus.choices,
+        'problem_status_choices': ProblemStatus.choices if ProblemStatus else [],
         'vital_signs_history': vital_signs_history,
         'vital_signs_history_json': vital_signs_history_json,
         'allergy_severity_choices': PatientAllergy.Severity.choices,
@@ -913,6 +914,16 @@ def triage_view(request, visit_number):
                     base_priority += 100
                 elif priority == 'URGENT':
                     base_priority += 50
+
+                # Mark the patient's PARAMETERS / PARAMS_VIP token as SERVED
+                # so they no longer appear in the triage nurse's queue
+                QueueToken.objects.filter(
+                    patient=visit.patient,
+                    issued_at__date=today,
+                    service_type__in=['PARAMETERS', 'PARAMS_VIP'],
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    is_deleted=False,
+                ).update(status=TokenStatus.COMPLETED)
 
                 token_number = DailyTokenSequence.next_dept_token(service_type)
                 dest_label = direct_service or (dept.name if dept else service_type)

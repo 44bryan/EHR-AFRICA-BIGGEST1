@@ -72,6 +72,7 @@ LOCAL_APPS = [
     'apps.reception',
     'apps.notifications',
     'apps.outreach',
+    'apps.patient_portal',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -79,6 +80,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'apps.core.multi_session_middleware.MultiSessionMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -109,6 +111,10 @@ TEMPLATES = [
                 'apps.core.context_processors.hospital_settings',
                 'apps.core.context_processors.hospital_modules',
                 'apps.core.context_processors.user_notifications',
+                'apps.core.context_processors.session_slot',
+            ],
+            'builtins': [
+                'apps.core.templatetags.ehr_tags',
             ],
         },
     },
@@ -149,7 +155,7 @@ LOGOUT_REDIRECT_URL = 'accounts:login'
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-     'OPTIONS': {'min_length': 8}},
+     'OPTIONS': {'min_length': 12}},
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
@@ -201,7 +207,7 @@ CELERY_CACHE_BACKEND = 'django-cache'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'Africa/Lagos'
+CELERY_TIMEZONE = 'Africa/Douala'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Cache
@@ -218,7 +224,7 @@ AXES_COOLOFF_TIME = 1  # 1 hour
 AXES_LOCKOUT_TEMPLATE = 'accounts/lockout.html'
 
 # Phone number field
-PHONENUMBER_DEFAULT_REGION = 'NG'
+PHONENUMBER_DEFAULT_REGION = 'CM'
 
 # AI — Hybrid LLM Architecture
 # Demo:       Groq (Llama-3.3-70b) for fast reasoning + Claude for complex extraction
@@ -227,16 +233,16 @@ ANTHROPIC_API_KEY = env('ANTHROPIC_API_KEY', default='')
 AI_MODEL = 'claude-sonnet-4-6'
 AI_MAX_TOKENS = 4096
 
-# Groq — DeepSeek-R1 for deep clinical reasoning
+# Groq — DeepSeek-R1 distill for deep clinical reasoning
 GROQ_API_KEY = env('GROQ_API_KEY', default='')
-GROQ_MODEL = env('GROQ_MODEL', default='llama-3.3-70b-versatile')  # Primary reasoning model
+GROQ_MODEL = env('GROQ_MODEL', default='deepseek-r1-distill-llama-70b')  # Primary reasoning model (R1 chain-of-thought)
 GROQ_FAST_MODEL = env('GROQ_FAST_MODEL', default='llama-3.1-8b-instant')  # Receptionist / simple Q&A
 
 # Which engine to use for each feature
 # Options: 'groq' | 'claude' | 'ollama'
-AI_ENGINE_REASONING    = env('AI_ENGINE_REASONING',    default='groq')    # Diagnosis, analytics, receptionist
-AI_ENGINE_EXTRACTION   = env('AI_ENGINE_EXTRACTION',   default='claude')  # Voice EMR clinical extraction
-AI_ENGINE_PRODUCTION   = env('AI_ENGINE_PRODUCTION',   default='ollama')  # Future on-premises
+AI_ENGINE_REASONING    = env('AI_ENGINE_REASONING',    default='groq')   # Diagnosis, analytics, receptionist
+AI_ENGINE_EXTRACTION   = env('AI_ENGINE_EXTRACTION',   default='groq')   # Voice EMR clinical extraction
+AI_ENGINE_PRODUCTION   = env('AI_ENGINE_PRODUCTION',   default='ollama') # On-premises target
 
 # Ollama (production on-premises)
 OLLAMA_BASE_URL = env('OLLAMA_BASE_URL', default='http://localhost:11434')
@@ -260,12 +266,12 @@ SESSION_COOKIE_AGE = 28800          # 8 hours — matches a working shift
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_HTTPONLY = True      # JS cannot read session cookie
 SESSION_COOKIE_SAMESITE = 'Lax'     # CSRF protection
-SESSION_COOKIE_SECURE = not DEBUG   # HTTPS-only in production
+SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=(not DEBUG))
 
 # CSRF cookie
 CSRF_COOKIE_HTTPONLY = False        # Django requires JS to read it for AJAX
 CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE = not DEBUG      # HTTPS-only in production
+CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=(not DEBUG))
 
 # Security headers (applied by SecurityMiddleware)
 SECURE_BROWSER_XSS_FILTER = True        # X-XSS-Protection: 1; mode=block
@@ -291,6 +297,41 @@ CSP_CONNECT_SRC = ("'self'",)
 CSP_MEDIA_SRC   = ("'self'", "blob:")
 CSP_FRAME_SRC   = ("'none'",)
 CSP_OBJECT_SRC  = ("'none'",)
+
+# Twilio (SMS / WhatsApp)
+TWILIO_ACCOUNT_SID   = env('TWILIO_ACCOUNT_SID',   default='')
+TWILIO_AUTH_TOKEN    = env('TWILIO_AUTH_TOKEN',     default='')
+TWILIO_FROM_NUMBER   = env('TWILIO_FROM_NUMBER',    default='')
+TWILIO_WHATSAPP_FROM = env('TWILIO_WHATSAPP_FROM',  default='whatsapp:+14155238886')
+SMS_ENABLED          = env.bool('SMS_ENABLED',      default=False)
+
+# Backup settings
+BACKUP_DIR           = env('BACKUP_DIR', default=str(BASE_DIR / 'backups'))
+BACKUP_EXTERNAL_PATH = env('BACKUP_EXTERNAL_PATH', default='')  # e.g. /mnt/usb_drive/ehr_backups
+BACKUP_KEEP          = env.int('BACKUP_KEEP', default=30)       # How many backups to retain
+
+# Celery Beat schedule — daily backup at 02:00 Africa/Douala
+from celery.schedules import crontab
+CELERY_BEAT_SCHEDULE = {
+    'daily-db-backup': {
+        'task': 'core.daily_backup',
+        'schedule': crontab(hour=2, minute=0),
+    },
+    'daily-appointment-reminders': {
+        'task': 'notifications.send_appointment_reminders',
+        'schedule': crontab(hour=7, minute=0),
+    },
+    'daily-inventory-alerts': {
+        'task': 'notifications.daily_inventory_alerts',
+        'schedule': crontab(hour=8, minute=0),
+    },
+}
+
+# DICOM Imaging Viewer
+DICOM_VIEWER_BASE_URL   = env('DICOM_VIEWER_BASE_URL', default='')
+
+# Patient Portal
+PATIENT_PORTAL_BASE_URL = env('PATIENT_PORTAL_BASE_URL', default='')
 
 # Email
 EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')

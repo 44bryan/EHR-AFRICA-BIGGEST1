@@ -1,0 +1,96 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Journal Entries{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-journal-text me-2 text-primary"></i>Journal Entries</h4>
+    <p class="text-muted small mb-0">{{ total }} entries found</p>
+  </div>
+  <a href="{% url 'billing:journal_entry_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Manual Entry
+  </a>
+</div>
+{% endblock %}
+{% block content %}
+<!-- Filters -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body py-2 px-3">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-sm-3">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search entry #, description…" value="{{ q }}">
+      </div>
+      <div class="col-sm-2">
+        <select name="source" class="form-select form-select-sm">
+          <option value="">All Sources</option>
+          <option value="payment" {% if source == 'payment' %}selected{% endif %}>Payments</option>
+          <option value="expense" {% if source == 'expense' %}selected{% endif %}>Expenses</option>
+          <option value="ap_payment" {% if source == 'ap_payment' %}selected{% endif %}>AP Payments</option>
+          <option value="ap_bill" {% if source == 'ap_bill' %}selected{% endif %}>AP Bills</option>
+          <option value="manual" {% if source == 'manual' %}selected{% endif %}>Manual</option>
+          <option value="reversal" {% if source == 'reversal' %}selected{% endif %}>Reversals</option>
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-sm-2">
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-sm-2">
+        <button type="submit" class="btn btn-sm btn-outline-primary w-100">Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Entry #</th>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Reference</th>
+          <th>Source</th>
+          <th class="text-end">Dr Total</th>
+          <th class="text-end">Cr Total</th>
+          <th class="text-center">Balanced</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+        <tr>
+          <td class="fw-semibold font-monospace text-primary">{{ entry.entry_number }}</td>
+          <td>{{ entry.entry_date|date:"d/m/Y" }}</td>
+          <td>{{ entry.description|truncatechars:60 }}
+            {% if entry.is_reversal %}<span class="badge bg-warning-subtle text-warning ms-1">Reversal</span>{% endif %}
+          </td>
+          <td class="text-muted small">{{ entry.reference|default:"—" }}</td>
+          <td>
+            <span class="badge {% if entry.source_type == 'payment' %}bg-success-subtle text-success{% elif entry.source_type == 'expense' %}bg-danger-subtle text-danger{% elif entry.source_type == 'manual' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
+              {{ entry.source_type|default:"manual" }}
+            </span>
+          </td>
+          <td class="text-end">{{ entry.total_debits|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ entry.total_credits|floatformat:0|intcomma }}</td>
+          <td class="text-center">
+            {% if entry.is_balanced %}<i class="bi bi-check-circle-fill text-success"></i>
+            {% else %}<i class="bi bi-x-circle-fill text-danger"></i>{% endif %}
+          </td>
+          <td>
+            <a href="{% url 'billing:journal_entry_detail' entry.pk %}" class="btn btn-xs btn-outline-primary">
+              <i class="bi bi-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No journal entries found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

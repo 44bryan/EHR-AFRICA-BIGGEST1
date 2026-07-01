@@ -102,6 +102,10 @@ class OpticalOrder(AuditModel):
     def __str__(self):
         return f"Optical Order {self.order_number} - {self.patient.full_name}"
 
+    @property
+    def balance_due(self):
+        return max(0, self.total_amount - self.deposit_paid)
+
     def save(self, *args, **kwargs):
         if not self.order_number:
             today = timezone.localdate()

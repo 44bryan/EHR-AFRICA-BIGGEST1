@@ -154,19 +154,21 @@ def groq_chat(messages: list, system: str = None, model: str = None, max_tokens:
 
 def groq_json(messages: list, system: str = None, model: str = None, max_tokens: int = 2048) -> dict:
     """
-    Request JSON output from Groq (uses JSON mode).
+    Request JSON output from Groq (uses JSON mode where supported).
+    Falls back to plain text + regex parse if JSON mode is not supported by the model.
     Returns: { success, data (parsed dict), text, error }
     """
-    import json
+    import json, re as _re
     client = get_groq_client()
     if client is None:
         return {'success': False, 'error': 'Groq not configured', 'data': {}}
 
     model = model or getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile')
     system_prompt = (system or GLUDD_SYSTEM_PROMPT) + '\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanation outside the JSON object.'
+    chat_messages = [{'role': 'system', 'content': system_prompt}] + messages
 
+    # Try with JSON mode first (supported by llama models)
     try:
-        chat_messages = [{'role': 'system', 'content': system_prompt}] + messages
         response = client.chat.completions.create(
             model=model,
             messages=chat_messages,
@@ -175,13 +177,33 @@ def groq_json(messages: list, system: str = None, model: str = None, max_tokens:
             response_format={'type': 'json_object'},
         )
         raw = response.choices[0].message.content or ''
-        text, _ = _split_reasoning(raw)  # strip any <think> from JSON response
+        text, _ = _split_reasoning(raw)
         data = json.loads(text)
         return {'success': True, 'data': data, 'text': text}
     except json.JSONDecodeError as e:
         logger.error(f"Groq JSON parse error: {e}")
         return {'success': False, 'error': 'JSON parse failed', 'data': {}}
     except Exception as e:
+        err_str = str(e).lower()
+        # JSON mode not supported by this model — retry without it
+        if 'json' in err_str or 'response_format' in err_str or 'model' in err_str or 'deprecated' in err_str or 'decommissioned' in err_str:
+            logger.warning(f"Groq JSON mode unsupported for model {model}, retrying without it: {e}")
+            fallback_model = getattr(settings, 'GROQ_FAST_MODEL', 'llama-3.1-8b-instant')
+            try:
+                response = client.chat.completions.create(
+                    model=fallback_model,
+                    messages=chat_messages,
+                    max_tokens=max_tokens,
+                    temperature=0.1,
+                    response_format={'type': 'json_object'},
+                )
+                raw = response.choices[0].message.content or ''
+                text, _ = _split_reasoning(raw)
+                data = json.loads(text)
+                return {'success': True, 'data': data, 'text': text}
+            except Exception as e2:
+                logger.error(f"Groq JSON fallback error: {e2}")
+                return {'success': False, 'error': str(e2), 'data': {}}
         logger.error(f"Groq JSON request error: {e}")
         return {'success': False, 'error': str(e), 'data': {}}
 

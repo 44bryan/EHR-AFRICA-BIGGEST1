@@ -1,53 +1,177 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Investigation — {{ order.investigation_type.name }}{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">{{ order.investigation_type.name }}</h1>
-  <div class="d-flex gap-2">
-    {% if not result %}
-    <a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i>Enter Result</a>
-    {% elif not result.is_verified %}
-    <form method="post" action="{% url 'investigations:verify' order.pk %}">{% csrf_token %}<button type="submit" class="btn btn-success"><i class="bi bi-check-circle me-1"></i>Verify</button></form>
-    {% endif %}
-    <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
-  </div>
-</div>
-<div class="row g-3">
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Order Details</h6></div>
-      <div class="card-body">
-        <dl class="row mb-0 small">
-          <dt class="col-5 text-muted">Patient</dt><dd class="col-7 fw-semibold">{{ order.patient.full_name }}</dd>
-          <dt class="col-5 text-muted">Eye</dt><dd class="col-7">{{ order.eye }}</dd>
-          <dt class="col-5 text-muted">Urgency</dt><dd class="col-7"><span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span></dd>
-          <dt class="col-5 text-muted">Ordered By</dt><dd class="col-7">{{ order.ordered_by.full_name }}</dd>
-          <dt class="col-5 text-muted">Date</dt><dd class="col-7">{{ order.created_at|date:"d M Y, H:i" }}</dd>
-          <dt class="col-5 text-muted">Status</dt><dd class="col-7"><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">{{ order.status }}</span></dd>
-        </dl>
-        {% if order.clinical_indication %}<div class="mt-2 pt-2 border-top"><div class="text-muted small fw-medium">Clinical Indication</div><div class="small">{{ order.clinical_indication }}</div></div>{% endif %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-search-heart text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ order.investigation_type.name }}</h5>
+      <div class="text-muted small">
+        <strong>{{ order.patient.full_name }}</strong>
+        &bull; {{ order.patient.patient_id }}
+        &bull; Eye: <span class="badge bg-secondary">{{ order.get_eye_display }}</span>
+        &bull; Ordered by Dr. {{ order.ordered_by.full_name }}
+        &bull; {{ order.created_at|date:"d M Y, H:i" }}
       </div>
     </div>
   </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if request.user.can_record_investigation_results %}
+    {% if not result %}
+    <a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary">
+      <i class="bi bi-pencil-square me-1"></i>Enter Result
+    </a>
+    {% endif %}
+    {% endif %}
+    {# Verify: technician (to print for patient) or doctor/MD #}
+    {% if result and not result.is_verified %}
+    {% if request.user.can_record_investigation_results or request.user.is_doctor or request.user.is_medical_director %}
+    <form method="post" action="{% url 'investigations:verify' order.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-check-circle me-1"></i>Verify Result
+      </button>
+    </form>
+    {% endif %}
+    {% endif %}
+    {% if result and result.is_verified %}
+    <a href="{% url 'reports:investigation_pdf' pk=order.pk %}" class="btn btn-outline-danger" target="_blank">
+      <i class="bi bi-file-pdf me-1"></i>Print PDF
+    </a>
+    {% endif %}
+    {% if order.consultation %}
+    <a href="{% url 'consultations:detail' pk=order.consultation.pk %}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back to Consultation
+    </a>
+    {% else %}
+    <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-clipboard me-1"></i>Order Details</h6></div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Patient</dt>
+          <dd class="col-7 fw-semibold">{{ order.patient.full_name }}</dd>
+          <dt class="col-5 text-muted">Eye</dt>
+          <dd class="col-7">{{ order.get_eye_display }}</dd>
+          <dt class="col-5 text-muted">Urgency</dt>
+          <dd class="col-7">
+            <span class="badge {% if order.urgency == 'URGENT' or order.urgency == 'EMERGENCY' %}bg-danger{% else %}bg-secondary{% endif %}">
+              {{ order.urgency }}
+            </span>
+          </dd>
+          <dt class="col-5 text-muted">Ordered By</dt>
+          <dd class="col-7">Dr. {{ order.ordered_by.full_name }}</dd>
+          <dt class="col-5 text-muted">Date</dt>
+          <dd class="col-7">{{ order.created_at|date:"d M Y, H:i" }}</dd>
+          {% if result %}
+          <dt class="col-5 text-muted">Performed By</dt>
+          <dd class="col-7 fw-semibold text-primary">
+            {% if result.performed_by %}{{ result.performed_by.full_name }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </dd>
+          <dt class="col-5 text-muted">Result Date</dt>
+          <dd class="col-7">{{ result.result_date|date:"d M Y, H:i" }}</dd>
+          {% if result.is_verified %}
+          <dt class="col-5 text-muted">Verified By</dt>
+          <dd class="col-7 fw-semibold text-success">{{ result.verified_by.full_name }}</dd>
+          <dt class="col-5 text-muted">Verified At</dt>
+          <dd class="col-7">{{ result.verified_at|date:"d M Y, H:i" }}</dd>
+          {% endif %}
+          {% endif %}
+          <dt class="col-5 text-muted">Status</dt>
+          <dd class="col-7">
+            <span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+              {{ order.get_status_display }}
+            </span>
+          </dd>
+        </dl>
+        {% if order.clinical_indication %}
+        <div class="mt-2 pt-2 border-top">
+          <div class="text-muted small fw-semibold">Clinical Indication</div>
+          <div class="small">{{ order.clinical_indication }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
   <div class="col-md-8">
     {% if result %}
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white py-2 d-flex justify-content-between">
-        <h6 class="mb-0 fw-semibold">Result</h6>
-        {% if result.is_verified %}<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Verified by {{ result.verified_by.full_name }}</span>{% endif %}
+      <div class="card-header py-2 d-flex justify-content-between align-items-center flex-wrap gap-2
+        {% if result.is_normal %}bg-success bg-opacity-10{% elif result.is_normal == False %}bg-danger bg-opacity-10{% else %}bg-white{% endif %}">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge {% if result.is_normal %}bg-success{% elif result.is_normal == False %}bg-danger{% else %}bg-secondary{% endif %} fs-6">
+            {% if result.is_normal %}Normal{% elif result.is_normal == False %}Abnormal{% else %}Recorded{% endif %}
+          </span>
+          <h6 class="mb-0 fw-semibold">Result — {{ order.investigation_type.name }}</h6>
+        </div>
+        <div class="d-flex gap-1 flex-wrap align-items-center">
+          {% if result.is_verified %}
+          <span class="badge bg-success">
+            <i class="bi bi-patch-check-fill me-1"></i>Verified by {{ result.verified_by.full_name }}
+          </span>
+          {% else %}
+          <span class="badge bg-warning text-dark">
+            <i class="bi bi-clock me-1"></i>Awaiting Verification
+          </span>
+          {% endif %}
+        </div>
       </div>
       <div class="card-body">
-        <div class="mb-2"><span class="badge {% if result.is_normal %}bg-success{% else %}bg-danger{% endif %} mb-2">{% if result.is_normal %}Normal{% else %}Abnormal{% endif %}</span></div>
-        <div class="p-3 bg-light rounded small">{{ result.interpretation|linebreaksbr }}</div>
+        {% if result.interpretation %}
+        <div class="p-3 rounded mb-3" style="background:#f8fafc;border-left:3px solid #0d6efd;">
+          <div class="fw-semibold small text-muted mb-1">Interpretation / Findings</div>
+          <div style="white-space:pre-wrap;font-size:.9rem;line-height:1.6;">{{ result.interpretation }}</div>
+        </div>
+        {% endif %}
         {% if result.files.exists %}
-        <div class="mt-3"><h6 class="small fw-semibold">Uploaded Files</h6>
-          {% for f in result.files.all %}<a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-file-earmark me-1"></i>{{ f.file_type }}</a>{% endfor %}
-        </div>{% endif %}
+        <div class="mt-2">
+          <div class="fw-semibold small mb-2">Attached Files / Images</div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for f in result.files.all %}
+            {% if f.file_type == 'IMAGE' %}
+            <a href="{{ f.file.url }}" target="_blank" title="{{ f.description|default:'View image' }}">
+              <img src="{{ f.file.url }}" alt="{{ f.description|default:'Investigation image' }}"
+                   class="border rounded shadow-sm"
+                   style="max-height:220px;max-width:300px;object-fit:contain;cursor:zoom-in;">
+            </a>
+            {% elif f.file_type == 'PDF' %}
+            <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-danger">
+              <i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"Open Report PDF" }}
+            </a>
+            {% else %}
+            <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-secondary">
+              <i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"Download File" }}
+            </a>
+            {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
     {% else %}
     <div class="card border-0 shadow-sm">
-      <div class="card-body text-center text-muted py-5"><i class="bi bi-hourglass-split" style="font-size:2.5rem;"></i><p class="mt-2">No result entered yet.</p><a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary">Enter Result</a></div>
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-hourglass-split" style="font-size:2.5rem;"></i>
+        <p class="mt-2 mb-3">No result entered yet.</p>
+        {% if request.user.can_record_investigation_results %}
+        <a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary">
+          <i class="bi bi-pencil-square me-1"></i>Enter Result
+        </a>
+        {% endif %}
+      </div>
     </div>
     {% endif %}
   </div>

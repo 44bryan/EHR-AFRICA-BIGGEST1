@@ -1,0 +1,139 @@
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Statement — {{ account.name }}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size:12px; background:#f5f5f5; padding:20px; }
+    .sheet { background:#fff; max-width:800px; margin:0 auto; padding:30px; box-shadow:0 4px 20px rgba(0,0,0,.1); }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }
+    .hospital-name { font-size:18px; font-weight:bold; color:#1d4ed8; }
+    .section-title { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; margin-bottom:6px; font-weight:600; }
+    .divider { border:none; border-top:2px solid #374151; margin:12px 0; }
+    .divider-thin { border:none; border-top:1px solid #e5e7eb; margin:8px 0; }
+    table { width:100%; border-collapse:collapse; }
+    th { background:#f3f4f6; text-align:left; padding:6px 8px; font-size:10px; text-transform:uppercase; color:#6b7280; border-bottom:2px solid #d1d5db; }
+    td { padding:7px 8px; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
+    .text-right { text-align:right; }
+    .text-center { text-align:center; }
+    .fw-bold { font-weight:bold; }
+    .badge-paid { background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:10px; font-size:10px; }
+    .badge-partial { background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; font-size:10px; }
+    .badge-issued { background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:10px; font-size:10px; }
+    .summary-box { background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; padding:12px; margin-top:16px; }
+    .action-bar { max-width:800px; margin:12px auto; display:flex; gap:8px; }
+    .btn { padding:8px 16px; border:none; border-radius:6px; font-size:13px; cursor:pointer; }
+    .btn-print { background:#1d4ed8; color:#fff; }
+    .btn-back { background:#6b7280; color:#fff; }
+    @media print {
+      body { background:white; padding:0; }
+      .action-bar { display:none !important; }
+      .sheet { box-shadow:none; max-width:100%; padding:15px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="action-bar">
+  <button class="btn btn-print" onclick="window.print()">&#128438; Print Statement</button>
+  <button class="btn btn-back" onclick="history.back()">&#8592; Back</button>
+</div>
+
+<div class="sheet">
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="hospital-name">{{ HOSPITAL_NAME }}</div>
+      <div style="color:#6b7280;font-size:11px;">Specialist Eye Hospital &middot; Cameroon</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:16px;font-weight:bold;color:#374151;">ACCOUNT STATEMENT</div>
+      <div style="color:#6b7280;font-size:11px;">Printed: {{ today|date:"d F Y" }}</div>
+      {% if date_from or date_to %}
+      <div style="color:#6b7280;font-size:11px;">
+        Period: {% if date_from %}{{ date_from|date:"d M Y" }}{% else %}All time{% endif %} — {% if date_to %}{{ date_to|date:"d M Y" }}{% else %}today{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Billed To -->
+  <div class="section-title">Billed To</div>
+  <div style="margin-bottom:16px;">
+    <div class="fw-bold" style="font-size:14px;">{{ account.name }}</div>
+    {% if account.account_code %}<div style="color:#6b7280;">Acc#: {{ account.account_code }}</div>{% endif %}
+    {% if account.contact_name %}<div>Attn: {{ account.contact_name }}</div>{% endif %}
+    {% if account.phone %}<div>Tel: {{ account.phone }}</div>{% endif %}
+    {% if account.email %}<div>{{ account.email }}</div>{% endif %}
+    {% if account.address %}<div style="color:#6b7280;">{{ account.address }}</div>{% endif %}
+    <div style="color:#6b7280;margin-top:4px;">Payment Terms: Net {{ account.payment_terms_days }} days</div>
+  </div>
+
+  <!-- Invoices Table -->
+  <div class="section-title">Invoice Details</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Invoice #</th>
+        <th>Patient</th>
+        <th>Date</th>
+        <th class="text-right">Total (FCFA)</th>
+        <th class="text-right">Paid (FCFA)</th>
+        <th class="text-right">Balance (FCFA)</th>
+        <th class="text-center">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in invoices_data %}
+      <tr>
+        <td class="fw-bold" style="font-family:monospace;">{{ row.invoice.invoice_number }}</td>
+        <td>{{ row.invoice.patient.full_name }}</td>
+        <td>{{ row.invoice.issue_date|date:"d/m/Y" }}</td>
+        <td class="text-right">{{ row.total|floatformat:0|intcomma }}</td>
+        <td class="text-right" style="color:#065f46;">{{ row.paid|floatformat:0|intcomma }}</td>
+        <td class="text-right {% if row.balance > 0 %}fw-bold{% endif %}" style="{% if row.balance > 0 %}color:#b91c1c;{% endif %}">{{ row.balance|floatformat:0|intcomma }}</td>
+        <td class="text-center">
+          {% if row.invoice.status == 'PAID' %}
+          <span class="badge-paid">PAID</span>
+          {% elif row.invoice.status == 'PARTIAL' %}
+          <span class="badge-partial">PARTIAL</span>
+          {% else %}
+          <span class="badge-issued">{{ row.invoice.get_status_display|upper }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="text-center" style="color:#9ca3af;padding:20px;">No invoices in this period</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Summary -->
+  <div class="summary-box">
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span>Total Invoiced:</span>
+      <span class="fw-bold">{{ grand_total|floatformat:0|intcomma }} FCFA</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;color:#059669;">
+      <span>Total Paid:</span>
+      <span class="fw-bold">{{ grand_paid|floatformat:0|intcomma }} FCFA</span>
+    </div>
+    <hr class="divider-thin">
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:bold;{% if grand_balance > 0 %}color:#b91c1c;{% endif %}">
+      <span>AMOUNT DUE:</span>
+      <span>{{ grand_balance|floatformat:0|intcomma }} FCFA</span>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="margin-top:30px;font-size:11px;color:#9ca3af;text-align:center;border-top:1px solid #e5e7eb;padding-top:10px;">
+    Please remit payment within {{ account.payment_terms_days }} days. For queries, contact the Finance Department.
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,111 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}PO {{ po.po_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-0">Purchase Order {{ po.po_number }}</h1>
+    <small class="text-muted">{{ po.vendor.name }} · {{ po.ordered_date|date:"d M Y" }}</small>
+  </div>
+  <div class="d-flex gap-2">
+    {% if po.status == 'SUBMITTED' or po.status == 'APPROVED' %}
+    <a href="{% url 'inventory:po_receive' po.id %}" class="btn btn-success btn-sm">
+      <i class="bi bi-box-arrow-in-down me-1"></i>Receive Goods
+    </a>
+    {% endif %}
+    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">Order Info</div>
+      <div class="card-body" style="font-size:0.875rem;">
+        <dl class="mb-0">
+          <dt class="text-muted small">Status</dt>
+          <dd>
+            <span class="badge {% if po.status == 'RECEIVED' %}bg-success{% elif po.status == 'APPROVED' %}bg-primary{% elif po.status == 'SUBMITTED' %}bg-warning text-dark{% elif po.status == 'CANCELLED' %}bg-secondary{% else %}bg-light text-dark{% endif %}">
+              {{ po.get_status_display }}
+            </span>
+          </dd>
+          <dt class="text-muted small">Vendor</dt>
+          <dd>{{ po.vendor.name }}</dd>
+          <dt class="text-muted small">Order Date</dt>
+          <dd>{{ po.ordered_date|date:"d M Y" }}</dd>
+          {% if po.expected_date %}
+          <dt class="text-muted small">Expected</dt>
+          <dd>{{ po.expected_date|date:"d M Y" }}</dd>
+          {% endif %}
+          {% if po.received_date %}
+          <dt class="text-muted small">Received</dt>
+          <dd>{{ po.received_date|date:"d M Y" }}</dd>
+          {% endif %}
+          {% if po.approved_by %}
+          <dt class="text-muted small">Received by</dt>
+          <dd>{{ po.approved_by.get_full_name }}</dd>
+          {% endif %}
+          {% if po.notes %}
+          <dt class="text-muted small">Notes</dt>
+          <dd>{{ po.notes }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center">
+        <div class="text-muted small">Total Amount</div>
+        <div class="fw-bold fs-4 text-primary">{{ po.total_amount|floatformat:0|intcomma }} FCFA</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Line Items</div>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" style="font-size:0.875rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Item</th>
+              <th class="text-end">Ordered</th>
+              <th class="text-end">Received</th>
+              <th class="text-end">Unit Price</th>
+              <th class="text-end">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in po_items %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ line.item.name }}</div>
+                <small class="text-muted">{{ line.item.item_code }}</small>
+              </td>
+              <td class="text-end">{{ line.quantity_ordered }} {{ line.item.unit }}</td>
+              <td class="text-end {% if line.quantity_received > 0 %}text-success fw-semibold{% else %}text-muted{% endif %}">
+                {{ line.quantity_received|default:"—" }}
+              </td>
+              <td class="text-end">{{ line.unit_price|floatformat:0|intcomma }}</td>
+              <td class="text-end fw-semibold">{{ line.subtotal|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted py-3">No line items.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td colspan="4">TOTAL</td>
+              <td class="text-end">{{ po.total_amount|floatformat:0|intcomma }} FCFA</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Pay Bill {{ bill.bill_number }}{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <a href="{% url 'billing:ap_bill_detail' bill.pk %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Back to Bill
+  </a>
+  <h4 class="fw-bold mb-0"><i class="bi bi-cash me-2 text-success"></i>Record Payment — {{ bill.bill_number }}</h4>
+  <p class="text-muted small mb-0">Pay vendor: {{ bill.vendor.name }}</p>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-3 border-success">
+      <div class="card-header py-2 bg-light fw-semibold">Bill Summary</div>
+      <div class="card-body small">
+        <div class="row g-2">
+          <div class="col-6 text-muted">Bill Amount:</div>
+          <div class="col-6 fw-bold">{{ bill.amount_due|floatformat:0|intcomma }} XAF</div>
+          <div class="col-6 text-muted">Already Paid:</div>
+          <div class="col-6 fw-bold text-success">{{ bill.total_paid|floatformat:0|intcomma }} XAF</div>
+          <div class="col-6 text-muted fw-bold">Balance Due:</div>
+          <div class="col-6 fw-bold text-danger fs-6">{{ bill.balance_due|floatformat:0|intcomma }} XAF</div>
+        </div>
+      </div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="card shadow-sm">
+        <div class="card-header py-2 fw-semibold">Payment Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Payment Date <span class="text-danger">*</span></label>
+              <input type="date" name="payment_date" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Amount (XAF) <span class="text-danger">*</span></label>
+              <input type="number" name="amount" class="form-control text-end"
+                     min="1" max="{{ bill.balance_due }}" step="1"
+                     value="{{ bill.balance_due|floatformat:0 }}" required>
+              <div class="form-text">Max: {{ bill.balance_due|floatformat:0|intcomma }} XAF</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
+              <select name="payment_method" class="form-select" required>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+                <option value="CASH">Cash</option>
+                <option value="CHEQUE">Cheque</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Reference</label>
+              <input type="text" name="reference" class="form-control"
+                     placeholder="Bank ref, cheque #, etc.">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Bank Account (GL)</label>
+              <select name="bank_account" class="form-select">
+                <option value="">— Auto (from method) —</option>
+                {% for a in bank_accounts %}
+                <option value="{{ a.pk }}">{{ a.code }} — {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Notes</label>
+              <textarea name="notes" class="form-control" rows="2" placeholder="Optional notes"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <button type="submit" class="btn btn-success">
+          <i class="bi bi-check-circle me-1"></i>Record Payment
+        </button>
+        <a href="{% url 'billing:ap_bill_detail' bill.pk %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm bg-light">
+      <div class="card-header py-2 fw-semibold">GL Entries Created</div>
+      <div class="card-body small text-muted">
+        <p>When you record this payment, the system will automatically post:</p>
+        <table class="table table-sm table-bordered small">
+          <thead class="table-light"><tr><th>Account</th><th>Dr</th><th>Cr</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Accounts Payable (220000)</td>
+              <td class="text-success fw-bold">✓ Debit</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>Bank / Cash Account</td>
+              <td>—</td>
+              <td class="text-danger fw-bold">✓ Credit</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          This reduces the liability (AP) and reduces the bank balance simultaneously.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

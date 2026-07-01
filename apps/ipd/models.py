@@ -588,3 +588,245 @@ class WardRound(AuditModel):
     def __str__(self):
         return (f"Ward Round — {self.admission.patient.full_name} "
                 f"— {self.round_date} by Dr. {self.doctor.full_name}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ANAESTHETIC RECORD — JCI ASC Standards
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ASAGrade(models.TextChoices):
+    I   = 'I',   'ASA I — Normal healthy patient'
+    II  = 'II',  'ASA II — Mild systemic disease, no functional limitation'
+    III = 'III', 'ASA III — Severe systemic disease with functional limitation'
+    IV  = 'IV',  'ASA IV — Severe systemic disease, constant threat to life'
+    V   = 'V',   'ASA V — Moribund, not expected to survive 24h without operation'
+    E   = 'E',   'E — Emergency (added to any grade, e.g. IIE, IIIE)'
+
+
+class AnaestheticRecord(AuditModel):
+    """
+    Pre-operative anaesthetic assessment + intraoperative monitoring summary.
+    Completed by the Anaesthetist before and during surgery.
+    JCI ASC.5 / ASC.6 requirements.
+    """
+    surgical_booking = models.ForeignKey(
+        SurgicalBooking, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='anaesthetic_records'
+    )
+    theatre_procedure = models.ForeignKey(
+        TheatreProcedure, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='anaesthetic_records'
+    )
+    patient = models.ForeignKey(
+        'patients.Patient', on_delete=models.PROTECT, related_name='anaesthetic_records'
+    )
+    anaesthetist = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True,
+        related_name='anaesthetic_records_authored'
+    )
+
+    # ── Pre-operative Assessment ───────────────────────────────────────────────
+    asa_grade = models.CharField(
+        max_length=5, choices=ASAGrade.choices, blank=True,
+        help_text='ASA Physical Status Classification'
+    )
+    weight_kg = models.FloatField(null=True, blank=True)
+    height_cm = models.FloatField(null=True, blank=True)
+
+    # Airway assessment
+    mallampati_score = models.CharField(
+        max_length=5, blank=True,
+        help_text='Mallampati score: I, II, III, or IV'
+    )
+    mouth_opening = models.CharField(max_length=50, blank=True,
+        help_text='e.g. >4 cm, <3 cm')
+    neck_mobility = models.CharField(max_length=50, blank=True,
+        help_text='e.g. Full, Limited')
+    thyromental_distance = models.CharField(max_length=50, blank=True,
+        help_text='e.g. >6.5 cm')
+    difficult_airway_predicted = models.BooleanField(
+        default=False, help_text='Anticipated difficult airway')
+    airway_notes = models.TextField(blank=True)
+
+    # Fasting
+    last_oral_intake = models.DateTimeField(null=True, blank=True,
+        help_text='Date/time of last oral intake (food or fluid)')
+    fasting_adequate = models.BooleanField(
+        null=True, blank=True,
+        help_text='True = fasting criteria met before anaesthesia'
+    )
+
+    # Allergy / drug review
+    allergies_reviewed = models.BooleanField(default=False)
+    anaesthetic_allergies = models.TextField(blank=True,
+        help_text='Known allergies relevant to anaesthesia (latex, drugs, etc.)')
+    current_medications_reviewed = models.BooleanField(default=False)
+    medications_to_continue = models.TextField(blank=True)
+    medications_to_stop = models.TextField(blank=True)
+
+    # Pre-medication
+    premedication_given = models.TextField(blank=True,
+        help_text='Pre-operative medications administered (drug, dose, time)')
+
+    # Consent
+    anaesthetic_consent_obtained = models.BooleanField(default=False)
+    pre_op_assessment_completed = models.DateTimeField(null=True, blank=True)
+
+    # ── Anaesthetic Plan ──────────────────────────────────────────────────────
+    anaesthesia_type = models.CharField(max_length=30, choices=[
+        ('LOCAL',     'Local (Peribulbar / Sub-Tenon / Topical)'),
+        ('REGIONAL',  'Regional Block'),
+        ('GENERAL',   'General Anaesthesia (GA)'),
+        ('SEDATION',  'Monitored Anaesthesia Care (MAC / Sedation)'),
+        ('COMBINED',  'Combined GA + Regional'),
+    ], blank=True)
+    planned_agents = models.TextField(blank=True,
+        help_text='Planned induction and maintenance agents')
+
+    # ── Intraoperative Record ─────────────────────────────────────────────────
+    induction_agent = models.CharField(max_length=200, blank=True,
+        help_text='e.g. Propofol 2mg/kg IV, Ketamine 1.5mg/kg')
+    induction_dose = models.CharField(max_length=100, blank=True)
+    maintenance_agent = models.CharField(max_length=200, blank=True,
+        help_text='e.g. Sevoflurane 2% in O2/Air, Propofol TIVA')
+    airway_management = models.CharField(max_length=100, blank=True,
+        help_text='e.g. ETT size 7.0, LMA #4, Face Mask')
+    analgesics_used = models.TextField(blank=True,
+        help_text='Analgesics given intraoperatively')
+    muscle_relaxants_used = models.TextField(blank=True)
+    reversal_agents = models.TextField(blank=True)
+
+    anaesthesia_start_time = models.TimeField(null=True, blank=True)
+    anaesthesia_end_time   = models.TimeField(null=True, blank=True)
+    total_duration_minutes = models.PositiveIntegerField(null=True, blank=True)
+
+    # Monitoring
+    monitoring_notes = models.TextField(blank=True,
+        help_text='Vital signs trends, any significant intraop events')
+    estimated_blood_loss_ml = models.PositiveIntegerField(null=True, blank=True)
+    iv_fluids_given = models.TextField(blank=True,
+        help_text='Type and volume of IV fluids administered')
+    urine_output_ml = models.PositiveIntegerField(null=True, blank=True)
+    blood_products_given = models.TextField(blank=True)
+
+    intraoperative_complications = models.TextField(blank=True,
+        help_text='Any complications encountered intraoperatively')
+
+    # ── Post-operative Recovery ───────────────────────────────────────────────
+    recovery_start_time = models.TimeField(null=True, blank=True)
+    discharge_from_recovery = models.DateTimeField(null=True, blank=True)
+    pain_score_on_discharge = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text='Pain score 0-10 on discharge from recovery room'
+    )
+    post_op_nausea_vomiting = models.BooleanField(default=False)
+    post_op_instructions = models.TextField(blank=True)
+    post_op_complications = models.TextField(blank=True)
+
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Anaesthetic Record'
+        verbose_name_plural = 'Anaesthetic Records'
+
+    def __str__(self):
+        return (f"Anaesthetic Record — {self.patient.full_name} "
+                f"({self.get_anaesthesia_type_display()}) "
+                f"[{self.created_at.strftime('%d/%m/%Y')}]")
+
+    @property
+    def bmi(self):
+        if self.weight_kg and self.height_cm and self.height_cm > 0:
+            h_m = self.height_cm / 100
+            return round(self.weight_kg / (h_m * h_m), 1)
+        return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NURSING CARE PLAN — JCI COP.8 requirement
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NursingCarePlan(AuditModel):
+    """
+    Structured nursing care plan for an admitted patient.
+    Based on NANDA nursing diagnoses and NIC/NOC outcomes.
+    JCI COP.8 — every inpatient must have an individualized care plan.
+    """
+    admission = models.ForeignKey(
+        Admission, on_delete=models.CASCADE, related_name='care_plans'
+    )
+    nurse = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True,
+        related_name='care_plans_authored'
+    )
+    plan_date = models.DateField(auto_now_add=True)
+
+    # NANDA-based nursing diagnoses
+    nursing_diagnoses = models.TextField(
+        help_text='NANDA nursing diagnoses (e.g. "Acute Pain r/t post-surgical state")'
+    )
+
+    # Expected outcomes / goals
+    short_term_goals = models.TextField(
+        help_text='Expected outcomes within this shift/24h'
+    )
+    long_term_goals = models.TextField(
+        blank=True,
+        help_text='Expected outcomes for entire admission'
+    )
+
+    # Nursing interventions by category
+    hygiene_mobility_care = models.TextField(
+        blank=True,
+        help_text='Personal hygiene, positioning, mobility plan, fall prevention'
+    )
+    medication_eye_drop_schedule = models.TextField(
+        blank=True,
+        help_text='Post-op eye drop schedule, systemic medications, timing'
+    )
+    wound_eye_dressing_care = models.TextField(
+        blank=True,
+        help_text='Wound inspection, eye pad/shield management, dressing changes'
+    )
+    nutrition_hydration_plan = models.TextField(
+        blank=True,
+        help_text='Diet type, fluid restriction/encouragement, IV fluids'
+    )
+    vital_signs_monitoring = models.TextField(
+        blank=True,
+        help_text='Frequency and parameters to monitor (BP, pulse, SPO2, VA, IOP post-op)'
+    )
+    patient_family_education = models.TextField(
+        blank=True,
+        help_text='Teaching provided: eye drop instillation, activity restrictions, warning signs'
+    )
+    psychological_support = models.TextField(
+        blank=True,
+        help_text='Emotional support, anxiety management, patient concerns addressed'
+    )
+    discharge_planning = models.TextField(
+        blank=True,
+        help_text='Discharge criteria, transport, home support, follow-up appointment'
+    )
+    safety_measures = models.TextField(
+        blank=True,
+        help_text='Fall risk measures, call bell, bed rails, orientation'
+    )
+
+    # Evaluation
+    evaluation_notes = models.TextField(
+        blank=True,
+        help_text='Outcome evaluation — goals met / partially met / not met + rationale'
+    )
+    next_review_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-plan_date', '-created_at']
+        verbose_name = 'Nursing Care Plan'
+        verbose_name_plural = 'Nursing Care Plans'
+
+    def __str__(self):
+        return (f"Care Plan — {self.admission.patient.full_name} "
+                f"({self.plan_date}) by {self.nurse.full_name if self.nurse else 'Unknown'}")

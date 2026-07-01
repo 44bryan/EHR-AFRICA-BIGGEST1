@@ -1,180 +1,235 @@
-{% extends 'layouts/base_authenticated.html' %}
+{% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
 {% block title %}Administration Dashboard — {{ HOSPITAL_NAME }}{% endblock %}
 
-{% block extra_css %}
-<style>
-  .admin-header {
-    background: linear-gradient(135deg, #1e1b4b 0%, #3730a3 100%);
-    border-radius: 14px;
-    padding: 24px 28px;
-    color: #fff;
-    margin-bottom: 28px;
-  }
-  .kpi-card { border-radius: 12px; padding: 20px; border: none; }
-  .kpi-val  { font-size: 2rem; font-weight: 800; line-height: 1; }
-  .kpi-lbl  { font-size: .65rem; font-weight: 700; text-transform: uppercase;
-               letter-spacing: .08em; opacity: .65; margin-top: 4px; }
-  .kpi-sub  { font-size: .72rem; margin-top: 5px; opacity: .8; }
-  .go-btn   { background: rgba(255,255,255,.12); color: #fff;
-               border: 1px solid rgba(255,255,255,.2); font-size: .8rem; }
-  .go-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
-  .section-head {
-    font-size: .65rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .1em; color: #64748b; margin-bottom: 12px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .section-head::after { content:''; flex:1; height:1px; background:#e2e8f0; }
-</style>
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-building me-2 text-primary"></i>Administration Dashboard</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — Operational overview</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'hrms:dashboard' %}" class="btn btn-sm btn-outline-primary"><i class="bi bi-people me-1"></i>HR</a>
+    <a href="{% url 'appointments:clinic_board' %}" class="btn btn-sm btn-outline-warning"><i class="bi bi-calendar-week me-1"></i>Clinic Board</a>
+    <a href="{% url 'leadership:analytics_dashboard' %}" class="btn btn-sm btn-primary"><i class="bi bi-bar-chart-line me-1"></i>Analytics</a>
+  </div>
+</div>
 {% endblock %}
 
 {% block content %}
 
-<!-- Header -->
-<div class="admin-header">
-  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-    <div>
-      <div style="font-size:.7rem;opacity:.45;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">
-        {{ HOSPITAL_NAME }} &bull; {{ request.user.get_role_display }}
-      </div>
-      <h2 class="fw-bold mb-1" style="font-size:1.5rem;">
-        Good {% now "H" as hr %}{% if hr < "12" %}Morning{% elif hr < "17" %}Afternoon{% else %}Evening{% endif %}, {{ request.user.first_name }}
-      </h2>
-      <div style="font-size:.82rem;opacity:.6;">{{ today|date:"l, d F Y" }}</div>
-    </div>
-    <div class="d-flex gap-2 flex-wrap">
-      <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm go-btn">
-        <i class="bi bi-graph-up-arrow me-1"></i>Performance Hub
-      </a>
-      <a href="{% url 'appointments:clinic_board' %}" class="btn btn-sm go-btn">
-        <i class="bi bi-calendar-week me-1"></i>Clinic Board
-      </a>
-      <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm go-btn">
-        <i class="bi bi-box-seam me-1"></i>Inventory
-      </a>
-      {% if open_complaints > 0 %}
-      <a href="{% url 'feedback:service_recovery' %}" class="btn btn-sm"
-         style="background:rgba(251,191,36,.2);color:#fbbf24;border:1px solid rgba(251,191,36,.4);">
-        <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ open_complaints }} Open Complaint{{ open_complaints|pluralize }}
-      </a>
-      {% endif %}
-    </div>
-  </div>
+{% if open_complaints > 0 %}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3" style="font-size:.83rem;">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <strong>{{ open_complaints }} open complaint{{ open_complaints|pluralize }}</strong> — service recovery needed.
+  <a href="{% url 'feedback:service_recovery' %}" class="ms-auto btn btn-sm btn-warning">Review</a>
 </div>
+{% endif %}
 
-<!-- Row 1: Patient & Scheduling KPIs -->
-<div class="section-head"><i class="bi bi-people-fill"></i> Patient Flow &amp; Scheduling</div>
+{# ── Primary KPI Strip ── #}
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="background:#eff6ff;">
-      <div class="kpi-lbl" style="color:#1e40af;">New Patients Today</div>
-      <div class="kpi-val" style="color:#1d4ed8;">{{ new_today }}</div>
-      <div class="kpi-sub" style="color:#1e40af;">{{ new_month }} this month &bull; {{ total_pts|intcomma }} total</div>
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">New Patients Today</div>
+        <div class="fs-3 fw-bold text-primary">{{ new_today }}</div>
+        <div class="text-muted" style="font-size:.72rem;">{{ new_month }} this month · {{ total_pts|intcomma }} total</div>
+      </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="background:#faf5ff;">
-      <div class="kpi-lbl" style="color:#6b21a8;">Appointments Today</div>
-      <div class="kpi-val" style="color:#7c3aed;">{{ today_appts }}</div>
-      <div class="kpi-sub" style="color:#6b21a8;">{{ pending_appts }} still pending</div>
+    <div class="card border-0 shadow-sm border-start border-4 border-info">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Appointments Today</div>
+        <div class="fs-3 fw-bold text-info">{{ today_appts }}</div>
+        <div class="text-muted" style="font-size:.72rem;">{{ pending_appts }} still pending</div>
+      </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="background:#f0fdfa;">
-      <div class="kpi-lbl" style="color:#0f766e;">Queue Now</div>
-      <div class="kpi-val" style="color:#0d9488;">{{ queue_waiting }}</div>
-      <div class="kpi-sub" style="color:#0f766e;">{{ served_today }} served today</div>
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Queue Now</div>
+        <div class="fs-3 fw-bold text-warning">{{ queue_waiting }}</div>
+        <div class="text-muted" style="font-size:.72rem;">{{ served_today }} served today</div>
+      </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="background:#fff7ed;">
-      <div class="kpi-lbl" style="color:#9a3412;">Bed Occupancy</div>
-      <div class="kpi-val" style="color:#c2410c;">{{ bed_occupancy }}%</div>
-      <div class="kpi-sub" style="color:#9a3412;">{{ occupied_beds }} of {{ total_beds }} beds occupied</div>
+    <div class="card border-0 shadow-sm border-start border-4 {% if bed_occupancy > 85 %}border-danger{% elif bed_occupancy > 70 %}border-warning{% else %}border-success{% endif %}">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Beds In Use</div>
+        <div class="fs-3 fw-bold {% if bed_occupancy > 85 %}text-danger{% elif bed_occupancy > 70 %}text-warning{% else %}text-success{% endif %}">{{ bed_occupancy }}%</div>
+        <div class="text-muted" style="font-size:.72rem;">{{ occupied_beds }} of {{ total_beds }} beds occupied</div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Row 2: Operations KPIs -->
-<div class="section-head"><i class="bi bi-building"></i> Operations &amp; Staff</div>
+{# ── Secondary KPIs ── #}
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="background:#f0fdf4;">
-      <div class="kpi-lbl" style="color:#166534;">Active Staff</div>
-      <div class="kpi-val" style="color:#15803d;">{{ total_staff }}</div>
-      <div class="kpi-sub" style="color:#166534;">accounts enabled</div>
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ total_staff }}</div>
+      <div class="text-muted small">Active Staff</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="{% if low_stock > 0 %}background:#fff1f2;{% else %}background:#f0fdf4;{% endif %}">
-      <div class="kpi-lbl" style="color:{% if low_stock > 0 %}#9f1239{% else %}#166534{% endif %};">Low Stock Alerts</div>
-      <div class="kpi-val" style="color:{% if low_stock > 0 %}#be123c{% else %}#15803d{% endif %};">{{ low_stock }}</div>
-      <div class="kpi-sub">
-        {% if low_stock > 0 %}
-        <a href="{% url 'inventory:dashboard' %}" class="text-danger">View inventory →</a>
-        {% else %}
-        All items above reorder level
-        {% endif %}
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if low_stock > 0 %}text-danger{% else %}text-success{% endif %}">{{ low_stock }}</div>
+      <div class="text-muted small">
+        Low Stock Items
+        {% if low_stock > 0 %}<br><a href="{% url 'inventory:dashboard' %}" class="small text-danger">View →</a>{% endif %}
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="{% if open_complaints > 0 %}background:#fffbeb;{% else %}background:#f0fdf4;{% endif %}">
-      <div class="kpi-lbl" style="color:{% if open_complaints > 0 %}#92400e{% else %}#166534{% endif %};">Open Complaints</div>
-      <div class="kpi-val" style="color:{% if open_complaints > 0 %}#b45309{% else %}#15803d{% endif %};">{{ open_complaints }}</div>
-      <div class="kpi-sub">
-        {% if open_complaints > 0 %}<a href="{% url 'feedback:service_recovery' %}" class="text-warning">Resolve now →</a>
-        {% else %}No open complaints{% endif %}
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if open_complaints > 0 %}text-warning{% else %}text-success{% endif %}">{{ open_complaints }}</div>
+      <div class="text-muted small">
+        Open Complaints
+        {% if open_complaints > 0 %}<br><a href="{% url 'feedback:service_recovery' %}" class="small text-warning">Resolve →</a>{% endif %}
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="kpi-card h-100" style="background:#fdf4ff;">
-      <div class="kpi-lbl" style="color:#86198f;">Patient NPS</div>
-      <div class="kpi-val" style="color:#a21caf;">{{ nps }}</div>
-      <div class="kpi-sub" style="color:#86198f;">
-        {% if nps >= 50 %}Excellent{% elif nps >= 30 %}Good{% elif nps >= 0 %}Fair{% else %}Needs attention{% endif %}
-        &bull; {{ new_leads }} new lead{{ new_leads|pluralize }} today
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if nps >= 50 %}text-success{% elif nps >= 0 %}text-warning{% else %}text-danger{% endif %}">{{ nps }}</div>
+      <div class="text-muted small">Patient Satisfaction Score</div>
+    </div>
+  </div>
+</div>
+
+{# ── Charts Row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-graph-up me-1 text-primary"></i>Patient Registrations — 12 Months</h6>
+      </div>
+      <div class="card-body py-3"><canvas id="adPatientTrend" height="110"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-calendar-check me-1 text-warning"></i>Appointments by Status</h6>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="adApptChart" height="200"></canvas>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Quick Links -->
-<div class="section-head"><i class="bi bi-lightning-charge-fill"></i> Quick Actions</div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-bar-chart me-1 text-info"></i>Daily Visits — Last 30 Days</h6>
+      </div>
+      <div class="card-body py-3"><canvas id="adDailyVisits" height="120"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-shield me-1 text-success"></i>Billing Type Breakdown</h6>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="adBillingType" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Quick Actions ── #}
 <div class="row g-3">
   <div class="col-6 col-md-3">
-    <a href="{% url 'appointments:book' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+    <a href="{% url 'appointments:book' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
       <div class="card-body d-flex align-items-center gap-3 py-3">
-        <i class="bi bi-calendar-plus fs-4 text-primary"></i>
-        <div><div class="fw-semibold small">Book Appointment</div><div class="text-muted" style="font-size:.72rem;">Schedule a patient visit</div></div>
+        <i class="bi bi-calendar-plus text-primary fs-4 flex-shrink-0"></i>
+        <div><div class="fw-semibold small">Book Appointment</div><div class="text-muted" style="font-size:.72rem;">Schedule patient visit</div></div>
       </div>
     </a>
   </div>
   <div class="col-6 col-md-3">
-    <a href="{% url 'hrms:dashboard' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+    <a href="{% url 'hrms:dashboard' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
       <div class="card-body d-flex align-items-center gap-3 py-3">
-        <i class="bi bi-people-fill fs-4 text-indigo"></i>
-        <div><div class="fw-semibold small">HR Management</div><div class="text-muted" style="font-size:.72rem;">Staff &amp; leaves</div></div>
+        <i class="bi bi-people-fill text-info fs-4 flex-shrink-0"></i>
+        <div><div class="fw-semibold small">HR Management</div><div class="text-muted" style="font-size:.72rem;">Staff, leaves, attendance</div></div>
       </div>
     </a>
   </div>
   <div class="col-6 col-md-3">
-    <a href="{% url 'inventory:dashboard' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+    <a href="{% url 'inventory:dashboard' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
       <div class="card-body d-flex align-items-center gap-3 py-3">
-        <i class="bi bi-box-seam fs-4 text-warning"></i>
+        <i class="bi bi-box-seam text-warning fs-4 flex-shrink-0"></i>
         <div><div class="fw-semibold small">Inventory</div><div class="text-muted" style="font-size:.72rem;">Stock &amp; supplies</div></div>
       </div>
     </a>
   </div>
   <div class="col-6 col-md-3">
-    <a href="{% url 'feedback:dashboard' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+    <a href="{% url 'feedback:dashboard' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
       <div class="card-body d-flex align-items-center gap-3 py-3">
-        <i class="bi bi-emoji-smile fs-4 text-success"></i>
+        <i class="bi bi-emoji-smile text-success fs-4 flex-shrink-0"></i>
         <div><div class="fw-semibold small">Patient Feedback</div><div class="text-muted" style="font-size:.72rem;">NPS &amp; satisfaction</div></div>
       </div>
     </a>
   </div>
 </div>
+
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
+<script>
+const PAL = ['#0891b2','#10b981','#f59e0b','#ef4444','#8b5cf6','#0ea5e9','#f97316','#14b8a6','#ec4899','#6366f1'];
+let cc = {};
+function dc(id) { if (cc[id]) { cc[id].destroy(); delete cc[id]; } }
+
+fetch("{% url 'leadership:analytics_data' %}")
+  .then(r => r.json())
+  .then(d => {
+    dc('pt'); cc['pt'] = new Chart(document.getElementById('adPatientTrend'), {
+      type: 'bar',
+      data: { labels: d.monthly_patients.map(r => r.month),
+        datasets: [{ data: d.monthly_patients.map(r => r.patients),
+          backgroundColor: '#0891b2', borderRadius: 4 }] },
+      options: { responsive: true, plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } }, x: { ticks: { font: { size: 9 } } } } }
+    });
+
+    if (d.appointments_by_status?.length) {
+      dc('ap'); cc['ap'] = new Chart(document.getElementById('adApptChart'), {
+        type: 'doughnut',
+        data: { labels: d.appointments_by_status.map(a => a.status),
+          datasets: [{ data: d.appointments_by_status.map(a => a.count), backgroundColor: PAL, borderWidth: 2 }] },
+        options: { responsive: true, cutout: '60%',
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 9 }, padding: 6 } } } }
+      });
+    }
+
+    dc('dv'); cc['dv'] = new Chart(document.getElementById('adDailyVisits'), {
+      type: 'line',
+      data: { labels: d.daily_visits.map(r => r.date),
+        datasets: [{ data: d.daily_visits.map(r => r.visits),
+          borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,.15)',
+          fill: true, tension: 0.3, pointRadius: 2 }] },
+      options: { responsive: true, plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } }, x: { ticks: { font: { size: 9 } } } } }
+    });
+
+    if (d.patient_billing_type?.length) {
+      dc('bt'); cc['bt'] = new Chart(document.getElementById('adBillingType'), {
+        type: 'doughnut',
+        data: { labels: d.patient_billing_type.map(b => b.type || 'Unknown'),
+          datasets: [{ data: d.patient_billing_type.map(b => b.count), backgroundColor: PAL, borderWidth: 2 }] },
+        options: { responsive: true, cutout: '60%',
+          plugins: { legend: { position: 'right', labels: { font: { size: 10 }, padding: 8 } } } }
+      });
+    }
+  })
+  .catch(e => console.warn('Admin chart load failed', e));
+
+setInterval(() => location.reload(), 5 * 60 * 1000);
+</script>
 
 {% endblock %}

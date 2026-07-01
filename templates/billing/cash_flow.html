@@ -1,0 +1,176 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Cash Flow Statement{% endblock %}
+{% block page_header %}
+<div class="mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Cash Flow Statement</h4>
+  <p class="text-muted small mb-0">Statement of Cash Flows — Operating, Investing, Financing activities</p>
+</div>
+{% endblock %}
+{% block content %}
+<form method="get" class="row g-2 mb-4 align-items-end">
+  <div class="col-md-2">
+    <label class="form-label fw-semibold small">From</label>
+    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request.GET.date_from }}">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label fw-semibold small">To</label>
+    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request.GET.date_to }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-sm btn-primary w-100">
+      <i class="bi bi-calculator me-1"></i>Generate
+    </button>
+  </div>
+  <div class="col-auto ms-auto">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</form>
+
+<div class="row g-4">
+  <div class="col-lg-8 mx-auto">
+
+    <!-- Operating Activities -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 bg-primary text-white d-flex justify-content-between">
+        <span class="fw-bold"><i class="bi bi-gear me-2"></i>Operating Activities</span>
+        <span class="fw-bold">{{ net_operating|floatformat:0|intcomma }} XAF</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr class="table-light"><td colspan="2" class="fw-semibold small ps-3 py-1">Cash Inflows</td></tr>
+            {% for row in operating_inflows %}
+            <tr>
+              <td class="ps-4 small">{{ row.label }}</td>
+              <td class="text-end text-success fw-semibold">{{ row.amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted small">No inflows</td></tr>
+            {% endfor %}
+            <tr class="fw-semibold border-top">
+              <td class="ps-3">Total Inflows</td>
+              <td class="text-end text-success">{{ total_op_inflows|floatformat:0|intcomma }}</td>
+            </tr>
+
+            <tr class="table-light"><td colspan="2" class="fw-semibold small ps-3 py-1 mt-2">Cash Outflows</td></tr>
+            {% for row in operating_outflows %}
+            <tr>
+              <td class="ps-4 small">{{ row.label }}</td>
+              <td class="text-end text-danger fw-semibold">({{ row.amount|floatformat:0|intcomma }})</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted small">No outflows</td></tr>
+            {% endfor %}
+            <tr class="fw-semibold border-top">
+              <td class="ps-3">Total Outflows</td>
+              <td class="text-end text-danger">({{ total_op_outflows|floatformat:0|intcomma }})</td>
+            </tr>
+          </tbody>
+          <tfoot class="table-primary fw-bold">
+            <tr>
+              <td class="ps-3">Net Cash from Operating Activities</td>
+              <td class="text-end {% if net_operating >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {% if net_operating < 0 %}({{ net_operating|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_operating|floatformat:0|intcomma }}{% endif %} XAF
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Investing Activities -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 bg-info text-white d-flex justify-content-between">
+        <span class="fw-bold"><i class="bi bi-building me-2"></i>Investing Activities</span>
+        <span class="fw-bold">{{ net_investing|floatformat:0|intcomma }} XAF</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for row in investing_rows %}
+            <tr>
+              <td class="ps-4 small">{{ row.label }}</td>
+              <td class="text-end {% if row.amount >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
+                {% if row.amount < 0 %}({{ row.amount|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ row.amount|floatformat:0|intcomma }}{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted small py-3">No investing activity in period</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-info fw-bold">
+            <tr>
+              <td class="ps-3">Net Cash from Investing Activities</td>
+              <td class="text-end {% if net_investing >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {% if net_investing < 0 %}({{ net_investing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_investing|floatformat:0|intcomma }}{% endif %} XAF
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Financing Activities -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-header py-2 bg-success text-white d-flex justify-content-between">
+        <span class="fw-bold"><i class="bi bi-cash-coin me-2"></i>Financing Activities</span>
+        <span class="fw-bold">{{ net_financing|floatformat:0|intcomma }} XAF</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for row in financing_rows %}
+            <tr>
+              <td class="ps-4 small">{{ row.label }}</td>
+              <td class="text-end {% if row.amount >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
+                {% if row.amount < 0 %}({{ row.amount|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ row.amount|floatformat:0|intcomma }}{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted small py-3">No financing activity in period</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-success fw-bold">
+            <tr>
+              <td class="ps-3">Net Cash from Financing Activities</td>
+              <td class="text-end {% if net_financing >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {% if net_financing < 0 %}({{ net_financing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_financing|floatformat:0|intcomma }}{% endif %} XAF
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Net Change Summary -->
+    <div class="card shadow-sm border-2 border-dark">
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr>
+              <td class="fw-semibold">Opening Cash Balance</td>
+              <td class="text-end fw-semibold">{{ opening_cash|floatformat:0|intcomma }} XAF</td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Net Change in Cash</td>
+              <td class="text-end fw-bold {% if net_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {% if net_change >= 0 %}+{% endif %}{{ net_change|floatformat:0|intcomma }} XAF
+              </td>
+            </tr>
+          </tbody>
+          <tfoot class="table-secondary fw-bold border-top border-2">
+            <tr>
+              <td>Closing Cash Balance</td>
+              <td class="text-end fs-6">{{ closing_cash|floatformat:0|intcomma }} XAF</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

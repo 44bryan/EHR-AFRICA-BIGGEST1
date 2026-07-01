@@ -1,0 +1,132 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Top Services by Revenue{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-trophy text-warning fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Top Services by Revenue</h5>
+      <div class="text-muted small">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <form method="get" class="d-flex gap-1 align-items-center">
+      <input type="date" name="from" class="form-control form-control-sm" value="{{ date_from_str }}">
+      <span class="text-muted small">to</span>
+      <input type="date" name="to"   class="form-control form-control-sm" value="{{ date_to_str }}">
+      <button type="submit" class="btn btn-sm btn-primary">Go</button>
+    </form>
+    <button class="btn btn-sm btn-dark" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Total Revenue</div>
+      <div class="fs-3 fw-bold text-success">{{ total_revenue|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Unique Services</div>
+      <div class="fs-3 fw-bold">{{ services|length }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Top Services Table -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom fw-semibold small">
+        <i class="bi bi-list-ol me-1 text-warning"></i>Top 50 Services by Revenue
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr>
+                <th>#</th>
+                <th>Service</th>
+                <th>Category</th>
+                <th class="text-end">Count</th>
+                <th class="text-end">Revenue (FCFA)</th>
+                <th class="text-end">% Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in services %}
+              <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td class="fw-semibold">{{ row.description }}</td>
+                <td><span class="badge bg-light text-dark border" style="font-size:.7rem;">
+                  {% for k, v in cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}
+                </span></td>
+                <td class="text-end text-muted">{{ row.count }}</td>
+                <td class="text-end fw-bold text-primary">{{ row.revenue|floatformat:0|intcomma }}</td>
+                <td class="text-end">
+                  {% if total_revenue %}
+                  <div class="d-flex align-items-center justify-content-end gap-1">
+                    <div style="width:50px;background:#e5e7eb;height:6px;border-radius:3px;">
+                      <div style="width:{% widthratio row.revenue total_revenue 100 %}%;background:#2563eb;height:6px;border-radius:3px;"></div>
+                    </div>
+                    <span class="text-muted" style="font-size:.7rem;">{% widthratio row.revenue total_revenue 100 %}%</span>
+                  </div>
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="text-center text-muted py-5">No data for this period.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- By Category -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom fw-semibold small">
+        <i class="bi bi-pie-chart me-1 text-info"></i>Revenue by Category
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Category</th><th class="text-end">Revenue</th></tr>
+          </thead>
+          <tbody>
+            {% for row in by_cat %}
+            <tr>
+              <td class="fw-semibold">
+                {% for k, v in cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}
+              </td>
+              <td class="text-end">
+                <div class="fw-bold">{{ row.revenue|floatformat:0|intcomma }}</div>
+                <div class="text-muted" style="font-size:.7rem;">{{ row.count }} items</div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted py-3">No data</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if total_revenue %}
+          <tfoot class="table-light">
+            <tr><td class="fw-bold">Total</td><td class="text-end fw-bold">{{ total_revenue|floatformat:0|intcomma }}</td></tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

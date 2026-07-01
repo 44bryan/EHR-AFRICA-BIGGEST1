@@ -4,7 +4,7 @@ Each report type renders an HTML template and converts to PDF.
 """
 import io
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import get_object_or_404
+from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, HttpResponseForbidden
 from django.template.loader import render_to_string
 from django.conf import settings
@@ -213,7 +213,6 @@ def lab_report_pdf_view(request, pk):
 def medical_certificate_view(request, consultation_pk):
     """Medical certificate / sick note generator."""
     from apps.consultations.models import Consultation
-    from django.shortcuts import render, redirect
     from django.utils import timezone as tz
 
     consult = get_object_or_404(
@@ -255,7 +254,6 @@ def medical_certificate_view(request, consultation_pk):
 def referral_letter_view(request, consultation_pk):
     """Formal referral letter PDF generator."""
     from apps.consultations.models import Consultation
-    from django.shortcuts import render
     from django.utils import timezone as tz
 
     consult = get_object_or_404(
@@ -331,3 +329,236 @@ def patient_summary_pdf_view(request, patient_id):
         'pdf_filename': f'patient_summary_{patient.patient_id}.pdf',
     }
     return render_pdf('reports/pdf/patient_summary.html', context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MOH DISEASE EXPORT — CSV
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def moh_disease_export_view(request):
+    """Ministry of Health disease statistics CSV export."""
+    import csv
+    from django.utils import timezone
+    from datetime import date as _date
+    from django.db.models import Count
+    from apps.consultations.models import ConsultationDiagnosis
+
+    if not (request.user.is_super_admin or request.user.is_medical_director or
+            request.user.is_admin_director or request.user.is_ceo or
+            request.user.role == 'medical_records'):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    date_from_str = request.GET.get('from', today.replace(day=1).isoformat())
+    date_to_str = request.GET.get('to', today.isoformat())
+
+    try:
+        date_from = _date.fromisoformat(date_from_str)
+        date_to = _date.fromisoformat(date_to_str)
+    except ValueError:
+        date_from = today.replace(day=1)
+        date_to = today
+
+    if 'download' not in request.GET:
+        return render(request, 'reports/analytics/moh_export_form.html', {
+            'today': today,
+            'month_start': today.replace(day=1),
+            'date_from': date_from,
+            'date_to': date_to,
+        })
+
+    qs = (
+        ConsultationDiagnosis.objects
+        .filter(
+            consultation__consultation_date__date__gte=date_from,
+            consultation__consultation_date__date__lte=date_to,
+            consultation__is_deleted=False,
+        )
+        .values('diagnosis__icd10_code', 'diagnosis__description', 'laterality')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+
+    response = HttpResponse(content_type='text/csv')
+    filename = f'MOH_Disease_Export_{date_from}_{date_to}.csv'
+    response['Content-Disposition'] = 'attachment; filename="' + filename + '"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'ICD-10 Code', 'Diagnosis', 'Laterality', 'Case Count',
+        'Period From', 'Period To', 'Hospital', 'Export Date',
+    ])
+    for row in qs:
+        writer.writerow([
+            row['diagnosis__icd10_code'] or '',
+            row['diagnosis__description'] or '',
+            row['laterality'] or '',
+            row['count'],
+            date_from.isoformat(),
+            date_to.isoformat(),
+            settings.HOSPITAL_NAME,
+            today.isoformat(),
+        ])
+    return response
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ANALYTICS HTML REPORT VIEWS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def disease_burden_view(request):
+    """Disease burden analytics — top diagnoses by count."""
+    from django.utils import timezone
+    from datetime import timedelta
+    from django.db.models import Count
+    from apps.consultations.models import ConsultationDiagnosis
+
+    if not (request.user.is_super_admin or request.user.is_medical_director or
+            request.user.is_admin_director or request.user.is_ceo or
+            request.user.is_finance_director or request.user.role == 'medical_records'):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    period = int(request.GET.get('days', 90))
+    date_from = today - timedelta(days=period)
+
+    top_dx = list(
+        ConsultationDiagnosis.objects
+        .filter(
+            consultation__consultation_date__date__gte=date_from,
+            consultation__is_deleted=False,
+        )
+        .values('diagnosis__icd10_code', 'diagnosis__description')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:20]
+    )
+
+    monthly = []
+    for i in range(5, -1, -1):
+        d = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
+        nd = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+        c = ConsultationDiagnosis.objects.filter(
+            consultation__consultation_date__date__gte=d,
+            consultation__consultation_date__date__lt=nd,
+            consultation__is_deleted=False,
+        ).count()
+        monthly.append({'month': d.strftime('%b %Y'), 'count': c})
+
+    return render(request, 'reports/analytics/disease_burden.html', {
+        'top_dx': top_dx,
+        'monthly': monthly,
+        'period': period,
+        'date_from': date_from,
+        'today': today,
+    })
+
+
+@login_required
+def revenue_report_view(request):
+    """Revenue analytics report."""
+    from django.utils import timezone
+    from datetime import timedelta
+    from django.db.models import Sum
+
+    if not (request.user.is_super_admin or request.user.is_finance_director or
+            request.user.is_ceo or request.user.is_admin_director or
+            request.user.is_medical_director):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    month_start = today.replace(day=1)
+    year_start = today.replace(month=1, day=1)
+    rev_month = 0.0
+    rev_year = 0.0
+    monthly_revenue = []
+    rev_by_method = []
+
+    for i in range(11, -1, -1):
+        d = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
+        nd = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+        try:
+            from apps.billing.models import Payment
+            r = Payment.objects.filter(
+                payment_date__date__gte=d, payment_date__date__lt=nd, is_deleted=False,
+            ).aggregate(total=Sum('amount'))['total'] or 0
+        except Exception:
+            r = 0
+        monthly_revenue.append({'month': d.strftime('%b %Y'), 'revenue': float(r)})
+
+    try:
+        from apps.billing.models import Payment
+        raw = list(
+            Payment.objects.filter(
+                payment_date__date__gte=month_start, is_deleted=False
+            ).values('payment_method').annotate(total=Sum('amount')).order_by('-total')
+        )
+        rev_by_method = [{'method': r['payment_method'], 'total': float(r['total'] or 0)} for r in raw]
+        rev_month = float(Payment.objects.filter(
+            payment_date__date__gte=month_start, is_deleted=False
+        ).aggregate(t=Sum('amount'))['t'] or 0)
+        rev_year = float(Payment.objects.filter(
+            payment_date__date__gte=year_start, is_deleted=False
+        ).aggregate(t=Sum('amount'))['t'] or 0)
+    except Exception:
+        pass
+
+    return render(request, 'reports/analytics/revenue_report.html', {
+        'monthly_revenue': monthly_revenue,
+        'rev_by_method': rev_by_method,
+        'rev_month': rev_month,
+        'rev_year': rev_year,
+        'today': today,
+        'month_start': month_start,
+    })
+
+
+@login_required
+def staff_performance_view(request):
+    """Doctor throughput and average wait time analytics."""
+    from django.utils import timezone
+    from datetime import timedelta
+    from django.db.models import Count, Avg
+    from apps.consultations.models import Consultation
+    from apps.qms.models import QueueToken, TokenStatus
+
+    if not (request.user.is_super_admin or request.user.is_medical_director or
+            request.user.is_admin_director or request.user.is_ceo or
+            request.user.role == 'medical_records'):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    period = int(request.GET.get('days', 30))
+    date_from = today - timedelta(days=period)
+
+    doctor_stats = list(
+        Consultation.objects.filter(
+            created_at__date__gte=date_from, is_deleted=False
+        )
+        .values(
+            'consulting_doctor__first_name', 'consulting_doctor__last_name',
+            'consulting_doctor__role', 'department__name',
+        )
+        .annotate(consultations=Count('id'))
+        .order_by('-consultations')[:15]
+    )
+
+    wait_by_dept = list(
+        QueueToken.objects.filter(
+            token_date__gte=date_from,
+            status=TokenStatus.COMPLETED,
+            wait_time_minutes__isnull=False,
+        )
+        .values('service_type')
+        .annotate(avg_wait=Avg('wait_time_minutes'), count=Count('id'))
+        .order_by('service_type')
+    )
+
+    return render(request, 'reports/analytics/staff_performance.html', {
+        'doctor_stats': doctor_stats,
+        'wait_by_dept': wait_by_dept,
+        'period': period,
+        'date_from': date_from,
+        'today': today,
+    })

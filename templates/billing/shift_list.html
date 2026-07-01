@@ -1,0 +1,296 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Cashier Shifts{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-person-badge text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Cashier Shift Register</h5>
+      <div class="text-muted small">Open / close / submit / verify daily shifts</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if request.user.role == 'billing_officer' or request.user.role == 'finance_director' or request.user.is_super_admin %}
+    <a href="{% url 'billing:shift_day_open' %}" class="btn btn-success btn-sm fw-bold">
+      <i class="bi bi-sun me-1"></i>Open Day for All Cashiers
+    </a>
+    {% endif %}
+    {% if my_shift_today %}
+      <a href="{% url 'billing:shift_detail' my_shift_today.id %}" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-person-badge me-1"></i>My Shift Today
+        <span class="badge
+          {% if my_shift_today.status == 'OPEN' %}bg-success
+          {% elif my_shift_today.status == 'CLOSED' %}bg-warning text-dark
+          {% elif my_shift_today.status == 'SUBMITTED' %}bg-info text-dark
+          {% else %}bg-secondary{% endif %} ms-1">
+          {{ my_shift_today.get_status_display }}
+        </span>
+      </a>
+    {% elif request.user.role == 'billing_officer' %}
+      <a href="{% url 'billing:shift_open' %}" class="btn btn-success btn-sm fw-bold">
+        <i class="bi bi-door-open me-1"></i>Open My Shift
+      </a>
+    {% endif %}
+    <a href="{% url 'billing:export_shift_list' %}?date={{ filter_date }}&cashier={{ filter_cashier }}&status={{ filter_status }}" class="btn btn-success btn-sm">
+      <i class="bi bi-download me-1"></i>Download CSV
+    </a>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Billing
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── My shift banner ── #}
+{% if my_shift_today %}
+<div class="alert
+  {% if my_shift_today.status == 'OPEN' %}alert-success
+  {% elif my_shift_today.status == 'CLOSED' %}alert-warning
+  {% elif my_shift_today.status == 'SUBMITTED' %}alert-info
+  {% else %}alert-secondary{% endif %} d-flex align-items-center gap-2 py-2 mb-3">
+  <i class="bi bi-person-circle fs-5"></i>
+  <div>
+    <strong>Your shift today is {{ my_shift_today.get_status_display }}</strong>
+    {% if my_shift_today.status == 'OPEN' %}
+      — opened at {{ my_shift_today.opened_at|time:"H:i" }}.
+      <a href="{% url 'billing:shift_detail' my_shift_today.id %}" class="alert-link ms-1">Close shift →</a>
+    {% elif my_shift_today.status == 'CLOSED' %}
+      — ready to submit to Chief Cashier.
+      <a href="{% url 'billing:shift_detail' my_shift_today.id %}" class="alert-link ms-1">View &amp; Submit →</a>
+    {% elif my_shift_today.status == 'SUBMITTED' %}
+      — awaiting Chief Cashier verification.
+    {% else %}
+      — verified. Well done!
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Today's Cashier Overview (Billing Agent / Finance only) ── #}
+{% if request.user.role == 'billing_officer' or request.user.role == 'finance_director' or request.user.is_super_admin %}
+{% if today_shifts %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-bar-chart-fill me-2 text-success"></i>Today's Cashier Overview — {{ today|date:"d M Y" }}</span>
+    <span class="small text-muted">Live running total</span>
+  </div>
+  <div class="card-body p-0">
+    {# KPI strip #}
+    <div class="d-flex gap-0 flex-wrap border-bottom">
+      <div class="px-4 py-2 text-center border-end flex-fill">
+        <div class="fw-bold fs-5 text-success">{{ today_total|floatformat:0 }}</div>
+        <div class="small text-muted">FCFA Collected</div>
+      </div>
+      <div class="px-4 py-2 text-center border-end flex-fill">
+        <div class="fw-bold fs-5">{{ today_shifts|length }}</div>
+        <div class="small text-muted">Shifts Open</div>
+      </div>
+      <div class="px-4 py-2 text-center border-end flex-fill">
+        <div class="fw-bold fs-5 text-info">{{ today_submitted_count }}</div>
+        <div class="small text-muted">Submitted</div>
+      </div>
+      <div class="px-4 py-2 text-center flex-fill">
+        <div class="fw-bold fs-5 text-secondary">{{ today_verified_count }}</div>
+        <div class="small text-muted">Verified</div>
+      </div>
+    </div>
+    {# Per-cashier live row #}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Cashier</th>
+            <th class="text-end">Total Collected</th>
+            <th class="text-end">Cash</th>
+            <th class="text-end">Expected Drawer</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in today_shifts %}
+          <tr>
+            <td class="fw-semibold">{{ s.cashier.get_full_name|default:s.cashier.username }}</td>
+            <td class="text-end text-primary fw-semibold">{{ s.total_collected|floatformat:0 }}</td>
+            <td class="text-end">{{ s.cash_collected|floatformat:0 }}</td>
+            <td class="text-end">{{ s.expected_cash_in_hand|floatformat:0 }}</td>
+            <td>
+              <span class="badge
+                {% if s.status == 'OPEN' %}bg-success
+                {% elif s.status == 'CLOSED' %}bg-warning text-dark
+                {% elif s.status == 'SUBMITTED' %}bg-info text-dark
+                {% else %}bg-secondary{% endif %}">
+                {{ s.get_status_display }}
+              </span>
+            </td>
+            <td>
+              <a href="{% url 'billing:shift_detail' s.id %}" class="btn btn-xs btn-outline-secondary py-0" style="font-size:.75rem;padding:2px 8px;">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td>TOTAL</td>
+            <td class="text-end text-success">{{ today_total|floatformat:0 }}</td>
+            <td colspan="4"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+{# ── Filters ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label form-label-sm text-muted mb-1">Date</label>
+        <input type="date" name="date" value="{{ filter_date }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label form-label-sm text-muted mb-1">Cashier</label>
+        <select name="cashier" class="form-select form-select-sm">
+          <option value="">All Cashiers</option>
+          {% for c in cashiers %}
+          <option value="{{ c.id }}" {% if filter_cashier == c.id|stringformat:"s" %}selected{% endif %}>
+            {{ c.get_full_name|default:c.username }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label form-label-sm text-muted mb-1">Status</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All</option>
+          {% for code, label in statuses %}
+          <option value="{{ code }}" {% if filter_status == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm flex-grow-1">Filter</button>
+        <a href="{% url 'billing:shift_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Shift table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <span class="small text-muted">{{ paginator.count }} shift{{ paginator.count|pluralize }}</span>
+    <span class="small text-muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Cashier</th>
+            <th>Opened</th>
+            <th>Closed</th>
+            <th class="text-end">Opening Float</th>
+            <th class="text-end">Total Collected</th>
+            <th class="text-end">Declared Cash</th>
+            <th class="text-end">Variance</th>
+            <th>Status</th>
+            <th>Verified By</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in page_obj %}
+          <tr>
+            <td class="text-muted">{{ s.shift_date|date:"d M Y" }}</td>
+            <td class="fw-semibold">{{ s.cashier.get_full_name|default:s.cashier.username }}</td>
+            <td>{{ s.opened_at|time:"H:i" }}</td>
+            <td>{{ s.closed_at|time:"H:i"|default:"—" }}</td>
+            <td class="text-end">{{ s.opening_cash|floatformat:0|intcomma }}</td>
+            <td class="text-end text-primary fw-semibold">{{ s.total_collected|floatformat:0|intcomma }}</td>
+            <td class="text-end">
+              {% if s.closing_cash_declared is not None %}
+                {{ s.closing_cash_declared|floatformat:0|intcomma }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="text-end">
+              {% if s.cash_variance is not None %}
+                {% with v=s.cash_variance %}
+                <span class="fw-semibold
+                  {% if v == 0 %}text-success
+                  {% elif v > 0 %}text-warning
+                  {% else %}text-danger{% endif %}">
+                  {% if v >= 0 %}+{% endif %}{{ v|floatformat:0|intcomma }}
+                </span>
+                {% endwith %}
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              <span class="badge
+                {% if s.status == 'OPEN' %}bg-success
+                {% elif s.status == 'CLOSED' %}bg-warning text-dark
+                {% elif s.status == 'SUBMITTED' %}bg-info text-dark
+                {% else %}bg-secondary{% endif %}">
+                {{ s.get_status_display }}
+              </span>
+            </td>
+            <td class="text-muted small">
+              {% if s.verified_by %}{{ s.verified_by.get_full_name|default:s.verified_by.username }}{% else %}—{% endif %}
+            </td>
+            <td>
+              <a href="{% url 'billing:shift_detail' s.id %}"
+                 class="btn btn-xs btn-outline-secondary py-0"
+                 style="font-size:.75rem;padding:2px 8px;">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="11" class="text-center text-muted py-4">
+              <i class="bi bi-inbox fs-3 d-block mb-2"></i>No shifts found.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if page_obj.has_other_pages %}
+<nav class="mt-3">
+  <ul class="pagination pagination-sm justify-content-center">
+    {% if page_obj.has_previous %}
+    <li class="page-item">
+      <a class="page-link" href="?date={{ filter_date }}&cashier={{ filter_cashier }}&status={{ filter_status }}&page={{ page_obj.previous_page_number }}">&laquo;</a>
+    </li>
+    {% endif %}
+    {% for num in page_obj.paginator.page_range %}
+    {% if page_obj.number == num %}
+    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+    {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+    <li class="page-item">
+      <a class="page-link" href="?date={{ filter_date }}&cashier={{ filter_cashier }}&status={{ filter_status }}&page={{ num }}">{{ num }}</a>
+    </li>
+    {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <li class="page-item">
+      <a class="page-link" href="?date={{ filter_date }}&cashier={{ filter_cashier }}&status={{ filter_status }}&page={{ page_obj.next_page_number }}">&raquo;</a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
+{% endblock %}

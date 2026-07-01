@@ -531,14 +531,26 @@
             {% for lab in consult.lab_orders.all %}
             <div class="mb-2 p-2 rounded" style="background:#fefce8;border:1px solid #fde68a;">
               <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="small fw-bold text-warning-emphasis"><i class="bi bi-flask me-1"></i>Lab Request</span>
-                <span class="badge {% if lab.urgency == 'EMERGENCY' %}bg-danger{% elif lab.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="font-size:.6rem;">{{ lab.urgency }}</span>
+                <span class="small fw-bold text-warning-emphasis">
+                  <i class="bi bi-flask me-1"></i>Lab Request
+                  <span class="badge {% if lab.status == 'COMPLETED' %}bg-success{% elif lab.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-info{% endif %} ms-1" style="font-size:.58rem;">{{ lab.get_status_display }}</span>
+                </span>
+                <a href="{% url 'laboratory:detail' lab.pk %}" class="text-muted" style="font-size:.7rem;"><i class="bi bi-box-arrow-up-right me-1"></i>View</a>
               </div>
               {% for item in lab.items.all %}
-              <div class="small text-muted">• {{ item.test_type.name }}
-                {% if item.status == 'COMPLETED' %}<span class="badge bg-success ms-1" style="font-size:.58rem;">Done</span>
-                {% elif item.status == 'PROCESSING' %}<span class="badge bg-info ms-1" style="font-size:.58rem;">Processing</span>
-                {% else %}<span class="badge bg-light text-dark border ms-1" style="font-size:.58rem;">{{ item.status }}</span>{% endif %}
+              <div class="small d-flex align-items-center gap-1 mb-1">
+                <span class="text-muted">• {{ item.test_type.name }}</span>
+                {% if item.result %}
+                  <span class="fw-bold {% if item.result.is_critical %}text-danger{% elif item.result.is_abnormal %}text-warning{% else %}text-success{% endif %}">
+                    {{ item.result.result_value }} {{ item.result.result_unit }}
+                  </span>
+                  {% if item.result.reference_range %}<span class="text-muted" style="font-size:.7rem;">(ref: {{ item.result.reference_range }})</span>{% endif %}
+                  {% if item.result.is_critical %}<span class="badge bg-danger" style="font-size:.58rem;">Critical</span>
+                  {% elif item.result.is_abnormal %}<span class="badge bg-warning text-dark" style="font-size:.58rem;">Abnormal</span>
+                  {% else %}<span class="badge bg-success" style="font-size:.58rem;">Normal</span>{% endif %}
+                {% else %}
+                  <span class="badge bg-light text-muted border" style="font-size:.58rem;">{{ item.status }}</span>
+                {% endif %}
               </div>
               {% endfor %}
             </div>
@@ -1684,7 +1696,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
 <script>
 /* ── Prevent tab scroll ── */
 (function() {

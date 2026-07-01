@@ -38,6 +38,94 @@ class ServiceCategory(models.TextChoices):
     OTHER = 'OTHER', 'Other'
 
 
+class ServiceTierFilter(models.TextChoices):
+    """
+    Controls which cashier desk tier can bill this service.
+    Blank = visible to ALL cashier desks.
+    """
+    ALL        = '',          'All Tiers (No restriction)'
+    STANDARD   = 'STANDARD',  'Standard Desk Only'
+    FAST_TRACK = 'FAST_TRACK','Fast Track Desk Only'
+    VIP        = 'VIP',       'VIP Desk Only'
+    INSURED    = 'INSURED',   'Insured / HMO Desk Only'
+
+
+class ServicePrice(AuditModel):
+    """
+    Charge Description Master (CDM) — DB-driven price list.
+    Replaces hardcoded SERVICE_CATALOG in views.py.
+    Managed via Django admin by Finance Manager / Super Admin.
+    """
+    name = models.CharField(max_length=200, help_text='Service/item name shown on invoice')
+    code = models.CharField(
+        max_length=30, blank=True,
+        help_text='Internal billing code (e.g. CONS-STD, OPT-REFRAC)'
+    )
+    category = models.CharField(max_length=20, choices=ServiceCategory.choices)
+    tier = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='Leave blank = visible to ALL cashier desks. '
+                  'Set to restrict this service to a specific desk tier only '
+                  '(e.g. VIP consultation at a higher price for VIP desk).',
+    )
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        help_text='Standard selling price in FCFA'
+    )
+    nhis_price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='NHIS-negotiated rate (leave blank to use standard price)'
+    )
+    insurance_price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Insurance-negotiated rate (leave blank to use standard price)'
+    )
+    is_active = models.BooleanField(default=True)
+    requires_price_entry = models.BooleanField(
+        default=False,
+        help_text='If True, cashier must enter price at point of sale (e.g. glasses frames)'
+    )
+
+    class Meta:
+        ordering = ['category', 'name']
+        verbose_name = 'Service Price'
+        verbose_name_plural = 'Service Prices (Charge Master)'
+
+    def __str__(self):
+        return f"{self.name} — {self.price:,.0f} FCFA"
+
+    def get_price_for_method(self, payment_method=None):
+        """Return the appropriate price based on payment method."""
+        if payment_method == PaymentMethod.NHIS and self.nhis_price is not None:
+            return self.nhis_price
+        if payment_method == PaymentMethod.INSURANCE and self.insurance_price is not None:
+            return self.insurance_price
+        return self.price
+
+
+class InvoiceVoidReason(AuditModel):
+    """
+    Configurable reason codes for cancelling or reversing an invoice.
+    Managed by Finance Director / Super Admin via Django admin.
+    Mirrors TurboClinic's reason dropdown (001=Declination by Patient, etc.)
+    """
+    code  = models.CharField(max_length=10, unique=True, help_text='e.g. 001, 002')
+    label = models.CharField(max_length=200, help_text='e.g. Declination by Patient')
+    requires_supervisor = models.BooleanField(
+        default=False,
+        help_text='If True, a supervisor must confirm before this reason is accepted'
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = 'Invoice Void Reason'
+        verbose_name_plural = 'Invoice Void Reasons'
+
+    def __str__(self):
+        return f"{self.code}: {self.label}"
+
+
 class Invoice(AuditModel):
     invoice_number = models.CharField(max_length=30, unique=True)
     patient = models.ForeignKey(
@@ -52,7 +140,21 @@ class Invoice(AuditModel):
     due_date = models.DateField(null=True, blank=True)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     discount_reason = models.CharField(max_length=200, blank=True)
+    corporate_account = models.ForeignKey(
+        'billing.CorporateAccount', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoices',
+        help_text='Set when this invoice is billed to a corporate/insurer account'
+    )
     notes = models.TextField(blank=True)
+    insurance_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text='Amount the insurer is expected to cover (set at billing time)'
+    )
+    void_reason = models.ForeignKey(
+        'billing.InvoiceVoidReason', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='voided_invoices',
+        help_text='Required when cancelling or reversing an invoice'
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -76,24 +178,36 @@ class Invoice(AuditModel):
         return max(self.subtotal - self.discount_amount, 0)
 
     @property
+    def patient_amount(self):
+        """Patient share after insurance coverage is deducted."""
+        return max(self.total - self.insurance_amount, 0)
+
+    @property
     def amount_paid(self):
-        return sum(
-            p.amount for p in self.payments.filter(is_deleted=False)
-        )
+        return sum(p.amount for p in self.payments.filter(is_deleted=False))
+
+    @property
+    def refund_total(self):
+        return sum(r.amount for r in self.refunds.filter(is_deleted=False))
+
+    @property
+    def net_paid(self):
+        """Amount paid minus any refunds issued."""
+        return self.amount_paid - self.refund_total
 
     @property
     def balance_due(self):
-        return self.total - self.amount_paid
+        return self.total - self.net_paid
 
     def update_status(self):
-        if self.status == InvoiceStatus.CANCELLED:
+        if self.status in (InvoiceStatus.CANCELLED, InvoiceStatus.WAIVED):
             return
-        paid = self.amount_paid
+        net = self.net_paid   # amount_paid minus refunds
         total = self.total
-        if paid <= 0:
+        if net <= 0:
             if self.status != InvoiceStatus.DRAFT:
                 self.status = InvoiceStatus.ISSUED
-        elif paid >= total:
+        elif net >= total:
             self.status = InvoiceStatus.PAID
         else:
             self.status = InvoiceStatus.PARTIALLY_PAID
@@ -120,7 +234,14 @@ class Payment(AuditModel):
     invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='payments')
     payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    reference = models.CharField(max_length=100, blank=True, help_text='Transaction reference / receipt number')
+    receipt_number = models.CharField(
+        max_length=30, blank=True, db_index=True,
+        help_text='Auto-generated unique receipt number (RCT-YYYY-NNNNN)'
+    )
+    reference = models.CharField(
+        max_length=100, blank=True,
+        help_text='External transaction reference (e.g. Mobile Money TX ID, POS terminal ref)'
+    )
     notes = models.CharField(max_length=200, blank=True)
     received_by = models.ForeignKey(
         'accounts.User', on_delete=models.PROTECT, related_name='payments_received'
@@ -131,11 +252,22 @@ class Payment(AuditModel):
         ordering = ['-payment_date']
 
     def __str__(self):
-        return f"Payment {self.amount} on {self.invoice.invoice_number}"
+        return f"{self.receipt_number or self.id} — {self.amount:,.0f} FCFA on {self.invoice.invoice_number}"
 
     def save(self, *args, **kwargs):
+        if not self.receipt_number:
+            year = timezone.now().year
+            count = Payment.objects.filter(created_at__year=year).count() + 1
+            self.receipt_number = f"RCT-{year}-{count:05d}"
         super().save(*args, **kwargs)
         self.invoice.update_status()
+        # Auto-create department work orders when invoice is fully paid
+        try:
+            self.invoice.refresh_from_db()
+            if self.invoice.status == InvoiceStatus.PAID:
+                ServiceWorkOrder.create_for_invoice(self.invoice, created_by=self.received_by)
+        except Exception:
+            pass
         # When first payment received on a visit-linked invoice,
         # open the 15-day consultation window for that patient's visit.
         try:
@@ -149,3 +281,1029 @@ class Payment(AuditModel):
                 visit.mark_consultation_paid()
         except Exception:
             pass
+
+
+class ShiftStatus(models.TextChoices):
+    OPEN      = 'OPEN',      'Open'
+    CLOSED    = 'CLOSED',    'Closed'
+    SUBMITTED = 'SUBMITTED', 'Submitted to Chief Cashier'
+    VERIFIED  = 'VERIFIED',  'Verified'
+
+
+class CashierShift(AuditModel):
+    """
+    One row per cashier per working day.
+    Lifecycle: OPEN → CLOSED → SUBMITTED → VERIFIED
+    Cashier opens shift with opening cash float, collects payments all day,
+    closes by declaring closing cash, then submits to chief cashier for sign-off.
+    """
+    cashier = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='cashier_shifts'
+    )
+    shift_date = models.DateField(default=timezone.localdate)
+    opened_at = models.DateTimeField(default=timezone.now)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    opening_cash = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text='Cash float handed to cashier at shift start (FCFA)'
+    )
+    closing_cash_declared = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text='Physical cash in drawer as counted and declared by cashier'
+    )
+    status = models.CharField(
+        max_length=20, choices=ShiftStatus.choices, default=ShiftStatus.OPEN
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='verified_shifts'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-shift_date', '-opened_at']
+        unique_together = [('cashier', 'shift_date')]
+        verbose_name = 'Cashier Shift'
+        verbose_name_plural = 'Cashier Shifts'
+
+    def __str__(self):
+        return f"Shift — {self.cashier.get_full_name() or self.cashier.username} ({self.shift_date})"
+
+    @property
+    def cash_collected(self):
+        """CASH payments only — what should physically be in the drawer."""
+        from django.db.models import Sum as _Sum
+        return (
+            Payment.objects.filter(
+                received_by=self.cashier,
+                payment_date__date=self.shift_date,
+                payment_method=PaymentMethod.CASH,
+                is_deleted=False,
+            ).aggregate(t=_Sum('amount'))['t'] or 0
+        )
+
+    @property
+    def total_collected(self):
+        """All payment methods combined."""
+        from django.db.models import Sum as _Sum
+        return (
+            Payment.objects.filter(
+                received_by=self.cashier,
+                payment_date__date=self.shift_date,
+                is_deleted=False,
+            ).aggregate(t=_Sum('amount'))['t'] or 0
+        )
+
+    @property
+    def collections_by_method(self):
+        from django.db.models import Sum as _Sum
+        return (
+            Payment.objects
+            .filter(received_by=self.cashier, payment_date__date=self.shift_date, is_deleted=False)
+            .values('payment_method')
+            .annotate(total=_Sum('amount'))
+            .order_by('payment_method')
+        )
+
+    @property
+    def expected_cash_in_hand(self):
+        """Opening float + cash collected during shift."""
+        return self.opening_cash + self.cash_collected
+
+    @property
+    def cash_variance(self):
+        """Positive = cashier has MORE than expected (overage). Negative = shortage."""
+        if self.closing_cash_declared is None:
+            return None
+        return self.closing_cash_declared - self.expected_cash_in_hand
+
+    @property
+    def refunds_issued(self):
+        from django.db.models import Sum as _Sum
+        return (
+            Refund.objects
+            .filter(processed_by=self.cashier, refund_date__date=self.shift_date, is_deleted=False)
+            .aggregate(t=_Sum('amount'))['t'] or 0
+        )
+
+    @property
+    def transaction_count(self):
+        return Payment.objects.filter(
+            received_by=self.cashier,
+            payment_date__date=self.shift_date,
+            is_deleted=False,
+        ).count()
+
+
+class Refund(AuditModel):
+    """
+    Refund / credit note against a paid invoice.
+    Used when a patient overpays, a service is cancelled after payment,
+    or a billing error must be corrected.
+    Processed by Cashier; audited by Finance Manager.
+    """
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='refunds')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    reason = models.CharField(max_length=300)
+    payment_method = models.CharField(
+        max_length=20, choices=PaymentMethod.choices,
+        help_text='How the refund is returned to the patient'
+    )
+    reference = models.CharField(max_length=100, blank=True)
+    processed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT,
+        related_name='processed_refunds'
+    )
+    refund_date = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-refund_date']
+
+    def __str__(self):
+        return f"Refund {self.amount:,.0f} FCFA — {self.invoice.invoice_number}"
+
+
+# ── Work Order System ─────────────────────────────────────────────────────────
+
+class WorkOrderStatus(models.TextChoices):
+    PENDING_PAYMENT = 'PENDING_PAYMENT', 'Waiting for Payment'
+    PENDING         = 'PENDING',         'Paid — Pending Service'
+    DONE            = 'DONE',            'Done'
+    CANCELLED       = 'CANCELLED',       'Cancelled'
+
+
+# Categories that require a department to act after payment
+_ACTIONABLE_CATEGORIES = frozenset({
+    ServiceCategory.CONSULTATION,
+    ServiceCategory.INVESTIGATION,
+    ServiceCategory.LABORATORY,
+    ServiceCategory.PHARMACY,
+    ServiceCategory.OPTICAL,
+    ServiceCategory.SURGICAL,
+})
+
+
+class ServiceWorkOrder(AuditModel):
+    """
+    Auto-created when an invoice is fully PAID.
+    One row per invoice line item that requires department action.
+    Each department filters by category to see their own queue.
+    """
+    invoice = models.ForeignKey(
+        Invoice, on_delete=models.PROTECT, related_name='work_orders',
+        null=True, blank=True,
+        help_text='Set when cashier bills the order. Null = not yet billed.'
+    )
+    invoice_item = models.ForeignKey(
+        InvoiceItem, on_delete=models.PROTECT, related_name='work_orders',
+        null=True, blank=True
+    )
+    consultation = models.ForeignKey(
+        'consultations.Consultation', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='work_orders',
+        help_text='Set when doctor creates the order during a consultation.'
+    )
+    lab_order_item = models.ForeignKey(
+        'laboratory.LabOrderItem', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='work_orders',
+        help_text='Links this work order to a specific lab test item for per-test payment tracking.'
+    )
+    patient = models.ForeignKey(
+        'patients.Patient', on_delete=models.PROTECT, related_name='work_orders'
+    )
+    category = models.CharField(max_length=20, choices=ServiceCategory.choices)
+    description = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=20, choices=WorkOrderStatus.choices, default=WorkOrderStatus.PENDING
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='completed_work_orders'
+    )
+    notes = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = 'Service Work Order'
+        verbose_name_plural = 'Service Work Orders'
+
+    def __str__(self):
+        return f"{self.description} — {self.patient.full_name} [{self.status}]"
+
+    @classmethod
+    def create_for_invoice(cls, invoice, created_by=None):
+        """
+        Called automatically by Payment.save() when invoice transitions to PAID.
+        1. Activates any PENDING_PAYMENT doctor orders for this patient → PENDING.
+        2. Creates new PENDING work orders for invoice items not already tracked.
+        Idempotent — safe to call multiple times.
+        """
+        if not invoice.patient:
+            return
+        from django.utils import timezone as _tz
+        today = _tz.localdate()
+
+        # Step 1: activate pre-created doctor orders for this patient today
+        pending_payment_qs = cls.objects.filter(
+            patient=invoice.patient,
+            status=WorkOrderStatus.PENDING_PAYMENT,
+            is_deleted=False,
+            created_at__date=today,
+        )
+        for wo in pending_payment_qs:
+            wo.invoice = invoice
+            wo.status = WorkOrderStatus.PENDING
+            wo.save(update_fields=['invoice', 'status', 'updated_at'])
+
+        # Step 2: create work orders for invoice items that don't have one yet
+        tracked_item_ids = set(
+            cls.objects.filter(invoice=invoice, is_deleted=False)
+            .exclude(invoice_item__isnull=True)
+            .values_list('invoice_item_id', flat=True)
+        )
+        for item in invoice.items.filter(is_deleted=False):
+            if item.category in _ACTIONABLE_CATEGORIES and item.pk not in tracked_item_ids:
+                cls.objects.create(
+                    invoice=invoice,
+                    invoice_item=item,
+                    patient=invoice.patient,
+                    category=item.category,
+                    description=item.description,
+                    status=WorkOrderStatus.PENDING,
+                    created_by=created_by,
+                )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FINANCIAL MODULE — Expenses, Corporate Accounts, Petty Cash
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ExpenseCategory(models.TextChoices):
+    SUPPLIES    = 'SUPPLIES',    'Medical Supplies'
+    UTILITIES   = 'UTILITIES',   'Utilities (Electricity / Water)'
+    SALARY      = 'SALARY',      'Salaries & Staff Costs'
+    RENT        = 'RENT',        'Rent & Facilities'
+    EQUIPMENT   = 'EQUIPMENT',   'Equipment & Maintenance'
+    DRUGS       = 'DRUGS',       'Drug / Pharmacy Stock'
+    TRANSPORT   = 'TRANSPORT',   'Transport & Logistics'
+    ADMIN       = 'ADMIN',       'Administrative'
+    MARKETING   = 'MARKETING',   'Marketing & Outreach'
+    OTHER       = 'EXP_OTHER',   'Other'
+
+
+class Expense(AuditModel):
+    """
+    Operational expense incurred by the hospital.
+    Recorded by Finance / Admin staff; approved by Finance Director.
+    Used to calculate net P&L in financial reports.
+    """
+    date        = models.DateField(default=timezone.localdate)
+    category    = models.CharField(max_length=20, choices=ExpenseCategory.choices)
+    description = models.CharField(max_length=300)
+    amount      = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_method = models.CharField(
+        max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CASH
+    )
+    vendor      = models.CharField(max_length=200, blank=True, help_text='Supplier / vendor name')
+    reference   = models.CharField(max_length=100, blank=True, help_text='Vendor receipt / invoice #')
+    department  = models.CharField(max_length=100, blank=True)
+    approved_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='approved_expenses'
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+        verbose_name = 'Expense'
+        verbose_name_plural = 'Expenses'
+
+    def __str__(self):
+        return f"{self.description} — {self.amount:,.0f} FCFA ({self.date})"
+
+
+class CorporateAccount(AuditModel):
+    """
+    An employer, insurer, or government agency billed on credit.
+    Patients linked via CorporateAccountMember.
+    Finance generates a monthly statement; company pays in bulk.
+    """
+    name            = models.CharField(max_length=200, unique=True)
+    account_code    = models.CharField(max_length=30, blank=True, unique=True, null=True)
+    contact_name    = models.CharField(max_length=150, blank=True)
+    phone           = models.CharField(max_length=20, blank=True)
+    email           = models.EmailField(blank=True)
+    address         = models.TextField(blank=True)
+    credit_limit    = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        help_text='Max outstanding balance in FCFA (0 = no limit)'
+    )
+    payment_terms_days = models.PositiveSmallIntegerField(
+        default=30, help_text='Net payment days (e.g. 30 for Net-30)'
+    )
+    discount_pct    = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        help_text='Flat discount % applied to all invoices for this account'
+    )
+    is_active       = models.BooleanField(default=True)
+    notes           = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Corporate Account'
+        verbose_name_plural = 'Corporate Accounts'
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def outstanding_balance(self):
+        from django.db.models import Sum as _S, F as _F, ExpressionWrapper, DecimalField as _D
+        inv_qs = Invoice.objects.filter(
+            corporate_account=self, is_deleted=False
+        ).exclude(status__in=[InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.WAIVED])
+        gross = InvoiceItem.objects.filter(
+            invoice__in=inv_qs, is_deleted=False
+        ).aggregate(
+            t=_S(ExpressionWrapper(_F('unit_price') * _F('quantity'), output_field=_D(max_digits=14, decimal_places=2)))
+        )['t'] or 0
+        disc  = inv_qs.aggregate(d=_S('discount_amount'))['d'] or 0
+        paid  = Payment.objects.filter(invoice__in=inv_qs, is_deleted=False).aggregate(p=_S('amount'))['p'] or 0
+        return max(0, float(gross) - float(disc) - float(paid))
+
+    @property
+    def member_count(self):
+        return self.members.filter(is_active=True, is_deleted=False).count()
+
+
+class CorporateAccountMember(AuditModel):
+    """Links a patient to a corporate account (employee / insured member)."""
+    corporate_account = models.ForeignKey(
+        CorporateAccount, on_delete=models.PROTECT, related_name='members'
+    )
+    patient     = models.ForeignKey(
+        'patients.Patient', on_delete=models.PROTECT, related_name='corporate_memberships'
+    )
+    employee_id = models.CharField(max_length=50, blank=True, help_text='Employee or membership number')
+    coverage_limit = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text='Annual coverage limit per member (0 = use account default)'
+    )
+    is_active   = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = [('corporate_account', 'patient')]
+        verbose_name = 'Corporate Account Member'
+
+    def __str__(self):
+        return f"{self.patient.full_name} — {self.corporate_account.name}"
+
+
+class PettyCashFund(AuditModel):
+    """A named petty cash fund held by a custodian (e.g. reception petty cash)."""
+    name       = models.CharField(max_length=100)
+    custodian  = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='petty_cash_funds'
+    )
+    opening_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    is_active  = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Petty Cash Fund'
+
+    def __str__(self):
+        return f"{self.name} — {self.custodian.get_full_name() or self.custodian.username}"
+
+    @property
+    def current_balance(self):
+        from django.db.models import Sum as _S
+        credits = self.entries.filter(entry_type='CREDIT', is_deleted=False).aggregate(s=_S('amount'))['s'] or 0
+        debits  = self.entries.filter(entry_type='DEBIT',  is_deleted=False).aggregate(s=_S('amount'))['s'] or 0
+        return self.opening_balance + credits - debits
+
+    @property
+    def total_spent(self):
+        from django.db.models import Sum as _S
+        return self.entries.filter(entry_type='DEBIT', is_deleted=False).aggregate(s=_S('amount'))['s'] or 0
+
+    @property
+    def total_topups(self):
+        from django.db.models import Sum as _S
+        return self.entries.filter(entry_type='CREDIT', is_deleted=False).aggregate(s=_S('amount'))['s'] or 0
+
+
+class PettyCashEntry(AuditModel):
+    """A single debit (payment/expense) or credit (top-up) on a petty cash fund."""
+    ENTRY_TYPES = [('DEBIT', 'Payment / Expense'), ('CREDIT', 'Top-up / Replenishment')]
+    fund        = models.ForeignKey(PettyCashFund, on_delete=models.PROTECT, related_name='entries')
+    entry_type  = models.CharField(max_length=10, choices=ENTRY_TYPES)
+    date        = models.DateField(default=timezone.localdate)
+    description = models.CharField(max_length=300)
+    amount      = models.DecimalField(max_digits=10, decimal_places=2)
+    category    = models.CharField(max_length=20, choices=ExpenseCategory.choices, blank=True)
+    reference   = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+        verbose_name = 'Petty Cash Entry'
+
+    def __str__(self):
+        return f"{self.entry_type} {self.amount:,.0f} FCFA — {self.description}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUDGET MODULE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BudgetType(models.TextChoices):
+    REVENUE  = 'REVENUE',  'Revenue Target'
+    EXPENSE  = 'EXPENSE',  'Expense Budget'
+
+
+class Budget(AuditModel):
+    """
+    Monthly budget line — one row per category/department per month.
+    Finance Director sets targets; system calculates actual vs budget.
+    """
+    year            = models.PositiveSmallIntegerField()
+    month           = models.PositiveSmallIntegerField(help_text='1–12')
+    budget_type     = models.CharField(max_length=10, choices=BudgetType.choices)
+    category        = models.CharField(
+        max_length=30,
+        help_text='ServiceCategory code for revenue budgets; ExpenseCategory code for expense budgets'
+    )
+    department      = models.CharField(max_length=100, blank=True, help_text='Department name (optional)')
+    budgeted_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    notes           = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-year', '-month', 'budget_type', 'category']
+        unique_together = [('year', 'month', 'budget_type', 'category', 'department')]
+        verbose_name = 'Budget Line'
+        verbose_name_plural = 'Budgets'
+
+    def __str__(self):
+        import calendar
+        return f"{calendar.month_name[self.month]} {self.year} — {self.budget_type} {self.category}: {self.budgeted_amount:,.0f} FCFA"
+
+    @property
+    def month_label(self):
+        import calendar
+        return f"{calendar.month_name[self.month]} {self.year}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROFORMA INVOICE
+# Pre-billing estimate given to patient before payment.
+# Cashier creates → patient confirms → converts to real Invoice.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ProformaStatus(models.TextChoices):
+    DRAFT     = 'DRAFT',     'Draft'
+    ISSUED    = 'ISSUED',    'Issued to Patient'
+    CONVERTED = 'CONVERTED', 'Converted to Invoice'
+    CANCELLED = 'CANCELLED', 'Cancelled / Expired'
+
+
+class Proforma(AuditModel):
+    """
+    Pre-billing quote given to patient before services are rendered.
+    Can be converted to a real Invoice once patient confirms.
+    """
+    proforma_number = models.CharField(max_length=30, unique=True)
+    patient = models.ForeignKey(
+        'patients.Patient', on_delete=models.PROTECT, related_name='proformas'
+    )
+    issued_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='issued_proformas'
+    )
+    status = models.CharField(
+        max_length=15, choices=ProformaStatus.choices, default=ProformaStatus.DRAFT
+    )
+    issue_date  = models.DateField(default=timezone.localdate)
+    valid_days  = models.PositiveSmallIntegerField(
+        default=3, help_text='Days before this proforma expires'
+    )
+    insurance_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text='Estimated insurer share'
+    )
+    invoice = models.OneToOneField(
+        Invoice, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='proforma',
+        help_text='Set when converted to a real invoice'
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Proforma Invoice'
+        verbose_name_plural = 'Proforma Invoices'
+
+    def __str__(self):
+        return f"Proforma {self.proforma_number} — {self.patient.full_name}"
+
+    def save(self, *args, **kwargs):
+        if not self.proforma_number:
+            year = timezone.now().year
+            count = Proforma.objects.filter(created_at__year=year).count() + 1
+            self.proforma_number = f"PRO-{year}-{count:05d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def subtotal(self):
+        return sum(item.line_total for item in self.items.filter(is_deleted=False))
+
+    @property
+    def patient_amount(self):
+        return max(self.subtotal - self.insurance_amount, 0)
+
+    @property
+    def is_expired(self):
+        from datetime import timedelta
+        return (
+            self.status == ProformaStatus.ISSUED
+            and timezone.localdate() > self.issue_date + timedelta(days=self.valid_days)
+        )
+
+
+class ProformaItem(AuditModel):
+    proforma    = models.ForeignKey(Proforma, on_delete=models.CASCADE, related_name='items')
+    category    = models.CharField(max_length=20, choices=ServiceCategory.choices)
+    description = models.CharField(max_length=255)
+    quantity    = models.PositiveSmallIntegerField(default=1)
+    unit_price  = models.DecimalField(max_digits=10, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.description} x{self.quantity}"
+
+    @property
+    def line_total(self):
+        return self.quantity * self.unit_price
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Patient Prepayment Wallet
+# ─────────────────────────────────────────────────────────────────────────────
+
+class WalletTransactionType(models.TextChoices):
+    DEPOSIT    = 'DEPOSIT',    'Deposit (Top-up)'
+    DEDUCTION  = 'DEDUCTION',  'Payment Deducted'
+    REFUND     = 'REFUND',     'Refund to Wallet'
+    WITHDRAWAL = 'WITHDRAWAL', 'Cash Withdrawal'
+    ADJUSTMENT = 'ADJUSTMENT', 'Manual Adjustment'
+
+
+class PatientWallet(AuditModel):
+    """
+    Pre-payment account for a patient.
+    Patient deposits money; cashier deducts per invoice.
+    Balance is always current_balance = sum of DEPOSIT+REFUND - sum of DEDUCTION+WITHDRAWAL.
+    """
+    patient = models.OneToOneField(
+        'patients.Patient', on_delete=models.PROTECT, related_name='wallet'
+    )
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    notes   = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Patient Wallet'
+
+    def __str__(self):
+        return f"Wallet — {self.patient.full_name} ({self.balance:,.0f} XAF)"
+
+    def deposit(self, amount, received_by, reference='', notes=''):
+        from decimal import Decimal
+        amount = Decimal(str(amount))
+        self.balance += amount
+        self.save(update_fields=['balance', 'updated_at'])
+        return WalletTransaction.objects.create(
+            wallet=self,
+            transaction_type=WalletTransactionType.DEPOSIT,
+            amount=amount,
+            balance_after=self.balance,
+            reference=reference,
+            notes=notes,
+            processed_by=received_by,
+            created_by=received_by,
+        )
+
+    def deduct(self, amount, processed_by, invoice=None, notes=''):
+        from decimal import Decimal
+        amount = Decimal(str(amount))
+        if amount > self.balance:
+            raise ValueError(f'Insufficient wallet balance ({self.balance:,.0f} XAF)')
+        self.balance -= amount
+        self.save(update_fields=['balance', 'updated_at'])
+        return WalletTransaction.objects.create(
+            wallet=self,
+            transaction_type=WalletTransactionType.DEDUCTION,
+            amount=amount,
+            balance_after=self.balance,
+            invoice=invoice,
+            notes=notes,
+            processed_by=processed_by,
+            created_by=processed_by,
+        )
+
+    def refund(self, amount, processed_by, notes=''):
+        from decimal import Decimal
+        amount = Decimal(str(amount))
+        self.balance += amount
+        self.save(update_fields=['balance', 'updated_at'])
+        return WalletTransaction.objects.create(
+            wallet=self,
+            transaction_type=WalletTransactionType.REFUND,
+            amount=amount,
+            balance_after=self.balance,
+            notes=notes,
+            processed_by=processed_by,
+            created_by=processed_by,
+        )
+
+
+class WalletTransaction(AuditModel):
+    wallet           = models.ForeignKey(PatientWallet, on_delete=models.CASCADE, related_name='transactions')
+    transaction_type = models.CharField(max_length=20, choices=WalletTransactionType.choices)
+    amount           = models.DecimalField(max_digits=12, decimal_places=2)
+    balance_after    = models.DecimalField(max_digits=12, decimal_places=2)
+    invoice          = models.ForeignKey(
+        Invoice, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='wallet_transactions'
+    )
+    reference  = models.CharField(max_length=100, blank=True)
+    notes      = models.TextField(blank=True)
+    processed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='wallet_transactions'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_transaction_type_display()} {self.amount:,.0f} XAF — {self.wallet.patient.full_name}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Asset Register
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AssetCategory(models.TextChoices):
+    MEDICAL_EQUIPMENT = 'MEDICAL',    'Medical Equipment'
+    IT_EQUIPMENT      = 'IT',         'IT / Computer Equipment'
+    FURNITURE         = 'FURNITURE',  'Furniture & Fixtures'
+    VEHICLE           = 'VEHICLE',    'Vehicle'
+    BUILDING          = 'BUILDING',   'Building / Infrastructure'
+    OTHER             = 'OTHER',      'Other'
+
+
+class AssetStatus(models.TextChoices):
+    ACTIVE       = 'ACTIVE',       'Active / In Use'
+    MAINTENANCE  = 'MAINTENANCE',  'Under Maintenance'
+    DISPOSED     = 'DISPOSED',     'Disposed / Written Off'
+    STOLEN       = 'STOLEN',       'Stolen / Lost'
+
+
+class AssetRegister(AuditModel):
+    """
+    Hospital equipment and fixed asset tracking with straight-line depreciation.
+    """
+    asset_number   = models.CharField(max_length=30, unique=True, editable=False)
+    name           = models.CharField(max_length=200)
+    category       = models.CharField(max_length=20, choices=AssetCategory.choices)
+    description    = models.TextField(blank=True)
+    serial_number  = models.CharField(max_length=100, blank=True)
+    make_model     = models.CharField(max_length=200, blank=True, help_text='Manufacturer and model')
+    location       = models.CharField(max_length=100, blank=True, help_text='Ward, room, or department')
+    status         = models.CharField(max_length=20, choices=AssetStatus.choices, default=AssetStatus.ACTIVE)
+
+    # Financial
+    purchase_date  = models.DateField()
+    purchase_cost  = models.DecimalField(max_digits=14, decimal_places=2)
+    supplier       = models.CharField(max_length=200, blank=True)
+    useful_life_years = models.PositiveSmallIntegerField(default=5,
+        help_text='Expected useful life in years for depreciation')
+    residual_value = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+        help_text='Estimated scrap/salvage value at end of life')
+
+    # Maintenance
+    last_service_date = models.DateField(null=True, blank=True)
+    next_service_date = models.DateField(null=True, blank=True)
+    warranty_expiry   = models.DateField(null=True, blank=True)
+    maintenance_notes = models.TextField(blank=True)
+
+    # Recorded by
+    recorded_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assets_recorded'
+    )
+
+    class Meta:
+        ordering = ['category', 'name']
+        verbose_name = 'Asset'
+        verbose_name_plural = 'Asset Register'
+
+    def __str__(self):
+        return f"{self.asset_number} — {self.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.asset_number:
+            count = AssetRegister.objects.count() + 1
+            self.asset_number = f"AST-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def annual_depreciation(self):
+        """Straight-line annual depreciation."""
+        if self.useful_life_years <= 0:
+            return 0
+        return (self.purchase_cost - self.residual_value) / self.useful_life_years
+
+    @property
+    def accumulated_depreciation(self):
+        """Total depreciation to date."""
+        from django.utils import timezone
+        years = (timezone.localdate() - self.purchase_date).days / 365.25
+        years = min(years, self.useful_life_years)
+        return round(self.annual_depreciation * years, 2)
+
+    @property
+    def net_book_value(self):
+        """Current book value after depreciation."""
+        nbv = self.purchase_cost - self.accumulated_depreciation
+        return max(nbv, self.residual_value)
+
+    @property
+    def is_fully_depreciated(self):
+        return self.net_book_value <= self.residual_value
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENERAL LEDGER  —  Chart of Accounts, Journal Entries, Double-Entry Posting
+# OHADA/SYSCOHADA account structure for Cameroon
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AccountType(models.TextChoices):
+    ASSET     = 'ASSET',     'Asset'
+    LIABILITY = 'LIABILITY', 'Liability'
+    EQUITY    = 'EQUITY',    'Equity'
+    REVENUE   = 'REVENUE',   'Revenue'
+    EXPENSE   = 'EXPENSE',   'Expense'
+
+
+class GLAccount(AuditModel):
+    """
+    Chart of Accounts — one row per GL account.
+    OHADA account codes: 1-5 = Balance Sheet, 6 = Expenses, 7 = Revenue.
+    """
+    code        = models.CharField(max_length=10, unique=True, db_index=True,
+                    help_text='OHADA account code e.g. 572000')
+    name        = models.CharField(max_length=200)
+    account_type = models.CharField(max_length=15, choices=AccountType.choices)
+    parent      = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='children', help_text='Parent account for sub-account grouping'
+    )
+    description = models.TextField(blank=True)
+    is_active   = models.BooleanField(default=True)
+    allow_manual_posting = models.BooleanField(
+        default=True, help_text='Allow manual journal entries to post to this account'
+    )
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = 'GL Account'
+        verbose_name_plural = 'Chart of Accounts'
+
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+
+    @property
+    def balance(self):
+        """Running balance: sum of debits minus credits (for assets/expenses) or reverse."""
+        from django.db.models import Sum as _S
+        lines = self.journal_lines.filter(entry__is_posted=True, entry__is_deleted=False)
+        debits  = lines.aggregate(t=_S('debit_amount'))['t']  or 0
+        credits = lines.aggregate(t=_S('credit_amount'))['t'] or 0
+        if self.account_type in (AccountType.ASSET, AccountType.EXPENSE):
+            return debits - credits
+        else:  # LIABILITY, EQUITY, REVENUE
+            return credits - debits
+
+
+class JournalEntry(AuditModel):
+    """
+    A double-entry journal entry header.
+    Each entry has 2+ lines; total debits must equal total credits.
+    """
+    entry_number = models.CharField(max_length=20, unique=True, editable=False)
+    entry_date   = models.DateField(default=timezone.localdate)
+    reference    = models.CharField(max_length=100, blank=True,
+                    help_text='Source reference: receipt number, expense ID, payroll batch')
+    description  = models.CharField(max_length=500)
+    is_posted    = models.BooleanField(default=True,
+                    help_text='Posted entries are locked and affect account balances')
+    is_reversal  = models.BooleanField(default=False)
+    reversed_entry = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='reversals'
+    )
+    # Source tracking — which model generated this entry
+    source_type  = models.CharField(max_length=30, blank=True,
+                    help_text='payment | expense | payroll | petty_cash | manual')
+    source_id    = models.CharField(max_length=50, blank=True,
+                    help_text='UUID/ID of the source record')
+
+    class Meta:
+        ordering = ['-entry_date', '-created_at']
+        verbose_name = 'Journal Entry'
+        verbose_name_plural = 'Journal Entries'
+
+    def __str__(self):
+        return f"{self.entry_number} — {self.description}"
+
+    def save(self, *args, **kwargs):
+        if not self.entry_number:
+            year = timezone.now().year
+            count = JournalEntry.objects.filter(created_at__year=year).count() + 1
+            self.entry_number = f"JNL-{year}-{count:05d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def total_debits(self):
+        from django.db.models import Sum as _S
+        return self.lines.aggregate(t=_S('debit_amount'))['t'] or 0
+
+    @property
+    def total_credits(self):
+        from django.db.models import Sum as _S
+        return self.lines.aggregate(t=_S('credit_amount'))['t'] or 0
+
+    @property
+    def is_balanced(self):
+        return abs(self.total_debits - self.total_credits) < 0.01
+
+
+class JournalLine(models.Model):
+    """A single debit or credit line within a journal entry."""
+    entry         = models.ForeignKey(JournalEntry, on_delete=models.CASCADE, related_name='lines')
+    account       = models.ForeignKey(GLAccount, on_delete=models.PROTECT, related_name='journal_lines')
+    description   = models.CharField(max_length=300, blank=True)
+    debit_amount  = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    credit_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    sequence      = models.PositiveSmallIntegerField(default=1)
+
+    class Meta:
+        ordering = ['sequence', 'id']
+
+    def __str__(self):
+        if self.debit_amount:
+            return f"Dr {self.account.code} {self.debit_amount:,.0f}"
+        return f"Cr {self.account.code} {self.credit_amount:,.0f}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ACCOUNTS PAYABLE  —  Vendor Bills & Payments
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class APVendor(AuditModel):
+    """A supplier or service provider the hospital owes money to."""
+    name         = models.CharField(max_length=200, unique=True)
+    vendor_code  = models.CharField(max_length=20, unique=True, blank=True)
+    contact_name = models.CharField(max_length=150, blank=True)
+    phone        = models.CharField(max_length=20, blank=True)
+    email        = models.EmailField(blank=True)
+    address      = models.TextField(blank=True)
+    tax_id       = models.CharField(max_length=50, blank=True, help_text='NIU / Tax ID number')
+    payment_terms_days = models.PositiveSmallIntegerField(default=30)
+    bank_name    = models.CharField(max_length=100, blank=True)
+    bank_account = models.CharField(max_length=50, blank=True)
+    is_active    = models.BooleanField(default=True)
+    notes        = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Vendor'
+        verbose_name_plural = 'AP Vendors'
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.vendor_code:
+            count = APVendor.objects.count() + 1
+            self.vendor_code = f"VEN-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def outstanding_balance(self):
+        from django.db.models import Sum as _S
+        total = self.bills.filter(is_deleted=False).exclude(
+            status=APBillStatus.PAID
+        ).aggregate(t=_S('amount_due'))['t'] or 0
+        paid = APPayment.objects.filter(
+            bill__vendor=self, is_deleted=False
+        ).aggregate(p=_S('amount'))['p'] or 0
+        return max(0, float(total) - float(paid))
+
+
+class APBillStatus(models.TextChoices):
+    DRAFT   = 'DRAFT',   'Draft'
+    PENDING = 'PENDING', 'Awaiting Payment'
+    PARTIAL = 'PARTIAL', 'Partially Paid'
+    PAID    = 'PAID',    'Fully Paid'
+    OVERDUE = 'OVERDUE', 'Overdue'
+    VOID    = 'VOID',    'Void / Cancelled'
+
+
+class APBill(AuditModel):
+    """A vendor bill / supplier invoice — money the hospital OWES."""
+    bill_number  = models.CharField(max_length=30, unique=True, editable=False)
+    vendor       = models.ForeignKey(APVendor, on_delete=models.PROTECT, related_name='bills')
+    vendor_ref   = models.CharField(max_length=100, blank=True,
+                    help_text='Vendor invoice number / reference')
+    category     = models.CharField(max_length=20, choices=ExpenseCategory.choices)
+    description  = models.CharField(max_length=500)
+    amount_due   = models.DecimalField(max_digits=14, decimal_places=2)
+    tax_amount   = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    bill_date    = models.DateField(default=timezone.localdate)
+    due_date     = models.DateField(null=True, blank=True)
+    status       = models.CharField(max_length=10, choices=APBillStatus.choices,
+                    default=APBillStatus.PENDING)
+    gl_account   = models.ForeignKey(
+        GLAccount, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ap_bills', help_text='Expense GL account to debit'
+    )
+    attachment_ref = models.CharField(max_length=200, blank=True,
+                      help_text='Physical receipt / invoice filing reference')
+    approved_by  = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_bills'
+    )
+    notes        = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-bill_date', '-created_at']
+        verbose_name = 'AP Bill'
+        verbose_name_plural = 'AP Bills (Payables)'
+
+    def __str__(self):
+        return f"{self.bill_number} — {self.vendor.name} ({self.amount_due:,.0f} XAF)"
+
+    def save(self, *args, **kwargs):
+        if not self.bill_number:
+            year = timezone.now().year
+            count = APBill.objects.filter(created_at__year=year).count() + 1
+            self.bill_number = f"APB-{year}-{count:05d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def total_paid(self):
+        from django.db.models import Sum as _S
+        return self.payments.filter(is_deleted=False).aggregate(t=_S('amount'))['t'] or 0
+
+    @property
+    def balance_due(self):
+        return self.amount_due - self.total_paid
+
+    def update_status(self):
+        paid = self.total_paid
+        if paid <= 0:
+            status = APBillStatus.PENDING
+        elif paid >= self.amount_due:
+            status = APBillStatus.PAID
+        else:
+            status = APBillStatus.PARTIAL
+        if self.status not in (APBillStatus.VOID,):
+            self.status = status
+            self.save(update_fields=['status', 'updated_at'])
+
+
+class APPayment(AuditModel):
+    """Payment made to a vendor against a bill."""
+    bill           = models.ForeignKey(APBill, on_delete=models.PROTECT, related_name='payments')
+    payment_date   = models.DateField(default=timezone.localdate)
+    amount         = models.DecimalField(max_digits=14, decimal_places=2)
+    payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices,
+                      default=PaymentMethod.TRANSFER)
+    reference      = models.CharField(max_length=100, blank=True,
+                      help_text='Bank transfer ref / cheque number')
+    paid_by        = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='ap_payments_made'
+    )
+    notes          = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-payment_date']
+        verbose_name = 'AP Payment'
+
+    def __str__(self):
+        return f"{self.amount:,.0f} XAF to {self.bill.vendor.name} ({self.payment_date})"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.bill.update_status()

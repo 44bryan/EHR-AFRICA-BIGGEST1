@@ -8,9 +8,18 @@
     <h4 class="fw-bold mb-0">Patient Records</h4>
     <p class="text-muted small mb-0">{{ total_count }} patient{{ total_count|pluralize }} found</p>
   </div>
-  <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-person-plus me-1"></i>Register New Patient
-  </a>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if request.user.is_super_admin or request.user.is_receptionist or request.user.is_medical_director or request.user.is_admin_director or request.user.is_ceo %}
+    <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-person-plus me-1"></i>Register New Patient
+    </a>
+    {% endif %}
+    {% if request.user.is_super_admin or request.user.is_medical_director or request.user.is_ceo or request.user.role == 'medical_records' or request.user.is_admin_director %}
+    <a href="{% url 'dashboard:export_patient_list' %}" class="btn btn-outline-success btn-sm">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}
 
@@ -41,38 +50,61 @@
         <tr>
           <th class="small">Patient ID</th>
           <th class="small">Name</th>
-          <th class="small">Age</th>
-          <th class="small">Gender</th>
+          <th class="small d-none d-lg-table-cell">Age</th>
+          <th class="small d-none d-lg-table-cell">Gender</th>
           <th class="small">Phone</th>
-          <th class="small">Blood Group</th>
-          <th class="small">Registered</th>
+          <th class="small d-none d-xl-table-cell">Blood Group</th>
+          <th class="small d-none d-lg-table-cell">Last Visit</th>
+          <th class="small d-none d-xl-table-cell">Registered</th>
           <th class="small">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for patient in patients %}
-        <tr>
+        <tr class="table-row-link" data-href="{{ patient.get_absolute_url }}" style="cursor:pointer;">
           <td><code class="small">{{ patient.patient_id }}</code></td>
           <td>
-            <a href="{{ patient.get_absolute_url }}" class="text-decoration-none fw-medium">
-              {{ patient.full_name }}
-            </a>
+            <span class="fw-medium">{{ patient.full_name }}</span>
+            {% if patient.medical_history.known_allergies %}
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" style="font-size:.6rem;"
+                  title="Allergy: {{ patient.medical_history.known_allergies }}">
+              <i class="bi bi-exclamation-triangle-fill"></i> ALLERGY
+            </span>
+            {% endif %}
           </td>
-          <td class="small">{{ patient.age_display }}</td>
-          <td class="small">{{ patient.get_gender_display }}</td>
+          <td class="small d-none d-lg-table-cell">{{ patient.age_display }}</td>
+          <td class="small d-none d-lg-table-cell">{{ patient.get_gender_display }}</td>
           <td class="small">{{ patient.phone_number }}</td>
-          <td>
+          <td class="d-none d-xl-table-cell">
             <span class="badge bg-danger-subtle text-danger small">{{ patient.blood_group }}</span>
           </td>
-          <td class="small text-muted">{{ patient.registration_date|date:"d M Y" }}</td>
-          <td>
-            <div class="d-flex gap-1">
-              <a href="{{ patient.get_absolute_url }}" class="btn btn-sm btn-outline-primary">
-                <i class="bi bi-folder2-open"></i>
+          <td class="small d-none d-lg-table-cell">
+            {% if patient.last_visit_date %}
+              <div>{{ patient.last_visit_date|date:"d M Y" }}</div>
+              <span class="badge mt-1
+                {% if patient.last_visit_status == 'COMPLETED' or patient.last_visit_status == 'DISCHARGED' %}bg-success-subtle text-success
+                {% elif patient.last_visit_status == 'IN_CONSULTATION' or patient.last_visit_status == 'WAITING' %}bg-warning-subtle text-warning
+                {% else %}bg-secondary-subtle text-secondary{% endif %}"
+                style="font-size:.6rem;">
+                {{ patient.last_visit_status|default:"—" }}
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted d-none d-xl-table-cell">{{ patient.registration_date|date:"d M Y" }}</td>
+          <td onclick="event.stopPropagation();">
+            <div class="d-flex gap-1 flex-nowrap">
+              <a href="{{ patient.get_absolute_url }}" class="btn btn-sm btn-primary"
+                 hx-boost="false"
+                 onclick="event.stopPropagation(); window.location.href=this.getAttribute('href'); return false;"
+                 title="Open Patient Record">
+                <i class="bi bi-folder2-open"></i><span class="d-none d-md-inline ms-1">Open</span>
               </a>
               {% if request.user.can_create_consultation %}
               <a href="{% url 'consultations:create' patient_id=patient.patient_id %}"
-                 class="btn btn-sm btn-outline-success" title="New Consultation">
+                 class="btn btn-sm btn-outline-success" title="New Consultation"
+                 onclick="event.stopPropagation();">
                 <i class="bi bi-clipboard2-plus"></i>
               </a>
               {% endif %}
@@ -81,7 +113,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="8" class="text-center py-5 text-muted">
+          <td colspan="9" class="text-center py-5 text-muted">
             <i class="bi bi-search fs-3 d-block mb-2 opacity-50"></i>
             No patients found{% if query %} for "{{ query }}"{% endif %}
           </td>
@@ -91,4 +123,57 @@
     </table>
   </div>
 </div>
+
+{# ── Pagination ── #}
+{% if page_obj.has_other_pages %}
+<nav aria-label="Patient list pagination" class="mt-3">
+  <ul class="pagination pagination-sm justify-content-center flex-wrap">
+    {% if page_obj.has_previous %}
+    <li class="page-item">
+      <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}page={{ page_obj.previous_page_number }}">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+    </li>
+    {% endif %}
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+      <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+      {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+      <li class="page-item">
+        <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}page={{ num }}">{{ num }}</a>
+      </li>
+      {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <li class="page-item">
+      <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}page={{ page_obj.next_page_number }}">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </li>
+    {% endif %}
+  </ul>
+  <p class="text-center text-muted small">
+    Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} — {{ total_count }} patient{{ total_count|pluralize }}
+  </p>
+</nav>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Make entire table row clickable — navigate directly (bypasses HTMX for reliability)
+document.querySelectorAll('tr.table-row-link[data-href]').forEach(function(row) {
+  row.addEventListener('click', function(e) {
+    // Don't trigger if clicking a button/link inside the row
+    if (e.target.closest('a, button')) return;
+    window.location.href = row.dataset.href;
+  });
+});
+// Hover highlight
+document.querySelectorAll('tr.table-row-link').forEach(function(row) {
+  row.addEventListener('mouseenter', function() { row.style.background = '#f0f9ff'; });
+  row.addEventListener('mouseleave', function() { row.style.background = ''; });
+});
+</script>
 {% endblock %}

@@ -1,0 +1,209 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Optical Patient Search{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold"><i class="bi bi-search me-2 text-primary"></i>Optical Patient Search</h1>
+    <div class="text-muted small">Search by patient name or hospital ID to view optical history and create a new order</div>
+  </div>
+  <a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+{# ── Search Box ── #}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #2563eb !important;">
+  <div class="card-body py-3">
+    <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+      <i class="bi bi-search text-primary fs-5 flex-shrink-0"></i>
+      <div class="flex-grow-1" style="min-width:260px;max-width:500px;">
+        <input type="text" name="q" value="{{ q }}"
+               id="search-input"
+               class="form-control"
+               placeholder="Patient name (e.g. Marie Claire) or Hospital ID (e.g. EHR-0037)"
+               autofocus autocomplete="off">
+      </div>
+      <button type="submit" class="btn btn-primary px-4">
+        <i class="bi bi-search me-1"></i>Search
+      </button>
+      {% if q %}
+      <a href="{% url 'opticals:patient_search' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-x-circle me-1"></i>Clear
+      </a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+{# ── No Query Yet ── #}
+{% if not q %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-eyeglasses fs-1 d-block mb-3" style="opacity:.3;"></i>
+  <div class="fw-semibold">Type a patient name or hospital ID above to get started</div>
+  <div class="small mt-1">You can search by first name, last name, or full hospital ID like EHR-0012</div>
+</div>
+
+{# ── No Results ── #}
+{% elif not results %}
+<div class="alert alert-warning d-flex align-items-center gap-2">
+  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+  <div>No patient found matching <strong>"{{ q }}"</strong>. Check the spelling or try a different name.</div>
+</div>
+
+{# ── Results ── #}
+{% else %}
+<div class="mb-2 text-muted small">
+  <i class="bi bi-check-circle text-primary me-1"></i>{{ results|length }} patient{{ results|length|pluralize }} found
+</div>
+
+{% for row in results %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 d-flex align-items-center justify-content-between flex-wrap gap-2"
+       style="background:#eff6ff;border-left:4px solid #2563eb;">
+    <div class="d-flex align-items-center gap-3">
+      <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold"
+           style="width:38px;height:38px;font-size:.9rem;flex-shrink:0;">
+        {{ row.patient.first_name|first|upper }}{{ row.patient.last_name|first|upper }}
+      </div>
+      <div>
+        <div class="fw-bold fs-6">{{ row.patient.full_name }}</div>
+        <div class="text-muted small">
+          {{ row.patient.patient_id }}
+          {% if row.patient.date_of_birth %} &bull; {{ row.patient.date_of_birth|date:"d M Y" }}{% endif %}
+          {% if row.patient.get_gender_display %} &bull; {{ row.patient.get_gender_display }}{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'opticals:create_order' %}?patient={{ row.patient.pk }}" class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-circle me-1"></i>New Order
+      </a>
+      <a href="{% url 'patients:detail' patient_id=row.patient.patient_id %}" class="btn btn-sm btn-outline-secondary" target="_blank">
+        <i class="bi bi-person me-1"></i>View Record
+      </a>
+    </div>
+  </div>
+
+  <div class="card-body p-0">
+
+    {# ── Recent Optical Prescriptions ── #}
+    {% if row.recent_rx %}
+    <div class="px-3 pt-3 pb-1">
+      <div class="fw-semibold small text-primary mb-2">
+        <i class="bi bi-file-earmark-medical me-1"></i>Recent Optical Prescriptions
+      </div>
+    </div>
+    {% for rx in row.recent_rx %}
+    <div class="px-3 pb-3 {% if not forloop.last %}border-bottom{% endif %}">
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">
+              {{ rx.get_prescription_type_display }}
+            </span>
+            <span class="text-muted small">
+              {{ rx.prescription_date|date:"d M Y" }}
+              {% if rx.prescribed_by %}&bull; Dr. {{ rx.prescribed_by.get_full_name }}{% endif %}
+            </span>
+          </div>
+          <div class="row row-cols-2 row-cols-md-4 g-2 mt-1">
+            {% if rx.re_sphere or rx.re_cylinder or rx.re_axis %}
+            <div class="col">
+              <div class="bg-light rounded p-2 text-center" style="font-size:.78rem;">
+                <div class="fw-bold text-muted mb-1">OD (Right)</div>
+                <div>Sph: <strong>{{ rx.re_sphere|default:"—" }}</strong></div>
+                <div>Cyl: <strong>{{ rx.re_cylinder|default:"—" }}</strong></div>
+                <div>Axis: <strong>{{ rx.re_axis|default:"—" }}°</strong></div>
+                {% if rx.re_add %}<div>Add: <strong>{{ rx.re_add }}</strong></div>{% endif %}
+              </div>
+            </div>
+            {% endif %}
+            {% if rx.le_sphere or rx.le_cylinder or rx.le_axis %}
+            <div class="col">
+              <div class="bg-light rounded p-2 text-center" style="font-size:.78rem;">
+                <div class="fw-bold text-muted mb-1">OS (Left)</div>
+                <div>Sph: <strong>{{ rx.le_sphere|default:"—" }}</strong></div>
+                <div>Cyl: <strong>{{ rx.le_cylinder|default:"—" }}</strong></div>
+                <div>Axis: <strong>{{ rx.le_axis|default:"—" }}°</strong></div>
+                {% if rx.le_add %}<div>Add: <strong>{{ rx.le_add }}</strong></div>{% endif %}
+              </div>
+            </div>
+            {% endif %}
+            {% if rx.pd_distance or rx.pd_near %}
+            <div class="col">
+              <div class="bg-light rounded p-2 text-center" style="font-size:.78rem;">
+                <div class="fw-bold text-muted mb-1">PD</div>
+                {% if rx.pd_distance %}<div>Distance: <strong>{{ rx.pd_distance }}</strong></div>{% endif %}
+                {% if rx.pd_near %}<div>Near: <strong>{{ rx.pd_near }}</strong></div>{% endif %}
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <a href="{% url 'opticals:create_order' %}?patient={{ row.patient.pk }}&rx={{ rx.pk }}"
+             class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-eyeglasses me-1"></i>Order from Rx
+          </a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="px-3 py-2 text-muted small fst-italic border-bottom">
+      <i class="bi bi-info-circle me-1"></i>No optical prescription on record for this patient.
+    </div>
+    {% endif %}
+
+    {# ── Active / Recent Orders ── #}
+    {% if row.active_orders %}
+    <div class="px-3 pt-3 pb-1">
+      <div class="fw-semibold small text-secondary mb-2">
+        <i class="bi bi-bag-check me-1"></i>Recent Orders
+      </div>
+    </div>
+    {% for order in row.active_orders %}
+    <div class="px-3 pb-3 {% if not forloop.last %}border-bottom{% endif %}">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+          <div class="fw-semibold small">{{ order.order_number }}</div>
+          <div class="text-muted small">
+            {{ order.ordered_date|date:"d M Y" }}
+            {% if order.frame %}&bull; {{ order.frame }}{% endif %}
+            {% if order.lens %}&bull; {{ order.lens.name }}{% endif %}
+          </div>
+          <div class="mt-1">
+            {% if order.status == 'ORDERED' %}
+              <span class="badge bg-primary">Ordered</span>
+            {% elif order.status == 'LAB' %}
+              <span class="badge bg-warning text-dark">At Lab</span>
+            {% elif order.status == 'READY' %}
+              <span class="badge bg-success">Ready to Collect</span>
+            {% elif order.status == 'DELIVERED' %}
+              <span class="badge bg-secondary">Delivered</span>
+            {% endif %}
+            {% if order.balance_due > 0 %}
+              <span class="badge bg-danger ms-1">Balance: {{ order.balance_due|floatformat:0|intcomma }} XAF</span>
+            {% endif %}
+          </div>
+        </div>
+        <a href="{% url 'opticals:order_detail' order_id=order.id %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-eye me-1"></i>View Order
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="px-3 py-2 text-muted small fst-italic">
+      <i class="bi bi-info-circle me-1"></i>No optical orders on record.
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% endblock %}
