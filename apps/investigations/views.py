@@ -132,12 +132,9 @@ def investigation_list_view(request):
         'patient', 'investigation_type', 'ordered_by', 'assigned_to'
     ).filter(is_deleted=False)
 
-    # Lab techs / investigation staff see all; others see their orders
-    if not (request.user.is_medical_director or request.user.is_admin_staff):
-        if request.user.is_lab_tech:
-            pass  # see all
-        else:
-            orders = orders.filter(ordered_by=request.user)
+    # Investigation techs / medical director see all; others see only their orders
+    if not (request.user.is_medical_director or request.user.is_admin_staff or request.user.is_investigation_tech):
+        orders = orders.filter(ordered_by=request.user)
 
     status_filter = request.GET.get('status', '')
     patient_filter = request.GET.get('patient', '')

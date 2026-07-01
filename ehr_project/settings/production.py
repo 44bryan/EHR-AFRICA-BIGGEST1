@@ -53,7 +53,7 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
 
 # ── Static files — WhiteNoise with compression + long-lived caching ───────────
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 # ── Email — SMTP ─────────────────────────────────────────────────────────────
 EMAIL_BACKEND = env(
