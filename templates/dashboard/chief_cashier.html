@@ -1,0 +1,278 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Chief Cashier Dashboard{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-person-badge me-2 text-primary"></i>Chief Cashier Dashboard</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} &mdash; Cashier supervision &amp; shift management</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:shift_day_open' %}" class="btn btn-success btn-sm fw-bold">
+      <i class="bi bi-sun me-1"></i>Open Day for Cashiers
+    </a>
+    <a href="{% url 'billing:shift_list' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-person-badge me-1"></i>All Shifts
+    </a>
+    <a href="{% url 'billing:reconciliation' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-calculator me-1"></i>Reconciliation
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Stale open shifts warning ── #}
+{% if stale_open_shifts %}
+<div class="alert alert-danger d-flex align-items-start gap-3 mb-4 py-3">
+  <i class="bi bi-exclamation-triangle-fill fs-4 mt-1 flex-shrink-0"></i>
+  <div class="flex-grow-1">
+    <div class="fw-bold mb-1">
+      {{ stale_open_shifts|length }} shift{{ stale_open_shifts|length|pluralize }} from a previous day still OPEN
+    </div>
+    <div class="small mb-2">
+      These were never closed. Force-close them now, or they will be auto-closed when you open today's shifts.
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for s in stale_open_shifts %}
+      <button class="btn btn-sm btn-danger fw-semibold"
+              onclick="forceClose('{{ s.id }}', '{{ s.cashier.get_full_name|default:s.cashier.username }}', this)">
+        <i class="bi bi-x-circle me-1"></i>
+        Close: {{ s.cashier.get_full_name|default:s.cashier.username }}
+        <span class="ms-1 opacity-75" style="font-size:.7rem;">({{ s.shift_date|date:"d M" }})</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Today's Cashier Overview ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Collected Today</div>
+        <div class="fs-3 fw-bold text-success">{{ revenue_today|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA — all cashiers</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Active Shifts</div>
+        <div class="fs-3 fw-bold text-primary">{{ today_shifts|length }}</div>
+        <div class="text-muted" style="font-size:.72rem;">cashiers on duty today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Awaiting Handover</div>
+        <div class="fs-3 fw-bold text-warning">{{ submitted_shifts|length }}</div>
+        <div class="text-muted" style="font-size:.72rem;">shifts submitted to you</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-danger">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Unpaid Bills</div>
+        <div class="fs-3 fw-bold text-danger">{{ unpaid_count }}</div>
+        <div class="text-muted" style="font-size:.72rem;">invoices outstanding</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Shifts awaiting handover verification ── #}
+{% if submitted_shifts %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #f59e0b !important;">
+  <div class="card-header bg-white py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-box-arrow-in-down text-warning fs-5"></i>
+    <h6 class="mb-0 fw-bold">Cash Handovers Waiting for Your Verification</h6>
+    <span class="badge bg-warning text-dark ms-1">{{ submitted_shifts|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Cashier</th>
+          <th class="text-end">Total Collected</th>
+          <th class="text-end">Cash Declared</th>
+          <th class="text-end">Expected in Drawer</th>
+          <th class="text-end">Variance</th>
+          <th>Submitted At</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submitted_shifts %}
+        <tr>
+          <td class="fw-semibold">{{ s.cashier.get_full_name|default:s.cashier.username }}</td>
+          <td class="text-end text-primary fw-semibold">{{ s.total_collected|floatformat:0|intcomma }}</td>
+          <td class="text-end">
+            {% if s.closing_cash_declared is not None %}{{ s.closing_cash_declared|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end">{{ s.expected_cash_in_hand|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold">
+            {% with v=s.cash_variance %}
+            {% if v is not None %}
+            <span class="{% if v == 0 %}text-success{% elif v > 0 %}text-warning{% else %}text-danger{% endif %}">
+              {% if v >= 0 %}+{% endif %}{{ v|floatformat:0|intcomma }}
+            </span>
+            {% else %}—{% endif %}
+            {% endwith %}
+          </td>
+          <td class="text-muted">{{ s.submitted_at|time:"H:i" }}</td>
+          <td>
+            <a href="{% url 'billing:shift_detail' s.id %}" class="btn btn-sm btn-warning fw-semibold">
+              <i class="bi bi-patch-check me-1"></i>Verify
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── All today's shifts live view ── #}
+{% if today_shifts %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-bar-chart-fill me-2 text-success"></i>All Cashier Shifts Today</span>
+    <span class="small text-success fw-bold">Total: {{ today_total|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Cashier</th>
+          <th>Station</th>
+          <th class="text-end">Collected</th>
+          <th class="text-end">Cash in Drawer</th>
+          <th class="text-end">Txns</th>
+          <th>Status</th>
+          <th>Opened</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in today_shifts %}
+        <tr>
+          <td class="fw-semibold">{{ s.cashier.get_full_name|default:s.cashier.username }}</td>
+          <td class="text-muted small">{{ s.cashier.get_cashier_station_display|default:"—" }}</td>
+          <td class="text-end text-primary fw-semibold">{{ s.total_collected|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ s.cash_collected|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ s.transaction_count }}</td>
+          <td>
+            <span class="badge
+              {% if s.status == 'OPEN' %}bg-success
+              {% elif s.status == 'CLOSED' %}bg-warning text-dark
+              {% elif s.status == 'SUBMITTED' %}bg-info text-dark
+              {% else %}bg-secondary{% endif %}">
+              {{ s.get_status_display }}
+            </span>
+          </td>
+          <td class="text-muted">{{ s.opened_at|time:"H:i" }}</td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{% url 'billing:shift_detail' s.id %}" class="btn btn-xs btn-outline-secondary py-0" style="font-size:.75rem;padding:2px 8px;">View</a>
+              {% if s.status == 'OPEN' %}
+              <button class="btn btn-xs btn-outline-danger py-0" style="font-size:.75rem;padding:2px 8px;"
+                      onclick="forceClose('{{ s.id }}', '{{ s.cashier.get_full_name|default:s.cashier.username }}', this)"
+                      title="Force close this shift at end of day">
+                <i class="bi bi-x-circle"></i> Close
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-3">No shifts open today. Use "Open Day for Cashiers" above.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light fw-bold">
+        <tr>
+          <td colspan="2">TOTAL</td>
+          <td class="text-end text-success">{{ today_total|floatformat:0|intcomma }}</td>
+          <td colspan="5"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-4">
+  <i class="bi bi-info-circle-fill"></i>
+  <div>No shifts open today yet.
+    <a href="{% url 'billing:shift_day_open' %}" class="alert-link fw-bold">Open the day for all cashiers →</a>
+  </div>
+</div>
+{% endif %}
+
+{# ── Unpaid invoices ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-warning"></i>Unpaid Invoices</h6>
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Invoice</th><th>Patient</th><th class="text-end">Total</th><th class="text-end">Balance</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for inv in unpaid_invoices %}
+        <tr>
+          <td><code>{{ inv.invoice_number }}</code></td>
+          <td class="fw-semibold">{{ inv.patient.full_name }}</td>
+          <td class="text-end">{{ inv.total|floatformat:0|intcomma }} FCFA</td>
+          <td class="text-end text-danger fw-semibold">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
+          <td><span class="badge bg-{% if inv.status == 'PARTIAL' %}warning text-dark{% else %}secondary{% endif %}">{{ inv.get_status_display }}</span></td>
+          <td><a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-warning">Open</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-3">No unpaid invoices.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = '{{ csrf_token }}';
+function forceClose(shiftId, cashierName, btn) {
+  if (!confirm('Force-close shift for ' + cashierName + '?\nThis marks it CLOSED. No cash declaration entered.')) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  fetch('/billing/shifts/' + shiftId + '/force-close/', {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF }
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) { location.reload(); }
+    else {
+      alert(data.message || 'Could not close shift.');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-x-circle"></i> Close';
+    }
+  })
+  .catch(function () {
+    alert('Network error. Please try again.');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-x-circle"></i> Close';
+  });
+}
+</script>
+{% endblock %}

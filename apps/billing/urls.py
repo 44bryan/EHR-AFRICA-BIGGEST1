@@ -11,10 +11,16 @@ urlpatterns = [
     path('invoices/<uuid:invoice_id>/', views.invoice_detail, name='invoice_detail'),
     path('invoices/<uuid:invoice_id>/pay/', views.add_payment, name='add_payment'),
     path('invoices/<uuid:invoice_id>/cancel/', views.cancel_invoice, name='cancel_invoice'),
+    path('invoices/<uuid:invoice_id>/waive/', views.waive_invoice, name='waive_invoice'),
+    path('invoices/<uuid:invoice_id>/void-draft/', views.void_draft_invoice, name='void_draft_invoice'),
 
     # POS (Point of Sale)
+    path('pos/queue/', views.cashier_queue, name='cashier_queue'),
     path('pos/<uuid:token_id>/', views.cashier_pos, name='cashier_pos'),
     path('pos/<uuid:token_id>/finalize/', views.pos_finalize, name='pos_finalize'),
+    # QMS-independent POS (works when QMS is off or patient has no token)
+    path('pos/patient/<str:patient_id>/', views.patient_pos, name='patient_pos'),
+    path('finalize/patient/<str:patient_id>/', views.patient_finalize, name='patient_finalize'),
     path('invoice/<uuid:invoice_id>/add-item/', views.pos_add_item, name='pos_add_item'),
     path('invoice/<uuid:invoice_id>/discount/', views.pos_apply_discount, name='pos_apply_discount'),
     path('item/<uuid:item_id>/remove/', views.pos_remove_item, name='pos_remove_item'),
@@ -24,6 +30,138 @@ urlpatterns = [
     # Surgical deposit
     path('surgical-deposit/<uuid:booking_id>/', views.surgical_deposit, name='surgical_deposit'),
 
+    # Refund
+    path('invoices/<uuid:invoice_id>/refund/', views.process_refund, name='process_refund'),
+
+    # Financial reports
+    path('reports/ar-aging/', views.ar_aging_report, name='ar_aging'),
+    path('reports/reconciliation/', views.cashier_reconciliation, name='reconciliation'),
+
+    # Cashier Shift management
+    path('shifts/', views.shift_list, name='shift_list'),
+    path('shifts/my/', views.my_shift, name='my_shift'),
+    path('shifts/open/', views.shift_open, name='shift_open'),
+    path('shifts/open-day/', views.shift_day_open, name='shift_day_open'),
+    path('shifts/<uuid:shift_id>/', views.shift_detail, name='shift_detail'),
+    path('shifts/<uuid:shift_id>/close/', views.shift_close, name='shift_close'),
+    path('shifts/<uuid:shift_id>/submit/', views.shift_submit, name='shift_submit'),
+    path('shifts/<uuid:shift_id>/transfer/', views.shift_transfer, name='shift_transfer'),
+    path('shifts/<uuid:shift_id>/verify/', views.shift_verify, name='shift_verify'),
+    path('shifts/<uuid:shift_id>/reopen/', views.shift_reopen, name='shift_reopen'),
+    path('shifts/<uuid:shift_id>/force-close/', views.shift_force_close, name='shift_force_close'),
+
     # SLA breach API
     path('api/waiting-sla/', views.waiting_sla_json, name='waiting_sla_json'),
+
+    # Work Order system — department queues after payment
+    path('work-queue/', views.work_queue, name='work_queue'),
+    path('work-orders/<uuid:wo_id>/done/', views.work_order_done, name='work_order_done'),
+
+    # Doctor orders — created during consultation, billed at cashier
+    path('doctor-orders/create/', views.doctor_order_create, name='doctor_order_create'),
+    path('doctor-orders/<uuid:wo_id>/cancel/', views.doctor_order_cancel, name='doctor_order_cancel'),
+
+    # ── Service Price (Charge Master) Management ──────────────────────────────
+    path('service-prices/', views.service_price_list, name='service_price_list'),
+    path('service-prices/create/', views.service_price_create, name='service_price_create'),
+    path('service-prices/<uuid:price_id>/edit/', views.service_price_edit, name='service_price_edit'),
+    path('service-prices/<uuid:price_id>/toggle/', views.service_price_toggle, name='service_price_toggle'),
+
+    # ── Expense Management ────────────────────────────────────────────────────
+    path('expenses/', views.expense_list, name='expense_list'),
+    path('expenses/create/', views.expense_create, name='expense_create'),
+    path('expenses/<uuid:expense_id>/delete/', views.expense_delete, name='expense_delete'),
+    path('expenses/<uuid:expense_id>/approve/', views.expense_approve, name='expense_approve'),
+
+    # ── Corporate Account Management ──────────────────────────────────────────
+    path('corporate/', views.corporate_list, name='corporate_list'),
+    path('corporate/create/', views.corporate_create, name='corporate_create'),
+    path('corporate/<uuid:account_id>/', views.corporate_detail, name='corporate_detail'),
+    path('corporate/<uuid:account_id>/add-member/', views.corporate_add_member, name='corporate_add_member'),
+    path('corporate/member/<uuid:member_id>/remove/', views.corporate_remove_member, name='corporate_remove_member'),
+    path('corporate/<uuid:account_id>/statement/', views.corporate_statement, name='corporate_statement'),
+
+    # ── Petty Cash Management ─────────────────────────────────────────────────
+    path('petty-cash/', views.petty_cash_list, name='petty_cash_list'),
+    path('petty-cash/create/', views.petty_cash_create, name='petty_cash_create'),
+    path('petty-cash/<uuid:fund_id>/', views.petty_cash_detail, name='petty_cash_detail'),
+    path('petty-cash/<uuid:fund_id>/entry/', views.petty_cash_entry, name='petty_cash_entry'),
+
+    # ── Financial Reports ─────────────────────────────────────────────────────
+    path('reports/daily/', views.report_daily_summary, name='report_daily_summary'),
+    path('reports/pl/', views.report_pl, name='report_pl'),
+    path('reports/top-services/', views.report_top_services, name='report_top_services'),
+
+    # ── Budget Module ─────────────────────────────────────────────────────────
+    path('budget/', views.budget_list, name='budget_list'),
+    path('budget/create/', views.budget_create, name='budget_create'),
+    path('budget/<uuid:budget_id>/delete/', views.budget_delete, name='budget_delete'),
+
+    # ── Insurance split ───────────────────────────────────────────────────────
+    path('invoice/<uuid:invoice_id>/insurance/', views.invoice_set_insurance, name='invoice_set_insurance'),
+
+    # ── All-Cashdesks Overview ────────────────────────────────────────────────
+    path('cashdesks/', views.cashdesks_overview, name='cashdesks_overview'),
+
+    # ── Sales Journal ─────────────────────────────────────────────────────────
+    path('reports/sales-journal/', views.sales_journal, name='sales_journal'),
+
+    # ── Proforma Invoices ─────────────────────────────────────────────────────
+    path('proforma/', views.proforma_list, name='proforma_list'),
+    path('proforma/create/', views.proforma_create, name='proforma_create'),
+    path('proforma/<uuid:proforma_id>/', views.proforma_detail, name='proforma_detail'),
+    path('proforma/<uuid:proforma_id>/convert/', views.proforma_convert, name='proforma_convert'),
+    path('proforma/<uuid:proforma_id>/cancel/', views.proforma_cancel, name='proforma_cancel'),
+    path('proforma/<uuid:proforma_id>/pdf/', views.proforma_pdf, name='proforma_pdf'),
+
+    # ── Audit Registers ───────────────────────────────────────────────────────
+    path('reports/void-register/', views.void_register, name='void_register'),
+    path('payments/<uuid:payment_id>/receipt/', views.payment_receipt, name='payment_receipt'),
+
+    # ── Patient Financial History ─────────────────────────────────────────────
+    path('patient-accounts/', views.patient_financial_history, name='patient_financial_history'),
+
+    # ── Patient Wallet (Pre-payment Accounts) ────────────────────────────────
+    path('wallets/', views.wallet_list, name='wallet_list'),
+    path('wallets/search/', views.wallet_search_ajax, name='wallet_search_ajax'),
+    path('wallets/<str:patient_id>/', views.wallet_detail, name='wallet_detail'),
+    path('wallets/<str:patient_id>/deposit/', views.wallet_deposit, name='wallet_deposit'),
+    path('wallets/<str:patient_id>/deduct/', views.wallet_deduct, name='wallet_deduct'),
+
+    # ── Asset Register ────────────────────────────────────────────────────────
+    path('assets/', views.asset_list, name='asset_list'),
+    path('assets/create/', views.asset_create, name='asset_create'),
+    path('assets/<uuid:asset_id>/edit/', views.asset_edit, name='asset_edit'),
+
+    # General Ledger
+    path('gl/accounts/', views.chart_of_accounts, name='chart_of_accounts'),
+    path('gl/accounts/create/', views.gl_account_create, name='gl_account_create'),
+    path('gl/accounts/<uuid:account_id>/edit/', views.gl_account_edit, name='gl_account_edit'),
+    path('gl/journal/', views.journal_entry_list, name='journal_entry_list'),
+    path('gl/journal/create/', views.journal_entry_create, name='journal_entry_create'),
+    path('gl/journal/<uuid:entry_id>/', views.journal_entry_detail, name='journal_entry_detail'),
+    path('gl/ledger/', views.general_ledger, name='general_ledger'),
+    path('gl/trial-balance/', views.trial_balance, name='trial_balance'),
+    path('gl/balance-sheet/', views.balance_sheet, name='balance_sheet'),
+    path('gl/cash-flow/', views.cash_flow_statement, name='cash_flow_statement'),
+
+    # Accounts Payable
+    path('ap/vendors/', views.ap_vendor_list, name='ap_vendor_list'),
+    path('ap/vendors/create/', views.ap_vendor_create, name='ap_vendor_create'),
+    path('ap/vendors/<uuid:vendor_id>/edit/', views.ap_vendor_edit, name='ap_vendor_edit'),
+    path('ap/bills/', views.ap_bill_list, name='ap_bill_list'),
+    path('ap/bills/create/', views.ap_bill_create, name='ap_bill_create'),
+    path('ap/bills/<uuid:bill_id>/', views.ap_bill_detail, name='ap_bill_detail'),
+    path('ap/bills/<uuid:bill_id>/pay/', views.ap_bill_pay, name='ap_bill_pay'),
+
+    # ── CSV Exports ───────────────────────────────────────────────────────────
+    path('export/invoices/', views.export_invoice_list, name='export_invoice_list'),
+    path('export/ar-aging/', views.export_ar_aging, name='export_ar_aging'),
+    path('export/expenses/', views.export_expense_list, name='export_expense_list'),
+    path('export/shifts/', views.export_shift_list, name='export_shift_list'),
+    path('export/service-prices/', views.export_service_prices, name='export_service_prices'),
+    path('export/sales-journal/', views.export_sales_journal, name='export_sales_journal'),
+    path('export/void-register/', views.export_void_register, name='export_void_register'),
+    path('export/corporate/', views.export_corporate_list, name='export_corporate_list'),
+    path('export/patient-financial/', views.export_patient_financial, name='export_patient_financial'),
 ]
