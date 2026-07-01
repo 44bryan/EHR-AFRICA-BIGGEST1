@@ -1,55 +1,98 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
-from django.db.models import Q, Count
+from django.db.models import Q, Count, OuterRef, Subquery, CharField
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.utils import timezone
-from .models import Patient, Visit, MedicalHistory
+from .models import Patient, Visit, MedicalHistory, PatientMedication, PatientAllergy
 from .forms import PatientRegistrationForm, NextOfKinForm, MedicalHistoryForm, VitalSignsForm
 from apps.core.decorators import (
     clinical_staff_required, doctor_required,
     CAN_VIEW_PATIENT, CAN_MANAGE_VISIT,
 )
+from apps.core.context_processors import qms_active as _qms_active
 
 
 @login_required
 def patient_list_view(request):
     query = request.GET.get('q', '').strip()
-    # select_related('registered_by') fetches the linked user in the SAME query
-    # instead of firing a separate DB query for each of the 100 patients shown.
-    # Without this: 101 queries. With this: 1 query.
-    patients = Patient.objects.filter(is_active=True).select_related('registered_by').order_by('-registration_date')
+
+    # Subqueries to pull last visit date and status in a single JOIN-free query
+    _latest_visit = Visit.objects.filter(
+        patient=OuterRef('pk'), is_deleted=False
+    ).order_by('-visit_date')
+
+    patients = (
+        Patient.objects.filter(is_active=True)
+        .select_related('registered_by', 'medical_history')
+        .annotate(
+            last_visit_date=Subquery(_latest_visit.values('visit_date')[:1]),
+            last_visit_status=Subquery(
+                _latest_visit.values('status')[:1],
+                output_field=CharField(),
+            ),
+        )
+        .order_by('-registration_date')
+    )
 
     if query:
-        patients = patients.filter(
-            Q(patient_id__icontains=query) |
-            Q(first_name__icontains=query) |
-            Q(last_name__icontains=query) |
-            Q(phone_number__icontains=query)
-        )
+        from apps.core.utils import patient_search_q
+        patients = patients.filter(patient_search_q(query))
 
-    # Evaluate queryset once — avoids hitting the DB twice (once for slice, once for count)
-    patients_page = list(patients[:100])
-    total_count   = patients.count() if query else Patient.objects.filter(is_active=True).count()
+    from django.core.paginator import Paginator
+    paginator   = Paginator(patients, 50)
+    page_number = request.GET.get('page', 1)
+    patients_page = paginator.get_page(page_number)
+    total_count = paginator.count
 
     return render(request, 'patients/list.html', {
         'patients': patients_page,
         'query': query,
         'total_count': total_count,
+        'paginator': paginator,
+        'page_obj': patients_page,
     })
 
 
 @login_required
 def patient_register_view(request):
-    # QMS token ID passed when arriving from receptionist counter
-    qms_token_id = request.GET.get('token') or request.POST.get('qms_token_id')
+    # QMS token ID passed when arriving from receptionist queue
+    qms_token_id = (
+        request.GET.get('qms_token_id') or request.GET.get('token')
+        or request.POST.get('qms_token_id')
+    )
 
     if request.method == 'POST':
         form = PatientRegistrationForm(request.POST, request.FILES)
         nok_form = NextOfKinForm(request.POST, prefix='nok')
         if form.is_valid():
             from django.db import transaction
+            # ── Hard duplicate check — prevent double registration ────────────
+            _data = form.cleaned_data
+            _dup_q = Q()
+            if _data.get('phone_number'):
+                _dup_q |= Q(phone_number=_data['phone_number'])
+            if _data.get('first_name') and _data.get('last_name') and _data.get('date_of_birth'):
+                _dup_q |= Q(
+                    first_name__iexact=_data['first_name'],
+                    last_name__iexact=_data['last_name'],
+                    date_of_birth=_data['date_of_birth'],
+                )
+            _existing = Patient.objects.filter(_dup_q, is_deleted=False).first() if _dup_q else None
+            if _existing:
+                messages.error(
+                    request,
+                    f'A patient with this information already exists: '
+                    f'{_existing.full_name} (ID: {_existing.patient_id}). '
+                    f'Use their existing record instead of registering again.'
+                )
+                return render(request, 'patients/register.html', {
+                    'form': form,
+                    'nok_form': NextOfKinForm(prefix='nok'),
+                    'duplicate': _existing,
+                })
+            # ─────────────────────────────────────────────────────────────────
             patient = form.save(commit=False)
             patient.registered_by = request.user
             patient.created_by = request.user
@@ -139,16 +182,53 @@ def patient_register_view(request):
                         f'Patient {patient.full_name} registered. ID: {patient.patient_id}'
                     )
             else:
-                messages.success(request, f'Patient {patient.full_name} registered. ID: {patient.patient_id}')
+                # No QMS entry token — check if QMS is active and auto-create cashier token
+                from apps.core.context_processors import qms_active
+                if qms_active():
+                    try:
+                        from apps.qms.models import (
+                            QueueToken, DailyTokenSequence,
+                            ServiceType, IssuancePoint, TIER_PRIORITY,
+                        )
+                        with transaction.atomic():
+                            cashier_number = DailyTokenSequence.next_dept_token(ServiceType.CASHIER)
+                            cashier_tok = QueueToken.objects.create(
+                                token_number=cashier_number,
+                                token_date=timezone.localdate(),
+                                patient=patient,
+                                patient_name=patient.full_name,
+                                service_type=ServiceType.CASHIER,
+                                service_tier='STANDARD',
+                                issuance_point=IssuancePoint.SYSTEM,
+                                priority=TIER_PRIORITY.get('STANDARD', 0),
+                                issued_by=request.user,
+                                notes='Auto-created after direct registration',
+                            )
+                        messages.success(
+                            request,
+                            f'Patient {patient.full_name} registered (ID: {patient.patient_id}). '
+                            f'Cashier queue token {cashier_tok.token_number} issued — ask patient to sit and wait for their number.'
+                        )
+                    except Exception:
+                        messages.success(request, f'Patient {patient.full_name} registered. ID: {patient.patient_id}')
+                else:
+                    messages.success(request, f'Patient {patient.full_name} registered. ID: {patient.patient_id}')
 
             if counter_redirect:
                 return redirect('qms:counter', counter_id=counter_redirect)
+            if qms_token_id:
+                # Return to receptionist queue so staff can handle the next patient
+                return redirect('qms:receptionist')
             return redirect('patients:detail', patient_id=patient.patient_id)
     else:
         g = request.GET
+        # Do NOT pre-fill first_name with the full patient name from the QMS token
+        # (putting "John Doe" in the first_name field is wrong — leave fields blank
+        # so staff enter first name and last name separately)
+        prefill_name = ''
         # Pre-fill from pre-registration QR scan OR from name search
         form = PatientRegistrationForm(initial={
-            'first_name':     g.get('first_name') or g.get('name', ''),
+            'first_name':     g.get('first_name') or prefill_name,
             'middle_name':    g.get('middle_name', ''),
             'last_name':      g.get('last_name', ''),
             'phone_number':   g.get('phone_number', ''),
@@ -191,6 +271,99 @@ def patient_register_view(request):
 
 
 @login_required
+@require_POST
+def checkin_existing_patient(request):
+    """
+    When a duplicate is detected during registration, allow the receptionist to
+    check-in the existing patient through the QMS flow instead of leaving the
+    receptionist token stuck.
+
+    POST params:
+      - patient_id    : existing patient's patient_id string
+      - qms_token_id  : the RECEPTIONIST QueueToken UUID that triggered registration
+      - chief_complaint, service_tier, billing_type (optional — passed through from form)
+    """
+    from django.db import transaction as _tx
+    patient_id_str = request.POST.get('patient_id', '').strip()
+    qms_token_id   = request.POST.get('qms_token_id', '').strip()
+
+    patient = get_object_or_404(Patient, patient_id=patient_id_str, is_deleted=False)
+
+    counter_redirect = None
+    if qms_token_id:
+        try:
+            from apps.qms.models import (
+                QueueToken, DailyTokenSequence,
+                ServiceType, TokenStatus, IssuancePoint, TIER_PRIORITY,
+            )
+            recep_token = QueueToken.objects.select_related('counter').get(
+                id=qms_token_id, is_deleted=False
+            )
+
+            # Link the existing patient to the entry token
+            recep_token.patient      = patient
+            recep_token.patient_name = patient.full_name
+            recep_token.save(update_fields=['patient', 'patient_name', 'updated_at'])
+
+            # Free the counter
+            if recep_token.counter:
+                counter_redirect = recep_token.counter_id
+                recep_token.counter.current_serving = None
+                recep_token.counter.save(update_fields=['current_serving', 'updated_at'])
+
+            # Complete the receptionist token
+            recep_token.complete()
+
+            # Apply 15-day rule:
+            #   < 15 days → GENERAL queue (skip cashier, go straight to triage/clinic)
+            #   ≥ 15 days → CASHIER queue (must pay for a new consultation)
+            today = timezone.localdate()
+            tier  = recep_token.service_tier or 'STANDARD'
+            is_free_followup = patient.is_free_followup
+
+            if is_free_followup:
+                next_service = ServiceType.GENERAL
+                dest_label   = 'clinic directly (FREE FOLLOW-UP — within 15 days, no payment needed)'
+                token_notes  = f'Returning — {patient.consultation_visit_label} — skip cashier'
+            else:
+                next_service = ServiceType.CASHIER
+                dest_label   = 'Cashier (consultation window expired — renewal required)'
+                token_notes  = 'Returning patient — consultation expired, pay to renew'
+
+            with _tx.atomic():
+                next_number = DailyTokenSequence.next_dept_token(next_service)
+                QueueToken.objects.create(
+                    token_number   = next_number,
+                    token_date     = today,
+                    patient        = patient,
+                    patient_name   = patient.full_name,
+                    service_type   = next_service,
+                    service_tier   = tier,
+                    issuance_point = IssuancePoint.SYSTEM,
+                    priority       = TIER_PRIORITY.get(tier, 0),
+                    entry_token    = recep_token,
+                    issued_by      = request.user,
+                    issued_at      = recep_token.issued_at,  # preserve original arrival time
+                    notes          = token_notes,
+                )
+            messages.success(
+                request,
+                f'{patient.full_name} checked in and routed to {dest_label}.'
+            )
+        except Exception as exc:
+            messages.warning(request, f'Patient found but queue update failed: {exc}')
+    else:
+        # No QMS flow — just open the patient record
+        messages.info(request, f'Opening existing record for {patient.full_name}.')
+
+    if counter_redirect:
+        return redirect('qms:counter', counter_id=counter_redirect)
+    if qms_token_id:
+        return redirect('qms:receptionist')
+    return redirect('patients:detail', patient_id=patient.patient_id)
+
+
+@login_required
 @clinical_staff_required
 def patient_detail_view(request, patient_id):
     from collections import defaultdict
@@ -203,6 +376,8 @@ def patient_detail_view(request, patient_id):
         'consultation_diagnoses__diagnosis',
         'optical_prescriptions',
         'drug_prescriptions__items',
+        'lab_orders__items__test_type',
+        'investigation_orders__investigation_type',
     ).order_by('-consultation_date')
 
     # Group consultations by department for tabbed display
@@ -257,9 +432,165 @@ def patient_detail_view(request, patient_id):
     except Exception:
         admissions = []
 
+    # Chronic medications
+    chronic_medications = list(PatientMedication.objects.filter(
+        patient=patient
+    ).select_related('prescribed_by').order_by('-is_active', 'drug_name'))
+
+    allergies = list(PatientAllergy.objects.filter(
+        patient=patient, is_active=True
+    ).order_by('severity', 'allergen'))
+
+    try:
+        from .models import PatientProblem, ProblemStatus
+        problems = list(PatientProblem.objects.filter(patient=patient).select_related('recorded_by'))
+    except Exception:
+        problems = []
+
+    # Patient documents (uploaded scans / external records)
+    try:
+        from .models import PatientDocument
+        documents = list(PatientDocument.objects.filter(
+            patient=patient, is_deleted=False
+        ).select_related('created_by').order_by('-created_at'))
+    except Exception:
+        documents = []
+
+    # ── Billing history (for finance roles) ──────────────────────────────
+    u = request.user
+    billing_invoices = []
+    billing_total_billed = 0
+    billing_total_paid = 0
+    billing_total_outstanding = 0
+    is_finance_role = u.role in (
+        'finance_director', 'billing_officer', 'accountant',
+        'senior_accountant', 'chief_cashier',
+    ) or u.is_super_admin or u.is_ceo or u.is_medical_director or u.is_admin_director
+    if is_finance_role:
+        try:
+            from apps.billing.models import Invoice, InvoiceItem
+            from django.db.models import Sum, F, ExpressionWrapper, DecimalField as BDec
+            invoices_qs = Invoice.objects.filter(
+                patient=patient, is_deleted=False
+            ).prefetch_related('items').order_by('-issue_date')[:30]
+            billing_invoices = list(invoices_qs)
+            # Totals
+            items_agg = InvoiceItem.objects.filter(
+                invoice__patient=patient,
+                invoice__is_deleted=False,
+                is_deleted=False,
+            ).aggregate(
+                total=Sum(ExpressionWrapper(F('unit_price') * F('quantity'), output_field=BDec(max_digits=14, decimal_places=2)))
+            )
+            billing_total_billed = float(items_agg['total'] or 0)
+            from apps.billing.models import Payment, Refund
+            payments_agg = Payment.objects.filter(
+                invoice__patient=patient, is_deleted=False
+            ).aggregate(total=Sum('amount'))
+            refunds_agg = Refund.objects.filter(
+                invoice__patient=patient, is_deleted=False
+            ).aggregate(total=Sum('amount'))
+            billing_total_paid = float(payments_agg['total'] or 0) - float(refunds_agg['total'] or 0)
+            billing_total_outstanding = max(0, billing_total_billed - billing_total_paid)
+        except Exception:
+            pass
+
+    # Longitudinal vital signs history (last 10 visits with vitals)
+    import json
+    from django.core.serializers.json import DjangoJSONEncoder
+    _vs_qs = list(
+        Visit.objects.filter(
+            patient=patient, is_deleted=False
+        ).exclude(vital_signs={}).order_by('-visit_date')[:10]
+        .values('visit_date', 'visit_number', 'vital_signs')
+    )
+    # Normalize: convert datetime → ISO date string so JS can parse it
+    vital_signs_history = [
+        {
+            'visit_date': v['visit_date'].date().isoformat() if v['visit_date'] else None,
+            'visit_number': v['visit_number'],
+            'vital_signs': v['vital_signs'] or {},
+        }
+        for v in _vs_qs
+    ]
+    vital_signs_history_json = json.dumps(vital_signs_history, cls=DjangoJSONEncoder)
+
+    # ── Role-based permission flags for the template ─────────────────────
+    is_doctor        = u.is_doctor or u.is_medical_director
+    is_clinical_nurse = u.is_ward_nurse or u.is_theatre_nurse or u.is_opd_nurse or u.role == 'anaesthetist'
+    is_pharma        = u.is_pharmacist or u.is_optical_dispenser
+    is_admin_staff   = u.role in ('medical_records', 'receptionist') or u.is_admission_officer or u.is_super_admin
+    # Billing-only staff: access patient record for invoice/insurance lookup only — no clinical tabs
+    is_billing_only  = u.role == 'billing_officer' and not (is_doctor or u.is_super_admin or u.is_medical_director)
+
+    pr = {
+        # Action buttons in banner
+        'can_new_consultation': u.can_create_consultation,
+        'can_dispatch':         u.can_do_triage,
+        'can_counsel':          u.is_counseling_nurse,
+        'can_book_appointment': is_doctor or u.is_receptionist or u.is_medical_director or u.is_super_admin or u.is_ceo or u.is_admin_director,
+        'can_edit_demographics': u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director,
+        'can_print_pdf':        is_doctor or u.is_medical_director or u.role == 'medical_records' or u.is_super_admin or u.is_ceo,
+        'can_qr_card':          u.is_receptionist or u.is_super_admin,
+        'can_full_history':     is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Tabs — each gated strictly to the roles that genuinely need that data
+        # Timeline/vitals: clinical staff only — NOT counseling nurse (triage is a separate workflow)
+        'tab_timeline':         is_doctor or is_clinical_nurse or u.is_opd_nurse or u.is_investigation_tech or u.is_lab_tech or u.role == 'medical_records' or u.is_super_admin or u.is_ceo or u.is_medical_director,
+        'tab_dept_clinical':    is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_ceo or u.is_medical_director,
+        'tab_problems':         is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Allergies: doctors, nurses, pharmacist (drug safety), paramedicals
+        'tab_allergies':        is_doctor or is_clinical_nurse or u.is_pharmacist or u.is_opd_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Medications: doctors, pharmacist, ward nurse only
+        'tab_medications':      is_doctor or u.is_pharmacist or u.is_ward_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Prescriptions: doctors, pharmacist (drug dispensing), optical dispenser (spectacle Rx)
+        'tab_prescriptions':    is_doctor or u.is_pharmacist or u.is_optical_dispenser or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Surgical: doctors, theatre/ward nurses, counseling nurse (their primary function), admission
+        'tab_surgical':         is_doctor or u.is_theatre_nurse or u.is_ward_nurse or u.is_admission_officer or u.is_counseling_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        'tab_ipd':              is_doctor or u.is_ward_nurse or u.is_theatre_nurse or u.is_admission_officer or u.role == 'anaesthetist' or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Visit log: all clinical staff (not billing-only)
+        'tab_visits':           not is_billing_only,
+        # Insurance: admin/reception/medical_records/billing officer (for billing workflow)
+        'tab_insurance':        u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or u.role == 'billing_officer',
+        # Demographics: clinical/admin staff — NOT billing-only roles
+        'tab_demographics':     u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or is_doctor or u.is_medical_director or u.role == 'billing_officer',
+        # Billing tab: billing officer sees their scope; finance roles already blocked at decorator level
+        'tab_billing':          is_finance_role,
+        # Documents tab: clinical, admin, medical records, super admin
+        'tab_documents':        is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or u.is_medical_director or is_clinical_nurse or is_admin_staff,
+        # Quick prescribe panel in patient record
+        'show_quick_prescribe': u.can_create_consultation,
+        # Inline nursing/ward actions
+        'show_ward_actions':    u.is_ward_nurse or u.is_theatre_nurse or u.role == 'anaesthetist',
+    }
+
+    # ── Latest invoice payment status (shown as badge for all clinical staff) ─
+    latest_invoice_status = None
+    try:
+        from apps.billing.models import Invoice as _Inv
+        _inv = _Inv.objects.filter(
+            patient=patient, is_deleted=False
+        ).exclude(status__in=['CANCELLED', 'WAIVED']).order_by('-issue_date').first()
+        if _inv:
+            latest_invoice_status = _inv.status
+    except Exception:
+        pass
+
+    # For counseling nurse: find the most recent open visit to counsel
+    # (not limited by 15-day window — surgery referral may be older)
+    counseling_visit = None
+    if u.is_counseling_nurse:
+        from apps.patients.models import Visit as _Visit
+        counseling_visit = _Visit.objects.filter(
+            patient=patient, is_deleted=False,
+        ).exclude(status__in=['COMPLETED', 'DISCHARGED']).order_by('-visit_date').first()
+        if not counseling_visit and visits:
+            # All visits completed — use the most recent one anyway
+            counseling_visit = visits[0] if len(visits) > 0 else None
+
     return render(request, 'patients/detail.html', {
         'patient': patient,
         'visits': visits,
+        'counseling_visit': counseling_visit,
         'medical_history': medical_history,
         'next_of_kin': patient.next_of_kin.all(),
         'insurance': patient.insurance.filter(is_active=True).first(),
@@ -269,6 +600,22 @@ def patient_detail_view(request, patient_id):
         'surgical_bookings': surgical_bookings,
         'theatre_procedures': theatre_procedures,
         'admissions': admissions,
+        'chronic_medications': chronic_medications,
+        'allergies': allergies,
+        'problems': problems,
+        'problem_status_choices': ProblemStatus.choices,
+        'vital_signs_history': vital_signs_history,
+        'vital_signs_history_json': vital_signs_history_json,
+        'allergy_severity_choices': PatientAllergy.Severity.choices,
+        'allergy_type_choices': PatientAllergy.AllergyType.choices,
+        'today': timezone.localdate(),
+        'pr': pr,  # permission flags
+        'billing_invoices': billing_invoices,
+        'billing_total_billed': billing_total_billed,
+        'billing_total_paid': billing_total_paid,
+        'billing_total_outstanding': billing_total_outstanding,
+        'latest_invoice_status': latest_invoice_status,
+        'documents': documents,
     })
 
 
@@ -409,16 +756,16 @@ def visit_detail_view(request, visit_number):
 
 @login_required
 def triage_view(request, visit_number):
-    """Any clinical staff can record vitals and dispatch patient to any unit."""
-    if not request.user.can_dispatch_patient() and not request.user.is_super_admin:
+    """OPD Nurses and Medical Director record vitals and dispatch patients."""
+    if not request.user.can_do_triage() and not request.user.is_super_admin:
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("You do not have permission to dispatch patients.")
+        return HttpResponseForbidden("Only nursing staff can record patient vitals.")
 
     visit = get_object_or_404(Visit, visit_number=visit_number)
 
     from apps.departments.models import Department
     from apps.qms.models import ServiceType
-    departments = Department.objects.filter(is_active=True).order_by('display_order', 'name')
+    departments = Department.objects.filter(is_active=True).order_by('name')
 
     # All routable destinations: departments + direct service queues
     # Nurse can pick ANY of these regardless of patient tier or path
@@ -432,7 +779,52 @@ def triage_view(request, visit_number):
         {'code': 'EXP_CONSULT', 'label': 'Express Consultation Room'},
     ]
 
+    # ── Payment check: patient must have paid before triage starts ──────────
+    from apps.billing.models import Invoice, InvoiceStatus as _IS
+    visit_date = visit.visit_date.date()
+    today_invoices = Invoice.objects.filter(
+        patient=visit.patient,
+        is_deleted=False,
+        created_at__date=visit_date,
+    )
+    payment_paid = today_invoices.filter(
+        status__in=[_IS.PAID, _IS.WAIVED, _IS.PARTIALLY_PAID]
+    ).exists()
+    # Payment is blocked unless the patient has at least a partially-paid invoice today
+    payment_blocked = not payment_paid
+
     if request.method == 'POST':
+        # Emergency override: nurse ticks "Emergency" checkbox to bypass payment
+        is_emergency = bool(request.POST.get('emergency_override'))
+        if payment_blocked and not is_emergency:
+            messages.error(
+                request,
+                f'{visit.patient.full_name} has not paid yet. '
+                'Direct the patient to the cashier first, or tick "Emergency" to override.'
+            )
+            form = VitalSignsForm(initial=visit.vital_signs)
+            patient = visit.patient
+            med_history = getattr(patient, 'medical_history', None)
+            prev_visit = Visit.objects.filter(
+                patient=patient, is_deleted=False,
+            ).exclude(pk=visit.pk).exclude(vital_signs={}).order_by('-visit_date').first()
+            return render(request, 'patients/triage.html', {
+                'visit': visit, 'patient': patient, 'form': form,
+                'departments': departments, 'direct_routes': direct_routes,
+                'med_history': med_history, 'prev_visit': prev_visit,
+                'recent_consultations': [],
+                'payment_blocked': True,
+            })
+        if is_emergency and payment_blocked:
+            # Flag the visit as emergency-bypassed for audit
+            existing_notes = visit.nursing_notes or ''
+            if 'EMERGENCY OVERRIDE' not in existing_notes:
+                visit.nursing_notes = (
+                    f'[EMERGENCY OVERRIDE — triage started without payment by '
+                    f'{request.user.get_full_name()} on {timezone.localdate()}]\n' + existing_notes
+                )
+                visit.save(update_fields=['nursing_notes', 'updated_at'])
+
         form = VitalSignsForm(request.POST)
         dept_id        = request.POST.get('dispatch_department', '').strip()
         direct_service = request.POST.get('dispatch_direct', '').strip()
@@ -444,6 +836,12 @@ def triage_view(request, visit_number):
             visit.vital_signs = vitals
             visit.status = 'TRIAGE'
             visit.triage_nurse = request.user
+            nursing_notes = request.POST.get('nursing_notes', '').strip()
+            if nursing_notes:
+                visit.nursing_notes = nursing_notes
+            pre_auth = request.POST.get('pre_auth_status', '').strip()
+            if pre_auth:
+                visit.pre_auth_status = pre_auth
 
             dept = None
             # Dispatch: assign to the selected department
@@ -460,7 +858,8 @@ def triage_view(request, visit_number):
                 vitals['priority'] = priority
                 visit.vital_signs = vitals
 
-            visit.save(update_fields=['vital_signs', 'status', 'triage_nurse', 'department', 'updated_at'])
+            visit.save(update_fields=['vital_signs', 'status', 'triage_nurse', 'department',
+                                      'nursing_notes', 'pre_auth_status', 'updated_at'])
 
             # ── QMS Integration: flexible routing ─────────────────────────────
             # Priority 1: nurse picked a direct service (REFRACTION, LAB, etc.)
@@ -580,6 +979,7 @@ def triage_view(request, visit_number):
         'med_history': med_history,
         'prev_visit': prev_visit,
         'recent_consultations': recent_consultations,
+        'payment_blocked': payment_blocked,
     })
 
 
@@ -640,35 +1040,154 @@ def discharge_view(request, visit_number):
 
 @login_required
 @require_GET
+def duplicate_check_api(request):
+    """
+    AJAX endpoint: check for potential duplicate patients before registration.
+    Searches by phone number OR (first_name + last_name + DOB).
+    Returns up to 5 matches so the receptionist can decide whether to proceed.
+    """
+    phone     = request.GET.get('phone', '').strip()
+    first     = request.GET.get('first_name', '').strip()
+    last      = request.GET.get('last_name', '').strip()
+    dob       = request.GET.get('dob', '').strip()
+
+    if not phone and not (first and last):
+        return JsonResponse({'duplicates': []})
+
+    qs = Patient.objects.filter(is_active=True)
+    conditions = Q()
+    if phone:
+        conditions |= Q(phone_number=phone)
+    if first and last:
+        conditions |= Q(first_name__iexact=first, last_name__iexact=last)
+        if dob:
+            conditions |= Q(first_name__iexact=first, last_name__iexact=last, date_of_birth=dob)
+
+    matches = qs.filter(conditions).values(
+        'patient_id', 'first_name', 'last_name', 'date_of_birth', 'phone_number', 'gender'
+    )[:5]
+
+    from apps.core.utils import calculate_age
+    results = []
+    for p in matches:
+        results.append({
+            'patient_id': p['patient_id'],
+            'name': f"{p['first_name']} {p['last_name']}",
+            'dob': str(p['date_of_birth']),
+            'age': calculate_age(p['date_of_birth']),
+            'phone': p['phone_number'],
+            'gender': p['gender'],
+            'url': f"/patients/{p['patient_id']}/",
+        })
+    return JsonResponse({'duplicates': results})
+
+
+@login_required
+@require_GET
 def patient_search_api(request):
     """AJAX endpoint: returns JSON list of matching patients for autocomplete."""
     query = request.GET.get('q', '').strip()
+    exact = request.GET.get('exact', '0') == '1'
     if len(query) < 2:
         return JsonResponse({'results': []})
 
-    patients = Patient.objects.filter(
-        is_active=True
-    ).filter(
-        Q(patient_id__icontains=query) |
-        Q(first_name__icontains=query) |
-        Q(last_name__icontains=query) |
-        Q(phone_number__icontains=query)
-    ).values('id', 'patient_id', 'first_name', 'last_name', 'date_of_birth', 'phone_number', 'gender')[:10]
+    from apps.core.utils import calculate_age
+    from django.utils import timezone
+
+    if exact:
+        patients = Patient.objects.filter(
+            is_active=True
+        ).filter(
+            Q(patient_id__iexact=query) |
+            Q(phone_number__iexact=query)
+        ).prefetch_related('visits')[:5]
+    else:
+        from apps.core.utils import patient_search_q
+        patients = Patient.objects.filter(
+            is_active=True
+        ).filter(patient_search_q(query)).prefetch_related('visits')[:10]
+
+    today = timezone.localdate()
+
+    # Prefetch today's appointments for all matched patients in one query
+    try:
+        from apps.appointments.models import Appointment
+        appt_map = {}
+        patient_ids = [p.id for p in patients]
+        for appt in Appointment.objects.filter(
+            patient_id__in=patient_ids,
+            appointment_date=today,
+        ).select_related('doctor', 'department').order_by('appointment_time'):
+            if appt.patient_id not in appt_map:
+                appt_map[appt.patient_id] = appt
+    except Exception:
+        appt_map = {}
+
+    # Prefetch today's pre-registrations by phone
+    try:
+        from apps.patients.models import PreRegistration
+        prereg_phones = {
+            pr.data.get('phone_number', '').strip(): pr
+            for pr in PreRegistration.objects.filter(
+                visit_date=today,
+                status__in=[PreRegistration.Status.PENDING, PreRegistration.Status.ARRIVED],
+            )
+        }
+    except Exception:
+        prereg_phones = {}
 
     results = []
     for p in patients:
-        from apps.core.utils import calculate_age
-        age = calculate_age(p['date_of_birth'])
-        full_name = f"{p['first_name']} {p['last_name']}"
+        has_any_visit = p.visits.filter(is_deleted=False).exists()
+        is_free = p.is_free_followup
+        if not has_any_visit:
+            status = 'NEW'
+            status_label = 'New Patient'
+        elif is_free:
+            status = 'FREE_FOLLOWUP'
+            status_label = p.consultation_visit_label
+        else:
+            status = 'RETURNING'
+            status_label = 'Returning — pay consultation'
+
+        # Today's appointment info
+        appt = appt_map.get(p.id)
+        appt_info = None
+        if appt:
+            doctor_name = appt.doctor.get_full_name() if appt.doctor else 'Doctor'
+            dept_name   = appt.department.name if appt.department else ''
+            time_str    = appt.appointment_time.strftime('%H:%M') if appt.appointment_time else ''
+            appt_info   = {
+                'id': str(appt.id),
+                'doctor': doctor_name,
+                'department': dept_name,
+                'time': time_str,
+                'label': f'Appointment {time_str} — {doctor_name}' + (f' ({dept_name})' if dept_name else ''),
+            }
+
+        # Pre-registration info
+        prereg = prereg_phones.get(p.phone_number, None)
+        prereg_info = None
+        if prereg:
+            prereg_info = {
+                'code': prereg.code,
+                'status': prereg.status,
+                'status_label': prereg.get_status_display(),
+            }
+
         results.append({
-            'id': str(p['id']),
-            'patient_id': p['patient_id'],
-            'name': full_name,
-            'full_name': full_name,
-            'age': age,
-            'gender': p['gender'],
-            'phone': p['phone_number'],
-            'url': f"/patients/{p['patient_id']}/",
+            'id': str(p.id),
+            'patient_id': p.patient_id,
+            'name': p.full_name,
+            'full_name': p.full_name,
+            'age': calculate_age(p.date_of_birth),
+            'gender': p.gender,
+            'phone': p.phone_number,
+            'url': f"/patients/{p.patient_id}/",
+            'status': status,
+            'status_label': status_label,
+            'appointment_today': appt_info,
+            'prereg_today': prereg_info,
         })
 
     return JsonResponse({'results': results})
@@ -794,6 +1313,68 @@ def qr_generate_view(request, patient_id):
     })
 
 
+@login_required
+def registration_card_view(request, patient_id):
+    """
+    Printable registration card shown immediately after new patient registration.
+    Contains patient ID, name, DOB, phone and a QR code.
+    Staff prints this and hands it to the patient before sending them to cashier.
+    """
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+    import qrcode as _qr, base64 as _b64
+    from io import BytesIO as _BIO
+    from django.conf import settings as _s
+    import os as _os
+
+    # QR encodes the patient_id so any scanner can look them up
+    qr = _qr.QRCode(box_size=8, border=2, error_correction=_qr.constants.ERROR_CORRECT_M)
+    qr.add_data(patient.patient_id)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buf = _BIO()
+    img.save(buf, format='PNG')
+    qr_data_url = 'data:image/png;base64,' + _b64.b64encode(buf.getvalue()).decode()
+
+    # Embed hospital logo for offline printing
+    logo_data = ''
+    for _sd in getattr(_s, 'STATICFILES_DIRS', []):
+        for _ext, _mime in [('svg', 'image/svg+xml'), ('png', 'image/png')]:
+            _p = _os.path.join(str(_sd), 'img', f'gludd_logo.{_ext}')
+            if _os.path.exists(_p):
+                try:
+                    with open(_p, 'rb') as _f:
+                        logo_data = f'data:{_mime};base64,' + _b64.b64encode(_f.read()).decode()
+                    break
+                except OSError:
+                    pass
+        if logo_data:
+            break
+
+    # Look up the most recent cashier token created for this patient today (auto-created on registration)
+    from apps.core.context_processors import qms_active
+    cashier_token = None
+    if qms_active():
+        try:
+            from apps.qms.models import QueueToken, ServiceType
+            cashier_token = QueueToken.objects.filter(
+                patient=patient,
+                service_type=ServiceType.CASHIER,
+                token_date=timezone.localdate(),
+                is_deleted=False,
+            ).order_by('-issued_at').first()
+        except Exception:
+            pass
+
+    return render(request, 'patients/registration_card.html', {
+        'patient': patient,
+        'qr_data_url': qr_data_url,
+        'logo_data': logo_data,
+        'hospital_name': getattr(_s, 'HOSPITAL_NAME', 'EHR Africa'),
+        'today': timezone.localdate(),
+        'cashier_token': cashier_token,
+    })
+
+
 def qr_checkin_view(request):
     """
     Public self-check-in page (no login).
@@ -872,19 +1453,20 @@ def qr_checkin_view(request):
 
         # Create QueueToken in REGISTRATION queue
         token = None
-        try:
-            from apps.qms.models import QueueToken, ServiceType, ServiceTier as QMSTier
-            if not already_checked_in:
-                token = QueueToken.objects.create(
-                    patient=patient,
-                    visit=visit,
-                    service_type=ServiceType.REGISTRATION,
-                    service_tier=QMSTier.STANDARD,
-                    token_date=today,
-                    priority=0,
-                )
-        except Exception:
-            pass
+        if _qms_active():
+            try:
+                from apps.qms.models import QueueToken, ServiceType, ServiceTier as QMSTier
+                if not already_checked_in:
+                    token = QueueToken.objects.create(
+                        patient=patient,
+                        visit=visit,
+                        service_type=ServiceType.REGISTRATION,
+                        service_tier=QMSTier.STANDARD,
+                        token_date=today,
+                        priority=0,
+                    )
+            except Exception:
+                pass
 
         return render(request, 'patients/qr_checkin_confirm.html', {
             'patient': patient,
@@ -1004,6 +1586,7 @@ def preregistration_view(request):
         insurance_company = p.get('insurance_company', '').strip()
         previously_registered = p.get('previously_registered', '')
         has_referral_letter   = p.get('has_referral_letter', '')
+        visit_date_str        = p.get('visit_date', '').strip()
 
         if not first_name or not last_name or not phone or not dob:
             from .forms import CAMEROON_REGIONS
@@ -1069,11 +1652,18 @@ def preregistration_view(request):
             'has_referral_letter':   has_referral_letter,
             'referral_doc_path':     referral_doc_path,
         }
+        import datetime as _dt2
+        visit_date_obj = None
+        try:
+            visit_date_obj = _dt.date.fromisoformat(visit_date_str) if visit_date_str else None
+        except ValueError:
+            pass
         from .models import PreRegistration
         PreRegistration.objects.create(
             code=code,
             data=prereg_data,
-            expires_at=_tz.now() + _dt.timedelta(days=30),
+            visit_date=visit_date_obj,
+            expires_at=_tz.now() + _dt.timedelta(days=7),  # expires 7 days after submission
         )
         return redirect(f'/patients/prereg/{code}/slip/')
 
@@ -1228,3 +1818,386 @@ def preregistration_lookup_view(request):
         'data': data,
         'code': code,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chronic / Long-term Medications (Medication Reconciliation)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@clinical_staff_required
+def medication_add_view(request, patient_id):
+    """Add a chronic medication to a patient's long-term medication list."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    if request.method == 'POST':
+        drug_name = request.POST.get('drug_name', '').strip()
+        if not drug_name:
+            messages.error(request, 'Drug name is required.')
+            return redirect('patients:detail', patient_id=patient_id)
+        PatientMedication.objects.create(
+            patient=patient,
+            drug_name=drug_name,
+            dose=request.POST.get('dose', '').strip(),
+            frequency=request.POST.get('frequency', '').strip(),
+            route=request.POST.get('route', '').strip(),
+            indication=request.POST.get('indication', '').strip(),
+            notes=request.POST.get('notes', '').strip(),
+            is_active=True,
+            prescribed_by=request.user,
+        )
+        messages.success(request, f'Medication "{drug_name}" added to {patient.full_name}\'s record.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+@login_required
+@clinical_staff_required
+def medication_toggle_view(request, patient_id, med_id):
+    """Toggle a chronic medication active/inactive (stop/restart)."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    med = get_object_or_404(PatientMedication, pk=med_id, patient=patient)
+    if request.method == 'POST':
+        med.is_active = not med.is_active
+        med.save(update_fields=['is_active', 'updated_at'])
+        status = 'restarted' if med.is_active else 'stopped'
+        messages.success(request, f'Medication "{med.drug_name}" {status}.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Emergency Quick-Registration
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def emergency_register_view(request):
+    """
+    Fast-track registration for emergency patients.
+    Requires minimal info (name + presenting complaint), immediately creates
+    a Visit with EMERGENCY status and routes to triage.
+    """
+    if not (request.user.can_dispatch_patient() or request.user.can_create_consultation()
+            or request.user.is_super_admin or request.user.is_admin_staff):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        first_name = request.POST.get('first_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
+        gender = request.POST.get('gender', 'Other').strip()
+        phone = request.POST.get('phone_number', '').strip()
+        chief_complaint = request.POST.get('chief_complaint', '').strip()
+
+        if not first_name or not last_name or not chief_complaint:
+            messages.error(request, 'First name, last name, and chief complaint are required.')
+            return render(request, 'patients/emergency_register.html', {'post': request.POST})
+
+        from django.db import transaction
+        from apps.core.utils import generate_patient_id
+        from datetime import date
+
+        with transaction.atomic():
+            # Create minimal patient record
+            patient = Patient.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                gender=gender,
+                phone_number=phone or 'EMERGENCY',
+                date_of_birth=date(1900, 1, 1),  # placeholder — update later
+                registered_by=request.user,
+            )
+            patient.notes = 'EMERGENCY REGISTRATION — demographics to be completed after stabilisation.'
+            patient.save(update_fields=['notes'])
+
+            visit = Visit.objects.create(
+                patient=patient,
+                visit_type='EMERGENCY',
+                chief_complaint=chief_complaint,
+                status='PARAMETERS',
+                service_tier='STANDARD',
+                billing_type='SELF_PAY',
+                attending_doctor=request.user,
+                department=request.user.department,
+                created_by=request.user,
+            )
+
+        messages.success(
+            request,
+            f'Emergency registration complete. Visit {visit.visit_number} created. '
+            'Patient sent to triage — update demographics later.'
+        )
+        return redirect('patients:triage', visit_number=visit.visit_number)
+
+    return render(request, 'patients/emergency_register.html', {})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Patient Allergies
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@clinical_staff_required
+def allergy_add_view(request, patient_id):
+    """Record a new allergy for a patient."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    if request.method == 'POST':
+        allergen = request.POST.get('allergen', '').strip()
+        if not allergen:
+            messages.error(request, 'Allergen name is required.')
+            return redirect('patients:detail', patient_id=patient_id)
+        PatientAllergy.objects.create(
+            patient=patient,
+            allergen=allergen,
+            allergy_type=request.POST.get('allergy_type', 'DRUG'),
+            severity=request.POST.get('severity', 'MODERATE'),
+            reaction=request.POST.get('reaction', '').strip(),
+            recorded_by=request.user,
+        )
+        messages.success(request, f'Allergy to "{allergen}" recorded.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+@login_required
+@clinical_staff_required
+@require_POST
+def allergy_delete_view(request, patient_id, allergy_id):
+    """Mark an allergy as inactive (soft-delete)."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    PatientAllergy.objects.filter(pk=allergy_id, patient=patient).update(is_active=False)
+    messages.info(request, 'Allergy removed.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Insurance Info
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def insurance_add_view(request, patient_id):
+    """Add or update insurance information for a patient."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    if request.method == 'POST':
+        provider      = request.POST.get('provider', '').strip()
+        policy_number = request.POST.get('policy_number', '').strip()
+        if not provider or not policy_number:
+            messages.error(request, 'Provider and policy number are required.')
+            return redirect('patients:detail', patient_id=patient_id)
+        from .models import InsuranceInfo
+        InsuranceInfo.objects.create(
+            patient=patient,
+            provider=provider,
+            policy_number=policy_number,
+            group_number=request.POST.get('group_number', '').strip(),
+            plan_name=request.POST.get('plan_name', '').strip(),
+            expiry_date=request.POST.get('expiry_date') or None,
+            notes=request.POST.get('notes', '').strip(),
+            is_active=True,
+        )
+        messages.success(request, f'Insurance ({provider}) added.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+@login_required
+@require_POST
+def insurance_deactivate_view(request, patient_id, ins_id):
+    """Mark an insurance record as inactive."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    from .models import InsuranceInfo
+    InsuranceInfo.objects.filter(pk=ins_id, patient=patient).update(is_active=False)
+    messages.info(request, 'Insurance record deactivated.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+# ── Problem List ─────────────────────────────────────────────────────────────
+
+@clinical_staff_required
+def problem_add_view(request, patient_id):
+    """Add a new problem to the patient's persistent problem list."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    if request.method == 'POST':
+        from .models import PatientProblem, ProblemStatus
+        problem_text = request.POST.get('problem', '').strip()
+        if not problem_text:
+            messages.error(request, 'Problem description is required.')
+            return redirect('patients:detail', patient_id=patient_id)
+        PatientProblem.objects.create(
+            patient=patient,
+            problem=problem_text,
+            icd10_code=request.POST.get('icd10_code', '').strip(),
+            status=request.POST.get('status', ProblemStatus.ACTIVE),
+            onset_date=request.POST.get('onset_date') or None,
+            notes=request.POST.get('notes', '').strip(),
+            recorded_by=request.user,
+        )
+        messages.success(request, f'Problem "{problem_text}" added to problem list.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+@clinical_staff_required
+@require_POST
+def problem_update_status_view(request, patient_id, problem_id):
+    """Update the status of a problem (e.g., mark as resolved)."""
+    from .models import PatientProblem
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    problem = get_object_or_404(PatientProblem, pk=problem_id, patient=patient)
+    new_status = request.POST.get('status', '').strip()
+    if new_status:
+        problem.status = new_status
+        if new_status == 'resolved' and not problem.resolved_date:
+            from django.utils import timezone
+            problem.resolved_date = timezone.now().date()
+        problem.save(update_fields=['status', 'resolved_date'])
+        messages.success(request, f'Problem status updated to {problem.get_status_display()}.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+@clinical_staff_required
+@require_POST
+def problem_delete_view(request, patient_id, problem_id):
+    """Remove a problem from the problem list."""
+    from .models import PatientProblem
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    PatientProblem.objects.filter(pk=problem_id, patient=patient).delete()
+    messages.info(request, 'Problem removed from problem list.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+# ── Patient Consent (JCI PFR.5) ──────────────────────────────────────────────
+
+@clinical_staff_required
+def consent_list_view(request, patient_id):
+    """List all consent records for a patient."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    from .models import PatientConsent
+    consents = PatientConsent.objects.filter(patient=patient).select_related(
+        'obtained_by', 'consultation'
+    ).order_by('-created_at')
+    return render(request, 'patients/consent_list.html', {
+        'patient': patient,
+        'consents': consents,
+    })
+
+
+@clinical_staff_required
+def consent_create_view(request, patient_id):
+    """Create a new informed consent record."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    from .models import PatientConsent, ConsentType
+    from apps.consultations.models import Consultation
+
+    if request.method == 'POST':
+        signed_at_str = request.POST.get('signed_at', '').strip()
+        signed_at = None
+        if signed_at_str:
+            from django.utils.dateparse import parse_datetime
+            signed_at = parse_datetime(signed_at_str) or timezone.now()
+
+        consent = PatientConsent.objects.create(
+            patient=patient,
+            consent_type=request.POST.get('consent_type', ConsentType.GENERAL),
+            procedure_name=request.POST.get('procedure_name', '').strip(),
+            obtained_by=request.user,
+            signed_at=signed_at or timezone.now(),
+            patient_has_capacity=request.POST.get('patient_has_capacity') == 'on',
+            patient_representative=request.POST.get('patient_representative', '').strip(),
+            relationship_to_patient=request.POST.get('relationship_to_patient', '').strip(),
+            risks_explained=request.POST.get('risks_explained', '').strip(),
+            benefits_explained=request.POST.get('benefits_explained', '').strip(),
+            alternatives_explained=request.POST.get('alternatives_explained', '').strip(),
+            questions_answered=request.POST.get('questions_answered') == 'on',
+            interpreter_used=request.POST.get('interpreter_used') == 'on',
+            interpreter_name=request.POST.get('interpreter_name', '').strip(),
+            witness_name=request.POST.get('witness_name', '').strip(),
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        # Handle optional document upload
+        if 'consent_document' in request.FILES:
+            consent.consent_document = request.FILES['consent_document']
+            consent.save(update_fields=['consent_document'])
+
+        messages.success(request, f'Consent recorded for {patient.full_name}.')
+        return redirect('patients:consent_list', patient_id=patient_id)
+
+    # GET — render form
+    recent_consultations = Consultation.objects.filter(
+        patient=patient, is_deleted=False
+    ).order_by('-consultation_date')[:5]
+
+    return render(request, 'patients/consent_form.html', {
+        'patient': patient,
+        'consent_types': ConsentType.choices,
+        'recent_consultations': recent_consultations,
+    })
+
+
+@clinical_staff_required
+def consent_detail_view(request, patient_id, consent_id):
+    """View consent detail / handle revocation."""
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    from .models import PatientConsent
+    consent = get_object_or_404(PatientConsent, pk=consent_id, patient=patient)
+
+    if request.method == 'POST' and request.POST.get('action') == 'revoke':
+        reason = request.POST.get('revocation_reason', '').strip()
+        consent.revoke(reason=reason)
+        messages.warning(request, 'Consent revoked.')
+        return redirect('patients:consent_list', patient_id=patient_id)
+
+    return render(request, 'patients/consent_detail.html', {
+        'patient': patient,
+        'consent': consent,
+    })
+
+
+# ── Patient Documents / Scanned Records ───────────────────────────────────────
+
+@login_required
+def document_upload_view(request, patient_id):
+    """Upload a scanned or digital document to a patient's record."""
+    from .models import PatientDocument
+    from django.contrib import messages
+    patient = get_object_or_404(Patient, patient_id=patient_id)
+
+    if request.method == 'POST':
+        title    = request.POST.get('title', '').strip()
+        doc_type = request.POST.get('document_type', 'OTHER')
+        source   = request.POST.get('source', 'SCAN')
+        desc     = request.POST.get('description', '').strip()
+        doc_date = request.POST.get('document_date') or None
+        file_obj = request.FILES.get('file')
+
+        if not title or not file_obj:
+            messages.error(request, 'Title and file are required.')
+        else:
+            PatientDocument.objects.create(
+                patient=patient,
+                title=title,
+                document_type=doc_type,
+                source=source,
+                description=desc,
+                document_date=doc_date,
+                file=file_obj,
+                created_by=request.user,
+            )
+            messages.success(request, f'Document "{title}" uploaded successfully.')
+        return redirect('patients:detail', patient_id=patient_id)
+
+    return render(request, 'patients/document_upload.html', {
+        'patient': patient,
+        'doc_types': PatientDocument.DocType.choices,
+        'source_types': PatientDocument.Source.choices,
+    })
+
+
+@login_required
+def document_delete_view(request, patient_id, doc_id):
+    """Soft-delete a patient document."""
+    from .models import PatientDocument
+    from django.contrib import messages
+    patient  = get_object_or_404(Patient, patient_id=patient_id)
+    document = get_object_or_404(PatientDocument, pk=doc_id, patient=patient, is_deleted=False)
+
+    if request.method == 'POST':
+        document.is_deleted = True
+        document.save()
+        messages.success(request, 'Document removed.')
+    return redirect('patients:detail', patient_id=patient_id)

@@ -14,7 +14,9 @@ from django.http import JsonResponse
 from apps.patients.models import Patient, Visit, MedicalHistory
 from apps.appointments.models import Appointment
 from apps.departments.models import Department
-from apps.qms.models import QueueToken, DailyTokenSequence, ServiceType, TokenStatus
+from apps.core.context_processors import qms_active
+# QMS models are imported lazily inside functions so this file
+# works correctly when QMS is toggled off (module_qms = False).
 
 
 # ── Tier meta: colour, icon, QMS priority ────────────────────────────────────
@@ -45,18 +47,22 @@ def desk(request):
         'completed': appointments.filter(status=Appointment.Status.COMPLETED).count(),
     }
 
-    # Active QMS queue
-    queue = QueueToken.objects.filter(
-        issued_at__date=today,
-        is_deleted=False,
-    ).exclude(
-        status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED]
-    ).order_by('-priority', 'issued_at').select_related('patient')[:30]
+    # Active QMS queue — only populated when QMS module is on
+    queue = []
+    if qms_active():
+        from apps.qms.models import QueueToken, TokenStatus
+        queue = QueueToken.objects.filter(
+            issued_at__date=today,
+            is_deleted=False,
+        ).exclude(
+            status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED]
+        ).order_by('-priority', 'issued_at').select_related('patient')[:30]
 
     return render(request, 'reception/desk.html', {
         'appointments': appointments,
         'stats': stats,
         'queue': queue,
+        'qms_active': qms_active(),
         'today': today,
         'tier_meta': TIER_META,
     })
@@ -87,14 +93,10 @@ def walk_in(request):
             selected_patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
 
         elif q:
+            from apps.core.utils import patient_search_q
             patients = Patient.objects.filter(
                 is_active=True
-            ).filter(
-                Q(patient_id__icontains=q) |
-                Q(first_name__icontains=q) |
-                Q(last_name__icontains=q) |
-                Q(phone_number__icontains=q)
-            ).order_by('last_name')[:20]
+            ).filter(patient_search_q(q)).order_by('last_name')[:20]
 
         # Check if selected patient has an active consultation (no payment needed)
         active_consult_visit = None
@@ -130,16 +132,7 @@ def walk_in(request):
         active_visit = patient.active_consultation_visit  # None if expired / never paid
         consultation_valid = active_visit is not None
 
-        # Determine QMS service type
         if consultation_valid:
-            # Within 15-day window — skip cashier, route to department directly
-            dept_code = department.code if department else 'GEN_OPH'
-            service_map = {
-                'LAB': ServiceType.LABORATORY,
-                'INVEST': ServiceType.INVESTIGATION,
-                'REFRAC': ServiceType.OPTICAL,
-            }
-            service_type = service_map.get(dept_code, ServiceType.GENERAL)
             messages.success(
                 request,
                 f"Walk-in check-in — consultation valid until "
@@ -147,8 +140,6 @@ def walk_in(request):
                 f"Patient directed to {department.name if department else 'department'} (no payment required)."
             )
         else:
-            # No valid consultation — must pay first
-            service_type = ServiceType.CASHIER
             messages.warning(
                 request,
                 "No active consultation found. Patient directed to cashier for payment."
@@ -157,16 +148,29 @@ def walk_in(request):
         # QMS priority from tier
         priority = TIER_META.get(tier, {}).get('priority', 0)
 
-        # Issue QMS token
-        token_number = DailyTokenSequence.next_token(service_type)
-        token = QueueToken.objects.create(
-            token_number=token_number,
-            patient=patient,
-            patient_name=patient.full_name,
-            service_type=service_type,
-            priority=priority,
-            issued_by=request.user,
-        )
+        # Issue QMS token (only when QMS module is active)
+        token = None
+        if qms_active():
+            from apps.qms.models import ServiceType, QueueToken, DailyTokenSequence
+            dept_code = department.code if department else 'GEN_OPH'
+            if consultation_valid:
+                service_map = {
+                    'LAB': ServiceType.LABORATORY,
+                    'INVEST': ServiceType.INVESTIGATION,
+                    'REFRAC': ServiceType.OPTICAL,
+                }
+                service_type = service_map.get(dept_code, ServiceType.GENERAL)
+            else:
+                service_type = ServiceType.CASHIER
+            token_number = DailyTokenSequence.next_token(service_type)
+            token = QueueToken.objects.create(
+                token_number=token_number,
+                patient=patient,
+                patient_name=patient.full_name,
+                service_type=service_type,
+                priority=priority,
+                issued_by=request.user,
+            )
 
         # Create appointment (CHECKED_IN immediately since patient is here)
         appt = Appointment.objects.create(
@@ -182,18 +186,29 @@ def walk_in(request):
             created_by=request.user,
         )
 
-        # Auto-create visit
+        # Correct OPD flow:
+        #   New / expired consultation → AT_CASHIER (pays first, then goes to triage)
+        #   Follow-up within 15 days  → PARAMETERS  (skip cashier, go straight to triage)
+        # In BOTH cases triage records vitals before the doctor sees the patient.
+        initial_visit_status = 'PARAMETERS' if consultation_valid else 'AT_CASHIER'
         visit = Visit.objects.create(
             patient=patient,
             department=department,
             appointment=appt,
             visit_type=appt_type if appt_type in ['NEW', 'FOLLOW_UP', 'EMERGENCY', 'REVIEW', 'PROCEDURE'] else 'NEW',
             chief_complaint=chief_complaint,
-            status='WAITING',
+            status=initial_visit_status,
             created_by=request.user,
         )
 
-        return redirect('reception:confirmation', token_pk=token.pk)
+        if token:
+            return redirect('reception:confirmation', token_pk=token.pk)
+        # QMS off — redirect to patient detail
+        if consultation_valid:
+            messages.success(request, "Patient checked in. Direct them to Triage/Parameters for vitals.")
+        else:
+            messages.warning(request, "Patient checked in. Direct them to the Cashier first, then Triage.")
+        return redirect('patients:detail', patient_id=patient.patient_id)
 
     # action == 'register_new' → redirect to patient registration with return_url
     return redirect('patients:register')
@@ -202,6 +217,7 @@ def walk_in(request):
 @login_required
 def confirmation(request, token_pk):
     """Show confirmation screen with token slip after successful walk-in."""
+    from apps.qms.models import QueueToken
     token = get_object_or_404(QueueToken, pk=token_pk)
     # Get the visit created in this session
     visit = None
@@ -245,9 +261,6 @@ def quick_checkin(request, pk):
     consultation_valid = active_visit is not None
 
     if consultation_valid:
-        # Patient is within valid consultation window — no payment needed.
-        # Route directly to the department that booked the appointment.
-        service_type = ServiceType.GENERAL          # standard QMS token
         visit_type   = 'FOLLOW_UP'
         visit_status = 'WAITING'
         messages.success(
@@ -257,8 +270,6 @@ def quick_checkin(request, pk):
             f"Patient directed to {appt.department.name if appt.department else 'department'}."
         )
     else:
-        # Consultation expired or first visit — must pay before proceeding.
-        service_type = ServiceType.CASHIER
         visit_type   = 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW'
         visit_status = 'WAITING'
         messages.warning(
@@ -266,16 +277,20 @@ def quick_checkin(request, pk):
             "Consultation period has expired. Patient directed to cashier for payment."
         )
 
-    # Issue QMS token
-    token_number = DailyTokenSequence.next_token(service_type)
-    token = QueueToken.objects.create(
-        token_number=token_number,
-        patient=patient,
-        patient_name=patient.full_name,
-        service_type=service_type,
-        priority=priority,
-        issued_by=request.user,
-    )
+    # Issue QMS token (only when QMS module is active)
+    token = None
+    if qms_active():
+        from apps.qms.models import ServiceType, QueueToken, DailyTokenSequence
+        service_type = ServiceType.GENERAL if consultation_valid else ServiceType.CASHIER
+        token_number = DailyTokenSequence.next_token(service_type)
+        token = QueueToken.objects.create(
+            token_number=token_number,
+            patient=patient,
+            patient_name=patient.full_name,
+            service_type=service_type,
+            priority=priority,
+            issued_by=request.user,
+        )
 
     appt.status = Appointment.Status.CHECKED_IN
     appt.save(update_fields=['status'])
@@ -293,4 +308,7 @@ def quick_checkin(request, pk):
         }
     )
 
-    return redirect('reception:confirmation', token_pk=token.pk)
+    if token:
+        return redirect('reception:confirmation', token_pk=token.pk)
+    messages.success(request, f"Patient checked in successfully.")
+    return redirect('patients:detail', patient_id=patient.patient_id)

@@ -48,6 +48,28 @@ def calculate_age(date_of_birth):
     return age
 
 
+def patient_search_q(query, prefix=''):
+    """
+    Smart patient name search — splits query into words and ANDs them together.
+    Every word must match at least one field (patient_id, first_name, last_name,
+    phone_number), so any word order works: "john doe" and "doe john" both find
+    the same patient.
+
+    prefix: relationship prefix e.g. 'patient__' when querying a related model.
+    """
+    from django.db.models import Q
+    p = prefix
+    combined = Q()
+    for term in query.split():
+        combined &= (
+            Q(**{f'{p}patient_id__icontains': term}) |
+            Q(**{f'{p}first_name__icontains': term}) |
+            Q(**{f'{p}last_name__icontains': term}) |
+            Q(**{f'{p}phone_number__icontains': term})
+        )
+    return combined
+
+
 def format_visual_acuity(va_string):
     """Normalise a visual acuity string — e.g. '6/6', 'CF', 'HM', 'LP', 'NPL'."""
     if not va_string:

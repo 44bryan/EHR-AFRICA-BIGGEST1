@@ -314,10 +314,9 @@ def invoice_list(request):
         invoices = invoices.filter(created_by=request.user)
 
     if q:
+        from apps.core.utils import patient_search_q
         invoices = invoices.filter(
-            Q(invoice_number__icontains=q) |
-            Q(patient__first_name__icontains=q) |
-            Q(patient__last_name__icontains=q)
+            Q(invoice_number__icontains=q) | patient_search_q(q, prefix='patient__')
         )
     if status:
         invoices = invoices.filter(status=status)
@@ -3369,11 +3368,9 @@ def proforma_list(request):
     if status_f:
         qs = qs.filter(status=status_f)
     if q:
+        from apps.core.utils import patient_search_q
         qs = qs.filter(
-            Q(proforma_number__icontains=q) |
-            Q(patient__first_name__icontains=q) |
-            Q(patient__last_name__icontains=q) |
-            Q(patient__patient_id__icontains=q)
+            Q(proforma_number__icontains=q) | patient_search_q(q, prefix='patient__')
         )
 
     paginator = Paginator(qs, 25)
@@ -3743,12 +3740,8 @@ def patient_financial_history(request):
         ).order_by('-last_invoice_at', '-registration_date')
 
         if q:
-            patients_qs = patients_qs.filter(
-                _Q(first_name__icontains=q) |
-                _Q(last_name__icontains=q) |
-                _Q(patient_id__icontains=q) |
-                _Q(phone_number__icontains=q)
-            )
+            from apps.core.utils import patient_search_q
+            patients_qs = patients_qs.filter(patient_search_q(q))
 
         paginator = Paginator(patients_qs, 50)
         patient_page = paginator.get_page(request.GET.get('page', 1))
@@ -3776,10 +3769,9 @@ def export_invoice_list(request):
     date_to = request.GET.get('date_to', '')
     qs = Invoice.objects.filter(is_deleted=False).select_related('patient', 'created_by')
     if q:
+        from apps.core.utils import patient_search_q
         qs = qs.filter(
-            Q(invoice_number__icontains=q) |
-            Q(patient__first_name__icontains=q) |
-            Q(patient__last_name__icontains=q)
+            Q(invoice_number__icontains=q) | patient_search_q(q, prefix='patient__')
         )
     if status:
         qs = qs.filter(status=status)
@@ -4132,10 +4124,8 @@ def export_patient_financial(request):
 
         q = request.GET.get('q', '').strip()
         if q:
-            patients_qs = patients_qs.filter(
-                _Q(first_name__icontains=q) | _Q(last_name__icontains=q) |
-                _Q(patient_id__icontains=q) | _Q(phone_number__icontains=q)
-            )
+            from apps.core.utils import patient_search_q
+            patients_qs = patients_qs.filter(patient_search_q(q))
 
         fname = f'patient_financial_records_{timezone.localdate()}.csv'
         response = _csv_response(fname)
@@ -4167,11 +4157,8 @@ def wallet_list(request):
     q = request.GET.get('q', '').strip()
     all_wallets = PatientWallet.objects.filter(is_deleted=False).select_related('patient')
     if q:
-        wallets = all_wallets.filter(
-            Q(patient__first_name__icontains=q) |
-            Q(patient__last_name__icontains=q) |
-            Q(patient__patient_id__icontains=q)
-        ).order_by('-balance')
+        from apps.core.utils import patient_search_q
+        wallets = all_wallets.filter(patient_search_q(q, prefix='patient__')).order_by('-balance')
     else:
         wallets = all_wallets.order_by('-balance')
     total_balance     = all_wallets.aggregate(t=Sum('balance'))['t'] or 0
@@ -4287,9 +4274,8 @@ def wallet_search_ajax(request):
     q = request.GET.get('q', '').strip()
     if len(q) < 2:
         return JsonResponse([], safe=False)
-    patients = _Patient.objects.filter(is_deleted=False).filter(
-        Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(patient_id__icontains=q)
-    )[:10]
+    from apps.core.utils import patient_search_q
+    patients = _Patient.objects.filter(is_deleted=False).filter(patient_search_q(q))[:10]
     data = [{'name': p.full_name, 'patient_id': p.patient_id} for p in patients]
     return JsonResponse(data, safe=False)
 
