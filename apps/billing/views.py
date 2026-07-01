@@ -663,16 +663,8 @@ def pos_landing(request):
         # 3 — No counter assigned: show cashier queue page listing all waiting patients
         return redirect('billing:cashier_queue')
 
-    # QMS inactive — fall back to open invoice or invoice list
-    open_invoice = Invoice.objects.filter(
-        issue_date=today,
-        is_deleted=False,
-    ).exclude(
-        status__in=[InvoiceStatus.PAID, InvoiceStatus.CANCELLED]
-    ).select_related('patient').order_by('-created_at').first()
-    if open_invoice:
-        return redirect('billing:invoice_detail', invoice_id=open_invoice.pk)
-    return redirect('billing:invoice_list')
+    # QMS inactive — fall back to cashier workstation dashboard
+    return redirect('dashboard:home')
 
 
 @login_required
