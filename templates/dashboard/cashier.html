@@ -3,45 +3,128 @@
 {% block title %}Cashier Workstation{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4">
+<div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h4 class="fw-bold mb-0">Cashier Workstation</h4>
     <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
   </div>
-  <div class="d-flex gap-2">
-    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-list-ul me-1"></i>All Invoices
-    </a>
+  <div class="text-muted small">{{ today|date:"l, d F Y" }}</div>
+</div>
+
+{# ── Patient Search — always available regardless of QMS state ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-primary text-white d-flex align-items-center gap-2">
+    <i class="bi bi-search fs-5"></i>
+    <h6 class="mb-0">Find Patient — Open POS</h6>
+  </div>
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-8">
+        <label class="form-label small fw-semibold">Search by name, ID or phone</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-person-search"></i></span>
+          <input type="text" class="form-control form-control-lg" id="cashierPatientSearch"
+                 placeholder="Type name, patient ID or phone number..." autocomplete="off" autofocus>
+        </div>
+        <div id="cashierSearchResults" class="list-group mt-1 shadow"
+             style="display:none;max-height:260px;overflow-y:auto;position:absolute;z-index:1050;width:calc(100% - 3rem);"></div>
+      </div>
+      <div class="col-md-4">
+        <a href="{% url 'billing:invoice_create' %}" class="btn btn-outline-secondary btn-lg w-100">
+          <i class="bi bi-file-earmark-plus me-1"></i>New Invoice
+        </a>
+      </div>
+    </div>
+    <div id="cashierSelectedPatient" class="alert alert-primary d-none mt-3 py-2">
+      <div class="d-flex align-items-center gap-3">
+        <i class="bi bi-person-check-fill fs-4"></i>
+        <div class="flex-grow-1">
+          <div class="fw-bold" id="cashierSelName"></div>
+          <small class="text-muted" id="cashierSelMeta"></small>
+        </div>
+        <a id="cashierOpenPosBtn" href="#" class="btn btn-success btn-sm px-3">
+          <i class="bi bi-receipt me-1"></i>Open POS
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="cashierClearSel">
+          <i class="bi bi-x"></i>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
-{# ── No counter assigned warning ── #}
+{% if qms_active and not cashier_queue %}
 <div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
   <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
   <div>
     <strong>No counter assigned.</strong>
-    Ask the administrator to assign you to a cashier counter so you can use the full POS system.
+    Ask the administrator to assign you to a cashier counter to use the full queue system.
   </div>
 </div>
+{% endif %}
 
-{# ── Today's revenue ── #}
+{# ── Patients Waiting to Pay (no QMS) ── #}
+{% if pending_payment_visits %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-person-walking text-primary fs-5"></i>
+      <h6 class="mb-0 fw-bold">Patients Waiting to Pay</h6>
+      <span class="badge bg-primary">{{ pending_payment_visits|length }}</span>
+    </div>
+    <small class="text-muted">Registered today &mdash; not yet billed</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>#</th><th>Patient</th><th>Visit Type</th><th>Complaint</th><th>Arrived</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for v in pending_payment_visits %}
+        <tr>
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if v.visit_type == 'NEW' %}<span class="badge bg-primary">New Patient</span>
+            {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge bg-secondary">Follow-up</span>
+            {% else %}<span class="badge bg-primary">{{ v.get_visit_type_display }}</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ v.chief_complaint|truncatechars:50 }}</td>
+          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+          <td>
+            <a href="{% url 'billing:invoice_create' %}?patient={{ v.patient.pk }}" class="btn btn-sm btn-primary">
+              <i class="bi bi-receipt me-1"></i>Bill
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── My stats today ── #}
 <div class="row g-3 mb-4">
   <div class="col-sm-4">
     <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h3 fw-bold text-success mb-0">{{ revenue_today|floatformat:0|intcomma }} FCFA</div>
-      <div class="text-muted small mt-1">Collected Today</div>
+      <div class="h3 fw-bold text-primary mb-0">{{ invoices_today }}</div>
+      <div class="text-muted small mt-1">Invoices Issued Today</div>
     </div>
   </div>
   <div class="col-sm-4">
     <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h3 fw-bold text-warning mb-0">{{ cashier_queue|length }}</div>
+      <div class="h3 fw-bold text-primary mb-0">{{ cashier_queue|length }}</div>
       <div class="text-muted small mt-1">Waiting at Cashier</div>
     </div>
   </div>
   <div class="col-sm-4">
     <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h3 fw-bold text-danger mb-0">{{ unpaid_count }}</div>
-      <div class="text-muted small mt-1">Unpaid Invoices</div>
+      <div class="h3 fw-bold text-primary mb-0">{{ unpaid_count }}</div>
+      <div class="text-muted small mt-1">My Unpaid Invoices</div>
     </div>
   </div>
 </div>
@@ -49,9 +132,11 @@
 {# ── Cashier queue ── #}
 {% if cashier_queue %}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-people-fill me-2 text-primary"></i>Waiting at Cashier</h6>
-    <span class="badge bg-primary">{{ cashier_queue|length }}</span>
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="bi bi-people-fill me-2"></i>Waiting at Cashier
+      {% if cashier_station_label %}<span class="badge bg-white text-primary ms-2">{{ cashier_station_label }}</span>{% endif %}
+    </h6>
+    <span class="badge bg-white text-primary">{{ cashier_queue|length }}</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
@@ -66,17 +151,20 @@
           <td><span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span></td>
           <td class="fw-semibold">{{ tok.display_name }}</td>
           <td>
-            {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed">VIP</span>
-            {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
-            {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
-            {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+            <span class="badge bg-primary">{{ tok.tier_label.0 }}</span>
           </td>
           <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
           <td>
             {% if tok.patient %}
-            <a href="{% url 'billing:cashier_pos' tok.id %}" class="btn btn-sm btn-success">
+            <a href="{% url 'billing:cashier_pos' tok.id %}" class="btn btn-sm btn-primary">
               <i class="bi bi-receipt me-1"></i>Open POS
             </a>
+            {% else %}
+            <button class="btn btn-sm btn-outline-primary"
+                    onclick="document.getElementById('cashierPatientSearch').value='{{ tok.patient_name|escapejs }}';document.getElementById('cashierPatientSearch').dispatchEvent(new Event('input'));document.getElementById('cashierPatientSearch').focus();"
+                    title="Patient not registered — search below to link them">
+              <i class="bi bi-search me-1"></i>Find Patient
+            </button>
             {% endif %}
           </td>
         </tr>
@@ -90,8 +178,8 @@
 {# ── Unpaid invoices ── #}
 <div class="card border-0 shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-warning"></i>Unpaid Invoices</h6>
-    <span class="badge bg-warning text-dark">{{ unpaid_count }}</span>
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-primary"></i>Unpaid Invoices</h6>
+    <span class="badge bg-primary">{{ unpaid_count }}</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
@@ -104,14 +192,14 @@
           <td><code>{{ inv.invoice_number }}</code></td>
           <td class="fw-semibold">{{ inv.patient.full_name }}</td>
           <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
-          <td class="text-danger fw-semibold">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
+          <td class="text-primary fw-semibold">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
           <td>
-            <span class="badge bg-{% if inv.status == 'PARTIAL' %}warning text-dark{% else %}secondary{% endif %}">
+            <span class="badge bg-{% if inv.status == 'PARTIAL' %}primary{% else %}secondary{% endif %}">
               {{ inv.get_status_display }}
             </span>
           </td>
           <td>
-            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-warning">
+            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-primary">
               Collect
             </a>
           </td>
@@ -123,4 +211,65 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Cashier patient search → open POS ────────────────────────────────────────
+let cashierSearchTimeout;
+const cashierInput   = document.getElementById('cashierPatientSearch');
+const cashierResults = document.getElementById('cashierSearchResults');
+const cashierSelCard = document.getElementById('cashierSelectedPatient');
+
+cashierInput.addEventListener('input', () => {
+  clearTimeout(cashierSearchTimeout);
+  const q = cashierInput.value.trim();
+  if (q.length < 2) { cashierResults.style.display = 'none'; return; }
+  cashierSearchTimeout = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        cashierResults.innerHTML = '';
+        const list = data.results || data.patients || [];
+        if (!list.length) {
+          cashierResults.innerHTML = '<div class="list-group-item text-muted small">No patients found</div>';
+        } else {
+          list.forEach(p => {
+            const item = document.createElement('a');
+            item.href = '#';
+            item.className = 'list-group-item list-group-item-action py-2';
+            item.innerHTML = `<div class="d-flex align-items-center gap-2">
+              <i class="bi bi-person-fill text-primary"></i>
+              <div><strong>${p.full_name}</strong> <span class="badge bg-secondary ms-1" style="font-size:.7rem;">${p.patient_id}</span><br>
+              <small class="text-muted">${p.phone || ''}</small></div>
+              <small class="text-success ms-auto fw-semibold">Select</small></div>`;
+            item.addEventListener('click', e => {
+              e.preventDefault();
+              document.getElementById('cashierSelName').textContent = p.full_name;
+              document.getElementById('cashierSelMeta').textContent = `${p.patient_id}${p.phone ? ' · ' + p.phone : ''}`;
+              document.getElementById('cashierOpenPosBtn').href = `/billing/pos/patient/${p.patient_id}/`;
+              cashierSelCard.classList.remove('d-none');
+              cashierResults.style.display = 'none';
+              cashierInput.value = p.full_name;
+            });
+            cashierResults.appendChild(item);
+          });
+        }
+        cashierResults.style.display = 'block';
+      });
+  }, 300);
+});
+
+document.getElementById('cashierClearSel').addEventListener('click', () => {
+  cashierSelCard.classList.add('d-none');
+  cashierInput.value = '';
+  cashierResults.style.display = 'none';
+});
+
+document.addEventListener('click', e => {
+  if (!cashierInput.contains(e.target) && !cashierResults.contains(e.target)) {
+    cashierResults.style.display = 'none';
+  }
+});
+</script>
 {% endblock %}

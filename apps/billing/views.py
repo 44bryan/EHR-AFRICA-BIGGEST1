@@ -365,6 +365,21 @@ def invoice_detail(request, invoice_id):
 
 @login_required
 def invoice_create(request):
+    # GET with ?patient=<UUID or patient_id> — direct link from dashboard "Bill" button
+    if request.method == 'GET':
+        patient_ref = request.GET.get('patient', '').strip()
+        if patient_ref:
+            try:
+                # Try UUID pk first (dashboard passes patient.pk)
+                import uuid as _uuid
+                _uuid.UUID(patient_ref)
+                p = Patient.objects.filter(pk=patient_ref, is_deleted=False).first()
+            except ValueError:
+                # Fall back to patient_id string
+                p = Patient.objects.filter(patient_id=patient_ref, is_deleted=False).first()
+            if p:
+                return redirect('billing:patient_pos', patient_id=p.patient_id)
+
     if request.method == 'POST':
         patient_id = request.POST.get('patient_id')
         patient = get_object_or_404(Patient, patient_id=patient_id)
@@ -746,8 +761,8 @@ def pos_landing(request):
         # 3 — No counter assigned: show cashier queue page listing all waiting patients
         return redirect('billing:cashier_queue')
 
-    # QMS inactive — fall back to cashier workstation dashboard
-    return redirect('dashboard:home')
+    # QMS inactive — open the patient search / direct billing page
+    return redirect('billing:invoice_create')
 
 
 @login_required

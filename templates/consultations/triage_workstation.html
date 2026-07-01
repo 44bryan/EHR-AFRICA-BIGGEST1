@@ -97,7 +97,7 @@
   </div>
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-info mb-0">{{ parameters_queue|length|add:vip_params_queue|length }}</div>
+      <div class="h2 fw-bold text-info mb-0">{{ total_waiting }}</div>
       <div class="text-muted small mt-1">Currently in My View</div>
     </div>
   </div>
@@ -115,8 +115,58 @@
 </div>
 {% endif %}
 
-{# ══ Standard Parameters Queue ══ #}
-{% if show_mode != 'VIP' %}
+{# ══ No-QMS: visits waiting at triage ══ #}
+{% if not qms_on %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #dc3545 !important;">
+  <div class="card-header bg-danger bg-opacity-10 border-bottom d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold text-danger">
+      <i class="bi bi-people-fill me-2"></i>Patients Waiting for Triage
+    </h6>
+    <span class="badge bg-danger">{{ triage_visits|length }}</span>
+  </div>
+  {% if triage_visits %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>#</th><th>Patient</th><th>Type</th><th>Complaint</th><th>Arrived</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for v in triage_visits %}
+        <tr>
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if v.visit_type == 'NEW' %}<span class="badge bg-primary">New</span>
+            {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge bg-secondary">Follow-up</span>
+            {% elif v.visit_type == 'EMERGENCY' %}<span class="badge bg-danger">Emergency</span>
+            {% else %}<span class="badge bg-warning text-dark">{{ v.get_visit_type_display }}</span>{% endif %}
+          </td>
+          <td class="text-muted" style="max-width:140px;">{{ v.chief_complaint|truncatechars:50 }}</td>
+          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+          <td>
+            <a href="{% url 'patients:triage' visit_number=v.visit_number %}" class="btn btn-sm btn-danger">
+              <i class="bi bi-heart-pulse me-1"></i>Record Vitals
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-check-circle fs-2 d-block mb-2 text-success"></i>
+    No patients waiting at triage.
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ══ Standard Parameters Queue (QMS mode) ══ #}
+{% if show_mode != 'VIP' and qms_on %}
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
     <h6 class="mb-0 fw-semibold">
@@ -162,20 +212,20 @@
             {% now "H:i" as now_time %}
           </td>
           <td class="text-muted">
-            {% if tok.active_visit %}{{ tok.active_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
+            {% if tok.ws_visit %}{{ tok.ws_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
           </td>
           <td>
-            {% if tok.active_visit %}
+            {% if tok.ws_visit %}
               <span class="badge bg-light text-dark border" style="font-size:.65rem;">
-                {{ tok.active_visit.get_status_display }}
+                {{ tok.ws_visit.get_status_display }}
               </span>
             {% else %}
               <span class="text-muted small">No visit</span>
             {% endif %}
           </td>
           <td>
-            {% if tok.patient and tok.active_visit %}
-            <a href="{% url 'patients:triage' visit_number=tok.active_visit.visit_number %}"
+            {% if tok.patient and tok.ws_visit %}
+            <a href="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}"
                class="btn btn-sm btn-danger">
               <i class="bi bi-heart-pulse me-1"></i>Record Vitals
             </a>
@@ -259,20 +309,20 @@
           </td>
           <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
           <td class="text-muted">
-            {% if tok.active_visit %}{{ tok.active_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
+            {% if tok.ws_visit %}{{ tok.ws_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
           </td>
           <td>
-            {% if tok.active_visit %}
+            {% if tok.ws_visit %}
               <span class="badge bg-light text-dark border" style="font-size:.65rem;">
-                {{ tok.active_visit.get_status_display }}
+                {{ tok.ws_visit.get_status_display }}
               </span>
             {% else %}
               <span class="text-muted small">No visit</span>
             {% endif %}
           </td>
           <td>
-            {% if tok.patient and tok.active_visit %}
-            <a href="{% url 'patients:triage' visit_number=tok.active_visit.visit_number %}"
+            {% if tok.patient and tok.ws_visit %}
+            <a href="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}"
                class="btn btn-sm fw-bold"
                style="background:#7c3aed;color:white;border:none;">
               <i class="bi bi-heart-pulse me-1"></i>Record Vitals
@@ -356,6 +406,23 @@
 
 {% block extra_js %}
 <script>
+// ── Auto-refresh queue every 30 s ─────────────────────────────────────────────
+(function() {
+  var countdown = 30;
+  var badge = document.createElement('span');
+  badge.className = 'badge bg-light text-muted border small';
+  badge.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:999;font-size:.7rem;cursor:pointer;';
+  badge.title = 'Click to refresh now';
+  badge.textContent = 'Auto-refresh in 30s';
+  badge.onclick = function() { location.reload(); };
+  document.body.appendChild(badge);
+  setInterval(function() {
+    countdown--;
+    if (countdown <= 0) { location.reload(); }
+    badge.textContent = 'Auto-refresh in ' + countdown + 's';
+  }, 1000);
+})();
+
 (function () {
   const modal  = document.getElementById('triagePatientModal');
   const input  = document.getElementById('triageSearchInput');
