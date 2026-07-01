@@ -125,9 +125,11 @@
       border: none;
       border-radius: 6px;
       padding: 10px;
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: bold;
       cursor: pointer;
       font-family: inherit;
+      letter-spacing: .5px;
     }
     .btn-triage:hover { background: #15803d; }
     .btn-triage:disabled { background: #6b7280; cursor: default; }
@@ -163,8 +165,21 @@
   <div class="divider-solid"></div>
 
   <!-- Receipt meta -->
+  {% for payment in payments %}
+  {% if forloop.first %}
   <div class="meta-row">
     <span class="label">RECEIPT #:</span>
+    <span class="value" style="font-size:14px;letter-spacing:1px;">{{ payment.receipt_number }}</span>
+  </div>
+  {% endif %}
+  {% empty %}
+  <div class="meta-row">
+    <span class="label">RECEIPT #:</span>
+    <span class="value">{{ invoice.invoice_number }}</span>
+  </div>
+  {% endfor %}
+  <div class="meta-row">
+    <span class="label">Invoice #:</span>
     <span class="value">{{ invoice.invoice_number }}</span>
   </div>
   <div class="meta-row">
@@ -187,14 +202,12 @@
     <span class="label">Patient ID:</span>
     <span class="value">{{ invoice.patient.patient_id }}</span>
   </div>
-  {% with token=invoice.patient.queue_tokens.all|first %}
-  {% if token %}
+  {% if today_token %}
   <div class="meta-row">
     <span class="label">Ticket #:</span>
-    <span class="value">{{ token.display_token_number }}</span>
+    <span class="value">{{ today_token.display_token_number }}</span>
   </div>
   {% endif %}
-  {% endwith %}
 
   <div class="divider"></div>
 
@@ -228,6 +241,16 @@
       <span>TOTAL (FCFA)</span>
       <span>{{ invoice.total|floatformat:0|intcomma }}</span>
     </div>
+    {% if invoice.insurance_amount > 0 %}
+    <div class="total-row" style="color:#0891b2;">
+      <span>Insurance covers</span>
+      <span>{{ invoice.insurance_amount|floatformat:0|intcomma }}</span>
+    </div>
+    <div class="total-row" style="font-weight:bold;color:#155724;">
+      <span>Patient amount</span>
+      <span>{{ invoice.patient_amount|floatformat:0|intcomma }}</span>
+    </div>
+    {% endif %}
   </div>
 
   <div class="divider"></div>
@@ -280,24 +303,51 @@
 <!-- Action bar (screen only) -->
 <div class="action-bar" id="actionBar">
   <button class="btn-print-receipt" onclick="window.print()">
-    &#128438; Print Receipt
+    &#128438; Print Again
   </button>
-  {% with token=invoice.patient.queue_tokens.filter %}
-  <button class="btn-triage" id="triageBtn"
-          onclick="window.close()"
-          title="Close and return to counter">
-    &#10003; Done / Close
+  <button class="btn-triage" id="nextPatientBtn"
+          onclick="window.location.href='/billing/pos/'">
+    &#8594; Back to Counter
   </button>
-  {% endwith %}
+</div>
+
+<!-- Auto-return countdown (screen only) -->
+<div id="countdownBar" style="width:340px;margin-top:8px;text-align:center;font-size:12px;color:#555;font-family:'Courier New',monospace;">
+  Returning to counter in <strong id="countNum">5</strong>s…
+  <button onclick="clearInterval(cdTimer);document.getElementById('countdownBar').style.display='none';"
+          style="border:none;background:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline;margin-left:4px;">
+    stay
+  </button>
 </div>
 
 <script>
-  // Auto-print on load (slight delay to allow rendering)
+  const isPopup = new URLSearchParams(window.location.search).has('popup');
+
+  // Auto-print on load
   window.addEventListener('load', function () {
-    setTimeout(function () {
-      window.print();
-    }, 500);
+    setTimeout(function () { window.print(); }, 400);
   });
+
+  if (isPopup) {
+    // Opened as receipt popup from POS — close tab after printing
+    const bar = document.getElementById('countdownBar');
+    if (bar) bar.innerHTML = 'Receipt printed. <button onclick="window.close()" style="border:none;background:none;color:#0d6efd;font-size:12px;cursor:pointer;text-decoration:underline;">Close tab</button>';
+    window.addEventListener('afterprint', function () {
+      setTimeout(function () { window.close(); }, 1200);
+    });
+  } else {
+    // Regular flow: countdown → back to cashier POS landing
+    let cdCount = 5;
+    const cdTimer = setInterval(function () {
+      cdCount--;
+      const el = document.getElementById('countNum');
+      if (el) el.textContent = cdCount;
+      if (cdCount <= 0) {
+        clearInterval(cdTimer);
+        window.location.href = '/billing/pos/';
+      }
+    }, 1000);
+  }
 </script>
 
 </body>

@@ -1,14 +1,37 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Cashier POS — {{ patient.full_name|default:"Walk-in" }}{% endblock %}
 
-{% block extra_css %}
+{% block extra_css %}{% endblock %}
+
+{% block content %}
+{% load humanize %}
 <style>
   /* ── POS layout ── */
   .pos-wrapper {
     display: grid;
-    grid-template-columns: 1fr 440px;
+    grid-template-columns: 320px 1fr;   /* catalog fixed-narrow, billing fills rest */
     gap: 1rem;
     min-height: calc(100vh - 140px);
+  }
+
+  /* ── Tablet + Mobile: stack panels vertically ── */
+  @media (max-width: 1024px) {
+    .pos-wrapper {
+      grid-template-columns: 1fr;
+      min-height: auto;
+    }
+    .catalog-panel, .billing-panel {
+      max-height: none !important;
+      overflow-y: visible !important;
+    }
+    .billing-panel {
+      order: -1; /* Show billing summary at top on tablet/mobile */
+    }
+    .service-btn {
+      font-size: 0.9rem !important;
+      padding: 0.65rem 0.9rem !important;
+    }
+    .pos-total-row { font-size: 1rem !important; }
   }
 
   /* Patient card */
@@ -83,11 +106,19 @@
   .items-table td { padding: 0.35rem 0.4rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
   .items-table tbody tr:hover { background: #f8f9fa; }
   .remove-item-btn {
-    background: none; border: none;
+    background: #fff0f0; border: 1px solid #f5c6cb;
     color: #dc3545; cursor: pointer;
-    padding: 0 4px; font-size: 1rem; line-height: 1;
+    padding: 4px 8px; font-size: 0.85rem; border-radius: 6px;
+    transition: all .15s;
   }
-  .remove-item-btn:hover { color: #b02a37; }
+  .remove-item-btn:hover { background: #dc3545; color: #fff; border-color: #dc3545; }
+
+  /* Floating cart badge — always visible on tablet/mobile */
+  #floatingCart {
+    position: fixed; bottom: 1.2rem; right: 1.2rem;
+    z-index: 999; display: none;
+  }
+  @media (max-width: 1024px) { #floatingCart { display: block; } }
 
   /* Totals section */
   .totals-block { border-top: 2px solid #dee2e6; padding-top: 0.6rem; font-size: 0.9rem; }
@@ -149,10 +180,6 @@
   /* Modal override for light theme */
   #priceModal .modal-content { background: #fff; color: #212529; border: 1px solid #dee2e6; }
 </style>
-{% endblock %}
-
-{% block content %}
-{% load humanize %}
 
 {# ── CSRF Token ── #}
 <form id="csrf-holder">{% csrf_token %}</form>
@@ -169,7 +196,7 @@
       <div class="d-flex align-items-center gap-2 mt-1">
         <small class="text-primary">{{ patient.patient_id|default:"—" }}</small>
         <span class="text-muted">·</span>
-        <small class="text-muted">Ticket: <span class="fw-semibold text-dark">{{ token.display_token_number }}</span></small>
+        {% if token %}<small class="text-muted">Ticket: <span class="fw-semibold text-dark">{{ token.display_token_number }}</span></small>{% endif %}
         {% if patient.age %}
           <span class="text-muted">·</span>
           <small class="text-muted">{{ patient.age_display }}</small>
@@ -178,9 +205,11 @@
     </div>
   </div>
   <div class="d-flex align-items-center gap-2">
+    {% if token %}
     <span class="badge tier-badge-{{ token.service_tier }} text-white px-3 py-2">
       {{ token.get_service_tier_display }}
     </span>
+    {% endif %}
     {% if invoice %}
       <span class="badge bg-secondary px-3 py-2">{{ invoice.invoice_number }}</span>
       <span class="badge
@@ -234,6 +263,26 @@
 
   {# ───── LEFT: Service Catalog ───── #}
   <div class="catalog-panel">
+
+    {# ── Doctor's Orders — pre-populated from consultation ── #}
+    {% if doctor_orders %}
+    <div class="mb-3 rounded" style="background:#f0fdf4;border:1.5px solid #16a34a;padding:0.75rem;">
+      <div class="fw-bold small text-success mb-2">
+        <i class="bi bi-clipboard2-pulse-fill me-1"></i>Doctor's Orders — click to add
+      </div>
+      <div class="d-flex flex-column gap-1">
+        {% for wo in doctor_orders %}
+        <button type="button" class="service-btn"
+                style="border-color:#16a34a;background:#fff;"
+                onclick="addCatalogItem('{{ wo.description|escapejs }}','{{ wo.category }}',0)">
+          <span>{{ wo.description }}</span>
+          <span style="font-size:.7rem;color:#16a34a;font-weight:600;">{{ wo.get_category_display }}</span>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="d-flex justify-content-between align-items-center mb-3">
       <span style="color:#0d6efd;font-weight:700;font-size:1rem;">
         <i class="bi bi-grid-3x3-gap me-1"></i>Service Catalog
@@ -400,14 +449,14 @@
               {{ item.line_total|floatformat:0|intcomma }}
             </td>
             <td>
-              <button class="remove-item-btn" onclick="removeItem('{{ item.id }}')" title="Remove">
-                &times;
+              <button class="remove-item-btn" onclick="removeItem('{{ item.id }}')" title="Remove item">
+                <i class="bi bi-trash"></i>
               </button>
             </td>
           </tr>
           {% empty %}
           <tr id="emptyRow">
-            <td colspan="5" class="text-center text-muted py-3" style="font-size:0.8rem;">
+            <td colspan="6" class="text-center text-muted py-3" style="font-size:0.8rem;">
               <i class="bi bi-receipt me-1"></i>No items yet — select from catalog
             </td>
           </tr>
@@ -442,6 +491,30 @@
       <div class="row-total grand-total mt-2">
         <span>TOTAL</span>
         <span id="totalDisplay">{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
+      </div>
+
+      {# ── Insurance / Patient split ── #}
+      <div class="mt-2 pt-2" style="border-top:1px dashed #dee2e6;">
+        <div class="row-total" style="font-size:0.8rem;">
+          <span style="color:#0891b2;"><i class="bi bi-shield-check me-1"></i>Insurance covers</span>
+          <div class="d-flex align-items-center gap-1">
+            <input type="number" id="insuranceAmtInput" class="form-control form-control-sm"
+                   style="width:100px;text-align:right;font-size:0.8rem;"
+                   value="{{ invoice.insurance_amount|floatformat:0 }}"
+                   min="0" max="{{ invoice.total|floatformat:0 }}"
+                   placeholder="0"
+                   oninput="updateInsuranceSplit()" />
+            <span style="font-size:0.75rem;color:#6c757d;">FCFA</span>
+            <button class="btn btn-sm" style="background:#0891b2;color:#fff;border:none;font-size:0.72rem;padding:2px 8px;"
+                    onclick="saveInsuranceAmount()">Set</button>
+          </div>
+        </div>
+        <div class="row-total mt-1" style="font-size:0.85rem;font-weight:700;">
+          <span style="color:#16a34a;"><i class="bi bi-person-fill me-1"></i>Patient pays</span>
+          <span id="patientAmtDisplay" style="color:#16a34a;">
+            {{ invoice.patient_amount|floatformat:0|intcomma }} FCFA
+          </span>
+        </div>
       </div>
     </div>
 
@@ -493,6 +566,32 @@
         </button>
         {% endfor %}
       </div>
+      {# Insurance info panel — shown when INSURANCE or NHIS selected #}
+      {% if active_insurance %}
+      <div id="insurancePanel" style="display:none;"
+           class="alert alert-info py-2 px-3 mb-2 small">
+        <div class="fw-bold mb-1"><i class="bi bi-shield-check me-1"></i>Active Insurance</div>
+        <div><strong>Provider:</strong> {{ active_insurance.provider }}</div>
+        <div><strong>Policy #:</strong> {{ active_insurance.policy_number|default:"—" }}</div>
+        {% if active_insurance.group_number %}<div><strong>Group #:</strong> {{ active_insurance.group_number }}</div>{% endif %}
+        {% if active_insurance.plan_name %}<div><strong>Plan:</strong> {{ active_insurance.plan_name }}</div>{% endif %}
+        {% if active_insurance.expiry_date %}
+        <div><strong>Expires:</strong>
+          <span class="{% if active_insurance.expiry_date < today %}text-danger fw-bold{% endif %}">
+            {{ active_insurance.expiry_date|date:"d M Y" }}
+            {% if active_insurance.expiry_date < today %}(EXPIRED){% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div id="insurancePanel" style="display:none;"
+           class="alert alert-warning py-2 px-3 mb-2 small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        No active insurance on file for this patient. Verify coverage before proceeding.
+      </div>
+      {% endif %}
+
       <div class="row g-2 mb-2">
         <div class="col-7">
           <input type="number" id="payAmount" class="form-control form-control-sm"
@@ -504,21 +603,48 @@
                  placeholder="Reference / Ref#" />
         </div>
       </div>
-      <button class="btn btn-warning w-100 fw-bold" style="border-radius:8px;" onclick="recordPayment()">
-        <i class="bi bi-check-circle me-1"></i>Record Payment
+      <button class="btn-finalize" id="collectBtn" onclick="collectAndPrint()"
+              {% if not invoice or invoice.status == 'PAID' %}{% if invoice.status == 'PAID' %}style="background:linear-gradient(135deg,#6c757d,#495057);"{% endif %}{% endif %}>
+        <i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt
       </button>
     </div>
 
-    {# Finalize / Print buttons #}
-    <button class="btn-finalize" id="finalizeBtn"
-            {% if invoice.balance_due > 0 %}disabled{% endif %}
-            onclick="finalizeAndRoute()">
-      <i class="bi bi-send-check-fill me-2"></i>Confirm Payment &amp; Send to Triage
+    {# Secondary: reprint receipt if already paid #}
+    {% if invoice and invoice.status == 'PAID' %}
+    <button class="btn-print" onclick="window.open('{{ receipt_url }}','_blank')">
+      <i class="bi bi-printer me-2"></i>Reprint Receipt
     </button>
+    {% endif %}
 
-    <button class="btn-print" onclick="openReceipt()">
-      <i class="bi bi-printer me-2"></i>Print Receipt
-    </button>
+    {# Discard empty DRAFT invoice — shown only when no items have been added yet #}
+    {% if invoice and invoice.status == 'DRAFT' and items|length == 0 %}
+    <form method="post" action="{% url 'billing:void_draft_invoice' invoice_id=invoice.id %}"
+          id="discardForm" style="margin-top:8px;">
+      {% csrf_token %}
+      <button type="button" class="btn btn-outline-danger w-100 btn-sm" onclick="confirmDiscard()">
+        <i class="bi bi-x-circle me-1"></i>Discard Empty Invoice
+      </button>
+    </form>
+    <script>
+    function confirmDiscard() {
+      var btn = document.querySelector('#discardForm button');
+      if (btn.dataset.armed === '1') {
+        document.getElementById('discardForm').submit();
+      } else {
+        btn.dataset.armed = '1';
+        btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Tap again to confirm discard';
+        btn.classList.add('btn-danger');
+        btn.classList.remove('btn-outline-danger');
+        setTimeout(function() {
+          btn.dataset.armed = '0';
+          btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Discard Empty Invoice';
+          btn.classList.remove('btn-danger');
+          btn.classList.add('btn-outline-danger');
+        }, 4000);
+      }
+    }
+    </script>
+    {% endif %}
 
     {% else %}
     <div class="text-center text-muted py-5">
@@ -531,6 +657,16 @@
   </div>{# end billing-panel #}
 
 </div>{# end pos-wrapper #}
+
+{# ── Floating cart badge (tablet/mobile) ── #}
+<div id="floatingCart">
+  <button class="btn btn-primary shadow-lg px-3 py-2 fw-bold" style="border-radius:50px;font-size:0.9rem;"
+          onclick="document.getElementById('billingPanel').scrollIntoView({behavior:'smooth',block:'start'})">
+    <i class="bi bi-cart-check-fill me-1"></i>
+    <span id="floatingCartCount">0</span> item(s) —
+    <span id="floatingCartTotal">0</span> FCFA
+  </button>
+</div>
 
 {# ── Custom Item Price Modal (for 0-price catalog items) ── #}
 <div class="modal fade" id="priceModal" tabindex="-1">
@@ -553,26 +689,28 @@
   </div>
 </div>
 
-{% endblock %}
-
-{% block extra_js %}
 <script>
-const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 {% if invoice %}
-const INVOICE_ID = '{{ invoice.id }}';
+var INVOICE_ID = '{{ invoice.id }}';
 {% else %}
-const INVOICE_ID = null;
+var INVOICE_ID = null;
 {% endif %}
-const TOKEN_ID   = '{{ token.id }}';
-const FINALIZE_URL = "{% url 'billing:pos_finalize' token.id %}";
-{% if invoice %}
-const RECEIPT_URL  = "{% url 'billing:receipt' invoice.id %}";
+{% if token %}
+var TOKEN_ID   = '{{ token.id }}';
+var FINALIZE_URL = "{% url 'billing:pos_finalize' token.id %}";
 {% else %}
-const RECEIPT_URL  = null;
+var TOKEN_ID   = null;
+var FINALIZE_URL = "{% url 'billing:patient_finalize' patient.patient_id %}";
+{% endif %}
+{% if invoice %}
+var RECEIPT_URL  = "{% url 'billing:receipt' invoice.id %}";
+{% else %}
+var RECEIPT_URL  = null;
 {% endif %}
 
-let selectedMethod = 'CASH';
-let rowCounter = {{ items|length }};
+var selectedMethod = 'CASH';
+var rowCounter = {{ items|length }};
 
 // ── Utility: format numbers with commas ──────────────────────────────────────
 function fmt(n) {
@@ -653,35 +791,71 @@ function _doAddItem(description, category, quantity, unitPrice) {
   fd.append('unit_price', unitPrice);
 
   fetch(`/billing/invoice/${INVOICE_ID}/add-item/`, { method: 'POST', body: fd })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.success) { alert(data.error || 'Could not add item.'); return; }
-      removeEmptyRow();
-      rowCounter++;
-      const tbody = document.getElementById('itemsBody');
-      const tr = document.createElement('tr');
-      tr.id = `item-row-${data.item_id}`;
-      tr.innerHTML = `
-        <td class="text-muted">${rowCounter}</td>
-        <td>
-          <div class="fw-medium">${data.description}</div>
-          <small class="text-muted" style="font-size:0.7rem;">${category}</small>
-        </td>
-        <td class="text-center">${data.quantity}</td>
-        <td class="text-end text-muted" style="white-space:nowrap;">${fmt(unitPrice)}</td>
-        <td class="text-end fw-semibold text-primary" style="white-space:nowrap;">${fmt(data.line_total)}</td>
-        <td>
-          <button class="remove-item-btn" onclick="removeItem('${data.item_id}')" title="Remove">&times;</button>
-        </td>`;
-      tbody.appendChild(tr);
-      updateTotals(data);
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
     })
-    .catch(() => alert('Network error. Please try again.'));
+    .then(function(data) {
+      if (!data.success) { showToast(data.error || 'Could not add item.', 'danger'); return; }
+      try {
+        removeEmptyRow();
+        rowCounter++;
+        const tbody = document.getElementById('itemsBody');
+        const tr = document.createElement('tr');
+        tr.id = `item-row-${data.item_id}`;
+        tr.innerHTML = `
+          <td class="text-muted">${rowCounter}</td>
+          <td>
+            <div class="fw-medium">${data.description}</div>
+            <small class="text-muted" style="font-size:0.7rem;">${category}</small>
+          </td>
+          <td class="text-center">${data.quantity}</td>
+          <td class="text-end text-muted" style="white-space:nowrap;">${fmt(unitPrice)}</td>
+          <td class="text-end fw-semibold text-primary" style="white-space:nowrap;">${fmt(data.line_total)}</td>
+          <td>
+            <button class="remove-item-btn" data-item-id="${data.item_id}"
+                    onclick="removeItem('${data.item_id}', this)" title="Tap once to select, tap again to remove">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>`;
+        tbody.appendChild(tr);
+        updateTotals(data);
+        updateFloatingCart();
+        // Scroll billing panel into view so user can see the new item
+        const panel = document.getElementById('billingPanel');
+        if (panel) setTimeout(function() { panel.scrollIntoView({behavior: 'smooth', block: 'start'}); }, 150);
+        showToast('✓ ' + data.description + ' — ' + fmt(data.line_total) + ' FCFA added', 'success');
+      } catch(err) {
+        showToast('Item saved but display error: ' + err.message + '. Please refresh.', 'warning');
+      }
+    })
+    .catch(function(err) { showToast('Network error: ' + err.message + '. Try again.', 'danger'); });
 }
 
-// ── Remove item ──────────────────────────────────────────────────────────────
-function removeItem(itemId) {
-  if (!confirm('Remove this item?')) return;
+// ── Remove item — tap once to arm (turns red), tap again within 3s to confirm ──
+var _pendingRemove = null;
+function removeItem(itemId, btn) {
+  if (_pendingRemove === itemId) {
+    // Second tap — confirmed, proceed
+    _pendingRemove = null;
+    if (btn) { btn.innerHTML = '<i class="bi bi-hourglass-split"></i>'; btn.disabled = true; }
+  } else {
+    // First tap — arm the button
+    _pendingRemove = itemId;
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.style.background = '#dc3545'; btn.style.color = '#fff';
+      btn.title = 'Tap again to confirm removal';
+      setTimeout(function() {
+        if (_pendingRemove === itemId) {
+          _pendingRemove = null;
+          btn.style.background = ''; btn.style.color = '';
+          btn.innerHTML = orig; btn.title = 'Tap once to select, tap again to remove';
+        }
+      }, 3000);
+    }
+    return;
+  }
   const fd = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
 
@@ -701,17 +875,44 @@ function removeItem(itemId) {
       if (rowCounter === 0) {
         document.getElementById('itemsBody').innerHTML = `
           <tr id="emptyRow">
-            <td colspan="5" class="text-center text-muted py-3" style="font-size:0.8rem;">
+            <td colspan="6" class="text-center text-muted py-3" style="font-size:0.8rem;">
               <i class="bi bi-receipt me-1"></i>No items yet — select from catalog
             </td>
           </tr>`;
       }
       updateTotals(data);
+      updateFloatingCart();
     })
     .catch(() => alert('Network error.'));
 }
 
 // ── Apply discount ───────────────────────────────────────────────────────────
+// ── Insurance / Patient split ─────────────────────────────────────────────────
+function updateInsuranceSplit() {
+  const total = parseFloat(document.getElementById('totalDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
+  const ins   = parseFloat(document.getElementById('insuranceAmtInput').value) || 0;
+  const patient = Math.max(total - ins, 0);
+  document.getElementById('patientAmtDisplay').textContent = patient.toLocaleString('fr-FR') + ' FCFA';
+}
+
+function saveInsuranceAmount() {
+  if (!INVOICE_ID) return;
+  const ins = document.getElementById('insuranceAmtInput').value || '0';
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append('insurance_amount', ins);
+  fetch(`/billing/invoice/${INVOICE_ID}/insurance/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { alert(data.error || 'Could not save insurance amount.'); return; }
+      updateInsuranceSplit();
+      // Auto-set pay amount to patient portion
+      const patientAmt = data.patient_amount || 0;
+      document.getElementById('payAmount').value = patientAmt;
+    })
+    .catch(() => alert('Network error.'));
+}
+
 function applyDiscount() {
   if (!INVOICE_ID) return;
   const amount = document.getElementById('discountInput').value || '0';
@@ -735,14 +936,38 @@ function selectMethod(btn, method) {
   document.querySelectorAll('.pay-method-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   selectedMethod = method;
+
+  // Show insurance panel when insurance-type method is selected
+  const insPanel = document.getElementById('insurancePanel');
+  if (insPanel) {
+    insPanel.style.display = (method === 'INSURANCE' || method === 'NHIS') ? 'block' : 'none';
+  }
+
 }
 
-// ── Record payment ───────────────────────────────────────────────────────────
-function recordPayment() {
+// ── Collect & Print Receipt — single button flow ─────────────────────────────
+function collectAndPrint() {
   if (!INVOICE_ID) return;
-  const amount = document.getElementById('payAmount').value;
+  const amountInput = document.getElementById('payAmount');
+  const amount = amountInput.value;
   const ref    = document.getElementById('payRef').value;
-  if (!amount || parseFloat(amount) <= 0) { alert('Enter a valid amount.'); return; }
+  const btn    = document.getElementById('collectBtn');
+
+  // If already paid — just reprint
+  if (RECEIPT_URL && parseFloat(amount) <= 0) {
+    window.open(RECEIPT_URL, '_blank');
+    return;
+  }
+
+  if (!amount || parseFloat(amount) <= 0) {
+    amountInput.focus();
+    amountInput.classList.add('is-invalid');
+    setTimeout(() => amountInput.classList.remove('is-invalid'), 1500);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
 
   const fd = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
@@ -753,7 +978,12 @@ function recordPayment() {
   fetch(`/billing/invoice/${INVOICE_ID}/record-payment/`, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
-      if (!data.success) { alert(data.error || 'Could not record payment.'); return; }
+      if (!data.success) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+        alert(data.error || 'Could not record payment.');
+        return;
+      }
 
       // Append to payment log
       const log = document.getElementById('paymentLog');
@@ -762,36 +992,44 @@ function recordPayment() {
       entry.innerHTML = `<span>${selectedMethod}${ref ? ' · ' + ref : ''}</span>
                          <span style="color:#4ade80;">+${fmt(amount)}</span>`;
       log.appendChild(entry);
-
       document.getElementById('payRef').value = '';
       updateTotals(data);
 
+      // Corporate credit limit warning
+      if (data.credit_warning) {
+        const warn = document.createElement('div');
+        warn.className = 'alert alert-warning alert-dismissible mt-2 py-2 small';
+        warn.innerHTML = data.credit_warning + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+        document.getElementById('paymentLog').parentElement.insertBefore(warn, log);
+      }
+
       if (data.is_paid) {
-        showToast('Invoice fully paid!', 'success');
+        // Auto-finalize (create visit, route to triage if QMS on) then open receipt
+        const ffd = new FormData();
+        ffd.append('csrfmiddlewaretoken', CSRF);
+        fetch(FINALIZE_URL, { method: 'POST', body: ffd })
+          .then(r => r.json())
+          .then(fdata => {
+            // Open receipt in new tab so it can auto-print without losing the EHR interface
+            const receiptUrl = (fdata.redirect_url || RECEIPT_URL);
+            if (receiptUrl) window.open(receiptUrl + '?popup=1', '_blank');
+            // Return to cashier dashboard ready for next patient
+            window.location.href = '/dashboard/';
+          })
+          .catch(() => {
+            if (RECEIPT_URL) window.open(RECEIPT_URL + '?popup=1', '_blank');
+            window.location.href = '/dashboard/';
+      } else {
+        // Partial payment — stay on POS, re-enable button
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
       }
     })
-    .catch(() => alert('Network error.'));
-}
-
-// ── Finalize and route to triage ─────────────────────────────────────────────
-function finalizeAndRoute() {
-  if (!confirm('Confirm payment received?\nThis will send the patient to the Triage queue.')) return;
-
-  const fd = new FormData();
-  fd.append('csrfmiddlewaretoken', CSRF);
-
-  fetch(FINALIZE_URL, { method: 'POST', body: fd })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.success) { alert(data.error || 'Could not finalize.'); return; }
-      window.location.href = data.redirect_url;
-    })
-    .catch(() => alert('Network error.'));
-}
-
-// ── Open receipt ─────────────────────────────────────────────────────────────
-function openReceipt() {
-  if (RECEIPT_URL) window.open(RECEIPT_URL, '_blank');
+    .catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+      alert('Network error. Please try again.');
+    });
 }
 
 // ── AI Suggest ───────────────────────────────────────────────────────────────
@@ -847,6 +1085,17 @@ function renderAiSuggestions(suggestions) {
   }
   container.style.display = 'block';
 }
+
+// ── Floating cart badge ───────────────────────────────────────────────────────
+function updateFloatingCart() {
+  const rows = document.querySelectorAll('#itemsBody tr[id^="item-row-"]');
+  const totalEl = document.getElementById('totalDisplay');
+  const totalText = totalEl ? totalEl.textContent.replace(/[^0-9,]/g,'').replace(/,/g,'') : '0';
+  document.getElementById('floatingCartCount').textContent = rows.length;
+  document.getElementById('floatingCartTotal').textContent = parseInt(totalText || 0).toLocaleString('fr-FR').replace(/\s/g,',');
+}
+// Initialise on load (existing items)
+updateFloatingCart();
 
 // ── Toast helper ─────────────────────────────────────────────────────────────
 function showToast(msg, type) {

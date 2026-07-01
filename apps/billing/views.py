@@ -1157,6 +1157,59 @@ def patient_finalize(request, patient_id):
             visit.status = VisitStatus.PARAMETERS
             visit.save(update_fields=['status', 'updated_at'])
 
+        # ── QMS-aware: if patient has an active cashier token, complete it & route to triage ──
+        if _qms_active():
+            try:
+                from apps.qms.models import (
+                    QueueToken, DailyTokenSequence,
+                    ServiceType, ServiceTier, TokenStatus, IssuancePoint, TIER_PRIORITY,
+                )
+                cashier_token = (
+                    QueueToken.objects
+                    .filter(
+                        patient=patient,
+                        token_date=today,
+                        service_type=ServiceType.CASHIER,
+                        is_deleted=False,
+                    )
+                    .exclude(status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED])
+                    .order_by('-issued_at')
+                    .first()
+                )
+                if cashier_token:
+                    # Complete the cashier token & free counter
+                    cashier_token.complete()
+                    if cashier_token.counter:
+                        cashier_token.counter.current_serving = None
+                        cashier_token.counter.save(update_fields=['current_serving', 'updated_at'])
+                    # Update visit with service tier from the token
+                    if hasattr(visit, 'service_tier'):
+                        visit.service_tier = cashier_token.service_tier
+                        visit.save(update_fields=['service_tier', 'updated_at'])
+                    # Create triage token to route patient to parameters/triage
+                    triage_stype = (
+                        ServiceType.PARAMETERS
+                        if cashier_token.service_tier == ServiceTier.STANDARD
+                        else ServiceType.PARAMETERS_VIP
+                    )
+                    triage_num = DailyTokenSequence.next_dept_token(triage_stype)
+                    QueueToken.objects.create(
+                        token_number=triage_num,
+                        token_date=today,
+                        patient=patient,
+                        visit=visit,
+                        patient_name=patient.full_name,
+                        service_type=triage_stype,
+                        service_tier=cashier_token.service_tier,
+                        issuance_point=IssuancePoint.SYSTEM,
+                        priority=TIER_PRIORITY.get(cashier_token.service_tier, 0),
+                        entry_token=cashier_token.entry_token or cashier_token,
+                        issued_by=request.user,
+                        notes='Auto-routed after direct POS payment',
+                    )
+            except Exception:
+                pass  # QMS routing is best-effort — never block payment confirmation
+
     redirect_url = reverse('billing:receipt', kwargs={'invoice_id': str(invoice.id)})
     return JsonResponse({'success': True, 'redirect_url': redirect_url})
 
