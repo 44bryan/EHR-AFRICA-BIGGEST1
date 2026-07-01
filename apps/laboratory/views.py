@@ -304,6 +304,30 @@ def lab_stats_view(request):
         cnt = LabOrder.objects.filter(is_deleted=False, created_at__date=d).count()
         daily_volume.append({'date': d.strftime('%d %b'), 'count': cnt})
 
+    # ── Lab orders by requesting department / consultation type ──────────────
+    dept_lab_raw = list(
+        base_orders.values('consultation__department__name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    dept_lab_table = [
+        {'name': r['consultation__department__name'] or 'Unknown', 'count': r['count']}
+        for r in dept_lab_raw
+    ]
+    dept_lab_json = json.dumps({
+        'labels': [r['name'] for r in dept_lab_table],
+        'data':   [r['count'] for r in dept_lab_table],
+    })
+
+    # ── Urgency breakdown ────────────────────────────────────────────────────
+    urgency_raw = list(
+        base_orders.values('urgency').annotate(count=Count('id')).order_by('-count')
+    )
+    urgency_json = json.dumps({
+        'labels': [r['urgency'].title() for r in urgency_raw],
+        'data':   [r['count'] for r in urgency_raw],
+    })
+
     # Category totals for donut chart
     category_labels = {
         'HAEMATOLOGY': 'Haematology', 'BIOCHEMISTRY': 'Biochemistry',
@@ -360,6 +384,10 @@ def lab_stats_view(request):
         'daily_volume': daily_volume,
         'daily_volume_json': json.dumps(daily_volume),
         'category_json': category_json,
+        # By department
+        'dept_lab_table': dept_lab_table,
+        'dept_lab_json': dept_lab_json,
+        'urgency_json': urgency_json,
     }
     return render(request, 'laboratory/stats.html', context)
 
