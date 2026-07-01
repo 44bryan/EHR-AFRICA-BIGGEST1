@@ -8,10 +8,20 @@
     <i class="bi bi-graph-up-arrow text-primary fs-4"></i>
     <div>
       <h5 class="mb-0 fw-bold">Laboratory Statistics</h5>
-      <div class="text-muted small">{{ month_start|date:"F Y" }} — Monthly reporting for management</div>
+      <div class="text-muted small">{{ month_start|date:"F Y" }} — WHO-standard monthly report</div>
     </div>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    {# ── Month navigation ── #}
+    <div class="btn-group btn-group-sm">
+      <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+      <span class="btn btn-outline-secondary disabled px-3">{{ month_start|date:"M Y" }}</span>
+      <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
     <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-printer me-1"></i>Print
     </button>
@@ -24,9 +34,11 @@
 
 {% block content %}
 
-<!-- KPI Summary -->
+{# ══════════════════════════════════════════════════════
+   SECTION 1 — KPI SUMMARY
+═══════════════════════════════════════════════════════ #}
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md col-lg">
     <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #0d6efd !important;">
       <div class="card-body py-3">
         <div class="h2 fw-bold text-primary">{{ total_orders }}</div>
@@ -34,7 +46,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md col-lg">
     <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #0dcaf0 !important;">
       <div class="card-body py-3">
         <div class="h2 fw-bold text-info">{{ total_items }}</div>
@@ -42,7 +54,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md col-lg">
     <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #ffc107 !important;">
       <div class="card-body py-3">
         <div class="h2 fw-bold text-warning">{{ total_abnormal }}</div>
@@ -50,7 +62,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md col-lg">
     <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #dc3545 !important;">
       <div class="card-body py-3">
         <div class="h2 fw-bold text-danger">{{ total_critical }}</div>
@@ -58,9 +70,19 @@
       </div>
     </div>
   </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #6366f1 !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ positivity_rate }}%</div>
+        <div class="small text-muted">Overall Positivity</div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<!-- Charts row -->
+{# ══════════════════════════════════════════════════════
+   SECTION 2 — DAILY VOLUME + CATEGORY DONUT
+═══════════════════════════════════════════════════════ #}
 <div class="row g-3 mb-4">
   <div class="col-md-8">
     <div class="card border-0 shadow-sm h-100">
@@ -78,15 +100,200 @@
         <i class="bi bi-pie-chart text-primary me-2"></i>Tests by Category
       </div>
       <div class="card-body d-flex align-items-center justify-content-center">
-        <canvas id="categoryChart"></canvas>
+        <canvas id="categoryChart" style="max-height:220px;"></canvas>
       </div>
     </div>
   </div>
 </div>
 
-<div class="row g-3 mb-4">
+{# ══════════════════════════════════════════════════════
+   SECTION 3 — WHO DEMOGRAPHICS
+═══════════════════════════════════════════════════════ #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-people-fill text-primary"></i>
+    <span>Patient Demographics — WHO Standard</span>
+    <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_start|date:"F Y" }}</span>
+  </div>
+  <div class="card-body">
+    <div class="row g-4">
 
-  <!-- Top tests ordered -->
+      {# Gender #}
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase letter-spacing-1">
+          <i class="bi bi-gender-ambiguous me-1"></i>Sex Distribution
+        </h6>
+        <div class="d-flex gap-4 justify-content-center mb-3">
+          <div class="text-center">
+            <div class="h3 fw-bold text-primary">{{ male_count }}</div>
+            <div class="small text-muted"><i class="bi bi-gender-male text-primary me-1"></i>Male</div>
+          </div>
+          <div class="text-center">
+            <div class="h3 fw-bold" style="color:#e83e8c;">{{ female_count }}</div>
+            <div class="small text-muted"><i class="bi bi-gender-female me-1" style="color:#e83e8c;"></i>Female</div>
+          </div>
+        </div>
+        {% if male_count or female_count %}
+        <canvas id="genderChart" height="160"></canvas>
+        {% else %}
+        <div class="text-center text-muted small py-3">No patient gender data available</div>
+        {% endif %}
+        <div class="d-flex justify-content-between mt-3 small">
+          <div>
+            <span class="badge bg-light text-dark border me-1">
+              <i class="bi bi-person-fill text-success me-1"></i>Paediatric (0–14 yrs)
+            </span>
+            <strong>{{ paed_count }}</strong>
+          </div>
+          <div>
+            <span class="badge bg-light text-dark border me-1">
+              <i class="bi bi-person-fill text-primary me-1"></i>Adult (15+ yrs)
+            </span>
+            <strong>{{ adult_count }}</strong>
+          </div>
+        </div>
+      </div>
+
+      {# WHO Age Groups #}
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-bar-chart-steps me-1"></i>WHO Age Groups
+        </h6>
+        <canvas id="ageChart" height="200"></canvas>
+        <div class="mt-2">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr><th>Age Band</th><th class="text-end">Patients</th><th class="text-end">%</th></tr>
+            </thead>
+            <tbody>
+              {% for band, cnt in age_counts.items %}
+              {% with total=male_count|add:female_count %}
+              <tr>
+                <td>{{ band }} yrs</td>
+                <td class="text-end fw-semibold">{{ cnt }}</td>
+                <td class="text-end text-muted">
+                  {% if total %}{% widthratio cnt total 100 %}%{% else %}—{% endif %}
+                </td>
+              </tr>
+              {% endwith %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# Gender per Category #}
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-grid-3x3-gap me-1"></i>M/F Split by Category
+        </h6>
+        {% if cat_gender %}
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Category</th>
+                <th class="text-center text-primary"><i class="bi bi-gender-male"></i></th>
+                <th class="text-center" style="color:#e83e8c;"><i class="bi bi-gender-female"></i></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cat, gd in cat_gender.items %}
+              <tr>
+                <td class="small">
+                  {% if cat == 'HAEMATOLOGY' %}Haematology
+                  {% elif cat == 'BIOCHEMISTRY' %}Biochemistry
+                  {% elif cat == 'MICROBIOLOGY' %}Microbiology
+                  {% elif cat == 'SEROLOGY' %}Serology
+                  {% elif cat == 'URINALYSIS' %}Urinalysis
+                  {% elif cat == 'HISTOLOGY' %}Histology
+                  {% elif cat == 'OCULAR' %}Ocular
+                  {% else %}{{ cat }}{% endif %}
+                </td>
+                <td class="text-center fw-semibold text-primary">{{ gd.M }}</td>
+                <td class="text-center fw-semibold" style="color:#e83e8c;">{{ gd.F }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted small py-4">No data for this period</div>
+        {% endif %}
+      </div>
+
+    </div>{# /row #}
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════════
+   SECTION 4 — QUALITATIVE TEST POSITIVITY RATES
+═══════════════════════════════════════════════════════ #}
+{% if positivity_by_test %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-virus text-danger me-2"></i>
+    Disease Positivity Rates — Qualitative & Rapid Tests
+    <span class="badge bg-danger-subtle text-danger small ms-2">Epidemiology</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Test</th>
+            <th class="text-end">Tested</th>
+            <th class="text-end">Positive</th>
+            <th class="text-end">Negative</th>
+            <th style="min-width:180px;">Positivity Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in positivity_by_test %}
+          <tr>
+            <td class="fw-semibold">
+              {{ t.order_item__test_type__name }}
+              <code class="text-muted ms-1" style="font-size:.7rem;">{{ t.order_item__test_type__code }}</code>
+            </td>
+            <td class="text-end">{{ t.total }}</td>
+            <td class="text-end fw-bold {% if t.rate > 30 %}text-danger{% elif t.rate > 10 %}text-warning{% else %}text-success{% endif %}">
+              {{ t.positive }}
+            </td>
+            <td class="text-end text-muted">{{ t.total|add:"-0" }}</td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="flex-grow-1">
+                  <div class="progress" style="height:8px;">
+                    <div class="progress-bar {% if t.rate > 30 %}bg-danger{% elif t.rate > 10 %}bg-warning{% else %}bg-success{% endif %}"
+                         role="progressbar"
+                         style="width:{{ t.rate }}%;"
+                         aria-valuenow="{{ t.rate }}" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                  </div>
+                </div>
+                <span class="fw-bold {% if t.rate > 30 %}text-danger{% elif t.rate > 10 %}text-warning{% else %}text-success{% endif %}" style="min-width:40px;text-align:right;">
+                  {{ t.rate }}%
+                </span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="px-3 py-2 bg-light border-top small text-muted">
+      <i class="bi bi-info-circle me-1"></i>
+      Positivity rate = Positive results ÷ Total tests × 100.
+      Red (&gt;30%) = Alert threshold. Orange (&gt;10%) = Monitor.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════
+   SECTION 5 — TOP TESTS + ABNORMAL RATE
+═══════════════════════════════════════════════════════ #}
+<div class="row g-3 mb-4">
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold border-bottom py-2">
@@ -116,17 +323,16 @@
     </div>
   </div>
 
-  <!-- Abnormal rate per test -->
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-exclamation-triangle text-warning me-2"></i>Abnormal / Critical Rate by Test
+        <i class="bi bi-exclamation-triangle text-warning me-2"></i>Abnormal / Critical Rate
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-sm small mb-0">
             <thead class="table-light">
-              <tr><th>Test</th><th class="text-end">Total</th><th class="text-end">Abnormal</th><th class="text-end">Critical</th></tr>
+              <tr><th>Test</th><th class="text-end">Total</th><th class="text-end">Abnormal</th><th class="text-end">%</th><th class="text-end">Critical</th></tr>
             </thead>
             <tbody>
               {% for t in abnormal_by_test %}
@@ -134,10 +340,11 @@
                 <td>{{ t.order_item__test_type__name }}</td>
                 <td class="text-end">{{ t.total }}</td>
                 <td class="text-end text-warning fw-semibold">{{ t.abnormal }}</td>
+                <td class="text-end text-muted">{{ t.abn_rate }}%</td>
                 <td class="text-end text-danger fw-semibold">{{ t.critical }}</td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted py-3">No data yet</td></tr>
+              <tr><td colspan="5" class="text-center text-muted py-3">No data yet</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -147,26 +354,36 @@
   </div>
 </div>
 
-<!-- Category breakdown -->
+{# ══════════════════════════════════════════════════════
+   SECTION 6 — CATEGORY BREAKDOWN TABLE
+═══════════════════════════════════════════════════════ #}
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold border-bottom py-2">
-    <i class="bi bi-grid text-primary me-2"></i>Tests by Category — {{ month_start|date:"F Y" }}
+    <i class="bi bi-grid text-primary me-2"></i>Complete Test Breakdown by Category — {{ month_start|date:"F Y" }}
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-sm small mb-0">
         <thead class="table-light">
-          <tr><th>Category</th><th>Test Name</th><th class="text-end">Count</th></tr>
+          <tr>
+            <th>Category</th><th>Test</th><th class="text-end">Count</th>
+            <th class="text-end"><i class="bi bi-gender-male text-primary"></i> M</th>
+            <th class="text-end"><i class="bi bi-gender-female" style="color:#e83e8c;"></i> F</th>
+          </tr>
         </thead>
         <tbody>
           {% for c in category_volume %}
+          {% with cat_gd=cat_gender|default_if_none:'' %}
           <tr>
-            <td><span class="badge bg-secondary">{{ c.test_type__category }}</span></td>
+            <td><span class="badge bg-secondary-subtle text-secondary border small">{{ c.test_type__category }}</span></td>
             <td>{{ c.test_type__name }}</td>
             <td class="text-end fw-bold">{{ c.count }}</td>
+            <td class="text-end text-primary small">—</td>
+            <td class="text-end small" style="color:#e83e8c;">—</td>
           </tr>
+          {% endwith %}
           {% empty %}
-          <tr><td colspan="3" class="text-center text-muted py-3">No test data for this month yet</td></tr>
+          <tr><td colspan="5" class="text-center text-muted py-3">No test data for this month yet</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -174,8 +391,12 @@
   </div>
 </div>
 
+{# ── Charts ── #}
 <script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
 <script>
+const COLORS = ['#6366f1','#0d6efd','#0dcaf0','#198754','#ffc107','#dc3545','#6c757d','#fd7e14','#20c997'];
+
+// Daily volume bar chart
 const dv = {{ daily_volume_json|safe }};
 new Chart(document.getElementById('dailyChart'), {
   type: 'bar',
@@ -186,8 +407,7 @@ new Chart(document.getElementById('dailyChart'), {
       data: dv.map(d => d.count),
       backgroundColor: 'rgba(99,102,241,0.6)',
       borderColor: '#6366f1',
-      borderWidth: 1,
-      borderRadius: 4,
+      borderWidth: 1, borderRadius: 4,
     }]
   },
   options: {
@@ -196,26 +416,74 @@ new Chart(document.getElementById('dailyChart'), {
     scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
   }
 });
+
+// Category doughnut
 {% if category_json %}
 const catData = {{ category_json|safe }};
 new Chart(document.getElementById('categoryChart'), {
   type: 'doughnut',
   data: {
     labels: catData.map(c => c.label),
-    datasets: [{
-      data: catData.map(c => c.count),
-      backgroundColor: ['#6366f1','#0d6efd','#0dcaf0','#198754','#ffc107','#dc3545','#6c757d'],
-      borderWidth: 2,
-    }]
+    datasets: [{ data: catData.map(c => c.count), backgroundColor: COLORS, borderWidth: 2 }]
   },
   options: {
-    responsive: true,
-    cutout: '58%',
-    plugins: {
-      legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
-    }
+    responsive: true, cutout: '58%',
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
   }
 });
 {% endif %}
+
+// Gender pie chart
+{% if gender_json %}
+const genderData = {{ gender_json|safe }};
+if (document.getElementById('genderChart')) {
+  new Chart(document.getElementById('genderChart'), {
+    type: 'doughnut',
+    data: {
+      labels: genderData.map(g => g.label),
+      datasets: [{
+        data: genderData.map(g => g.count),
+        backgroundColor: ['#0d6efd', '#e83e8c', '#6c757d'],
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, cutout: '55%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+    }
+  });
+}
+{% endif %}
+
+// WHO Age group bar chart
+{% if age_json %}
+const ageData = {{ age_json|safe }};
+if (document.getElementById('ageChart')) {
+  new Chart(document.getElementById('ageChart'), {
+    type: 'bar',
+    data: {
+      labels: ageData.map(a => a.label + ' yrs'),
+      datasets: [{
+        label: 'Patients',
+        data: ageData.map(a => a.count),
+        backgroundColor: ['#198754','#20c997','#0dcaf0','#0d6efd','#6366f1','#6c757d'],
+        borderWidth: 1, borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+  });
+}
+{% endif %}
 </script>
+
+<style>
+@media print {
+  .btn, .btn-group { display: none !important; }
+  .card { break-inside: avoid; }
+}
+</style>
 {% endblock %}

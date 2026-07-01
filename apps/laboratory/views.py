@@ -144,42 +144,148 @@ def lab_list_view(request):
 
 @login_required
 def lab_stats_view(request):
-    """Monthly statistics for lab — for medical director."""
+    """Monthly statistics for lab — WHO-standard demographics included."""
     if not (request.user.is_medical_director or request.user.is_admin_staff or request.user.is_lab_tech):
         return HttpResponseForbidden()
 
-    today = timezone.localdate()
-    month_start = today.replace(day=1)
+    import json
+    from datetime import date as _date
 
-    # Monthly test volume by category
-    category_volume = (
-        LabOrderItem.objects.filter(
-            order__is_deleted=False,
-            order__created_at__date__gte=month_start,
+    today = timezone.localdate()
+
+    # ── Month selector (default = current month) ─────────────────────────────
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = _date(year, month, 1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = month_start.year, month_start.month
+
+    import calendar
+    last_day = calendar.monthrange(year, month)[1]
+    month_end = _date(year, month, last_day)
+
+    base_orders = LabOrder.objects.filter(
+        is_deleted=False,
+        created_at__date__gte=month_start,
+        created_at__date__lte=month_end,
+    )
+    base_items = LabOrderItem.objects.filter(
+        order__is_deleted=False,
+        order__created_at__date__gte=month_start,
+        order__created_at__date__lte=month_end,
+    )
+    base_results = LabResult.objects.filter(
+        is_deleted=False,
+        created_at__date__gte=month_start,
+        created_at__date__lte=month_end,
+    )
+
+    # ── KPI totals ────────────────────────────────────────────────────────────
+    total_orders   = base_orders.count()
+    total_items    = base_items.count()
+    total_abnormal = base_results.filter(is_abnormal=True).count()
+    total_critical = base_results.filter(is_critical=True).count()
+
+    # Positivity rate (abnormal / total with results)
+    total_results  = base_results.count()
+    positivity_rate = round(total_abnormal / total_results * 100, 1) if total_results else 0
+
+    # ── Gender breakdown ──────────────────────────────────────────────────────
+    gender_raw = (
+        base_orders.values('patient__gender').annotate(count=Count('id'))
+    )
+    gender_map = {g['patient__gender']: g['count'] for g in gender_raw}
+    male_count   = gender_map.get('M', 0)
+    female_count = gender_map.get('F', 0)
+    other_count  = sum(v for k, v in gender_map.items() if k not in ('M', 'F'))
+    gender_json  = json.dumps([
+        {'label': 'Male',   'count': male_count},
+        {'label': 'Female', 'count': female_count},
+    ] + ([{'label': 'Other', 'count': other_count}] if other_count else []))
+
+    # ── WHO age groups ────────────────────────────────────────────────────────
+    # WHO standard age bands: 0-4, 5-14, 15-24, 25-44, 45-59, 60+
+    WHO_BANDS = [
+        ('0–4',   0,  4),
+        ('5–14',  5,  14),
+        ('15–24', 15, 24),
+        ('25–44', 25, 44),
+        ('45–59', 45, 59),
+        ('60+',   60, 999),
+    ]
+    dobs = list(
+        base_orders.filter(patient__date_of_birth__isnull=False)
+        .values_list('patient_id', 'patient__date_of_birth')
+        .distinct()
+    )
+    age_counts = {band[0]: 0 for band in WHO_BANDS}
+    age_unknown = 0
+    for _, dob in dobs:
+        try:
+            age = (today - dob).days // 365
+            placed = False
+            for label, lo, hi in WHO_BANDS:
+                if lo <= age <= hi:
+                    age_counts[label] += 1
+                    placed = True
+                    break
+            if not placed:
+                age_unknown += 1
+        except Exception:
+            age_unknown += 1
+
+    # Also split by gender per age band (paediatric highlight)
+    paed_count  = age_counts.get('0–4', 0) + age_counts.get('5–14', 0)
+    adult_count = sum(v for k, v in age_counts.items() if k not in ('0–4', '5–14'))
+    age_json = json.dumps([{'label': k, 'count': v} for k, v in age_counts.items()])
+
+    # ── Positivity rate for qualitative tests ─────────────────────────────────
+    positivity_by_test = list(
+        base_results.filter(
+            order_item__test_type__result_type__in=['QUALITATIVE', 'SEMI_QUANT'],
         )
-        .values('test_type__category', 'test_type__name')
+        .values('order_item__test_type__name', 'order_item__test_type__code')
+        .annotate(
+            total=Count('id'),
+            positive=Count('id', filter=Q(is_abnormal=True)),
+        )
+        .filter(total__gt=0)
+        .order_by('-total')
+    )
+    for t in positivity_by_test:
+        t['rate'] = round(t['positive'] / t['total'] * 100, 1) if t['total'] else 0
+
+    # ── Gender per test category ──────────────────────────────────────────────
+    cat_gender_raw = list(
+        base_items.values('test_type__category', 'order__patient__gender')
+        .annotate(count=Count('id'))
+    )
+    cat_gender = {}
+    for row in cat_gender_raw:
+        cat = row['test_type__category']
+        g   = row['order__patient__gender']
+        if cat not in cat_gender:
+            cat_gender[cat] = {'M': 0, 'F': 0}
+        if g == 'M':
+            cat_gender[cat]['M'] += row['count']
+        elif g == 'F':
+            cat_gender[cat]['F'] += row['count']
+
+    # ── Existing stats ────────────────────────────────────────────────────────
+    category_volume = (
+        base_items.values('test_type__category', 'test_type__name')
         .annotate(count=Count('id'))
         .order_by('test_type__category', '-count')
     )
-
-    # Most ordered tests
     top_tests = (
-        LabOrderItem.objects.filter(
-            order__is_deleted=False,
-            order__created_at__date__gte=month_start,
-        )
-        .values('test_type__name', 'test_type__code')
+        base_items.values('test_type__name', 'test_type__code')
         .annotate(count=Count('id'))
         .order_by('-count')[:15]
     )
-
-    # Abnormal rate per test
     abnormal_by_test = (
-        LabResult.objects.filter(
-            is_deleted=False,
-            created_at__date__gte=month_start,
-        )
-        .values('order_item__test_type__name')
+        base_results.values('order_item__test_type__name')
         .annotate(
             total=Count('id'),
             abnormal=Count('id', filter=Q(is_abnormal=True)),
@@ -188,64 +294,72 @@ def lab_stats_view(request):
         .filter(total__gt=0)
         .order_by('-abnormal')[:10]
     )
+    for t in abnormal_by_test:
+        t['abn_rate'] = round(t['abnormal'] / t['total'] * 100, 1) if t['total'] else 0
 
-    # Daily volume last 14 days
+    # Daily volume
     daily_volume = []
     for i in range(13, -1, -1):
         d = today - timedelta(days=i)
-        cnt = LabOrder.objects.filter(
-            is_deleted=False, created_at__date=d
-        ).count()
+        cnt = LabOrder.objects.filter(is_deleted=False, created_at__date=d).count()
         daily_volume.append({'date': d.strftime('%d %b'), 'count': cnt})
 
-    # Total this month
-    total_orders = LabOrder.objects.filter(
-        is_deleted=False, created_at__date__gte=month_start
-    ).count()
-    total_items = LabOrderItem.objects.filter(
-        order__is_deleted=False, order__created_at__date__gte=month_start
-    ).count()
-    total_abnormal = LabResult.objects.filter(
-        is_abnormal=True, is_deleted=False, created_at__date__gte=month_start
-    ).count()
-    total_critical = LabResult.objects.filter(
-        is_critical=True, is_deleted=False, created_at__date__gte=month_start
-    ).count()
-
     # Category totals for donut chart
-    category_totals = (
-        LabOrderItem.objects.filter(
-            order__is_deleted=False,
-            order__created_at__date__gte=month_start,
-        )
-        .values('test_type__category')
-        .annotate(count=Count('id'))
-        .order_by('-count')
-    )
     category_labels = {
         'HAEMATOLOGY': 'Haematology', 'BIOCHEMISTRY': 'Biochemistry',
         'MICROBIOLOGY': 'Microbiology', 'SEROLOGY': 'Serology',
-        'URINALYSIS': 'Urinalysis', 'HISTOLOGY': 'Histology',
+        'URINALYSIS': 'Urinalysis', 'HISTOLOGY': 'Histology/Cytology',
         'OCULAR': 'Ocular',
     }
-    import json
+    category_totals = (
+        base_items.values('test_type__category').annotate(count=Count('id')).order_by('-count')
+    )
     category_json = json.dumps([
         {'label': category_labels.get(c['test_type__category'], c['test_type__category']), 'count': c['count']}
         for c in category_totals
     ])
+
+    # Previous / next month navigation
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+
     context = {
+        'month_start': month_start,
+        'today': today,
+        'year': year,
+        'month': month,
+        'prev_year': prev_year, 'prev_month': prev_month,
+        'next_year': next_year, 'next_month': next_month,
+        # KPIs
+        'total_orders': total_orders,
+        'total_items': total_items,
+        'total_abnormal': total_abnormal,
+        'total_critical': total_critical,
+        'positivity_rate': positivity_rate,
+        # Demographics
+        'male_count': male_count,
+        'female_count': female_count,
+        'paed_count': paed_count,
+        'adult_count': adult_count,
+        'age_counts': age_counts,
+        'age_json': age_json,
+        'gender_json': gender_json,
+        'cat_gender': cat_gender,
+        # Positivity
+        'positivity_by_test': positivity_by_test,
+        # Existing
         'category_volume': category_volume,
         'top_tests': top_tests,
         'abnormal_by_test': abnormal_by_test,
         'daily_volume': daily_volume,
         'daily_volume_json': json.dumps(daily_volume),
         'category_json': category_json,
-        'total_orders': total_orders,
-        'total_items': total_items,
-        'total_abnormal': total_abnormal,
-        'total_critical': total_critical,
-        'month_start': month_start,
-        'today': today,
     }
     return render(request, 'laboratory/stats.html', context)
 
