@@ -310,8 +310,13 @@ def lab_stats_view(request):
         .annotate(count=Count('id'))
         .order_by('-count')
     )
+    total_dept_orders = sum(r['count'] for r in dept_lab_raw)
     dept_lab_table = [
-        {'name': r['consultation__department__name'] or 'Unknown', 'count': r['count']}
+        {
+            'name': r['consultation__department__name'] or 'Unknown',
+            'count': r['count'],
+            'pct': round(r['count'] / total_dept_orders * 100, 1) if total_dept_orders else 0,
+        }
         for r in dept_lab_raw
     ]
     dept_lab_json = json.dumps({
@@ -354,18 +359,19 @@ def lab_stats_view(request):
                 pass
 
     # Build ordered table (all tiers, even zeros)
+    total_completed_items = sum(d['total'] for d in tier_age.values())
+
     tier_age_table = []
     for tk in TIER_ORDER:
         d = tier_age.get(tk, {'children': 0, 'adults': 0, 'elderly': 0, 'total': 0})
         if d['total'] > 0:
-            tier_age_table.append({'tier': TIER_DISPLAY[tk], 'key': tk, **d})
+            pct = round(d['total'] / total_completed_items * 100, 1) if total_completed_items else 0
+            tier_age_table.append({'tier': TIER_DISPLAY[tk], 'key': tk, 'pct': pct, **d})
 
-    # Also include any unknown tiers
     for tk, d in tier_age.items():
         if tk not in TIER_ORDER and d['total'] > 0:
-            tier_age_table.append({'tier': tk, 'key': tk, **d})
-
-    total_completed_items = sum(d['total'] for d in tier_age.values())
+            pct = round(d['total'] / total_completed_items * 100, 1) if total_completed_items else 0
+            tier_age_table.append({'tier': tk, 'key': tk, 'pct': pct, **d})
 
     # JSON for tier doughnut
     tier_lab_json = json.dumps({

@@ -332,6 +332,8 @@ async function sendMessage() {
   scrollToBottom();
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout
     const resp = await fetch(SEND_URL, {
       method: 'POST',
       headers: {
@@ -339,17 +341,27 @@ async function sendMessage() {
         'X-CSRFToken': CSRF_TOKEN,
       },
       body: JSON.stringify({ message: msg }),
+      signal: controller.signal,
     });
-    const data = await resp.json();
+    clearTimeout(timeoutId);
     typing.style.display = 'none';
-    if (data.message) {
-      appendMessage('assistant', data.message, data.tokens_used, data.response_time_ms, data.reasoning || '');
-    } else if (data.error) {
-      appendMessage('assistant', `Error: ${data.error}`);
+    if (!resp.ok) {
+      appendMessage('assistant', `Server error (${resp.status}). Please try again.`);
+    } else {
+      const data = await resp.json();
+      if (data.message) {
+        appendMessage('assistant', data.message, data.tokens_used, data.response_time_ms, data.reasoning || '');
+      } else if (data.error) {
+        appendMessage('assistant', `AI error: ${data.error}`);
+      }
     }
   } catch (err) {
     typing.style.display = 'none';
-    appendMessage('assistant', 'Network error. Please check your connection and try again.');
+    if (err.name === 'AbortError') {
+      appendMessage('assistant', 'The AI took too long to respond. Please try a shorter question.');
+    } else {
+      appendMessage('assistant', `Connection error: ${err.message}. Check your network and try again.`);
+    }
   } finally {
     btn.disabled = false;
     input.focus();
