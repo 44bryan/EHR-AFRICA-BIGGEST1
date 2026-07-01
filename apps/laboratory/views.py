@@ -319,6 +319,32 @@ def lab_stats_view(request):
         'data':   [r['count'] for r in dept_lab_table],
     })
 
+    # ── Orders by service tier (VIP / Express / Fast Track / Standard) ───────
+    TIER_DISPLAY = {'VIP': 'VIP', 'EXPRESS': 'Express', 'FAST_TRACK': 'Fast Track', 'STANDARD': 'Standard'}
+    tier_raw = list(
+        base_orders.values('consultation__visit__service_tier')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    tier_table = [
+        {'tier': TIER_DISPLAY.get(r['consultation__visit__service_tier'] or '', r['consultation__visit__service_tier'] or 'Unknown'), 'count': r['count']}
+        for r in tier_raw
+    ]
+    tier_lab_json = json.dumps({'labels': [r['tier'] for r in tier_table], 'data': [r['count'] for r in tier_table]})
+
+    # ── Orders by billing type (Cash / Insurance / HMO) ──────────────────────
+    BT_DISPLAY = {'SELF_PAY': 'Cash / Card', 'INSURANCE': 'Insurance', 'HMO': 'HMO', 'WAIVER': 'Waiver', 'FREE': 'Free'}
+    bt_raw = list(
+        base_orders.values('consultation__visit__billing_type')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    bt_table = [
+        {'bt': BT_DISPLAY.get(r['consultation__visit__billing_type'] or '', r['consultation__visit__billing_type'] or 'Unknown'), 'count': r['count']}
+        for r in bt_raw
+    ]
+    bt_lab_json = json.dumps({'labels': [r['bt'] for r in bt_table], 'data': [r['count'] for r in bt_table]})
+
     # ── Urgency breakdown ────────────────────────────────────────────────────
     urgency_raw = list(
         base_orders.values('urgency').annotate(count=Count('id')).order_by('-count')
@@ -384,9 +410,13 @@ def lab_stats_view(request):
         'daily_volume': daily_volume,
         'daily_volume_json': json.dumps(daily_volume),
         'category_json': category_json,
-        # By department
+        # By department / tier / billing
         'dept_lab_table': dept_lab_table,
         'dept_lab_json': dept_lab_json,
+        'tier_table': tier_table,
+        'tier_lab_json': tier_lab_json,
+        'bt_table': bt_table,
+        'bt_lab_json': bt_lab_json,
         'urgency_json': urgency_json,
     }
     return render(request, 'laboratory/stats.html', context)
