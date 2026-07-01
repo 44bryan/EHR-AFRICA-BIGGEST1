@@ -8,6 +8,7 @@ from django.views.generic import ListView, CreateView, UpdateView
 from django.urls import reverse_lazy
 from django.http import HttpResponseForbidden, JsonResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count
 from .models import User, UserRole
 from .forms import LoginForm, UserCreateForm, UserEditForm, ProfileForm
@@ -32,24 +33,23 @@ def login_view(request):
                 request.session['_2fa_next'] = request.GET.get('next', '')
                 return redirect('accounts:two_fa_verify')
             login(request, user)
-            if user.must_change_password:
-                messages.warning(request, 'Please change your password before continuing.')
-                return redirect('accounts:password_change')
             messages.success(request, f'Welcome back, {user.first_name}!')
             return redirect(request.GET.get('next', 'dashboard:home'))
         else:
-            messages.error(request, 'Invalid email or password.')
+            messages.error(request, 'Invalid username or password.')
     else:
         form = LoginForm(request)
 
     return render(request, 'accounts/login.html', {'form': form})
 
 
-@login_required
+@csrf_exempt
 def logout_view(request):
+    # Accept both GET and POST; csrf_exempt because logging out is always safe
     logout(request)
-    messages.info(request, 'You have been signed out.')
-    return redirect('accounts:login')
+    response = redirect('accounts:login')
+    response['HX-Redirect'] = '/accounts/login/'
+    return response
 
 
 @login_required
@@ -187,30 +187,46 @@ def staff_hub_view(request):
     # Group roles into categories for the quick-create panel
     role_categories = [
         {
+            'label': 'Executive / Leadership',
+            'icon': 'bi-award',
+            'color': 'dark',
+            'roles': [
+                UserRole.CEO, UserRole.MEDICAL_DIRECTOR, UserRole.ADMIN_DIRECTOR,
+                UserRole.FINANCE_DIRECTOR,
+            ],
+        },
+        {
             'label': 'Doctors / Clinical',
             'icon': 'bi-stethoscope',
             'color': 'primary',
             'roles': [
-                UserRole.MEDICAL_DIRECTOR, UserRole.OPHTHALMOLOGIST,
+                UserRole.OPHTHALMOLOGIST,
                 UserRole.RETINA_SPECIALIST, UserRole.GLAUCOMA_SPECIALIST,
-                UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.CATARACT_SURGEON,
-                UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
-                UserRole.NEURO_OPHTHALMOLOGIST, UserRole.OPTOMETRIST, UserRole.INTERN,
+                UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.PEDIATRIC_REFRACTIONIST,
+                UserRole.CATARACT_SURGEON, UserRole.CORNEA_SPECIALIST,
+                UserRole.OCULOPLASTICS_SURGEON, UserRole.NEURO_OPHTHALMOLOGIST,
+                UserRole.UVEITIS_SPECIALIST, UserRole.OPTOMETRIST,
+                UserRole.LOW_VISION_SPECIALIST, UserRole.INTERN,
             ],
         },
         {
-            'label': 'Nursing',
+            'label': 'Nursing & Allied Clinical',
             'icon': 'bi-heart-pulse',
             'color': 'danger',
-            'roles': [UserRole.NURSE, UserRole.THEATRE_NURSE, UserRole.WARD_NURSE],
+            'roles': [
+                UserRole.NURSE, UserRole.THEATRE_NURSE,
+                UserRole.WARD_NURSE, UserRole.COUNSELING_NURSE,
+                UserRole.ANAESTHETIST,
+            ],
         },
         {
-            'label': 'Technical / Support',
+            'label': 'Technical / Paramedical',
             'icon': 'bi-tools',
             'color': 'warning',
             'roles': [
                 UserRole.INVESTIGATION_TECHNICIAN, UserRole.LAB_TECHNICIAN,
                 UserRole.PHARMACIST, UserRole.OPTICAL_DISPENSER,
+                UserRole.CSSD_TECHNICIAN,
             ],
         },
         {
@@ -219,7 +235,8 @@ def staff_hub_view(request):
             'color': 'success',
             'roles': [
                 UserRole.RECEPTIONIST, UserRole.ADMISSION_OFFICER,
-                UserRole.BILLING_OFFICER, UserRole.MEDICAL_RECORDS, UserRole.ADMIN,
+                UserRole.BILLING_OFFICER, UserRole.CASHIER,
+                UserRole.MEDICAL_RECORDS, UserRole.GATEKEEPER, UserRole.ADMIN,
             ],
         },
     ]
@@ -313,9 +330,6 @@ def two_fa_verify_view(request):
             request.session.pop('_2fa_user_id', None)
             next_url = request.session.pop('_2fa_next', '') or 'dashboard:home'
             login(request, user)
-            if user.must_change_password:
-                messages.warning(request, 'Please change your password before continuing.')
-                return redirect('accounts:password_change')
             messages.success(request, f'Welcome back, {user.first_name}!')
             return redirect(next_url)
         else:
