@@ -8,14 +8,21 @@ from django.db.models import Q, Count
 from .models import Appointment
 from .forms import AppointmentForm
 from apps.patients.models import Patient
+from apps.core.context_processors import qms_active as _qms_active
 
 
 @login_required
 def appointment_list_view(request):
     today = timezone.localdate()
+    user = request.user
     appointments = Appointment.objects.select_related(
         'patient', 'department', 'doctor'
     ).filter(is_deleted=False)
+
+    # Doctors only see their own appointments; admin/oversight roles see all
+    _oversight = ('medical_director', 'super_admin', 'ceo', 'admin_director', 'receptionist', 'medical_records')
+    if user.is_doctor and user.role not in _oversight:
+        appointments = appointments.filter(doctor=user)
 
     date_filter = request.GET.get('date', str(today))
     dept_filter = request.GET.get('department', '')
@@ -29,6 +36,21 @@ def appointment_list_view(request):
         appointments = appointments.filter(status=status_filter)
 
     from apps.departments.models import Department
+
+    # Today's stats — scoped to doctor if applicable
+    today_qs = Appointment.objects.filter(appointment_date=today, is_deleted=False)
+    if user.is_doctor and user.role not in _oversight:
+        today_qs = today_qs.filter(doctor=user)
+    today_stats = {
+        'total':     today_qs.count(),
+        'scheduled': today_qs.filter(status='SCHEDULED').count(),
+        'confirmed': today_qs.filter(status='CONFIRMED').count(),
+        'checked_in':today_qs.filter(status='CHECKED_IN').count(),
+        'completed': today_qs.filter(status='COMPLETED').count(),
+        'no_show':   today_qs.filter(status='NO_SHOW').count(),
+        'cancelled': today_qs.filter(status='CANCELLED').count(),
+    }
+
     return render(request, 'appointments/list.html', {
         'appointments': appointments,
         'departments': Department.objects.filter(is_active=True),
@@ -37,6 +59,7 @@ def appointment_list_view(request):
         'dept_filter': dept_filter,
         'status_filter': status_filter,
         'today': today,
+        'today_stats': today_stats,
     })
 
 
@@ -50,12 +73,85 @@ def appointment_book_view(request):
     if request.method == 'POST':
         form = AppointmentForm(request.POST)
         if form.is_valid():
-            appt = form.save(commit=False)
-            appt.booked_by = request.user
-            appt.created_by = request.user
-            appt.save()
-            messages.success(request, f'Appointment booked: {appt.appointment_number}')
-            return redirect('appointments:detail', pk=appt.pk)
+            appt_date = form.cleaned_data.get('appointment_date')
+            doctor    = form.cleaned_data.get('doctor')
+
+            # ── Slot availability check ───────────────────────────────────────
+            slot_error = None
+            if doctor and appt_date:
+                from .models import DoctorSchedule
+                day_of_week = appt_date.weekday()  # 0=Monday … 6=Sunday
+                schedule = DoctorSchedule.objects.filter(
+                    doctor=doctor, day_of_week=day_of_week, is_active=True
+                ).first()
+                if schedule:
+                    booked = Appointment.objects.filter(
+                        doctor=doctor,
+                        appointment_date=appt_date,
+                        is_deleted=False,
+                    ).exclude(
+                        status__in=[Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW]
+                    ).count()
+                    if booked >= schedule.max_patients:
+                        # Find next available day for this doctor
+                        from datetime import timedelta
+                        next_slot_msg = ''
+                        for delta in range(1, 14):
+                            check_date = appt_date + timedelta(days=delta)
+                            check_day  = check_date.weekday()
+                            next_sched = DoctorSchedule.objects.filter(
+                                doctor=doctor, day_of_week=check_day, is_active=True
+                            ).first()
+                            if next_sched:
+                                next_booked = Appointment.objects.filter(
+                                    doctor=doctor,
+                                    appointment_date=check_date,
+                                    is_deleted=False,
+                                ).exclude(
+                                    status__in=[Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW]
+                                ).count()
+                                if next_booked < next_sched.max_patients:
+                                    remaining = next_sched.max_patients - next_booked
+                                    next_slot_msg = (
+                                        f' Next available: {check_date.strftime("%A %d %b")} '
+                                        f'({remaining} slot{"s" if remaining != 1 else ""} remaining).'
+                                    )
+                                    break
+                        slot_error = (
+                            f"{doctor.full_name}'s clinic on "
+                            f"{appt_date.strftime('%A %d %b')} is full "
+                            f"({booked}/{schedule.max_patients} slots taken).{next_slot_msg}"
+                        )
+
+            if slot_error:
+                form.add_error('appointment_date', slot_error)
+            else:
+                appt = form.save(commit=False)
+                appt.booked_by = request.user
+                appt.created_by = request.user
+                appt.save()
+                # ── Audit log ─────────────────────────────────────────────────
+                try:
+                    from apps.accounts.models import UserAuditLog
+                    UserAuditLog.log(
+                        user=request.user,
+                        action=UserAuditLog.Action.CREATE_RECORD,
+                        target_model='Appointment',
+                        target_id=str(appt.pk),
+                        extra_data={
+                            'appointment_number': appt.appointment_number,
+                            'patient': appt.patient.full_name,
+                            'patient_id': appt.patient.patient_id,
+                            'doctor': doctor.full_name if doctor else '—',
+                            'date': str(appt_date),
+                            'department': str(appt.department) if appt.department else '—',
+                        },
+                        request=request,
+                    )
+                except Exception:
+                    pass
+                messages.success(request, f'Appointment booked: {appt.appointment_number}')
+                return redirect('appointments:detail', pk=appt.pk)
     else:
         initial = {}
         if patient:
@@ -77,7 +173,6 @@ def appointment_detail_view(request, pk):
 @login_required
 def appointment_check_in_view(request, pk):
     from apps.patients.models import Visit
-    from apps.qms.models import QueueToken, DailyTokenSequence, ServiceType, TokenStatus
 
     appt = get_object_or_404(Appointment, pk=pk)
     patient = appt.patient
@@ -90,8 +185,6 @@ def appointment_check_in_view(request, pk):
     consultation_valid = active_visit is not None
 
     if consultation_valid:
-        # Within window — route directly to department
-        service_type = ServiceType.GENERAL
         visit_type = 'FOLLOW_UP'
         messages.success(
             request,
@@ -100,29 +193,11 @@ def appointment_check_in_view(request, pk):
             f"Patient directed to {appt.department.name if appt.department else 'department'} (no payment required)."
         )
     else:
-        # Expired or first visit — cashier first
-        service_type = ServiceType.CASHIER
         visit_type = 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW'
         messages.warning(
             request,
             "Consultation period has expired or no prior payment found. Patient directed to cashier."
         )
-
-    # Issue QMS token
-    from apps.appointments.models import Appointment as Appt
-    tier = appt.service_tier or 'STANDARD'
-    TIER_PRIORITY = {'STANDARD': 0, 'EXPRESS': 1, 'FAST_TRACK': 1, 'VIP': 2}
-    priority = TIER_PRIORITY.get(tier, 0)
-
-    token_number = DailyTokenSequence.next_token(service_type)
-    token = QueueToken.objects.create(
-        token_number=token_number,
-        patient=patient,
-        patient_name=patient.full_name,
-        service_type=service_type,
-        priority=priority,
-        issued_by=request.user,
-    )
 
     # Create visit
     visit, created = Visit.objects.get_or_create(
@@ -137,8 +212,28 @@ def appointment_check_in_view(request, pk):
         }
     )
 
-    messages.success(request, f'Patient checked in. Token: {token.token_number} | Visit: {visit.visit_number}')
-    return redirect('reception:confirmation', token_pk=token.pk)
+    if _qms_active():
+        try:
+            from apps.qms.models import QueueToken, DailyTokenSequence, ServiceType
+            service_type = ServiceType.GENERAL if consultation_valid else ServiceType.CASHIER
+            tier = appt.service_tier or 'STANDARD'
+            TIER_PRIORITY = {'STANDARD': 0, 'EXPRESS': 1, 'FAST_TRACK': 1, 'VIP': 2}
+            token_number = DailyTokenSequence.next_token(service_type)
+            token = QueueToken.objects.create(
+                token_number=token_number,
+                patient=patient,
+                patient_name=patient.full_name,
+                service_type=service_type,
+                priority=TIER_PRIORITY.get(tier, 0),
+                issued_by=request.user,
+            )
+            messages.success(request, f'Patient checked in. Token: {token.token_number} | Visit: {visit.visit_number}')
+            return redirect('reception:confirmation', token_pk=token.pk)
+        except Exception:
+            pass
+
+    messages.success(request, f'Patient {patient.full_name} checked in. Visit: {visit.visit_number}')
+    return redirect('patients:detail', patient_id=patient.patient_id)
 
 
 @login_required
@@ -148,6 +243,24 @@ def appointment_cancel_view(request, pk):
         appt.status = Appointment.Status.CANCELLED
         appt.cancellation_reason = request.POST.get('reason', '')
         appt.save(update_fields=['status', 'cancellation_reason'])
+        try:
+            from apps.accounts.models import UserAuditLog
+            UserAuditLog.log(
+                user=request.user,
+                action=UserAuditLog.Action.DELETE_RECORD,
+                target_model='Appointment',
+                target_id=str(appt.pk),
+                extra_data={
+                    'appointment_number': appt.appointment_number,
+                    'patient': appt.patient.full_name,
+                    'patient_id': appt.patient.patient_id,
+                    'reason': appt.cancellation_reason,
+                    'date': str(appt.appointment_date),
+                },
+                request=request,
+            )
+        except Exception:
+            pass
         messages.success(request, 'Appointment cancelled.')
         return redirect('appointments:list')
     return render(request, 'appointments/cancel.html', {'appointment': appt})
@@ -157,12 +270,22 @@ def appointment_cancel_view(request, pk):
 def clinic_board_view(request):
     """Today's clinic board — all booked appointments grouped by department with live status."""
     today = timezone.localdate()
+    user = request.user
     from apps.departments.models import Department
 
     dept_filter = request.GET.get('dept', '')
     appts = Appointment.objects.filter(
         appointment_date=today, is_deleted=False
     ).select_related('patient', 'department', 'doctor').order_by('appointment_time')
+
+    # Specialists auto-scoped to their own department (can override via ?dept=)
+    _oversight = ('medical_director', 'super_admin', 'ceo', 'admin_director', 'receptionist')
+    if user.is_doctor and user.role not in _oversight and not dept_filter:
+        if user.department:
+            appts = appts.filter(department=user.department)
+        else:
+            # General ophthalmologist with no dept assigned — filter to their own appointments
+            appts = appts.filter(doctor=user)
 
     if dept_filter:
         appts = appts.filter(department_id=dept_filter)
@@ -192,6 +315,29 @@ def clinic_board_view(request):
         'dept_filter': dept_filter,
         'status_choices': Appointment.Status.choices,
     })
+
+
+@login_required
+@require_POST
+def appointment_no_show_view(request, pk):
+    """Mark appointment as No Show — AJAX endpoint used from receptionist dashboard."""
+    from django.http import JsonResponse
+    appt = get_object_or_404(Appointment, pk=pk)
+    appt.status = Appointment.Status.NO_SHOW
+    appt.save(update_fields=['status'])
+    try:
+        from apps.accounts.models import UserAuditLog
+        UserAuditLog.log(
+            user=request.user,
+            action=UserAuditLog.Action.UPDATE_RECORD,
+            target_model='Appointment',
+            target_id=str(appt.pk),
+            extra_data={'patient': appt.patient.full_name, 'status': 'NO_SHOW'},
+            request=request,
+        )
+    except Exception:
+        pass
+    return JsonResponse({'success': True})
 
 
 @login_required
@@ -232,10 +378,32 @@ def reschedule_view(request, pk):
         new_date = request.POST.get('appointment_date')
         new_time = request.POST.get('appointment_time')
         if new_date and new_time:
+            old_date = str(appt.appointment_date)
+            old_time = str(appt.appointment_time)
             appt.appointment_date = new_date
             appt.appointment_time = new_time
             appt.status = Appointment.Status.SCHEDULED
             appt.save(update_fields=['appointment_date', 'appointment_time', 'status'])
+            try:
+                from apps.accounts.models import UserAuditLog
+                UserAuditLog.log(
+                    user=request.user,
+                    action=UserAuditLog.Action.UPDATE_RECORD,
+                    target_model='Appointment',
+                    target_id=str(appt.pk),
+                    extra_data={
+                        'appointment_number': appt.appointment_number,
+                        'patient': appt.patient.full_name,
+                        'patient_id': appt.patient.patient_id,
+                        'from_date': old_date,
+                        'from_time': old_time,
+                        'to_date': new_date,
+                        'to_time': new_time,
+                    },
+                    request=request,
+                )
+            except Exception:
+                pass
             messages.success(request, f'Appointment rescheduled to {new_date} at {new_time}.')
         return redirect('appointments:detail', pk=appt.pk)
     return render(request, 'appointments/reschedule.html', {'appointment': appt})
@@ -266,8 +434,7 @@ def schedule_list_view(request):
         role__in=['medical_director','ophthalmologist','retina_specialist','glaucoma_specialist',
                   'pediatric_ophthalmologist','cataract_surgeon','cornea_specialist',
                   'oculoplastics_surgeon','neuro_ophthalmologist','uveitis_specialist',
-                  'optometrist','express_ophthalmologist','insurance_ophthalmologist',
-                  'intern','pediatric_refractionist']
+                  'optometrist','intern','pediatric_refractionist']
     ).order_by('last_name')
 
     return render(request, 'appointments/schedule_list.html', {
@@ -327,8 +494,7 @@ def schedule_create_view(request):
         role__in=['medical_director','ophthalmologist','retina_specialist','glaucoma_specialist',
                   'pediatric_ophthalmologist','cataract_surgeon','cornea_specialist',
                   'oculoplastics_surgeon','neuro_ophthalmologist','uveitis_specialist',
-                  'optometrist','express_ophthalmologist','insurance_ophthalmologist',
-                  'intern','pediatric_refractionist']
+                  'optometrist','intern','pediatric_refractionist']
     ).order_by('last_name')
 
     return render(request, 'appointments/schedule_form.html', {

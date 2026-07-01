@@ -1,117 +1,355 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% block title %}Reception Dashboard — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Stat cards ─────────────────────────────────── */
+.stat-card { text-align:center; padding:1rem .75rem; }
+.stat-card .num { font-size:2.2rem; font-weight:900; line-height:1; }
+.stat-card .lbl { font-size:.75rem; color:#6c757d; margin-top:4px; text-transform:uppercase; letter-spacing:.5px; }
+
+/* ── Quick search ───────────────────────────────── */
+#qsResults {
+  position:absolute; z-index:1055; width:100%; top:100%;
+  max-height:260px; overflow-y:auto;
+  border-radius:0 0 8px 8px;
+  border:1px solid #dee2e6; border-top:none;
+}
+
+/* ── Waiting time badge ─────────────────────────── */
+.wait-badge { font-size:.68rem; background:#fff3cd; color:#856404;
+  border:1px solid #ffc107; border-radius:20px; padding:1px 7px; white-space:nowrap; }
+
+/* ── Responsive ─────────────────────────────────── */
+.col-hide-sm { display:table-cell; }
+@media (max-width:575px) {
+  .col-hide-sm { display:none; }
+  .header-actions .btn { flex:1; font-size:.85rem; }
+}
+</style>
+{% endblock %}
+
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0">Reception Queue — {% now "l, F j, Y" %}</h4>
-  <div class="d-flex gap-2">
-    <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm"><i class="bi bi-person-plus me-1"></i>Register Patient</a>
-    <a href="{% url 'appointments:book' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-calendar-plus me-1"></i>Book Appointment</a>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <h4 class="fw-bold mb-0">
+    <i class="bi bi-person-badge me-2 text-primary"></i>Reception — {% now "l, d M Y" %}
+  </h4>
+  <div class="d-flex gap-2 flex-wrap header-actions">
+    <a href="{% url 'patients:register' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-person-plus me-1"></i>Register Patient
+    </a>
+    <a href="{% url 'appointments:book' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-calendar-plus me-1"></i>Book Appointment
+    </a>
   </div>
 </div>
+
+{# ── Quick Patient Search ── #}
+<div class="position-relative mb-4" style="max-width:500px;">
+  <div class="input-group shadow-sm">
+    <span class="input-group-text bg-white border-end-0">
+      <i class="bi bi-search text-muted"></i>
+    </span>
+    <input type="text" id="quickSearch" class="form-control border-start-0 ps-0"
+           placeholder="Search patient by name, ID or phone…" autocomplete="off">
+    <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary" hx-boost="false">
+      <i class="bi bi-people me-1"></i><span class="d-none d-sm-inline">All Patients</span>
+    </a>
+  </div>
+  <div id="qsResults" class="list-group shadow d-none"></div>
+</div>
 {% endblock %}
+
 {% block content %}
+
+{# ── Stat Cards ─────────────────────────────────────────────────────── #}
 <div class="row g-3 mb-4">
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center p-3">
-      <div class="h2 fw-bold text-primary">{{ waiting_count }}</div>
-      <div class="text-muted small">Waiting in Queue</div>
+  <div class="col-4">
+    <div class="card border-0 shadow-sm stat-card">
+      <div class="num text-warning">{{ waiting_count }}</div>
+      <div class="lbl">Waiting</div>
     </div>
   </div>
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center p-3">
-      <div class="h2 fw-bold text-warning">{{ scheduled_count }}</div>
-      <div class="text-muted small">Scheduled Today</div>
+  <div class="col-4">
+    <div class="card border-0 shadow-sm stat-card">
+      <div class="num text-primary">{{ scheduled_count }}</div>
+      <div class="lbl">Scheduled</div>
     </div>
   </div>
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center p-3">
-      <div class="h2 fw-bold text-success">{{ checked_in_count }}</div>
-      <div class="text-muted small">Checked In</div>
+  <div class="col-4">
+    <div class="card border-0 shadow-sm stat-card">
+      <div class="num text-success">{{ checked_in_count }}</div>
+      <div class="lbl">Checked In</div>
     </div>
   </div>
 </div>
 
-<!-- Today's Reception Queue (Primary) -->
+{# ── Reception Queue ─────────────────────────────────────────────────── #}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-bottom py-3">
-    <h6 class="fw-bold mb-0"><i class="bi bi-queue-fill me-2 text-primary"></i>Today's Reception Queue</h6>
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+    <h6 class="fw-bold mb-0">
+      <i class="bi bi-person-lines-fill me-2 text-primary"></i>
+      Registration Queue
+      {% if waiting_count > 0 %}
+      <span class="badge bg-warning text-dark ms-1">{{ waiting_count }}</span>
+      {% endif %}
+    </h6>
+    <small class="text-muted d-none d-sm-inline" id="refreshStatus">
+      <i class="bi bi-arrow-clockwise me-1"></i>Auto-refreshes every 30s
+    </small>
   </div>
   <div class="table-responsive">
     <table class="table table-hover mb-0 align-middle">
       <thead class="table-light">
         <tr>
-          <th class="small">Queue #</th>
-          <th class="small">Patient</th>
-          <th class="small">Type</th>
-          <th class="small">Time In</th>
-          <th class="small">Status</th>
-          <th></th>
+          <th class="ps-3" style="width:80px;">Queue #</th>
+          <th>Patient</th>
+          <th class="col-hide-sm">Type</th>
+          <th class="col-hide-sm">Waiting</th>
+          <th class="col-hide-sm">Status</th>
+          <th style="width:120px;"></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="queueTbody">
         {% for patient in queue_patients %}
         <tr>
-          <td><span class="badge bg-primary fs-6">{{ patient.queue_number }}</span></td>
-          <td>
-            <div class="small fw-medium">{{ patient.name }}</div>
-            <div class="text-muted" style="font-size:0.72rem;">{{ patient.patient_id }}</div>
-          </td>
-          <td><span class="badge bg-secondary-subtle text-secondary small">{{ patient.visit_type }}</span></td>
-          <td class="small text-muted">{{ patient.arrival_time|time:"H:i" }}</td>
-          <td>
-            {% if patient.status == 'REGISTERED' %}<span class="badge bg-info">Registered</span>
-            {% elif patient.status == 'PROCESSING' %}<span class="badge bg-warning text-dark">Processing</span>
-            {% elif patient.status == 'COMPLETED' %}<span class="badge bg-success">Done</span>
-            {% else %}<span class="badge bg-light text-dark">{{ patient.status }}</span>{% endif %}
+          <td class="ps-3">
+            <span class="badge bg-primary fs-6">{{ patient.queue_number }}</span>
           </td>
           <td>
-            {% if patient.status == 'REGISTERED' %}
-            <a href="{% url 'qms:receptionist_complete' token_id=patient.pk %}" class="btn btn-sm btn-primary">Next</a>
+            <div class="fw-semibold small">{{ patient.name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ patient.patient_id }}</div>
+          </td>
+          <td class="col-hide-sm">
+            <span class="badge bg-secondary-subtle text-secondary small">{{ patient.visit_type }}</span>
+          </td>
+          <td class="col-hide-sm">
+            <span class="wait-badge" data-arrived="{{ patient.arrival_time|date:'c' }}">—</span>
+          </td>
+          <td class="col-hide-sm">
+            {% if patient.status == 'WAITING' %}
+              <span class="badge bg-warning text-dark">Waiting</span>
+            {% elif patient.status == 'CALLED' %}
+              <span class="badge bg-info text-dark">Called</span>
+            {% elif patient.status == 'SERVING' %}
+              <span class="badge bg-primary">Registering</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ patient.status }}</span>
+            {% endif %}
+          </td>
+          <td class="pe-3">
+            {% if patient.status == 'WAITING' or patient.status == 'CALLED' or patient.status == 'SERVING' %}
+            <a href="{% url 'patients:register' %}?qms_token_id={{ patient.pk }}"
+               class="btn btn-primary btn-sm w-100" hx-boost="false">
+              <i class="bi bi-person-plus me-1"></i>Register
+            </a>
             {% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center py-4 text-muted small">No patients in queue</td></tr>
+        <tr>
+          <td colspan="6" class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-2 d-block mb-2 opacity-50"></i>
+            No patients in queue right now
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-<!-- Scheduled Appointments (Secondary) -->
+{# ── Today's Appointments ────────────────────────────────────────────── #}
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-white border-bottom py-3">
-    <h6 class="fw-bold mb-0"><i class="bi bi-calendar3 me-2"></i>Today's Appointments</h6>
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+    <h6 class="fw-bold mb-0">
+      <i class="bi bi-calendar3 me-2"></i>Today's Appointments
+    </h6>
+    <a href="{% url 'appointments:book' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-plus me-1"></i>Book New
+    </a>
   </div>
   <div class="table-responsive">
     <table class="table table-hover mb-0 align-middle">
       <thead class="table-light">
-        <tr><th class="small">Time</th><th class="small">Patient</th><th class="small">Dept</th><th class="small">Doctor</th><th class="small">Status</th><th></th></tr>
+        <tr>
+          <th class="ps-3 col-hide-sm" style="width:70px;">Time</th>
+          <th>Patient</th>
+          <th class="col-hide-sm">Dept</th>
+          <th class="col-hide-sm">Doctor</th>
+          <th>Status</th>
+          <th style="width:160px;"></th>
+        </tr>
       </thead>
       <tbody>
         {% for appt in today_appointments %}
-        <tr>
-          <td class="small fw-medium">{{ appt.appointment_time|time:"H:i" }}</td>
-          <td><div class="small fw-medium">{{ appt.patient.full_name }}</div><div class="text-muted" style="font-size:0.72rem;">{{ appt.patient.patient_id }}</div></td>
-          <td><span class="badge bg-secondary-subtle text-secondary small">{{ appt.department }}</span></td>
-          <td class="small text-muted">{% if appt.doctor %}Dr. {{ appt.doctor.last_name }}{% else %}—{% endif %}</td>
+        <tr id="appt-row-{{ appt.pk }}">
+          <td class="ps-3 col-hide-sm small fw-semibold">{{ appt.appointment_time|time:"H:i" }}</td>
           <td>
-            {% if appt.status == 'CHECKED_IN' %}<span class="badge bg-success">Checked In</span>
-            {% elif appt.status == 'SCHEDULED' %}<span class="badge bg-warning text-dark">Scheduled</span>
-            {% elif appt.status == 'COMPLETED' %}<span class="badge bg-secondary">Done</span>
-            {% else %}<span class="badge bg-light text-dark">{{ appt.get_status_display }}</span>{% endif %}
+            <div class="fw-semibold small">{{ appt.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">
+              {{ appt.patient.patient_id }}
+              {% if appt.patient.phone_number %}
+              · <a href="tel:{{ appt.patient.phone_number }}" class="text-muted">{{ appt.patient.phone_number }}</a>
+              {% endif %}
+            </div>
+          </td>
+          <td class="col-hide-sm">
+            <span class="badge bg-secondary-subtle text-secondary small">{{ appt.department }}</span>
+          </td>
+          <td class="col-hide-sm small text-muted">
+            {% if appt.doctor %}Dr. {{ appt.doctor.last_name }}{% else %}—{% endif %}
           </td>
           <td>
-            {% if appt.status == 'SCHEDULED' or appt.status == 'CONFIRMED' %}
-            <a href="{% url 'appointments:check_in' pk=appt.pk %}" class="btn btn-sm btn-success">Check In</a>
+            {% if appt.status == 'CHECKED_IN' %}
+              <span class="badge bg-success">Checked In</span>
+            {% elif appt.status == 'SCHEDULED' %}
+              <span class="badge bg-primary">Scheduled</span>
+            {% elif appt.status == 'CONFIRMED' %}
+              <span class="badge bg-info text-dark">Confirmed</span>
+            {% elif appt.status == 'COMPLETED' %}
+              <span class="badge bg-secondary">Done</span>
+            {% elif appt.status == 'NO_SHOW' %}
+              <span class="badge bg-danger">No Show</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ appt.get_status_display }}</span>
             {% endif %}
+          </td>
+          <td class="pe-3">
+            <div class="d-flex gap-1">
+              {% if appt.status == 'SCHEDULED' or appt.status == 'CONFIRMED' %}
+              <a href="{% url 'appointments:check_in' pk=appt.pk %}"
+                 class="btn btn-sm btn-success" hx-boost="false">
+                <i class="bi bi-check2 me-1"></i>Check In
+              </a>
+              <button class="btn btn-sm btn-outline-danger"
+                      onclick="markNoShow('{{ appt.pk }}')"
+                      title="Mark as No Show">
+                <i class="bi bi-person-x"></i>
+              </button>
+              {% endif %}
+            </div>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center py-4 text-muted small">No appointments today</td></tr>
+        <tr>
+          <td colspan="6" class="text-center py-5 text-muted">
+            <i class="bi bi-calendar-x fs-2 d-block mb-2 opacity-50"></i>
+            No appointments today
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = '{{ csrf_token }}';
+
+// ── Quick Patient Search ──────────────────────────────────────────────────────
+(function () {
+  const inp = document.getElementById('quickSearch');
+  const box = document.getElementById('qsResults');
+  if (!inp) return;
+  let t;
+
+  inp.addEventListener('input', function () {
+    clearTimeout(t);
+    const q = this.value.trim();
+    if (q.length < 2) { box.classList.add('d-none'); box.innerHTML = ''; return; }
+    t = setTimeout(function () {
+      fetch('/patients/search/?q=' + encodeURIComponent(q))
+        .then(r => r.json())
+        .then(data => {
+          box.innerHTML = '';
+          const results = data.results || [];
+          if (!results.length) {
+            box.innerHTML = '<div class="list-group-item text-muted small py-2">No patients found</div>';
+          } else {
+            results.forEach(p => {
+              const a = document.createElement('a');
+              a.href = '/patients/' + p.patient_id + '/';
+              a.className = 'list-group-item list-group-item-action py-2 px-3';
+              a.setAttribute('hx-boost', 'false');
+              a.innerHTML = '<div class="fw-semibold small">' + p.full_name +
+                '<span class="text-muted ms-2" style="font-size:.72rem;">' + p.patient_id + '</span></div>' +
+                '<div class="text-muted" style="font-size:.72rem;">' + (p.phone || '') + '</div>';
+              box.appendChild(a);
+            });
+          }
+          box.classList.remove('d-none');
+        });
+    }, 280);
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!inp.contains(e.target) && !box.contains(e.target)) {
+      box.classList.add('d-none');
+    }
+  });
+})();
+
+// ── Waiting time badges ───────────────────────────────────────────────────────
+function updateWaitTimes() {
+  document.querySelectorAll('.wait-badge[data-arrived]').forEach(function (el) {
+    const arrived = new Date(el.dataset.arrived);
+    if (isNaN(arrived)) return;
+    const mins = Math.floor((Date.now() - arrived.getTime()) / 60000);
+    el.textContent = mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
+  });
+}
+updateWaitTimes();
+setInterval(updateWaitTimes, 60000);
+
+// ── Auto-refresh queue every 30s ─────────────────────────────────────────────
+if (window._receptTimer) clearInterval(window._receptTimer);
+window._receptTimer = setInterval(function () {
+  const tbody = document.getElementById('queueTbody');
+  const status = document.getElementById('refreshStatus');
+  if (!tbody) { clearInterval(window._receptTimer); return; }
+  if (status) status.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refreshing…';
+  fetch(window.location.pathname)
+    .then(r => r.text())
+    .then(html => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const newBody = doc.getElementById('queueTbody');
+      if (newBody) {
+        tbody.innerHTML = newBody.innerHTML;
+        updateWaitTimes();
+      }
+      const now = new Date();
+      const hm = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+      if (status) status.innerHTML = '<i class="bi bi-check-circle me-1 text-success"></i>Updated ' + hm;
+    })
+    .catch(function () {
+      if (status) status.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Auto-refreshes every 30s';
+    });
+}, 30000);
+
+// ── No Show ───────────────────────────────────────────────────────────────────
+function markNoShow(apptId) {
+  if (!confirm('Mark this appointment as No Show?')) return;
+  fetch('/appointments/' + apptId + '/no-show/', {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF }
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      const row = document.getElementById('appt-row-' + apptId);
+      if (row) {
+        const statusTd = row.querySelector('td:nth-child(5)');
+        if (statusTd) statusTd.innerHTML = '<span class="badge bg-danger">No Show</span>';
+        const actionTd = row.querySelector('td:last-child');
+        if (actionTd) actionTd.innerHTML = '';
+      }
+    }
+  })
+  .catch(function () { alert('Could not update. Please try again.'); });
+}
+</script>
 {% endblock %}

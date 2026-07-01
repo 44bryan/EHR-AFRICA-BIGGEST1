@@ -10,6 +10,7 @@ urlpatterns = [
     path('<uuid:pk>/', views.appointment_detail_view, name='detail'),
     path('<uuid:pk>/check-in/', views.appointment_check_in_view, name='check_in'),
     path('<uuid:pk>/cancel/', views.appointment_cancel_view, name='cancel'),
+    path('<uuid:pk>/no-show/', views.appointment_no_show_view, name='no_show'),
     path('<uuid:pk>/status/', views.update_status_view, name='update_status'),
     path('<uuid:pk>/reschedule/', views.reschedule_view, name='reschedule'),
     # Doctor schedule management
