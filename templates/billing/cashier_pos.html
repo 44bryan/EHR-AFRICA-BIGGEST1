@@ -905,13 +905,22 @@ function _doAddItem(description, category, quantity, unitPrice) {
         tbody.appendChild(tr);
         updateTotals(data);
         updateFloatingCart();
-        // Scroll the NEW row into view (handles overflow-y:auto inside the billing panel)
+        // Flash the row green then scroll the billing panel so it's visible
+        tr.style.transition = 'background 0.3s';
+        tr.style.background = '#d1fae5';
+        setTimeout(function() { tr.style.background = ''; }, 1200);
         setTimeout(function() {
-          tr.scrollIntoView({behavior: 'smooth', block: 'nearest'});
-          tr.style.transition = 'background 0.3s';
-          tr.style.background = '#d1fae5';
-          setTimeout(function() { tr.style.background = ''; }, 1200);
-        }, 80);
+          // Use getBoundingClientRect so we scroll the overflow panel, not the page
+          var panel = document.getElementById('billingPanel');
+          if (panel) {
+            var panelRect = panel.getBoundingClientRect();
+            var trRect    = tr.getBoundingClientRect();
+            // Only scroll if the row is outside the visible area of the panel
+            if (trRect.top < panelRect.top || trRect.bottom > panelRect.bottom) {
+              panel.scrollTop += (trRect.top - panelRect.top) - 20;
+            }
+          }
+        }, 60);
         showToast('✓ ' + data.description + ' — ' + fmt(data.line_total) + ' FCFA added', 'success');
       } catch(err) {
         showToast('Item saved but display error: ' + err.message + '. Please refresh.', 'warning');
