@@ -924,3 +924,393 @@ def finance_dashboard(request):
         'waiver_total': waiver_total,
     }
     return render(request, 'leadership/finance_dashboard.html', context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Comprehensive Hospital Statistics — segmented by department, tier, billing
+# type, WHO age groups. WHO-standard monthly report modelled on lab stats.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def hospital_stats_view(request):
+    """
+    Comprehensive segmented hospital statistics.
+    Covers: consultations by specialty, visits by service tier/billing type,
+    WHO age+gender groups, IPD admissions, theatre cases by procedure,
+    optical shop, pharmacy dispensing, lab and investigation orders.
+    """
+    if not _require_director(request):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+
+    import json, calendar as _cal
+
+    today = timezone.localdate()
+
+    # ── Month selector ────────────────────────────────────────────────────────
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = today.replace(year=year, month=month, day=1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = month_start.year, month_start.month
+
+    last_day  = _cal.monthrange(year, month)[1]
+    month_end = today.replace(year=year, month=month, day=last_day)
+
+    # Previous / next month navigation
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+
+    # ── Model imports ─────────────────────────────────────────────────────────
+    from apps.patients.models import Visit, Patient, VisitType
+    from apps.consultations.models import Consultation
+
+    # ── Base querysets ────────────────────────────────────────────────────────
+    base_visits = Visit.objects.filter(
+        is_deleted=False,
+        visit_date__date__gte=month_start,
+        visit_date__date__lte=month_end,
+    )
+    base_consults = Consultation.objects.filter(
+        is_deleted=False,
+        consultation_date__date__gte=month_start,
+        consultation_date__date__lte=month_end,
+    )
+
+    # ── Top-level KPIs ────────────────────────────────────────────────────────
+    total_visits   = base_visits.count()
+    total_consults = base_consults.count()
+    new_patients   = base_visits.filter(visit_type=VisitType.NEW).count()
+    followup       = base_visits.filter(visit_type=VisitType.FOLLOW_UP).count()
+    emergency      = base_visits.filter(visit_type=VisitType.EMERGENCY).count()
+
+    # ── Consultations by department ───────────────────────────────────────────
+    dept_consults_raw = (
+        base_consults.values('department__name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    dept_labels  = [d['department__name'] or 'Unknown' for d in dept_consults_raw]
+    dept_counts  = [d['count'] for d in dept_consults_raw]
+    dept_consults_json = json.dumps({'labels': dept_labels, 'data': dept_counts})
+    dept_consults_table = list(dept_consults_raw)
+
+    # ── Visits by service tier ────────────────────────────────────────────────
+    TIER_LABELS = {
+        'STANDARD': 'Standard',
+        'EXPRESS':  'Express',
+        'FAST_TRACK': 'Fast Track',
+        'VIP':      'VIP',
+    }
+    tier_raw = (
+        base_visits.values('service_tier')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    tier_data    = {r['service_tier']: r['count'] for r in tier_raw}
+    tier_labels  = [TIER_LABELS.get(k, k) for k in TIER_LABELS]
+    tier_counts  = [tier_data.get(k, 0) for k in TIER_LABELS]
+    tier_json    = json.dumps({'labels': tier_labels, 'data': tier_counts})
+
+    # ── Visits by billing type ────────────────────────────────────────────────
+    BT_LABELS = {
+        'SELF_PAY':  'Cash / Card',
+        'INSURANCE': 'Insurance',
+        'HMO':       'HMO',
+        'WAIVER':    'Waiver',
+        'FREE':      'Free / Subsidised',
+    }
+    bt_raw    = base_visits.values('billing_type').annotate(count=Count('id')).order_by('-count')
+    bt_data   = {r['billing_type']: r['count'] for r in bt_raw}
+    bt_labels = [BT_LABELS.get(k, k) for k in BT_LABELS]
+    bt_counts = [bt_data.get(k, 0) for k in BT_LABELS]
+    bt_json   = json.dumps({'labels': bt_labels, 'data': bt_counts})
+
+    # ── Daily visit volume (this month) ──────────────────────────────────────
+    daily_raw = (
+        base_visits.values('visit_date__date')
+        .annotate(count=Count('id'))
+        .order_by('visit_date__date')
+    )
+    daily_map   = {r['visit_date__date']: r['count'] for r in daily_raw}
+    from datetime import timedelta as _td, date as _date
+    daily_labels = []
+    daily_counts = []
+    d = month_start
+    while d <= min(month_end, today):
+        daily_labels.append(d.strftime('%d'))
+        daily_counts.append(daily_map.get(d, 0))
+        d += _td(days=1)
+    daily_json = json.dumps({'labels': daily_labels, 'data': daily_counts})
+
+    # ── WHO Age groups + gender ───────────────────────────────────────────────
+    WHO_BANDS = [
+        ('0–4',   0,  4),
+        ('5–14',  5,  14),
+        ('15–24', 15, 24),
+        ('25–44', 25, 44),
+        ('45–59', 45, 59),
+        ('60+',   60, 999),
+    ]
+    dobs = list(
+        base_visits.filter(patient__date_of_birth__isnull=False)
+        .values_list('patient_id', 'patient__date_of_birth', 'patient__gender')
+        .distinct()
+    )
+    age_male   = {b[0]: 0 for b in WHO_BANDS}
+    age_female = {b[0]: 0 for b in WHO_BANDS}
+    age_other  = {b[0]: 0 for b in WHO_BANDS}
+    age_unknown = 0
+    total_male = total_female = total_other = 0
+    for _, dob, gender in dobs:
+        if gender == 'M':
+            total_male += 1
+        elif gender == 'F':
+            total_female += 1
+        else:
+            total_other += 1
+        try:
+            age = (today - dob).days // 365
+            placed = False
+            for label, lo, hi in WHO_BANDS:
+                if lo <= age <= hi:
+                    if gender == 'M':
+                        age_male[label] += 1
+                    elif gender == 'F':
+                        age_female[label] += 1
+                    else:
+                        age_other[label] += 1
+                    placed = True
+                    break
+            if not placed:
+                age_unknown += 1
+        except Exception:
+            age_unknown += 1
+
+    who_labels = [b[0] for b in WHO_BANDS]
+    who_json   = json.dumps({
+        'labels': who_labels,
+        'male':   [age_male[b[0]] for b in WHO_BANDS],
+        'female': [age_female[b[0]] for b in WHO_BANDS],
+    })
+    who_table = [
+        {
+            'band':   b[0],
+            'male':   age_male[b[0]],
+            'female': age_female[b[0]],
+            'other':  age_other[b[0]],
+            'total':  age_male[b[0]] + age_female[b[0]] + age_other[b[0]],
+        }
+        for b in WHO_BANDS
+    ]
+
+    # ── IPD Admissions ────────────────────────────────────────────────────────
+    try:
+        from apps.ipd.models import Admission
+        ipd_qs = Admission.objects.filter(
+            is_deleted=False,
+            admission_date__date__gte=month_start,
+            admission_date__date__lte=month_end,
+        )
+        total_admissions = ipd_qs.count()
+        discharged_qs = ipd_qs.filter(discharge_date__isnull=False)
+        # Average LOS via Python (discharge_date - admission_date)
+        los_list = []
+        for adm in discharged_qs.values('admission_date', 'discharge_date'):
+            try:
+                los_list.append((adm['discharge_date'] - adm['admission_date']).days)
+            except Exception:
+                pass
+        avg_los = round(sum(los_list) / len(los_list), 1) if los_list else 0
+        discharged_count = discharged_qs.count()
+    except Exception:
+        total_admissions = discharged_count = 0
+        avg_los = 0
+
+    # ── Theatre / Surgical Cases ──────────────────────────────────────────────
+    try:
+        from apps.ipd.models import SurgicalBooking, SurgicalBookingStatus
+        surg_qs = SurgicalBooking.objects.filter(
+            is_deleted=False,
+            surgery_date__date__gte=month_start,
+            surgery_date__date__lte=month_end,
+        )
+        total_theatre = surg_qs.count()
+        completed_theatre = surg_qs.filter(status=SurgicalBookingStatus.COMPLETED).count()
+        surg_by_proc_raw = (
+            surg_qs.values('procedure')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:12]
+        )
+        # Get display names
+        surg_choices = dict(SurgicalBooking._meta.get_field('procedure').flatchoices)
+        surg_by_proc = [
+            {
+                'procedure': surg_choices.get(r['procedure'], r['procedure']),
+                'count': r['count'],
+            }
+            for r in surg_by_proc_raw
+        ]
+        surg_labels = [s['procedure'] for s in surg_by_proc]
+        surg_counts = [s['count'] for s in surg_by_proc]
+        surg_json = json.dumps({'labels': surg_labels, 'data': surg_counts})
+    except Exception:
+        total_theatre = completed_theatre = 0
+        surg_by_proc = []
+        surg_json = json.dumps({'labels': [], 'data': []})
+
+    # ── Optical Orders ────────────────────────────────────────────────────────
+    try:
+        from apps.opticals.models import OpticalOrder
+        opt_qs = OpticalOrder.objects.filter(
+            is_deleted=False,
+            ordered_date__gte=month_start,
+            ordered_date__lte=month_end,
+        )
+        total_optical = opt_qs.count()
+        optical_delivered = opt_qs.filter(status='DELIVERED').count()
+    except Exception:
+        total_optical = optical_delivered = 0
+
+    # ── Pharmacy Dispensing ───────────────────────────────────────────────────
+    try:
+        from apps.pharmacy.models import Dispensing
+        from django.db.models import Sum as _Sum
+        pharma_qs = Dispensing.objects.filter(
+            is_deleted=False,
+            dispensed_at__date__gte=month_start,
+            dispensed_at__date__lte=month_end,
+        )
+        total_dispensing = pharma_qs.count()
+        pharma_revenue = pharma_qs.aggregate(total=_Sum('amount_paid'))['total'] or 0
+    except Exception:
+        total_dispensing = 0
+        pharma_revenue = 0
+
+    # ── Laboratory ────────────────────────────────────────────────────────────
+    try:
+        from apps.laboratory.models import LabOrder, LabOrderItem, LabResult
+        lab_qs = LabOrder.objects.filter(
+            is_deleted=False,
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end,
+        )
+        total_lab_orders = lab_qs.count()
+        total_lab_tests  = LabOrderItem.objects.filter(
+            order__is_deleted=False,
+            order__created_at__date__gte=month_start,
+            order__created_at__date__lte=month_end,
+        ).count()
+        lab_abnormal = LabResult.objects.filter(
+            is_deleted=False,
+            is_abnormal=True,
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end,
+        ).count()
+    except Exception:
+        total_lab_orders = total_lab_tests = lab_abnormal = 0
+
+    # ── Eye Investigations ────────────────────────────────────────────────────
+    try:
+        from apps.investigations.models import InvestigationOrder, InvestigationCategory
+        inv_qs = InvestigationOrder.objects.filter(
+            is_deleted=False,
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end,
+        )
+        total_inv = inv_qs.count()
+        inv_by_cat_raw = (
+            inv_qs.values('investigation_type__category')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+        cat_choices = dict(InvestigationCategory.choices)
+        inv_by_cat = [
+            {
+                'category': cat_choices.get(r['investigation_type__category'], r['investigation_type__category'] or 'Unknown'),
+                'count': r['count'],
+            }
+            for r in inv_by_cat_raw
+        ]
+        inv_labels = [i['category'] for i in inv_by_cat]
+        inv_counts = [i['count'] for i in inv_by_cat]
+        inv_json   = json.dumps({'labels': inv_labels, 'data': inv_counts})
+    except Exception:
+        total_inv = 0
+        inv_by_cat = []
+        inv_json   = json.dumps({'labels': [], 'data': []})
+
+    # ── Context ───────────────────────────────────────────────────────────────
+    months_list = [{'value': m, 'label': _date(year, m, 1).strftime('%B')} for m in range(1, 13)]
+
+    return render(request, 'leadership/hospital_stats.html', {
+        'month_start': month_start,
+        'year': year, 'month': month,
+        'months_list': months_list,
+        'years': range(today.year - 2, today.year + 1),
+        'prev_year': prev_year, 'prev_month': prev_month,
+        'next_year': next_year, 'next_month': next_month,
+        # KPIs
+        'total_visits': total_visits,
+        'total_consults': total_consults,
+        'new_patients': new_patients,
+        'followup': followup,
+        'emergency': emergency,
+        # Departments
+        'dept_consults_json': dept_consults_json,
+        'dept_consults_table': dept_consults_table,
+        # Tiers
+        'tier_json': tier_json,
+        'tier_labels': json.dumps(tier_labels),
+        'tier_standard': tier_data.get('STANDARD', 0),
+        'tier_express': tier_data.get('EXPRESS', 0),
+        'tier_fast': tier_data.get('FAST_TRACK', 0),
+        'tier_vip': tier_data.get('VIP', 0),
+        # Billing type
+        'bt_json': bt_json,
+        'bt_cash': bt_data.get('SELF_PAY', 0),
+        'bt_insurance': bt_data.get('INSURANCE', 0),
+        'bt_hmo': bt_data.get('HMO', 0),
+        'bt_waiver': bt_data.get('WAIVER', 0),
+        'bt_free': bt_data.get('FREE', 0),
+        # Daily volume
+        'daily_json': daily_json,
+        # WHO
+        'who_json': who_json,
+        'who_table': who_table,
+        'total_male': total_male,
+        'total_female': total_female,
+        'total_other': total_other,
+        'age_unknown': age_unknown,
+        # IPD
+        'total_admissions': total_admissions,
+        'discharged_count': discharged_count,
+        'avg_los': avg_los,
+        # Theatre
+        'total_theatre': total_theatre,
+        'completed_theatre': completed_theatre,
+        'surg_by_proc': surg_by_proc,
+        'surg_json': surg_json,
+        # Optical
+        'total_optical': total_optical,
+        'optical_delivered': optical_delivered,
+        # Pharmacy
+        'total_dispensing': total_dispensing,
+        'pharma_revenue': pharma_revenue,
+        # Lab
+        'total_lab_orders': total_lab_orders,
+        'total_lab_tests': total_lab_tests,
+        'lab_abnormal': lab_abnormal,
+        # Investigations
+        'total_inv': total_inv,
+        'inv_by_cat': inv_by_cat,
+        'inv_json': inv_json,
+    })

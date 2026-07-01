@@ -12,4 +12,5 @@ urlpatterns = [
     path('finance/', views.finance_dashboard, name='finance_dashboard'),
     path('analytics/', analytics_views.analytics_dashboard, name='analytics_dashboard'),
     path('analytics/data/', analytics_views.analytics_data_json, name='analytics_data'),
+    path('hospital-stats/', views.hospital_stats_view, name='hospital_stats'),
 ]

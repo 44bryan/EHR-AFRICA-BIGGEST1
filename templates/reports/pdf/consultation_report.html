@@ -63,15 +63,41 @@
 
 <!-- Examination -->
 {% with exam=consultation.examination_findings %}
-{% if exam.anterior_segment or exam.posterior_segment or exam.slit_lamp %}
 <div class="section">
   <div class="section-title">Examination Findings</div>
   {% if exam.pupils %}<div class="field-row"><span class="field-label">Pupils:</span><span class="field-value">{{ exam.pupils }}</span></div>{% endif %}
+  {% if exam.ocular_motility %}<div class="field-row"><span class="field-label">Ocular Motility:</span><span class="field-value">{{ exam.ocular_motility }}</span></div>{% endif %}
+  {% if exam.cover_test %}<div class="field-row"><span class="field-label">Cover Test:</span><span class="field-value">{{ exam.cover_test }}</span></div>{% endif %}
+  {% if exam.color_vision %}<div class="field-row"><span class="field-label">Colour Vision:</span><span class="field-value">{{ exam.color_vision }}</span></div>{% endif %}
   {% if exam.anterior_segment.right or exam.anterior_segment.left %}<div class="field-row"><span class="field-label">Anterior Segment:</span><span class="field-value">OD: {{ exam.anterior_segment.right|default:"—" }} | OS: {{ exam.anterior_segment.left|default:"—" }}</span></div>{% endif %}
-  {% if exam.posterior_segment.right or exam.posterior_segment.left %}<div class="field-row"><span class="field-label">Posterior Segment:</span><span class="field-value">OD: {{ exam.posterior_segment.right|default:"—" }} | OS: {{ exam.posterior_segment.left|default:"—" }}</span></div>{% endif %}
+  {% if exam.posterior_segment.right or exam.posterior_segment.left %}<div class="field-row"><span class="field-label">Posterior Segment / Fundus:</span><span class="field-value">OD: {{ exam.posterior_segment.right|default:"—" }} | OS: {{ exam.posterior_segment.left|default:"—" }}</span></div>{% endif %}
+  {% if exam.slit_lamp %}
+  {% if exam.slit_lamp.cornea or exam.slit_lamp.anterior_chamber or exam.slit_lamp.lens or exam.slit_lamp.conjunctiva %}
+  <div class="field-row"><span class="field-label">Slit Lamp:</span><span class="field-value">
+    {% if exam.slit_lamp.cornea %}Cornea: {{ exam.slit_lamp.cornea }}{% endif %}
+    {% if exam.slit_lamp.anterior_chamber %}&nbsp;| AC: {{ exam.slit_lamp.anterior_chamber }}{% endif %}
+    {% if exam.slit_lamp.lens %}&nbsp;| Lens: {{ exam.slit_lamp.lens }}{% endif %}
+    {% if exam.slit_lamp.conjunctiva %}&nbsp;| Conj.: {{ exam.slit_lamp.conjunctiva }}{% endif %}
+  </span></div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endwith %}
+
+<!-- Specialist / Department-Specific Clinical Exam -->
+{% if consultation.department_specific_data %}
+<div class="section">
+  <div class="section-title">{{ consultation.department.name }} — Specialist Examination</div>
+  {% for key, val in consultation.department_specific_data.items %}
+  {% if val %}
+  <div class="field-row">
+    <span class="field-label" style="text-transform:capitalize;">{{ key|cut:"_" }}:</span>
+    <span class="field-value">{{ val }}</span>
+  </div>
+  {% endif %}
+  {% endfor %}
 </div>
 {% endif %}
-{% endwith %}
 
 <!-- Diagnosis -->
 <div class="section">
@@ -104,6 +130,60 @@
   <div class="field-row"><span class="field-label">Date:</span><span class="field-value">{{ consultation.follow_up_date|date:"d M Y" }}</span></div>
   {% if consultation.follow_up_instructions %}<div class="field-row"><span class="field-label">Instructions:</span><span class="field-value">{{ consultation.follow_up_instructions }}</span></div>{% endif %}
 </div>
+{% endif %}
+
+<!-- Drug Prescriptions -->
+{% if consultation.drug_prescriptions.exists %}
+<div class="section">
+  <div class="section-title">Drug Prescriptions</div>
+  <table class="data-table">
+    <tr><th>Drug</th><th>Form / Conc.</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Eye</th></tr>
+    {% for rx in consultation.drug_prescriptions.all %}
+    {% for item in rx.items.all %}
+    <tr>
+      <td><strong>{{ item.drug_name }}</strong></td>
+      <td>{{ item.get_drug_form_display }}{% if item.concentration %} {{ item.concentration }}{% endif %}</td>
+      <td>{{ item.dose|default:"—" }}</td>
+      <td>{{ item.frequency|default:"—" }}</td>
+      <td>{{ item.duration|default:"—" }}</td>
+      <td>{{ item.get_eye_display|default:"—" }}</td>
+    </tr>
+    {% if item.special_instructions %}
+    <tr><td colspan="6" style="font-size:8pt;color:#555;padding-left:8px;">&#x2937; {{ item.special_instructions }}</td></tr>
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<!-- Optical Prescriptions -->
+{% if consultation.optical_prescriptions.exists %}
+{% for rx in consultation.optical_prescriptions.all %}
+<div class="section">
+  <div class="section-title">Optical Prescription — {{ rx.get_prescription_type_display }} ({{ rx.prescription_date|date:"d M Y" }})</div>
+  <table class="data-table">
+    <tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>Prism</th><th>VA</th></tr>
+    {% if rx.right_sphere or rx.right_cylinder or rx.right_axis %}
+    <tr>
+      <td><strong>OD</strong></td>
+      <td>{{ rx.right_sphere|default:"—" }}</td><td>{{ rx.right_cylinder|default:"—" }}</td>
+      <td>{{ rx.right_axis|default:"—" }}</td><td>{{ rx.right_add|default:"—" }}</td>
+      <td>{{ rx.right_prism|default:"—" }}</td><td>{{ rx.right_va|default:"—" }}</td>
+    </tr>
+    {% endif %}
+    {% if rx.left_sphere or rx.left_cylinder or rx.left_axis %}
+    <tr>
+      <td><strong>OS</strong></td>
+      <td>{{ rx.left_sphere|default:"—" }}</td><td>{{ rx.left_cylinder|default:"—" }}</td>
+      <td>{{ rx.left_axis|default:"—" }}</td><td>{{ rx.left_add|default:"—" }}</td>
+      <td>{{ rx.left_prism|default:"—" }}</td><td>{{ rx.left_va|default:"—" }}</td>
+    </tr>
+    {% endif %}
+  </table>
+  {% if rx.notes %}<div style="font-size:8pt;color:#555;margin-top:3px;">Notes: {{ rx.notes }}</div>{% endif %}
+</div>
+{% endfor %}
 {% endif %}
 
 <!-- Signature -->

@@ -745,23 +745,9 @@ def home_view(request):
         })
         return render(request, 'dashboard/investigation_tech.html', ctx)
 
-    # ── Lab Technician ───────────────────────────────────────────────────
+    # ── Lab Technician — blood/urine/micro only, no eye investigations ──
     if user.is_lab_tech:
-        from apps.investigations.models import InvestigationOrder
-        from apps.laboratory.models import LabOrder
-        pending_inv = InvestigationOrder.objects.select_related(
-            'patient', 'investigation_type'
-        ).filter(status__in=['ORDERED', 'IN_PROGRESS']).order_by('-created_at')
-        pending_lab = LabOrder.objects.select_related(
-            'patient'
-        ).filter(status__in=['ORDERED', 'SAMPLE_COLLECTED', 'PROCESSING']).order_by('-created_at')
-        ctx.update({
-            'pending_investigations': pending_inv,
-            'pending_labs': pending_lab,
-            'pending_inv_count': pending_inv.count(),
-            'pending_lab_count': pending_lab.count(),
-        })
-        return render(request, 'dashboard/lab_technician.html', ctx)
+        return redirect('laboratory:dashboard')
 
     # ── Pharmacist ────────────────────────────────────────────────────────
     if user.is_pharmacist:
