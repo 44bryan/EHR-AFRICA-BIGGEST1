@@ -445,9 +445,93 @@ def add_payment(request, invoice_id):
         # Open the 15-day consultation window for this patient's current visit
         # if the invoice contains a CONSULT or REG item (first-time payment)
         _try_open_consultation_window(invoice)
+        invoice.refresh_from_db()
+        # ── Route patient after full payment (same logic as patient_finalize) ──
+        if invoice.balance_due <= 0 and invoice.patient:
+            _route_patient_after_payment(invoice, request)
+            messages.success(request, 'Payment recorded. Patient routed to triage.')
+            return redirect('billing:receipt', invoice_id=invoice.id)
         messages.success(request, f'Payment of {amount} FCFA recorded.')
         return redirect('billing:invoice_detail', invoice_id=invoice.id)
     return redirect('billing:invoice_detail', invoice_id=invoice.id)
+
+
+def _route_patient_after_payment(invoice, request):
+    """
+    Shared helper: after an invoice is fully paid, create/update a Visit and
+    route the patient through the QMS (complete cashier token → create triage token).
+    Called from add_payment AND patient_finalize so ALL billing paths produce the
+    same outcome.
+    """
+    from django.db import transaction
+    from apps.patients.models import Visit, VisitStatus, VisitType
+
+    patient = invoice.patient
+    today = timezone.localdate()
+
+    try:
+        with transaction.atomic():
+            visit = Visit.objects.filter(
+                patient=patient, visit_date__date=today, is_deleted=False,
+            ).first()
+            if not visit:
+                has_prior = Visit.objects.filter(patient=patient, is_deleted=False).exists()
+                visit = Visit.objects.create(
+                    patient=patient,
+                    visit_type=VisitType.FOLLOW_UP if has_prior else VisitType.NEW,
+                    chief_complaint='',
+                    status=VisitStatus.PARAMETERS,
+                    created_by=request.user,
+                )
+            else:
+                visit.status = VisitStatus.PARAMETERS
+                visit.save(update_fields=['status', 'updated_at'])
+
+            # QMS routing — best-effort, never blocks payment confirmation
+            if _qms_active():
+                from apps.qms.models import (
+                    QueueToken, DailyTokenSequence,
+                    ServiceType, ServiceTier, TokenStatus, IssuancePoint, TIER_PRIORITY,
+                )
+                cashier_token = (
+                    QueueToken.objects
+                    .filter(
+                        patient=patient,
+                        token_date=today,
+                        service_type=ServiceType.CASHIER,
+                        is_deleted=False,
+                    )
+                    .exclude(status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED])
+                    .order_by('-issued_at')
+                    .first()
+                )
+                if cashier_token:
+                    cashier_token.complete()
+                    if cashier_token.counter:
+                        cashier_token.counter.current_serving = None
+                        cashier_token.counter.save(update_fields=['current_serving', 'updated_at'])
+                    triage_stype = (
+                        ServiceType.PARAMETERS
+                        if cashier_token.service_tier == ServiceTier.STANDARD
+                        else ServiceType.PARAMETERS_VIP
+                    )
+                    triage_num = DailyTokenSequence.next_dept_token(triage_stype)
+                    QueueToken.objects.create(
+                        token_number=triage_num,
+                        token_date=today,
+                        patient=patient,
+                        visit=visit,
+                        patient_name=patient.full_name,
+                        service_type=triage_stype,
+                        service_tier=cashier_token.service_tier,
+                        issuance_point=IssuancePoint.SYSTEM,
+                        priority=TIER_PRIORITY.get(cashier_token.service_tier, 0),
+                        entry_token=cashier_token.entry_token or cashier_token,
+                        issued_by=request.user,
+                        notes='Auto-routed after payment',
+                    )
+    except Exception:
+        pass  # never block payment over routing errors
 
 
 def _try_open_consultation_window(invoice):
@@ -1111,12 +1195,10 @@ def patient_pos(request, patient_id):
 @require_POST
 def patient_finalize(request, patient_id):
     """
-    QMS-independent finalize — confirm payment and create Visit without QMS routing.
-    Used when QMS is disabled or patient arrived without a queue token.
+    Finalize payment via cashier_pos. Calls _route_patient_after_payment to create
+    a Visit and complete/route QMS tokens (same as add_payment path).
     """
-    from django.db import transaction
     from django.urls import reverse
-    from apps.patients.models import Visit, VisitStatus, VisitType
 
     patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
     today = timezone.localdate()
@@ -1132,75 +1214,7 @@ def patient_finalize(request, patient_id):
             'error': f'Balance of {int(invoice.balance_due)} FCFA still outstanding.'
         }, status=400)
 
-    with transaction.atomic():
-        visit = Visit.objects.filter(
-            patient=patient, visit_date__date=today, is_deleted=False,
-        ).first()
-        if not visit:
-            has_prior = Visit.objects.filter(patient=patient, is_deleted=False).exists()
-            visit = Visit.objects.create(
-                patient=patient,
-                visit_type=VisitType.FOLLOW_UP if has_prior else VisitType.NEW,
-                chief_complaint='',
-                status=VisitStatus.PARAMETERS,
-                created_by=request.user,
-            )
-        else:
-            visit.status = VisitStatus.PARAMETERS
-            visit.save(update_fields=['status', 'updated_at'])
-
-        # ── QMS-aware: if patient has an active cashier token, complete it & route to triage ──
-        if _qms_active():
-            try:
-                from apps.qms.models import (
-                    QueueToken, DailyTokenSequence,
-                    ServiceType, ServiceTier, TokenStatus, IssuancePoint, TIER_PRIORITY,
-                )
-                cashier_token = (
-                    QueueToken.objects
-                    .filter(
-                        patient=patient,
-                        token_date=today,
-                        service_type=ServiceType.CASHIER,
-                        is_deleted=False,
-                    )
-                    .exclude(status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED])
-                    .order_by('-issued_at')
-                    .first()
-                )
-                if cashier_token:
-                    # Complete the cashier token & free counter
-                    cashier_token.complete()
-                    if cashier_token.counter:
-                        cashier_token.counter.current_serving = None
-                        cashier_token.counter.save(update_fields=['current_serving', 'updated_at'])
-                    # Update visit with service tier from the token
-                    if hasattr(visit, 'service_tier'):
-                        visit.service_tier = cashier_token.service_tier
-                        visit.save(update_fields=['service_tier', 'updated_at'])
-                    # Create triage token to route patient to parameters/triage
-                    triage_stype = (
-                        ServiceType.PARAMETERS
-                        if cashier_token.service_tier == ServiceTier.STANDARD
-                        else ServiceType.PARAMETERS_VIP
-                    )
-                    triage_num = DailyTokenSequence.next_dept_token(triage_stype)
-                    QueueToken.objects.create(
-                        token_number=triage_num,
-                        token_date=today,
-                        patient=patient,
-                        visit=visit,
-                        patient_name=patient.full_name,
-                        service_type=triage_stype,
-                        service_tier=cashier_token.service_tier,
-                        issuance_point=IssuancePoint.SYSTEM,
-                        priority=TIER_PRIORITY.get(cashier_token.service_tier, 0),
-                        entry_token=cashier_token.entry_token or cashier_token,
-                        issued_by=request.user,
-                        notes='Auto-routed after direct POS payment',
-                    )
-            except Exception:
-                pass  # QMS routing is best-effort — never block payment confirmation
+    _route_patient_after_payment(invoice, request)
 
     redirect_url = reverse('billing:receipt', kwargs={'invoice_id': str(invoice.id)})
     return JsonResponse({'success': True, 'redirect_url': redirect_url})
