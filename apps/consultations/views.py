@@ -99,7 +99,11 @@ def consultation_create_view(request, patient_id):
     if visit_id:
         visit = get_object_or_404(Visit, pk=visit_id, patient=patient)
     else:
-        visit = patient.visits.filter(status__in=['WAITING', 'TRIAGE', 'IN_CONSULTATION']).first()
+        visit = patient.visits.filter(
+            is_deleted=False,
+        ).exclude(
+            status__in=['COMPLETED', 'DISCHARGED', 'REGISTERED', 'AT_RECEPTIONIST']
+        ).order_by('-visit_date').first()
         if not visit:
             # No active visit — require doctor to explicitly confirm walk-in details
             if request.method == 'POST' and request.POST.get('walkin_confirm'):
@@ -420,7 +424,10 @@ def consultation_edit_view(request, pk):
     if consultation.consulting_doctor != request.user and not request.user.is_medical_director:
         return HttpResponseForbidden()
 
-    if consultation.status == ConsultationStatus.COMPLETED and not request.user.is_medical_director:
+    if consultation.status == ConsultationStatus.COMPLETED and not (
+        request.user.is_medical_director or
+        consultation.consulting_doctor == request.user
+    ):
         messages.error(request, 'Completed consultations cannot be edited.')
         return redirect('consultations:detail', pk=pk)
 
@@ -537,12 +544,22 @@ def consultation_edit_view(request, pk):
         ).select_related('investigation_type', 'result').order_by('-created_at')
     )
 
+    # Most recent refractionist consultation for this patient — shown as read-only grey section
+    refraction_consult = Consultation.objects.filter(
+        patient=consultation.patient,
+        is_deleted=False,
+        department__code__in=['REFRAC', 'PEDS_REFRAC'],
+    ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
+    refraction_data = refraction_consult.department_specific_data if refraction_consult else {}
+
     return render(request, 'consultations/edit.html', {
         'form': form,
         'consultation': consultation,
         'investigation_data': investigation_data,
         'investigation_orders': investigation_orders,
         'is_resuming': consultation.status == ConsultationStatus.IN_PROGRESS,
+        'refraction_consult': refraction_consult,
+        'refraction_data': refraction_data,
     })
 
 
@@ -1292,7 +1309,14 @@ _NURSE_ROUTE_MAP = {
     'OPTICAL':     ('OPTICAL',           'OPTICAL',    'Optical Shop'),
     'COUNSELING':  ('COUNSELING',        'COUNSEL',    'Surgical Counseling'),
     'RETINA':      ('AT_RETINA',         'RETINA',     'Retina Clinic'),
-    'GLAUCOMA':    ('AT_GLAUCOMA',       'GLAUC',      'Glaucoma Clinic'),
+    'GLAUCOMA':    ('AT_GLAUCOMA',       'GLAUCOMA',   'Glaucoma Clinic'),
+    'GENERAL':     ('WAITING',           'GENERAL',    'General Ophthalmology'),
+    'DOCTOR':      ('WAITING',           'GENERAL',    'General Ophthalmology'),
+    'CATARACT':    ('CATARACT',          'CATARACT',   'Cataract Clinic'),
+    'CORNEA':      ('AT_CORNEA',         'CORNEA',     'Cornea Clinic'),
+    'UVEITIS':     ('UVEITIS',           'UVEITIS',    'Uveitis Clinic'),
+    'NEURO':       ('NEURO',             'NEURO',      'Neuro-Ophthalmology'),
+    'OCULOPLASTY': ('AT_OCULOPLASTY',   'OCULOPLASTY','Oculoplastics'),
     'DISCHARGE':   ('COMPLETED',         None,         'Discharge / Done'),
 }
 
@@ -1325,40 +1349,38 @@ def nurse_route_patient_view(request, visit_pk):
     if _qms_active():
         try:
             from apps.qms.models import QueueToken, TokenStatus, IssuancePoint, TIER_PRIORITY, DailyTokenSequence
+            from django.db import transaction as _tx
             dept_code = user.role_department_code or (user.department.code if user.department else None)
             svc_type = _DEPT_TO_QMS_SERVICE.get(dept_code) if dept_code else None
             today = timezone.localdate()
 
-            # Complete the current token for this department
-            if svc_type:
-                current_token = QueueToken.objects.filter(
-                    patient=visit.patient,
-                    service_type=svc_type,
-                    issued_at__date=today,
-                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                    is_deleted=False,
-                ).first()
-                if current_token:
-                    current_token.status = TokenStatus.COMPLETED
-                    current_token.completed_at = timezone.now()
-                    current_token.save(update_fields=['status', 'completed_at', 'updated_at'])
+            with _tx.atomic():
+                # Complete the current token for this department
+                if svc_type:
+                    QueueToken.objects.filter(
+                        patient=visit.patient,
+                        service_type=svc_type,
+                        issued_at__date=today,
+                        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                        is_deleted=False,
+                    ).update(status=TokenStatus.COMPLETED, completed_at=timezone.now())
 
-            # Issue a new token for destination service
-            if qms_service and visit.patient:
-                tier = visit.service_tier
-                token_number = DailyTokenSequence.next_dept_token(qms_service)
-                QueueToken.objects.create(
-                    token_number=token_number,
-                    patient=visit.patient,
-                    visit=visit,
-                    patient_name=visit.patient.full_name,
-                    service_type=qms_service,
-                    service_tier=tier,
-                    issuance_point=IssuancePoint.SYSTEM,
-                    priority=TIER_PRIORITY.get(tier, 0),
-                    notes=f'Routed by Nurse {user.get_full_name()} → {label}',
-                    issued_by=user,
-                )
+                # Issue a new token for destination service
+                if qms_service and visit.patient:
+                    tier = visit.service_tier
+                    token_number = DailyTokenSequence.next_dept_token(qms_service)
+                    QueueToken.objects.create(
+                        token_number=token_number,
+                        patient=visit.patient,
+                        visit=visit,
+                        patient_name=visit.patient.full_name,
+                        service_type=qms_service,
+                        service_tier=tier,
+                        issuance_point=IssuancePoint.SYSTEM,
+                        priority=TIER_PRIORITY.get(tier, 0),
+                        notes=f'Routed by {user.get_full_name()} to {label}',
+                        issued_by=user,
+                    )
         except Exception:
             pass
 
