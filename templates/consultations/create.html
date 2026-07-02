@@ -48,6 +48,41 @@
 </div>
 {% endif %}
 
+{% if patient_allergies %}
+<!-- ── Known Allergies — Red alert ── -->
+<div class="alert alert-danger border-start border-4 border-danger py-2 px-3 mb-3">
+  <div class="d-flex align-items-center gap-2 mb-1">
+    <i class="bi bi-exclamation-octagon-fill text-danger fs-5"></i>
+    <strong class="small text-uppercase">Known Allergies ({{ patient_allergies|length }}) — Check before prescribing</strong>
+  </div>
+  <div class="d-flex flex-wrap gap-2 small">
+    {% for a in patient_allergies %}
+    <span class="badge {% if a.severity == 'SEVERE' or a.severity == 'ANAPHYLAXIS' %}bg-danger{% elif a.severity == 'MODERATE' %}bg-warning text-dark{% else %}bg-secondary{% endif %} px-2 py-1">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ a.allergen }}{% if a.reaction %} ({{ a.reaction }}){% endif %} — {{ a.get_severity_display }}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if patient_medications %}
+<!-- ── Chronic Medications — Medication Reconciliation ── -->
+<div class="alert alert-warning border-start border-4 border-warning py-2 px-3 mb-3">
+  <div class="d-flex align-items-center gap-2 mb-1">
+    <i class="bi bi-capsule-pill text-warning fs-5"></i>
+    <strong class="small text-uppercase">Chronic Medications ({{ patient_medications|length }})</strong>
+    <span class="badge bg-warning text-dark ms-1">Reconcile before prescribing</span>
+  </div>
+  <div class="d-flex flex-wrap gap-2 small">
+    {% for med in patient_medications %}
+    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1">
+      {{ med.drug_name }}{% if med.dose %} {{ med.dose }}{% endif %}{% if med.frequency %} — {{ med.frequency }}{% endif %}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if prev_consultations %}
 <!-- ── Previous Consultations History Panel ── -->
 <div class="card border-0 shadow-sm mb-3" id="prevHistoryPanel">
@@ -209,6 +244,20 @@
 <!-- Department (hidden — pre-filled from doctor's department) -->
 <div style="display:none;">{{ form.department }}</div>
 
+{% if form.errors %}
+<div class="alert alert-danger d-flex gap-3 align-items-start py-2 px-3 mb-3">
+  <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0 mt-1"></i>
+  <div>
+    <strong class="d-block mb-1">Please fix the following before saving:</strong>
+    {% for field, errors in form.errors.items %}
+    {% for error in errors %}
+    <div class="small">{% if field != '__all__' %}<strong>{{ field }}:</strong> {% endif %}{{ error }}</div>
+    {% endfor %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- ── AI Voice EMR Workstation ──────────────────────────────────── -->
 {% if request.user.can_use_ai_assistant %}
 {% include 'ai_assistant/partials/voice_emr.html' %}
@@ -218,42 +267,129 @@
 
   <!-- ═══════ SECTION 1: HISTORY ═══════ -->
   <div class="col-12">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2">
-        <h6 class="mb-0 fw-bold small text-uppercase text-primary">
-          <i class="bi bi-journal-text me-1"></i>History
+    <div class="card border-0 shadow-sm" style="border-left:4px solid #2563eb !important;">
+      <div class="card-header border-bottom py-3 d-flex justify-content-between align-items-center"
+           style="cursor:pointer;background:#dbeafe;" onclick="toggleCard('bodyHistory',this)">
+        <h6 class="mb-0 fw-bold text-primary" style="font-size:.95rem;">
+          <i class="bi bi-journal-text me-2"></i>1. History &amp; Chief Complaint
         </h6>
+        <i class="bi bi-chevron-up text-primary"></i>
       </div>
-      <div class="card-body">
+      <div id="bodyHistory" class="card-body">
         <div class="row g-3">
-          <div class="col-md-6">
+
+          {# ── Chief Complaint ── #}
+          <div class="col-12 col-lg-6">
             <label class="form-label fw-semibold small">Chief Complaint <span class="text-danger">*</span></label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_presenting_complaint',this)">
+              <option value="">— Select common symptom (or type below) —</option>
+              {% for s in "Blurred vision,Reduced vision,Loss of vision,Red eye,Eye pain,Ocular discharge,Floaters,Flashing lights (photopsia),Double vision (diplopia),Foreign body sensation,Itching / burning,Watery eyes (epiphora),Night blindness,Headache,Swelling around eye,Photophobia,Glare / halos,Distorted vision (metamorphopsia)"|split:"," %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+              <option value="Other">Other (type in field below)</option>
+            </select>
             {{ form.presenting_complaint }}
           </div>
-          <div class="col-md-6">
+
+          {# ── History of Presenting Complaint ── #}
+          <div class="col-12 col-lg-6">
             <label class="form-label fw-semibold small">History of Presenting Complaint</label>
+            <div class="row g-1 mb-1">
+              <div class="col-4">
+                <select class="form-select form-select-sm" onchange="qfPick('id_history_of_presenting_complaint',this)">
+                  <option value="">Duration…</option>
+                  {% for d in "1 day,2–3 days,1 week,2 weeks,1 month,3 months,6 months,1 year,>1 year"|split:"," %}
+                  <option value="Duration: {{ d }}">{{ d }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-4">
+                <select class="form-select form-select-sm" onchange="qfPick('id_history_of_presenting_complaint',this)">
+                  <option value="">Onset…</option>
+                  <option value="Sudden onset">Sudden</option>
+                  <option value="Gradual onset">Gradual</option>
+                  <option value="Insidious onset">Insidious</option>
+                </select>
+              </div>
+              <div class="col-4">
+                <select class="form-select form-select-sm" onchange="qfPick('id_history_of_presenting_complaint',this)">
+                  <option value="">Course…</option>
+                  <option value="Worsening">Worsening</option>
+                  <option value="Improving">Improving</option>
+                  <option value="Stable">Stable</option>
+                  <option value="Fluctuating">Fluctuating</option>
+                  <option value="Recurrent episodes">Recurrent</option>
+                </select>
+              </div>
+            </div>
             {{ form.history_of_presenting_complaint }}
           </div>
-          <div class="col-md-6">
+
+          {# ── Ocular History ── #}
+          <div class="col-12 col-lg-6">
             <label class="form-label fw-semibold small">Ocular History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_ocular_history',this)">
+              <option value="">— Select ocular history —</option>
+              {% for h in "No previous eye problems,Previous cataract surgery (Right),Previous cataract surgery (Left),Previous glaucoma surgery,Previous retinal surgery,Previous corneal surgery / graft,Previous vitreoretinal surgery,Wearing glasses,Wearing contact lenses,Ocular trauma history,Amblyopia (lazy eye),Squint / strabismus,Dry eye disease,Previous laser treatment"|split:"," %}
+              <option value="{{ h }}">{{ h }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.ocular_history }}
           </div>
-          <div class="col-md-6">
+
+          {# ── Systemic History ── #}
+          <div class="col-12 col-lg-6">
             <label class="form-label fw-semibold small">Systemic History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_systemic_history',this)">
+              <option value="">— Select systemic condition —</option>
+              {% for s in "Hypertension,Diabetes mellitus (Type 1),Diabetes mellitus (Type 2),Thyroid disease,Sickle cell disease,Rheumatoid arthritis,Systemic lupus erythematosus (SLE),HIV / AIDS,Tuberculosis,Stroke / CVA,Cardiac disease,Renal disease,No significant systemic history"|split:"," %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.systemic_history }}
           </div>
-          <div class="col-md-4">
+
+          {# ── Drug History ── #}
+          <div class="col-12 col-lg-4">
             <label class="form-label fw-semibold small">Drug History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_drug_history',this)">
+              <option value="">— Select drug history —</option>
+              {% for dr in "No current medication,NKDA (No known drug allergy),On topical eye drops,On systemic steroids,On anti-hypertensives,On oral hypoglycaemics,On insulin,On anti-malarials (chloroquine / hydroxychloroquine),On warfarin / anticoagulants,On immunosuppressants,On ethambutol (TB treatment)"|split:"," %}
+              <option value="{{ dr }}">{{ dr }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.drug_history }}
           </div>
-          <div class="col-md-4">
+
+          {# ── Family History ── #}
+          <div class="col-12 col-lg-4">
             <label class="form-label fw-semibold small">Family History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_family_history',this)">
+              <option value="">— Select family history —</option>
+              {% for f in "No significant family history,Glaucoma in family,Cataract in family,Diabetes mellitus in family,Hypertension in family,Retinal disease in family,Corneal disease in family,Squint in family"|split:"," %}
+              <option value="{{ f }}">{{ f }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.family_history }}
           </div>
-          <div class="col-md-4">
+
+          {# ── Social History ── #}
+          <div class="col-12 col-lg-4">
             <label class="form-label fw-semibold small">Social History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_social_history',this)">
+              <option value="">— Select social history —</option>
+              {% for sc in "Non-smoker,Current smoker,Ex-smoker,Alcohol use,Occupation: farmer / outdoor worker,Occupation: welder / arc exposure,Occupation: office / desk worker,Occupation: driver,UV exposure (prolonged outdoor work),Lives alone"|split:"," %}
+              <option value="{{ sc }}">{{ sc }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.social_history }}
           </div>
+
         </div>
       </div>
     </div>
@@ -261,13 +397,15 @@
 
   <!-- ═══════ SECTION 2: CLINICAL EXAMINATION ═══════ -->
   <div class="col-12">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-success bg-opacity-10 border-bottom py-2">
-        <h6 class="mb-0 fw-bold small text-uppercase text-success">
-          <i class="bi bi-clipboard2-heart me-1"></i>Clinical Examination — {{ request.user.get_role_display }}
+    <div class="card border-0 shadow-sm" style="border-left:4px solid #16a34a !important;">
+      <div class="card-header border-bottom py-3 d-flex justify-content-between align-items-center"
+           style="cursor:pointer;background:#dcfce7;" onclick="toggleCard('bodyExam',this)">
+        <h6 class="mb-0 fw-bold text-success" style="font-size:.95rem;">
+          <i class="bi bi-clipboard2-heart me-2"></i>2. Clinical Examination — {{ request.user.get_role_display }}
         </h6>
+        <i class="bi bi-chevron-up text-success"></i>
       </div>
-      <div class="card-body">
+      <div id="bodyExam" class="card-body">
         {% if dept_code == 'GEN_OPH' %}
           {% include 'consultations/clinical/_gen_oph_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
         {% elif dept_code == 'RETINA' %}
@@ -312,32 +450,40 @@
 
   <!-- ═══════ SECTION 3: MANAGEMENT ═══════ -->
   <div class="col-12">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-warning bg-opacity-10 border-bottom py-2">
-        <h6 class="mb-0 fw-bold small text-uppercase text-warning">
-          <i class="bi bi-clipboard2-check me-1"></i>Management &amp; Plan
+    <div class="card border-0 shadow-sm" style="border-left:4px solid #d97706 !important;">
+      <div class="card-header border-bottom py-3 d-flex justify-content-between align-items-center"
+           style="cursor:pointer;background:#fef9c3;" onclick="toggleCard('bodyMgmt',this)">
+        <h6 class="mb-0 fw-bold" style="font-size:.95rem;color:#92400e;">
+          <i class="bi bi-clipboard2-check me-2"></i>3. Management &amp; Plan
         </h6>
+        <i class="bi bi-chevron-down" style="color:#92400e;"></i>
       </div>
-      <div class="card-body">
+      <div id="bodyMgmt" class="card-body" style="display:none;">
         <div class="row g-3">
           <div class="col-12">
             <label class="form-label fw-semibold small">Management Plan</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_management_plan',this)">
+              <option value="">— Select management option (pick multiple) —</option>
+              {% for mg in "Continue current treatment,Topical medication prescribed,Systemic medication prescribed,Optical prescription issued,Referral to specialist,Surgery scheduled / planned,Added to surgical waiting list,Counselling provided,Discharge — no further follow-up,Observation only — monitor,Urgent review requested,Patient education given,Laser treatment planned,Intravitreal injection given,Investigations ordered"|split:"," %}
+              <option value="{{ mg }}">{{ mg }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.management_plan }}
           </div>
-          <div class="col-md-3">
+          <div class="col-12 col-sm-6 col-lg-3">
             <label class="form-label fw-semibold small">Follow-up Date</label>
             {{ form.follow_up_date }}
           </div>
-          <div class="col-md-5">
+          <div class="col-12 col-lg-5">
             <label class="form-label fw-semibold small">Follow-up Instructions</label>
             {{ form.follow_up_instructions }}
           </div>
-          <div class="col-md-4"></div>
-          <div class="col-md-3">
+          <div class="col-12 col-sm-6 col-lg-3">
             <label class="form-label fw-semibold small">Refer to Department</label>
             {{ form.referral_department }}
           </div>
-          <div class="col-md-5">
+          <div class="col-12 col-lg-5">
             <label class="form-label fw-semibold small">Referral Reason</label>
             {{ form.referral_reason }}
           </div>
@@ -364,7 +510,7 @@
               </div>
               <div class="card-body">
                 <div class="row g-3">
-                  <div class="col-md-5">
+                  <div class="col-12 col-lg-5">
                     <label class="form-label fw-semibold small">Procedure</label>
                     <select name="dept_surgical_procedure" class="form-select form-select-sm">
                       <option value="">— Select Procedure —</option>
@@ -415,7 +561,7 @@
                       </optgroup>
                     </select>
                   </div>
-                  <div class="col-md-3">
+                  <div class="col-6 col-lg-3">
                     <label class="form-label fw-semibold small">Eye</label>
                     <select name="dept_surgery_eye" class="form-select form-select-sm">
                       <option value="">—</option>
@@ -424,7 +570,7 @@
                       <option value="BE">Both Eyes (BE)</option>
                     </select>
                   </div>
-                  <div class="col-md-4">
+                  <div class="col-6 col-lg-4">
                     <label class="form-label fw-semibold small">Anaesthesia</label>
                     <select name="dept_anaesthesia_type" class="form-select form-select-sm">
                       <option value="">—</option>
@@ -444,12 +590,6 @@
           </div>
         </div>
 
-        {% if form.errors %}
-        <div class="alert alert-danger mt-3">
-          {% for field, errors in form.errors.items %}{% for error in errors %}<div>{{ field }}: {{ error }}</div>{% endfor %}{% endfor %}
-        </div>
-        {% endif %}
-
         <div class="d-flex gap-2 justify-content-end mt-3 pt-3 border-top">
           <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-secondary">
             <i class="bi bi-arrow-left me-1"></i>Cancel
@@ -460,8 +600,11 @@
             <i class="bi bi-robot me-1"></i>AI Assistant
           </a>
           {% endif %}
+          <button type="submit" name="save_mode" value="draft" class="btn btn-outline-warning btn-lg">
+            <i class="bi bi-search-heart me-1"></i>Order Tests First
+          </button>
           <button type="submit" class="btn btn-primary btn-lg">
-            <i class="bi bi-save me-1"></i>Save Consultation
+            <i class="bi bi-check-circle me-1"></i>Save &amp; Complete
           </button>
         </div>
       </div>
@@ -472,4 +615,52 @@
 </form>
 
 {% endwith %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ── Quick-fill select → textarea ─────────────────────── */
+
+// qfAppend — used by combo-box dropdowns to append picked value to a text input
+function qfAppend(id, val) {
+  var inp = document.getElementById(id);
+  if (!inp || !val) return;
+  inp.value = inp.value.trim() ? inp.value.trim() + '. ' + val : val;
+  inp.focus();
+}
+function qfPick(fieldId, sel) {
+  var val = sel.value;
+  if (!val || val === 'Other') { sel.value = ''; return; }
+  var ta = document.getElementById(fieldId);
+  if (ta) {
+    var cur = ta.value.trim();
+    ta.value = cur ? cur + '. ' + val : val;
+    ta.focus();
+  }
+  sel.value = '';
+}
+
+function toggleCard(bodyId, header) {
+  const body    = document.getElementById(bodyId);
+  const chevron = header.querySelector('i[class*="bi-chevron"]');
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? '' : 'none';
+  if (chevron) {
+    chevron.classList.toggle('bi-chevron-up',   isHidden);
+    chevron.classList.toggle('bi-chevron-down', !isHidden);
+  }
+}
+
+// ── Submit: show loading state ────────────────────────────────────────────────
+document.getElementById('consultationForm').addEventListener('submit', function(e) {
+
+  // Show loading state on whichever submit button was clicked
+  setTimeout(function() {
+    document.querySelectorAll('#consultationForm button[type="submit"]').forEach(function(btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+    });
+  }, 50);
+});
+</script>
 {% endblock %}

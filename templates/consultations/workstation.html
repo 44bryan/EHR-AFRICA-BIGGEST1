@@ -2,141 +2,246 @@
 {% load humanize %}
 {% block title %}My Workstation — {{ request.user.get_role_display }}{% endblock %}
 
+{% block extra_css %}
+<style>
+/* ── Portrait tablet: stack columns ──────────────────────────────────── */
+@media (max-width:991px) {
+  .ws-queue-col, .ws-consult-col { width:100% !important; max-width:100% !important; flex:0 0 100%; }
+  .ws-queue-col { margin-bottom:1rem; }
+  .ws-header-row { flex-direction:column !important; gap:.5rem !important; align-items:flex-start !important; }
+  .ws-header-row .d-flex.gap-2 { width:100%; }
+  .ws-header-row .btn { flex:1; text-align:center; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4">
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 ws-header-row">
   <div>
-    <h4 class="fw-bold mb-0">
+    <h5 class="fw-bold mb-0">
       <i class="bi bi-hospital me-2 text-primary"></i>Clinical Workstation
-    </h4>
+    </h5>
     <div class="text-muted small">
       Dr. {{ request.user.full_name }} &bull; {{ request.user.get_role_display }}
       {% if dept %}&bull; {{ dept.name }}{% endif %}
-      &bull; {{ today|date:"l, d F Y" }}
+      &bull; {{ today|date:"d M Y" }}
     </div>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 flex-wrap">
     <a href="{% url 'consultations:list' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-list-ul me-1"></i>All Consultations
+      <i class="bi bi-list-ul me-1"></i>Consultations
     </a>
   </div>
 </div>
 
 {# ── Stat cards ── #}
-<div class="row g-3 mb-4">
-  <div class="col-sm-4">
+<div class="row g-2 mb-3">
+  <div class="col-4">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="h2 fw-bold text-warning mb-0">{{ waiting_count }}</div>
       <div class="text-muted small mt-1"><i class="bi bi-hourglass-split me-1"></i>Waiting</div>
     </div>
   </div>
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-primary mb-0">{{ in_progress_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-person-check me-1"></i>Calling / Serving</div>
+  <div class="col-4">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="h3 fw-bold text-primary mb-0">{{ in_progress_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-person-check me-1"></i>Serving</div>
     </div>
   </div>
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-success mb-0">{{ completed_today }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Completed Today</div>
+  <div class="col-4">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="h3 fw-bold text-success mb-0">{{ completed_today }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Done Today</div>
     </div>
   </div>
 </div>
 
-<div class="row g-4">
+<div class="row g-3">
 
   {# ── Left column: patient queue ── #}
-  <div class="col-lg-6">
+  <div class="col-lg-6 ws-queue-col">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
         <h6 class="mb-0 fw-semibold">
           <i class="bi bi-people-fill me-2 text-warning"></i>Waiting Queue
           {% if dept %}<span class="text-muted fw-normal small">&mdash; {{ dept.name }}</span>{% endif %}
         </h6>
-        <span class="badge bg-warning text-dark">{{ waiting_tokens|length }}</span>
+        <span class="badge bg-warning text-dark">{% if qms_on %}{{ waiting_tokens|length }}{% else %}{{ waiting_visits|length }}{% endif %}</span>
       </div>
 
-      {% if waiting_tokens %}
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 small">
-          <thead class="table-light">
-            <tr>
-              <th>Token</th>
-              <th>Patient</th>
-              <th>Type</th>
-              <th>Tier</th>
-              <th>Since</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for tok in waiting_tokens %}
-            <tr>
-              <td>
-                <span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span>
-              </td>
-              <td class="fw-semibold">{{ tok.display_name }}</td>
-              <td>
-                {% if tok.visit_type_label == 'NEW' %}
-                  <span class="badge bg-primary" title="New Patient">NEW</span>
-                {% elif tok.visit_type_label == 'FOLLOW_UP' %}
-                  <span class="badge bg-outline-secondary text-secondary border" style="background:transparent;" title="Follow-up">F/U</span>
-                {% else %}
-                  <span class="text-muted small">—</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed">VIP</span>
-                {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
-                {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
-                {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
-              </td>
-              <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
-              <td>
-                {% if tok.status == 'WAITING' %}<span class="badge bg-warning text-dark">Waiting</span>
-                {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark">Called</span>
-                {% elif tok.status == 'SERVING' %}<span class="badge bg-primary">Serving</span>{% endif %}
-              </td>
-              <td>
-                {% if tok.patient %}
-                  {% if tok.active_visit %}
-                    <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.active_visit.pk }}"
-                       class="btn btn-sm btn-success">
-                      <i class="bi bi-journal-plus me-1"></i>Consult
-                    </a>
+      {% if qms_on %}
+        {# ── QMS ON: show queue tokens ── #}
+        {% if waiting_tokens %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr><th>Token</th><th>Patient</th><th>Type</th><th>Tier</th><th>Since</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for tok in waiting_tokens %}
+              <tr>
+                <td><span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span></td>
+                <td class="fw-semibold">{{ tok.display_name }}</td>
+                <td>
+                  {% if tok.ws_visit_type == 'NEW' %}<span class="badge bg-primary">NEW</span>
+                  {% elif tok.ws_visit_type == 'FOLLOW_UP' %}<span class="badge bg-outline-secondary text-secondary border" style="background:transparent;">F/U</span>
+                  {% else %}<span class="text-muted small">—</span>{% endif %}
+                </td>
+                <td>
+                  {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed">VIP</span>
+                  {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
+                  {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
+                  {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+                </td>
+                <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
+                <td>
+                  {% if tok.status == 'WAITING' %}<span class="badge bg-warning text-dark">Waiting</span>
+                  {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark">Called</span>
+                  {% elif tok.status == 'SERVING' %}<span class="badge bg-primary">Serving</span>{% endif %}
+                </td>
+                <td>
+                  {% if tok.patient %}
+                    {% if tok.ws_visit %}
+                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success">
+                        <i class="bi bi-journal-plus me-1"></i>Consult
+                      </a>
+                    {% else %}
+                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-journal-plus me-1"></i>Consult
+                      </a>
+                    {% endif %}
                   {% else %}
-                    <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}"
-                       class="btn btn-sm btn-outline-success">
-                      <i class="bi bi-journal-plus me-1"></i>Consult
-                    </a>
+                    <span class="text-muted small">Walk-in</span>
                   {% endif %}
-                {% else %}
-                  <span class="text-muted small">Walk-in</span>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class="card-body text-center text-muted py-5">
-        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
-        No patients waiting in your queue.
-        {% if not dept_code %}
-        <div class="mt-2 small text-warning">
-          <i class="bi bi-exclamation-triangle me-1"></i>
-          Your account is not mapped to a department. Ask the administrator.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="card-body text-center text-muted py-5">
+          <i class="bi bi-inbox fs-2 d-block mb-2"></i>No patients in queue.
         </div>
         {% endif %}
-      </div>
+
+      {% else %}
+        {# ── QMS OFF: show active visits for this department ── #}
+        {% if waiting_visits %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr><th>#</th><th>Patient</th><th>Type</th><th>Complaint</th><th>Arrived</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for v in waiting_visits %}
+              <tr>
+                <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+                <td>
+                  <div class="fw-semibold">{{ v.patient.full_name }}</div>
+                  <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+                </td>
+                <td>
+                  {% if v.visit_type == 'NEW' %}<span class="badge bg-primary">New</span>
+                  {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge bg-outline-secondary text-secondary border" style="background:transparent;">F/U</span>
+                  {% elif v.visit_type == 'EMERGENCY' %}<span class="badge bg-danger">Emergency</span>
+                  {% else %}<span class="badge bg-secondary">{{ v.get_visit_type_display }}</span>{% endif %}
+                </td>
+                <td class="text-muted" style="max-width:130px;">{{ v.chief_complaint|truncatechars:45 }}</td>
+                <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+                <td>
+                  {% if v.status == 'IN_CONSULTATION' %}<span class="badge bg-primary">In Consult</span>
+                  {% elif v.status == 'PARAMETERS' %}<span class="badge bg-info text-dark">Triage</span>
+                  {% else %}<span class="badge bg-warning text-dark">Waiting</span>{% endif %}
+                </td>
+                <td>
+                  <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success">
+                    <i class="bi bi-journal-plus me-1"></i>Consult
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="card-body text-center text-muted py-5">
+          <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+          No patients waiting in your department.
+          {% if not dept_code %}
+          <div class="mt-2 small text-warning">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Your account has no department assigned. Ask the administrator.
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
       {% endif %}
     </div>
   </div>
 
   {# ── Right column: today's consultations ── #}
-  <div class="col-lg-6">
+  <div class="col-lg-6 ws-consult-col">
+
+    {# ── Awaiting Results / Needs Resume ── #}
+    {% if in_progress_consultations %}
+    <div class="card border-0 shadow-sm mb-3"
+         style="border-left:4px solid {% for c in in_progress_consultations %}{% if c.results_ready %}#10b981{% else %}#fd7e14{% endif %}{% if not forloop.last %}{% endif %}{% endfor %} !important;">
+      <div class="card-header bg-warning bg-opacity-10 border-bottom d-flex justify-content-between align-items-center py-2">
+        <h6 class="mb-0 fw-semibold text-warning">
+          <i class="bi bi-hourglass-split me-2"></i>Pending Consultations — Awaiting / Resume
+        </h6>
+        <span class="badge bg-warning text-dark">{{ in_progress_consultations|length }}</span>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for c in in_progress_consultations %}
+        <div class="list-group-item py-2 px-3 {% if c.results_ready %}list-group-item-success{% endif %}">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-semibold small">{{ c.patient.full_name }}</span>
+                {% if c.results_ready %}
+                <span class="badge bg-success" style="font-size:.65rem;">
+                  <i class="bi bi-check-circle-fill me-1"></i>Results Ready
+                </span>
+                {% elif c.invest_pending %}
+                <span class="badge bg-warning text-dark" style="font-size:.65rem;">
+                  <i class="bi bi-hourglass me-1"></i>{{ c.invest_pending|length }} test{{ c.invest_pending|length|pluralize }} pending
+                </span>
+                {% elif c.invest_completed %}
+                <span class="badge bg-success" style="font-size:.65rem;">
+                  <i class="bi bi-check-circle-fill me-1"></i>Results Ready
+                </span>
+                {% endif %}
+              </div>
+              <div class="text-muted" style="font-size:.72rem;">
+                {{ c.department.name|default:"—" }} &bull; Started {{ c.consultation_date|time:"H:i" }}
+              </div>
+              {% if c.presenting_complaint %}
+              <div class="text-secondary" style="font-size:.72rem;">{{ c.presenting_complaint|truncatechars:60 }}</div>
+              {% endif %}
+            </div>
+            <div class="d-flex flex-column gap-1 flex-shrink-0">
+              {% if c.results_ready or c.invest_completed %}
+              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-success py-0 px-2" style="font-size:.72rem;">
+                <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit
+              </a>
+              {% else %}
+              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-warning py-0 px-2" style="font-size:.72rem;">
+                <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit
+              </a>
+              {% endif %}
+              <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
+                <i class="bi bi-eye me-1"></i>View / Order More
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
         <h6 class="mb-0 fw-semibold">
@@ -162,13 +267,28 @@
               </div>
               {% endif %}
             </div>
-            <span class="badge ms-2 flex-shrink-0
-              {% if c.status == 'COMPLETED' %}bg-success
-              {% elif c.status == 'IN_PROGRESS' %}bg-primary
-              {% elif c.status == 'REFERRED' %}bg-warning text-dark
-              {% else %}bg-secondary{% endif %}">
-              {{ c.get_status_display }}
-            </span>
+            <div class="d-flex align-items-center gap-1 ms-2 flex-shrink-0">
+              <span class="badge
+                {% if c.status == 'COMPLETED' %}bg-success
+                {% elif c.status == 'IN_PROGRESS' %}bg-primary
+                {% elif c.status == 'REFERRED' %}bg-warning text-dark
+                {% else %}bg-secondary{% endif %}">
+                {{ c.get_status_display }}
+              </span>
+              {# Quick order buttons — visible on today's open consultations #}
+              {% if c.status != 'COMPLETED' %}
+              <a href="{% url 'investigations:order' consultation_pk=c.pk %}"
+                 class="btn btn-sm btn-outline-info py-0 px-1" style="font-size:0.68rem;"
+                 title="Order Eye Investigation" onclick="event.stopPropagation();">
+                <i class="bi bi-search-heart"></i>
+              </a>
+              <a href="{% url 'laboratory:order' consultation_pk=c.pk %}"
+                 class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:0.68rem;"
+                 title="Order Lab Test" onclick="event.stopPropagation();">
+                <i class="bi bi-droplet"></i>
+              </a>
+              {% endif %}
+            </div>
           </div>
         </a>
         {% endfor %}
@@ -181,19 +301,199 @@
       {% endif %}
     </div>
 
-    {# ── Route patient dropdown (quick QMS route) ── #}
+    {# ── Lab Orders & Results ── #}
     <div class="card border-0 shadow-sm mt-3">
-      <div class="card-header bg-white border-bottom py-2">
-        <h6 class="mb-0 fw-semibold small">
-          <i class="bi bi-signpost-split me-1 text-dark"></i>Quick Patient Routing
-        </h6>
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold small"><i class="bi bi-droplet-fill me-2 text-danger"></i>Lab Orders — Today</span>
+        <span class="badge bg-secondary">{{ lab_orders_today|length }}</span>
       </div>
-      <div class="card-body py-2 small text-muted">
-        Open any consultation and use the <strong>Route</strong> button in the header
-        to send a patient to the next department (Pharmacy, Optical, Lab, etc.).
+      {% if lab_orders_today %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Patient</th>
+              <th>Tests</th>
+              <th>Status</th>
+              <th>Results</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in lab_orders_today %}
+            <tr>
+              <td class="fw-semibold">
+                {{ order.patient.full_name }}
+                <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
+              </td>
+              <td>
+                {% for item in order.items.all %}
+                <span class="badge bg-light text-dark border me-1">{{ item.test_type.code }}</span>
+                {% endfor %}
+              </td>
+              <td>
+                {% if order.status == 'COMPLETED' %}
+                  <span class="badge bg-success">Completed</span>
+                {% elif order.status == 'PROCESSING' %}
+                  <span class="badge bg-primary">Processing</span>
+                {% elif order.status == 'SAMPLE_COLLECTED' %}
+                  <span class="badge bg-info text-dark">Sample Collected</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark">Ordered</span>
+                {% endif %}
+              </td>
+              <td>
+                {% for item in order.items.all %}
+                  {% if item.result %}
+                  <div class="small">
+                    <strong>{{ item.test_type.code }}:</strong>
+                    <span class="{% if item.result.is_abnormal %}text-danger fw-bold{% endif %}">
+                      {{ item.result.result_value }} {{ item.result.result_unit }}
+                    </span>
+                    {% if item.result.is_abnormal %}<i class="bi bi-exclamation-triangle-fill text-danger ms-1"></i>{% endif %}
+                  </div>
+                  {% endif %}
+                {% endfor %}
+                {% if order.status != 'COMPLETED' %}
+                <span class="text-muted" style="font-size:.7rem;">Awaiting results</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
+      {% else %}
+      <div class="card-body py-3 text-center text-muted small">
+        <i class="bi bi-droplet fs-4 d-block mb-1 opacity-50"></i>
+        No lab orders today. Order from any open consultation.
+      </div>
+      {% endif %}
     </div>
+
+    {# ── Investigation Orders — Today ── #}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold small"><i class="bi bi-search-heart me-2 text-info"></i>Investigation Orders — Today</span>
+        <span class="badge bg-secondary">{{ investigation_orders_today|length }}</span>
+      </div>
+      {% if investigation_orders_today %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Patient</th>
+              <th>Test</th>
+              <th>Eye</th>
+              <th>Status</th>
+              <th>Result / Files</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in investigation_orders_today %}
+            <tr>
+              <td class="fw-semibold">
+                {{ order.patient.full_name }}
+                <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
+              </td>
+              <td>{{ order.investigation_type.name }}</td>
+              <td><span class="badge bg-secondary">{{ order.eye }}</span></td>
+              <td>
+                {% if order.status == 'COMPLETED' %}
+                  <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Done</span>
+                {% elif order.status == 'IN_PROGRESS' %}
+                  <span class="badge bg-primary">In Progress</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark">Ordered</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if order.result %}
+                  {% if order.result.interpretation %}
+                  <div class="text-muted" style="font-size:.72rem;max-width:160px;">{{ order.result.interpretation|truncatechars:50 }}</div>
+                  {% endif %}
+                  {% if order.result.files.exists %}
+                  {% for f in order.result.files.all %}
+                  <a href="{{ f.file.url }}" target="_blank" class="badge bg-info text-dark text-decoration-none mt-1"
+                     style="font-size:.65rem;">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>View Report
+                  </a>
+                  {% endfor %}
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted fst-italic" style="font-size:.72rem;">Awaiting result</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{% url 'investigations:detail' pk=order.pk %}"
+                   class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.68rem;">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body py-3 text-center text-muted small">
+        <i class="bi bi-search-heart fs-4 d-block mb-1 opacity-50"></i>
+        No investigation orders today. Order from any open consultation.
+      </div>
+      {% endif %}
+    </div>
+
   </div>
 
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// qfPick — used by clinical form selects to append picked value to a text input
+
+// qfAppend — used by combo-box dropdowns to append picked value to a text input
+function qfAppend(id, val) {
+  var inp = document.getElementById(id);
+  if (!inp || !val) return;
+  inp.value = inp.value.trim() ? inp.value.trim() + '. ' + val : val;
+  inp.focus();
+}
+function qfPick(fieldId, sel) {
+  var val = sel.value;
+  if (!val || val === 'Other') { sel.value = ''; return; }
+  var ta = document.getElementById(fieldId);
+  if (ta) {
+    var cur = ta.value.trim();
+    ta.value = cur ? cur + '. ' + val : val;
+    ta.focus();
+  }
+  sel.value = '';
+}
+
+// Auto-refresh the waiting queue every 45 seconds.
+// PAUSED when the doctor is actively filling a form (to prevent data loss).
+let _refreshTimer = 45;
+let _formDirty = false;
+const _refreshEl = document.createElement('small');
+_refreshEl.className = 'text-muted ms-2';
+_refreshEl.style.fontSize = '0.7rem';
+document.querySelector('.d-flex.gap-2 .btn-outline-secondary')?.after(_refreshEl);
+
+// Mark dirty on any input change
+document.addEventListener('input',  () => { _formDirty = true; });
+document.addEventListener('change', () => { _formDirty = true; });
+// Clear dirty state after form submit
+document.addEventListener('submit', () => { _formDirty = false; });
+
+setInterval(() => {
+  if (_formDirty) {
+    _refreshEl.textContent = '(auto-refresh paused — form in use)';
+    return;
+  }
+  _refreshTimer--;
+  _refreshEl.textContent = `(refresh in ${_refreshTimer}s)`;
+  if (_refreshTimer <= 0) location.reload();
+}, 1000);
+</script>
 {% endblock %}

@@ -14,23 +14,101 @@
 {% csrf_token %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h5 class="fw-semibold mb-0"><i class="bi bi-pencil me-2 text-primary"></i>Edit Consultation</h5>
+  <div>
+    <h5 class="fw-semibold mb-0">
+      {% if is_resuming %}
+      <i class="bi bi-hourglass-split me-2 text-warning"></i>Resume Consultation — {{ consultation.patient.full_name }}
+      {% else %}
+      <i class="bi bi-pencil me-2 text-primary"></i>Edit Consultation
+      {% endif %}
+    </h5>
+    {% if is_resuming %}
+    <div class="text-muted small mt-1">
+      <i class="bi bi-info-circle me-1 text-warning"></i>
+      Saved at {{ consultation.consultation_date|time:"H:i" }}. Fill in clinical findings below, then click <strong>Save</strong>. When done, open the consultation and click <strong>Complete</strong>.
+    </div>
+    {% endif %}
+  </div>
   <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-sm btn-outline-secondary">
     <i class="bi bi-arrow-left me-1"></i>Back
   </a>
 </div>
+
+{# ── Investigation results panel — shown when resuming with results available ── #}
+{% if investigation_orders %}
+<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #0dcaf0 !important;">
+  <div class="card-header bg-info bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold text-info small">
+      <i class="bi bi-clipboard2-data me-2"></i>Investigation Results for This Consultation
+    </h6>
+    <span class="badge bg-info text-dark">{{ investigation_orders|length }} order{{ investigation_orders|length|pluralize }}</span>
+  </div>
+  <div class="card-body py-2 px-3">
+    {% for order in investigation_orders %}
+    <div class="mb-2 pb-2 {% if not forloop.last %}border-bottom{% endif %}">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="fw-semibold small">{{ order.investigation_type.name }}</span>
+        <span class="badge bg-secondary">{{ order.eye }}</span>
+        {% if order.status == 'COMPLETED' %}
+          <span class="badge bg-success">Completed</span>
+        {% else %}
+          <span class="badge bg-warning text-dark">{{ order.get_status_display }}</span>
+        {% endif %}
+      </div>
+      {% if order.result %}
+      <div class="small text-dark">
+        {% if order.result.interpretation %}
+        <div class="mb-1"><span class="text-muted">Interpretation:</span> {{ order.result.interpretation }}</div>
+        {% endif %}
+        {% if order.result.findings %}
+        <div><span class="text-muted">Findings:</span> {{ order.result.findings }}</div>
+        {% endif %}
+        {% if order.result.result_data %}
+        <div class="d-flex flex-wrap gap-1 mt-1">
+          {% for key, val in order.result.result_data.items %}
+          <span class="badge bg-light text-dark border" style="font-size:.68rem;">{{ key|upper }}: {{ val }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if order.result.files.exists %}
+        <div class="mt-2 d-flex flex-wrap gap-2">
+          {% for f in order.result.files.all %}
+          <a href="{{ f.file.url }}" target="_blank"
+             class="btn btn-sm btn-outline-info py-0 px-2" style="font-size:.72rem;">
+            {% if f.file_type == 'PDF' %}
+            <i class="bi bi-file-earmark-pdf me-1 text-danger"></i>View PDF Report
+            {% else %}
+            <i class="bi bi-image me-1"></i>View Image
+            {% endif %}
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="text-muted small fst-italic">
+        <i class="bi bi-hourglass me-1"></i>Result not yet entered by technician.
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 <div class="row g-3">
 
   <!-- ═══════ SECTION 1: HISTORY ═══════ -->
   <div class="col-12">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2">
+      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center"
+           style="cursor:pointer;" onclick="toggleCard('bodyHistory',this)">
         <h6 class="mb-0 fw-bold small text-uppercase text-primary">
           <i class="bi bi-journal-text me-1"></i>History
         </h6>
+        <i class="bi bi-chevron-down text-primary"></i>
       </div>
-      <div class="card-body">
+      <div id="bodyHistory" class="card-body" {% if not is_resuming %}style="display:none;"{% endif %}>
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label fw-semibold small">Department</label>
@@ -38,30 +116,100 @@
           </div>
           <div class="col-md-8">
             <label class="form-label fw-semibold small">Chief Complaint <span class="text-danger">*</span></label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_presenting_complaint',this)">
+              <option value="">— Select common symptom (or type below) —</option>
+              {% for s in "Blurred vision,Reduced vision,Loss of vision,Red eye,Eye pain,Ocular discharge,Floaters,Flashing lights (photopsia),Double vision (diplopia),Foreign body sensation,Itching / burning,Watery eyes (epiphora),Night blindness,Headache,Swelling around eye,Photophobia,Glare / halos,Distorted vision (metamorphopsia)"|split:"," %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.presenting_complaint }}
           </div>
           <div class="col-md-6">
             <label class="form-label fw-semibold small">History of Presenting Complaint</label>
+            <div class="row g-1 mb-1">
+              <div class="col-4">
+                <select class="form-select form-select-sm" onchange="qfPick('id_history_of_presenting_complaint',this)">
+                  <option value="">Duration…</option>
+                  {% for d in "1 day,2–3 days,1 week,2 weeks,1 month,3 months,6 months,1 year,>1 year"|split:"," %}
+                  <option value="Duration: {{ d }}">{{ d }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-4">
+                <select class="form-select form-select-sm" onchange="qfPick('id_history_of_presenting_complaint',this)">
+                  <option value="">Onset…</option>
+                  <option value="Sudden onset">Sudden</option>
+                  <option value="Gradual onset">Gradual</option>
+                  <option value="Insidious onset">Insidious</option>
+                </select>
+              </div>
+              <div class="col-4">
+                <select class="form-select form-select-sm" onchange="qfPick('id_history_of_presenting_complaint',this)">
+                  <option value="">Course…</option>
+                  <option value="Worsening">Worsening</option>
+                  <option value="Improving">Improving</option>
+                  <option value="Stable">Stable</option>
+                  <option value="Fluctuating">Fluctuating</option>
+                  <option value="Recurrent episodes">Recurrent</option>
+                </select>
+              </div>
+            </div>
             {{ form.history_of_presenting_complaint }}
           </div>
           <div class="col-md-6">
             <label class="form-label fw-semibold small">Ocular History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_ocular_history',this)">
+              <option value="">— Select ocular history —</option>
+              {% for h in "No previous eye problems,Previous cataract surgery (Right),Previous cataract surgery (Left),Previous glaucoma surgery,Previous retinal surgery,Previous corneal surgery / graft,Wearing glasses,Wearing contact lenses,Ocular trauma history,Amblyopia,Squint / strabismus,Dry eye disease,Previous laser treatment"|split:"," %}
+              <option value="{{ h }}">{{ h }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.ocular_history }}
           </div>
           <div class="col-md-6">
             <label class="form-label fw-semibold small">Systemic History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_systemic_history',this)">
+              <option value="">— Select systemic condition —</option>
+              {% for s in "Hypertension,Diabetes mellitus (Type 1),Diabetes mellitus (Type 2),Thyroid disease,Sickle cell disease,Rheumatoid arthritis,SLE,HIV / AIDS,Tuberculosis,Stroke / CVA,Cardiac disease,No significant systemic history"|split:"," %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.systemic_history }}
           </div>
           <div class="col-md-3">
             <label class="form-label fw-semibold small">Drug History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_drug_history',this)">
+              <option value="">— Select drug history —</option>
+              {% for dr in "No current medication,NKDA,On topical eye drops,On systemic steroids,On anti-hypertensives,On oral hypoglycaemics,On insulin,On anti-malarials,On warfarin / anticoagulants,On ethambutol"|split:"," %}
+              <option value="{{ dr }}">{{ dr }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.drug_history }}
           </div>
           <div class="col-md-3">
             <label class="form-label fw-semibold small">Family History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_family_history',this)">
+              <option value="">— Select family history —</option>
+              {% for f in "No significant family history,Glaucoma in family,Cataract in family,Diabetes in family,Hypertension in family,Retinal disease in family"|split:"," %}
+              <option value="{{ f }}">{{ f }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.family_history }}
           </div>
           <div class="col-md-6">
             <label class="form-label fw-semibold small">Social History</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_social_history',this)">
+              <option value="">— Select social history —</option>
+              {% for sc in "Non-smoker,Current smoker,Ex-smoker,Alcohol use,Occupation: farmer / outdoor worker,Occupation: welder,Occupation: office worker,Occupation: driver,UV exposure"|split:"," %}
+              <option value="{{ sc }}">{{ sc }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.social_history }}
           </div>
         </div>
@@ -72,12 +220,14 @@
   <!-- ═══════ SECTION 2: CLINICAL EXAMINATION ═══════ -->
   <div class="col-12">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-success bg-opacity-10 border-bottom py-2">
+      <div class="card-header bg-success bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center"
+           style="cursor:pointer;" onclick="toggleCard('bodyExam',this)">
         <h6 class="mb-0 fw-bold small text-uppercase text-success">
           <i class="bi bi-clipboard2-heart me-1"></i>Clinical Examination — {{ consultation.department.name }}
         </h6>
+        <i class="bi bi-chevron-down text-success"></i>
       </div>
-      <div class="card-body">
+      <div id="bodyExam" class="card-body" {% if not is_resuming %}style="display:none;"{% endif %}>
         {% if dept_code == 'GEN_OPH' %}
           {% include 'consultations/clinical/_gen_oph_form.html' %}
         {% elif dept_code == 'RETINA' %}
@@ -106,15 +256,24 @@
   <!-- ═══════ SECTION 3: MANAGEMENT ═══════ -->
   <div class="col-12">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-warning bg-opacity-10 border-bottom py-2">
+      <div class="card-header bg-warning bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center"
+           style="cursor:pointer;" onclick="toggleCard('bodyMgmt',this)">
         <h6 class="mb-0 fw-bold small text-uppercase text-warning">
           <i class="bi bi-clipboard2-check me-1"></i>Management &amp; Plan
         </h6>
+        <i class="bi bi-chevron-down text-warning"></i>
       </div>
-      <div class="card-body">
+      <div id="bodyMgmt" class="card-body" {% if not is_resuming %}style="display:none;"{% endif %}>
         <div class="row g-3">
           <div class="col-12">
             <label class="form-label fw-semibold small">Management Plan</label>
+            <select class="form-select form-select-sm mb-1" onchange="qfPick('id_management_plan',this)">
+              <option value="">— Select management option (pick multiple) —</option>
+              {% for mg in "Continue current treatment,Topical medication prescribed,Systemic medication prescribed,Optical prescription issued,Referral to specialist,Surgery scheduled / planned,Added to surgical waiting list,Counselling provided,Discharge — no further follow-up,Observation only — monitor,Urgent review requested,Patient education given,Laser treatment planned,Intravitreal injection given,Investigations ordered"|split:"," %}
+              <option value="{{ mg }}">{{ mg }}</option>
+              {% endfor %}
+              <option value="Other">Other (type below)</option>
+            </select>
             {{ form.management_plan }}
           </div>
           <div class="col-md-3">
@@ -145,7 +304,7 @@
         <div class="d-flex gap-2 justify-content-end mt-3 pt-3 border-top">
           <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-secondary">Cancel</a>
           <button type="submit" class="btn btn-primary btn-lg">
-            <i class="bi bi-save me-1"></i>Save Changes
+            <i class="bi bi-save me-1"></i>Save
           </button>
         </div>
       </div>
@@ -156,4 +315,34 @@
 </form>
 
 {% endwith %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+
+// qfAppend — used by combo-box dropdowns to append picked value to a text input
+function qfAppend(id, val) {
+  var inp = document.getElementById(id);
+  if (!inp || !val) return;
+  inp.value = inp.value.trim() ? inp.value.trim() + '. ' + val : val;
+  inp.focus();
+}
+function qfPick(fieldId, sel) {
+  var val = sel.value;
+  if (!val || val === 'Other') { sel.value = ''; return; }
+  var ta = document.getElementById(fieldId);
+  if (ta) { var cur = ta.value.trim(); ta.value = cur ? cur + '. ' + val : val; ta.focus(); }
+  sel.value = '';
+}
+function toggleCard(bodyId, header) {
+  const body    = document.getElementById(bodyId);
+  const chevron = header.querySelector('i.bi-chevron-up, i.bi-chevron-down');
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? '' : 'none';
+  if (chevron) {
+    chevron.classList.toggle('bi-chevron-up',   isHidden);
+    chevron.classList.toggle('bi-chevron-down', !isHidden);
+  }
+}
+</script>
 {% endblock %}
