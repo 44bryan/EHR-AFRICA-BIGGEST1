@@ -285,6 +285,127 @@ def add_dispensing_item(request, dispensing_id):
 
 
 @login_required
+def drug_search_ajax(request):
+    """Search drugs by name/generic name — returns JSON for autocomplete."""
+    q = request.GET.get('q', '').strip()
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False)
+    if q:
+        drugs = drugs.filter(
+            Q(name__icontains=q) | Q(generic_name__icontains=q) | Q(brand_name__icontains=q)
+        )
+    drugs = drugs.order_by('name')[:25]
+    return JsonResponse({'drugs': [
+        {
+            'id': str(d.id),
+            'name': d.name,
+            'generic': d.generic_name,
+            'strength': d.strength or '',
+            'form': d.get_form_display(),
+            'stock': d.current_stock,
+            'price': str(d.selling_price),
+            'low': d.needs_reorder,
+        }
+        for d in drugs
+    ]})
+
+
+@login_required
+def add_dispensing_item_ajax(request, dispensing_id):
+    """AJAX: add a drug item to dispensing, return updated totals and interaction check."""
+    if not request.user.can_dispense_pharmacy():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
+        return JsonResponse({'error': 'Cannot add items to a completed dispensing'}, status=400)
+
+    drug_id = request.POST.get('drug_id', '').strip()
+    try:
+        qty = int(request.POST.get('qty', 1))
+        from decimal import Decimal, InvalidOperation
+        unit_price = Decimal(request.POST.get('unit_price', '0'))
+    except (ValueError, InvalidOperation):
+        return JsonResponse({'error': 'Invalid quantity or price'}, status=400)
+
+    drug = Drug.objects.filter(id=drug_id, is_active=True, is_deleted=False).first()
+    if not drug:
+        return JsonResponse({'error': 'Drug not found'}, status=404)
+    if qty <= 0:
+        return JsonResponse({'error': 'Quantity must be at least 1'}, status=400)
+
+    batch_id = request.POST.get('batch_id', '').strip()
+    batch = None
+    if batch_id:
+        batch = DrugStock.objects.filter(id=batch_id, is_deleted=False).first()
+    if not batch:
+        batch = DrugStock.objects.filter(
+            drug=drug, is_deleted=False, quantity_remaining__gt=0,
+            expiry_date__gte=timezone.localdate()
+        ).order_by('expiry_date').first()
+
+    item = DispensingItem.objects.create(
+        dispensing=dispensing,
+        drug=drug,
+        stock_batch=batch,
+        quantity_dispensed=qty,
+        unit_price=unit_price,
+        instructions=request.POST.get('instructions', '').strip(),
+    )
+
+    total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
+    dispensing.total_amount = total
+    dispensing.status = DispensingStatus.PARTIAL
+    dispensing.save(update_fields=['total_amount', 'status'])
+
+    drug_names = list(DispensingItem.objects.filter(dispensing=dispensing).values_list('drug__name', flat=True))
+    interactions = []
+    try:
+        from apps.prescriptions.models import DrugInteraction
+        interactions = [
+            {'severity': ix.get_severity_display(), 'drug_a': ix.drug_a, 'drug_b': ix.drug_b, 'description': ix.description}
+            for ix in DrugInteraction.find_interactions(drug_names)
+        ]
+    except Exception:
+        pass
+
+    return JsonResponse({
+        'success': True,
+        'item': {
+            'id': str(item.pk),
+            'drug_name': drug.name,
+            'strength': drug.strength or '',
+            'form': drug.get_form_display(),
+            'batch': batch.batch_number if batch else 'Auto',
+            'expiry': batch.expiry_date.strftime('%b %Y') if batch else '',
+            'qty': qty,
+            'unit_price': str(unit_price),
+            'subtotal': str(item.subtotal),
+            'instructions': item.instructions,
+        },
+        'total': str(total),
+        'interactions': interactions,
+    })
+
+
+@login_required
+def remove_dispensing_item_ajax(request, dispensing_id, item_id):
+    """AJAX: remove a drug item from an open dispensing and restore stock."""
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
+        return JsonResponse({'error': 'Cannot modify a completed dispensing'}, status=400)
+    item = get_object_or_404(DispensingItem, id=item_id, dispensing=dispensing)
+    if item.stock_batch:
+        item.stock_batch.quantity_remaining += item.quantity_dispensed
+        item.stock_batch.save(update_fields=['quantity_remaining'])
+    item.delete()
+    total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
+    dispensing.total_amount = total
+    if not DispensingItem.objects.filter(dispensing=dispensing).exists():
+        dispensing.status = DispensingStatus.PENDING
+    dispensing.save(update_fields=['total_amount', 'status'])
+    return JsonResponse({'success': True, 'total': str(total)})
+
+
+@login_required
 def drug_stock_ajax(request):
     """Return available stock batches for a drug as JSON (for dynamic form)."""
     drug_id = request.GET.get('drug_id')

@@ -1,34 +1,63 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
 {% block title %}Dispensing {{ dispensing.dispensing_number }}{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
   <div>
-    <h1 class="h3 mb-0">Dispensing: {{ dispensing.dispensing_number }}</h1>
-    <small class="text-muted">{{ dispensing.dispensed_at|date:"d M Y H:i" }} &bull; by {{ dispensing.dispensed_by.get_full_name }}</small>
+    <h4 class="fw-bold mb-0">
+      <i class="bi bi-capsule me-2 text-secondary"></i>Dispensing Workstation
+      <span class="text-muted fw-normal fs-6 ms-2">{{ dispensing.dispensing_number }}</span>
+    </h4>
+    <p class="text-muted small mb-0">
+      <i class="bi bi-person me-1"></i>{{ dispensing.patient.full_name }}
+      &nbsp;&bull;&nbsp;{{ dispensing.patient.patient_id }}
+      &nbsp;&bull;&nbsp;Started {{ dispensing.dispensed_at|date:"d M Y, H:i" }}
+      &nbsp;&bull;&nbsp;By {{ dispensing.dispensed_by.get_full_name }}
+    </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     {% if dispensing.prescription %}
     <a href="{% url 'reports:drug_prescription_pdf' pk=dispensing.prescription.pk %}" target="_blank"
-       class="btn btn-outline-primary btn-sm">
-      <i class="bi bi-file-medical me-1"></i>Print Prescription
+       class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-file-medical me-1"></i>Rx PDF
     </a>
     {% endif %}
-    {% if dispensing.status != 'CANCELLED' %}
+    {% if dispensing.status == 'DISPENSED' %}
     <a href="{% url 'pharmacy:dispensing_receipt' dispensing_id=dispensing.id %}" target="_blank"
-       class="btn btn-outline-{% if dispensing.status == 'DISPENSED' %}success{% else %}secondary{% endif %} btn-sm">
-      <i class="bi bi-printer me-1"></i>{% if dispensing.status == 'DISPENSED' %}Print Receipt{% else %}Preview Receipt{% endif %}
+       class="btn btn-sm btn-outline-success">
+      <i class="bi bi-printer me-1"></i>Print Receipt
     </a>
     {% endif %}
-    <a href="{% url 'pharmacy:dispensing_list' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-arrow-left me-1"></i>All Dispensings
+    <a href="{% url 'pharmacy:patient_search' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
     </a>
   </div>
 </div>
+{% endblock %}
 
-{# ── Drug Interaction Check ── #}
+{% block content %}
+
+{# ── Status badges ── #}
+<div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+  <span class="badge fs-6 fw-semibold
+    {% if dispensing.status == 'DISPENSED' %}bg-success
+    {% elif dispensing.status == 'PARTIAL' %}bg-warning text-dark
+    {% elif dispensing.status == 'CANCELLED' %}bg-secondary
+    {% else %}bg-info text-dark{% endif %}">
+    <i class="bi bi-circle-fill me-1" style="font-size:.5rem;vertical-align:middle;"></i>
+    {{ dispensing.get_status_display }}
+  </span>
+  {% if dispensing.status == 'DISPENSED' %}
+  <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Drugs dispensed &amp; payment collected</span>
+  {% elif dispensing.status == 'CANCELLED' %}
+  <span class="text-secondary small"><i class="bi bi-x-circle me-1"></i>This dispensing has been cancelled</span>
+  {% endif %}
+</div>
+
+{# ── Drug interaction alert (server-side check on load) ── #}
 {% if drug_interactions %}
-<div class="alert alert-danger d-flex align-items-start gap-3 mb-3 shadow-sm" role="alert">
+<div class="alert alert-danger d-flex align-items-start gap-3 mb-3 shadow-sm" role="alert" id="interaction-panel">
   <i class="bi bi-exclamation-triangle-fill fs-4 flex-shrink-0 mt-1"></i>
   <div>
     <strong>Drug Interaction Warning</strong>
@@ -43,188 +72,264 @@
     </ul>
   </div>
 </div>
+{% else %}
+<div id="interaction-panel" class="d-none"></div>
 {% endif %}
 
-<div class="row g-3">
-  <!-- Left: Summary card -->
-  <div class="col-md-4">
+{# ── MAIN POS LAYOUT ── #}
+<div class="row g-3 align-items-start">
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     LEFT COLUMN — Prescription reference + items workbench
+  ═══════════════════════════════════════════════════════════════════════ #}
+  <div class="col-lg-8">
+
+    {# ── Patient info strip ── #}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white fw-semibold">Summary</div>
-      <div class="card-body">
-        <dl class="mb-0 row row-cols-1 g-1">
-          <div class="col"><dt class="text-muted small">Patient</dt><dd class="mb-1 fw-semibold">{{ dispensing.patient.full_name }}</dd></div>
-          <div class="col"><dt class="text-muted small">Patient ID</dt><dd class="mb-1">{{ dispensing.patient.patient_id }}</dd></div>
-          <div class="col"><dt class="text-muted small">Status</dt><dd class="mb-1">
-            <span class="badge {% if dispensing.status == 'DISPENSED' %}bg-success{% elif dispensing.status == 'PARTIAL' %}bg-warning text-dark{% elif dispensing.status == 'CANCELLED' %}bg-secondary{% else %}bg-info text-dark{% endif %}">
-              {{ dispensing.get_status_display }}
-            </span>
-          </dd></div>
-          {% if dispensing.prescription %}
-          <div class="col"><dt class="text-muted small">Prescription</dt><dd class="mb-1">Linked</dd></div>
-          {% endif %}
-          <div class="col border-top pt-2 mt-2"><dt class="text-muted small">Total Amount</dt><dd class="mb-1 fw-bold fs-5 text-primary">{{ dispensing.total_amount|floatformat:0|intcomma }} FCFA</dd></div>
-          <div class="col"><dt class="text-muted small">Amount Paid</dt><dd class="mb-1 text-success fw-bold">{{ dispensing.amount_paid|floatformat:0|intcomma }} FCFA</dd></div>
-        </dl>
-        {% if dispensing.notes %}
-        <div class="mt-2 p-2 bg-light rounded small">{{ dispensing.notes }}</div>
-        {% endif %}
+      <div class="card-body py-2 px-3">
+        <div class="row g-2 align-items-center">
+          <div class="col-auto">
+            <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center text-white fw-bold"
+                 style="width:40px;height:40px;font-size:1.1rem;">
+              {{ dispensing.patient.first_name|first }}{{ dispensing.patient.last_name|first }}
+            </div>
+          </div>
+          <div class="col">
+            <div class="fw-bold">{{ dispensing.patient.full_name }}</div>
+            <div class="text-muted small">
+              ID: {{ dispensing.patient.patient_id }}
+              &nbsp;&bull;&nbsp;
+              {% if dispensing.patient.date_of_birth %}Age: {{ dispensing.patient.date_of_birth|timesince|truncatewords:2 }}{% endif %}
+              {% if dispensing.patient.gender %}&nbsp;&bull;&nbsp;{{ dispensing.patient.get_gender_display }}{% endif %}
+            </div>
+          </div>
+          <div class="col-auto text-end">
+            <a href="{% url 'patients:detail' patient_id=dispensing.patient.id %}" class="btn btn-sm btn-outline-secondary" target="_blank">
+              <i class="bi bi-person me-1"></i>Patient Record
+            </a>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Right: Items + Add form -->
-  <div class="col-md-8">
-    <!-- Items table -->
+    {# ── Doctor Prescription reference panel ── #}
+    {% if dispensing.prescription %}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h6 class="mb-0 fw-semibold">Dispensed Items ({{ dispensing.items.count }})</h6>
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-file-medical text-secondary"></i>
+        <span class="fw-semibold">Doctor's Prescription</span>
+        <span class="text-muted small ms-1">{{ dispensing.prescription.prescription_date|date:"d M Y" }}</span>
+        {% if dispensing.prescription.prescribed_by %}
+        <span class="ms-auto text-muted small">Dr. {{ dispensing.prescription.prescribed_by.get_full_name }}</span>
+        {% endif %}
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table mb-0 align-middle">
+          <table class="table table-sm align-middle mb-0 small">
             <thead class="table-light">
               <tr>
                 <th>Drug</th>
-                <th>Batch</th>
+                <th>Dose &amp; Freq</th>
+                <th>Duration</th>
+                <th>Route</th>
+                <th>Eye</th>
+                <th class="text-center">Qty</th>
+                <th class="text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for rx_item in dispensing.prescription.items.all %}
+              <tr>
+                <td class="fw-semibold">
+                  {{ rx_item.drug_name }}
+                  {% if rx_item.concentration %}<span class="text-muted">{{ rx_item.concentration }}</span>{% endif %}
+                  <br><span class="text-muted fw-normal">{{ rx_item.get_drug_form_display }}</span>
+                </td>
+                <td>
+                  <span class="badge bg-light text-dark border">{{ rx_item.frequency }}</span>
+                  {% if rx_item.dose %}<br><span class="text-muted">{{ rx_item.dose }}</span>{% endif %}
+                </td>
+                <td class="text-muted">{{ rx_item.duration|default:"—" }}</td>
+                <td class="text-muted">{{ rx_item.get_route_display }}</td>
+                <td class="text-muted">{% if rx_item.eye != 'NA' %}{{ rx_item.get_eye_display }}{% else %}—{% endif %}</td>
+                <td class="text-center fw-bold">{{ rx_item.quantity }}</td>
+                <td class="text-center">
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 rx-quick-add"
+                          data-name="{{ rx_item.drug_name }}"
+                          data-qty="{{ rx_item.quantity }}"
+                          data-instr="{{ rx_item.dose }} {{ rx_item.frequency }}{% if rx_item.duration %} × {{ rx_item.duration }}{% endif %}{% if rx_item.eye != 'NA' %} — {{ rx_item.get_eye_display }}{% endif %}{% if rx_item.special_instructions %} — {{ rx_item.special_instructions }}{% endif %}">
+                    <i class="bi bi-arrow-down-circle me-1"></i>Fill
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-2 border-top bg-light" style="font-size:.78rem;">
+          <i class="bi bi-info-circle me-1 text-secondary"></i>
+          Click <strong>Fill</strong> to pre-load a line into the dispense form below. Verify stock, quantity and price before adding.
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Dispensed Items Table ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-list-check me-1 text-secondary"></i>Items in this Dispensing</h6>
+        <span id="item-count-badge" class="badge bg-secondary rounded-pill">{{ dispensing.items.count }}</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table align-middle mb-0" id="items-table">
+            <thead class="table-light" style="font-size:.8rem;">
+              <tr>
+                <th>Drug</th>
+                <th>Batch / Exp</th>
                 <th class="text-center">Qty</th>
                 <th class="text-end">Unit Price</th>
                 <th class="text-end">Subtotal</th>
                 <th>Instructions</th>
+                {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+                <th></th>
+                {% endif %}
               </tr>
             </thead>
-            <tbody>
+            <tbody id="items-tbody">
               {% for item in dispensing.items.all %}
-              <tr>
+              <tr id="item-row-{{ item.pk }}">
                 <td>
-                  <div class="fw-semibold">{{ item.drug.name }}</div>
-                  <div class="text-muted small">{{ item.drug.strength }} &bull; {{ item.drug.get_form_display }}</div>
+                  <div class="fw-semibold" style="font-size:.88rem;">{{ item.drug.name }}</div>
+                  <div class="text-muted" style="font-size:.75rem;">{{ item.drug.strength }}{% if item.drug.strength %} &bull; {% endif %}{{ item.drug.get_form_display }}</div>
                 </td>
-                <td class="small text-muted">
-                  {% if item.stock_batch %}{{ item.stock_batch.batch_number }}<br><span class="text-danger-emphasis">Exp: {{ item.stock_batch.expiry_date }}</span>{% else %}—{% endif %}
+                <td style="font-size:.78rem;" class="text-muted">
+                  {% if item.stock_batch %}
+                  <span>{{ item.stock_batch.batch_number }}</span><br>
+                  <span class="{% if item.stock_batch.expiry_date < today %}text-danger{% else %}text-muted{% endif %}">
+                    Exp: {{ item.stock_batch.expiry_date|date:"M Y" }}
+                  </span>
+                  {% else %}—{% endif %}
                 </td>
-                <td class="text-center">{{ item.quantity_dispensed }}</td>
-                <td class="text-end">{{ item.unit_price|floatformat:0|intcomma }} XAF</td>
-                <td class="text-end fw-semibold">{{ item.subtotal|floatformat:0|intcomma }} XAF</td>
-                <td class="small">{{ item.instructions|default:"—" }}</td>
+                <td class="text-center fw-semibold">{{ item.quantity_dispensed }}</td>
+                <td class="text-end" style="font-size:.88rem;">{{ item.unit_price|floatformat:0|intcomma }}</td>
+                <td class="text-end fw-bold" style="font-size:.9rem;">{{ item.subtotal|floatformat:0|intcomma }}</td>
+                <td style="font-size:.78rem;" class="text-muted">{{ item.instructions|default:"—" }}</td>
+                {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+                <td>
+                  <form method="post" action="{% url 'pharmacy:remove_dispensing_item_ajax' dispensing_id=dispensing.id item_id=item.pk %}" class="remove-item-form">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Remove item">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </td>
+                {% endif %}
               </tr>
               {% empty %}
-              <tr>
-                <td colspan="6" class="text-center text-muted py-4">
+              <tr id="empty-row">
+                <td colspan="7" class="text-center text-muted py-4" id="empty-cell">
                   <i class="bi bi-box fs-2 d-block mb-2 opacity-25"></i>
                   No items added yet. Use the form below to add drugs.
                 </td>
               </tr>
               {% endfor %}
             </tbody>
-            {% if dispensing.items.count %}
-            <tfoot class="table-light">
+            <tfoot class="table-light fw-bold" id="items-tfoot" {% if not dispensing.items.count %}style="display:none;"{% endif %}>
               <tr>
-                <td colspan="4" class="text-end fw-bold">Total:</td>
-                <td class="text-end fw-bold text-primary">{{ dispensing.total_amount|floatformat:0|intcomma }} XAF</td>
+                <td colspan="{% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}4{% else %}4{% endif %}" class="text-end">TOTAL</td>
+                <td class="text-end text-primary fs-6" id="table-total">{{ dispensing.total_amount|floatformat:0|intcomma }}</td>
                 <td></td>
+                {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}<td></td>{% endif %}
               </tr>
             </tfoot>
-            {% endif %}
           </table>
         </div>
       </div>
     </div>
 
-    {% if request.user.can_dispense_pharmacy and dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' and request.user.can_dispense_pharmacy %}
-
-    {# ── Prescription Quick-Add (if Rx linked) ── #}
-    {% if dispensing.prescription %}
-    <div class="card border-0 shadow-sm border-start border-info border-3 mb-3">
-      <div class="card-header bg-white fw-semibold py-2 d-flex align-items-center gap-2">
-        <i class="bi bi-file-medical text-info fs-5"></i>
-        <span>Doctor's Prescription — {{ dispensing.prescription.prescription_date|date:"d M Y" }}</span>
-        {% if dispensing.prescription.prescribed_by %}
-        <span class="text-muted small ms-auto">Dr. {{ dispensing.prescription.prescribed_by.get_full_name }}</span>
-        {% endif %}
+    {# ── Drug Add Form (only when dispensing is open) ── #}
+    {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+    {% if request.user.can_dispense_pharmacy %}
+    <div class="card border-0 shadow-sm" id="add-item-card">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-plus-circle me-1 text-secondary"></i>Add Drug</h6>
       </div>
-      <div class="card-body p-0">
-        <table class="table table-sm align-middle mb-0 small">
-          <thead class="table-light">
-            <tr><th>Drug</th><th>Form</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Eye</th><th>Qty</th><th></th></tr>
-          </thead>
-          <tbody>
-            {% for rx_item in dispensing.prescription.items.all %}
-            <tr>
-              <td class="fw-semibold">{{ rx_item.drug_name }}{% if rx_item.concentration %} <span class="text-muted">{{ rx_item.concentration }}</span>{% endif %}</td>
-              <td class="text-muted">{{ rx_item.get_drug_form_display }}</td>
-              <td>{{ rx_item.dose }}</td>
-              <td><span class="badge bg-light text-dark border">{{ rx_item.frequency }}</span></td>
-              <td class="text-muted">{{ rx_item.duration }}</td>
-              <td class="text-muted">{{ rx_item.get_route_display }}</td>
-              <td class="text-muted">{% if rx_item.eye != 'NA' %}{{ rx_item.get_eye_display }}{% else %}—{% endif %}</td>
-              <td class="fw-semibold">{{ rx_item.quantity }}</td>
-              <td>
-                <button type="button" class="btn btn-success btn-sm py-0 rx-quick-add"
-                        data-name="{{ rx_item.drug_name }}"
-                        data-qty="{{ rx_item.quantity }}"
-                        data-instructions="{{ rx_item.dose }} {{ rx_item.frequency }} × {{ rx_item.duration }}{% if rx_item.eye != 'NA' %} — {{ rx_item.get_eye_display }}{% endif %}{% if rx_item.special_instructions %} — {{ rx_item.special_instructions }}{% endif %}">
-                  <i class="bi bi-plus"></i> Add
-                </button>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        <div class="px-3 pb-2 pt-1">
-          <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Click <strong>Add</strong> to pre-fill the form below. Verify quantity and price, then submit.</small>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Add item form -->
-    <div class="card border-0 shadow-sm border-start border-primary border-3">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-1 text-primary"></i>Add Drug Item</div>
       <div class="card-body">
-        <form method="post" action="{% url 'pharmacy:add_dispensing_item' dispensing_id=dispensing.id %}" id="add-item-form">
-          {% csrf_token %}
-          <div class="row g-3">
-            <div class="col-md-5">
-              <label class="form-label fw-semibold small">Drug <span class="text-danger">*</span></label>
-              <select name="drug" id="drug-select" class="form-select form-select-sm" required>
-                <option value="">— Select Drug —</option>
-                {% for drug in available_drugs %}
-                <option value="{{ drug.id }}" data-price="{{ drug.selling_price }}" data-name="{{ drug.name }}">{{ drug.name }} {% if drug.strength %}({{ drug.strength }}){% endif %} — Stock: {{ drug.current_stock }}</option>
-                {% endfor %}
-              </select>
+
+        {# Drug Search Autocomplete #}
+        <div class="row g-3 mb-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold small">Search Drug <span class="text-danger">*</span></label>
+            <div class="position-relative">
+              <input type="text" id="drug-search-input" class="form-control"
+                     placeholder="Type drug name, generic name or brand..."
+                     autocomplete="off">
+              <div id="drug-search-results" class="position-absolute bg-white border rounded shadow-sm w-100 d-none"
+                   style="z-index:1000;max-height:260px;overflow-y:auto;top:100%;left:0;"></div>
+            </div>
+          </div>
+        </div>
+
+        {# Drug selected panel (hidden until drug is chosen) #}
+        <div id="selected-drug-panel" class="d-none">
+          <div class="bg-light border rounded p-2 mb-3 d-flex align-items-center gap-3" id="selected-drug-info">
+            <div>
+              <div class="fw-bold" id="sel-drug-name"></div>
+              <div class="text-muted small" id="sel-drug-meta"></div>
+            </div>
+            <div class="ms-auto text-end">
+              <div class="small text-muted">Stock</div>
+              <div class="fw-bold" id="sel-drug-stock"></div>
+            </div>
+            <button type="button" id="clear-drug-btn" class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+
+          {# Quantity, Price, Batch ─ inline row #}
+          <div class="row g-2 mb-3">
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Qty <span class="text-danger">*</span></label>
+              <input type="number" id="qty-input" class="form-control" min="1" value="1">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Unit Price (FCFA) <span class="text-danger">*</span></label>
+              <input type="number" id="unit-price-input" class="form-control" min="0" step="1">
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold small">Batch</label>
-              <select name="stock_batch" id="batch-select" class="form-select form-select-sm">
+              <select id="batch-select" class="form-select">
                 <option value="">Auto (FEFO)</option>
               </select>
             </div>
-            <div class="col-md-2">
-              <label class="form-label fw-semibold small">Qty <span class="text-danger">*</span></label>
-              <input type="number" name="quantity_dispensed" id="qty-input" class="form-control form-control-sm" min="1" value="1" required>
+            <div class="col-md-3 d-flex align-items-end">
+              <div class="w-100 text-center py-2 bg-white border rounded">
+                <div class="text-muted" style="font-size:.72rem;">LINE TOTAL</div>
+                <div class="fw-bold text-primary" id="line-total-display">0</div>
+              </div>
             </div>
+          </div>
+
+          {# Instruction Builder ─ compact #}
+          <div class="row g-2 mb-3 align-items-end">
             <div class="col-md-2">
-              <label class="form-label fw-semibold small">Unit Price <span class="text-danger">*</span></label>
-              <input type="number" name="unit_price" id="unit-price" class="form-control form-control-sm" min="0" step="0.01" required>
-            </div>
-            <!-- Structured instruction selects -->
-            <div class="col-md-3">
               <label class="form-label fw-semibold small">Frequency</label>
               <select id="freq-sel" class="form-select form-select-sm">
                 <option value="">—</option>
                 <option>OD (Once daily)</option>
                 <option>BD (Twice daily)</option>
-                <option>TDS (Three times daily)</option>
-                <option>QID (Four times daily)</option>
-                <option>Q2H (Every 2 hours)</option>
-                <option>Q4H (Every 4 hours)</option>
-                <option>Q6H (Every 6 hours)</option>
+                <option>TDS (3× daily)</option>
+                <option>QID (4× daily)</option>
+                <option>Q2H (Every 2 h)</option>
+                <option>Q4H (Every 4 h)</option>
+                <option>Q6H (Every 6 h)</option>
                 <option>PRN (As needed)</option>
                 <option>STAT (Immediately)</option>
                 <option>Nocte (At night)</option>
               </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
               <label class="form-label fw-semibold small">Duration</label>
               <select id="dur-sel" class="form-select form-select-sm">
                 <option value="">—</option>
@@ -247,6 +352,7 @@
                 <option>IV</option>
                 <option>IM</option>
                 <option>Intravitreal</option>
+                <option>Subconjunctival</option>
               </select>
             </div>
             <div class="col-md-2">
@@ -258,105 +364,278 @@
                 <option>OU (Both)</option>
               </select>
             </div>
-            <div class="col-md-2 d-flex align-items-end">
-              <button type="button" id="build-instr-btn" class="btn btn-outline-secondary btn-sm w-100">
-                <i class="bi bi-arrow-down me-1"></i>Build
-              </button>
-            </div>
-            <div class="col-12">
-              <label class="form-label fw-semibold small">Instructions</label>
-              <input type="text" name="instructions" id="instructions-input" class="form-control form-control-sm"
-                     placeholder="Select fields above and click Build — or type manually">
-            </div>
-            <div class="col-12">
-              <button type="submit" class="btn btn-primary btn-sm">
-                <i class="bi bi-plus me-1"></i>Add to Dispensing
-              </button>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Instructions (auto-built or manual)</label>
+              <input type="text" id="instructions-input" class="form-control form-control-sm"
+                     placeholder="Instructions will appear here…">
             </div>
           </div>
-        </form>
+
+          {# Add button #}
+          <div class="d-flex gap-2 align-items-center">
+            <button type="button" id="add-item-btn" class="btn btn-primary">
+              <i class="bi bi-plus-circle me-1"></i>Add to Dispensing
+            </button>
+            <span id="add-item-spinner" class="d-none">
+              <span class="spinner-border spinner-border-sm me-1"></span> Adding…
+            </span>
+            <span id="add-item-error" class="text-danger small d-none"></span>
+          </div>
+        </div>
+
+        {# Hidden fields carrying selected drug state #}
+        <input type="hidden" id="selected-drug-id" value="">
+
       </div>
     </div>
     {% endif %}
-  </div>
-</div>
+    {% endif %}
 
-{# ── Pharmacy Payment POS ─────────────────────────────────────────────────── #}
-{% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
-{% if dispensing.items.count %}
-<div class="card border-0 shadow-sm border-start border-5 border-success mt-4" id="pharmacyPayPanel">
-  <div class="card-header bg-success text-white d-flex align-items-center gap-2">
-    <i class="bi bi-cash-coin fs-5"></i>
-    <span class="fw-semibold">Collect Payment &amp; Dispense</span>
-    <span class="ms-auto badge bg-white text-success fs-6">Total: {{ dispensing.total_amount|floatformat:0|intcomma }} FCFA</span>
-  </div>
-  <div class="card-body">
-    <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}"
-          onsubmit="return confirm('Confirm payment collected and dispense drugs to patient?')">
-      {% csrf_token %}
-      <div class="row g-3 align-items-end">
-        <div class="col-md-3">
-          <label class="form-label fw-semibold small">Payment Method</label>
-          <select name="payment_method" class="form-select form-select-sm" required>
-            <option value="CASH">Cash</option>
-            <option value="MOBILE">Mobile Money</option>
-            <option value="CARD">Card</option>
-            <option value="INSURANCE">Insurance</option>
-            <option value="TRANSFER">Bank Transfer</option>
-          </select>
+  </div>{# /col-lg-8 #}
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     RIGHT COLUMN — Sticky POS panel: totals + change calc + payment
+  ═══════════════════════════════════════════════════════════════════════ #}
+  <div class="col-lg-4">
+    <div class="sticky-top" style="top:72px;">
+
+      {# Running Total Card #}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom py-2">
+          <h6 class="fw-semibold mb-0"><i class="bi bi-receipt me-1 text-secondary"></i>Order Total</h6>
         </div>
-        <div class="col-md-3">
-          <label class="form-label fw-semibold small">Amount Received (FCFA)</label>
-          <input type="number" name="amount" class="form-control form-control-sm fw-bold"
-                 value="{{ dispensing.total_amount|floatformat:0 }}" min="0" step="100" required>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-semibold small">Reference / Receipt No.</label>
-          <input type="text" name="reference" class="form-control form-control-sm"
-                 placeholder="Mobile money ref, card approval…">
-        </div>
-        <div class="col-md-3">
-          <button type="submit" class="btn btn-success fw-bold w-100">
-            <i class="bi bi-send-check me-2"></i>Collect &amp; Dispense
-          </button>
+        <div class="card-body text-center py-3">
+          <div class="text-muted small text-uppercase fw-semibold mb-1">Amount Due (FCFA)</div>
+          <div class="display-5 fw-bold text-primary" id="grand-total-display">
+            {{ dispensing.total_amount|floatformat:0|intcomma }}
+          </div>
+          <div class="text-muted small mt-1" id="item-summary-text">
+            {{ dispensing.items.count }} item{{ dispensing.items.count|pluralize }}
+          </div>
         </div>
       </div>
-      <div class="form-text mt-2">
-        <i class="bi bi-info-circle me-1"></i>
-        Payment will be recorded in the patient's billing account. Drugs will be marked as dispensed.
-      </div>
-    </form>
-  </div>
-</div>
-{% else %}
-<div class="alert alert-warning mt-3">
-  <i class="bi bi-exclamation-triangle me-2"></i>
-  Add at least one drug item before collecting payment.
-</div>
-{% endif %}
-{% endif %}
 
-{% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+      {# Payment + Change Calculator (only when open) #}
+      {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+      <div class="card border-0 shadow mb-3" id="payment-card">
+        <div class="card-header bg-dark text-white py-2">
+          <h6 class="fw-semibold mb-0"><i class="bi bi-cash-coin me-1"></i>Collect Payment &amp; Dispense</h6>
+        </div>
+        <div class="card-body">
+          <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}"
+                id="payment-form" onsubmit="return validatePayment()">
+            {% csrf_token %}
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold small">Payment Method</label>
+              <div class="d-flex gap-2 flex-wrap" id="payment-method-btns">
+                {% for val, lbl in payment_methods %}
+                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn"
+                        data-value="{{ val }}">{{ lbl }}</button>
+                {% empty %}
+                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn active" data-value="CASH">Cash</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="MOBILE">Mobile Money</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="CARD">Card</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="INSURANCE">Insurance</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="TRANSFER">Bank Transfer</button>
+                {% endfor %}
+              </div>
+              <input type="hidden" name="payment_method" id="payment-method-input" value="CASH">
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label fw-semibold small">Amount Received (FCFA)</label>
+              <input type="number" name="amount" id="amount-received"
+                     class="form-control form-control-lg fw-bold text-center"
+                     value="{{ dispensing.total_amount|floatformat:0 }}"
+                     min="0" step="100" required>
+            </div>
+
+            {# Change due calculator #}
+            <div class="p-2 rounded mb-3 d-flex justify-content-between align-items-center"
+                 id="change-panel"
+                 style="background:#f0fdf4;border:1px solid #bbf7d0;">
+              <span class="small fw-semibold text-success">Change Due</span>
+              <span class="fw-bold fs-5 text-success" id="change-due-display">0</span>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold small">Reference / Receipt No. <span class="text-muted">(optional)</span></label>
+              <input type="text" name="reference" class="form-control form-control-sm"
+                     placeholder="Mobile money ref, approval code…">
+            </div>
+
+            <div id="payment-blocked-msg" class="alert alert-warning small py-2 d-none">
+              <i class="bi bi-exclamation-triangle me-1"></i>Add at least one drug item before collecting payment.
+            </div>
+
+            <button type="submit" id="collect-btn" class="btn btn-success btn-lg fw-bold w-100">
+              <i class="bi bi-send-check me-2"></i>Collect &amp; Dispense
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Dispensed summary (read-only) #}
+      {% if dispensing.status == 'DISPENSED' %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body text-center py-3">
+          <i class="bi bi-check-circle-fill text-success fs-2"></i>
+          <div class="fw-bold mt-2">Dispensed &amp; Paid</div>
+          <div class="text-muted small">{{ dispensing.dispensed_at|date:"d M Y, H:i" }}</div>
+          <div class="mt-2">
+            <span class="text-muted small">Amount paid:</span>
+            <span class="fw-bold text-success ms-1">{{ dispensing.amount_paid|floatformat:0|intcomma }} FCFA</span>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Notes / flags #}
+      {% if dispensing.notes %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom py-2">
+          <h6 class="fw-semibold mb-0 small"><i class="bi bi-sticky me-1"></i>Notes</h6>
+        </div>
+        <div class="card-body py-2 small text-muted">{{ dispensing.notes }}</div>
+      </div>
+      {% endif %}
+
+      {# Quick links #}
+      <div class="d-grid gap-2">
+        <a href="{% url 'pharmacy:dispensing_list' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-list me-1"></i>All Dispensings
+        </a>
+        <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-house me-1"></i>Pharmacy Dashboard
+        </a>
+      </div>
+
+    </div>{# /sticky-top #}
+  </div>{# /col-lg-4 #}
+
+</div>{# /row #}
+
+{# ─── JavaScript ─────────────────────────────────────────────────────────── #}
 <script>
-const drugSelect = document.getElementById('drug-select');
-const batchSelect = document.getElementById('batch-select');
-const unitPriceInput = document.getElementById('unit-price');
-const qtyInput = document.getElementById('qty-input');
-const instrInput = document.getElementById('instructions-input');
+// ── State ─────────────────────────────────────────────────────────────────
+const CSRF = '{{ csrf_token }}';
+const SEARCH_URL  = '{% url "pharmacy:drug_search_ajax" %}';
+const ADD_URL     = '{% url "pharmacy:add_dispensing_item_ajax" dispensing_id=dispensing.id %}';
+const STOCK_URL   = '{% url "pharmacy:drug_stock_ajax" %}';
+const dispStatus  = '{{ dispensing.status }}';
 
-// Drug select → fetch price + batches
-drugSelect.addEventListener('change', function () {
-  const drugId = this.value;
-  const price = this.options[this.selectedIndex].dataset.price;
-  if (price) unitPriceInput.value = price;
+let selectedDrug  = null;
+let searchTimer   = null;
+let runningTotal  = {{ dispensing.total_amount|floatformat:0 }};
+let itemCount     = {{ dispensing.items.count }};
 
-  batchSelect.innerHTML = '<option value="">Auto (FEFO)</option>';
-  if (!drugId) return;
+// ── Refs ──────────────────────────────────────────────────────────────────
+const searchInput     = document.getElementById('drug-search-input');
+const searchResults   = document.getElementById('drug-search-results');
+const selectedPanel   = document.getElementById('selected-drug-panel');
+const selDrugName     = document.getElementById('sel-drug-name');
+const selDrugMeta     = document.getElementById('sel-drug-meta');
+const selDrugStock    = document.getElementById('sel-drug-stock');
+const clearBtn        = document.getElementById('clear-drug-btn');
+const drugIdInput     = document.getElementById('selected-drug-id');
+const qtyInput        = document.getElementById('qty-input');
+const priceInput      = document.getElementById('unit-price-input');
+const batchSelect     = document.getElementById('batch-select');
+const lineTotalDisp   = document.getElementById('line-total-display');
+const instrInput      = document.getElementById('instructions-input');
+const addItemBtn      = document.getElementById('add-item-btn');
+const addSpinner      = document.getElementById('add-item-spinner');
+const addErrMsg       = document.getElementById('add-item-error');
+const grandTotal      = document.getElementById('grand-total-display');
+const tableTotal      = document.getElementById('table-total');
+const itemSummary     = document.getElementById('item-summary-text');
+const itemsBtbody     = document.getElementById('items-tbody');
+const itemsTfoot      = document.getElementById('items-tfoot');
+const itemCountBadge  = document.getElementById('item-count-badge');
+const amtReceived     = document.getElementById('amount-received');
+const changeDueDisp   = document.getElementById('change-due-display');
+const changePanel     = document.getElementById('change-panel');
+const interPanel      = document.getElementById('interaction-panel');
+const payMethodInput  = document.getElementById('payment-method-input');
 
-  fetch(`{% url 'pharmacy:drug_stock_ajax' %}?drug_id=${drugId}`)
+// ── Drug Search Autocomplete ───────────────────────────────────────────────
+if (searchInput) {
+  searchInput.addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    const q = this.value.trim();
+    if (q.length < 2) { hideResults(); return; }
+    searchTimer = setTimeout(() => fetchDrugs(q), 250);
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) hideResults();
+  });
+}
+
+function fetchDrugs(q) {
+  fetch(SEARCH_URL + '?q=' + encodeURIComponent(q))
     .then(r => r.json())
     .then(data => {
-      if (data.selling_price) unitPriceInput.value = data.selling_price;
+      searchResults.innerHTML = '';
+      if (!data.drugs || data.drugs.length === 0) {
+        searchResults.innerHTML = '<div class="px-3 py-2 text-muted small">No drugs found</div>';
+        searchResults.classList.remove('d-none');
+        return;
+      }
+      data.drugs.forEach(drug => {
+        const item = document.createElement('div');
+        item.className = 'px-3 py-2 border-bottom drug-result-item';
+        item.style.cursor = 'pointer';
+        const stockClass = drug.low ? 'text-warning' : 'text-success';
+        item.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold" style="font-size:.88rem;">${drug.name}</div>
+              <div class="text-muted" style="font-size:.75rem;">${drug.generic || ''} &bull; ${drug.strength} &bull; ${drug.form}</div>
+            </div>
+            <div class="text-end ms-3">
+              <span class="badge bg-light border ${stockClass}" style="font-size:.72rem;">
+                Stock: ${drug.stock}
+              </span>
+              <div class="small text-muted mt-1">${parseFloat(drug.price).toLocaleString()} FCFA</div>
+            </div>
+          </div>`;
+        item.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          selectDrug(drug);
+        });
+        searchResults.appendChild(item);
+      });
+      searchResults.classList.remove('d-none');
+    });
+}
+
+function hideResults() {
+  searchResults.classList.add('d-none');
+  searchResults.innerHTML = '';
+}
+
+function selectDrug(drug) {
+  selectedDrug = drug;
+  drugIdInput.value = drug.id;
+  searchInput.value = drug.name;
+  hideResults();
+
+  selDrugName.textContent = drug.name;
+  selDrugMeta.textContent = (drug.generic || '') + (drug.strength ? ' · ' + drug.strength : '') + ' · ' + drug.form;
+  selDrugStock.textContent = drug.stock + ' units';
+  selDrugStock.className = drug.low ? 'fw-bold text-warning' : 'fw-bold text-success';
+  priceInput.value = Math.round(parseFloat(drug.price));
+  selectedPanel.classList.remove('d-none');
+  updateLineTotal();
+
+  // Fetch batches
+  fetch(STOCK_URL + '?drug_id=' + drug.id)
+    .then(r => r.json())
+    .then(data => {
+      batchSelect.innerHTML = '<option value="">Auto (FEFO)</option>';
       data.batches.forEach(b => {
         const opt = document.createElement('option');
         opt.value = b.id;
@@ -364,48 +643,293 @@ drugSelect.addEventListener('change', function () {
         batchSelect.appendChild(opt);
       });
     });
-});
+}
 
-// Build instruction string from structured selects
+if (clearBtn) {
+  clearBtn.addEventListener('click', function () {
+    selectedDrug = null;
+    drugIdInput.value = '';
+    searchInput.value = '';
+    selectedPanel.classList.add('d-none');
+    searchInput.focus();
+  });
+}
+
+// ── Live line total ────────────────────────────────────────────────────────
+function updateLineTotal() {
+  if (!qtyInput || !priceInput) return;
+  const qty   = parseInt(qtyInput.value)  || 0;
+  const price = parseFloat(priceInput.value) || 0;
+  const sub   = qty * price;
+  if (lineTotalDisp) lineTotalDisp.textContent = Math.round(sub).toLocaleString();
+}
+if (qtyInput)    qtyInput.addEventListener('input', updateLineTotal);
+if (priceInput)  priceInput.addEventListener('input', updateLineTotal);
+
+// ── Instruction builder ────────────────────────────────────────────────────
 function buildInstructions() {
-  const freq  = document.getElementById('freq-sel')?.value  || '';
-  const dur   = document.getElementById('dur-sel')?.value   || '';
-  const route = document.getElementById('route-sel')?.value || '';
-  const eye   = document.getElementById('eye-sel')?.value   || '';
-  let parts = [];
+  const parts = [];
+  const freq  = document.getElementById('freq-sel')?.value;
+  const dur   = document.getElementById('dur-sel')?.value;
+  const route = document.getElementById('route-sel')?.value;
+  const eye   = document.getElementById('eye-sel')?.value;
   if (freq)  parts.push(freq);
   if (dur)   parts.push('× ' + dur);
   if (route) parts.push(route);
   if (eye)   parts.push(eye);
-  instrInput.value = parts.join(' — ');
+  if (instrInput) instrInput.value = parts.join(' — ');
 }
-document.getElementById('build-instr-btn')?.addEventListener('click', buildInstructions);
 ['freq-sel','dur-sel','route-sel','eye-sel'].forEach(id => {
-  document.getElementById(id)?.addEventListener('change', buildInstructions);
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', buildInstructions);
 });
 
-// Prescription quick-add: pre-fill form from Rx item
-document.querySelectorAll('.rx-quick-add').forEach(btn => {
+// ── AJAX Add item ──────────────────────────────────────────────────────────
+if (addItemBtn) {
+  addItemBtn.addEventListener('click', function () {
+    if (!selectedDrug) { showAddError('Please search and select a drug first.'); return; }
+    const qty = parseInt(qtyInput.value);
+    const price = parseFloat(priceInput.value);
+    if (!qty || qty < 1) { showAddError('Quantity must be at least 1.'); return; }
+    if (!price || price < 0) { showAddError('Unit price is required.'); return; }
+
+    addItemBtn.disabled = true;
+    addSpinner.classList.remove('d-none');
+    addErrMsg.classList.add('d-none');
+
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    fd.append('drug_id',      drugIdInput.value);
+    fd.append('qty',          qty);
+    fd.append('unit_price',   price);
+    fd.append('batch_id',     batchSelect ? batchSelect.value : '');
+    fd.append('instructions', instrInput ? instrInput.value : '');
+
+    fetch(ADD_URL, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { showAddError(data.error); return; }
+        appendItemRow(data.item);
+        updateTotals(parseFloat(data.total), ++itemCount);
+        checkInteractions(data.interactions);
+        resetAddForm();
+      })
+      .catch(() => showAddError('Network error. Please try again.'))
+      .finally(() => {
+        addItemBtn.disabled = false;
+        addSpinner.classList.add('d-none');
+      });
+  });
+}
+
+function showAddError(msg) {
+  if (!addErrMsg) return;
+  addErrMsg.textContent = msg;
+  addErrMsg.classList.remove('d-none');
+  addItemBtn.disabled = false;
+  addSpinner.classList.add('d-none');
+}
+
+function appendItemRow(item) {
+  const emptyRow = document.getElementById('empty-row');
+  if (emptyRow) emptyRow.remove();
+
+  const batchInfo = item.batch !== 'Auto'
+    ? `${item.batch}<br><span class="text-muted">Exp: ${item.expiry}</span>`
+    : '<span class="text-muted">Auto</span>';
+
+  const tr = document.createElement('tr');
+  tr.id = 'item-row-' + item.id;
+  tr.innerHTML = `
+    <td>
+      <div class="fw-semibold" style="font-size:.88rem;">${item.drug_name}</div>
+      <div class="text-muted" style="font-size:.75rem;">${item.strength}${item.strength ? ' · ' : ''}${item.form}</div>
+    </td>
+    <td style="font-size:.78rem;" class="text-muted">${batchInfo}</td>
+    <td class="text-center fw-semibold">${item.qty}</td>
+    <td class="text-end" style="font-size:.88rem;">${parseFloat(item.unit_price).toLocaleString()}</td>
+    <td class="text-end fw-bold" style="font-size:.9rem;">${parseFloat(item.subtotal).toLocaleString()}</td>
+    <td style="font-size:.78rem;" class="text-muted">${item.instructions || '—'}</td>
+    <td>
+      <form class="remove-item-form">
+        <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF}">
+        <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Remove" data-item-id="${item.id}">
+          <i class="bi bi-trash"></i>
+        </button>
+      </form>
+    </td>`;
+
+  itemsBtbody.appendChild(tr);
+
+  // Wire up AJAX remove on the new row
+  const form = tr.querySelector('.remove-item-form');
+  const btn  = tr.querySelector('[data-item-id]');
+  if (form && btn) {
+    const removeUrl = ADD_URL.replace('add-item-ajax/', `remove-item/${item.id}/`);
+    wireRemoveForm(form, item.id, removeUrl);
+  }
+  if (itemsTfoot) itemsTfoot.style.display = '';
+}
+
+function updateTotals(total, count) {
+  runningTotal = total;
+  const fmt = Math.round(total).toLocaleString();
+  if (grandTotal)   grandTotal.textContent = fmt;
+  if (tableTotal)   tableTotal.textContent = fmt;
+  if (itemSummary)  itemSummary.textContent = count + ' item' + (count !== 1 ? 's' : '');
+  if (itemCountBadge) itemCountBadge.textContent = count;
+  if (amtReceived) {
+    amtReceived.value = Math.round(total);
+    calcChange();
+  }
+  const blockedMsg = document.getElementById('payment-blocked-msg');
+  if (blockedMsg) blockedMsg.classList.toggle('d-none', count > 0);
+}
+
+function resetAddForm() {
+  selectedDrug = null;
+  drugIdInput.value = '';
+  searchInput.value = '';
+  selectedPanel.classList.add('d-none');
+  if (qtyInput) qtyInput.value = 1;
+  if (priceInput) priceInput.value = '';
+  if (instrInput) instrInput.value = '';
+  if (batchSelect) batchSelect.innerHTML = '<option value="">Auto (FEFO)</option>';
+  if (lineTotalDisp) lineTotalDisp.textContent = '0';
+  ['freq-sel','dur-sel','route-sel','eye-sel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  searchInput.focus();
+}
+
+function checkInteractions(interactions) {
+  if (!interPanel || !interactions || interactions.length === 0) return;
+  interPanel.classList.remove('d-none');
+  interPanel.className = 'alert alert-danger d-flex align-items-start gap-3 mb-3 shadow-sm';
+  interPanel.innerHTML = `
+    <i class="bi bi-exclamation-triangle-fill fs-4 flex-shrink-0 mt-1"></i>
+    <div><strong>Drug Interaction Warning</strong><ul class="mb-0 mt-1 small">
+    ${interactions.map(ix => `<li>
+      <span class="badge ${ix.severity === 'Contraindicated' ? 'bg-danger' : ix.severity === 'Major' ? 'bg-warning text-dark' : 'bg-info text-dark'} me-1">${ix.severity}</span>
+      <strong>${ix.drug_a}</strong> ↔ <strong>${ix.drug_b}</strong>
+      ${ix.description ? '— ' + ix.description : ''}
+    </li>`).join('')}
+    </ul></div>`;
+}
+
+// ── AJAX Remove item ───────────────────────────────────────────────────────
+function wireRemoveForm(form, itemId, url) {
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!confirm('Remove this item?')) return;
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    fetch(url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          const row = document.getElementById('item-row-' + itemId);
+          if (row) row.remove();
+          itemCount = Math.max(0, itemCount - 1);
+          updateTotals(parseFloat(data.total), itemCount);
+          if (itemCount === 0) {
+            if (itemsTfoot) itemsTfoot.style.display = 'none';
+            itemsBtbody.innerHTML = `<tr id="empty-row"><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-box fs-2 d-block mb-2 opacity-25"></i>No items added yet.</td></tr>`;
+          }
+        }
+      });
+  });
+}
+
+// Wire remove forms on page load (for existing items)
+document.querySelectorAll('.remove-item-form').forEach(function (form) {
+  const btn = form.querySelector('button[type="submit"]');
+  // Get item ID from the row id
+  const row = form.closest('tr');
+  if (!row) return;
+  const itemId = row.id.replace('item-row-', '');
+  const removeUrl = ADD_URL.replace('add-item-ajax/', `remove-item/${itemId}/`);
+  wireRemoveForm(form, itemId, removeUrl);
+});
+
+// ── Change calculator ──────────────────────────────────────────────────────
+function calcChange() {
+  if (!amtReceived || !changeDueDisp) return;
+  const received = parseFloat(amtReceived.value) || 0;
+  const change   = received - runningTotal;
+  changeDueDisp.textContent = Math.max(0, Math.round(change)).toLocaleString();
+  if (changePanel) {
+    changePanel.style.background = change < 0 ? '#fef2f2' : '#f0fdf4';
+    changePanel.style.borderColor = change < 0 ? '#fca5a5' : '#bbf7d0';
+    changeDueDisp.style.color = change < 0 ? '#dc2626' : '#16a34a';
+    const label = changePanel.querySelector('.small.fw-semibold');
+    if (label) label.textContent = change < 0 ? 'Short By' : 'Change Due';
+    if (label) label.style.color = change < 0 ? '#dc2626' : '#16a34a';
+  }
+}
+if (amtReceived) amtReceived.addEventListener('input', calcChange);
+calcChange();
+
+// ── Payment method toggle ──────────────────────────────────────────────────
+document.querySelectorAll('.pay-method-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.pay-method-btn').forEach(b => b.classList.remove('active', 'btn-secondary'));
+    this.classList.add('active');
+    if (payMethodInput) payMethodInput.value = this.dataset.value;
+  });
+});
+// Activate Cash by default
+const cashBtn = document.querySelector('.pay-method-btn[data-value="CASH"]');
+if (cashBtn) cashBtn.classList.add('active');
+
+// ── Payment validation ─────────────────────────────────────────────────────
+function validatePayment() {
+  if (itemCount === 0) {
+    const blockedMsg = document.getElementById('payment-blocked-msg');
+    if (blockedMsg) blockedMsg.classList.remove('d-none');
+    return false;
+  }
+  return confirm('Confirm: collect payment and dispense drugs to patient?');
+}
+
+// ── Prescription quick-fill ────────────────────────────────────────────────
+document.querySelectorAll('.rx-quick-add').forEach(function (btn) {
   btn.addEventListener('click', function () {
     const name  = this.dataset.name;
     const qty   = this.dataset.qty;
-    const instr = this.dataset.instructions;
-
-    // Find matching drug in select by name (case-insensitive contains)
-    const opts = Array.from(drugSelect.options);
-    const match = opts.find(o => o.dataset.name && o.dataset.name.toLowerCase().includes(name.toLowerCase().split(' ')[0]));
-    if (match) {
-      drugSelect.value = match.value;
-      drugSelect.dispatchEvent(new Event('change'));
+    const instr = this.dataset.instr;
+    if (searchInput) {
+      searchInput.value = name;
+      fetchDrugs(name);
+      if (instrInput) instrInput.value = instr || '';
+      // After search results load, if there's only one match, auto-select
+      setTimeout(() => {
+        const first = searchResults.querySelector('.drug-result-item');
+        if (first) first.dispatchEvent(new Event('mousedown'));
+        if (qtyInput && qty) qtyInput.value = qty;
+        if (instrInput && instr) instrInput.value = instr;
+      }, 400);
     }
-
-    if (qty) qtyInput.value = qty;
-    if (instr) instrInput.value = instr;
-
-    // Scroll to the add-item form
-    document.getElementById('add-item-form')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+    // Scroll to add form
+    const addCard = document.getElementById('add-item-card');
+    if (addCard) addCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 });
 </script>
-{% endif %}
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.drug-result-item:hover { background: #f8f9fa; }
+.pay-method-btn.active { background: #212529 !important; color: #fff !important; border-color: #212529 !important; }
+@media print {
+  #sidebar, .topbar, .page-header-bar, form, .btn, nav { display: none !important; }
+  #page-content-wrapper { margin: 0 !important; padding: 0 !important; }
+  #wrapper { display: block !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+  body { font-size: 11px !important; }
+}
+</style>
 {% endblock %}
