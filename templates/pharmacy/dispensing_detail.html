@@ -897,15 +897,22 @@ document.querySelectorAll('.rx-quick-add').forEach(function (btn) {
     const instr = this.dataset.instr;
     if (searchInput) {
       searchInput.value = name;
-      fetchDrugs(name);
       if (instrInput) instrInput.value = instr || '';
-      // After search results load, if there's only one match, auto-select
-      setTimeout(() => {
-        const first = searchResults.querySelector('.drug-result-item');
-        if (first) first.dispatchEvent(new Event('mousedown'));
-        if (qtyInput && qty) qtyInput.value = qty;
-        if (instrInput && instr) instrInput.value = instr;
-      }, 400);
+      // Fetch directly then auto-select first match — no timing issues
+      fetch(SEARCH_URL + '?q=' + encodeURIComponent(name))
+        .then(r => r.json())
+        .then(data => {
+          if (data.drugs && data.drugs.length > 0) {
+            selectDrug(data.drugs[0]);
+            if (qtyInput && qty) qtyInput.value = qty;
+            if (instrInput && instr) instrInput.value = instr;
+          } else {
+            // Not in formulary — show message so pharmacist can search manually
+            searchResults.innerHTML = '<div class="px-3 py-2 text-muted small"><i class="bi bi-exclamation-circle me-1"></i>Not in formulary — search a substitute manually</div>';
+            searchResults.classList.remove('d-none');
+          }
+        })
+        .catch(() => fetchDrugs(name));
     }
     // Scroll to add form
     const addCard = document.getElementById('add-item-card');

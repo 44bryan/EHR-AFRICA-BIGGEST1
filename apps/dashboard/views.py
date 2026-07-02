@@ -545,16 +545,16 @@ def home_view(request):
             ],
         ).order_by('visit_date')
 
-        # Filter queue by department:
-        # - Specialists and Medical Director (who has a dept) → their dept only
-        # - General ophthalmologist with no dept → sees all unassigned + general
-        if user.department:
-            if user.is_specialist or user.is_medical_director:
-                queue_qs = queue_qs.filter(department=user.department)
-            else:
-                queue_qs = queue_qs.filter(
-                    Q(department=user.department) | Q(department__isnull=True)
-                )
+        # Filter queue strictly by department — every doctor sees ONLY patients
+        # explicitly dispatched to their unit. No NULL-department fallback.
+        dept_obj = user.department
+        if not dept_obj and user.role_department_code:
+            from apps.departments.models import Department as _Dept
+            dept_obj = _Dept.objects.filter(code=user.role_department_code).first()
+        if dept_obj:
+            queue_qs = queue_qs.filter(department=dept_obj)
+        else:
+            queue_qs = queue_qs.none()
 
         # Annotate each queued visit with AI triage priority
         queue_list = list(queue_qs)
@@ -1065,6 +1065,11 @@ def home_view(request):
             except Exception:
                 pass
         
+        from apps.patients.models import PreRegistration
+        pre_regs = PreRegistration.objects.filter(
+            status__in=[PreRegistration.Status.PENDING, PreRegistration.Status.ARRIVED]
+        ).order_by('-created_at')[:20]
+
         ctx.update({
             'queue_patients': queue_data,
             'waiting_count': len(queue_data),
@@ -1078,6 +1083,10 @@ def home_view(request):
                 appointment_date=today,
                 status__in=['SCHEDULED', 'CONFIRMED']
             ).count(),
+            'registered_today': Patient.objects.filter(
+                created_at__date=today, is_active=True
+            ).count(),
+            'pre_registrations': pre_regs,
         })
         return render(request, 'dashboard/receptionist.html', ctx)
 

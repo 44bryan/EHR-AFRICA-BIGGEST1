@@ -64,22 +64,28 @@
 
 {# ── Stat Cards ─────────────────────────────────────────────────────── #}
 <div class="row g-3 mb-4">
-  <div class="col-4">
+  <div class="col-6 col-sm-3">
     <div class="card border-0 shadow-sm stat-card">
       <div class="num text-warning">{{ waiting_count }}</div>
       <div class="lbl">Waiting</div>
     </div>
   </div>
-  <div class="col-4">
+  <div class="col-6 col-sm-3">
     <div class="card border-0 shadow-sm stat-card">
       <div class="num text-primary">{{ scheduled_count }}</div>
       <div class="lbl">Scheduled</div>
     </div>
   </div>
-  <div class="col-4">
+  <div class="col-6 col-sm-3">
     <div class="card border-0 shadow-sm stat-card">
       <div class="num text-success">{{ checked_in_count }}</div>
       <div class="lbl">Checked In</div>
+    </div>
+  </div>
+  <div class="col-6 col-sm-3">
+    <div class="card border-0 shadow-sm stat-card">
+      <div class="num text-info">{{ registered_today }}</div>
+      <div class="lbl">Registered Today</div>
     </div>
   </div>
 </div>
@@ -243,6 +249,63 @@
     </table>
   </div>
 </div>
+
+{# ── Pre-Registrations ────────────────────────────────────────────────── #}
+{% if pre_registrations %}
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+    <h6 class="fw-bold mb-0">
+      <i class="bi bi-person-check me-2 text-primary"></i>
+      Pre-Registrations Awaiting Arrival
+      <span class="badge bg-primary ms-1">{{ pre_registrations|length }}</span>
+    </h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-3">Code</th>
+          <th>Name</th>
+          <th class="col-hide-sm">Phone</th>
+          <th class="col-hide-sm">Visit Date</th>
+          <th>Status</th>
+          <th style="width:130px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pr in pre_registrations %}
+        <tr>
+          <td class="ps-3">
+            <span class="badge bg-secondary-subtle text-secondary small fw-semibold">{{ pr.code }}</span>
+          </td>
+          <td>
+            <div class="fw-semibold small">{{ pr.data.first_name|default:'' }} {{ pr.data.last_name|default:'' }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ pr.data.email|default:'' }}</div>
+          </td>
+          <td class="col-hide-sm small text-muted">{{ pr.data.phone|default:'—' }}</td>
+          <td class="col-hide-sm small text-muted">
+            {% if pr.visit_date %}{{ pr.visit_date|date:"d M Y" }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if pr.status == 'ARRIVED' %}
+              <span class="badge bg-success">Arrived</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% endif %}
+          </td>
+          <td class="pe-3">
+            <a href="{% url 'patients:register' %}?prereg={{ pr.code }}"
+               class="btn btn-sm btn-outline-primary w-100" hx-boost="false">
+              <i class="bi bi-person-plus me-1"></i>Register
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {% endblock %}
 
