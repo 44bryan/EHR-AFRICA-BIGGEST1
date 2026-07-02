@@ -1,125 +1,31 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Monthly Statistics — {{ period_start|date:"F Y" }}{% endblock %}
-
-{% block extra_css %}
-<style>
-/* ══ Grid ══════════════════════════════════════════════════════════════════ */
-.stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.stats-grid .span-2 { grid-column:span 2; }
-@media(max-width:768px){ .stats-grid{grid-template-columns:1fr;} .stats-grid .span-2{grid-column:span 1;} }
-
-/* ══ Section cards ═════════════════════════════════════════════════════════ */
-.stat-card {
-  border-radius:14px; overflow:hidden;
-  box-shadow:0 2px 12px rgba(0,0,0,.06);
-  border:1px solid #e2e8f0;
-  background:#fff;
-}
-.stat-card-header {
-  padding:10px 18px;
-  display:flex; align-items:center; gap:10px;
-  font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
-}
-.stat-card-header .sec-icon {
-  width:28px; height:28px; border-radius:8px;
-  display:flex; align-items:center; justify-content:center;
-  font-size:.9rem; flex-shrink:0;
-}
-.stat-card-body { padding:16px 18px; }
-
-/* ══ Section color themes ══════════════════════════════════════════════════ */
-.theme-blue   .stat-card-header { background:linear-gradient(90deg,#eff6ff,#dbeafe); color:#1d4ed8; border-bottom:2px solid #bfdbfe; }
-.theme-blue   .stat-card-header .sec-icon { background:#2563eb; color:#fff; }
-.theme-green  .stat-card-header { background:linear-gradient(90deg,#f0fdf4,#dcfce7); color:#15803d; border-bottom:2px solid #bbf7d0; }
-.theme-green  .stat-card-header .sec-icon { background:#16a34a; color:#fff; }
-.theme-orange .stat-card-header { background:linear-gradient(90deg,#fff7ed,#fed7aa); color:#c2410c; border-bottom:2px solid #fdba74; }
-.theme-orange .stat-card-header .sec-icon { background:#ea580c; color:#fff; }
-.theme-purple .stat-card-header { background:linear-gradient(90deg,#fdf4ff,#f3e8ff); color:#7e22ce; border-bottom:2px solid #e9d5ff; }
-.theme-purple .stat-card-header .sec-icon { background:#9333ea; color:#fff; }
-.theme-cyan   .stat-card-header { background:linear-gradient(90deg,#ecfeff,#cffafe); color:#0e7490; border-bottom:2px solid #a5f3fc; }
-.theme-cyan   .stat-card-header .sec-icon { background:#0891b2; color:#fff; }
-.theme-emerald .stat-card-header { background:linear-gradient(90deg,#ecfdf5,#a7f3d0); color:#065f46; border-bottom:2px solid #6ee7b7; }
-.theme-emerald .stat-card-header .sec-icon { background:#059669; color:#fff; }
-.theme-amber  .stat-card-header { background:linear-gradient(90deg,#fffbeb,#fde68a); color:#92400e; border-bottom:2px solid #fcd34d; }
-.theme-amber  .stat-card-header .sec-icon { background:#d97706; color:#fff; }
-.theme-slate  .stat-card-header { background:linear-gradient(90deg,#f8fafc,#e2e8f0); color:#334155; border-bottom:2px solid #cbd5e1; }
-.theme-slate  .stat-card-header .sec-icon { background:#475569; color:#fff; }
-
-/* ══ Big numbers ═══════════════════════════════════════════════════════════ */
-.metric-block { text-align:center; padding:8px 4px; }
-.metric-block .val {
-  font-size:2rem; font-weight:900; line-height:1;
-  background:linear-gradient(135deg, #0f172a, #1e40af);
-  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-}
-.metric-block .lbl { font-size:.68rem; color:#64748b; margin-top:4px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
-.metric-block.success .val { background:linear-gradient(135deg,#065f46,#16a34a); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-.metric-block.warning .val { background:linear-gradient(135deg,#92400e,#d97706); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-.metric-block.danger  .val { background:linear-gradient(135deg,#991b1b,#dc2626); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-.metric-block.purple  .val { background:linear-gradient(135deg,#581c87,#9333ea); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-
-/* ══ Stat tables ═══════════════════════════════════════════════════════════ */
-.st { width:100%; border-collapse:collapse; font-size:.78rem; }
-.st thead th { font-size:.65rem; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; background:#f8fafc; padding:5px 10px; border-bottom:2px solid #e2e8f0; }
-.st td { padding:5px 10px; border-bottom:1px solid #f1f5f9; }
-.st tbody tr:last-child td { border-bottom:none; }
-.st .val-cell { font-weight:700; text-align:right; }
-.st tbody tr:hover { background:#f8fafc; }
-
-/* ══ Progress bars ═════════════════════════════════════════════════════════ */
-.mini-bar { height:5px; border-radius:99px; background:#e2e8f0; margin-top:4px; }
-.mini-bar-fill { height:100%; border-radius:99px; }
-
-/* ══ Pills ═════════════════════════════════════════════════════════════════ */
-.tag { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:99px; font-size:.72rem; font-weight:600; background:#f1f5f9; color:#334155; margin:2px; }
-
-/* ══ Divider label ═════════════════════════════════════════════════════════ */
-.sub-label { font-size:.67rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#94a3b8; margin:10px 0 6px; }
-
-/* ══ Print ═════════════════════════════════════════════════════════════════ */
-@media print {
-  #sidebar, #sidebar-backdrop, .topbar, .navbar, .no-print,
-  nav, .btn, .breadcrumb, .page_header_block { display:none !important; }
-  #page-content-wrapper { margin:0 !important; padding:0 !important; width:100% !important; }
-  #wrapper { display:block !important; }
-  body { background:#fff !important; font-size:9pt; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .stats-grid { grid-template-columns:1fr 1fr !important; gap:8px !important; }
-  .stats-grid .span-2 { grid-column:span 2 !important; }
-  .stat-card { box-shadow:none !important; break-inside:avoid; border:1px solid #e2e8f0 !important; }
-  .print-header { display:block !important; text-align:center; margin-bottom:16px; padding-bottom:12px; border-bottom:2px solid #1d4ed8; }
-  .metric-block .val { font-size:1.4rem !important; -webkit-text-fill-color:inherit !important; color:#0f172a !important; }
-  .stat-card-header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-}
-.print-header { display:none; }
-</style>
-{% endblock %}
+{% block title %}Monthly Report — {{ period_start|date:"F Y" }}{% endblock %}
 
 {% block page_header %}
-<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap no-print">
-  <div class="d-flex align-items-center gap-3">
-    <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#1d4ed8,#7c3aed);display:flex;align-items:center;justify-content:center;">
-      <i class="bi bi-file-bar-graph-fill text-white fs-5"></i>
-    </div>
-    <div>
-      <h5 class="mb-0 fw-bold">Monthly Statistics Report</h5>
-      <div class="text-muted small">{{ period_start|date:"d F" }} – {{ period_end|date:"d F Y" }} &nbsp;·&nbsp; {{ hospital_name|default:"Hospital" }}</div>
-    </div>
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-file-bar-graph me-2 text-primary"></i>Monthly Performance Report</h5>
+    <div class="text-muted small">{{ period_start|date:"d F" }} — {{ period_end|date:"d F Y" }}</div>
   </div>
-  <div class="d-flex gap-2 align-items-center flex-wrap">
-    <form method="get" class="d-flex gap-1 align-items-center">
+  <div class="d-flex gap-2 flex-wrap align-items-center">
+    <form method="get" class="d-flex gap-2 align-items-center">
       <select name="month" class="form-select form-select-sm" style="width:130px;">
-        {% for m in months %}<option value="{{ m.value }}" {% if m.value == month %}selected{% endif %}>{{ m.label }}</option>{% endfor %}
+        {% for m in months %}
+        <option value="{{ m.value }}" {% if m.value == month %}selected{% endif %}>{{ m.label }}</option>
+        {% endfor %}
       </select>
       <select name="year" class="form-select form-select-sm" style="width:90px;">
-        {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+        {% for y in years %}
+        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
       </select>
-      <button type="submit" class="btn btn-sm btn-primary">Go</button>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Apply</button>
     </form>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Print / PDF
+    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-printer me-1"></i>Print
     </button>
-    <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <a href="{% url 'dashboard:home' %}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
   </div>
@@ -128,370 +34,541 @@
 
 {% block content %}
 
-<!-- Print-only header -->
-<div class="print-header">
-  <div style="font-size:13pt;font-weight:900;color:#1d4ed8;">{{ hospital_name|default:"Hospital" }}</div>
-  <div style="font-size:11pt;font-weight:700;margin-top:4px;">Monthly Clinical &amp; Operational Statistics</div>
-  <div style="font-size:9pt;color:#475569;margin-top:2px;">{{ period_start|date:"d F" }} – {{ period_end|date:"d F Y" }}</div>
-</div>
-
-<div class="stats-grid">
-
-<!-- ① Patient Volume ─────────────────────────────────────────────────────── -->
-<div class="stat-card span-2 theme-blue">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-people-fill"></i></span>
-    <span>1 — Patient Volume</span>
-    <span class="ms-auto" style="font-size:.7rem;opacity:.7;">{{ period_start|date:"F Y" }}</span>
-  </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center mb-3">
-      <div class="col-4 border-end">
-        <div class="metric-block">
-          <div class="val">{{ total_visits|intcomma }}</div>
-          <div class="lbl">Total Visits</div>
-        </div>
-      </div>
-      <div class="col-4 border-end">
-        <div class="metric-block success">
-          <div class="val">{{ new_patients|intcomma }}</div>
-          <div class="lbl">New Patients</div>
-        </div>
-      </div>
-      <div class="col-4">
-        <div class="metric-block">
-          <div class="val">{{ returning|intcomma }}</div>
-          <div class="lbl">Follow-Up</div>
-        </div>
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 1 — Overall Volume                                            #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Patient Volume</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">TOTAL VISITS</div>
+        <div class="fs-4 fw-bold text-primary">{{ total_visits|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">all encounters</div>
       </div>
     </div>
-    <div class="row g-3">
-      <div class="col-md-6">
-        <div class="sub-label">By Service Tier</div>
-        <table class="st">
-          <thead><tr><th>Tier</th><th class="text-end">Patients</th><th style="width:80px;"></th></tr></thead>
-          <tbody>
-            {% for t in tier_breakdown %}
-            <tr>
-              <td>{{ t.service_tier }}</td>
-              <td class="val-cell">{{ t.count }}</td>
-              <td><div class="mini-bar"><div class="mini-bar-fill bg-primary" style="width:{% widthratio t.count total_visits 100 %}%"></div></div></td>
-            </tr>
-            {% empty %}<tr><td colspan="3" class="text-muted text-center">No data</td></tr>{% endfor %}
-          </tbody>
-        </table>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">NEW PATIENTS</div>
+        <div class="fs-4 fw-bold text-success">{{ new_patients|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">first-time visits</div>
       </div>
-      <div class="col-md-6">
-        <div class="sub-label">By Billing Type</div>
-        <table class="st">
-          <thead><tr><th>Type</th><th class="text-end">Patients</th><th style="width:80px;"></th></tr></thead>
-          <tbody>
-            {% for b in billing_breakdown %}
-            <tr>
-              <td>{{ b.billing_type }}</td>
-              <td class="val-cell">{{ b.count }}</td>
-              <td><div class="mini-bar"><div class="mini-bar-fill" style="width:{% widthratio b.count total_visits 100 %}%;background:#7c3aed;"></div></div></td>
-            </tr>
-            {% empty %}<tr><td colspan="3" class="text-muted text-center">No data</td></tr>{% endfor %}
-          </tbody>
-        </table>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">RETURN VISITS</div>
+        <div class="fs-4 fw-bold text-warning">{{ returning|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">follow-up / review</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4" style="border-color:#6366f1 !important;">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">CONSULTATIONS</div>
+        <div class="fs-4 fw-bold" style="color:#6366f1;">{{ total_consults|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">completed</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ② Consultations ──────────────────────────────────────────────────────── -->
-<div class="stat-card span-2 theme-green">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-clipboard2-pulse-fill"></i></span>
-    <span>2 — Consultations</span>
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 2 — Visit Type Breakdown                                      #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Visit Type Breakdown</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-5 fw-bold text-success">{{ new_patients|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-person-plus me-1"></i>New</div>
+    </div>
   </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center mb-3">
-      <div class="col-12">
-        <div class="metric-block success">
-          <div class="val">{{ total_consults|intcomma }}</div>
-          <div class="lbl">Total Consultations</div>
-        </div>
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-5 fw-bold text-primary">{{ followup_visits|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-arrow-repeat me-1"></i>Follow-up</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-5 fw-bold text-danger">{{ emergency_visits|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-exclamation-triangle me-1"></i>Emergency</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-5 fw-bold text-warning">{{ review_visits|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-eye me-1"></i>Review</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-5 fw-bold" style="color:#8b5cf6;">{{ procedure_visits|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-clipboard-pulse me-1"></i>Procedure</div>
+    </div>
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 3 — Service Tier Counts                                       #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Service Tier Breakdown</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-secondary">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">STANDARD</div>
+        <div class="fs-3 fw-bold text-secondary">{{ tier_standard|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">patients</div>
       </div>
     </div>
-    <div class="row g-3">
-      <div class="col-md-6">
-        <div class="sub-label">By Department</div>
-        <table class="st">
-          <thead><tr><th>Department</th><th class="text-end">Count</th><th style="width:80px;"></th></tr></thead>
-          <tbody>
-            {% for d in dept_consults %}
-            <tr>
-              <td>{{ d.department__name|default:"General OPD" }}</td>
-              <td class="val-cell">{{ d.count }}</td>
-              <td><div class="mini-bar"><div class="mini-bar-fill bg-success" style="width:{% widthratio d.count total_consults 100 %}%"></div></div></td>
-            </tr>
-            {% empty %}<tr><td colspan="3" class="text-muted text-center">No data</td></tr>{% endfor %}
-          </tbody>
-        </table>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">EXPRESS</div>
+        <div class="fs-3 fw-bold text-success">{{ tier_express|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">patients</div>
       </div>
-      <div class="col-md-6">
-        <div class="sub-label">Doctor Throughput (Top 10)</div>
-        <table class="st">
-          <thead><tr><th>Doctor</th><th class="text-end">Consults</th><th style="width:80px;"></th></tr></thead>
-          <tbody>
-            {% for d in doctor_consults %}
-            <tr>
-              <td>Dr. {{ d.consulting_doctor__first_name }} {{ d.consulting_doctor__last_name }}</td>
-              <td class="val-cell">{{ d.count }}</td>
-              <td><div class="mini-bar"><div class="mini-bar-fill bg-success" style="width:{% widthratio d.count doctor_consults.0.count 100 %}%"></div></div></td>
-            </tr>
-            {% empty %}<tr><td colspan="3" class="text-muted text-center">No data</td></tr>{% endfor %}
-          </tbody>
-        </table>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">FAST TRACK</div>
+        <div class="fs-3 fw-bold text-warning">{{ tier_fast|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">patients</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4" style="border-color:#7c3aed !important;">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">VIP</div>
+        <div class="fs-3 fw-bold" style="color:#7c3aed;">{{ tier_vip|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">patients</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ③ Surgical Activity ──────────────────────────────────────────────────── -->
-<div class="stat-card theme-orange">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-scissors"></i></span>
-    <span>3 — Surgical Activity</span>
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 3b — Billing Type Counts                                      #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Billing Type Breakdown</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">SELF PAY</div>
+        <div class="fs-3 fw-bold text-success">{{ bt_self_pay|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">cash / card</div>
+      </div>
+    </div>
   </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center mb-3">
-      <div class="col-4 border-end">
-        <div class="metric-block warning">
-          <div class="val">{{ total_surgery_prescribed|intcomma }}</div>
-          <div class="lbl">Prescribed</div>
-        </div>
-      </div>
-      <div class="col-4 border-end">
-        <div class="metric-block">
-          <div class="val">{{ total_surgery_paid|intcomma }}</div>
-          <div class="lbl">Confirmed</div>
-        </div>
-      </div>
-      <div class="col-4">
-        <div class="metric-block success">
-          <div class="val">{{ total_surgery_done|intcomma }}</div>
-          <div class="lbl">Completed</div>
-        </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">INSURANCE</div>
+        <div class="fs-3 fw-bold text-primary">{{ bt_insurance|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">patients</div>
       </div>
     </div>
-    {% if total_surgery_prescribed %}
-    <div class="mini-bar mb-3">
-      <div class="mini-bar-fill" style="width:{% widthratio total_surgery_done total_surgery_prescribed 100 %}%;background:#ea580c;"></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">HMO / MANAGED</div>
+        <div class="fs-3 fw-bold text-warning">{{ bt_hmo|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">patients</div>
+      </div>
     </div>
-    <div style="font-size:.68rem;color:#64748b;text-align:center;">
-      {% widthratio total_surgery_done total_surgery_prescribed 100 %}% completion rate
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-danger">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">FREE / SUBSIDISED</div>
+        <div class="fs-3 fw-bold text-danger">{{ bt_free|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">patients</div>
+      </div>
     </div>
-    {% endif %}
-    {% if surgery_by_category %}
-    <div class="sub-label mt-3">By Category</div>
-    <div class="d-flex flex-wrap">
-      {% for s in surgery_by_category %}
-      <span class="tag"><i class="bi bi-scissors me-1" style="color:#ea580c;"></i>{{ s.surgery_category }} <strong>{{ s.count }}</strong></span>
-      {% endfor %}
-    </div>
-    {% endif %}
   </div>
 </div>
 
-<!-- ④ IPD Admissions ─────────────────────────────────────────────────────── -->
-<div class="stat-card theme-purple">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-hospital-fill"></i></span>
-    <span>4 — Inpatient Admissions</span>
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 4 — Consultations + Surgery                                   #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Clinical Activity</div>
+<div class="row g-2 mb-3">
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-building me-1 text-primary"></i>Consultations by Department</h6>
+      </div>
+      <div class="card-body py-2"><canvas id="deptChart" height="140"></canvas></div>
+    </div>
   </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center">
-      <div class="col-6 border-end">
-        <div class="metric-block purple">
-          <div class="val">{{ total_admissions|intcomma }}</div>
-          <div class="lbl">Admitted</div>
-        </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-person-badge me-1 text-primary"></i>Top Doctors by Volume</h6>
       </div>
-      <div class="col-6">
-        <div class="metric-block success">
-          <div class="val">{{ discharged|intcomma }}</div>
-          <div class="lbl">Discharged</div>
-        </div>
-      </div>
+      <div class="card-body py-2"><canvas id="doctorChart" height="140"></canvas></div>
     </div>
-    {% if total_admissions %}
-    <div class="mini-bar mt-3">
-      <div class="mini-bar-fill" style="width:{% widthratio discharged total_admissions 100 %}%;background:#9333ea;"></div>
-    </div>
-    <div style="font-size:.68rem;color:#64748b;text-align:center;margin-top:4px;">
-      {% widthratio discharged total_admissions 100 %}% discharge rate
-    </div>
-    {% endif %}
   </div>
-</div>
-
-<!-- ⑤ Laboratory ─────────────────────────────────────────────────────────── -->
-<div class="stat-card theme-cyan">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-eyedropper-fill"></i></span>
-    <span>5 — Laboratory</span>
-  </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center mb-3">
-      <div class="col-4 border-end">
-        <div class="metric-block">
-          <div class="val">{{ total_lab_orders|intcomma }}</div>
-          <div class="lbl">Requests</div>
-        </div>
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-people me-1 text-success"></i>New vs Return</h6>
       </div>
-      <div class="col-4 border-end">
-        <div class="metric-block success">
-          <div class="val">{{ total_lab_tests|intcomma }}</div>
-          <div class="lbl">Tests Done</div>
-        </div>
-      </div>
-      <div class="col-4">
-        <div class="metric-block danger">
-          <div class="val">{{ abnormal_results|intcomma }}</div>
-          <div class="lbl">Abnormal</div>
-        </div>
+      <div class="card-body d-flex align-items-center justify-content-center py-2">
+        <canvas id="visitSplitChart" height="140"></canvas>
       </div>
     </div>
-    {% if lab_by_category %}
-    <div class="sub-label">Tests by Category</div>
-    <div class="d-flex flex-wrap">
-      {% for c in lab_by_category %}
-      <span class="tag"><i class="bi bi-droplet-fill me-1" style="color:#0891b2;"></i>{{ c.test_type__category }} <strong>{{ c.count }}</strong></span>
-      {% endfor %}
-    </div>
-    {% endif %}
   </div>
 </div>
 
-<!-- ⑥ Financial Summary ──────────────────────────────────────────────────── -->
-<div class="stat-card theme-emerald">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-cash-stack"></i></span>
-    <span>6 — Financial Summary</span>
-  </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center mb-3">
-      <div class="col-6 border-end">
-        <div class="metric-block success">
-          <div class="val" style="font-size:1.4rem;">{{ revenue|floatformat:0|intcomma }}</div>
-          <div class="lbl">Revenue (FCFA)</div>
-        </div>
-      </div>
-      <div class="col-6">
-        <div class="metric-block warning">
-          <div class="val" style="font-size:1.4rem;">{{ outstanding|floatformat:0|intcomma }}</div>
-          <div class="lbl">Outstanding (FCFA)</div>
-        </div>
-      </div>
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 5 — Surgery                                                   #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Surgery</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold" style="color:#6366f1;">{{ total_surgery_prescribed|intcomma }}</div>
+      <div class="text-muted small">Booked / Prescribed</div>
     </div>
-    {% if by_method %}
-    <div class="sub-label">By Payment Method</div>
-    <table class="st">
-      <thead><tr><th>Method</th><th class="text-end">Amount (FCFA)</th><th style="width:80px;"></th></tr></thead>
-      <tbody>
-        {% for m in by_method %}
-        <tr>
-          <td>{{ m.payment_method }}</td>
-          <td class="val-cell">{{ m.total|floatformat:0|intcomma }}</td>
-          <td><div class="mini-bar"><div class="mini-bar-fill bg-success" style="width:{% widthratio m.total revenue 100 %}%"></div></div></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-warning">{{ total_surgery_paid|intcomma }}</div>
+      <div class="text-muted small">Deposit Paid</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-success">{{ total_surgery_done|intcomma }}</div>
+      <div class="text-muted small">Completed</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-primary">{{ total_admissions|intcomma }}</div>
+      <div class="text-muted small">IPD Admissions</div>
+    </div>
+  </div>
+</div>
+{% if surgery_by_category %}
+<div class="row g-2 mb-3">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-scissors me-1 text-danger"></i>Surgery by Category</h6>
+      </div>
+      <div class="card-body py-2"><canvas id="surgCatChart" height="110"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-funnel me-1 text-info"></i>Surgery Funnel</h6>
+      </div>
+      <div class="card-body py-2"><canvas id="surgeryFunnelChart" height="110"></canvas></div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="row g-2 mb-3">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-funnel me-1 text-info"></i>Surgery Funnel</h6>
+      </div>
+      <div class="card-body py-2"><canvas id="surgeryFunnelChart" height="80"></canvas></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 6 — Appointments & IPD                                        #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Appointments & Inpatient</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-info">{{ total_appts|intcomma }}</div>
+      <div class="text-muted small">Total Appointments</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-danger">{{ appt_dna|intcomma }}</div>
+      <div class="text-muted small">DNA (No-show)</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-success">{{ discharged|intcomma }}</div>
+      <div class="text-muted small">IPD Discharged</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold {% if total_appts %}text-warning{% else %}text-muted{% endif %}">
+        {% if total_appts %}{% widthratio appt_dna total_appts 100 %}%{% else %}—{% endif %}
+      </div>
+      <div class="text-muted small">DNA Rate</div>
+    </div>
   </div>
 </div>
 
-<!-- ⑦ Patient Satisfaction ───────────────────────────────────────────────── -->
-<div class="stat-card theme-amber">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-emoji-smile-fill"></i></span>
-    <span>7 — Patient Satisfaction (NPS)</span>
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 7 — Laboratory                                                #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Laboratory</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold" style="color:#8b5cf6;">{{ total_lab_orders|intcomma }}</div>
+      <div class="text-muted small">Lab Orders</div>
+    </div>
   </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center mb-2">
-      <div class="col-3 border-end">
-        <div class="metric-block {% if nps >= 50 %}success{% elif nps >= 0 %}warning{% else %}danger{% endif %}">
-          <div class="val">{{ nps }}</div>
-          <div class="lbl">NPS Score</div>
-        </div>
-      </div>
-      <div class="col-3 border-end">
-        <div class="metric-block success">
-          <div class="val">{{ fb_promo }}</div>
-          <div class="lbl">Promoters</div>
-        </div>
-      </div>
-      <div class="col-3 border-end">
-        <div class="metric-block danger">
-          <div class="val">{{ fb_detra }}</div>
-          <div class="lbl">Detractors</div>
-        </div>
-      </div>
-      <div class="col-3">
-        <div class="metric-block warning">
-          <div class="val">{{ avg_rating }}/5</div>
-          <div class="lbl">Avg Rating</div>
-        </div>
-      </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-info">{{ total_lab_tests|intcomma }}</div>
+      <div class="text-muted small">Tests Performed</div>
     </div>
-    {% if fb_promo or fb_detra %}
-    <div class="mini-bar mt-2" style="height:8px;">
-      {% if fb_promo or fb_detra %}
-      {% with total_fb=fb_promo|add:fb_detra %}
-      <div class="mini-bar-fill" style="width:{% widthratio fb_promo total_fb 100 %}%;background:linear-gradient(90deg,#16a34a,#4ade80);height:8px;border-radius:99px;"></div>
-      {% endwith %}
-      {% endif %}
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fs-4 fw-bold text-danger">{{ abnormal_results|intcomma }}</div>
+      <div class="text-muted small">Abnormal Results</div>
     </div>
-    <div class="d-flex justify-content-between mt-1" style="font-size:.65rem;color:#64748b;">
-      <span>Promoters {{ fb_promo }}</span><span>Detractors {{ fb_detra }}</span>
+  </div>
+</div>
+<div class="row g-2 mb-3">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-flask me-1 text-info"></i>Lab Orders vs Tests vs Abnormal</h6>
+      </div>
+      <div class="card-body py-2"><canvas id="labChart" height="70"></canvas></div>
     </div>
-    {% endif %}
   </div>
 </div>
 
-<!-- ⑧ Appointments ───────────────────────────────────────────────────────── -->
-<div class="stat-card theme-slate">
-  <div class="stat-card-header">
-    <span class="sec-icon"><i class="bi bi-calendar-check-fill"></i></span>
-    <span>8 — Appointments</span>
+{# ══════════════════════════════════════════════════════════════════════ #}
+{# SECTION 8 — Financial                                                 #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+<div class="small fw-bold text-muted text-uppercase mb-2" style="letter-spacing:.05em;">Financial Summary</div>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-success">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">REVENUE COLLECTED</div>
+        <div class="fs-4 fw-bold text-success">{{ revenue|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">FCFA</div>
+      </div>
+    </div>
   </div>
-  <div class="stat-card-body">
-    <div class="row g-0 text-center mb-2">
-      <div class="col-6 border-end">
-        <div class="metric-block">
-          <div class="val">{{ total_appts|intcomma }}</div>
-          <div class="lbl">Total Booked</div>
-        </div>
-      </div>
-      <div class="col-6">
-        <div class="metric-block danger">
-          <div class="val">{{ appt_dna|intcomma }}</div>
-          <div class="lbl">Did Not Attend</div>
-        </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-warning">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">OUTSTANDING AR</div>
+        <div class="fs-4 fw-bold text-warning">{{ outstanding|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.7rem;">FCFA receivable</div>
       </div>
     </div>
-    {% if total_appts %}
-    <div class="mini-bar mt-2" style="height:8px;">
-      {% with attended=total_appts|add:"-"|add:appt_dna %}
-      <div class="mini-bar-fill" style="width:{% widthratio attended total_appts 100 %}%;background:#475569;height:8px;border-radius:99px;"></div>
-      {% endwith %}
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-info">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">NPS SCORE</div>
+        <div class="fs-4 fw-bold {% if nps >= 50 %}text-success{% elif nps >= 0 %}text-warning{% else %}text-danger{% endif %}">{{ nps }}</div>
+        <div class="text-muted" style="font-size:.7rem;">{{ fb_total }} responses</div>
+      </div>
     </div>
-    <div style="font-size:.68rem;color:#64748b;text-align:center;margin-top:4px;">
-      DNA rate: {% widthratio appt_dna total_appts 100 %}%
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-body py-2 px-3">
+        <div class="text-muted" style="font-size:.72rem;">AVG RATING</div>
+        <div class="fs-4 fw-bold text-primary">{{ avg_rating }} <small style="font-size:.6em;">/ 5</small></div>
+        <div class="text-muted" style="font-size:.7rem;">patient satisfaction</div>
+      </div>
     </div>
-    {% endif %}
+  </div>
+</div>
+<div class="row g-2 mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-bar-chart me-1 text-success"></i>Revenue by Payment Method (FCFA)</h6>
+      </div>
+      <div class="card-body py-2"><canvas id="revenueMethodChart" height="80"></canvas></div>
+    </div>
   </div>
 </div>
 
-</div>{# /stats-grid #}
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
+<script>
+Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+Chart.defaults.font.size = 10;
+Chart.defaults.plugins.legend.labels.boxWidth = 10;
+Chart.defaults.plugins.legend.labels.padding = 10;
 
-<!-- Print footer -->
-<div class="text-center text-muted small mt-4 d-none d-print-block" style="border-top:1px solid #e2e8f0;padding-top:8px;">
-  Generated by {{ hospital_name|default:"EHR System" }} · {{ today|date:"d F Y, H:i" }} · Confidential
-</div>
+const COLORS = [
+  '#0891b2','#10b981','#f59e0b','#6366f1','#ef4444',
+  '#ec4899','#8b5cf6','#14b8a6','#f97316','#3b82f6',
+];
+
+// 1. Dept Consultations — Horizontal bar
+new Chart(document.getElementById('deptChart'), {
+  type: 'bar',
+  data: {
+    labels: [{% for d in dept_consults %}"{{ d.department__name|default:'Unassigned'|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+    datasets: [{
+      label: 'Consultations',
+      data: [{% for d in dept_consults %}{{ d.count }}{% if not forloop.last %},{% endif %}{% endfor %}],
+      backgroundColor: COLORS, borderWidth: 0, borderRadius: 3,
+    }]
+  },
+  options: {
+    indexAxis: 'y', responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { x: { grid: { color: '#f1f5f9' }, ticks: { precision: 0 } }, y: { grid: { display: false } } }
+  }
+});
+
+// 2. Visit split — Doughnut
+new Chart(document.getElementById('visitSplitChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['New', 'Follow-up', 'Emergency', 'Review', 'Procedure'],
+    datasets: [{
+      data: [{{ new_patients }}, {{ followup_visits }}, {{ emergency_visits }}, {{ review_visits }}, {{ procedure_visits }}],
+      backgroundColor: ['#10b981','#0891b2','#ef4444','#f59e0b','#8b5cf6'],
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true, cutout: '60%',
+    plugins: { legend: { position: 'bottom', labels: { font: { size: 9 } } } }
+  }
+});
+
+// 3. Top doctors — Horizontal bar
+new Chart(document.getElementById('doctorChart'), {
+  type: 'bar',
+  data: {
+    labels: [{% for d in doctor_consults %}"{{ d.consulting_doctor__first_name|escapejs }} {{ d.consulting_doctor__last_name|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+    datasets: [{
+      label: 'Consultations',
+      data: [{% for d in doctor_consults %}{{ d.count }}{% if not forloop.last %},{% endif %}{% endfor %}],
+      backgroundColor: '#6366f1', borderWidth: 0, borderRadius: 3,
+    }]
+  },
+  options: {
+    indexAxis: 'y', responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { x: { grid: { color: '#f1f5f9' }, ticks: { precision: 0 } }, y: { grid: { display: false } } }
+  }
+});
+
+// 4. Surgery funnel — Bar
+new Chart(document.getElementById('surgeryFunnelChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Prescribed', 'Deposit Paid', 'Completed'],
+    datasets: [{
+      data: [{{ total_surgery_prescribed }}, {{ total_surgery_paid }}, {{ total_surgery_done }}],
+      backgroundColor: ['#6366f1', '#f59e0b', '#10b981'],
+      borderWidth: 0, borderRadius: 5,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { precision: 0 } }, x: { grid: { display: false } } }
+  }
+});
+
+{% if surgery_by_category %}
+// 4b. Surgery by category
+new Chart(document.getElementById('surgCatChart'), {
+  type: 'bar',
+  data: {
+    labels: [{% for s in surgery_by_category %}"{{ s.surgery_category|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+    datasets: [{
+      data: [{% for s in surgery_by_category %}{{ s.count }}{% if not forloop.last %},{% endif %}{% endfor %}],
+      backgroundColor: COLORS, borderWidth: 0, borderRadius: 3,
+    }]
+  },
+  options: {
+    indexAxis: 'y', responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { x: { grid: { color: '#f1f5f9' }, ticks: { precision: 0 } }, y: { grid: { display: false } } }
+  }
+});
+{% endif %}
+
+// 5. Revenue by method — Horizontal bar
+new Chart(document.getElementById('revenueMethodChart'), {
+  type: 'bar',
+  data: {
+    labels: [{% for m in by_method %}"{{ m.payment_method|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+    datasets: [{
+      label: 'FCFA',
+      data: [{% for m in by_method %}{{ m.total|floatformat:0 }}{% if not forloop.last %},{% endif %}{% endfor %}],
+      backgroundColor: COLORS, borderWidth: 0, borderRadius: 3,
+    }]
+  },
+  options: {
+    indexAxis: 'y', responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#f1f5f9' }, ticks: { callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'K' : v } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+// 6. Lab summary — Bar
+new Chart(document.getElementById('labChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Orders', 'Tests', 'Abnormal'],
+    datasets: [{
+      data: [{{ total_lab_orders }}, {{ total_lab_tests }}, {{ abnormal_results }}],
+      backgroundColor: ['#8b5cf6', '#0891b2', '#ef4444'],
+      borderWidth: 0, borderRadius: 5,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { precision: 0 } }, x: { grid: { display: false } } }
+  }
+});
+</script>
+
+{% block extra_css %}
+<style>
+@media print {
+  #sidebar, .topbar, .page-header-bar, form, .btn, nav { display: none !important; }
+  #page-content-wrapper { margin: 0 !important; padding: 0 !important; }
+  #wrapper { display: block !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; page-break-inside: avoid; }
+  .col-md-3, .col-md-4, .col-md-6 { width: 50% !important; float: left; }
+  body { font-size: 11px !important; }
+}
+</style>
+{% endblock %}
 
 {% endblock %}

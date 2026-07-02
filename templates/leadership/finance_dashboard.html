@@ -48,7 +48,7 @@
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm border-start border-4 border-warning">
       <div class="card-body py-3">
-        <div class="text-muted small text-uppercase fw-semibold">Outstanding</div>
+        <div class="text-muted small text-uppercase fw-semibold">Unpaid Bills (FCFA)</div>
         <div class="fs-3 fw-bold text-warning">{{ outstanding_total|floatformat:0 }}</div>
         <div class="text-muted" style="font-size:.72rem;">{{ outstanding_count }} unpaid invoice{{ outstanding_count|pluralize }}</div>
       </div>
@@ -61,13 +61,13 @@
   <div class="col-6 col-md-2">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="fs-3 fw-bold text-secondary">{{ invoices_today }}</div>
-      <div class="text-muted small">Invoices Today</div>
+      <div class="text-muted small">Bills Raised Today</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="fs-3 fw-bold text-primary">{{ invoices_month }}</div>
-      <div class="text-muted small">Invoices Month</div>
+      <div class="text-muted small">Bills This Month</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
@@ -85,13 +85,13 @@
   <div class="col-6 col-md-2">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="fs-3 fw-bold text-danger">{{ waiver_count }}</div>
-      <div class="text-muted small">Waivers Month</div>
+      <div class="text-muted small">Fee Waivers (Count)</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="fs-3 fw-bold text-danger">{{ waiver_total|floatformat:0 }}</div>
-      <div class="text-muted small">Waiver Amount</div>
+      <div class="text-muted small">Fee Waivers (FCFA)</div>
     </div>
   </div>
 </div>
@@ -116,27 +116,12 @@
       <div class="card-header bg-white border-bottom py-2">
         <h6 class="fw-semibold mb-0"><i class="bi bi-pie-chart me-1 text-primary"></i>Collections by Method (This Month)</h6>
       </div>
-      <div class="card-body">
-        {% for m in by_method %}
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <span class="small fw-semibold">
-            {% if m.payment_method == 'CASH' %}<i class="bi bi-cash me-1 text-success"></i>Cash
-            {% elif m.payment_method == 'CARD' %}<i class="bi bi-credit-card me-1 text-primary"></i>Card
-            {% elif m.payment_method == 'MOBILE_MONEY' %}<i class="bi bi-phone me-1 text-warning"></i>Mobile Money
-            {% elif m.payment_method == 'TRANSFER' %}<i class="bi bi-bank me-1 text-info"></i>Bank Transfer
-            {% elif m.payment_method == 'INSURANCE' %}<i class="bi bi-shield me-1 text-purple"></i>Insurance
-            {% elif m.payment_method == 'NHIS' %}<i class="bi bi-heart-pulse me-1 text-danger"></i>NHIS
-            {% elif m.payment_method == 'WAIVER' %}<i class="bi bi-gift me-1 text-secondary"></i>Waiver
-            {% else %}{{ m.payment_method }}{% endif %}
-          </span>
-          <div class="text-end">
-            <div class="fw-bold small">{{ m.total|floatformat:0 }}</div>
-            <div class="text-muted" style="font-size:.7rem;">{{ m.count }} payment{{ m.count|pluralize }}</div>
-          </div>
-        </div>
-        {% empty %}
-        <div class="text-muted text-center py-4 small">No payments this month</div>
-        {% endfor %}
+      <div class="card-body d-flex align-items-center justify-content-center">
+        {% if by_method %}
+        <canvas id="methodDonut" height="220"></canvas>
+        {% else %}
+        <div class="text-muted text-center small">No payments this month</div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -163,20 +148,11 @@
         <h6 class="fw-semibold mb-0"><i class="bi bi-tags me-1 text-warning"></i>Revenue by Service Category (This Month)</h6>
       </div>
       <div class="card-body">
-        {% for cat in by_category %}
-        <div class="mb-2">
-          <div class="d-flex justify-content-between small mb-1">
-            <span class="fw-semibold">{{ cat.category|title }}</span>
-            <span class="text-muted">{{ cat.total|floatformat:0 }} FCFA</span>
-          </div>
-          <div class="progress" style="height:6px;">
-            {% widthratio cat.total by_category.0.total 100 as pct %}
-            <div class="progress-bar bg-primary" style="width:{{ pct }}%"></div>
-          </div>
-        </div>
-        {% empty %}
+        {% if by_category %}
+        <canvas id="catBar" height="140"></canvas>
+        {% else %}
         <div class="text-muted text-center py-4 small">No data</div>
-        {% endfor %}
+        {% endif %}
       </div>
     </div>
   </div>
@@ -188,7 +164,7 @@
   <div class="col-lg-6">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
-        <h6 class="fw-semibold mb-0"><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Top Outstanding Invoices</h6>
+        <h6 class="fw-semibold mb-0"><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Largest Unpaid Bills</h6>
         <a href="{% url 'billing:invoice_list' %}?status=ISSUED" class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:2px 8px;">View All</a>
       </div>
       <div class="card-body p-0">
@@ -262,7 +238,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
 <script>
 // Monthly Trend
 new Chart(document.getElementById('monthlyChart'), {
@@ -286,6 +262,35 @@ new Chart(document.getElementById('monthlyChart'), {
   }
 });
 
+// Payment method donut
+{% if by_method %}
+const mLabels2 = [{% for m in by_method %}"{{ m.payment_method }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const mValues2 = [{% for m in by_method %}{{ m.total }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const mColors2 = ['#10b981','#3b82f6','#f59e0b','#06b6d4','#8b5cf6','#ef4444','#6b7280'];
+new Chart(document.getElementById('methodDonut'), {
+  type: 'doughnut',
+  data: { labels: mLabels2, datasets: [{ data: mValues2, backgroundColor: mColors2, borderWidth: 2 }] },
+  options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } } }
+});
+{% endif %}
+
+// Revenue by category bar
+{% if by_category %}
+const catLabels2 = [{% for c in by_category %}"{{ c.category }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+const catValues2 = [{% for c in by_category %}{{ c.total }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const catColors2 = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316'];
+new Chart(document.getElementById('catBar'), {
+  type: 'bar',
+  data: { labels: catLabels2, datasets: [{ label: 'FCFA', data: catValues2, backgroundColor: catColors2, borderRadius: 4 }] },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true, ticks: { callback: v => (v/1000).toFixed(0)+'k' } } }
+  }
+});
+{% endif %}
+
 // Daily Collections
 new Chart(document.getElementById('dailyChart'), {
   type: 'bar',
@@ -305,4 +310,15 @@ new Chart(document.getElementById('dailyChart'), {
   }
 });
 </script>
+{% endblock %}
+{% block extra_css %}
+<style>
+@media print {
+  #sidebar, .topbar, .page-header-bar, form, .btn, nav { display: none !important; }
+  #page-content-wrapper { margin: 0 !important; padding: 0 !important; }
+  #wrapper { display: block !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; page-break-inside: avoid; }
+  body { font-size: 11px !important; }
+}
+</style>
 {% endblock %}

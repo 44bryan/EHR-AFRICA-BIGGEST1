@@ -89,9 +89,9 @@
         </span>
       </div>
       <div class="d-flex gap-2 flex-wrap">
-        {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+        {% if request.user.can_create_consultation and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
         <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-sm btn-outline-primary">
-          <i class="bi bi-pencil me-1"></i>Edit
+          <i class="bi bi-pencil me-1"></i>Edit Notes
         </a>
         {% endif %}
         {% if consultation.status == 'IN_PROGRESS' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
@@ -102,6 +102,41 @@
             <i class="bi bi-check-circle me-1"></i>Complete
           </button>
         </form>
+        {% endif %}
+        {# ── Quick-action: Order / Prescribe ── always visible for clinical staff #}
+        {% if request.user.can_create_consultation or request.user.can_order_investigations %}
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-info dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-plus-circle me-1"></i>Order / Prescribe
+          </button>
+          <ul class="dropdown-menu">
+            {% if request.user.can_create_consultation %}
+            <li>
+              <a class="dropdown-item" href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}">
+                <i class="bi bi-capsule me-2 text-primary"></i>Prescribe Drug
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" href="{% url 'prescriptions:optical_new' consultation_pk=consultation.pk %}">
+                <i class="bi bi-eyeglasses me-2 text-purple"></i>Optical Prescription
+              </a>
+            </li>
+            {% endif %}
+            {% if request.user.can_order_investigations %}
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item" href="{% url 'investigations:order' consultation_pk=consultation.pk %}">
+                <i class="bi bi-search-heart me-2 text-danger"></i>Order Eye Investigation
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" href="{% url 'laboratory:order' consultation_pk=consultation.pk %}">
+                <i class="bi bi-droplet me-2 text-warning"></i>Order Lab Test
+              </a>
+            </li>
+            {% endif %}
+          </ul>
+        </div>
         {% endif %}
         <div class="dropdown">
           <button class="btn btn-sm btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -147,6 +182,12 @@
                 <i class="bi bi-arrow-right-circle me-1"></i>Send Patient
               </button>
             </form>
+            <hr class="my-2">
+            <a href="{% url 'appointments:book' %}?patient={{ consultation.patient.patient_id }}&ref={{ consultation.pk }}"
+               class="btn btn-sm btn-outline-primary w-100">
+              <i class="bi bi-calendar-plus me-1"></i>Book Specialist Appointment
+            </a>
+            <div class="text-muted mt-1" style="font-size:.67rem;">For future-date referrals (Retina, Glaucoma, etc.)</div>
           </div>
         </div>
         {% endif %}
@@ -229,30 +270,24 @@
       <span class="text-muted small">Recorded by nurse before consultation</span>
     </div>
     <div class="d-flex flex-wrap gap-3 small">
-      {% if v.va_re_unaided or v.va_le_unaided %}
+      {% if v.visual_acuity_right or v.visual_acuity_left %}
       <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
         <span class="text-muted" style="font-size:.65rem;">VA (Unaided)</span>
-        <span class="fw-semibold">RE: {{ v.va_re_unaided|default:"—" }} &nbsp; LE: {{ v.va_le_unaided|default:"—" }}</span>
+        <span class="fw-semibold">RE: {{ v.visual_acuity_right|default:"—" }} &nbsp; LE: {{ v.visual_acuity_left|default:"—" }}</span>
       </div>
       {% endif %}
-      {% if v.va_re_ph or v.va_le_ph %}
+      {% if v.intraocular_pressure_right or v.intraocular_pressure_left %}
       <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
-        <span class="text-muted" style="font-size:.65rem;">VA (Pinhole)</span>
-        <span class="fw-semibold">RE: {{ v.va_re_ph|default:"—" }} &nbsp; LE: {{ v.va_le_ph|default:"—" }}</span>
-      </div>
-      {% endif %}
-      {% if v.iop_re or v.iop_le %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if v.iop_re|add:0 > 21 or v.iop_le|add:0 > 21 %}bg-danger bg-opacity-10{% else %}bg-light{% endif %}">
         <span class="text-muted" style="font-size:.65rem;">IOP (mmHg)</span>
-        <span class="fw-semibold {% if v.iop_re|add:0 > 21 or v.iop_le|add:0 > 21 %}text-danger{% endif %}">
-          RE: {{ v.iop_re|default:"—" }} &nbsp; LE: {{ v.iop_le|default:"—" }}
+        <span class="fw-semibold">
+          RE: {{ v.intraocular_pressure_right|default:"—" }} &nbsp; LE: {{ v.intraocular_pressure_left|default:"—" }}
         </span>
       </div>
       {% endif %}
-      {% if v.bp_systolic %}
+      {% if v.blood_pressure %}
       <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
         <span class="text-muted" style="font-size:.65rem;">Blood Pressure</span>
-        <span class="fw-semibold">{{ v.bp_systolic }}/{{ v.bp_diastolic }} mmHg</span>
+        <span class="fw-semibold">{{ v.blood_pressure }} mmHg</span>
       </div>
       {% endif %}
       {% if v.pulse %}
@@ -669,7 +704,7 @@
     </div>
     {% endif %}
 
-    {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+    {% if request.user.can_create_consultation %}
     {# ── Inline Quick Prescribe Form ── #}
     <div class="card border-primary border-opacity-25 shadow-sm mb-3">
       <div class="card-header bg-primary bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center">

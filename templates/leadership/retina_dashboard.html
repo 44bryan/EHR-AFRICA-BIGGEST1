@@ -7,9 +7,15 @@
     <h4 class="fw-bold mb-0"><i class="bi bi-eye me-2 text-danger"></i>Retina &amp; Vitreoretinal Outcomes</h4>
     <div class="text-muted small">12-month clinical outcomes summary · as of {{ today|date:"d M Y" }}</div>
   </div>
+  {% if request.user.is_medical_director or request.user.is_ceo or request.user.is_super_admin or request.user.is_admin_director or request.user.is_finance_director %}
   <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm btn-outline-secondary">
     <i class="bi bi-arrow-left me-1"></i>Back to Leadership
   </a>
+  {% else %}
+  <a href="{% url 'dashboard:home' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+  {% endif %}
 </div>
 
 <!-- KPI strip -->
@@ -127,7 +133,7 @@
 </div>
 
 {% if monthly_retina %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
 <script>
 var labels = [{% for r in monthly_retina %}"{{ r.month|date:'M Y' }}"{% if not forloop.last %},{% endif %}{% endfor %}];
 var data   = [{% for r in monthly_retina %}{{ r.n }}{% if not forloop.last %},{% endif %}{% endfor %}];
@@ -154,4 +160,15 @@ new Chart(document.getElementById('retinaChart'), {
 });
 </script>
 {% endif %}
+{% endblock %}
+{% block extra_css %}
+<style>
+@media print {
+  #sidebar, .topbar, .page-header-bar, form, .btn, nav { display: none !important; }
+  #page-content-wrapper { margin: 0 !important; padding: 0 !important; }
+  #wrapper { display: block !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; page-break-inside: avoid; }
+  body { font-size: 11px !important; }
+}
+</style>
 {% endblock %}

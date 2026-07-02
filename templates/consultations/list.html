@@ -1,13 +1,17 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Consultations{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Consultations</h1>
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-clipboard2-pulse me-2 text-primary"></i>Consultations</h4>
+    <div class="text-muted small">Clinical records</div>
+  </div>
 </div>
 
-<!-- Filters -->
+<!-- Filters + Table -->
 <div class="card border-0 shadow-sm mb-3">
-  <div class="card-body">
+  <div class="card-body py-2">
     <form method="get" class="row g-2">
       <div class="col-md-4">
         <select name="department" class="form-select form-select-sm">
@@ -33,9 +37,12 @@
 </div>
 
 <div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom py-2">
+    <h6 class="mb-0 fw-semibold small"><i class="bi bi-list-ul me-2"></i>Recent Consultations (last 50)</h6>
+  </div>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0 align-middle">
+      <table class="table table-hover mb-0 align-middle small">
         <thead class="table-light">
           <tr>
             <th>Patient</th>
@@ -52,12 +59,12 @@
           <tr>
             <td>
               <div class="fw-semibold">{{ c.patient.full_name }}</div>
-              <div class="text-muted small">{{ c.patient.patient_id }}</div>
+              <div class="text-muted" style="font-size:.72rem;">{{ c.patient.patient_id }}</div>
             </td>
             <td>{{ c.department }}</td>
             <td>{{ c.consulting_doctor.full_name|default:"—" }}</td>
-            <td class="small">{{ c.consultation_date|date:"d M Y, H:i" }}</td>
-            <td class="small text-muted">{{ c.presenting_complaint|truncatechars:60 }}</td>
+            <td class="text-muted">{{ c.consultation_date|date:"d M Y, H:i" }}</td>
+            <td class="text-muted">{{ c.presenting_complaint|truncatechars:55 }}</td>
             <td>
               <span class="badge
                 {% if c.status == 'COMPLETED' %}bg-success
@@ -68,7 +75,7 @@
               </span>
             </td>
             <td>
-              <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-secondary">View</a>
+              <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a>
             </td>
           </tr>
           {% empty %}
@@ -84,4 +91,56 @@
     </div>
   </div>
 </div>
+
+{% block extra_js %}
+<script>
+const palette = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6'];
+
+// 12-month trend
+new Chart(document.getElementById('trendChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ trend_labels|safe }},
+    datasets: [{ label: 'Consultations', data: {{ trend_values|safe }}, backgroundColor: 'rgba(37,99,235,.7)', borderRadius: 4 }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+
+// Status donut
+const sColors = {'COMPLETED':'#10b981','IN_PROGRESS':'#3b82f6','REFERRED':'#f59e0b','PENDING':'#6b7280','CANCELLED':'#111827'};
+const sLabels = {{ stat_labels|safe }};
+new Chart(document.getElementById('statusChart'), {
+  type: 'doughnut',
+  data: { labels: sLabels, datasets: [{ data: {{ stat_values|safe }}, backgroundColor: sLabels.map(l => sColors[l] || '#94a3b8'), borderWidth: 2 }] },
+  options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 9 } } } } }
+});
+
+// By department donut
+new Chart(document.getElementById('deptChart'), {
+  type: 'doughnut',
+  data: { labels: {{ dept_labels|safe }}, datasets: [{ data: {{ dept_values|safe }}, backgroundColor: palette, borderWidth: 2 }] },
+  options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 9 } } } } }
+});
+
+// Doctor throughput horizontal bar
+new Chart(document.getElementById('docChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ doc_labels|safe }},
+    datasets: [{ label: 'Consultations', data: {{ doc_values|safe }}, backgroundColor: 'rgba(245,158,11,.7)', borderRadius: 4 }]
+  },
+  options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+
+// Top diagnoses horizontal bar
+new Chart(document.getElementById('dxChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ dx_labels|safe }},
+    datasets: [{ label: 'Cases', data: {{ dx_values|safe }}, backgroundColor: palette, borderRadius: 4 }]
+  },
+  options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+</script>
+{% endblock %}
 {% endblock %}
