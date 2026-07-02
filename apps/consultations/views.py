@@ -653,6 +653,24 @@ def add_note_view(request, pk):
 
 @login_required
 @require_POST
+def consultation_delete_view(request, pk):
+    """Soft-delete a consultation so the doctor can start fresh."""
+    consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
+    # Only the consulting doctor, medical director, or super admin can delete
+    if (consultation.consulting_doctor != request.user
+            and not request.user.is_medical_director
+            and not request.user.is_super_admin):
+        messages.error(request, 'You do not have permission to delete this consultation.')
+        return redirect('consultations:detail', pk=pk)
+    patient_id = consultation.patient.patient_id
+    consultation.is_deleted = True
+    consultation.save(update_fields=['is_deleted'])
+    messages.success(request, 'Consultation deleted. You can start a new one.')
+    return redirect('patients:detail', patient_id=patient_id)
+
+
+@login_required
+@require_POST
 def save_dept_clinical_view(request, pk):
     """Save department-specific clinical data from the clinical exam tab."""
     consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)

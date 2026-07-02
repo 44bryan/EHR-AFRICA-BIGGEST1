@@ -439,7 +439,7 @@ class User(AbstractUser):
         )
 
     def can_dispense_pharmacy(self):
-        return self.role in (
+        return self.is_super_admin or self.is_executive or self.role in (
             UserRole.PHARMACIST,
             UserRole.MEDICAL_DIRECTOR,
         )

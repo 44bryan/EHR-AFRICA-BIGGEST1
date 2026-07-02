@@ -12,6 +12,7 @@ urlpatterns = [
     path('<uuid:pk>/edit/', views.consultation_edit_view, name='edit'),
     path('<uuid:pk>/complete/', views.consultation_complete_view, name='complete'),
     path('<uuid:pk>/cosign/', views.cosign_consultation_view, name='cosign'),
+    path('<uuid:pk>/delete/', views.consultation_delete_view, name='delete'),
     path('<uuid:pk>/notes/add/', views.add_note_view, name='add_note'),
     path('<uuid:pk>/clinical-save/', views.save_dept_clinical_view, name='save_clinical'),
     path('<uuid:pk>/exam-update/', views.update_exam_findings_view, name='update_exam'),

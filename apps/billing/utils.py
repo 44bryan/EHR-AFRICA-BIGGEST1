@@ -112,10 +112,11 @@ def bill_dispensing(dispensing, created_by=None):
     items_created = []
     for item in dispensing.items.all():
         drug = item.drug
+        strength = getattr(drug, 'strength', '') or ''
         unit_price = item.unit_price or getattr(drug, 'selling_price', None) or _get_default_fee('pharmacy')
         billing_item = add_billing_item(
             patient=dispensing.patient,
-            description=f'Pharmacy — {drug.name} {drug.strength}'.strip(),
+            description=f'Pharmacy — {item.display_name} {strength}'.strip(),
             category=ServiceCategory.PHARMACY,
             quantity=item.quantity_dispensed,
             unit_price=unit_price,

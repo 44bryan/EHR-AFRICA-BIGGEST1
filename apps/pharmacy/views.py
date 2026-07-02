@@ -387,6 +387,59 @@ def add_dispensing_item_ajax(request, dispensing_id):
 
 
 @login_required
+def add_manual_item_ajax(request, dispensing_id):
+    """AJAX: add a non-formulary (Others) drug item to dispensing by name + price."""
+    if not request.user.can_dispense_pharmacy():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
+        return JsonResponse({'error': 'Cannot add items to a completed dispensing'}, status=400)
+
+    drug_name = request.POST.get('drug_name', '').strip()
+    if not drug_name:
+        return JsonResponse({'error': 'Drug name is required'}, status=400)
+    try:
+        qty = int(request.POST.get('qty', 1))
+        from decimal import Decimal, InvalidOperation
+        unit_price = Decimal(request.POST.get('unit_price', '0'))
+    except (ValueError, InvalidOperation):
+        return JsonResponse({'error': 'Invalid quantity or price'}, status=400)
+    if qty <= 0:
+        return JsonResponse({'error': 'Quantity must be at least 1'}, status=400)
+
+    item = DispensingItem.objects.create(
+        dispensing=dispensing,
+        drug=None,
+        custom_drug_name=drug_name,
+        quantity_dispensed=qty,
+        unit_price=unit_price,
+        instructions=request.POST.get('instructions', '').strip(),
+    )
+
+    total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
+    dispensing.total_amount = total
+    dispensing.status = DispensingStatus.PARTIAL
+    dispensing.save(update_fields=['total_amount', 'status'])
+
+    return JsonResponse({
+        'success': True,
+        'item': {
+            'id': str(item.pk),
+            'drug_name': drug_name,
+            'strength': '',
+            'form': 'Other',
+            'batch': '—',
+            'expiry': '',
+            'qty': qty,
+            'unit_price': str(unit_price),
+            'subtotal': str(item.subtotal),
+        },
+        'new_total': str(total),
+        'interactions': [],
+    })
+
+
+@login_required
 def remove_dispensing_item_ajax(request, dispensing_id, item_id):
     """AJAX: remove a drug item from an open dispensing and restore stock."""
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
@@ -446,7 +499,7 @@ def dispensing_detail(request, dispensing_id):
     # Drug interaction check
     try:
         from apps.prescriptions.models import DrugInteraction
-        drug_names = [item.drug.name for item in dispensing.items.all()]
+        drug_names = [item.display_name for item in dispensing.items.all()]
         ctx['drug_interactions'] = DrugInteraction.find_interactions(drug_names)
     except Exception:
         ctx['drug_interactions'] = []

@@ -164,9 +164,11 @@
             </tbody>
           </table>
         </div>
-        <div class="px-3 py-2 border-top bg-light" style="font-size:.78rem;">
-          <i class="bi bi-info-circle me-1 text-secondary"></i>
-          Click <strong>Fill</strong> to pre-load a line into the dispense form below. Verify stock, quantity and price before adding.
+        <div class="px-3 py-2 border-top bg-light d-flex align-items-center justify-content-between flex-wrap gap-2" style="font-size:.78rem;">
+          <span><i class="bi bi-info-circle me-1 text-secondary"></i>Click <strong>Fill</strong> to add one drug, or <strong>Fill All Rx</strong> to add every formulary drug at once.</span>
+          <button type="button" class="btn btn-sm btn-primary" id="fillAllRxBtn">
+            <i class="bi bi-lightning-fill me-1"></i>Fill All Rx
+          </button>
         </div>
       </div>
     </div>
@@ -250,8 +252,38 @@
     {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
     {% if request.user.can_dispense_pharmacy %}
     <div class="card border-0 shadow-sm" id="add-item-card">
-      <div class="card-header bg-white border-bottom py-2">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
         <h6 class="fw-semibold mb-0"><i class="bi bi-plus-circle me-1 text-secondary"></i>Add Drug</h6>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="toggleManualBtn">
+          <i class="bi bi-pencil me-1"></i>Add Non-Formulary Drug
+        </button>
+      </div>
+      {# ── Manual / Non-Formulary drug entry ── #}
+      <div id="manual-drug-panel" class="d-none border-bottom px-3 py-3 bg-light">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Drug Name <span class="text-danger">*</span></label>
+            <input type="text" id="manual-drug-name" class="form-control form-control-sm" placeholder="e.g. Chloroquine 150mg">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small fw-semibold">Qty</label>
+            <input type="number" id="manual-drug-qty" class="form-control form-control-sm" value="1" min="1">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Unit Price (FCFA)</label>
+            <input type="number" id="manual-drug-price" class="form-control form-control-sm" placeholder="0" min="0">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Instructions</label>
+            <input type="text" id="manual-drug-instr" class="form-control form-control-sm" placeholder="e.g. 1 drop OD BD">
+          </div>
+          <div class="col-12">
+            <button type="button" class="btn btn-sm btn-success" id="addManualBtn">
+              <i class="bi bi-plus me-1"></i>Add to Basket
+            </button>
+            <span id="manual-drug-feedback" class="ms-2 small text-danger d-none"></span>
+          </div>
+        </div>
       </div>
       <div class="card-body">
 
@@ -519,6 +551,7 @@
 const CSRF = '{{ csrf_token }}';
 const SEARCH_URL  = '{% url "pharmacy:drug_search_ajax" %}';
 const ADD_URL     = '{% url "pharmacy:add_dispensing_item_ajax" dispensing_id=dispensing.id %}';
+const MANUAL_URL  = '{% url "pharmacy:add_manual_item_ajax" dispensing_id=dispensing.id %}';
 const STOCK_URL   = '{% url "pharmacy:drug_stock_ajax" %}';
 const dispStatus  = '{{ dispensing.status }}';
 
@@ -887,6 +920,89 @@ function validatePayment() {
     return false;
   }
   return confirm('Confirm: collect payment and dispense drugs to patient?');
+}
+
+// ── Fill All Rx ────────────────────────────────────────────────────────────
+const fillAllBtn = document.getElementById('fillAllRxBtn');
+if (fillAllBtn) {
+  fillAllBtn.addEventListener('click', async function () {
+    const btns = document.querySelectorAll('.rx-quick-add');
+    if (!btns.length) return;
+    fillAllBtn.disabled = true;
+    fillAllBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Filling…';
+    for (const btn of btns) {
+      const name  = btn.dataset.name;
+      const qty   = btn.dataset.qty;
+      const instr = btn.dataset.instr;
+      try {
+        const r = await fetch(SEARCH_URL + '?q=' + encodeURIComponent(name));
+        const data = await r.json();
+        if (data.drugs && data.drugs.length > 0) {
+          const drug = data.drugs[0];
+          const fd = new FormData();
+          fd.append('drug_id', drug.id);
+          fd.append('qty', qty || 1);
+          fd.append('unit_price', drug.price);
+          fd.append('instructions', instr || '');
+          const addR = await fetch(ADD_URL, { method: 'POST', headers: {'X-CSRFToken': CSRF}, body: fd });
+          const addData = await addR.json();
+          if (addData.success) {
+            runningTotal = parseFloat(addData.new_total);
+            appendItemRow(addData.item);
+            updateRunningTotal(runningTotal);
+            itemCount++;
+          }
+        } else {
+          // Not in formulary — skip silently (pharmacist can add manually)
+          console.log('Not in formulary, skipped: ' + name);
+        }
+      } catch(e) { console.error(e); }
+    }
+    fillAllBtn.disabled = false;
+    fillAllBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Done';
+    setTimeout(() => { fillAllBtn.innerHTML = '<i class="bi bi-lightning-fill me-1"></i>Fill All Rx'; }, 2000);
+  });
+}
+
+// ── Manual (non-formulary) drug entry ─────────────────────────────────────
+const toggleManualBtn = document.getElementById('toggleManualBtn');
+const manualPanel = document.getElementById('manual-drug-panel');
+if (toggleManualBtn && manualPanel) {
+  toggleManualBtn.addEventListener('click', function () {
+    manualPanel.classList.toggle('d-none');
+    document.getElementById('manual-drug-name')?.focus();
+  });
+}
+const addManualBtn = document.getElementById('addManualBtn');
+if (addManualBtn) {
+  addManualBtn.addEventListener('click', function () {
+    const nameEl  = document.getElementById('manual-drug-name');
+    const qtyEl   = document.getElementById('manual-drug-qty');
+    const priceEl = document.getElementById('manual-drug-price');
+    const instrEl = document.getElementById('manual-drug-instr');
+    const fbEl    = document.getElementById('manual-drug-feedback');
+    if (!nameEl.value.trim()) { fbEl.textContent='Drug name is required'; fbEl.classList.remove('d-none'); return; }
+    fbEl.classList.add('d-none');
+    const fd = new FormData();
+    fd.append('drug_name', nameEl.value.trim());
+    fd.append('qty', qtyEl.value || 1);
+    fd.append('unit_price', priceEl.value || 0);
+    fd.append('instructions', instrEl.value || '');
+    fetch(MANUAL_URL, { method:'POST', headers:{'X-CSRFToken': CSRF}, body:fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          runningTotal = parseFloat(data.new_total);
+          appendItemRow(data.item);
+          updateRunningTotal(runningTotal);
+          itemCount++;
+          nameEl.value=''; qtyEl.value=1; priceEl.value=''; instrEl.value='';
+          manualPanel.classList.add('d-none');
+        } else {
+          fbEl.textContent = data.error || 'Failed to add'; fbEl.classList.remove('d-none');
+        }
+      });
+  });
 }
 
 // ── Prescription quick-fill ────────────────────────────────────────────────

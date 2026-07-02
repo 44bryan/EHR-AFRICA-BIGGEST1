@@ -13,6 +13,7 @@ urlpatterns = [
     path('drugs/stock-ajax/', views.drug_stock_ajax, name='drug_stock_ajax'),
     path('drugs/search/', views.drug_search_ajax, name='drug_search_ajax'),
     path('dispensing/<uuid:dispensing_id>/add-item-ajax/', views.add_dispensing_item_ajax, name='add_dispensing_item_ajax'),
+    path('dispensing/<uuid:dispensing_id>/add-manual-ajax/', views.add_manual_item_ajax, name='add_manual_item_ajax'),
     path('dispensing/<uuid:dispensing_id>/remove-item/<uuid:item_id>/', views.remove_dispensing_item_ajax, name='remove_dispensing_item_ajax'),
     path('dispense/', views.dispense, name='dispense'),
     path('dispensing/', views.dispensing_list, name='dispensing_list'),

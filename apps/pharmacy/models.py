@@ -146,12 +146,21 @@ class Dispensing(AuditModel):
 class DispensingItem(TimeStampedModel):
     """Individual drug item within a dispensing record"""
     dispensing = models.ForeignKey(Dispensing, on_delete=models.CASCADE, related_name='items')
-    drug = models.ForeignKey(Drug, on_delete=models.PROTECT)
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, null=True, blank=True)
+    custom_drug_name = models.CharField(max_length=200, blank=True,
+                                        help_text='Used when drug is not in the formulary (Others)')
     stock_batch = models.ForeignKey(DrugStock, null=True, blank=True, on_delete=models.SET_NULL)
     quantity_dispensed = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     subtotal = models.DecimalField(max_digits=12, decimal_places=2)
     instructions = models.TextField(blank=True)
+
+    @property
+    def display_name(self):
+        """Drug name for display and billing."""
+        if self.drug:
+            return self.drug.name
+        return self.custom_drug_name or 'Non-formulary Drug'
 
     def save(self, *args, **kwargs):
         self.subtotal = self.quantity_dispensed * self.unit_price
