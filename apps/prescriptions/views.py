@@ -203,14 +203,14 @@ def optical_prescription_new(request, consultation_pk):
             if visit:
                 ref_consult = _C.objects.filter(
                     visit=visit,
-                    consulting_doctor__role='refractionist',
+                    consulting_doctor__role__in=['optometrist', 'pediatric_refractionist', 'orthoptist'],
                     is_deleted=False,
                 ).order_by('-consultation_date').first()
                 if not ref_consult:
-                    # Also accept orthoptist
+                    # Fall back to any REFRAC/PEDS_REFRAC dept consultation this visit
                     ref_consult = _C.objects.filter(
                         visit=visit,
-                        consulting_doctor__role='orthoptist',
+                        department__code__in=['REFRAC', 'PEDS_REFRAC'],
                         is_deleted=False,
                     ).order_by('-consultation_date').first()
                 if ref_consult:
