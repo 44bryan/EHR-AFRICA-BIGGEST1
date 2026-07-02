@@ -1,140 +1,292 @@
-{% extends "layouts/base_authenticated.html" %}
-{% block title %}Receipt — {{ dispensing.dispensing_number }}{% endblock %}
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pharmacy Receipt — {{ dispensing.dispensing_number }}</title>
+  <style>
+    /* ── Print-clean styles (mirrors billing/receipt.html) ── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-{% block extra_css %}
-<style>
-@media print {
-  .no-print { display: none !important; }
-  body { font-size: 12px; }
-  .receipt-box { border: 1px solid #ccc !important; }
-  .drug-label { border: 1px dashed #666 !important; page-break-inside: avoid; }
-}
-.receipt-header { background: #0f172a; color: #fff; border-radius: 10px; padding: 18px 22px; }
-.drug-label {
-  border: 2px dashed #1d4ed8;
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  background: #f8faff;
-}
-.drug-label .drug-name { font-size: 1rem; font-weight: 700; color: #1e3a5f; }
-.drug-label .drug-instr { font-size: .82rem; color: #374151; margin-top: 4px; }
-.drug-label .drug-meta { font-size: .7rem; color: #6b7280; margin-top: 6px; }
-</style>
-{% endblock %}
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
 
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center no-print">
-  <h5 class="fw-bold mb-0"><i class="bi bi-receipt me-2 text-success"></i>Dispensing Receipt</h5>
-  <div class="d-flex gap-2">
-    <a href="{% url 'pharmacy:dispensing_detail' dispensing_id=dispensing.id %}" class="btn btn-outline-secondary btn-sm no-print">
-      <i class="bi bi-arrow-left me-1"></i>Back
-    </a>
-    <button onclick="window.print()" class="btn btn-primary btn-sm no-print">
-      <i class="bi bi-printer me-1"></i>Print Receipt
-    </button>
+    .receipt-wrapper {
+      background: #fff;
+      width: 340px;
+      padding: 24px 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      border-radius: 4px;
+    }
+
+    .header { text-align: center; margin-bottom: 12px; }
+    .header .hospital-name {
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .header .hospital-sub { font-size: 11px; color: #555; margin-top: 2px; }
+    .header .receipt-type {
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 6px;
+      color: #155724;
+    }
+
+    .divider       { border: none; border-top: 1px dashed #aaa; margin: 10px 0; }
+    .divider-solid { border: none; border-top: 2px solid #333;  margin: 10px 0; }
+
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .meta-row .label { color: #555; }
+    .meta-row .value { font-weight: bold; }
+
+    .section-title {
+      text-align: center;
+      font-weight: bold;
+      letter-spacing: 1px;
+      font-size: 12px;
+      margin: 8px 0 4px;
+      text-transform: uppercase;
+    }
+
+    /* Drug item block */
+    .drug-block  { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dotted #ccc; }
+    .drug-block:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .drug-name   { font-weight: bold; }
+    .drug-detail { font-size: 11px; color: #555; margin-top: 2px; }
+    .drug-price  { display: flex; justify-content: space-between; font-size: 12px; margin-top: 3px; }
+    .drug-price .subtotal { font-weight: bold; }
+    .drug-instr  { font-size: 10px; color: #444; margin-top: 3px; font-style: italic; }
+
+    .totals-section { margin-top: 4px; }
+    .totals-section .total-row {
+      display: flex; justify-content: space-between;
+      margin-bottom: 2px; font-size: 12px;
+    }
+    .grand-total-row {
+      display: flex; justify-content: space-between;
+      font-size: 14px; font-weight: bold;
+      border-top: 1px solid #333;
+      padding-top: 4px; margin-top: 4px;
+    }
+
+    .status-badge {
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      padding: 6px;
+      margin: 8px 0;
+    }
+    .status-dispensed { color: #155724; background: #d4edda; border: 1px solid #c3e6cb; }
+    .status-partial   { color: #856404; background: #fff3cd; border: 1px solid #ffc107; }
+    .status-pending   { color: #721c24; background: #f8d7da; border: 1px solid #f5c6cb; }
+
+    .pharmacist-line { text-align: center; font-size: 11px; color: #666; margin-top: 8px; }
+
+    .footer { text-align: center; margin-top: 12px; font-size: 11px; color: #555; }
+    .footer .thank-you { font-size: 12px; font-weight: bold; color: #333; margin-bottom: 4px; }
+
+    /* Action buttons — screen only */
+    .action-bar {
+      width: 340px;
+      margin-top: 16px;
+      display: flex;
+      gap: 8px;
+    }
+    .btn-print {
+      flex: 1;
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-print:hover { background: #1e40af; }
+    .btn-back {
+      flex: 1;
+      background: #6b7280;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      text-decoration: none;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn-back:hover { background: #4b5563; }
+
+    /* ── Print styles ── */
+    @media print {
+      body { background: white; padding: 0; }
+      .receipt-wrapper {
+        box-shadow: none;
+        border-radius: 0;
+        width: 100%;
+        padding: 4mm 4mm;
+      }
+      .action-bar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="receipt-wrapper" id="receiptBody">
+
+  <!-- Header -->
+  <div class="header">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo"
+         style="width:56px;height:56px;border-radius:50%;margin-bottom:6px;"
+         onerror="this.style.display='none'" />
+    <div class="hospital-name">{{ HOSPITAL_NAME }}</div>
+    <div class="hospital-sub">Specialist Eye Hospital</div>
+    <div class="hospital-sub">Tel: {{ HOSPITAL_PHONE|default:"+237 000 000 000" }}</div>
+    <div class="receipt-type">&#x2665; Pharmacy Receipt</div>
   </div>
-</div>
-{% endblock %}
 
-{% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-7">
+  <div class="divider-solid"></div>
 
-    {# Hospital header #}
-    <div class="receipt-header mb-4">
-      <div class="fw-bold fs-5">{{ HOSPITAL_NAME }}</div>
-      <div class="small opacity-70 mt-1">{{ HOSPITAL_ADDRESS }}</div>
-      <div class="mt-3 fw-semibold" style="font-size:1.05rem; letter-spacing:.04em;">
-        PHARMACY DISPENSING RECEIPT
-      </div>
-      <div class="small opacity-60 mt-1">{{ dispensing.dispensing_number }}</div>
-    </div>
-
-    {# Patient & transaction info #}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-body">
-        <div class="row g-2">
-          <div class="col-6">
-            <div class="text-muted small">Patient Name</div>
-            <div class="fw-semibold">{{ dispensing.patient.full_name }}</div>
-          </div>
-          <div class="col-6">
-            <div class="text-muted small">Patient ID</div>
-            <div class="fw-semibold">{{ dispensing.patient.patient_id }}</div>
-          </div>
-          <div class="col-6">
-            <div class="text-muted small">Date &amp; Time</div>
-            <div class="fw-semibold">{{ dispensing.dispensed_at|date:"d M Y H:i" }}</div>
-          </div>
-          <div class="col-6">
-            <div class="text-muted small">Dispensed By</div>
-            <div class="fw-semibold">{{ dispensing.dispensed_by.get_full_name }}</div>
-          </div>
-          {% if dispensing.prescription %}
-          <div class="col-12">
-            <div class="text-muted small">Linked Prescription</div>
-            <div class="fw-semibold">{{ dispensing.prescription }}</div>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-
-    {# Drug labels — one per item #}
-    <div class="mb-3">
-      <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.06em;">
-        <i class="bi bi-capsule-pill me-1"></i>Dispensed Medications
-      </div>
-      {% for item in dispensing.items.all %}
-      <div class="drug-label">
-        <div class="drug-name">{{ item.drug.name }}
-          <span class="badge bg-primary-subtle text-primary ms-1" style="font-size:.65rem;">{{ item.quantity_dispensed }} {{ item.drug.unit|default:"unit" }}</span>
-        </div>
-        {% if item.instructions %}
-        <div class="drug-instr"><i class="bi bi-info-circle me-1 text-primary"></i>{{ item.instructions }}</div>
-        {% endif %}
-        <div class="drug-meta d-flex flex-wrap gap-3 mt-1">
-          <span>Unit Price: {{ item.unit_price|floatformat:2 }}</span>
-          <span class="fw-semibold">Subtotal: {{ item.subtotal|floatformat:2 }}</span>
-          {% if item.stock_batch %}<span>Batch: {{ item.stock_batch.batch_number }} · Exp: {{ item.stock_batch.expiry_date|date:"M Y" }}</span>{% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    {# Totals #}
-    <div class="card border-0 shadow-sm mb-4">
-      <div class="card-body">
-        <div class="d-flex justify-content-between py-1">
-          <span class="text-muted">Total Amount</span>
-          <span class="fw-bold">{{ dispensing.total_amount|floatformat:2 }}</span>
-        </div>
-        <div class="d-flex justify-content-between py-1 border-top">
-          <span class="text-muted">Amount Paid</span>
-          <span class="fw-bold text-success">{{ dispensing.amount_paid|floatformat:2 }}</span>
-        </div>
-        {% if dispensing.total_amount != dispensing.amount_paid %}
-        <div class="d-flex justify-content-between py-1 border-top">
-          <span class="text-muted">Balance</span>
-          <span class="fw-bold text-danger">{{ dispensing.total_amount|floatformat:2 }}</span>
-        </div>
-        {% endif %}
-        <div class="d-flex justify-content-between py-1 border-top">
-          <span class="fw-semibold">Status</span>
-          <span class="badge {% if dispensing.status == 'DISPENSED' %}bg-success{% elif dispensing.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-            {{ dispensing.get_status_display }}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <div class="text-center text-muted small mb-3">
-      <i class="bi bi-shield-check me-1"></i>
-      Thank you for using {{ HOSPITAL_NAME }}<br>
-      Keep this receipt for your records.
-    </div>
-
+  <!-- Receipt meta -->
+  <div class="meta-row">
+    <span class="label">RECEIPT #:</span>
+    <span class="value" style="font-size:14px;letter-spacing:1px;">{{ dispensing.dispensing_number }}</span>
   </div>
+  <div class="meta-row">
+    <span class="label">Date:</span>
+    <span class="value">{{ dispensing.dispensed_at|date:"d/m/Y" }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Time:</span>
+    <span class="value">{{ dispensing.dispensed_at|time:"H:i" }}</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Patient info -->
+  <div class="meta-row">
+    <span class="label">Patient:</span>
+    <span class="value">{{ dispensing.patient.full_name|upper }}</span>
+  </div>
+  <div class="meta-row">
+    <span class="label">Patient ID:</span>
+    <span class="value">{{ dispensing.patient.patient_id }}</span>
+  </div>
+  {% if dispensing.prescription %}
+  <div class="meta-row">
+    <span class="label">Prescription:</span>
+    <span class="value" style="font-size:11px;">{{ dispensing.prescription }}</span>
+  </div>
+  {% endif %}
+
+  <div class="divider"></div>
+
+  <!-- Dispensed items -->
+  <div class="section-title">Dispensed Medications</div>
+
+  {% for item in dispensing.items.all %}
+  <div class="drug-block">
+    <div class="drug-name">{{ item.drug.name }}</div>
+    {% if item.drug.strength or item.drug.get_form_display %}
+    <div class="drug-detail">{{ item.drug.strength }}{% if item.drug.strength and item.drug.get_form_display %} · {% endif %}{{ item.drug.get_form_display }}</div>
+    {% endif %}
+    <div class="drug-price">
+      <span>Qty: {{ item.quantity_dispensed }} × {{ item.unit_price|floatformat:0|intcomma }} FCFA</span>
+      <span class="subtotal">{{ item.subtotal|floatformat:0|intcomma }} FCFA</span>
+    </div>
+    {% if item.instructions %}
+    <div class="drug-instr">&#x2192; {{ item.instructions }}</div>
+    {% endif %}
+    {% if item.stock_batch %}
+    <div class="drug-detail">Batch: {{ item.stock_batch.batch_number }} · Exp: {{ item.stock_batch.expiry_date|date:"M Y" }}</div>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div style="text-align:center;color:#999;font-size:11px;margin:4px 0;">No items recorded</div>
+  {% endfor %}
+
+  <div class="divider"></div>
+
+  <!-- Totals -->
+  <div class="totals-section">
+    <div class="total-row">
+      <span>Subtotal</span>
+      <span>{{ dispensing.total_amount|floatformat:0|intcomma }} FCFA</span>
+    </div>
+    <div class="grand-total-row">
+      <span>TOTAL (FCFA)</span>
+      <span>{{ dispensing.total_amount|floatformat:0|intcomma }}</span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Payment -->
+  <div class="section-title">Payment</div>
+  <div class="meta-row">
+    <span class="label">Amount Paid:</span>
+    <span class="value">{{ dispensing.amount_paid|floatformat:0|intcomma }} FCFA</span>
+  </div>
+  <div class="meta-row" style="font-weight:bold;">
+    <span>Balance Due</span>
+    <span>{{ balance_due|floatformat:0|intcomma }} FCFA</span>
+  </div>
+
+  <!-- Status badge -->
+  <div class="status-badge
+    {% if dispensing.status == 'DISPENSED' %}status-dispensed
+    {% elif dispensing.status == 'PARTIAL' %}status-partial
+    {% else %}status-pending{% endif %}">
+    {% if dispensing.status == 'DISPENSED' %}DISPENSED &#x2713;
+    {% elif dispensing.status == 'PARTIAL' %}PARTIALLY DISPENSED
+    {% else %}PENDING{% endif %}
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Pharmacist -->
+  <div class="pharmacist-line">
+    Pharmacist: {{ dispensing.dispensed_by.get_full_name|default:dispensing.dispensed_by.username }}
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="thank-you">Thank you for choosing {{ HOSPITAL_NAME }}!</div>
+    <div>Take medications as instructed by your doctor.</div>
+    <div style="margin-top:4px;">Keep this receipt for your records.</div>
+  </div>
+
 </div>
-{% endblock %}
+
+<!-- Action bar (screen only) -->
+<div class="action-bar">
+  <button class="btn-print" onclick="window.print()">&#128438; Print Receipt</button>
+  <a href="{% url 'pharmacy:dispensing_detail' dispensing_id=dispensing.id %}" class="btn-back">&#8592; Back</a>
+</div>
+
+<script>
+  window.addEventListener('load', function () {
+    setTimeout(function () { window.print(); }, 400);
+  });
+</script>
+
+</body>
+</html>

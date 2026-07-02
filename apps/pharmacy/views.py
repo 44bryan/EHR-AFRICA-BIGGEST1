@@ -610,12 +610,16 @@ def pilferage_dashboard(request):
 
 @login_required
 def dispensing_receipt(request, dispensing_id):
-    """Printable dispensing receipt / patient drug label sheet."""
+    """Printable dispensing receipt — thermal POS format matching billing desk."""
     dispensing = get_object_or_404(
-        Dispensing.objects.prefetch_related('items__drug'),
+        Dispensing.objects.prefetch_related('items__drug', 'items__stock_batch'),
         id=dispensing_id, is_deleted=False,
     )
-    return render(request, 'pharmacy/dispensing_receipt.html', {'dispensing': dispensing})
+    balance_due = max(dispensing.total_amount - dispensing.amount_paid, 0)
+    return render(request, 'pharmacy/dispensing_receipt.html', {
+        'dispensing': dispensing,
+        'balance_due': balance_due,
+    })
 
 
 @login_required

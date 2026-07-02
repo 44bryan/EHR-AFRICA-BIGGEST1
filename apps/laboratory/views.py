@@ -528,13 +528,20 @@ def lab_order_view(request, consultation_pk):
 @login_required
 def lab_detail_view(request, pk):
     order = get_object_or_404(
-        LabOrder.objects.prefetch_related('items__test_type', 'items__result'),
+        LabOrder.objects.prefetch_related('items__test_type', 'items__result__verified_by'),
         pk=pk, is_deleted=False
     )
     sample = getattr(order, 'sample_collection', None)
+    items = list(order.items.all())
+    items_with_results = [i for i in items if hasattr(i, 'result') and i.result]
+    all_verified = (
+        bool(items_with_results) and
+        all(i.result.is_verified for i in items_with_results)
+    )
     return render(request, 'laboratory/detail.html', {
         'order': order,
         'sample': sample,
+        'all_verified': all_verified,
     })
 
 
