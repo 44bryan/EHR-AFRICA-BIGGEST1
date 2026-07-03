@@ -1,12 +1,5 @@
 {% load ehr_tags %}
 {% with d=consultation.department_specific_data %}
-{# ────────────────────────────────────────────────────────────────────────────
-   PEDIATRIC REFRACTION & ORTHOPTICS WORKSTATION
-   All measurement inputs use datalist — clinicians can select OR type freely.
-   Sections: 0 VA · 1 Cycloplegic · 2 Subjective Rx · 3 Patient Glass
-             4 Alignment/Binocular · 5 Amblyopia · 6 Flags & Observations
-   History / complaints are NOT filled here — that is the doctor's section.
-──────────────────────────────────────────────────────────────────────────── #}
 
 {# ── 0. VISUAL ACUITY ────────────────────────────────────────────────────── #}
 <div class="mb-0 pt-3 border-top">
@@ -19,8 +12,12 @@
     <div class="row g-2 mb-2">
       <div class="col-md-3">
         <label class="form-label small mb-1">VA Test Method</label>
-        <input type="text" name="dept_va_method" list="pr_dl_va_method" class="form-control form-control-sm"
-               placeholder="e.g. Snellen 6m" value="{{ d.va_method|default:'' }}">
+        <select name="dept_va_method" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for m in "Snellen 6m,LogMAR,Kay Pictures,Cardiff Cards,LEA Symbols,Teller Acuity,Preferential Looking (PL),Fixes & Follows,HOTV,Tumbling E,Sheridan-Gardiner"|split:"," %}
+          <option value="{{ m }}" {% if d.va_method == m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
       </div>
     </div>
     <div class="table-responsive">
@@ -36,15 +33,29 @@
         <tbody>
           <tr>
             <td class="fw-semibold text-primary small">OD (Right)</td>
-            <td><input type="text" name="dept_va_unaided_od" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.va_unaided_od|default:'' }}"></td>
-            <td><input type="text" name="dept_va_corrected_od" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.va_corrected_od|default:'' }}"></td>
-            <td><input type="text" name="dept_fixation_od" list="pr_dl_fixation" class="form-control form-control-sm" placeholder="e.g. CSM" value="{{ d.fixation_od|default:'' }}"></td>
+            <td><select name="dept_va_unaided_od" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.va_unaided_od|default:'' }}"></select></td>
+            <td><select name="dept_va_corrected_od" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.va_corrected_od|default:'' }}"></select></td>
+            <td>
+              <select name="dept_fixation_od" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for f in "Central Steady Maintained (CSM),Central Steady Unmaintained,Central Unsteady,Eccentric,Wandering / Nystagmus"|split:"," %}
+                <option value="{{ f }}" {% if d.fixation_od == f %}selected{% endif %}>{{ f }}</option>
+                {% endfor %}
+              </select>
+            </td>
           </tr>
           <tr>
             <td class="fw-semibold text-success small">OS (Left)</td>
-            <td><input type="text" name="dept_va_unaided_os" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.va_unaided_os|default:'' }}"></td>
-            <td><input type="text" name="dept_va_corrected_os" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.va_corrected_os|default:'' }}"></td>
-            <td><input type="text" name="dept_fixation_os" list="pr_dl_fixation" class="form-control form-control-sm" placeholder="e.g. CSM" value="{{ d.fixation_os|default:'' }}"></td>
+            <td><select name="dept_va_unaided_os" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.va_unaided_os|default:'' }}"></select></td>
+            <td><select name="dept_va_corrected_os" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.va_corrected_os|default:'' }}"></select></td>
+            <td>
+              <select name="dept_fixation_os" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for f in "Central Steady Maintained (CSM),Central Steady Unmaintained,Central Unsteady,Eccentric,Wandering / Nystagmus"|split:"," %}
+                <option value="{{ f }}" {% if d.fixation_os == f %}selected{% endif %}>{{ f }}</option>
+                {% endfor %}
+              </select>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -52,11 +63,11 @@
     <div class="row g-2 mt-1">
       <div class="col-md-3">
         <label class="form-label small mb-1">Near VA OD</label>
-        <input type="text" name="dept_near_va_od" list="rf_dl_va_near" class="form-control form-control-sm" placeholder="N5" value="{{ d.near_va_od|default:'' }}">
+        <select name="dept_near_va_od" class="form-select form-select-sm" data-rftype="va_near" data-rfval="{{ d.near_va_od|default:'' }}"></select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Near VA OS</label>
-        <input type="text" name="dept_near_va_os" list="rf_dl_va_near" class="form-control form-control-sm" placeholder="N5" value="{{ d.near_va_os|default:'' }}">
+        <select name="dept_near_va_os" class="form-select form-select-sm" data-rftype="va_near" data-rfval="{{ d.near_va_os|default:'' }}"></select>
       </div>
     </div>
   </div>
@@ -73,8 +84,12 @@
     <div class="row g-2 mb-2">
       <div class="col-md-4">
         <label class="form-label small mb-1">Cycloplegic Agent</label>
-        <input type="text" name="dept_cyclo_agent" list="pr_dl_cyclo_agent" class="form-control form-control-sm"
-               placeholder="e.g. Cyclopentolate 1%" value="{{ d.cyclo_agent|default:'' }}">
+        <select name="dept_cyclo_agent" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for a in "Cyclopentolate 1%,Cyclopentolate 0.5%,Atropine 1% eye drops,Atropine 0.5% eye drops,Tropicamide 1%,Homatropine 2%"|split:"," %}
+          <option value="{{ a }}" {% if d.cyclo_agent == a %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Time of Drop Instillation</label>
@@ -86,12 +101,14 @@
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">Accommodation Recovered?</label>
-        <input type="text" name="dept_accom_recovered" list="pr_dl_yesno" class="form-control form-control-sm"
-               placeholder="Yes / No" value="{{ d.accom_recovered|default:'' }}">
+        <select name="dept_accom_recovered" class="form-select form-select-sm">
+          <option value="">—</option>
+          <option value="Yes" {% if d.accom_recovered == 'Yes' %}selected{% endif %}>Yes</option>
+          <option value="No" {% if d.accom_recovered == 'No' %}selected{% endif %}>No</option>
+          <option value="Partial" {% if d.accom_recovered == 'Partial' %}selected{% endif %}>Partial</option>
+        </select>
       </div>
     </div>
-
-    {# Cycloplegic Rx table #}
     <div class="table-responsive">
       <table class="table table-bordered table-sm align-middle mb-0" style="min-width:500px;">
         <thead class="table-light">
@@ -106,17 +123,17 @@
         <tbody>
           <tr>
             <td class="fw-semibold text-primary small">OD</td>
-            <td><input type="text" name="dept_cyclo_sph_od" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.cyclo_sph_od|default:'' }}"></td>
-            <td><input type="text" name="dept_cyclo_cyl_od" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.cyclo_cyl_od|default:'' }}"></td>
-            <td><input type="text" name="dept_cyclo_axis_od" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.cyclo_axis_od|default:'' }}"></td>
-            <td><input type="text" name="dept_cyclo_va_od" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.cyclo_va_od|default:'' }}"></td>
+            <td><select name="dept_cyclo_sph_od" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.cyclo_sph_od|default:'' }}"></select></td>
+            <td><select name="dept_cyclo_cyl_od" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.cyclo_cyl_od|default:'' }}"></select></td>
+            <td><select name="dept_cyclo_axis_od" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.cyclo_axis_od|default:'' }}"></select></td>
+            <td><select name="dept_cyclo_va_od" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.cyclo_va_od|default:'' }}"></select></td>
           </tr>
           <tr>
             <td class="fw-semibold text-success small">OS</td>
-            <td><input type="text" name="dept_cyclo_sph_os" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.cyclo_sph_os|default:'' }}"></td>
-            <td><input type="text" name="dept_cyclo_cyl_os" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.cyclo_cyl_os|default:'' }}"></td>
-            <td><input type="text" name="dept_cyclo_axis_os" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.cyclo_axis_os|default:'' }}"></td>
-            <td><input type="text" name="dept_cyclo_va_os" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.cyclo_va_os|default:'' }}"></td>
+            <td><select name="dept_cyclo_sph_os" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.cyclo_sph_os|default:'' }}"></select></td>
+            <td><select name="dept_cyclo_cyl_os" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.cyclo_cyl_os|default:'' }}"></select></td>
+            <td><select name="dept_cyclo_axis_os" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.cyclo_axis_os|default:'' }}"></select></td>
+            <td><select name="dept_cyclo_va_os" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.cyclo_va_os|default:'' }}"></select></td>
           </tr>
         </tbody>
       </table>
@@ -154,25 +171,25 @@
         <tbody>
           <tr>
             <td class="fw-semibold text-primary small">OD</td>
-            <td><input type="text" name="dept_sub_sph_dist_od" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_sph_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_cyl_dist_od" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_cyl_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_axis_dist_od" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.sub_axis_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_va_dist_od" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.sub_va_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_sph_near_od" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_sph_near_od|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_cyl_near_od" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_cyl_near_od|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_axis_near_od" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.sub_axis_near_od|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_va_near_od" list="rf_dl_va_near" class="form-control form-control-sm" placeholder="N5" value="{{ d.sub_va_near_od|default:'' }}"></td>
+            <td><select name="dept_sub_sph_dist_od" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.sub_sph_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_sub_cyl_dist_od" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.sub_cyl_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_sub_axis_dist_od" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.sub_axis_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_sub_va_dist_od" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.sub_va_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_sub_sph_near_od" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.sub_sph_near_od|default:'' }}"></select></td>
+            <td><select name="dept_sub_cyl_near_od" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.sub_cyl_near_od|default:'' }}"></select></td>
+            <td><select name="dept_sub_axis_near_od" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.sub_axis_near_od|default:'' }}"></select></td>
+            <td><select name="dept_sub_va_near_od" class="form-select form-select-sm" data-rftype="va_near" data-rfval="{{ d.sub_va_near_od|default:'' }}"></select></td>
           </tr>
           <tr>
             <td class="fw-semibold text-success small">OS</td>
-            <td><input type="text" name="dept_sub_sph_dist_os" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_sph_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_cyl_dist_os" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_cyl_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_axis_dist_os" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.sub_axis_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_va_dist_os" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.sub_va_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_sph_near_os" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_sph_near_os|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_cyl_near_os" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.sub_cyl_near_os|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_axis_near_os" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.sub_axis_near_os|default:'' }}"></td>
-            <td><input type="text" name="dept_sub_va_near_os" list="rf_dl_va_near" class="form-control form-control-sm" placeholder="N5" value="{{ d.sub_va_near_os|default:'' }}"></td>
+            <td><select name="dept_sub_sph_dist_os" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.sub_sph_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_sub_cyl_dist_os" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.sub_cyl_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_sub_axis_dist_os" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.sub_axis_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_sub_va_dist_os" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.sub_va_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_sub_sph_near_os" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.sub_sph_near_os|default:'' }}"></select></td>
+            <td><select name="dept_sub_cyl_near_os" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.sub_cyl_near_os|default:'' }}"></select></td>
+            <td><select name="dept_sub_axis_near_os" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.sub_axis_near_os|default:'' }}"></select></td>
+            <td><select name="dept_sub_va_near_os" class="form-select form-select-sm" data-rftype="va_near" data-rfval="{{ d.sub_va_near_os|default:'' }}"></select></td>
           </tr>
         </tbody>
       </table>
@@ -211,58 +228,69 @@
         <tbody>
           <tr>
             <td class="fw-semibold text-primary small">OD</td>
-            <td><input type="text" name="dept_pg_sph_dist_od" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_sph_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_cyl_dist_od" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_cyl_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_axis_dist_od" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.pg_axis_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_va_dist_od" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.pg_va_dist_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_sph_near_od" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_sph_near_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_cyl_near_od" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_cyl_near_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_axis_near_od" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.pg_axis_near_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_va_near_od" list="rf_dl_va_near" class="form-control form-control-sm" placeholder="N5" value="{{ d.pg_va_near_od|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_add_od" list="rf_dl_add" class="form-control form-control-sm" placeholder="+1.00" value="{{ d.pg_add_od|default:'' }}"></td>
+            <td><select name="dept_pg_sph_dist_od" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.pg_sph_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_cyl_dist_od" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.pg_cyl_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_axis_dist_od" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.pg_axis_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_va_dist_od" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.pg_va_dist_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_sph_near_od" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.pg_sph_near_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_cyl_near_od" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.pg_cyl_near_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_axis_near_od" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.pg_axis_near_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_va_near_od" class="form-select form-select-sm" data-rftype="va_near" data-rfval="{{ d.pg_va_near_od|default:'' }}"></select></td>
+            <td><select name="dept_pg_add_od" class="form-select form-select-sm" data-rftype="add" data-rfval="{{ d.pg_add_od|default:'' }}"></select></td>
           </tr>
           <tr>
             <td class="fw-semibold text-success small">OS</td>
-            <td><input type="text" name="dept_pg_sph_dist_os" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_sph_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_cyl_dist_os" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_cyl_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_axis_dist_os" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.pg_axis_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_va_dist_os" list="rf_dl_va_dist" class="form-control form-control-sm" placeholder="6/6" value="{{ d.pg_va_dist_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_sph_near_os" list="rf_dl_sph" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_sph_near_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_cyl_near_os" list="rf_dl_cyl" class="form-control form-control-sm" placeholder="0.00" value="{{ d.pg_cyl_near_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_axis_near_os" list="rf_dl_axis" class="form-control form-control-sm" placeholder="0" value="{{ d.pg_axis_near_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_va_near_os" list="rf_dl_va_near" class="form-control form-control-sm" placeholder="N5" value="{{ d.pg_va_near_os|default:'' }}"></td>
-            <td><input type="text" name="dept_pg_add_os" list="rf_dl_add" class="form-control form-control-sm" placeholder="+1.00" value="{{ d.pg_add_os|default:'' }}"></td>
+            <td><select name="dept_pg_sph_dist_os" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.pg_sph_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_cyl_dist_os" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.pg_cyl_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_axis_dist_os" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.pg_axis_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_va_dist_os" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.pg_va_dist_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_sph_near_os" class="form-select form-select-sm" data-rftype="sph" data-rfval="{{ d.pg_sph_near_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_cyl_near_os" class="form-select form-select-sm" data-rftype="cyl" data-rfval="{{ d.pg_cyl_near_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_axis_near_os" class="form-select form-select-sm" data-rftype="axis" data-rfval="{{ d.pg_axis_near_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_va_near_os" class="form-select form-select-sm" data-rftype="va_near" data-rfval="{{ d.pg_va_near_os|default:'' }}"></select></td>
+            <td><select name="dept_pg_add_os" class="form-select form-select-sm" data-rftype="add" data-rfval="{{ d.pg_add_os|default:'' }}"></select></td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    {# PD + Frame #}
     <div class="row g-2 mb-3">
       <div class="col-auto">
         <label class="form-label small mb-1">PD OD (mm)</label>
-        <input type="text" name="dept_pd_od" list="rf_dl_pd" class="form-control form-control-sm" style="width:90px;"
-               placeholder="32.0" value="{{ d.pd_od|default:'' }}">
+        <select name="dept_pd_od" class="form-select form-select-sm" style="width:100px;"
+                data-rftype="pd" data-rfval="{{ d.pd_od|default:'' }}"></select>
       </div>
       <div class="col-auto">
         <label class="form-label small mb-1">PD OS (mm)</label>
-        <input type="text" name="dept_pd_os" list="rf_dl_pd" class="form-control form-control-sm" style="width:90px;"
-               placeholder="32.0" value="{{ d.pd_os|default:'' }}">
+        <select name="dept_pd_os" class="form-select form-select-sm" style="width:100px;"
+                data-rftype="pd" data-rfval="{{ d.pd_os|default:'' }}"></select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Wear Schedule</label>
-        <input type="text" name="dept_rx_wear_schedule" list="pr_dl_wear_schedule" class="form-control form-control-sm"
-               placeholder="e.g. Full-time wear" value="{{ d.rx_wear_schedule|default:'' }}">
+        <select name="dept_rx_wear_schedule" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for s in "Full-time wear,Distance only,Near / reading only,Constant (amblyopia management),As needed"|split:"," %}
+          <option value="{{ s }}" {% if d.rx_wear_schedule == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Frame Type</label>
-        <input type="text" name="dept_frame_type" list="pr_dl_frame_type" class="form-control form-control-sm"
-               placeholder="e.g. Single vision" value="{{ d.frame_type|default:'' }}">
+        <select name="dept_frame_type" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for ft in "Single vision (full time),Single vision (reading),Bifocal,Progressive (PAL),Executive bifocal,Not prescribed"|split:"," %}
+          <option value="{{ ft }}" {% if d.frame_type == ft %}selected{% endif %}>{{ ft }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Myopia Control Plan</label>
-        <input type="text" name="dept_myopia_control" list="pr_dl_myopia_control" class="form-control form-control-sm"
-               placeholder="e.g. None (monitoring)" value="{{ d.myopia_control|default:'' }}">
+        <select name="dept_myopia_control" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for m in "None (monitoring),Spectacles only,Atropine 0.01%,Atropine 0.05%,Orthokeratology (Ortho-K),MiSight contact lens,Bifocal/Progressive spectacles"|split:"," %}
+          <option value="{{ m }}" {% if d.myopia_control == m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">Rx Valid Until</label>
@@ -287,18 +315,30 @@
     <div class="row g-2">
       <div class="col-md-3">
         <label class="form-label small mb-1">Cover Test (Distance)</label>
-        <input type="text" name="dept_cover_dist" list="pr_dl_cover" class="form-control form-control-sm"
-               placeholder="e.g. Orthotropic" value="{{ d.cover_dist|default:'' }}">
+        <select name="dept_cover_dist" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for v in "Orthotropic,Esotropia (ET),Exotropia (XT),Hypertropia,Hypotropia,Esophoria,Exophoria,Alternating ET,Alternating XT"|split:"," %}
+          <option value="{{ v }}" {% if d.cover_dist == v %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Cover Test (Near)</label>
-        <input type="text" name="dept_cover_near" list="pr_dl_cover" class="form-control form-control-sm"
-               placeholder="e.g. Orthotropic" value="{{ d.cover_near|default:'' }}">
+        <select name="dept_cover_near" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for v in "Orthotropic,Esotropia (ET),Exotropia (XT),Hypertropia,Hypotropia,Esophoria,Exophoria,Alternating ET,Alternating XT"|split:"," %}
+          <option value="{{ v }}" {% if d.cover_near == v %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Hirschberg</label>
-        <input type="text" name="dept_hirschberg" list="pr_dl_hirschberg" class="form-control form-control-sm"
-               placeholder="e.g. Symmetric" value="{{ d.hirschberg|default:'' }}">
+        <select name="dept_hirschberg" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for v in "Symmetric,Asymmetric (ET),Asymmetric (XT),Asymmetric (Hyper),Abnormal — see notes"|split:"," %}
+          <option value="{{ v }}" {% if d.hirschberg == v %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Deviation (Prism Dioptres)</label>
@@ -306,13 +346,21 @@
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Binocular Single Vision</label>
-        <input type="text" name="dept_bsv" list="pr_dl_bsv" class="form-control form-control-sm"
-               placeholder="e.g. Grade III (Stereopsis)" value="{{ d.bsv|default:'' }}">
+        <select name="dept_bsv" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for v in "Grade I (Simultaneous perception),Grade II (Fusion),Grade III (Stereopsis),Absent"|split:"," %}
+          <option value="{{ v }}" {% if d.bsv == v %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Stereoacuity Test</label>
-        <input type="text" name="dept_stereo_test" list="pr_dl_stereo_test" class="form-control form-control-sm"
-               placeholder="e.g. Titmus Fly" value="{{ d.stereo_test|default:'' }}">
+        <select name="dept_stereo_test" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for t in "Titmus Fly,Lang I,Lang II,Randot,TNO,Frisby,Not tested"|split:"," %}
+          <option value="{{ t }}" {% if d.stereo_test == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">Stereoacuity Result</label>
@@ -341,13 +389,22 @@
     <div class="row g-2">
       <div class="col-md-3">
         <label class="form-label small mb-1">Amblyopia Type</label>
-        <input type="text" name="dept_amblyopia_type" list="pr_dl_amblyopia_type" class="form-control form-control-sm"
-               placeholder="e.g. Anisometropic" value="{{ d.amblyopia_type|default:'' }}">
+        <select name="dept_amblyopia_type" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for a in "None,Refractive (unilateral),Anisometropic,Strabismic,Deprivation,Mixed"|split:"," %}
+          <option value="{{ a }}" {% if d.amblyopia_type == a %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">Amblyopic Eye</label>
-        <input type="text" name="dept_amblyopic_eye" list="pr_dl_eye_lr" class="form-control form-control-sm"
-               placeholder="OD / OS / OU" value="{{ d.amblyopic_eye|default:'' }}">
+        <select name="dept_amblyopic_eye" class="form-select form-select-sm">
+          <option value="">—</option>
+          <option value="OD" {% if d.amblyopic_eye == 'OD' %}selected{% endif %}>OD (Right)</option>
+          <option value="OS" {% if d.amblyopic_eye == 'OS' %}selected{% endif %}>OS (Left)</option>
+          <option value="OU" {% if d.amblyopic_eye == 'OU' %}selected{% endif %}>OU (Both)</option>
+          <option value="Not applicable" {% if d.amblyopic_eye == 'Not applicable' %}selected{% endif %}>Not applicable</option>
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small mb-1">VA Improvement (amblyopic eye)</label>
@@ -355,13 +412,22 @@
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">Patching Duration</label>
-        <input type="text" name="dept_patching_duration" list="pr_dl_patching" class="form-control form-control-sm"
-               placeholder="e.g. 2 hours/day" value="{{ d.patching_duration|default:'' }}">
+        <select name="dept_patching_duration" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for dur in "1 hour/day,2 hours/day,4 hours/day,6 hours/day,Full time,Atropine penalisation,Discontinued,N/A"|split:"," %}
+          <option value="{{ dur }}" {% if d.patching_duration == dur %}selected{% endif %}>{{ dur }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">Eye Patched</label>
-        <input type="text" name="dept_eye_patched" list="pr_dl_eye_patched" class="form-control form-control-sm"
-               placeholder="e.g. OD patched" value="{{ d.eye_patched|default:'' }}">
+        <select name="dept_eye_patched" class="form-select form-select-sm">
+          <option value="">—</option>
+          <option value="OD patched" {% if d.eye_patched == 'OD patched' %}selected{% endif %}>OD patched</option>
+          <option value="OS patched" {% if d.eye_patched == 'OS patched' %}selected{% endif %}>OS patched</option>
+          <option value="Alternating" {% if d.eye_patched == 'Alternating' %}selected{% endif %}>Alternating</option>
+          <option value="N/A" {% if d.eye_patched == 'N/A' %}selected{% endif %}>N/A</option>
+        </select>
       </div>
       <div class="col-md-4">
         <label class="form-label small mb-1">Orthoptic Exercises</label>
@@ -414,84 +480,72 @@
   </div>
 </div>
 
-{# ── JS: build shared datalists for Sph / Cyl / Axis / VA / Add / PD + pediatric-specific ── #}
+{# ── JS: populate Sph / Cyl / Axis / VA / Add / PD selects ─────────────── #}
 <script>
 (function () {
   function buildSph() {
-    var v = ['0.00'];
+    var v = [''];
     for (var n = 25; n <= 3000; n += 25) v.push('+' + (n / 100).toFixed(2));
     for (var n = -25; n >= -3000; n -= 25) v.push((n / 100).toFixed(2));
     return v;
   }
   function buildCyl() {
-    var v = ['0.00'];
+    var v = ['', '0.00'];
     for (var n = -25; n >= -1000; n -= 25) v.push((n / 100).toFixed(2));
     for (var n = 25; n <= 1000; n += 25) v.push('+' + (n / 100).toFixed(2));
     return v;
   }
   function buildAxis() {
-    var v = [];
+    var v = [''];
     for (var n = 0; n <= 180; n++) v.push(String(n));
     return v;
   }
   function buildPD() {
-    var v = [];
+    var v = [''];
     for (var n = 250; n <= 400; n += 5) v.push((n / 10).toFixed(1));
     return v;
   }
-
-  var RF_DATA = {
-    rf_dl_sph:     buildSph(),
-    rf_dl_cyl:     buildCyl(),
-    rf_dl_axis:    buildAxis(),
-    rf_dl_va_dist: ['6/5','6/6','6/7.5','6/9','6/12','6/18','6/24','6/36','6/60',
-                    '5/60','4/60','3/60','2/60','1/60','CF','HM','PL','NPL',
-                    'Fixes & Follows','Blinks to light','Nystagmus','Cannot assess'],
-    rf_dl_va_near: ['N4','N5','N6','N8','N10','N12','N14','N18','N24','N36','CF','HM'],
-    rf_dl_add:     ['+0.50','+0.75','+1.00','+1.25','+1.50','+1.75','+2.00',
-                    '+2.25','+2.50','+2.75','+3.00','+3.25','+3.50','+3.75','+4.00'],
-    rf_dl_pd:      buildPD(),
-    pr_dl_va_method:     ['Snellen 6m','LogMAR','Kay Pictures','Cardiff Cards','LEA Symbols',
-                          'Teller Acuity','Preferential Looking (PL)','Fixes & Follows',
-                          'HOTV','Tumbling E','Sheridan-Gardiner'],
-    pr_dl_fixation:      ['Central Steady Maintained (CSM)','Central Steady Unmaintained',
-                          'Central Unsteady','Eccentric','Wandering / Nystagmus'],
-    pr_dl_cyclo_agent:   ['Cyclopentolate 1%','Cyclopentolate 0.5%','Atropine 1% eye drops',
-                          'Atropine 0.5% eye drops','Tropicamide 1%','Homatropine 2%'],
-    pr_dl_yesno:         ['Yes','No','Partial'],
-    pr_dl_cover:         ['Orthotropic','Esotropia (ET)','Exotropia (XT)','Hypertropia',
-                          'Hypotropia','Esophoria','Exophoria','Alternating ET','Alternating XT'],
-    pr_dl_hirschberg:    ['Symmetric','Asymmetric (ET)','Asymmetric (XT)','Asymmetric (Hyper)',
-                          'Abnormal — see notes'],
-    pr_dl_bsv:           ['Grade I (Simultaneous perception)','Grade II (Fusion)',
-                          'Grade III (Stereopsis)','Absent'],
-    pr_dl_stereo_test:   ['Titmus Fly','Lang I','Lang II','Randot','TNO','Frisby','Not tested'],
-    pr_dl_amblyopia_type:['None','Refractive (unilateral)','Anisometropic','Strabismic',
-                          'Deprivation','Mixed'],
-    pr_dl_eye_lr:        ['OD','OS','OU','Not applicable'],
-    pr_dl_patching:      ['1 hour/day','2 hours/day','4 hours/day','6 hours/day',
-                          'Full time','Atropine penalisation','Discontinued','N/A'],
-    pr_dl_eye_patched:   ['OD patched','OS patched','Alternating','N/A'],
-    pr_dl_wear_schedule: ['Full-time wear','Distance only','Near / reading only',
-                          'Constant (amblyopia management)','As needed'],
-    pr_dl_frame_type:    ['Single vision (full time)','Single vision (reading)','Bifocal',
-                          'Progressive (PAL)','Executive bifocal','Not prescribed'],
-    pr_dl_myopia_control:['None (monitoring)','Spectacles only','Atropine 0.01%',
-                          'Atropine 0.05%','Orthokeratology (Ortho-K)','MiSight contact lens',
-                          'Bifocal/Progressive spectacles'],
+  var RF_OPTS = {
+    sph:     buildSph(),
+    cyl:     buildCyl(),
+    axis:    buildAxis(),
+    va_dist: ['', '6/5', '6/6', '6/7.5', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60',
+              '5/60', '4/60', '3/60', '2/60', '1/60', 'CF', 'HM', 'PL', 'NPL',
+              'Fixes & Follows', 'Blinks to light', 'Nystagmus', 'Cannot assess'],
+    va_near: ['', 'N4', 'N5', 'N6', 'N8', 'N10', 'N12', 'N14', 'N18', 'N24', 'N36', 'CF', 'HM'],
+    add:     ['', '+0.50', '+0.75', '+1.00', '+1.25', '+1.50', '+1.75', '+2.00',
+              '+2.25', '+2.50', '+2.75', '+3.00', '+3.25', '+3.50', '+3.75', '+4.00'],
+    pd:      buildPD(),
   };
 
-  /* Build and append each datalist once */
-  Object.keys(RF_DATA).forEach(function (id) {
-    if (document.getElementById(id)) return;
-    var dl = document.createElement('datalist');
-    dl.id = id;
-    RF_DATA[id].forEach(function (v) {
-      var o = document.createElement('option');
-      o.value = v;
-      dl.appendChild(o);
+  function toInput(sel, prefill) {
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.name = sel.name;
+    inp.className = sel.className.replace(/form-select/g, 'form-control');
+    inp.style.cssText = sel.style.cssText;
+    inp.placeholder = 'Type value…';
+    if (prefill) inp.value = prefill;
+    sel.parentNode.replaceChild(inp, sel);
+    if (!prefill) inp.focus();
+  }
+
+  document.querySelectorAll('select[data-rftype]').forEach(function (sel) {
+    var opts = RF_OPTS[sel.dataset.rftype];
+    if (!opts) return;
+    var saved = (sel.dataset.rfval || '').trim();
+    var inList = saved === '' || opts.indexOf(saved) >= 0;
+
+    if (!inList) { toInput(sel, saved); return; }
+
+    sel.innerHTML = opts.map(function (v) {
+      return '<option value="' + v + '"' + (v === saved ? ' selected' : '') + '>'
+             + (v === '' ? '—' : v) + '</option>';
+    }).join('') + '<option value="__other__">Other (type)…</option>';
+
+    sel.addEventListener('change', function () {
+      if (this.value === '__other__') toInput(this, '');
     });
-    document.body.appendChild(dl);
   });
 })();
 </script>
