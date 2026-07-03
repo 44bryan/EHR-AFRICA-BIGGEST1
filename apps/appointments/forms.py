@@ -19,3 +19,9 @@ class AppointmentForm(forms.ModelForm):
             'duration_minutes': forms.NumberInput(attrs={'class': 'form-control'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # department and doctor are optional — model allows null
+        self.fields['department'].required = False
+        self.fields['doctor'].required = False

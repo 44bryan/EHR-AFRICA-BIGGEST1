@@ -161,42 +161,37 @@
           </ul>
         </div>
         {% if consultation.visit and not consultation.visit.status == 'DISCHARGED' %}
-        <div class="dropdown">
-          <button class="btn btn-sm btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown">
-            <i class="bi bi-signpost-split me-1"></i>Route
+        <div id="routeBannerWrap"></div>
+        <div class="dropdown" id="routeDropdownWrap">
+          <button class="btn btn-sm btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown"
+                  data-bs-auto-close="outside" id="routeDropdownBtn">
+            <i class="bi bi-signpost-split me-1"></i>Route Patient
           </button>
-          <div class="dropdown-menu p-2" style="min-width:300px;">
-            <form method="post" action="{% url 'qms:route_to_dept' %}">
-              {% csrf_token %}
-              <input type="hidden" name="visit_id" value="{{ consultation.visit.pk }}">
-              <input type="hidden" name="next" value="{{ request.path }}">
-              <div class="mb-2">
-                <label class="form-label small mb-1 fw-semibold">Route patient to:</label>
-                <select name="service_type" class="form-select form-select-sm" required>
-                  <option value="">— Select department —</option>
-                  {% for code, label in service_types %}
-                  <option value="{{ code }}">{{ label }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="mb-2">
-                <label class="form-label small mb-1 fw-semibold">
-                  Instructions for receiving staff <span class="text-danger">*</span>
-                </label>
-                <textarea name="notes" class="form-control form-control-sm" rows="3" required
-                          placeholder="e.g. Check VA + refraction for pre-op. Return to Dr. {{ consultation.consulting_doctor.last_name }} after."></textarea>
-                <div class="text-muted mt-1" style="font-size:.68rem;">Shown on the receiving workstation so staff know what to do.</div>
-              </div>
-              <button type="submit" class="btn btn-dark btn-sm w-100">
-                <i class="bi bi-arrow-right-circle me-1"></i>Send Patient
-              </button>
-            </form>
+          <div class="dropdown-menu p-3" style="min-width:320px;">
+            <div class="fw-semibold small mb-2"><i class="bi bi-signpost-2 me-1"></i>Send patient to next department</div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">Route to:</label>
+              <select id="routeServiceType" class="form-select form-select-sm">
+                <option value="">— Select department —</option>
+                {% for code, label in service_types %}
+                <option value="{{ code }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">Notes for receiving staff <span class="text-muted">(optional)</span></label>
+              <textarea id="routeNotes" class="form-control form-control-sm" rows="2"
+                        placeholder="e.g. Check VA post-refraction. Return to Dr. {{ consultation.consulting_doctor.last_name }}."></textarea>
+            </div>
+            <button type="button" class="btn btn-dark btn-sm w-100" id="routeSendBtn"
+                    onclick="sendPatientRoute('{{ consultation.visit.pk }}')">
+              <i class="bi bi-arrow-right-circle me-1"></i>Send Patient
+            </button>
             <hr class="my-2">
             <a href="{% url 'appointments:book' %}?patient={{ consultation.patient.patient_id }}&ref={{ consultation.pk }}"
                class="btn btn-sm btn-outline-primary w-100">
-              <i class="bi bi-calendar-plus me-1"></i>Book Specialist Appointment
+              <i class="bi bi-calendar-plus me-1"></i>Book Follow-up Appointment
             </a>
-            <div class="text-muted mt-1" style="font-size:.67rem;">For future-date referrals (Retina, Glaucoma, etc.)</div>
           </div>
         </div>
         {% endif %}
@@ -1300,6 +1295,62 @@ document.querySelectorAll('[onclick*="clinicalForm"]').forEach(function(btn) {
     setTimeout(() => resultsBox.classList.add('d-none'), 200);
   });
 })();
+
+// ── Route patient AJAX ────────────────────────────────────────────────────────
+function sendPatientRoute(visitPk) {
+  const svcType = document.getElementById('routeServiceType').value;
+  const notes   = document.getElementById('routeNotes').value.trim();
+  const btn     = document.getElementById('routeSendBtn');
+
+  if (!svcType) {
+    document.getElementById('routeServiceType').focus();
+    document.getElementById('routeServiceType').classList.add('is-invalid');
+    return;
+  }
+  document.getElementById('routeServiceType').classList.remove('is-invalid');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+  fd.append('visit_id', visitPk);
+  fd.append('service_type', svcType);
+  fd.append('notes', notes);
+
+  fetch('{% url "qms:route_to_dept" %}', {
+    method: 'POST', body: fd,
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(r => r.json())
+  .then(function(data) {
+    if (data.success) {
+      // Close dropdown
+      const dropEl = document.getElementById('routeDropdownBtn');
+      bootstrap.Dropdown.getInstance(dropEl)?.hide();
+      // Show success banner
+      const wrap = document.getElementById('routeBannerWrap');
+      if (wrap) {
+        wrap.innerHTML = '<div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 mb-2">' +
+          '<i class="bi bi-check-circle-fill fs-5"></i>' +
+          '<div><strong>Patient routed to ' + data.department + '</strong>. Token: <code>' + data.token_number + '</code>. ' +
+          'Patient has left your queue.</div></div>';
+      }
+      // Hide the route dropdown entirely
+      const dropWrap = document.getElementById('routeDropdownWrap');
+      if (dropWrap) dropWrap.style.display = 'none';
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Send Patient';
+      alert('Routing failed: ' + (data.message || data.error || 'Unknown error'));
+    }
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Send Patient';
+    alert('Network error. Please try again.');
+  });
+}
 
 // ── Drug name autocomplete for inline Quick Prescribe ──────────────────────
 (function() {
