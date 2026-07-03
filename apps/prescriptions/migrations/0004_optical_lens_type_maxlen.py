@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('prescriptions', '0002_druginteraction'),
+        ('prescriptions', '0003_optical_near_vision'),
     ]
 
     operations = [
