@@ -117,7 +117,7 @@ class OpticalPrescription(AuditModel):
         default=PrescriptionType.SPECTACLE,
     )
 
-    # Right Eye (OD)
+    # Right Eye (OD) — Distance
     re_sphere = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     re_cylinder = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     re_axis = models.PositiveSmallIntegerField(null=True, blank=True, help_text='0–180 degrees')
@@ -125,8 +125,13 @@ class OpticalPrescription(AuditModel):
     re_prism = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
     re_prism_base = models.CharField(max_length=20, blank=True)
     re_visual_acuity = models.CharField(max_length=20, blank=True)
+    # Right Eye (OD) — Near Vision
+    re_sphere_near = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    re_cylinder_near = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    re_axis_near = models.PositiveSmallIntegerField(null=True, blank=True)
+    re_va_near = models.CharField(max_length=20, blank=True)
 
-    # Left Eye (OS)
+    # Left Eye (OS) — Distance
     le_sphere = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     le_cylinder = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     le_axis = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -134,6 +139,11 @@ class OpticalPrescription(AuditModel):
     le_prism = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
     le_prism_base = models.CharField(max_length=20, blank=True)
     le_visual_acuity = models.CharField(max_length=20, blank=True)
+    # Left Eye (OS) — Near Vision
+    le_sphere_near = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    le_cylinder_near = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    le_axis_near = models.PositiveSmallIntegerField(null=True, blank=True)
+    le_va_near = models.CharField(max_length=20, blank=True)
 
     # General
     interpupillary_distance = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
@@ -154,3 +164,58 @@ class OpticalPrescription(AuditModel):
         if value is None:
             return 'Plano'
         return f"{'+' if value > 0 else ''}{value:.2f}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DRUG INTERACTION CHECKER — JCI MMU.7
+# ══════════════════════════════════════════════════════════════════════════════
+
+class DrugInteractionSeverity(models.TextChoices):
+    CONTRAINDICATED = 'CONTRA',   'Contraindicated — Do NOT co-prescribe'
+    MAJOR           = 'MAJOR',    'Major — Potentially life-threatening'
+    MODERATE        = 'MODERATE', 'Moderate — Monitor closely'
+    MINOR           = 'MINOR',    'Minor — Clinically insignificant in most cases'
+
+
+class DrugInteraction(models.Model):
+    """
+    Lookup table of known drug-drug interactions.
+    JCI MMU.7 — clinical decision support at point of prescribing.
+    Seeded via: python manage.py seed_drug_interactions
+    """
+    drug_a      = models.CharField(max_length=200, db_index=True)
+    drug_b      = models.CharField(max_length=200, db_index=True)
+    severity    = models.CharField(max_length=15, choices=DrugInteractionSeverity.choices)
+    description = models.TextField(help_text='Mechanism of interaction')
+    clinical_effects = models.TextField(blank=True)
+    management  = models.TextField(blank=True, help_text='Avoid / Monitor / Dose-adjust')
+    is_active   = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['severity', 'drug_a']
+        verbose_name = 'Drug Interaction'
+        verbose_name_plural = 'Drug Interactions'
+        unique_together = ('drug_a', 'drug_b')
+
+    def __str__(self):
+        return f"{self.drug_a} ↔ {self.drug_b} ({self.get_severity_display()})"
+
+    @classmethod
+    def find_interactions(cls, drug_names: list) -> list:
+        """Return all active interactions between any two drugs in the list."""
+        drug_names_lower = [d.lower().strip() for d in drug_names if d]
+        if len(drug_names_lower) < 2:
+            return []
+        hits = []
+        seen = set()
+        for interaction in cls.objects.filter(is_active=True):
+            a = interaction.drug_a.lower()
+            b = interaction.drug_b.lower()
+            a_match = any(a in dn or dn in a for dn in drug_names_lower)
+            b_match = any(b in dn or dn in b for dn in drug_names_lower)
+            if a_match and b_match:
+                key = tuple(sorted([a, b]))
+                if key not in seen:
+                    seen.add(key)
+                    hits.append(interaction)
+        return hits

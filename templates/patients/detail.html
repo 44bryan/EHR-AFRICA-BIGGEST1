@@ -81,10 +81,11 @@
 @media(max-width:767px) {
   .ehr-tabs { overflow-x:auto; flex-wrap:nowrap !important; }
 }
-/* ── Tablet portrait: keep sidebar visible, not collapsed ────────────── */
+/* ── Tablet portrait: stack sidebar above content ────────────────────── */
 @media (min-width:768px) and (max-width:991px) and (orientation:portrait) {
-  .pt-sidebar { min-height:unset !important; }
+  .pt-sidebar { width:100% !important; max-width:100% !important; flex:0 0 100% !important; min-height:unset !important; }
   .pt-sidebar .info-card { margin-bottom:8px; }
+  .pt-main   { width:100% !important; max-width:100% !important; flex:0 0 100% !important; }
   .ehr-tabs .nav-link { font-size:.72rem; padding:6px 10px; }
   .btn { white-space:nowrap; }
 }
@@ -287,7 +288,7 @@
   </div>
 
   {# ── MAIN CONTENT ─────────────────────────────────────────────────── #}
-  <div class="col-md-8 col-lg-9">
+  <div class="col-md-8 col-lg-9 pt-main">
 
     {# ── TAB NAVIGATION ── #}
     <ul class="nav ehr-tabs border-bottom mb-3" id="patientTabs" role="tablist">
@@ -411,25 +412,26 @@
               VA priority: department_specific_data first (doctor measured in clinic),
               fall back to visit.vital_signs (triage measured)
             {% endcomment %}
-            {# Safe VA/IOP: dd (dept_specific_data) takes priority; fall back to vs (visit vital_signs dict) #}
-            {% if dd.va_re_unaided or dd.va_le_unaided or dd.iop_re or dd.iop_le or vs %}
+            {# VA/IOP: supports gen_oph (va_re_unaided/iop_re) + refraction (va_unaided_od/iop_od) naming #}
+            {% with va_od=dd.va_re_unaided|default:dd.va_unaided_od va_os=dd.va_le_unaided|default:dd.va_unaided_os iop_od=dd.iop_re|default:dd.iop_od iop_os=dd.iop_le|default:dd.iop_os %}
+            {% if va_od or va_os or iop_od or iop_os or vs %}
             <div class="exam-grid mb-3">
               <div class="eg-box">
                 <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
                 <table class="va-table">
-                  <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>BCVA</th></tr></thead>
+                  <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>BCVA/Corrected</th></tr></thead>
                   <tbody>
                     <tr>
                       <td class="eye-re">OD</td>
-                      <td>{% if dd.va_re_unaided %}{{ dd.va_re_unaided }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+                      <td>{% if va_od %}{{ va_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
                       <td>{{ dd.va_re_ph|default:"—" }}</td>
-                      <td>{{ dd.va_re_bcva|default:"—" }}</td>
+                      <td>{{ dd.va_re_bcva|default:dd.va_corrected_od|default:"—" }}</td>
                     </tr>
                     <tr>
                       <td class="eye-le">OS</td>
-                      <td>{% if dd.va_le_unaided %}{{ dd.va_le_unaided }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+                      <td>{% if va_os %}{{ va_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
                       <td>{{ dd.va_le_ph|default:"—" }}</td>
-                      <td>{{ dd.va_le_bcva|default:"—" }}</td>
+                      <td>{{ dd.va_le_bcva|default:dd.va_corrected_os|default:"—" }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -439,14 +441,14 @@
                 <div class="d-flex justify-content-around align-items-center" style="height:60px;">
                   <div class="text-center">
                     <div class="eye-re fw-bold" style="font-size:1.3rem;">
-                      {% if dd.iop_re %}{{ dd.iop_re }}{% elif vs.intraocular_pressure_right %}{{ vs.intraocular_pressure_right }}{% else %}—{% endif %}
+                      {% if iop_od %}{{ iop_od }}{% elif vs.intraocular_pressure_right %}{{ vs.intraocular_pressure_right }}{% else %}—{% endif %}
                     </div>
                     <div style="font-size:.65rem;color:#64748b;">OD mmHg</div>
                   </div>
                   <div style="width:1px;height:40px;background:#e2e8f0;"></div>
                   <div class="text-center">
                     <div class="eye-le fw-bold" style="font-size:1.3rem;">
-                      {% if dd.iop_le %}{{ dd.iop_le }}{% elif vs.intraocular_pressure_left %}{{ vs.intraocular_pressure_left }}{% else %}—{% endif %}
+                      {% if iop_os %}{{ iop_os }}{% elif vs.intraocular_pressure_left %}{{ vs.intraocular_pressure_left }}{% else %}—{% endif %}
                     </div>
                     <div style="font-size:.65rem;color:#64748b;">OS mmHg</div>
                   </div>
@@ -455,30 +457,31 @@
               </div>
             </div>
             {% endif %}
+            {% endwith %}
 
-            {# ── Refraction / Rx (from dept_specific_data) ── #}
-            {% with sph_od=dd|dictfirst:"rx_re_sphere,rx_sph_od,final_sph_od" sph_os=dd|dictfirst:"rx_le_sphere,rx_sph_os,final_sph_os" %}
+            {# ── Refraction / Rx — supports gen_oph (rx_re_sphere) + refractionist (pg_sph_dist_od) naming #}
+            {% with sph_od=dd|dictfirst:"rx_re_sphere,rx_sph_od,final_sph_od,pg_sph_dist_od" sph_os=dd|dictfirst:"rx_le_sphere,rx_sph_os,final_sph_os,pg_sph_dist_os" %}
             {% if sph_od or sph_os %}
             <div class="mb-3">
               <div class="eg-label mb-1"><i class="bi bi-eyeglasses me-1"></i>Refraction / Spectacle Rx</div>
               <table class="rx-table">
-                <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>VA with Rx</th></tr></thead>
+                <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>VA</th></tr></thead>
                 <tbody>
                   <tr>
                     <td class="eye-re">OD</td>
                     <td>{{ sph_od|default:"—" }}</td>
-                    <td>{{ dd|dictfirst:"rx_re_cyl,rx_cyl_od,final_cyl_od"|default:"—" }}</td>
-                    <td>{% with ax=dd|dictfirst:"rx_re_axis,rx_axis_od,final_axis_od" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
-                    <td>{{ dd|dictfirst:"rx_re_add,rx_add_od,add_od"|default:"—" }}</td>
-                    <td>{{ dd|dictfirst:"rx_re_va,rx_bcva_od,bcva_od"|default:"—" }}</td>
+                    <td>{{ dd|dictfirst:"rx_re_cyl,rx_cyl_od,final_cyl_od,pg_cyl_dist_od"|default:"—" }}</td>
+                    <td>{% with ax=dd|dictfirst:"rx_re_axis,rx_axis_od,final_axis_od,pg_axis_dist_od" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+                    <td>{{ dd|dictfirst:"rx_re_add,rx_add_od,add_od,pg_add_od"|default:"—" }}</td>
+                    <td>{{ dd|dictfirst:"rx_re_va,rx_bcva_od,bcva_od,pg_va_dist_od"|default:"—" }}</td>
                   </tr>
                   <tr>
                     <td class="eye-le">OS</td>
                     <td>{{ sph_os|default:"—" }}</td>
-                    <td>{{ dd|dictfirst:"rx_le_cyl,rx_cyl_os,final_cyl_os"|default:"—" }}</td>
-                    <td>{% with ax=dd|dictfirst:"rx_le_axis,rx_axis_os,final_axis_os" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
-                    <td>{{ dd|dictfirst:"rx_le_add,rx_add_os,add_os"|default:"—" }}</td>
-                    <td>{{ dd|dictfirst:"rx_le_va,rx_bcva_os,bcva_os"|default:"—" }}</td>
+                    <td>{{ dd|dictfirst:"rx_le_cyl,rx_cyl_os,final_cyl_os,pg_cyl_dist_os"|default:"—" }}</td>
+                    <td>{% with ax=dd|dictfirst:"rx_le_axis,rx_axis_os,final_axis_os,pg_axis_dist_os" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+                    <td>{{ dd|dictfirst:"rx_le_add,rx_add_os,add_os,pg_add_os"|default:"—" }}</td>
+                    <td>{{ dd|dictfirst:"rx_le_va,rx_bcva_os,bcva_os,pg_va_dist_os"|default:"—" }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -683,27 +686,34 @@
               document.getElementById('vitalsTableView').classList.add('d-none');
               document.getElementById('vitalsChartView').classList.remove('d-none');
               if (!chartInstance) {
-                try {
-                  var ctx = document.getElementById('iopTrendChart').getContext('2d');
-                  chartInstance = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                      labels: labels,
-                      datasets: [
-                        { label: 'IOP Right (mmHg)', data: iopR, borderColor: '#0891b2', backgroundColor: 'rgba(8,145,178,.1)', tension: 0.3, spanGaps: true },
-                        { label: 'IOP Left (mmHg)',  data: iopL, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.1)', tension: 0.3, spanGaps: true },
-                      ]
-                    },
-                    options: {
-                      responsive: true,
-                      plugins: { legend: { position: 'top' } },
-                      scales: {
-                        y: { title: { display: true, text: 'IOP (mmHg)' }, suggestedMin: 5, suggestedMax: 30 }
+                var hasIopData = iopR.some(function(x){ return x !== null; }) || iopL.some(function(x){ return x !== null; });
+                if (!hasIopData) {
+                  document.getElementById('vitalsChartView').innerHTML =
+                    '<div class="text-center text-muted py-4 small"><i class="bi bi-graph-up fs-2 d-block mb-2 opacity-25"></i>' +
+                    'No IOP readings available yet.<br>IOP is recorded during clinical examination by the doctor.</div>';
+                } else {
+                  try {
+                    var ctx = document.getElementById('iopTrendChart').getContext('2d');
+                    chartInstance = new Chart(ctx, {
+                      type: 'line',
+                      data: {
+                        labels: labels,
+                        datasets: [
+                          { label: 'IOP Right (mmHg)', data: iopR, borderColor: '#0891b2', backgroundColor: 'rgba(8,145,178,.1)', tension: 0.3, spanGaps: true },
+                          { label: 'IOP Left (mmHg)',  data: iopL, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.1)', tension: 0.3, spanGaps: true },
+                        ]
+                      },
+                      options: {
+                        responsive: true,
+                        plugins: { legend: { position: 'top' } },
+                        scales: {
+                          y: { title: { display: true, text: 'IOP (mmHg)' }, suggestedMin: 5, suggestedMax: 30 }
+                        }
                       }
-                    }
-                  });
-                } catch(e) {
-                  document.getElementById('vitalsChartView').innerHTML = '<p class="text-muted small text-center py-3">Chart unavailable. Ensure Chart.js is loaded.</p>';
+                    });
+                  } catch(e) {
+                    document.getElementById('vitalsChartView').innerHTML = '<p class="text-muted small text-center py-3">Chart unavailable — ensure Chart.js is loaded.</p>';
+                  }
                 }
               }
             } else {

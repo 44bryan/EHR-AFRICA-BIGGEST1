@@ -217,20 +217,31 @@ def optical_prescription_new(request, consultation_pk):
                     d = ref_consult.department_specific_data or {}
                     # Refractionist stores final Rx as final_sph_od/os, final_cyl_od/os, final_axis_od/os
                     # IPD stored as pd_dist_od + pd_dist_os (split PD)
-                    pd_od = d.get('pd_dist_od', '')
-                    pd_os = d.get('pd_dist_os', '')
+                    # Support both new field names (pg_*) and old fallback names
+                    pd_od = d.get('pd_od') or d.get('pd_dist_od', '')
+                    pd_os = d.get('pd_os') or d.get('pd_dist_os', '')
                     ipd = f"{pd_od}/{pd_os}" if pd_od and pd_os else (pd_od or pd_os or '')
                     initial = {
-                        're_sphere':              d.get('final_sph_od', ''),
-                        're_cylinder':            d.get('final_cyl_od', ''),
-                        're_axis':                d.get('final_axis_od', ''),
-                        're_add':                 d.get('add_od', ''),
-                        're_visual_acuity':       d.get('bcva_od') or d.get('va_corrected_od', ''),
-                        'le_sphere':              d.get('final_sph_os', ''),
-                        'le_cylinder':            d.get('final_cyl_os', ''),
-                        'le_axis':                d.get('final_axis_os', ''),
-                        'le_add':                 d.get('add_os', ''),
-                        'le_visual_acuity':       d.get('bcva_os') or d.get('va_corrected_os', ''),
+                        're_sphere':    d.get('pg_sph_dist_od') or d.get('final_sph_od', ''),
+                        're_cylinder':  d.get('pg_cyl_dist_od') or d.get('final_cyl_od', ''),
+                        're_axis':      d.get('pg_axis_dist_od') or d.get('final_axis_od', ''),
+                        're_add':       d.get('pg_add_od') or d.get('add_od', ''),
+                        're_visual_acuity': (d.get('pg_va_dist_od') or d.get('bcva_od')
+                                             or d.get('va_corrected_od', '')),
+                        're_sphere_near':   d.get('pg_sph_near_od', ''),
+                        're_cylinder_near': d.get('pg_cyl_near_od', ''),
+                        're_axis_near':     d.get('pg_axis_near_od', ''),
+                        're_va_near':       d.get('pg_va_near_od', ''),
+                        'le_sphere':    d.get('pg_sph_dist_os') or d.get('final_sph_os', ''),
+                        'le_cylinder':  d.get('pg_cyl_dist_os') or d.get('final_cyl_os', ''),
+                        'le_axis':      d.get('pg_axis_dist_os') or d.get('final_axis_os', ''),
+                        'le_add':       d.get('pg_add_os') or d.get('add_os', ''),
+                        'le_visual_acuity': (d.get('pg_va_dist_os') or d.get('bcva_os')
+                                             or d.get('va_corrected_os', '')),
+                        'le_sphere_near':   d.get('pg_sph_near_os', ''),
+                        'le_cylinder_near': d.get('pg_cyl_near_os', ''),
+                        'le_axis_near':     d.get('pg_axis_near_os', ''),
+                        'le_va_near':       d.get('pg_va_near_os', ''),
                         'lens_type':              d.get('lens_type', ''),
                         'interpupillary_distance': ipd,
                     }

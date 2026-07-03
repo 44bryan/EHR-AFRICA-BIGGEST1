@@ -1330,11 +1330,14 @@ _NURSE_ROUTE_MAP = {
     'GLAUCOMA':    ('AT_GLAUCOMA',       'GLAUCOMA',   'Glaucoma Clinic'),
     'GENERAL':     ('WAITING',           'GENERAL',    'General Ophthalmology'),
     'DOCTOR':      ('WAITING',           'GENERAL',    'General Ophthalmology'),
-    'CATARACT':    ('CATARACT',          'CATARACT',   'Cataract Clinic'),
+    'PEDIATRIC':   ('AT_PEDIATRIC',      'PEDIATRIC',  'Pediatric Clinic'),
+    'PEDS_OPH':    ('AT_PEDIATRIC',      'PEDIATRIC',  'Pediatric Clinic'),
+    'REFRACTION':  ('REFRACTION',        'REFRACTION', 'Refraction / Optometry'),
+    'CATARACT':    ('AT_CATARACT',       'CATARACT',   'Cataract Clinic'),
     'CORNEA':      ('AT_CORNEA',         'CORNEA',     'Cornea Clinic'),
     'UVEITIS':     ('UVEITIS',           'UVEITIS',    'Uveitis Clinic'),
-    'NEURO':       ('NEURO',             'NEURO',      'Neuro-Ophthalmology'),
-    'OCULOPLASTY': ('AT_OCULOPLASTY',   'OCULOPLASTY','Oculoplastics'),
+    'NEURO':       ('AT_NEURO',          'NEURO',      'Neuro-Ophthalmology'),
+    'OCULOPLASTY': ('AT_OCULOPLASTY',    'OCULOPLASTY','Oculoplastics'),
     'DISCHARGE':   ('COMPLETED',         None,         'Discharge / Done'),
 }
 
