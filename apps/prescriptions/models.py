@@ -148,7 +148,7 @@ class OpticalPrescription(AuditModel):
     # General
     interpupillary_distance = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
     near_ipd = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
-    lens_type = models.CharField(max_length=100, blank=True, help_text='e.g. Single Vision, Bifocal, Progressive')
+    lens_type = models.CharField(max_length=500, blank=True, help_text='Comma-separated list of lens types')
     frame_advice = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     is_dispensed = models.BooleanField(default=False)

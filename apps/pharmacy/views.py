@@ -234,10 +234,10 @@ def dispense(request):
 @login_required
 def add_dispensing_item(request, dispensing_id):
     """Add a drug item to an open dispensing record."""
-    if not request.user.can_dispense_pharmacy():
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if not (request.user.can_dispense_pharmacy() or request.user == dispensing.dispensed_by):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
     if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
         messages.error(request, 'Cannot add items to a completed or cancelled dispensing.')
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
@@ -312,9 +312,9 @@ def drug_search_ajax(request):
 @login_required
 def add_dispensing_item_ajax(request, dispensing_id):
     """AJAX: add a drug item to dispensing, return updated totals and interaction check."""
-    if not request.user.can_dispense_pharmacy():
-        return JsonResponse({'error': 'Permission denied'}, status=403)
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if not (request.user.can_dispense_pharmacy() or request.user == dispensing.dispensed_by):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
     if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
         return JsonResponse({'error': 'Cannot add items to a completed dispensing'}, status=400)
 
