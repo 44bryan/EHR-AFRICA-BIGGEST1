@@ -12,6 +12,18 @@
 
 <form method="post" id="consultationForm">
 {% csrf_token %}
+<input type="hidden" id="draftPk" name="draft_pk" value="">
+<input type="hidden" id="patientIdHidden" value="{{ patient.patient_id }}">
+<input type="hidden" id="visitIdHidden" value="{{ visit.pk|default:'' }}">
+{# Toast for draft save feedback #}
+<div id="draftToast" class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div class="toast align-items-center text-bg-success border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="draftToastMsg"><i class="bi bi-check-circle me-1"></i>Draft saved.</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
 
 {% if referring_consult %}
 <!-- ── Referring Doctor's Consultation (same visit) ── -->
@@ -370,6 +382,11 @@
           </div>
 
         </div>
+        <div class="mt-2 pt-2 border-top d-flex justify-content-end">
+          <button type="button" class="btn btn-sm btn-outline-success" onclick="saveDraft('history')">
+            <i class="bi bi-cloud-check me-1"></i>Save History Draft
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -423,6 +440,11 @@
         {% else %}
           {% include 'consultations/clinical/_gen_oph_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
         {% endif %}
+        <div class="mt-2 pt-2 border-top d-flex justify-content-end">
+          <button type="button" class="btn btn-sm btn-outline-success" onclick="saveDraft('clinical')">
+            <i class="bi bi-cloud-check me-1"></i>Save Clinical Draft
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -645,6 +667,67 @@ function toggleCard(bodyId, header) {
     chevron.classList.toggle('bi-chevron-up',   isHidden);
     chevron.classList.toggle('bi-chevron-down', !isHidden);
   }
+}
+
+// ── Section draft autosave ────────────────────────────────────────────────────
+const _autosaveUrl = '{% url "consultations:autosave" %}';
+const _csrfToken   = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+function saveDraft(section) {
+  const form      = document.getElementById('consultationForm');
+  const draftPkEl = document.getElementById('draftPk');
+  const patientId = document.getElementById('patientIdHidden').value;
+  const visitId   = document.getElementById('visitIdHidden').value;
+
+  const data = new FormData();
+  data.append('csrfmiddlewaretoken', _csrfToken);
+  data.append('_section', section);
+  data.append('draft_pk', draftPkEl.value);
+  data.append('patient_id', patientId);
+  data.append('visit_id', visitId);
+
+  if (section === 'history') {
+    ['presenting_complaint','history_of_presenting_complaint','ocular_history',
+     'systemic_history','drug_history','family_history','social_history'].forEach(function(n) {
+      var el = form.querySelector('[name="' + n + '"]');
+      if (el) data.append(n, el.value);
+    });
+  } else if (section === 'clinical') {
+    form.querySelectorAll('[name^="dept_"]').forEach(function(el) {
+      if (el.type === 'checkbox') {
+        if (el.checked) data.append(el.name, el.value);
+      } else {
+        data.append(el.name, el.value);
+      }
+    });
+  }
+
+  // Disable the button while saving
+  var btn = event.currentTarget || document.querySelector('[onclick="saveDraft(\'' + section + '\')"]');
+
+  fetch(_autosaveUrl, { method: 'POST', body: data,
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(json) {
+    if (json.ok) {
+      draftPkEl.value = json.pk;
+      showDraftToast('Draft saved \u2714');
+    } else {
+      showDraftToast('Save failed: ' + (json.error || 'unknown error'), true);
+    }
+  })
+  .catch(function() { showDraftToast('Network error — draft not saved.', true); });
+}
+
+function showDraftToast(msg, isError) {
+  var toastEl  = document.querySelector('#draftToast .toast');
+  var toastMsg = document.getElementById('draftToastMsg');
+  toastMsg.innerHTML = '<i class="bi bi-' + (isError ? 'exclamation-triangle' : 'check-circle') + ' me-1"></i>' + msg;
+  toastEl.classList.toggle('text-bg-success', !isError);
+  toastEl.classList.toggle('text-bg-danger',   isError);
+  var bsToast = new bootstrap.Toast(toastEl, { delay: 3000 });
+  bsToast.show();
 }
 
 // ── Submit: show loading state ────────────────────────────────────────────────

@@ -953,11 +953,13 @@ def home_view(request):
         unpaid_count = _unpaid_qs.count()
         unpaid = list(_unpaid_qs[:20])
 
-        invoices_today = Invoice.objects.filter(
+        _invoices_today_qs = Invoice.objects.filter(
             created_by=user,
             issue_date=today,
             is_deleted=False,
-        ).count()
+        ).select_related('patient').order_by('-created_at')
+        invoices_today = _invoices_today_qs.count()
+        invoices_today_list = list(_invoices_today_qs)
 
         # My shift today — shows cashier their own running balance
         from apps.billing.models import CashierShift
@@ -973,6 +975,7 @@ def home_view(request):
             'unpaid_invoices': unpaid,
             'unpaid_count': unpaid_count,
             'invoices_today': invoices_today,
+            'invoices_today_list': invoices_today_list,
             'cashier_station_label': user.get_cashier_station_display() if hasattr(user, 'get_cashier_station_display') else 'All',
         })
         return render(request, 'dashboard/cashier.html', ctx)

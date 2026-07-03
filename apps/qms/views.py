@@ -909,10 +909,42 @@ def route_to_dept(request):
             create_kwargs['issued_at'] = issued_at_override
         dept_token = QueueToken.objects.create(**create_kwargs)
 
+        # Complete the calling user's existing active token so the patient
+        # leaves the originating queue (e.g. REFRACTION token when PEDS_REFRAC
+        # routes to GENERAL).  Only complete if it's a different service type.
+        _ROLE_TO_QMS_SVC = {
+            'ophthalmologist':           'GENERAL',
+            'intern':                    'GENERAL',
+            'retina_specialist':         'RETINA',
+            'glaucoma_specialist':       'GLAUCOMA',
+            'pediatric_ophthalmologist': 'PEDIATRIC',
+            'pediatric_refractionist':   'REFRACTION',
+            'optometrist':               'REFRACTION',
+            'cataract_surgeon':          'CATARACT',
+            'cornea_specialist':         'CORNEA',
+            'oculoplastics_surgeon':     'OCULOPLASTY',
+            'neuro_ophthalmologist':     'NEURO',
+            'uveitis_specialist':        'UVEITIS',
+            'low_vision_specialist':     'LOW_VISION',
+        }
+        _user_svc = _ROLE_TO_QMS_SVC.get(getattr(request.user, 'role', ''))
+        if _user_svc and _user_svc != service_type and visit.patient:
+            QueueToken.objects.filter(
+                patient=visit.patient,
+                service_type=_user_svc,
+                issued_at__date=timezone.localdate(),
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                is_deleted=False,
+            ).update(status=TokenStatus.COMPLETED, completed_at=timezone.now())
+
         # Update visit status and department — SKIP for VIP specialist calls
         # (VIP patient stays in the VIP room; only the specialist moves)
         if not _is_vip_call_early:
+            # Build reverse map — for service types that map to multiple visit
+            # statuses (e.g. GENERAL → WAITING and IN_CONSULTATION), prefer WAITING.
+            _prefer_status = {'GENERAL': 'WAITING'}
             reverse_map = {v: k for k, v in VISIT_STATUS_TO_SERVICE_TYPE.items()}
+            reverse_map.update(_prefer_status)
             new_status = reverse_map.get(service_type)
             update_fields = ['updated_at']
             if new_status:

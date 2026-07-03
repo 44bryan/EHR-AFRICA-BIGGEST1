@@ -18,6 +18,7 @@ urlpatterns = [
     path('<uuid:pk>/exam-update/', views.update_exam_findings_view, name='update_exam'),
     path('<uuid:pk>/diagnosis/add/', views.diagnosis_add_view, name='diagnosis_add'),
     path('<uuid:pk>/diagnosis/<uuid:cd_pk>/remove/', views.diagnosis_remove_view, name='diagnosis_remove'),
+    path('autosave/', views.consultation_autosave_view, name='autosave'),
     path('diagnoses/search/', views.diagnosis_search_view, name='diagnosis_search'),
     path('clinic-nurse/', views.clinic_nurse_view, name='clinic_nurse'),
     path('clinic-nurse/call/<uuid:visit_pk>/', views.clinic_call_patient_view, name='clinic_call'),

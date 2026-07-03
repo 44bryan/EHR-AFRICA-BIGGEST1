@@ -18,7 +18,7 @@ _DEPT_TO_SERVICE_TYPES = {
     'RETINA':     ['RETINA'],
     'GLAUC':      ['GLAUCOMA'],
     'PEDS_OPH':   ['PEDIATRIC'],
-    'PEDS_REFRAC':['PEDIATRIC'],
+    'PEDS_REFRAC':['REFRACTION'],
     'REFRAC':     ['REFRACTION'],
     'CORNEA':     ['CORNEA'],
     'OCULOPLASTY':['OCULOPLASTY'],
@@ -35,7 +35,7 @@ _DEPT_TO_VISIT_STATUSES = {
     'RETINA':      ['AT_RETINA'],
     'GLAUC':       ['AT_GLAUCOMA'],
     'PEDS_OPH':    ['AT_PEDIATRIC'],
-    'PEDS_REFRAC': ['AT_PEDIATRIC'],
+    'PEDS_REFRAC': ['REFRACTION'],
     'REFRAC':      ['REFRACTION'],
     'CORNEA':      ['AT_CORNEA'],
     'OCULOPLASTY': ['AT_OCULOPLASTY'],
@@ -581,7 +581,7 @@ def consultation_complete_view(request, pk):
             'RETINA':      ['RETINA'],
             'GLAUC':       ['GLAUCOMA'],
             'PEDS_OPH':    ['PEDIATRIC'],
-            'PEDS_REFRAC': ['PEDIATRIC'],
+            'PEDS_REFRAC': ['REFRACTION'],
             'REFRAC':      ['REFRACTION'],
             'CORNEA':      ['CORNEA'],
             'OCULOPLASTY': ['OCULOPLASTY'],
@@ -716,8 +716,85 @@ def save_dept_clinical_view(request, pk):
     consultation.updated_by = request.user
     consultation.save(update_fields=['department_specific_data', 'examination_findings', 'updated_by', 'updated_at'])
 
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'ok': True})
     messages.success(request, 'Clinical examination data saved.')
     return redirect('consultations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def consultation_autosave_view(request):
+    """
+    AJAX endpoint — creates or updates a draft Consultation without closing the form.
+    Called by section Save Draft buttons on the create form.
+
+    POST params:
+        patient_id  — patient's string ID (e.g. EHR-0001)
+        visit_id    — Visit UUID (optional)
+        draft_pk    — existing draft UUID (if returning to update)
+        _section    — 'history' | 'clinical' (determines which fields to save)
+    Returns: {ok: true, pk: "<uuid>"}
+    """
+    patient_id = request.POST.get('patient_id', '').strip()
+    visit_id   = request.POST.get('visit_id', '').strip()
+    draft_pk   = request.POST.get('draft_pk', '').strip()
+    section    = request.POST.get('_section', 'history')
+
+    if draft_pk:
+        consultation = get_object_or_404(
+            Consultation, pk=draft_pk, consulting_doctor=request.user,
+            status=ConsultationStatus.IN_PROGRESS, is_deleted=False
+        )
+    else:
+        if not patient_id:
+            return JsonResponse({'ok': False, 'error': 'patient_id required'}, status=400)
+        patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+        visit   = get_object_or_404(Visit, pk=visit_id, is_deleted=False) if visit_id else None
+        consultation = Consultation.objects.create(
+            patient=patient,
+            visit=visit,
+            department=request.user.department,
+            consulting_doctor=request.user,
+            presenting_complaint=request.POST.get('presenting_complaint', '').strip(),
+            status=ConsultationStatus.IN_PROGRESS,
+            created_by=request.user,
+        )
+        if visit and visit.status not in ('IN_CONSULTATION', 'COMPLETED', 'DISCHARGED'):
+            visit.status = 'IN_CONSULTATION'
+            visit.attending_doctor = request.user
+            visit.save(update_fields=['status', 'attending_doctor', 'updated_at'])
+
+    # Save history fields
+    if section == 'history':
+        history_fields = [
+            'presenting_complaint', 'history_of_presenting_complaint',
+            'ocular_history', 'systemic_history', 'drug_history',
+            'family_history', 'social_history',
+        ]
+        changed = ['updated_by', 'updated_at']
+        for f in history_fields:
+            val = request.POST.get(f, '').strip()
+            if val:
+                setattr(consultation, f, val)
+                changed.append(f)
+        consultation.updated_by = request.user
+        consultation.save(update_fields=changed)
+
+    # Save clinical dept_ fields
+    elif section == 'clinical':
+        dept_data = {
+            k[5:]: v.strip()
+            for k, v in request.POST.items()
+            if k.startswith('dept_') and v.strip()
+        }
+        existing = consultation.department_specific_data or {}
+        existing.update(dept_data)
+        consultation.department_specific_data = existing
+        consultation.updated_by = request.user
+        consultation.save(update_fields=['department_specific_data', 'updated_by', 'updated_at'])
+
+    return JsonResponse({'ok': True, 'pk': str(consultation.pk)})
 
 
 @login_required
@@ -1099,7 +1176,7 @@ _DEPT_TO_WAITING_STATUSES = {
     'RETINA':      ['AT_RETINA'],
     'GLAUC':       ['AT_GLAUCOMA'],
     'PEDS_OPH':    ['AT_PEDIATRIC'],
-    'PEDS_REFRAC': ['AT_PEDIATRIC'],
+    'PEDS_REFRAC': ['REFRACTION'],
     'REFRAC':      ['REFRACTION'],
     'CORNEA':      ['AT_CORNEA'],
     'OCULOPLASTY': ['AT_OCULOPLASTY'],
@@ -1115,7 +1192,7 @@ _DEPT_TO_QMS_SERVICE = {
     'RETINA':      'RETINA',
     'GLAUC':       'GLAUCOMA',
     'PEDS_OPH':    'PEDIATRIC',
-    'PEDS_REFRAC': 'PEDIATRIC',
+    'PEDS_REFRAC': 'REFRACTION',
     'REFRAC':      'REFRACTION',
     'CORNEA':      'CORNEA',
     'OCULOPLASTY': 'OCULOPLASTY',
@@ -1386,22 +1463,30 @@ def nurse_route_patient_view(request, visit_pk):
                         is_deleted=False,
                     ).update(status=TokenStatus.COMPLETED, completed_at=timezone.now())
 
-                # Issue a new token for destination service
+                # Issue a new token for destination service (skip if already waiting there)
                 if qms_service and visit.patient:
-                    tier = visit.service_tier
-                    token_number = DailyTokenSequence.next_dept_token(qms_service)
-                    QueueToken.objects.create(
-                        token_number=token_number,
+                    already_waiting = QueueToken.objects.filter(
                         patient=visit.patient,
-                        visit=visit,
-                        patient_name=visit.patient.full_name,
                         service_type=qms_service,
-                        service_tier=tier,
-                        issuance_point=IssuancePoint.SYSTEM,
-                        priority=TIER_PRIORITY.get(tier, 0),
-                        notes=f'Routed by {user.get_full_name()} to {label}',
-                        issued_by=user,
-                    )
+                        issued_at__date=today,
+                        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                        is_deleted=False,
+                    ).exists()
+                    if not already_waiting:
+                        tier = visit.service_tier
+                        token_number = DailyTokenSequence.next_dept_token(qms_service)
+                        QueueToken.objects.create(
+                            token_number=token_number,
+                            patient=visit.patient,
+                            visit=visit,
+                            patient_name=visit.patient.full_name,
+                            service_type=qms_service,
+                            service_tier=tier,
+                            issuance_point=IssuancePoint.SYSTEM,
+                            priority=TIER_PRIORITY.get(tier, 0),
+                            notes=f'Routed by {user.get_full_name()} to {label}',
+                            issued_by=user,
+                        )
         except Exception:
             pass
 

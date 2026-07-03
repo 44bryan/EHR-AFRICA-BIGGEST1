@@ -175,11 +175,50 @@
 </div>
 {% endif %}
 
+{# ── My Invoices Today ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-calendar-check me-2 text-success"></i>My Invoices Today</h6>
+    <span class="badge bg-success">{{ invoices_today }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Invoice No.</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices_today_list %}
+        <tr>
+          <td><code>{{ inv.invoice_number }}</code></td>
+          <td class="fw-semibold">{{ inv.patient.full_name }}</td>
+          <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
+          <td class="{% if inv.balance_due > 0 %}text-primary fw-semibold{% else %}text-success{% endif %}">
+            {{ inv.balance_due|floatformat:0|intcomma }} FCFA
+          </td>
+          <td>
+            <span class="badge bg-{% if inv.status == 'PAID' %}success{% elif inv.status == 'PARTIAL' %}warning text-dark{% elif inv.status == 'VOID' %}danger{% else %}secondary{% endif %}">
+              {{ inv.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-primary">
+              View
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4">No invoices issued yet today.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 {# ── Unpaid invoices ── #}
 <div class="card border-0 shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-primary"></i>Unpaid Invoices</h6>
-    <span class="badge bg-primary">{{ unpaid_count }}</span>
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-warning"></i>Unpaid Invoices (Pending Collection)</h6>
+    <span class="badge bg-warning text-dark">{{ unpaid_count }}</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
