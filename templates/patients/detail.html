@@ -413,8 +413,9 @@
               fall back to visit.vital_signs (triage measured)
             {% endcomment %}
             {# VA/IOP: supports gen_oph (va_re_unaided/iop_re) + refraction (va_unaided_od/iop_od) naming #}
-            {% with va_od=dd.va_re_unaided|default:dd.va_unaided_od va_os=dd.va_le_unaided|default:dd.va_unaided_os iop_od=dd.iop_re|default:dd.iop_od iop_os=dd.iop_le|default:dd.iop_os %}
-            {% if va_od or va_os or iop_od or iop_os or vs %}
+            {# Django 6: |default:dd.variable crashes when key missing — use {% if %} instead #}
+            {% with va_od=dd.va_re_unaided va_os=dd.va_le_unaided iop_od=dd.iop_re iop_os=dd.iop_le %}
+            {% if va_od or va_os or iop_od or iop_os or dd.va_unaided_od or dd.va_unaided_os or vs %}
             <div class="exam-grid mb-3">
               <div class="eg-box">
                 <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
@@ -423,15 +424,15 @@
                   <tbody>
                     <tr>
                       <td class="eye-re">OD</td>
-                      <td>{% if va_od %}{{ va_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+                      <td>{% if va_od %}{{ va_od }}{% elif dd.va_unaided_od %}{{ dd.va_unaided_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
                       <td>{{ dd.va_re_ph|default:"—" }}</td>
-                      <td>{{ dd.va_re_bcva|default:dd.va_corrected_od|default:"—" }}</td>
+                      <td>{% if dd.va_re_bcva %}{{ dd.va_re_bcva }}{% elif dd.va_corrected_od %}{{ dd.va_corrected_od }}{% else %}—{% endif %}</td>
                     </tr>
                     <tr>
                       <td class="eye-le">OS</td>
-                      <td>{% if va_os %}{{ va_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+                      <td>{% if va_os %}{{ va_os }}{% elif dd.va_unaided_os %}{{ dd.va_unaided_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
                       <td>{{ dd.va_le_ph|default:"—" }}</td>
-                      <td>{{ dd.va_le_bcva|default:dd.va_corrected_os|default:"—" }}</td>
+                      <td>{% if dd.va_le_bcva %}{{ dd.va_le_bcva }}{% elif dd.va_corrected_os %}{{ dd.va_corrected_os }}{% else %}—{% endif %}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -441,14 +442,14 @@
                 <div class="d-flex justify-content-around align-items-center" style="height:60px;">
                   <div class="text-center">
                     <div class="eye-re fw-bold" style="font-size:1.3rem;">
-                      {% if iop_od %}{{ iop_od }}{% elif vs.intraocular_pressure_right %}{{ vs.intraocular_pressure_right }}{% else %}—{% endif %}
+                      {% if iop_od %}{{ iop_od }}{% elif dd.iop_od %}{{ dd.iop_od }}{% elif vs.intraocular_pressure_right %}{{ vs.intraocular_pressure_right }}{% else %}—{% endif %}
                     </div>
                     <div style="font-size:.65rem;color:#64748b;">OD mmHg</div>
                   </div>
                   <div style="width:1px;height:40px;background:#e2e8f0;"></div>
                   <div class="text-center">
                     <div class="eye-le fw-bold" style="font-size:1.3rem;">
-                      {% if iop_os %}{{ iop_os }}{% elif vs.intraocular_pressure_left %}{{ vs.intraocular_pressure_left }}{% else %}—{% endif %}
+                      {% if iop_os %}{{ iop_os }}{% elif dd.iop_os %}{{ dd.iop_os }}{% elif vs.intraocular_pressure_left %}{{ vs.intraocular_pressure_left }}{% else %}—{% endif %}
                     </div>
                     <div style="font-size:.65rem;color:#64748b;">OS mmHg</div>
                   </div>
