@@ -393,6 +393,7 @@ class User(AbstractUser):
             UserRole.LOW_VISION_SPECIALIST:     'LOW_VIS',
             UserRole.OPHTHALMOLOGIST:           'GEN_OPH',
             UserRole.INTERN:                    'GEN_OPH',   # interns work under general ophthalmology
+            UserRole.ORTHOPTIST:                'ORTHO',
             UserRole.INVESTIGATION_TECHNICIAN:  'INVEST',
         }
         return mapping.get(self.role)
