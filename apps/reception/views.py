@@ -38,6 +38,10 @@ def desk(request):
         appointment_date=today, is_deleted=False
     ).select_related('patient', 'department').order_by('appointment_time')
 
+    registered_today = Patient.objects.filter(
+        created_at__date=today, is_active=True
+    ).count()
+
     stats = {
         'total': appointments.count(),
         'waiting': appointments.filter(status__in=[
@@ -45,15 +49,17 @@ def desk(request):
         ]).count(),
         'checked_in': appointments.filter(status=Appointment.Status.CHECKED_IN).count(),
         'completed': appointments.filter(status=Appointment.Status.COMPLETED).count(),
+        'registered_today': registered_today,
     }
 
     # Active QMS queue — only populated when QMS module is on
     queue = []
     if qms_active():
-        from apps.qms.models import QueueToken, TokenStatus
+        from apps.qms.models import QueueToken, TokenStatus, ServiceType
         queue = QueueToken.objects.filter(
             issued_at__date=today,
             is_deleted=False,
+            service_type=ServiceType.RECEPTIONIST,
         ).exclude(
             status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED]
         ).order_by('-priority', 'issued_at').select_related('patient')[:30]
