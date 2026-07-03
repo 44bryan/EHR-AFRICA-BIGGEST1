@@ -1,564 +1,632 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}Cashier POS — {{ patient.full_name|default:"Walk-in" }}{% endblock %}
+{% block title %}Cashier — {{ patient.full_name|default:"No Patient" }}{% endblock %}
 
-{% block extra_css %}{% endblock %}
+{% block extra_css %}
+<style>
+/* ═══════════════════════════════════════════════════════
+   CASHIER POS — Dark Slate + Blue 2-Color Theme
+   Primary:  #2563eb  (blue-600)
+   Surface:  #1e293b  (slate-800)
+   BG:       #0f172a  (slate-900)
+   Border:   #334155  (slate-700)
+   Text:     #f1f5f9  (slate-100)
+   Muted:    #94a3b8  (slate-400)
+═══════════════════════════════════════════════════════ */
+
+/* ── Page background ──────────────────────────────── */
+.pos-root { background: #0f172a; min-height: calc(100vh - 60px); padding: 0.75rem; margin: -1.5rem; }
+
+/* ── Shift bar ────────────────────────────────────── */
+.shift-bar {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.shift-bar .sb-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; }
+.shift-bar .sb-label { color: #94a3b8; }
+.shift-bar .sb-val   { color: #f1f5f9; font-weight: 700; }
+.shift-bar .sb-cash  { color: #22c55e; }
+.shift-bar .sb-momo  { color: #f59e0b; }
+.shift-bar .sb-total { color: #2563eb; font-size: 0.9rem; }
+
+/* ── Patient banner ───────────────────────────────── */
+.pat-banner {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-left: 4px solid #2563eb;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.pat-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: #2563eb; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem; font-weight: 900; flex-shrink: 0;
+}
+.pat-name  { color: #f1f5f9; font-size: 1rem; font-weight: 700; }
+.pat-meta  { color: #94a3b8; font-size: 0.75rem; }
+.pat-badge { background: #334155; color: #94a3b8; border-radius: 20px; padding: 2px 10px; font-size: 0.72rem; }
+.pat-badge-inv { background: #1d4ed8; color: #bfdbfe; border-radius: 20px; padding: 2px 10px; font-size: 0.72rem; }
+
+/* ── Alerts ───────────────────────────────────────── */
+.pos-alert { border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.6rem; font-size: 0.8rem; display: flex; gap: 0.5rem; align-items: flex-start; }
+.pos-alert-warn  { background: #422006; border: 1px solid #78350f; color: #fef3c7; }
+.pos-alert-danger { background: #450a0a; border: 1px solid #7f1d1d; color: #fee2e2; }
+.pos-alert-info  { background: #0c2a4a; border: 1px solid #1d4ed8; color: #bfdbfe; }
+
+/* ── Main grid ────────────────────────────────────── */
+.pos-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+@media (max-width: 1024px) {
+  .pos-grid { grid-template-columns: 1fr; }
+  .catalog-col { order: 2; }
+  .bill-col    { order: 1; }
+}
+
+/* ── Catalog panel ────────────────────────────────── */
+.catalog-col {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 0.75rem;
+  position: sticky;
+  top: 0.75rem;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+/* Category tabs */
+.cat-tabs { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 0.6rem; }
+.cat-tab {
+  background: #0f172a; border: 1px solid #334155; color: #94a3b8;
+  border-radius: 6px; padding: 3px 8px; font-size: 0.68rem; font-weight: 600;
+  cursor: pointer; transition: all .12s; letter-spacing: .03em;
+}
+.cat-tab:hover { background: #1e3a5f; border-color: #2563eb; color: #bfdbfe; }
+.cat-tab.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+.cat-tab.orders-tab { background: #14532d; border-color: #16a34a; color: #bbf7d0; }
+.cat-tab.orders-tab.active { background: #16a34a; color: #fff; }
+
+/* Service buttons */
+.svc-btn {
+  width: 100%; background: #0f172a; border: 1px solid #334155; color: #e2e8f0;
+  border-radius: 7px; padding: 0.45rem 0.65rem; font-size: 0.8rem;
+  cursor: pointer; transition: all .12s; text-align: left;
+  display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+  margin-bottom: 3px;
+}
+.svc-btn:hover { background: #2563eb; border-color: #2563eb; color: #fff; }
+.svc-btn:hover .svc-price { color: #bfdbfe; }
+.svc-btn .svc-price { font-size: 0.72rem; color: #2563eb; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.svc-btn.orders-btn { background: #052e16; border-color: #16a34a; }
+.svc-btn.orders-btn:hover { background: #16a34a; }
+.svc-btn.orders-btn .svc-price { color: #4ade80; }
+
+/* Cat panes */
+.cat-pane { display: none; }
+.cat-pane.active { display: block; }
+
+/* Section label */
+.cat-label { color: #475569; font-size: 0.65rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 4px; }
+
+/* Custom item */
+.custom-row { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 0.65rem; }
+.custom-row input, .custom-row select {
+  background: #1e293b !important; border: 1px solid #334155 !important;
+  color: #f1f5f9 !important; font-size: 0.78rem !important;
+}
+.custom-row input::placeholder { color: #475569; }
+.custom-row input:focus, .custom-row select:focus {
+  border-color: #2563eb !important; box-shadow: 0 0 0 2px rgba(37,99,235,.2) !important;
+}
+.custom-row select option { background: #1e293b; }
+
+/* ── Bill panel ───────────────────────────────────── */
+.bill-col {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+/* Invoice header */
+.inv-hdr { display: flex; align-items: center; justify-content: space-between; }
+.inv-no   { color: #2563eb; font-weight: 700; font-size: 0.9rem; }
+.inv-date { color: #475569; font-size: 0.75rem; }
+
+/* Items table */
+.items-tbl { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.items-tbl th { color: #475569; font-weight: 600; padding: 0.25rem 0.4rem; border-bottom: 1px solid #334155; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; }
+.items-tbl td { padding: 0.32rem 0.4rem; border-bottom: 1px solid #0f172a; vertical-align: middle; color: #e2e8f0; }
+.items-tbl tr:hover td { background: #263347; }
+.item-desc { color: #f1f5f9; font-weight: 500; }
+.item-cat  { color: #475569; font-size: 0.68rem; }
+.item-amt  { color: #2563eb; font-weight: 600; white-space: nowrap; }
+.rm-btn {
+  background: #1a0a0a; border: 1px solid #7f1d1d; color: #f87171;
+  padding: 3px 7px; font-size: 0.75rem; border-radius: 5px; cursor: pointer; transition: all .12s;
+}
+.rm-btn:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
+
+/* Totals */
+.totals-blk { border-top: 1px solid #334155; padding-top: 0.5rem; }
+.tot-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; font-size: 0.82rem; }
+.tot-lbl  { color: #94a3b8; }
+.tot-val  { color: #e2e8f0; }
+.grand-row { font-size: 1.05rem; font-weight: 700; margin-top: 4px; }
+.grand-lbl { color: #f1f5f9; }
+.grand-val { color: #2563eb; }
+.patient-pays { color: #22c55e; font-weight: 700; }
+
+/* Discount / insurance row */
+.mod-row input, .mod-row select {
+  background: #0f172a !important; border: 1px solid #334155 !important;
+  color: #f1f5f9 !important; font-size: 0.78rem !important;
+}
+.mod-row input:focus { border-color: #2563eb !important; box-shadow: none !important; }
+.mod-row input::placeholder { color: #475569; }
+.mod-btn {
+  background: #334155; border: none; color: #e2e8f0;
+  font-size: 0.72rem; padding: 3px 9px; border-radius: 5px; cursor: pointer;
+}
+.mod-btn:hover { background: #2563eb; color: #fff; }
+
+/* Payment log */
+.pay-log { font-size: 0.75rem; }
+.pay-entry { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #0f172a; color: #94a3b8; }
+.pay-entry:last-child { border-bottom: none; }
+.pay-credit { color: #4ade80; font-weight: 600; }
+.bal-row { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.95rem; }
+.bal-due { color: #f87171; }
+.bal-clear { color: #4ade80; }
+
+/* Payment section */
+.pay-section { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 0.75rem; }
+.pay-section-lbl { color: #475569; font-size: 0.65rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 0.5rem; }
+
+/* Payment method buttons */
+.method-btns { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 0.5rem; }
+.meth-btn {
+  background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+  border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; transition: all .12s;
+}
+.meth-btn:hover { border-color: #2563eb; color: #bfdbfe; }
+.meth-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+/* Split payment inputs */
+.split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
+.split-card { background: #1e293b; border: 1px solid #334155; border-radius: 7px; padding: 0.5rem; }
+.split-card-lbl { font-size: 0.65rem; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; font-weight: 600; margin-bottom: 3px; }
+.split-cash-lbl { color: #22c55e; }
+.split-momo-lbl { color: #f59e0b; }
+.split-input {
+  width: 100%; background: #0f172a !important; border: 1px solid #334155 !important;
+  color: #f1f5f9 !important; border-radius: 5px; padding: 4px 7px; font-size: 0.82rem; font-weight: 700;
+}
+.split-input:focus { border-color: #2563eb !important; outline: none; box-shadow: 0 0 0 2px rgba(37,99,235,.2); }
+.split-input::placeholder { color: #475569; font-weight: 400; }
+
+/* single payment amount */
+.single-amt {
+  width: 100%; background: #0f172a !important; border: 1px solid #334155 !important;
+  color: #f1f5f9 !important; border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.single-amt:focus { border-color: #2563eb !important; outline: none; box-shadow: 0 0 0 2px rgba(37,99,235,.2); }
+.single-amt::placeholder { color: #475569; font-weight: 400; }
+
+.pay-ref {
+  width: 100%; background: #0f172a !important; border: 1px solid #334155 !important;
+  color: #f1f5f9 !important; border-radius: 6px; padding: 5px 8px; font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+}
+.pay-ref:focus { border-color: #2563eb !important; outline: none; }
+.pay-ref::placeholder { color: #475569; }
+
+/* Insurance panel */
+.ins-panel { background: #0c2a4a; border: 1px solid #1d4ed8; border-radius: 7px; padding: 0.5rem 0.7rem; font-size: 0.75rem; color: #bfdbfe; margin-bottom: 0.5rem; }
+
+/* Collect button */
+.btn-collect {
+  width: 100%; background: linear-gradient(135deg, #1d4ed8, #2563eb);
+  border: none; color: #fff; border-radius: 8px;
+  padding: 0.7rem 1rem; font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; transition: all .15s; letter-spacing: .02em;
+}
+.btn-collect:hover:not(:disabled) { background: linear-gradient(135deg, #2563eb, #3b82f6); transform: translateY(-1px); }
+.btn-collect:disabled { background: #334155; color: #475569; cursor: not-allowed; transform: none; }
+.btn-reprint { width: 100%; background: #0f172a; border: 1px solid #334155; color: #94a3b8; border-radius: 8px; padding: 0.5rem; font-size: 0.82rem; cursor: pointer; margin-top: 0.4rem; }
+.btn-reprint:hover { border-color: #2563eb; color: #bfdbfe; }
+
+/* Floating cart (mobile) */
+#floatCart { display: none; }
+@media (max-width: 1024px) {
+  #floatCart {
+    display: block; position: fixed; bottom: 1rem; right: 1rem; z-index: 999;
+  }
+  #floatCart button {
+    background: #2563eb; color: #fff; border: none; border-radius: 50px;
+    padding: 0.55rem 1.1rem; font-size: 0.85rem; font-weight: 700; box-shadow: 0 4px 14px rgba(37,99,235,.4);
+  }
+}
+
+/* Price modal */
+#priceModal .modal-content { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; }
+#priceModal .modal-header { border-bottom: 1px solid #334155; }
+#priceModal .modal-footer { border-top: none; }
+#priceModal input { background: #0f172a !important; border: 1px solid #334155 !important; color: #f1f5f9 !important; }
+#priceModal input:focus { border-color: #2563eb !important; box-shadow: none !important; }
+#priceModal .btn-close { filter: invert(1); }
+
+/* Toast */
+.pos-toast { position: fixed; top: 1rem; right: 1rem; z-index: 9999; min-width: 240px; border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.82rem; font-weight: 500; }
+.pos-toast-ok   { background: #052e16; border: 1px solid #16a34a; color: #bbf7d0; }
+.pos-toast-err  { background: #450a0a; border: 1px solid #dc2626; color: #fecaca; }
+.pos-toast-warn { background: #422006; border: 1px solid #d97706; color: #fed7aa; }
+
+/* Empty state */
+.empty-bill { color: #334155; text-align: center; padding: 1.5rem 0; font-size: 0.82rem; }
+
+/* Discard button */
+.btn-discard { width: 100%; background: transparent; border: 1px solid #7f1d1d; color: #f87171; border-radius: 7px; padding: 0.4rem; font-size: 0.78rem; cursor: pointer; margin-top: 0.4rem; }
+.btn-discard:hover { background: #450a0a; }
+
+/* Section divider */
+.pos-div { border: none; border-top: 1px solid #334155; margin: 0; }
+
+/* AI button */
+.ai-tab { background: linear-gradient(135deg,#4c1d95,#6d28d9) !important; border-color: #6d28d9 !important; color: #fff !important; }
+.ai-tab:hover { background: linear-gradient(135deg,#5b21b6,#7c3aed) !important; }
+</style>
+{% endblock %}
 
 {% block content %}
 {% load humanize %}
-<style>
-  /* ── POS layout ── */
-  .pos-wrapper {
-    display: grid;
-    grid-template-columns: 320px 1fr;
-    gap: 1rem;
-    align-items: start;   /* each panel sizes to its own content */
-  }
-
-  /* ── Tablet + Mobile: stack panels vertically ── */
-  @media (max-width: 1024px) {
-    .pos-wrapper {
-      grid-template-columns: 1fr;
-    }
-    .billing-panel {
-      order: -1; /* Show billing summary at top on tablet/mobile */
-    }
-    .service-btn {
-      font-size: 0.9rem !important;
-      padding: 0.65rem 0.9rem !important;
-    }
-  }
-
-  /* Patient card */
-  .patient-banner {
-    background: #fff;
-    border-radius: 12px;
-    border: 1px solid #dee2e6;
-    border-left: 4px solid #0d6efd;
-  }
-  .tier-badge-STANDARD   { background: #6c757d; }
-  .tier-badge-EXPRESS    { background: #0891b2; }
-  .tier-badge-FAST_TRACK { background: #d97706; }
-  .tier-badge-VIP        { background: #7c3aed; }
-
-  /* Left panel — catalog */
-  .catalog-panel {
-    background: #fff;
-    border-radius: 12px;
-    border: 1px solid #dee2e6;
-    padding: 1rem 1rem 0.75rem;
-    position: sticky;
-    top: 1rem;   /* sticks while billing panel scrolls with page */
-    max-height: calc(100vh - 80px);
-    overflow-y: auto;
-  }
-  .catalog-panel h6 { color: #6c757d; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
-  /* Category tab buttons */
-  .cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 0.6rem; }
-  .cat-tab-btn {
-    background: #f1f5f9; border: 1px solid #dee2e6; border-radius: 20px;
-    padding: 0.18rem 0.6rem; font-size: 0.7rem; font-weight: 600;
-    cursor: pointer; transition: all .15s; color: #495057; line-height: 1.4;
-  }
-  .cat-tab-btn:hover { background: #e2e8f0; }
-  .cat-tab-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-  .cat-tab-btn.active-orders { background: #16a34a; color: #fff; border-color: #16a34a; }
-  #catalogScroll { padding-bottom: 0.5rem; }
-
-  .service-btn {
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
-    color: #212529;
-    border-radius: 8px;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.82rem;
-    cursor: pointer;
-    transition: all .15s;
-    text-align: left;
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .service-btn:hover {
-    background: #0d6efd;
-    border-color: #0d6efd;
-    color: #fff;
-  }
-  .service-btn .price-tag {
-    font-size: 0.75rem;
-    color: #0d6efd;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .service-btn:hover .price-tag { color: #cfe2ff; }
-
-  .cat-section { margin-bottom: 0.75rem; }
-  /* Category panes — only active pane is visible */
-  .cat-pane { display: none; }
-  .cat-pane.active { display: block; }
-
-  /* Right billing panel — no fixed height, page scrolls naturally */
-  .billing-panel {
-    background: #fff;
-    border-radius: 12px;
-    border: 1px solid #dee2e6;
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  /* Items table */
-  .items-table { width: 100%; font-size: 0.82rem; }
-  .items-table th { color: #6c757d; font-weight: 600; padding: 0.3rem 0.4rem; border-bottom: 2px solid #dee2e6; }
-  .items-table td { padding: 0.35rem 0.4rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-  .items-table tbody tr:hover { background: #f8f9fa; }
-  .remove-item-btn {
-    background: #fff0f0; border: 1px solid #f5c6cb;
-    color: #dc3545; cursor: pointer;
-    padding: 4px 8px; font-size: 0.85rem; border-radius: 6px;
-    transition: all .15s;
-  }
-  .remove-item-btn:hover { background: #dc3545; color: #fff; border-color: #dc3545; }
-
-  /* Floating cart badge — tablet/mobile only */
-  #floatingCart { display: none; }
-  @media (max-width: 1024px) {
-    #floatingCart {
-      display: block; position: fixed; bottom: 1.2rem; right: 1.2rem; z-index: 999;
-    }
-  }
-
-  /* Totals section */
-  .totals-block { border-top: 2px solid #dee2e6; padding-top: 0.6rem; font-size: 0.9rem; }
-  .totals-block .row-total { display: flex; justify-content: space-between; margin-bottom: 2px; }
-  .grand-total  { font-size: 1.2rem; font-weight: 700; color: #0d6efd; }
-  .balance-row  { font-size: 1rem; font-weight: 700; }
-  .balance-due-amount { color: #dc3545; }
-  .balance-paid { color: #198754; }
-
-  /* Payment section */
-  .payment-section { background: #f8f9fa; border-radius: 10px; padding: 1rem; border: 1px solid #dee2e6; }
-  .pay-method-btn {
-    background: #fff; border: 1px solid #dee2e6; color: #495057;
-    border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.8rem; cursor: pointer; transition: all .15s;
-  }
-  .pay-method-btn.active, .pay-method-btn:hover {
-    background: #0d6efd; border-color: #0d6efd; color: #fff;
-  }
-
-  /* Action buttons */
-  .btn-finalize {
-    background: linear-gradient(135deg, #16a34a, #15803d);
-    border: none; color: white; border-radius: 10px;
-    padding: 0.75rem 1.25rem; font-size: 0.95rem; font-weight: 700;
-    width: 100%; cursor: pointer; transition: all .2s;
-  }
-  .btn-finalize:hover:not(:disabled) { background: linear-gradient(135deg, #15803d, #14532d); transform: translateY(-1px); }
-  .btn-finalize:disabled { background: #adb5bd; color: #fff; cursor: not-allowed; transform: none; }
-
-  .btn-print {
-    background: #fff; border: 1px solid #dee2e6; color: #495057;
-    border-radius: 10px; padding: 0.6rem 1rem; font-size: 0.85rem;
-    width: 100%; cursor: pointer; transition: all .15s;
-  }
-  .btn-print:hover { background: #f8f9fa; color: #212529; }
-
-  /* Custom item row */
-  .custom-item-row { background: #f8f9fa; border-radius: 8px; padding: 0.75rem; border: 1px solid #dee2e6; }
-
-  /* Discount row */
-  .discount-row input { border-radius: 6px; font-size: 0.8rem; }
-
-  /* Payment history */
-  .payment-log { font-size: 0.78rem; }
-  .payment-log .pay-entry {
-    display: flex; justify-content: space-between;
-    padding: 3px 0; border-bottom: 1px solid #f0f0f0; color: #6c757d;
-  }
-  .payment-log .pay-entry:last-child { border-bottom: none; }
-
-  /* AI suggest */
-  .ai-btn {
-    background: linear-gradient(135deg, #7c3aed, #6d28d9);
-    border: none; color: white; border-radius: 8px;
-    padding: 0.5rem 1rem; font-size: 0.82rem; cursor: pointer; width: 100%;
-  }
-  .ai-btn:hover { background: linear-gradient(135deg, #6d28d9, #5b21b6); }
-
-  /* Modal override for light theme */
-  #priceModal .modal-content { background: #fff; color: #212529; border: 1px solid #dee2e6; }
-</style>
-
-{# ── CSRF Token ── #}
 <form id="csrf-holder">{% csrf_token %}</form>
+<div class="pos-root">
 
-{# ── Patient Banner ── #}
-<div class="patient-banner p-3 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <div class="d-flex align-items-center gap-3">
-    <div class="rounded-circle d-flex align-items-center justify-content-center"
-         style="width:48px;height:48px;background:#e7f1ff;font-size:1.4rem;font-weight:900;color:#0d6efd;">
-      {{ patient.first_name|first|upper|default:"?" }}
+{# ── Shift Running Total Bar ──────────────────────────────────────────────── #}
+<div class="shift-bar">
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <div class="sb-item">
+      <i class="bi bi-person-circle" style="color:#2563eb;"></i>
+      <span class="sb-label">Cashier:</span>
+      <span class="sb-val">{{ request.user.get_full_name|default:request.user.username }}</span>
     </div>
+    <div class="sb-item">
+      <i class="bi bi-calendar3" style="color:#475569;"></i>
+      <span class="sb-label">{{ today|date:"d M Y" }}</span>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-4 flex-wrap">
+    <div class="sb-item">
+      <i class="bi bi-cash" style="color:#22c55e;"></i>
+      <span class="sb-label">Cash:</span>
+      <span class="sb-val sb-cash" id="shiftCash">{{ shift_cash|floatformat:0|intcomma }}</span>
+      <span class="sb-label">FCFA</span>
+    </div>
+    <div class="sb-item">
+      <i class="bi bi-phone" style="color:#f59e0b;"></i>
+      <span class="sb-label">MoMo:</span>
+      <span class="sb-val sb-momo" id="shiftMomo">{{ shift_mobile|floatformat:0|intcomma }}</span>
+      <span class="sb-label">FCFA</span>
+    </div>
+    <div class="sb-item">
+      <i class="bi bi-bar-chart-fill" style="color:#2563eb;"></i>
+      <span class="sb-label">Shift Total:</span>
+      <span class="sb-val sb-total" id="shiftTotal">{{ shift_total|floatformat:0|intcomma }}</span>
+      <span class="sb-label">FCFA</span>
+    </div>
+  </div>
+</div>
+
+{# ── Patient Banner ───────────────────────────────────────────────────────── #}
+<div class="pat-banner">
+  <div class="d-flex align-items-center gap-3">
+    <div class="pat-avatar">{{ patient.first_name|first|upper|default:"?" }}</div>
     <div>
-      <div class="fw-bold fs-5 text-dark">{{ patient.full_name|default:"Walk-in Patient" }}</div>
-      <div class="d-flex align-items-center gap-2 mt-1">
-        <small class="text-primary">{{ patient.patient_id|default:"—" }}</small>
-        <span class="text-muted">·</span>
-        {% if token %}<small class="text-muted">Ticket: <span class="fw-semibold text-dark">{{ token.display_token_number }}</span></small>{% endif %}
-        {% if patient.age %}
-          <span class="text-muted">·</span>
-          <small class="text-muted">{{ patient.age_display }}</small>
-        {% endif %}
+      <div class="pat-name">{{ patient.full_name|default:"No Patient" }}</div>
+      <div class="pat-meta d-flex flex-wrap gap-2 mt-1">
+        <span>{{ patient.patient_id|default:"—" }}</span>
+        {% if token %}<span>·</span><span>Ticket <strong style="color:#f1f5f9;">{{ token.display_token_number }}</strong></span>{% endif %}
+        {% if patient.age %}<span>·</span><span>{{ patient.age_display }}</span>{% endif %}
+        {% if patient.get_gender_display %}<span>·</span><span>{{ patient.get_gender_display }}</span>{% endif %}
       </div>
     </div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
-    {% if token %}
-    <span class="badge tier-badge-{{ token.service_tier }} text-white px-3 py-2">
-      {{ token.get_service_tier_display }}
-    </span>
-    {% endif %}
     {% if invoice %}
-      <span class="badge bg-secondary px-3 py-2">{{ invoice.invoice_number }}</span>
-      <span class="badge
-        {% if invoice.status == 'PAID' %}bg-success
-        {% elif invoice.status == 'PARTIAL' %}bg-warning text-dark
-        {% elif invoice.status == 'ISSUED' %}bg-info text-dark
-        {% else %}bg-secondary{% endif %} px-3 py-2">
+      <span class="pat-badge-inv"><i class="bi bi-receipt me-1"></i>{{ invoice.invoice_number }}</span>
+      <span class="pat-badge
+        {% if invoice.status == 'PAID' %}{% else %}{% endif %}">
+        {% if invoice.status == 'PAID' %}<i class="bi bi-check-circle-fill" style="color:#4ade80;"></i>{% elif invoice.status == 'PARTIAL' %}<i class="bi bi-half" style="color:#f59e0b;"></i>{% else %}<i class="bi bi-circle" style="color:#94a3b8;"></i>{% endif %}
         {{ invoice.get_status_display }}
       </span>
     {% endif %}
-    <small class="text-muted">{{ today|date:"d M Y" }}</small>
     {% if not token %}
-    <a href="{% url 'billing:invoice_create' %}"
-       class="btn btn-sm btn-outline-secondary ms-2"
-       onclick="return confirm('Switch to a different patient? Any unsaved changes will remain on this invoice.');"
-       title="Select a different patient">
-      <i class="bi bi-arrow-left-right me-1"></i>Change Patient
+    <a href="{% url 'billing:invoice_create' %}" class="pat-badge" style="text-decoration:none;cursor:pointer;color:#94a3b8;"
+       onclick="return confirm('Switch patient? Changes on this invoice are saved.');">
+      <i class="bi bi-arrow-left-right me-1"></i>Change
     </a>
     {% endif %}
   </div>
 </div>
 
-{# ── 15-day Consultation Window Warning ── #}
+{# ── Consultation Window Warning ──────────────────────────────────────────── #}
 {% if active_consultation %}
-<div class="alert alert-warning py-2 mb-3 d-flex align-items-center gap-2" role="alert">
-  <i class="bi bi-clock-history fs-5 flex-shrink-0"></i>
-  <div>
-    <strong>Active consultation window:</strong>
-    {{ patient.full_name }} already paid for a consultation valid until
-    <strong>{{ active_consultation.consultation_valid_until|date:"d M Y" }}</strong>.
-    Adding a new consultation fee may be a <span class="text-danger fw-bold">duplicate charge</span>.
-    Verify before proceeding.
-  </div>
+<div class="pos-alert pos-alert-warn">
+  <i class="bi bi-clock-history flex-shrink-0"></i>
+  <div><strong>Active consult window</strong> valid until <strong>{{ active_consultation.consultation_valid_until|date:"d M Y" }}</strong>. Adding a new consultation fee may be a duplicate charge.</div>
 </div>
 {% endif %}
 
-{# ── Prior Unpaid Invoices Warning ── #}
+{# ── Prior Unpaid Balance Warning ─────────────────────────────────────────── #}
 {% if prior_unpaid_invoices %}
-<div class="alert alert-danger py-2 mb-3" role="alert">
-  <div class="d-flex align-items-center gap-2 mb-2">
-    <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
-    <strong>Outstanding balance — {{ prior_unpaid_invoices|length }} unpaid invoice{{ prior_unpaid_invoices|length|pluralize }}</strong>
-  </div>
-  <ul class="mb-0 small ps-3">
+<div class="pos-alert pos-alert-danger">
+  <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+  <div>
+    <strong>{{ prior_unpaid_invoices|length }} prior unpaid invoice{{ prior_unpaid_invoices|length|pluralize }}</strong>
     {% for inv in prior_unpaid_invoices %}
-    <li>
-      <a href="{% url 'billing:invoice_detail' inv.id %}" class="alert-link">{{ inv.invoice_number }}</a>
-      — {{ inv.get_status_display }} —
-      <strong>{{ inv.balance_due|floatformat:0|intcomma }} XAF</strong>
-      <span class="text-muted">({{ inv.created_at|date:"d M Y" }})</span>
-    </li>
+    — <a href="{% url 'billing:invoice_detail' inv.id %}" style="color:#fca5a5;">{{ inv.invoice_number }}</a> ({{ inv.balance_due|floatformat:0|intcomma }} FCFA)
     {% endfor %}
-  </ul>
+  </div>
 </div>
 {% endif %}
 
-{# ── Main POS Grid ── #}
-<div class="pos-wrapper">
+{# ── Main POS Grid ────────────────────────────────────────────────────────── #}
+<div class="pos-grid">
 
-  {# ───── LEFT: Service Catalog ───── #}
-  <div class="catalog-panel">
+  {# ─── LEFT: Service Catalog ─── #}
+  <div class="catalog-col">
+    <div class="cat-label mb-2">Services</div>
 
-    {# ── Category tab strip (always visible, never scrolls) ── #}
-    <div class="cat-tabs">
+    {# Tab strip #}
+    <div class="cat-tabs" id="catTabs">
       {% if doctor_orders %}
-      <button class="cat-tab-btn active active-orders" onclick="switchCat('ORDERS',this)">
+      <button class="cat-tab orders-tab active" onclick="switchCat('ORDERS',this)">
         <i class="bi bi-clipboard2-pulse me-1"></i>Orders ({{ doctor_orders|length }})
       </button>
       {% endif %}
-      <button class="cat-tab-btn {% if not doctor_orders %}active{% endif %}" onclick="switchCat('REG',this)">Reg</button>
-      <button class="cat-tab-btn" onclick="switchCat('CONSULT',this)">Consult</button>
-      <button class="cat-tab-btn" onclick="switchCat('INVEST',this)">Invest</button>
-      <button class="cat-tab-btn" onclick="switchCat('LAB',this)">Lab</button>
-      <button class="cat-tab-btn" onclick="switchCat('PHARM',this)">Pharm</button>
-      <button class="cat-tab-btn" onclick="switchCat('SURGERY',this)">Surgery</button>
-      <button class="cat-tab-btn" onclick="switchCat('OTHER',this)">Other</button>
+      <button class="cat-tab {% if not doctor_orders %}active{% endif %}" onclick="switchCat('REG',this)">Reg</button>
+      <button class="cat-tab" onclick="switchCat('CONSULT',this)">Consult</button>
+      <button class="cat-tab" onclick="switchCat('INVEST',this)">Invest</button>
+      <button class="cat-tab" onclick="switchCat('LAB',this)">Lab</button>
+      <button class="cat-tab" onclick="switchCat('PHARM',this)">Pharm</button>
+      <button class="cat-tab" onclick="switchCat('SURGERY',this)">Surgery</button>
+      <button class="cat-tab" onclick="switchCat('OTHER',this)">Other</button>
       {% if invoice %}
-      <button class="cat-tab-btn" onclick="switchCat('CUSTOM',this)">
-        <i class="bi bi-pencil me-1"></i>Custom
-      </button>
-      <button class="cat-tab-btn" id="aiSuggestBtn" onclick="aiSuggest()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-color:#6d28d9;">
-        <i class="bi bi-stars me-1"></i>AI
-      </button>
+      <button class="cat-tab" onclick="switchCat('CUSTOM',this)"><i class="bi bi-pencil me-1"></i>Custom</button>
+      <button class="cat-tab ai-tab" id="aiTabBtn" onclick="aiSuggest()"><i class="bi bi-stars me-1"></i>AI</button>
       {% endif %}
     </div>
 
-    {# ── Scrollable services area ── #}
-    <div id="catalogScroll">
+    <div id="catScroll">
 
-      {# Doctor's Orders pane #}
+      {# Doctor Orders #}
       {% if doctor_orders %}
-      <div class="cat-pane" data-cat="ORDERS">
-        <div class="d-flex flex-column gap-1">
-          {% for wo in doctor_orders %}
-          <button type="button" class="service-btn"
-                  style="border-color:#16a34a;background:#f0fdf4;"
-                  onclick="addCatalogItem('{{ wo.description|escapejs }}','{{ wo.category }}',0)">
-            <span>{{ wo.description }}</span>
-            <span style="font-size:.7rem;color:#16a34a;font-weight:600;">{{ wo.get_category_display }}</span>
-          </button>
-          {% endfor %}
-        </div>
+      <div class="cat-pane active" data-cat="ORDERS">
+        {% for wo in doctor_orders %}
+        <button class="svc-btn orders-btn" onclick="addItem('{{ wo.description|escapejs }}','{{ wo.category }}',0)">
+          <span>{{ wo.description }}</span>
+          <span class="svc-price" style="color:#4ade80;">{{ wo.get_category_display }}</span>
+        </button>
+        {% endfor %}
       </div>
       {% endif %}
 
       {# Registration #}
       <div class="cat-pane {% if not doctor_orders %}active{% endif %}" data-cat="REG">
-        <div class="d-flex flex-column gap-1">
-          {% for svc in service_catalog %}{% if svc.category == 'REG' %}
-          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-            <span>{{ svc.name }}</span>
-            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-          </button>
-          {% endif %}{% endfor %}
-        </div>
+        {% for svc in service_catalog %}{% if svc.category == 'REG' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{{ svc.price|intcomma }}</span>
+        </button>
+        {% endif %}{% endfor %}
       </div>
 
       {# Consultation #}
       <div class="cat-pane" data-cat="CONSULT">
-        <div class="d-flex flex-column gap-1">
-          {% for svc in service_catalog %}{% if svc.category == 'CONSULT' %}
-          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-            <span>{{ svc.name }}</span>
-            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-          </button>
-          {% endif %}{% endfor %}
-        </div>
+        {% for svc in service_catalog %}{% if svc.category == 'CONSULT' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{{ svc.price|intcomma }}</span>
+        </button>
+        {% endif %}{% endfor %}
       </div>
 
       {# Investigations #}
       <div class="cat-pane" data-cat="INVEST">
-        <div class="d-flex flex-column gap-1">
-          {% for svc in service_catalog %}{% if svc.category == 'INVEST' %}
-          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-            <span>{{ svc.name }}</span>
-            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-          </button>
-          {% endif %}{% endfor %}
-        </div>
+        {% for svc in service_catalog %}{% if svc.category == 'INVEST' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{{ svc.price|intcomma }}</span>
+        </button>
+        {% endif %}{% endfor %}
       </div>
 
-      {# Laboratory #}
+      {# Lab #}
       <div class="cat-pane" data-cat="LAB">
-        <div class="d-flex flex-column gap-1">
-          {% for svc in service_catalog %}{% if svc.category == 'LAB' %}
-          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-            <span>{{ svc.name }}</span>
-            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-          </button>
-          {% endif %}{% endfor %}
-        </div>
+        {% for svc in service_catalog %}{% if svc.category == 'LAB' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{{ svc.price|intcomma }}</span>
+        </button>
+        {% endif %}{% endfor %}
       </div>
 
-      {# Pharmacy & Opticals #}
+      {# Pharmacy #}
       <div class="cat-pane" data-cat="PHARM">
-        <div class="d-flex flex-column gap-1">
-          {% for svc in service_catalog %}{% if svc.category == 'PHARMACY' or svc.category == 'OPTICAL' %}
-          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-            <span>{{ svc.name }}</span>
-            <span class="price-tag">
-              {% if svc.price > 0 %}{{ svc.price|intcomma }} FCFA{% else %}Enter price{% endif %}
-            </span>
-          </button>
-          {% endif %}{% endfor %}
-        </div>
+        {% for svc in service_catalog %}{% if svc.category == 'PHARMACY' or svc.category == 'OPTICAL' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{% if svc.price > 0 %}{{ svc.price|intcomma }}{% else %}Enter price{% endif %}</span>
+        </button>
+        {% endif %}{% endfor %}
       </div>
 
       {# Surgery #}
       <div class="cat-pane" data-cat="SURGERY">
-        <div class="d-flex flex-column gap-1">
-          {% for svc in service_catalog %}{% if svc.category == 'SURGICAL' %}
-          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-            <span>{{ svc.name }}</span>
-            <span class="price-tag">{{ svc.price|intcomma }} FCFA</span>
-          </button>
-          {% endif %}{% endfor %}
-        </div>
+        {% for svc in service_catalog %}{% if svc.category == 'SURGICAL' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{{ svc.price|intcomma }}</span>
+        </button>
+        {% endif %}{% endfor %}
       </div>
 
-      {# Other / Admission #}
+      {# Other #}
       <div class="cat-pane" data-cat="OTHER">
-        <div class="d-flex flex-column gap-1">
-          {% for svc in service_catalog %}{% if svc.category == 'OTHER' or svc.category == 'ADMISSION' %}
-          <button class="service-btn" onclick="addCatalogItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-            <span>{{ svc.name }}</span>
-            <span class="price-tag">
-              {% if svc.price > 0 %}{{ svc.price|intcomma }} FCFA{% else %}Enter price{% endif %}
-            </span>
-          </button>
-          {% endif %}{% endfor %}
-        </div>
+        {% for svc in service_catalog %}{% if svc.category == 'OTHER' or svc.category == 'ADMISSION' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{% if svc.price > 0 %}{{ svc.price|intcomma }}{% else %}Enter price{% endif %}</span>
+        </button>
+        {% endif %}{% endfor %}
       </div>
 
-      {# Custom Item #}
+      {# Custom #}
       {% if invoice %}
       <div class="cat-pane" data-cat="CUSTOM">
-        <div class="custom-item-row">
-          <div class="row g-2 mb-2">
-            <div class="col-12">
-              <input type="text" id="customDesc" class="form-control form-control-sm" placeholder="Description…" />
-            </div>
-          </div>
-          <div class="row g-2 mb-2">
+        <div class="custom-row">
+          <input type="text" id="custDesc" class="form-control form-control-sm mb-2" placeholder="Description…">
+          <div class="row g-1 mb-2">
             <div class="col-5">
-              <select id="customCat" class="form-select form-select-sm">
+              <select id="custCat" class="form-select form-select-sm">
                 {% for val, label in categories %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
               </select>
             </div>
             <div class="col-3">
-              <input type="number" id="customQty" class="form-control form-control-sm" value="1" min="1" placeholder="Qty" />
+              <input type="number" id="custQty" class="form-control form-control-sm" value="1" min="1" placeholder="Qty">
             </div>
             <div class="col-4">
-              <input type="number" id="customPrice" class="form-control form-control-sm" placeholder="Price" min="0" />
+              <input type="number" id="custPrice" class="form-control form-control-sm" placeholder="Price" min="0">
             </div>
           </div>
-          <button class="service-btn" style="background:#1d4ed8;border-color:#3b82f6;color:#fff;"
-                  onclick="addCustomItem()">
+          <button class="svc-btn" style="background:#1d4ed8;border-color:#2563eb;color:#fff;" onclick="addCustomItem()">
             <span><i class="bi bi-plus-circle me-1"></i>Add to Bill</span>
           </button>
         </div>
       </div>
-      {% endif %}
 
       {# AI Suggestions #}
-      <div id="aiSuggestions" class="cat-pane" data-cat="AI" style="display:none;">
-        <div id="aiList" class="d-flex flex-column gap-1"></div>
+      <div class="cat-pane" data-cat="AI">
+        <div id="aiList" class="d-flex flex-column"></div>
       </div>
+      {% endif %}
 
-    </div>{# end catalogScroll #}
-  </div>{# end catalog-panel #}
+    </div>{# /catScroll #}
+  </div>{# /catalog-col #}
 
 
-  {# ───── RIGHT: Bill & Payment ───── #}
-  <div class="billing-panel" id="billingPanel">
-
-    {# Invoice header #}
-    <div class="d-flex justify-content: space-between align-items-center">
-      <span class="fw-bold text-primary">
-        <i class="bi bi-receipt me-1"></i>
-        {% if invoice %}{{ invoice.invoice_number }}{% else %}No Invoice{% endif %}
-      </span>
-      <small class="text-muted ms-auto">{{ today|date:"d/m/Y" }}</small>
-    </div>
+  {# ─── RIGHT: Bill & Payment ─── #}
+  <div class="bill-col" id="billCol">
 
     {% if invoice %}
 
+    {# Invoice header #}
+    <div class="inv-hdr">
+      <span class="inv-no"><i class="bi bi-receipt me-1"></i>{{ invoice.invoice_number }}</span>
+      <span class="inv-date">{{ today|date:"d/m/Y" }}</span>
+    </div>
+
     {# Items table #}
     <div style="overflow-x:auto;">
-      <table class="items-table" id="itemsTable">
+      <table class="items-tbl">
         <thead>
           <tr>
             <th>#</th>
             <th>Description</th>
             <th class="text-center">Qty</th>
-            <th class="text-end">Unit Price</th>
+            <th class="text-end">Price</th>
             <th class="text-end">Total</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="itemsBody">
           {% for item in items %}
-          <tr id="item-row-{{ item.id }}">
-            <td class="text-muted">{{ forloop.counter }}</td>
+          <tr id="ir-{{ item.id }}">
+            <td style="color:#475569;font-size:.75rem;">{{ forloop.counter }}</td>
             <td>
-              <div class="fw-medium">{{ item.description }}</div>
-              <small class="text-muted" style="font-size:0.7rem;">{{ item.get_category_display }}</small>
+              <div class="item-desc">{{ item.description }}</div>
+              <div class="item-cat">{{ item.get_category_display }}</div>
             </td>
-            <td class="text-center">{{ item.quantity }}</td>
-            <td class="text-end text-muted" style="white-space:nowrap;">
-              {{ item.unit_price|floatformat:0|intcomma }}
-            </td>
-            <td class="text-end fw-semibold text-primary" style="white-space:nowrap;">
-              {{ item.line_total|floatformat:0|intcomma }}
-            </td>
+            <td class="text-center" style="color:#94a3b8;">{{ item.quantity }}</td>
+            <td class="text-end" style="color:#475569;white-space:nowrap;font-size:.75rem;">{{ item.unit_price|floatformat:0|intcomma }}</td>
+            <td class="text-end item-amt" style="white-space:nowrap;">{{ item.line_total|floatformat:0|intcomma }}</td>
             <td>
-              <button class="remove-item-btn" onclick="removeItem('{{ item.id }}', this)" title="Tap once to select, tap again to confirm removal">
-                <i class="bi bi-trash"></i>
-              </button>
+              <button class="rm-btn" onclick="removeItem('{{ item.id }}',this)"><i class="bi bi-trash3"></i></button>
             </td>
           </tr>
           {% empty %}
           <tr id="emptyRow">
-            <td colspan="6" class="text-center text-muted py-3" style="font-size:0.8rem;">
-              <i class="bi bi-receipt me-1"></i>No items yet — select from catalog
-            </td>
+            <td colspan="6" class="empty-bill"><i class="bi bi-receipt me-1"></i>No items — select from catalog</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
 
-    {# Totals #}
-    <div class="totals-block">
-      <div class="row-total text-muted" style="font-size:0.82rem;">
-        <span>Subtotal</span>
-        <span id="subtotalDisplay">{{ invoice.subtotal|floatformat:0|intcomma }} FCFA</span>
+    {# Totals block #}
+    <div class="totals-blk">
+      <div class="tot-row">
+        <span class="tot-lbl">Subtotal</span>
+        <span class="tot-val" id="subtotalDisplay">{{ invoice.subtotal|floatformat:0|intcomma }} FCFA</span>
       </div>
 
-      {# Discount row #}
-      <div class="row-total mt-1 discount-row align-items-center gap-1" style="font-size:0.82rem;">
-        <span style="color:#f59e0b;">Discount</span>
-        <div class="d-flex gap-1 align-items-center">
-          <input type="number" id="discountInput" class="form-control form-control-sm"
-                 style="width:90px;text-align:right;"
-                 value="{{ invoice.discount_amount|floatformat:0 }}"
-                 min="0" placeholder="0" />
-          <input type="text" id="discountReason" class="form-control form-control-sm"
-                 style="width:110px;"
-                 value="{{ invoice.discount_reason }}" placeholder="Reason…" />
-          <button class="btn btn-sm" style="background:#92400e;color:#fef3c7;border:none;font-size:0.75rem;"
-                  onclick="applyDiscount()">Apply</button>
+      {# Discount #}
+      <div class="tot-row mod-row align-items-center gap-1 mt-1" style="flex-wrap:wrap;">
+        <span style="color:#f59e0b;font-size:.78rem;">Discount</span>
+        <div class="d-flex gap-1 ms-auto align-items-center">
+          <input type="number" id="discAmt" class="form-control form-control-sm" style="width:80px;text-align:right;"
+                 value="{{ invoice.discount_amount|floatformat:0 }}" min="0" placeholder="0">
+          <input type="text" id="discReason" class="form-control form-control-sm" style="width:100px;"
+                 value="{{ invoice.discount_reason }}" placeholder="Reason…">
+          <button class="mod-btn" onclick="applyDiscount()">Apply</button>
         </div>
       </div>
 
-      <div class="row-total grand-total mt-2">
-        <span>TOTAL</span>
-        <span id="totalDisplay">{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
+      {# Grand total #}
+      <div class="tot-row grand-row mt-2">
+        <span class="grand-lbl">TOTAL</span>
+        <span class="grand-val" id="totalDisplay">{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
       </div>
 
-      {# ── Insurance / Patient split ── #}
-      <div class="mt-2 pt-2" style="border-top:1px dashed #dee2e6;">
-        <div class="row-total" style="font-size:0.8rem;">
-          <span style="color:#0891b2;"><i class="bi bi-shield-check me-1"></i>Insurance covers</span>
-          <div class="d-flex align-items-center gap-1">
-            <input type="number" id="insuranceAmtInput" class="form-control form-control-sm"
-                   style="width:100px;text-align:right;font-size:0.8rem;"
-                   value="{{ invoice.insurance_amount|floatformat:0 }}"
-                   min="0" max="{{ invoice.total|floatformat:0 }}"
-                   placeholder="0"
-                   oninput="updateInsuranceSplit()" />
-            <span style="font-size:0.75rem;color:#6c757d;">FCFA</span>
-            <button class="btn btn-sm" style="background:#0891b2;color:#fff;border:none;font-size:0.72rem;padding:2px 8px;"
-                    onclick="saveInsuranceAmount()">Set</button>
+      {# Insurance split #}
+      <div class="mt-2 pt-2" style="border-top:1px dashed #334155;">
+        <div class="tot-row mod-row align-items-center gap-1" style="font-size:.8rem;">
+          <span style="color:#60a5fa;"><i class="bi bi-shield-check me-1"></i>Insurance</span>
+          <div class="d-flex align-items-center gap-1 ms-auto">
+            <input type="number" id="insAmt" class="form-control form-control-sm" style="width:90px;text-align:right;font-size:.78rem;"
+                   value="{{ invoice.insurance_amount|floatformat:0 }}" min="0" placeholder="0" oninput="updateInsSplit()">
+            <span style="color:#475569;font-size:.72rem;">FCFA</span>
+            <button class="mod-btn" onclick="saveInsAmt()">Set</button>
           </div>
         </div>
-        <div class="row-total mt-1" style="font-size:0.85rem;font-weight:700;">
-          <span style="color:#16a34a;"><i class="bi bi-person-fill me-1"></i>Patient pays</span>
-          <span id="patientAmtDisplay" style="color:#16a34a;">
-            {{ invoice.patient_amount|floatformat:0|intcomma }} FCFA
-          </span>
+        <div class="tot-row mt-1" style="font-size:.85rem;">
+          <span style="color:#4ade80;"><i class="bi bi-person-fill me-1"></i>Patient pays</span>
+          <span class="patient-pays" id="patAmtDisplay">{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>
         </div>
       </div>
     </div>
@@ -566,637 +634,573 @@
     {# Payment log #}
     {% if payments %}
     <div>
-      <div style="color:#64748b;font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">
-        Payments Received
-      </div>
-      <div class="payment-log" id="paymentLog">
+      <div class="cat-label mb-1">Payments received</div>
+      <div class="pay-log" id="payLog">
         {% for p in payments %}
         <div class="pay-entry">
           <span>{{ p.get_payment_method_display }}{% if p.reference %} · {{ p.reference }}{% endif %}</span>
-          <span style="color:#4ade80;">+{{ p.amount|floatformat:0|intcomma }}</span>
+          <span class="pay-credit">+{{ p.amount|floatformat:0|intcomma }}</span>
         </div>
         {% endfor %}
       </div>
     </div>
     {% else %}
-    <div class="payment-log" id="paymentLog"></div>
+    <div class="pay-log" id="payLog"></div>
     {% endif %}
 
-    <div class="row-total balance-row">
-      <span>Balance Due</span>
-      <span id="balanceDueDisplay"
-            class="{% if invoice.balance_due <= 0 %}balance-paid{% else %}balance-due-amount{% endif %}">
+    <div class="bal-row">
+      <span style="color:#94a3b8;">Balance Due</span>
+      <span id="balDisplay" class="{% if invoice.balance_due <= 0 %}bal-clear{% else %}bal-due{% endif %}">
         {{ invoice.balance_due|floatformat:0|intcomma }} FCFA
       </span>
     </div>
 
-    {# Payment form #}
-    <div class="payment-section">
-      <div style="color:#94a3b8;font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.5rem;">
-        Record Payment
-      </div>
-      <div class="d-flex flex-wrap gap-1 mb-2" id="methodButtons">
+    {# Payment section #}
+    <div class="pay-section">
+      <div class="pay-section-lbl">Record Payment</div>
+
+      {# Method buttons #}
+      <div class="method-btns" id="methBtns">
         {% for val, label in payment_methods %}
-        <button class="pay-method-btn {% if val == 'CASH' %}active{% endif %}"
-                data-method="{{ val }}"
-                onclick="selectMethod(this, '{{ val }}')">
+        <button class="meth-btn {% if val == 'CASH' %}active{% endif %}"
+                data-method="{{ val }}" onclick="pickMethod(this,'{{ val }}')">
           {% if val == 'CASH' %}<i class="bi bi-cash me-1"></i>
           {% elif val == 'MOBILE' %}<i class="bi bi-phone me-1"></i>
           {% elif val == 'CARD' %}<i class="bi bi-credit-card me-1"></i>
           {% elif val == 'TRANSFER' %}<i class="bi bi-bank me-1"></i>
           {% elif val == 'INSURANCE' %}<i class="bi bi-shield-check me-1"></i>
-          {% else %}<i class="bi bi-currency-exchange me-1"></i>
-          {% endif %}
+          {% else %}<i class="bi bi-currency-exchange me-1"></i>{% endif %}
           {{ label }}
         </button>
         {% endfor %}
+        <button class="meth-btn" id="splitToggleBtn" onclick="toggleSplit()" style="border-color:#f59e0b;color:#f59e0b;">
+          <i class="bi bi-arrow-left-right me-1"></i>Split
+        </button>
       </div>
-      {# Insurance info panel — shown when INSURANCE or NHIS selected #}
+
+      {# Insurance info #}
       {% if active_insurance %}
-      <div id="insurancePanel" style="display:none;"
-           class="alert alert-info py-2 px-3 mb-2 small">
-        <div class="fw-bold mb-1"><i class="bi bi-shield-check me-1"></i>Active Insurance</div>
-        <div><strong>Provider:</strong> {{ active_insurance.provider }}</div>
-        <div><strong>Policy #:</strong> {{ active_insurance.policy_number|default:"—" }}</div>
-        {% if active_insurance.group_number %}<div><strong>Group #:</strong> {{ active_insurance.group_number }}</div>{% endif %}
-        {% if active_insurance.plan_name %}<div><strong>Plan:</strong> {{ active_insurance.plan_name }}</div>{% endif %}
+      <div id="insPanel" style="display:none;" class="ins-panel">
+        <div class="fw-bold mb-1"><i class="bi bi-shield-check me-1"></i>{{ active_insurance.provider }}</div>
+        <div>Policy: {{ active_insurance.policy_number|default:"—" }}</div>
         {% if active_insurance.expiry_date %}
-        <div><strong>Expires:</strong>
-          <span class="{% if active_insurance.expiry_date < today %}text-danger fw-bold{% endif %}">
-            {{ active_insurance.expiry_date|date:"d M Y" }}
-            {% if active_insurance.expiry_date < today %}(EXPIRED){% endif %}
-          </span>
-        </div>
+        <div>Expires: <span class="{% if active_insurance.expiry_date < today %}" style="color:#f87171;{% endif %}">{{ active_insurance.expiry_date|date:"d M Y" }}</span></div>
         {% endif %}
       </div>
       {% else %}
-      <div id="insurancePanel" style="display:none;"
-           class="alert alert-warning py-2 px-3 mb-2 small">
-        <i class="bi bi-exclamation-triangle me-1"></i>
-        No active insurance on file for this patient. Verify coverage before proceeding.
+      <div id="insPanel" style="display:none;" class="pos-alert pos-alert-warn mb-2">
+        <i class="bi bi-exclamation-triangle me-1"></i>No insurance on file. Verify coverage first.
       </div>
       {% endif %}
 
-      <div class="row g-2 mb-2">
-        <div class="col-7">
-          <input type="number" id="payAmount" class="form-control form-control-sm"
-                 placeholder="Amount (FCFA)" min="0"
-                 value="{{ invoice.balance_due|floatformat:0 }}" />
-        </div>
-        <div class="col-5">
-          <input type="text" id="payRef" class="form-control form-control-sm"
-                 placeholder="Reference / Ref#" />
-        </div>
+      {# Single payment amount (default) #}
+      <div id="singlePayDiv">
+        <input type="number" id="payAmt" class="single-amt" placeholder="Amount (FCFA)" min="0"
+               value="{{ invoice.balance_due|floatformat:0 }}">
+        <input type="text" id="payRef" class="pay-ref" placeholder="Reference / MoMo # (optional)">
       </div>
-      <button class="btn-finalize" id="collectBtn" onclick="collectAndPrint()"
-              {% if not invoice or invoice.status == 'PAID' %}{% if invoice.status == 'PAID' %}style="background:linear-gradient(135deg,#6c757d,#495057);"{% endif %}{% endif %}>
+
+      {# Split payment (Cash + MoMo) #}
+      <div id="splitPayDiv" style="display:none;">
+        <div class="split-grid">
+          <div class="split-card">
+            <div class="split-card-lbl split-cash-lbl"><i class="bi bi-cash me-1"></i>Cash (FCFA)</div>
+            <input type="number" id="splitCash" class="split-input" placeholder="0" min="0" oninput="updateSplitBalance()">
+          </div>
+          <div class="split-card">
+            <div class="split-card-lbl split-momo-lbl"><i class="bi bi-phone me-1"></i>Mobile Money</div>
+            <input type="number" id="splitMomo" class="split-input" placeholder="0" min="0" oninput="updateSplitBalance()">
+          </div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2" style="font-size:.78rem;">
+          <span style="color:#94a3b8;">Split total:</span>
+          <span id="splitTotalDisplay" style="color:#f1f5f9;font-weight:700;">0 FCFA</span>
+        </div>
+        <input type="text" id="splitRef" class="pay-ref" placeholder="MoMo reference # (optional)">
+      </div>
+
+      <button class="btn-collect" id="collectBtn" onclick="collectPay()"
+              {% if invoice.status == 'PAID' %}style="background:linear-gradient(135deg,#334155,#475569);"{% endif %}>
         <i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt
       </button>
     </div>
 
-    {# Secondary: reprint receipt if already paid #}
-    {% if invoice and invoice.status == 'PAID' %}
-    <button class="btn-print" onclick="window.open('{{ receipt_url }}','_blank')">
+    {# Reprint if paid #}
+    {% if invoice.status == 'PAID' %}
+    <button class="btn-reprint" onclick="window.open('{{ receipt_url }}','_blank')">
       <i class="bi bi-printer me-2"></i>Reprint Receipt
     </button>
     {% endif %}
 
-    {# Discard empty DRAFT invoice — shown only when no items have been added yet #}
-    {% if invoice and invoice.status == 'DRAFT' and items|length == 0 %}
-    <form method="post" action="{% url 'billing:void_draft_invoice' invoice_id=invoice.id %}"
-          id="discardForm" style="margin-top:8px;">
+    {# Discard empty draft #}
+    {% if invoice.status == 'DRAFT' and items|length == 0 %}
+    <form method="post" action="{% url 'billing:void_draft_invoice' invoice_id=invoice.id %}" id="discardForm">
       {% csrf_token %}
-      <button type="button" class="btn btn-outline-danger w-100 btn-sm" onclick="confirmDiscard()">
+      <button type="button" class="btn-discard" onclick="doDiscard()">
         <i class="bi bi-x-circle me-1"></i>Discard Empty Invoice
       </button>
     </form>
-    <script>
-    function confirmDiscard() {
-      var btn = document.querySelector('#discardForm button');
-      if (btn.dataset.armed === '1') {
-        document.getElementById('discardForm').submit();
-      } else {
-        btn.dataset.armed = '1';
-        btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Tap again to confirm discard';
-        btn.classList.add('btn-danger');
-        btn.classList.remove('btn-outline-danger');
-        setTimeout(function() {
-          btn.dataset.armed = '0';
-          btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Discard Empty Invoice';
-          btn.classList.remove('btn-danger');
-          btn.classList.add('btn-outline-danger');
-        }, 4000);
-      }
-    }
-    </script>
     {% endif %}
 
     {% else %}
-    <div class="text-center text-muted py-5">
-      <i class="bi bi-person-x-fill fs-2 mb-3 d-block text-danger"></i>
-      <div>No patient linked to this token.</div>
-      <div class="small mt-1">Please link a patient before billing.</div>
+    <div style="text-align:center;padding:2rem 0;color:#334155;">
+      <i class="bi bi-person-x-fill" style="font-size:2rem;display:block;margin-bottom:.75rem;color:#ef4444;"></i>
+      No patient linked. Please link a patient before billing.
     </div>
     {% endif %}
 
-  </div>{# end billing-panel #}
+  </div>{# /bill-col #}
+</div>{# /pos-grid #}
 
-</div>{# end pos-wrapper #}
-
-{# ── Floating cart badge (tablet/mobile) ── #}
-<div id="floatingCart">
-  <button class="btn btn-primary shadow-lg px-3 py-2 fw-bold" style="border-radius:50px;font-size:0.9rem;"
-          onclick="document.getElementById('billingPanel').scrollIntoView({behavior:'smooth',block:'start'})">
+{# Floating cart — mobile #}
+<div id="floatCart">
+  <button onclick="document.getElementById('billCol').scrollIntoView({behavior:'smooth',block:'start'})">
     <i class="bi bi-cart-check-fill me-1"></i>
-    <span id="floatingCartCount">0</span> item(s) —
-    <span id="floatingCartTotal">0</span> FCFA
+    <span id="floatCount">0</span> item(s) — <span id="floatTotal">0</span> FCFA
   </button>
 </div>
 
-{# ── Custom Item Price Modal (for 0-price catalog items) ── #}
+{# Price modal #}
 <div class="modal fade" id="priceModal" tabindex="-1">
   <div class="modal-dialog modal-sm modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header border-bottom pb-2">
+      <div class="modal-header py-2">
         <h6 class="modal-title" id="priceModalTitle">Enter Price</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
-        <input type="hidden" id="pendingName" />
-        <input type="hidden" id="pendingCat" />
-        <input type="number" id="pendingPrice" class="form-control"
-               placeholder="Price in FCFA" min="0" />
+      <div class="modal-body py-2">
+        <input type="hidden" id="pendName">
+        <input type="hidden" id="pendCat">
+        <input type="number" id="pendPrice" class="form-control" placeholder="Price (FCFA)" min="0">
       </div>
-      <div class="modal-footer border-0 pt-0">
-        <button class="btn btn-primary btn-sm" onclick="confirmPriceAndAdd()">Add to Bill</button>
+      <div class="modal-footer border-0 py-2">
+        <button class="btn btn-primary btn-sm" onclick="confirmPrice()">Add to Bill</button>
       </div>
     </div>
   </div>
 </div>
 
+</div>{# /pos-root #}
+
 <script>
-// ── Catalog tab switcher ──────────────────────────────────────────────────────
-function switchCat(cat, btn) {
-  // Update tab button active state
-  document.querySelectorAll('.cat-tab-btn').forEach(function(b) {
-    b.classList.remove('active');
-    // Restore AI button original style
-    if (b.id === 'aiSuggestBtn') {
-      b.style.background = 'linear-gradient(135deg,#7c3aed,#6d28d9)';
-      b.style.color = '#fff';
-    }
-  });
-  btn.classList.add('active');
-  // Show matching pane, hide others
-  document.querySelectorAll('.cat-pane').forEach(function(pane) {
-    pane.classList.toggle('active', pane.dataset.cat === cat);
-    pane.style.display = (pane.dataset.cat === cat) ? 'block' : 'none';
-  });
-  // Reset catalogScroll to top
-  var scroll = document.getElementById('catalogScroll');
-  if (scroll) scroll.scrollTop = 0;
-}
-
-// Initialise: show first active pane
-document.addEventListener('DOMContentLoaded', function() {
-  var firstActive = document.querySelector('.cat-tab-btn.active');
-  if (firstActive) {
-    var cat = firstActive.textContent.trim();
-    // Map tab label back to data-cat
-    var paneToShow = firstActive.classList.contains('active-orders') ? 'ORDERS'
-      : firstActive.textContent.trim() === 'Reg' ? 'REG' : null;
-    if (paneToShow) {
-      document.querySelectorAll('.cat-pane').forEach(function(p) {
-        p.style.display = p.dataset.cat === paneToShow ? 'block' : 'none';
-        p.classList.toggle('active', p.dataset.cat === paneToShow);
-      });
-    }
-  }
-});
-
-var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
-{% if invoice %}
-var INVOICE_ID = '{{ invoice.id }}';
-{% else %}
-var INVOICE_ID = null;
-{% endif %}
+// ── Constants ─────────────────────────────────────────────────────────────────
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+{% if invoice %}const INV_ID = '{{ invoice.id }}';{% else %}const INV_ID = null;{% endif %}
 {% if token %}
-var TOKEN_ID   = '{{ token.id }}';
-var FINALIZE_URL = "{% url 'billing:pos_finalize' token.id %}";
+const TOKEN_ID = '{{ token.id }}';
+const FINALIZE_URL = "{% url 'billing:pos_finalize' token.id %}";
 {% else %}
-var TOKEN_ID   = null;
-var FINALIZE_URL = "{% url 'billing:patient_finalize' patient.patient_id %}";
+const TOKEN_ID = null;
+const FINALIZE_URL = "{% url 'billing:patient_finalize' patient.patient_id %}";
 {% endif %}
-{% if invoice %}
-var RECEIPT_URL  = "{% url 'billing:receipt' invoice.id %}";
-{% else %}
-var RECEIPT_URL  = null;
-{% endif %}
+{% if invoice %}const RECEIPT_URL = "{% url 'billing:receipt' invoice.id %}";{% else %}const RECEIPT_URL = null;{% endif %}
 
-var selectedMethod = 'CASH';
-var rowCounter = {{ items|length }};
+let activeMethod = 'CASH';
+let rowCount   = {{ items|length }};
+let splitMode  = false;
 
-// ── Utility: format numbers with commas ──────────────────────────────────────
-function fmt(n) {
-  return Math.round(n).toLocaleString('fr-FR').replace(/\s/g, ',');
+// Shift totals JS state (updated when payments come in)
+let _shiftCash  = {{ shift_cash|floatformat:0 }};
+let _shiftMomo  = {{ shift_mobile|floatformat:0 }};
+let _shiftTotal = {{ shift_total|floatformat:0 }};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt(n) { return Math.round(n).toLocaleString('fr-FR').replace(/\s/g, ','); }
+
+function toast(msg, type) {
+  const t = document.createElement('div');
+  t.className = `pos-toast pos-toast-${type === 'success' ? 'ok' : type === 'danger' ? 'err' : 'warn'}`;
+  t.innerHTML = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
 }
 
-// ── Update totals display ────────────────────────────────────────────────────
+function updateShiftBar(method, amount) {
+  amount = parseFloat(amount) || 0;
+  if (method === 'CASH') _shiftCash += amount;
+  else if (method === 'MOBILE') _shiftMomo += amount;
+  _shiftTotal += amount;
+  document.getElementById('shiftCash').textContent  = fmt(_shiftCash);
+  document.getElementById('shiftMomo').textContent  = fmt(_shiftMomo);
+  document.getElementById('shiftTotal').textContent = fmt(_shiftTotal);
+}
+
 function updateTotals(data) {
   if (data.subtotal !== undefined)
     document.getElementById('subtotalDisplay').textContent = fmt(data.subtotal) + ' FCFA';
   if (data.total !== undefined)
     document.getElementById('totalDisplay').textContent = fmt(data.total) + ' FCFA';
-
-  const bdEl = document.getElementById('balanceDueDisplay');
-  if (bdEl && data.balance_due !== undefined) {
-    bdEl.textContent = fmt(data.balance_due) + ' FCFA';
-    bdEl.className = data.balance_due <= 0 ? 'balance-paid' : 'balance-due-amount';
-
-    // Update pay amount default
-    const pa = document.getElementById('payAmount');
+  const bd = document.getElementById('balDisplay');
+  if (bd && data.balance_due !== undefined) {
+    bd.textContent = fmt(data.balance_due) + ' FCFA';
+    bd.className = data.balance_due <= 0 ? 'bal-clear' : 'bal-due';
+    const pa = document.getElementById('payAmt');
     if (pa && data.balance_due > 0) pa.value = Math.round(data.balance_due);
-
-    // Enable / disable finalize button
-    const fb = document.getElementById('finalizeBtn');
-    if (fb) fb.disabled = data.balance_due > 0;
+    if (splitMode) prefillSplit(data.balance_due);
   }
+  updateFloatCart();
 }
 
-// ── Remove empty row if it exists ────────────────────────────────────────────
 function removeEmptyRow() {
   const er = document.getElementById('emptyRow');
   if (er) er.remove();
 }
 
-// ── Add item from catalog ────────────────────────────────────────────────────
-function addCatalogItem(name, category, price) {
-  if (!INVOICE_ID) { alert('No invoice found. Please refresh.'); return; }
+// ── Catalog tab switcher ───────────────────────────────────────────────────────
+function switchCat(cat, btn) {
+  document.querySelectorAll('.cat-tab').forEach(b => { b.classList.remove('active'); });
+  btn.classList.add('active');
+  document.querySelectorAll('.cat-pane').forEach(p => {
+    const on = p.dataset.cat === cat;
+    p.classList.toggle('active', on);
+    p.style.display = on ? 'block' : 'none';
+  });
+  document.getElementById('catScroll').scrollTop = 0;
+}
+
+// Init: ensure first active pane is visible
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.cat-pane').forEach(p => {
+    p.style.display = p.classList.contains('active') ? 'block' : 'none';
+  });
+});
+
+// ── Add item from catalog ─────────────────────────────────────────────────────
+function addItem(name, cat, price) {
+  if (!INV_ID) { toast('No invoice. Please refresh.', 'danger'); return; }
   if (price === 0) {
-    // Show price modal
-    document.getElementById('pendingName').value  = name;
-    document.getElementById('pendingCat').value   = category;
-    document.getElementById('pendingPrice').value = '';
+    document.getElementById('pendName').value = name;
+    document.getElementById('pendCat').value  = cat;
+    document.getElementById('pendPrice').value = '';
     document.getElementById('priceModalTitle').textContent = name;
     new bootstrap.Modal(document.getElementById('priceModal')).show();
     return;
   }
-  _doAddItem(name, category, 1, price);
+  _doAdd(name, cat, 1, price);
 }
 
-function confirmPriceAndAdd() {
-  const name  = document.getElementById('pendingName').value;
-  const cat   = document.getElementById('pendingCat').value;
-  const price = parseFloat(document.getElementById('pendingPrice').value || '0');
+function confirmPrice() {
+  const name  = document.getElementById('pendName').value;
+  const cat   = document.getElementById('pendCat').value;
+  const price = parseFloat(document.getElementById('pendPrice').value || '0');
   bootstrap.Modal.getInstance(document.getElementById('priceModal')).hide();
-  _doAddItem(name, cat, 1, price);
+  _doAdd(name, cat, 1, price);
 }
 
-// ── Add custom item ──────────────────────────────────────────────────────────
 function addCustomItem() {
-  if (!INVOICE_ID) { alert('No invoice found. Please refresh.'); return; }
-  const desc  = document.getElementById('customDesc').value.trim();
-  const cat   = document.getElementById('customCat').value;
-  const qty   = parseInt(document.getElementById('customQty').value) || 1;
-  const price = parseFloat(document.getElementById('customPrice').value || '0');
-  if (!desc) { alert('Please enter a description.'); return; }
-  _doAddItem(desc, cat, qty, price);
-  document.getElementById('customDesc').value = '';
-  document.getElementById('customPrice').value = '';
-  document.getElementById('customQty').value = '1';
+  if (!INV_ID) return;
+  const desc  = document.getElementById('custDesc').value.trim();
+  const cat   = document.getElementById('custCat').value;
+  const qty   = parseInt(document.getElementById('custQty').value) || 1;
+  const price = parseFloat(document.getElementById('custPrice').value || '0');
+  if (!desc) { toast('Please enter a description.', 'warn'); return; }
+  _doAdd(desc, cat, qty, price);
+  document.getElementById('custDesc').value  = '';
+  document.getElementById('custPrice').value = '';
+  document.getElementById('custQty').value   = '1';
 }
 
-function _doAddItem(description, category, quantity, unitPrice) {
+function _doAdd(desc, cat, qty, unitPrice) {
   const fd = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
-  fd.append('description', description);
-  fd.append('category', category);
-  fd.append('quantity', quantity);
+  fd.append('description', desc);
+  fd.append('category', cat);
+  fd.append('quantity', qty);
   fd.append('unit_price', unitPrice);
-
-  fetch(`/billing/invoice/${INVOICE_ID}/add-item/`, { method: 'POST', body: fd })
-    .then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
+  fetch(`/billing/invoice/${INV_ID}/add-item/`, { method: 'POST', body: fd })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      if (!data.success) { toast(data.error || 'Could not add item.', 'danger'); return; }
+      removeEmptyRow();
+      rowCount++;
+      const tbody = document.getElementById('itemsBody');
+      const tr = document.createElement('tr');
+      tr.id = `ir-${data.item_id}`;
+      tr.innerHTML = `
+        <td style="color:#475569;font-size:.75rem;">${rowCount}</td>
+        <td><div class="item-desc">${data.description}</div><div class="item-cat">${cat}</div></td>
+        <td class="text-center" style="color:#94a3b8;">${qty}</td>
+        <td class="text-end" style="color:#475569;white-space:nowrap;font-size:.75rem;">${fmt(unitPrice)}</td>
+        <td class="text-end item-amt" style="white-space:nowrap;">${fmt(data.line_total)}</td>
+        <td><button class="rm-btn" onclick="removeItem('${data.item_id}',this)"><i class="bi bi-trash3"></i></button></td>`;
+      tbody.appendChild(tr);
+      tr.style.transition = 'background .3s';
+      tr.style.background = '#052e16';
+      setTimeout(() => { tr.style.background = ''; }, 1000);
+      updateTotals(data);
+      toast(`<i class="bi bi-check-circle me-1"></i>${data.description} — ${fmt(data.line_total)} FCFA`, 'success');
     })
-    .then(function(data) {
-      if (!data.success) { showToast(data.error || 'Could not add item.', 'danger'); return; }
-      try {
-        removeEmptyRow();
-        rowCounter++;
-        const tbody = document.getElementById('itemsBody');
-        const tr = document.createElement('tr');
-        tr.id = `item-row-${data.item_id}`;
-        tr.innerHTML = `
-          <td class="text-muted">${rowCounter}</td>
-          <td>
-            <div class="fw-medium">${data.description}</div>
-            <small class="text-muted" style="font-size:0.7rem;">${category}</small>
-          </td>
-          <td class="text-center">${data.quantity}</td>
-          <td class="text-end text-muted" style="white-space:nowrap;">${fmt(unitPrice)}</td>
-          <td class="text-end fw-semibold text-primary" style="white-space:nowrap;">${fmt(data.line_total)}</td>
-          <td>
-            <button class="remove-item-btn" data-item-id="${data.item_id}"
-                    onclick="removeItem('${data.item_id}', this)" title="Tap once to select, tap again to remove">
-              <i class="bi bi-trash"></i>
-            </button>
-          </td>`;
-        tbody.appendChild(tr);
-        updateTotals(data);
-        updateFloatingCart();
-        // Flash the row green so the cashier can see it was added
-        tr.style.transition = 'background 0.3s';
-        tr.style.background = '#d1fae5';
-        setTimeout(function() { tr.style.background = ''; }, 1200);
-        // Scroll the new row into view (page-level scroll — no overflow panel)
-        setTimeout(function() { tr.scrollIntoView({behavior: 'smooth', block: 'nearest'}); }, 60);
-        showToast('✓ ' + data.description + ' — ' + fmt(data.line_total) + ' FCFA added', 'success');
-      } catch(err) {
-        showToast('Item saved but display error: ' + err.message + '. Please refresh.', 'warning');
-      }
-    })
-    .catch(function(err) { showToast('Network error: ' + err.message + '. Try again.', 'danger'); });
+    .catch(err => toast('Network error: ' + err.message, 'danger'));
 }
 
-// ── Remove item — tap once to arm (turns red), tap again within 3s to confirm ──
-var _pendingRemove = null;
+// ── Remove item — double-tap to confirm ──────────────────────────────────────
+let _pendRm = null;
 function removeItem(itemId, btn) {
-  if (_pendingRemove === itemId) {
-    // Second tap — confirmed, proceed
-    _pendingRemove = null;
+  if (_pendRm === itemId) {
+    _pendRm = null;
     if (btn) { btn.innerHTML = '<i class="bi bi-hourglass-split"></i>'; btn.disabled = true; }
   } else {
-    // First tap — arm the button
-    _pendingRemove = itemId;
+    _pendRm = itemId;
     if (btn) {
       const orig = btn.innerHTML;
-      btn.style.background = '#dc3545'; btn.style.color = '#fff';
-      btn.title = 'Tap again to confirm removal';
-      setTimeout(function() {
-        if (_pendingRemove === itemId) {
-          _pendingRemove = null;
-          btn.style.background = ''; btn.style.color = '';
-          btn.innerHTML = orig; btn.title = 'Tap once to select, tap again to remove';
+      btn.style.background = '#ef4444'; btn.style.color = '#fff';
+      btn.title = 'Tap again to confirm';
+      setTimeout(() => {
+        if (_pendRm === itemId) {
+          _pendRm = null; btn.style.background = ''; btn.style.color = ''; btn.innerHTML = orig;
         }
       }, 3000);
     }
     return;
   }
-  const fd = new FormData();
-  fd.append('csrfmiddlewaretoken', CSRF);
-
+  const fd = new FormData(); fd.append('csrfmiddlewaretoken', CSRF);
   fetch(`/billing/item/${itemId}/remove/`, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
-      if (!data.success) { alert(data.error || 'Could not remove item.'); return; }
-      const row = document.getElementById(`item-row-${itemId}`);
+      if (!data.success) { toast(data.error || 'Could not remove item.', 'danger'); return; }
+      const row = document.getElementById(`ir-${itemId}`);
       if (row) row.remove();
-      // Re-number rows
       const rows = document.querySelectorAll('#itemsBody tr');
-      rows.forEach((r, i) => {
-        const firstTd = r.querySelector('td:first-child');
-        if (firstTd) firstTd.textContent = i + 1;
-      });
-      rowCounter = rows.length;
-      if (rowCounter === 0) {
-        document.getElementById('itemsBody').innerHTML = `
-          <tr id="emptyRow">
-            <td colspan="6" class="text-center text-muted py-3" style="font-size:0.8rem;">
-              <i class="bi bi-receipt me-1"></i>No items yet — select from catalog
-            </td>
-          </tr>`;
+      rows.forEach((r, i) => { const td = r.querySelector('td:first-child'); if (td) td.textContent = i + 1; });
+      rowCount = rows.length;
+      if (rowCount === 0) {
+        document.getElementById('itemsBody').innerHTML =
+          '<tr id="emptyRow"><td colspan="6" class="empty-bill"><i class="bi bi-receipt me-1"></i>No items — select from catalog</td></tr>';
       }
       updateTotals(data);
-      updateFloatingCart();
     })
-    .catch(() => alert('Network error.'));
+    .catch(() => toast('Network error.', 'danger'));
 }
 
-// ── Apply discount ───────────────────────────────────────────────────────────
-// ── Insurance / Patient split ─────────────────────────────────────────────────
-function updateInsuranceSplit() {
-  const total = parseFloat(document.getElementById('totalDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
-  const ins   = parseFloat(document.getElementById('insuranceAmtInput').value) || 0;
-  const patient = Math.max(total - ins, 0);
-  document.getElementById('patientAmtDisplay').textContent = patient.toLocaleString('fr-FR') + ' FCFA';
-}
-
-function saveInsuranceAmount() {
-  if (!INVOICE_ID) return;
-  const ins = document.getElementById('insuranceAmtInput').value || '0';
-  const fd = new FormData();
-  fd.append('csrfmiddlewaretoken', CSRF);
-  fd.append('insurance_amount', ins);
-  fetch(`/billing/invoice/${INVOICE_ID}/insurance/`, { method: 'POST', body: fd })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.success) { alert(data.error || 'Could not save insurance amount.'); return; }
-      updateInsuranceSplit();
-      // Auto-set pay amount to patient portion
-      const patientAmt = data.patient_amount || 0;
-      document.getElementById('payAmount').value = patientAmt;
-    })
-    .catch(() => alert('Network error.'));
-}
-
+// ── Discount ──────────────────────────────────────────────────────────────────
 function applyDiscount() {
-  if (!INVOICE_ID) return;
-  const amount = document.getElementById('discountInput').value || '0';
-  const reason = document.getElementById('discountReason').value;
+  if (!INV_ID) return;
   const fd = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
-  fd.append('discount_amount', amount);
-  fd.append('discount_reason', reason);
+  fd.append('discount_amount', document.getElementById('discAmt').value || '0');
+  fd.append('discount_reason', document.getElementById('discReason').value);
+  fetch(`/billing/invoice/${INV_ID}/discount/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => { if (data.success) updateTotals(data); else toast(data.error, 'danger'); })
+    .catch(() => toast('Network error.', 'danger'));
+}
 
-  fetch(`/billing/invoice/${INVOICE_ID}/discount/`, { method: 'POST', body: fd })
+// ── Insurance split ───────────────────────────────────────────────────────────
+function updateInsSplit() {
+  const total = parseFloat(document.getElementById('totalDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
+  const ins   = parseFloat(document.getElementById('insAmt').value) || 0;
+  document.getElementById('patAmtDisplay').textContent = fmt(Math.max(total - ins, 0)) + ' FCFA';
+}
+function saveInsAmt() {
+  if (!INV_ID) return;
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append('insurance_amount', document.getElementById('insAmt').value || '0');
+  fetch(`/billing/invoice/${INV_ID}/insurance/`, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
-      if (!data.success) { alert(data.error || 'Could not apply discount.'); return; }
-      updateTotals(data);
-    })
-    .catch(() => alert('Network error.'));
+      if (!data.success) { toast(data.error, 'danger'); return; }
+      updateInsSplit();
+      const pa = document.getElementById('payAmt');
+      if (pa) pa.value = data.patient_amount || 0;
+    });
 }
 
-// ── Select payment method ────────────────────────────────────────────────────
-function selectMethod(btn, method) {
-  document.querySelectorAll('.pay-method-btn').forEach(b => b.classList.remove('active'));
+// ── Payment method selection ──────────────────────────────────────────────────
+function pickMethod(btn, method) {
+  document.querySelectorAll('.meth-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  selectedMethod = method;
-
-  // Show insurance panel when insurance-type method is selected
-  const insPanel = document.getElementById('insurancePanel');
-  if (insPanel) {
-    insPanel.style.display = (method === 'INSURANCE' || method === 'NHIS') ? 'block' : 'none';
-  }
-
+  activeMethod = method;
+  const ip = document.getElementById('insPanel');
+  if (ip) ip.style.display = (method === 'INSURANCE' || method === 'NHIS') ? 'block' : 'none';
+  // Exit split mode when picking a specific method
+  if (splitMode) toggleSplit();
 }
 
-// ── Collect & Print Receipt — single button flow ─────────────────────────────
-function collectAndPrint() {
-  if (!INVOICE_ID) return;
-  const amountInput = document.getElementById('payAmount');
-  const amount = amountInput.value;
-  const ref    = document.getElementById('payRef').value;
-  const btn    = document.getElementById('collectBtn');
-
-  // If already paid — just reprint
-  if (RECEIPT_URL && parseFloat(amount) <= 0) {
-    window.open(RECEIPT_URL, '_blank');
-    return;
+// ── Split payment toggle ──────────────────────────────────────────────────────
+function toggleSplit() {
+  splitMode = !splitMode;
+  const splitBtn = document.getElementById('splitToggleBtn');
+  document.getElementById('singlePayDiv').style.display  = splitMode ? 'none' : 'block';
+  document.getElementById('splitPayDiv').style.display   = splitMode ? 'block' : 'none';
+  splitBtn.classList.toggle('active', splitMode);
+  if (splitMode) {
+    // Deselect all method buttons
+    document.querySelectorAll('.meth-btn:not(#splitToggleBtn)').forEach(b => b.classList.remove('active'));
+    // Pre-fill split with balance due
+    const bal = parseFloat(document.getElementById('balDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
+    prefillSplit(bal);
   }
+}
 
-  if (!amount || parseFloat(amount) <= 0) {
-    amountInput.focus();
-    amountInput.classList.add('is-invalid');
-    setTimeout(() => amountInput.classList.remove('is-invalid'), 1500);
-    return;
+function prefillSplit(bal) {
+  document.getElementById('splitCash').value = Math.round(bal) || '';
+  document.getElementById('splitMomo').value = '';
+  updateSplitBalance();
+}
+
+function updateSplitBalance() {
+  const cash = parseFloat(document.getElementById('splitCash').value) || 0;
+  const momo = parseFloat(document.getElementById('splitMomo').value) || 0;
+  document.getElementById('splitTotalDisplay').textContent = fmt(cash + momo) + ' FCFA';
+}
+
+// ── Collect & Print ───────────────────────────────────────────────────────────
+function collectPay() {
+  if (!INV_ID) return;
+  const btn = document.getElementById('collectBtn');
+
+  if (splitMode) {
+    // Split payment: send two separate payment requests
+    const cash = parseFloat(document.getElementById('splitCash').value) || 0;
+    const momo = parseFloat(document.getElementById('splitMomo').value) || 0;
+    const ref  = document.getElementById('splitRef').value;
+    if (cash <= 0 && momo <= 0) {
+      toast('Enter at least one payment amount.', 'warn'); return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
+    _recordPayment('CASH', cash, '', false)
+      .then(() => _recordPayment('MOBILE', momo, ref, true))
+      .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+      });
+  } else {
+    const amount = parseFloat(document.getElementById('payAmt').value) || 0;
+    const ref    = document.getElementById('payRef').value;
+    if (amount <= 0) {
+      document.getElementById('payAmt').focus();
+      toast('Enter payment amount.', 'warn'); return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
+    _recordPayment(activeMethod, amount, ref, true);
   }
+}
 
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
-
-  const fd = new FormData();
+function _recordPayment(method, amount, ref, finalize) {
+  if (!amount || amount <= 0) return Promise.resolve({ success: true, skip: true });
+  const btn = document.getElementById('collectBtn');
+  const fd  = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
-  fd.append('payment_method', selectedMethod);
+  fd.append('payment_method', method);
   fd.append('amount', amount);
   fd.append('reference', ref);
-
-  fetch(`/billing/invoice/${INVOICE_ID}/record-payment/`, { method: 'POST', body: fd })
+  return fetch(`/billing/invoice/${INV_ID}/record-payment/`, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
       if (!data.success) {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
-        alert(data.error || 'Could not record payment.');
-        return;
+        toast(data.error || 'Payment failed.', 'danger');
+        return data;
       }
-
-      // Append to payment log
-      const log = document.getElementById('paymentLog');
-      const entry = document.createElement('div');
-      entry.className = 'pay-entry';
-      entry.innerHTML = `<span>${selectedMethod}${ref ? ' · ' + ref : ''}</span>
-                         <span style="color:#4ade80;">+${fmt(amount)}</span>`;
-      log.appendChild(entry);
-      document.getElementById('payRef').value = '';
+      // Append to log
+      if (amount > 0) {
+        const log = document.getElementById('payLog');
+        const entry = document.createElement('div');
+        entry.className = 'pay-entry';
+        entry.innerHTML = `<span>${method}${ref ? ' · ' + ref : ''}</span><span class="pay-credit">+${fmt(amount)}</span>`;
+        log.appendChild(entry);
+        // Update shift bar
+        updateShiftBar(method, amount);
+      }
       updateTotals(data);
-
-      // Corporate credit limit warning
-      if (data.credit_warning) {
-        const warn = document.createElement('div');
-        warn.className = 'alert alert-warning alert-dismissible mt-2 py-2 small';
-        warn.innerHTML = data.credit_warning + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-        document.getElementById('paymentLog').parentElement.insertBefore(warn, log);
-      }
-
-      if (data.is_paid) {
-        // Auto-finalize (create visit, route to triage if QMS on) then open receipt
+      if (finalize && data.is_paid) {
         const ffd = new FormData();
         ffd.append('csrfmiddlewaretoken', CSRF);
         fetch(FINALIZE_URL, { method: 'POST', body: ffd })
           .then(r => r.json())
           .then(fdata => {
-            // Open receipt in new tab so it can auto-print without losing the EHR interface
-            const receiptUrl = (fdata.redirect_url || RECEIPT_URL);
-            if (receiptUrl) window.open(receiptUrl + '?popup=1', '_blank');
-            // Return to POS landing — auto-routes to next patient in queue
+            const url = fdata.redirect_url || RECEIPT_URL;
+            if (url) window.open(url + '?popup=1', '_blank');
             window.location.href = '/billing/pos/';
           })
           .catch(() => {
             if (RECEIPT_URL) window.open(RECEIPT_URL + '?popup=1', '_blank');
             window.location.href = '/billing/pos/';
           });
-      } else {
-        // Partial payment — stay on POS, re-enable button
+      } else if (finalize && !data.is_paid) {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+        document.getElementById('payRef').value = '';
+        if (splitMode) {
+          document.getElementById('splitCash').value = '';
+          document.getElementById('splitMomo').value = '';
+          updateSplitBalance();
+        }
       }
-    })
-    .catch(() => {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
-      alert('Network error. Please try again.');
+      return data;
     });
 }
 
-// ── AI Suggest ───────────────────────────────────────────────────────────────
+// ── AI Suggest ────────────────────────────────────────────────────────────────
 function aiSuggest() {
-  const btn = document.getElementById('aiSuggestBtn');
-  const container = document.getElementById('aiSuggestions');
+  const btn = document.getElementById('aiTabBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Thinking…';
-
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
   fetch('/ai/suggest-billing/', {
     method: 'POST',
     headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/json' },
     body: JSON.stringify({ patient_id: '{{ patient.patient_id|default:"" }}', token_id: TOKEN_ID })
   })
-  .then(r => {
-    if (!r.ok) throw new Error('unavailable');
-    return r.json();
-  })
-  .then(data => {
-    const suggestions = data.suggestions || [];
-    renderAiSuggestions(suggestions);
-  })
-  .catch(() => {
-    // Fallback static suggestions
-    renderAiSuggestions([
-      { name: 'Standard Consultation', category: 'CONSULT', price: 15000 },
-      { name: 'Tonometry (IOP)',        category: 'INVEST',  price: 3000  },
-    ]);
-  })
-  .finally(() => {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-stars me-1"></i>AI Suggest';
+  .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+  .then(data => renderAi(data.suggestions || []))
+  .catch(() => renderAi([
+    { name: 'Standard Consultation', category: 'CONSULT', price: 15000 },
+    { name: 'Tonometry (IOP)',        category: 'INVEST',  price: 3000  },
+  ]))
+  .finally(() => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-stars me-1"></i>AI'; });
+  // Switch to AI pane
+  document.querySelectorAll('.cat-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.cat-pane').forEach(p => {
+    const on = p.dataset.cat === 'AI';
+    p.classList.toggle('active', on); p.style.display = on ? 'block' : 'none';
   });
 }
-
-function renderAiSuggestions(suggestions) {
-  const container = document.getElementById('aiSuggestions');
+function renderAi(suggestions) {
   const list = document.getElementById('aiList');
   list.innerHTML = '';
   if (!suggestions.length) {
-    list.innerHTML = '<small class="text-muted">No suggestions available.</small>';
-  } else {
-    suggestions.forEach(svc => {
-      const btn = document.createElement('button');
-      btn.className = 'service-btn';
-      btn.style.background = '#1e1b4b';
-      btn.style.borderColor = '#4338ca';
-      btn.innerHTML = `<span>${svc.name}</span>
-                       <span class="price-tag">${fmt(svc.price)} FCFA</span>`;
-      btn.onclick = () => addCatalogItem(svc.name, svc.category, svc.price);
-      list.appendChild(btn);
-    });
+    list.innerHTML = '<div style="color:#475569;font-size:.78rem;padding:.5rem;">No suggestions.</div>'; return;
   }
-  // Switch catalog to AI pane
-  document.querySelectorAll('.cat-pane').forEach(function(p) {
-    p.style.display = p.dataset.cat === 'AI' ? 'block' : 'none';
-    p.classList.toggle('active', p.dataset.cat === 'AI');
+  suggestions.forEach(svc => {
+    const b = document.createElement('button');
+    b.className = 'svc-btn';
+    b.style.cssText = 'background:#2d1657;border-color:#6d28d9;';
+    b.innerHTML = `<span>${svc.name}</span><span class="svc-price" style="color:#c4b5fd;">${fmt(svc.price)} FCFA</span>`;
+    b.onclick = () => addItem(svc.name, svc.category, svc.price);
+    list.appendChild(b);
   });
 }
 
-// ── Floating cart badge ───────────────────────────────────────────────────────
-function updateFloatingCart() {
-  const rows = document.querySelectorAll('#itemsBody tr[id^="item-row-"]');
+// ── Floating cart ─────────────────────────────────────────────────────────────
+function updateFloatCart() {
+  const rows = document.querySelectorAll('#itemsBody tr[id^="ir-"]');
   const totalEl = document.getElementById('totalDisplay');
-  const totalText = totalEl ? totalEl.textContent.replace(/[^0-9,]/g,'').replace(/,/g,'') : '0';
-  document.getElementById('floatingCartCount').textContent = rows.length;
-  document.getElementById('floatingCartTotal').textContent = parseInt(totalText || 0).toLocaleString('fr-FR').replace(/\s/g,',');
+  const total = totalEl ? totalEl.textContent.replace(/[^0-9]/g,'') : '0';
+  document.getElementById('floatCount').textContent = rows.length;
+  document.getElementById('floatTotal').textContent = parseInt(total || 0).toLocaleString('fr-FR').replace(/\s/g,',');
 }
-// Initialise on load (existing items)
-updateFloatingCart();
+updateFloatCart();
 
-// ── Toast helper ─────────────────────────────────────────────────────────────
-function showToast(msg, type) {
-  const t = document.createElement('div');
-  t.className = `alert alert-${type} position-fixed shadow-lg`;
-  t.style.cssText = 'top:1rem;right:1rem;z-index:9999;min-width:250px;';
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3000);
+// ── Discard empty invoice ──────────────────────────────────────────────────────
+function doDiscard() {
+  const btn = document.querySelector('#discardForm button');
+  if (btn.dataset.armed === '1') {
+    document.getElementById('discardForm').submit();
+  } else {
+    btn.dataset.armed = '1';
+    btn.textContent = 'Tap again to confirm discard';
+    btn.style.background = '#450a0a';
+    setTimeout(() => {
+      btn.dataset.armed = '0';
+      btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Discard Empty Invoice';
+      btn.style.background = '';
+    }, 4000);
+  }
 }
 </script>
 {% endblock %}

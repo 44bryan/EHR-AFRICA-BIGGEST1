@@ -859,6 +859,18 @@ def cashier_pos(request, token_id):
             ).order_by('created_at')
         )
 
+    # Shift running total — today's payments collected by this cashier
+    today = timezone.localdate()
+    shift_totals = Payment.objects.filter(
+        received_by=request.user,
+        payment_date__date=today,
+        is_deleted=False,
+    ).aggregate(
+        total=Sum('amount'),
+        cash=Sum('amount', filter=Q(payment_method=PaymentMethod.CASH)),
+        mobile=Sum('amount', filter=Q(payment_method=PaymentMethod.MOBILE)),
+    )
+
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -868,12 +880,15 @@ def cashier_pos(request, token_id):
         'categories': ServiceCategory.choices,
         'payment_methods': PaymentMethod.choices,
         'service_catalog': _get_service_catalog(cashier_station=getattr(request.user, 'cashier_station', 'ALL')),
-        'today': timezone.localdate(),
+        'today': today,
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
         'active_insurance': active_insurance,
         'doctor_orders': doctor_orders,
         'receipt_url': f"/billing/receipt/{invoice.id}/" if invoice else '',
+        'shift_total': shift_totals['total'] or 0,
+        'shift_cash': shift_totals['cash'] or 0,
+        'shift_mobile': shift_totals['mobile'] or 0,
     })
 
 
