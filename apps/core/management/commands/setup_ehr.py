@@ -330,26 +330,78 @@ class Command(BaseCommand):
     def _seed_lab_tests(self):
         from apps.laboratory.models import LabTestType, LabTestCategory
         tests = [
-            ('Full Blood Count (FBC)', 'FBC', LabTestCategory.HAEMATOLOGY),
-            ('Erythrocyte Sedimentation Rate (ESR)', 'ESR', LabTestCategory.HAEMATOLOGY),
-            ('Sickling Test', 'SICK', LabTestCategory.HAEMATOLOGY),
-            ('Haemoglobin Electrophoresis', 'HbEP', LabTestCategory.HAEMATOLOGY),
-            ('Prothrombin Time (PT)', 'PT', LabTestCategory.HAEMATOLOGY),
-            ('Fasting Blood Glucose (FBG)', 'FBG', LabTestCategory.BIOCHEMISTRY),
-            ('HbA1c', 'HBA1C', LabTestCategory.BIOCHEMISTRY),
-            ('Urea, Electrolytes & Creatinine (U&E)', 'UEC', LabTestCategory.BIOCHEMISTRY),
-            ('Liver Function Tests (LFT)', 'LFT', LabTestCategory.BIOCHEMISTRY),
-            ('Total Cholesterol / Lipid Profile', 'LIPID', LabTestCategory.BIOCHEMISTRY),
-            ('CRP (C-Reactive Protein)', 'CRP', LabTestCategory.BIOCHEMISTRY),
-            ('Thyroid Function Tests (TFT)', 'TFT', LabTestCategory.BIOCHEMISTRY),
-            ('Toxoplasma IgG/IgM', 'TOXO', LabTestCategory.SEROLOGY),
-            ('CMV IgG/IgM', 'CMV', LabTestCategory.SEROLOGY),
-            ('HSV IgG/IgM', 'HSV', LabTestCategory.SEROLOGY),
-            ('HIV Screening', 'HIV', LabTestCategory.SEROLOGY),
-            ('VDRL (Syphilis)', 'VDRL', LabTestCategory.SEROLOGY),
-            ('Urinalysis', 'UA', LabTestCategory.URINALYSIS),
+            # ── HAEMATOLOGY ──────────────────────────────────────────────
+            ('CBC Complète (Hémogramme)', 'LAB-04', LabTestCategory.HAEMATOLOGY),
+            ('Groupe Sanguin + RH', 'LAB-57', LabTestCategory.HAEMATOLOGY),
+            ('Hémoglobine Electrophorèse', 'LAB-55', LabTestCategory.HAEMATOLOGY),
+            ('Temps de Saignement (TS)', 'LAB-08', LabTestCategory.HAEMATOLOGY),
+            ('Taux de Prothrombine (TP/PT)', 'LAB-06', LabTestCategory.HAEMATOLOGY),
+            ('Temps de Céphaline Activée (TCA/PTT)', 'LAB-07', LabTestCategory.HAEMATOLOGY),
+            ('Vitesse de Sédimentation (VS/ESR)', 'LAB-50', LabTestCategory.HAEMATOLOGY),
+            # ── PARASITOLOGY ─────────────────────────────────────────────
+            ('Skin Snip (Onchocercose)', 'LAB-26', LabTestCategory.PARASITOLOGY),
+            ('Frottis Sanguin — Paludisme', 'LAB-25', LabTestCategory.PARASITOLOGY),
+            ('Examen Parasitologique des Selles', 'LAB-37', LabTestCategory.PARASITOLOGY),
+            # ── MICROBIOLOGY ─────────────────────────────────────────────
+            ('Culture + Antibiogramme (Prélèvement Oculaire)', 'LAB-02', LabTestCategory.MICROBIOLOGY),
+            ('Culture des Selles', 'LAB-60', LabTestCategory.MICROBIOLOGY),
+            ('Culture des Urines (ECBU)', 'LAB-61', LabTestCategory.MICROBIOLOGY),
             ('Eye Swab M/C/S', 'EYE-MCS', LabTestCategory.MICROBIOLOGY),
+            # ── URINALYSIS ───────────────────────────────────────────────
+            ('Examen Cytobactériologique des Urines (ECBU)', 'LAB-24', LabTestCategory.URINALYSIS),
+            # ── FEBRILE PROFILE ──────────────────────────────────────────
+            ('Sérodiagnostic de Widal', 'LAB-05', LabTestCategory.FEBRILE),
+            ('Hépatite C (HCV Ab)', 'LAB-15', LabTestCategory.FEBRILE),
+            # ── BIOCHEMISTRY ─────────────────────────────────────────────
+            ('Glycémie à Jeun (Fasting)', 'LAB-01', LabTestCategory.BIOCHEMISTRY),
+            ('Glycémie Post-Prandiale (2h)', 'LAB-39', LabTestCategory.BIOCHEMISTRY),
+            ('Glycémie Aléatoire (Random)', 'LAB-33', LabTestCategory.BIOCHEMISTRY),
+            ('Test de Tolérance au Glucose (OGTT)', 'LAB-34', LabTestCategory.BIOCHEMISTRY),
+            ('Hémoglobine Glyquée (HbA1c)', 'LAB-19', LabTestCategory.BIOCHEMISTRY),
+            ('Bilirubine Totale', 'LAB-41', LabTestCategory.BIOCHEMISTRY),
+            ('Bilirubine Directe', 'LAB-42', LabTestCategory.BIOCHEMISTRY),
+            ('ALAT (SGPT)', 'LAB-14', LabTestCategory.BIOCHEMISTRY),
+            ('ASAT (SGOT)', 'LAB-17', LabTestCategory.BIOCHEMISTRY),
+            ('Gamma GT (GGT)', 'LAB-35', LabTestCategory.BIOCHEMISTRY),
+            ('Protéines Totales', 'LAB-56', LabTestCategory.BIOCHEMISTRY),
+            # ── LIPID PROFILE ────────────────────────────────────────────
+            ('Cholestérol Total', 'LAB-10', LabTestCategory.LIPID),
+            ('HDL Cholestérol', 'LAB-11', LabTestCategory.LIPID),
+            ('Triglycérides', 'LAB-12', LabTestCategory.LIPID),
+            ('LDL Cholestérol', 'LAB-13', LabTestCategory.LIPID),
+            ('Lipides Totaux', 'LAB-40', LabTestCategory.LIPID),
+            # ── RENAL PROFILE ────────────────────────────────────────────
+            ('Urée Sanguine', 'LAB-31', LabTestCategory.RENAL),
+            ('Créatinine Sérique', 'LAB-09', LabTestCategory.RENAL),
+            ('Acide Urique', 'LAB-18', LabTestCategory.RENAL),
+            # ── ELECTROLYTES ─────────────────────────────────────────────
+            ('Sodium (Na+)', 'LAB-20', LabTestCategory.ELECTROLYTES),
+            ('Potassium (K+)', 'LAB-21', LabTestCategory.ELECTROLYTES),
+            ('Chlore (Cl-)', 'LAB-22', LabTestCategory.ELECTROLYTES),
+            ('Calcium (Ca2+)', 'LAB-23', LabTestCategory.ELECTROLYTES),
+            # ── THYROID ──────────────────────────────────────────────────
+            ('T3 (Triiodothyronine)', 'LAB-52', LabTestCategory.THYROID),
+            ('T4 (Thyroxine)', 'LAB-53', LabTestCategory.THYROID),
+            ('TSH (Thyroid Stimulating Hormone)', 'LAB-54', LabTestCategory.THYROID),
+            # ── SEROLOGY ─────────────────────────────────────────────────
+            ('Chlamydia Antigène (AG)', 'LAB-43', LabTestCategory.SEROLOGY),
+            ('Chlamydia Anticorps (AB)', 'LAB-44', LabTestCategory.SEROLOGY),
+            ('HSV Antigène (AG)', 'LAB-45', LabTestCategory.SEROLOGY),
+            ('HSV Anticorps (ABS)', 'LAB-46', LabTestCategory.SEROLOGY),
+            ('Antigène de Surface Hépatite B (HBsAg)', 'LAB-16', LabTestCategory.SEROLOGY),
+            ('HIV Anticorps (HIV ABS)', 'LAB-29', LabTestCategory.SEROLOGY),
+            ('VDRL (Syphilis)', 'LAB-36', LabTestCategory.SEROLOGY),
+            ('TPHA (Syphilis Confirmatoire)', 'LAB-28', LabTestCategory.SEROLOGY),
+            ('Toxoplasma IgG', 'LAB-30', LabTestCategory.SEROLOGY),
+            ('CRP (C-Reactive Protein)', 'LAB-27', LabTestCategory.SEROLOGY),
+            ('H. Pylori Antigène', 'LAB-59', LabTestCategory.SEROLOGY),
+            ('ASLO (Antistreptolysine O)', 'LAB-47', LabTestCategory.SEROLOGY),
+            # ── RHEUMATOID PROFILE ───────────────────────────────────────
+            ('Facteur Rhumatoïde (RF)', 'LAB-48', LabTestCategory.RHEUMATOID),
+            # ── OCULAR SPECIMENS ─────────────────────────────────────────
             ('Ocular Fluid Culture', 'OCC', LabTestCategory.OCULAR),
+            ('Corneal Scraping M/C/S', 'CORN-MCS', LabTestCategory.OCULAR),
+            ('Vitreous Tap Culture', 'VIT-CX', LabTestCategory.OCULAR),
         ]
         for name, code, category in tests:
             LabTestType.objects.get_or_create(code=code, defaults={

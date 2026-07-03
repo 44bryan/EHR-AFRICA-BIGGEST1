@@ -9,13 +9,20 @@ from apps.core.models import AuditModel, TimeStampedModel
 
 
 class LabTestCategory(models.TextChoices):
-    HAEMATOLOGY = 'HAEMATOLOGY', _('Haematology')
+    HAEMATOLOGY  = 'HAEMATOLOGY',  _('Haematology')
     BIOCHEMISTRY = 'BIOCHEMISTRY', _('Biochemistry')
+    LIPID        = 'LIPID',        _('Lipid Profile')
+    RENAL        = 'RENAL',        _('Renal Profile')
+    ELECTROLYTES = 'ELECTROLYTES', _('Electrolytes')
+    THYROID      = 'THYROID',      _('Thyroid Functions')
     MICROBIOLOGY = 'MICROBIOLOGY', _('Microbiology')
-    SEROLOGY = 'SEROLOGY', _('Serology')
-    URINALYSIS = 'URINALYSIS', _('Urinalysis')
-    HISTOLOGY = 'HISTOLOGY', _('Histology / Cytology')
-    OCULAR = 'OCULAR', _('Ocular Specimens')
+    PARASITOLOGY = 'PARASITOLOGY', _('Parasitology')
+    SEROLOGY     = 'SEROLOGY',     _('Serology')
+    RHEUMATOID   = 'RHEUMATOID',   _('Rheumatoid Profile')
+    FEBRILE      = 'FEBRILE',      _('Febrile Profile')
+    URINALYSIS   = 'URINALYSIS',   _('Urinalysis / Pathology')
+    HISTOLOGY    = 'HISTOLOGY',    _('Histology / Cytology')
+    OCULAR       = 'OCULAR',       _('Ocular Specimens')
 
 
 class ResultType(models.TextChoices):
