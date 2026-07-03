@@ -389,9 +389,9 @@ def add_dispensing_item_ajax(request, dispensing_id):
 @login_required
 def add_manual_item_ajax(request, dispensing_id):
     """AJAX: add a non-formulary (Others) drug item to dispensing by name + price."""
-    if not request.user.can_dispense_pharmacy():
-        return JsonResponse({'error': 'Permission denied'}, status=403)
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if not (request.user.can_dispense_pharmacy() or request.user == dispensing.dispensed_by):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
     if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
         return JsonResponse({'error': 'Cannot add items to a completed dispensing'}, status=400)
 
