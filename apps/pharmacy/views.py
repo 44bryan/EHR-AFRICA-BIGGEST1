@@ -109,6 +109,18 @@ def pharmacy_dashboard(request):
         for v in waiting_visits:
             v.latest_rx = latest_rx.get(v.patient_id)
 
+    # Pharmacist's own shift for today (for cash desk status card)
+    my_shift = None
+    if request.user.is_pharmacist:
+        try:
+            from apps.billing.models import CashierShift, ShiftStatus
+            my_shift = CashierShift.objects.filter(
+                cashier=request.user, shift_date=today,
+                status=ShiftStatus.OPEN, is_deleted=False,
+            ).first()
+        except Exception:
+            pass
+
     context = {
         'low_stock_count': len(low_stock_drugs),
         'low_stock_drugs': low_stock_drugs[:15],
@@ -125,6 +137,7 @@ def pharmacy_dashboard(request):
         'total_drugs': len(all_drugs),
         'pharmacy_work_orders': pharmacy_work_orders,
         'waiting_visits': waiting_visits,
+        'my_shift': my_shift,
     }
     return render(request, 'pharmacy/dashboard.html', context)
 
@@ -523,22 +536,24 @@ def complete_dispensing(request, dispensing_id):
         messages.error(request, 'Cannot complete a dispensing that is already dispensed or cancelled.')
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
-    # Require an open shift for pharmacists collecting cash at the pharmacy counter
+    # Auto-open a pharmacy cash desk shift if the pharmacist doesn't have one yet today
     from apps.accounts.models import UserRole as _UR
     if request.user.role == _UR.PHARMACIST:
         from apps.billing.models import CashierShift, ShiftStatus
+        from decimal import Decimal as _D
         _today = timezone.localdate()
         _open_shift = CashierShift.objects.filter(
             cashier=request.user, shift_date=_today,
             status=ShiftStatus.OPEN, is_deleted=False,
         ).first()
         if not _open_shift:
-            messages.error(
-                request,
-                'Open your cash desk shift before collecting payment. '
-                'Click "My Cash Desk" in the sidebar.'
+            CashierShift.objects.create(
+                cashier=request.user,
+                shift_date=_today,
+                opening_cash=_D('0'),
+                status=ShiftStatus.OPEN,
+                created_by=request.user,
             )
-            return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
     from decimal import Decimal, InvalidOperation
     from apps.billing.models import Payment, PaymentMethod, Invoice, InvoiceStatus
