@@ -200,8 +200,8 @@
               {% for item in dispensing.items.all %}
               <tr id="item-row-{{ item.pk }}">
                 <td>
-                  <div class="fw-semibold" style="font-size:.88rem;">{{ item.drug.name }}</div>
-                  <div class="text-muted" style="font-size:.75rem;">{{ item.drug.strength }}{% if item.drug.strength %} &bull; {% endif %}{{ item.drug.get_form_display }}</div>
+                  <div class="fw-semibold" style="font-size:.88rem;">{{ item.display_name }}</div>
+                  <div class="text-muted" style="font-size:.75rem;">{% if item.drug %}{{ item.drug.strength }}{% if item.drug.strength %} &bull; {% endif %}{{ item.drug.get_form_display }}{% else %}<span class="badge bg-secondary" style="font-size:.7rem;">Non-formulary</span>{% endif %}</div>
                 </td>
                 <td style="font-size:.78rem;" class="text-muted">
                   {% if item.stock_batch %}
@@ -944,13 +944,13 @@ if (fillAllBtn) {
           fd.append('qty', qty || 1);
           fd.append('unit_price', drug.price);
           fd.append('instructions', instr || '');
-          const addR = await fetch(ADD_URL, { method: 'POST', headers: {'X-CSRFToken': CSRF}, body: fd });
+          fd.append('csrfmiddlewaretoken', CSRF);
+          const addR = await fetch(ADD_URL, { method: 'POST', body: fd });
           const addData = await addR.json();
           if (addData.success) {
-            runningTotal = parseFloat(addData.new_total);
             appendItemRow(addData.item);
-            updateRunningTotal(runningTotal);
             itemCount++;
+            updateTotals(parseFloat(addData.total), itemCount);
           }
         } else {
           // Not in formulary — skip silently (pharmacist can add manually)
@@ -992,10 +992,9 @@ if (addManualBtn) {
       .then(r => r.json())
       .then(data => {
         if (data.success) {
-          runningTotal = parseFloat(data.new_total);
-          appendItemRow(data.item);
-          updateRunningTotal(runningTotal);
           itemCount++;
+          appendItemRow(data.item);
+          updateTotals(parseFloat(data.new_total), itemCount);
           nameEl.value=''; qtyEl.value=1; priceEl.value=''; instrEl.value='';
           manualPanel.classList.add('d-none');
         } else {

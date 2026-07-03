@@ -19,13 +19,18 @@ def _require_director(request):
     """
     Leadership views are visible to:
     - Super Admin (master account, controls everything)
+    - System Administrator (ADMIN role — IT/system admin)
+    - Django superuser (Django is_superuser flag)
     - Medical Director (controls all clinical operations)
     - CEO (sees everything, read-only)
     - Finance Director (sees everything, focus on finance)
     - Admin Director (sees everything, read-only)
     """
+    from apps.accounts.models import UserRole
     return (
-        request.user.is_super_admin
+        request.user.is_superuser
+        or request.user.is_super_admin
+        or request.user.role == UserRole.ADMIN
         or request.user.is_medical_director
         or request.user.is_ceo
         or request.user.is_finance_director
@@ -1112,6 +1117,54 @@ def hospital_stats_view(request):
         for b in WHO_BANDS
     ]
 
+    # ── Tier × Gender × Age cross-tab ────────────────────────────────────────
+    from collections import defaultdict as _dd
+    _visit_detail = list(
+        base_visits.filter(patient__date_of_birth__isnull=False)
+        .values('service_tier', 'billing_type', 'patient__gender', 'patient__date_of_birth')
+    )
+    _mx_data = _dd(lambda: _dd(lambda: _dd(int)))
+    for _v in _visit_detail:
+        _dob     = _v['patient__date_of_birth']
+        _gender  = _v['patient__gender'] or 'Other'
+        _billing = _v['billing_type']
+        _tk      = _billing if _billing in ('INSURANCE', 'HMO') else _v['service_tier']
+        try:
+            _age = (today - _dob).days // 365
+            _ag  = 'Children' if _age < 18 else ('Adult' if _age < 60 else 'Elderly')
+        except Exception:
+            _ag = 'Unknown'
+        _mx_data[_tk][_ag][_gender] += 1
+
+    _TIER_ROWS = [
+        ('STANDARD',   'Standard',  '#0d6efd'),
+        ('EXPRESS',    'Express',   '#0dcaf0'),
+        ('FAST_TRACK', 'Fast Track','#ffc107'),
+        ('VIP',        'VIP',       '#dc3545'),
+        ('INSURANCE',  'Insurance', '#198754'),
+        ('HMO',        'HMO',       '#6f42c1'),
+    ]
+
+    def _mx(tk, ag, g):
+        return _mx_data[tk][ag].get(g, 0)
+
+    tier_matrix = []
+    for _tk, _label, _color in _TIER_ROWS:
+        _cm = _mx(_tk,'Children','M'); _cf = _mx(_tk,'Children','F')
+        _am = _mx(_tk,'Adult','M');    _af = _mx(_tk,'Adult','F')
+        _em = _mx(_tk,'Elderly','M');  _ef = _mx(_tk,'Elderly','F')
+        _tm = _cm + _am + _em;        _tf = _cf + _af + _ef
+        tier_matrix.append({
+            'tier':      _label,
+            'color':     _color,
+            'total':     _tm + _tf,
+            'male':      _tm,
+            'female':    _tf,
+            'children':  _cm + _cf, 'children_m': _cm, 'children_f': _cf,
+            'adult':     _am + _af, 'adult_m':    _am, 'adult_f':    _af,
+            'elderly':   _em + _ef, 'elderly_m':  _em, 'elderly_f':  _ef,
+        })
+
     # ── IPD Admissions ────────────────────────────────────────────────────────
     try:
         from apps.ipd.models import Admission
@@ -1251,7 +1304,7 @@ def hospital_stats_view(request):
     # ── Context ───────────────────────────────────────────────────────────────
     months_list = [{'value': m, 'label': _date(year, m, 1).strftime('%B')} for m in range(1, 13)]
 
-    return render(request, 'leadership/hospital_stats.html', {
+    ctx = {
         'month_start': month_start,
         'year': year, 'month': month,
         'months_list': months_list,
@@ -1313,4 +1366,160 @@ def hospital_stats_view(request):
         'total_inv': total_inv,
         'inv_by_cat': inv_by_cat,
         'inv_json': inv_json,
-    })
+        # Tier × Gender × Age cross-tab
+        'tier_matrix': tier_matrix,
+    }
+    ctx['pdf_filename'] = f'Hospital-Stats-{month_start.strftime("%b-%Y")}.pdf'
+
+    if request.GET.get('format') == 'pdf':
+        from apps.reports.views import render_pdf
+        return render_pdf('leadership/pdf/hospital_stats_pdf.html', ctx)
+
+    return render(request, 'leadership/hospital_stats.html', ctx)
+
+
+# ── Department Stats (visible to all clinical staff for their own dept) ───────
+@login_required
+def department_stats_view(request):
+    """
+    Segmented stats for the requesting user's department.
+    Shows tier × gender × age breakdown for consultations in this department.
+    """
+    import json, calendar as _cal
+    from collections import defaultdict as _dd
+    from apps.consultations.models import Consultation
+    from apps.patients.models import Visit
+
+    today = timezone.localdate()
+
+    # Month selector
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = today.replace(year=year, month=month, day=1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = today.year, today.month
+
+    last_day  = _cal.monthrange(year, month)[1]
+    month_end = today.replace(year=year, month=month, day=last_day)
+
+    if month == 1:  prev_year, prev_month = year - 1, 12
+    else:           prev_year, prev_month = year, month - 1
+    if month == 12: next_year, next_month = year + 1, 1
+    else:           next_year, next_month = year, month + 1
+
+    # Determine the user's department
+    user = request.user
+    dept_code = getattr(user, 'role_department_code', None)
+    dept_name = dept_code or 'Your Department'
+
+    # Consultations for this department
+    dept_qs = Consultation.objects.filter(
+        is_deleted=False,
+        consultation_date__date__gte=month_start,
+        consultation_date__date__lte=month_end,
+    )
+    if dept_code:
+        dept_qs = dept_qs.filter(department__code=dept_code)
+
+    total_consults = dept_qs.count()
+
+    # Tier × Gender × Age cross-tab via visits
+    visit_ids = dept_qs.values_list('visit_id', flat=True)
+    detail = list(
+        Visit.objects.filter(
+            id__in=visit_ids,
+            is_deleted=False,
+            patient__date_of_birth__isnull=False,
+        ).values('service_tier', 'billing_type', 'patient__gender', 'patient__date_of_birth')
+    )
+
+    mx = _dd(lambda: _dd(lambda: _dd(int)))
+    for v in detail:
+        dob     = v['patient__date_of_birth']
+        gender  = v['patient__gender'] or 'Other'
+        billing = v['billing_type']
+        tk      = billing if billing in ('INSURANCE', 'HMO') else v['service_tier']
+        try:
+            age = (today - dob).days // 365
+            ag  = 'Children' if age < 18 else ('Adult' if age < 60 else 'Elderly')
+        except Exception:
+            ag = 'Unknown'
+        mx[tk][ag][gender] += 1
+
+    TIER_ROWS = [
+        ('STANDARD',   'Standard',  '#0d6efd'),
+        ('EXPRESS',    'Express',   '#0dcaf0'),
+        ('FAST_TRACK', 'Fast Track','#ffc107'),
+        ('VIP',        'VIP',       '#dc3545'),
+        ('INSURANCE',  'Insurance', '#198754'),
+        ('HMO',        'HMO',       '#6f42c1'),
+    ]
+
+    def _m(tk, ag, g): return mx[tk][ag].get(g, 0)
+
+    tier_matrix = []
+    for tk, label, color in TIER_ROWS:
+        cm = _m(tk,'Children','M'); cf = _m(tk,'Children','F')
+        am = _m(tk,'Adult','M');    af = _m(tk,'Adult','F')
+        em = _m(tk,'Elderly','M');  ef = _m(tk,'Elderly','F')
+        tm = cm + am + em;          tf = cf + af + ef
+        if tm + tf == 0:
+            continue  # skip empty tiers
+        tier_matrix.append({
+            'tier': label, 'color': color,
+            'total': tm + tf, 'male': tm, 'female': tf,
+            'children': cm+cf, 'children_m': cm, 'children_f': cf,
+            'adult':    am+af, 'adult_m':    am, 'adult_f':    af,
+            'elderly':  em+ef, 'elderly_m':  em, 'elderly_f':  ef,
+        })
+
+    # Daily volume chart
+    from datetime import timedelta as _td
+    daily_raw = (
+        dept_qs.values('consultation_date__date')
+        .annotate(count=Count('id'))
+        .order_by('consultation_date__date')
+    )
+    daily_map = {r['consultation_date__date']: r['count'] for r in daily_raw}
+    daily_labels, daily_counts = [], []
+    d = month_start
+    while d <= min(month_end, today):
+        daily_labels.append(d.strftime('%d'))
+        daily_counts.append(daily_map.get(d, 0))
+        d += _td(days=1)
+    daily_json = json.dumps({'labels': daily_labels, 'data': daily_counts})
+
+    # Gender totals
+    total_male = sum(mx[tk]['Children']['M'] + mx[tk]['Adult']['M'] + mx[tk]['Elderly']['M'] for tk, *_ in TIER_ROWS)
+    total_female = sum(mx[tk]['Children']['F'] + mx[tk]['Adult']['F'] + mx[tk]['Elderly']['F'] for tk, *_ in TIER_ROWS)
+    total_children = sum(mx[tk]['Children']['M'] + mx[tk]['Children']['F'] for tk, *_ in TIER_ROWS)
+    total_adult    = sum(mx[tk]['Adult']['M']    + mx[tk]['Adult']['F']    for tk, *_ in TIER_ROWS)
+    total_elderly  = sum(mx[tk]['Elderly']['M']  + mx[tk]['Elderly']['F']  for tk, *_ in TIER_ROWS)
+
+    ctx = {
+        'dept_name': dept_name,
+        'dept_code': dept_code,
+        'month_start': month_start,
+        'year': year, 'month': month,
+        'months_list': [{'value': m, 'label': today.replace(year=year, month=m, day=1).strftime('%B')} for m in range(1, 13)],
+        'years': range(today.year - 2, today.year + 1),
+        'prev_year': prev_year, 'prev_month': prev_month,
+        'next_year': next_year, 'next_month': next_month,
+        'total_consults': total_consults,
+        'total_male': total_male,
+        'total_female': total_female,
+        'total_children': total_children,
+        'total_adult': total_adult,
+        'total_elderly': total_elderly,
+        'tier_matrix': tier_matrix,
+        'daily_json': daily_json,
+        'pdf_filename': f'{dept_name}-Stats-{month_start.strftime("%b-%Y")}.pdf',
+    }
+
+    if request.GET.get('format') == 'pdf':
+        from apps.reports.views import render_pdf
+        return render_pdf('leadership/pdf/department_stats_pdf.html', ctx)
+
+    return render(request, 'leadership/department_stats.html', ctx)

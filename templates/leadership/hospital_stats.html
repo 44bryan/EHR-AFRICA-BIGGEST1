@@ -3,16 +3,16 @@
 {% block title %}Hospital Statistics — {{ month_start|date:"F Y" }}{% endblock %}
 
 {% block page_header %}
-<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-  <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-hospital text-primary fs-4"></i>
+<div class="mb-3">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-hospital text-primary fs-4 flex-shrink-0"></i>
     <div>
       <h5 class="mb-0 fw-bold">Hospital Statistics</h5>
       <div class="text-muted small">{{ month_start|date:"F Y" }} — Segmented by specialty, tier &amp; billing type</div>
     </div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
-    <div class="btn-group btn-group-sm">
+    <div class="btn-group btn-group-sm flex-shrink-0">
       <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary">
         <i class="bi bi-chevron-left"></i>
       </a>
@@ -21,10 +21,14 @@
         <i class="bi bi-chevron-right"></i>
       </a>
     </div>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+    <a href="?year={{ year }}&month={{ month }}&format=pdf"
+       class="btn btn-sm btn-danger flex-shrink-0" target="_blank">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+    </a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary flex-shrink-0">
       <i class="bi bi-printer me-1"></i>Print
     </button>
-    <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <a href="{% url 'leadership:dashboard' %}" class="btn btn-sm btn-outline-secondary flex-shrink-0">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
   </div>
@@ -73,6 +77,74 @@
         <div class="h2 fw-bold text-danger">{{ emergency|intcomma }}</div>
         <div class="small text-muted">Emergencies</div>
       </div>
+    </div>
+  </div>
+</div>
+
+{# ── Tier × Gender × Age Cross-tab ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-3 border-bottom">
+    <h6 class="mb-0 fw-bold"><i class="bi bi-grid-3x3 me-2 text-primary"></i>Patient Breakdown — Service Tier × Gender × Age Group</h6>
+    <div class="text-muted small">WHO age classification: Children (&lt;18) · Adult (18–59) · Elderly (60+)</div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem;">
+        <thead class="table-light">
+          <tr>
+            <th rowspan="2" class="align-middle">Tier / Billing</th>
+            <th rowspan="2" class="text-center align-middle">Total</th>
+            <th colspan="2" class="text-center border-start">All Ages</th>
+            <th colspan="2" class="text-center border-start">Children (&lt;18)</th>
+            <th colspan="2" class="text-center border-start">Adult (18–59)</th>
+            <th colspan="2" class="text-center border-start">Elderly (60+)</th>
+          </tr>
+          <tr>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i> M</th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i> F</th>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i></th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i></th>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i></th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i></th>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i></th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in tier_matrix %}
+          <tr>
+            <td>
+              <span class="badge rounded-pill" style="background:{{ row.color }};font-size:.72rem;">{{ row.tier }}</span>
+            </td>
+            <td class="text-center fw-bold">{{ row.total }}</td>
+            <td class="text-center text-primary border-start">{{ row.male }}</td>
+            <td class="text-center text-danger">{{ row.female }}</td>
+            <td class="text-center border-start">{{ row.children_m }}</td>
+            <td class="text-center">{{ row.children_f }}</td>
+            <td class="text-center border-start">{{ row.adult_m }}</td>
+            <td class="text-center">{{ row.adult_f }}</td>
+            <td class="text-center border-start">{{ row.elderly_m }}</td>
+            <td class="text-center">{{ row.elderly_f }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="10" class="text-center text-muted py-3">No visit data for this period.</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td>TOTAL</td>
+            <td class="text-center">{{ total_visits }}</td>
+            <td class="text-center text-primary border-start">{{ total_male }}</td>
+            <td class="text-center text-danger">{{ total_female }}</td>
+            <td class="text-center border-start">{% for r in tier_matrix %}{% if forloop.first %}{% with s=0 %}{% endwith %}{% endif %}{% endfor %}—</td>
+            <td class="text-center">—</td>
+            <td class="text-center border-start">—</td>
+            <td class="text-center">—</td>
+            <td class="text-center border-start">—</td>
+            <td class="text-center">—</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   </div>
 </div>
