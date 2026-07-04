@@ -1,0 +1,64 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Walk-in Triage — {{ patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-12 col-md-7 col-lg-5">
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-header py-3" style="background:#fef9c3;border-bottom:2px solid #fde047;">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+        <div>
+          <div class="fw-bold" style="font-size:.95rem;">No Active Visit Today</div>
+          <div class="text-muted small">{{ patient.full_name }} — {{ patient.patient_id }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">
+        This patient has no visit registered for today. To start triage, you must create a
+        walk-in visit first. Please enter a chief complaint before proceeding.
+      </p>
+
+      {% if messages %}
+        {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags|default:'warning' }} alert-dismissible fade show py-2 small" role="alert">
+          {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+      {% endif %}
+
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="walkin_confirm" value="1">
+
+        <div class="mb-4">
+          <label class="form-label fw-semibold">Chief Complaint <span class="text-danger">*</span></label>
+          <input type="text" name="chief_complaint" class="form-control"
+                 placeholder="e.g. Blurred vision, Eye pain, Routine check-up…"
+                 required autofocus>
+          <div class="form-text">Briefly describe the patient's reason for visit today.</div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-warning fw-semibold flex-fill">
+            <i class="bi bi-clipboard2-plus me-1"></i>Create Visit &amp; Start Triage
+          </button>
+          <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-outline-secondary">
+            Cancel
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="alert alert-info small mt-3 py-2">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>Tip:</strong> For patients who came through the gate/QMS, they already have a visit.
+    Use the <strong>Triage Workstation</strong> queue instead of starting triage from the patient record.
+  </div>
+
+</div>
+</div>
+{% endblock %}

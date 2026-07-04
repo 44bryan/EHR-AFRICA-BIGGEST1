@@ -614,7 +614,8 @@ def complete_dispensing(request, dispensing_id):
         f'Payment of {int(amount):,} FCFA collected. '
         f'Drugs dispensed — {dispensing.dispensing_number} complete.'
     )
-    return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+    # Return to pharmacy dashboard so pharmacist can handle the next patient
+    return redirect('pharmacy:dashboard')
 
 
 @login_required

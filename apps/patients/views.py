@@ -1584,8 +1584,9 @@ def qr_checkin_view(request):
 @login_required
 def triage_start_view(request, patient_id):
     """
-    Triage nurse shortcut: given a patient_id, find or create today's visit
-    and redirect straight to the triage form. No queue token required.
+    Triage nurse shortcut: given a patient_id, find today's visit and redirect
+    to the triage form.  A visit is NEVER created silently on GET — the nurse
+    must explicitly confirm walk-in details (POST) before a visit is created.
     """
     if not request.user.can_do_triage() and not request.user.is_super_admin:
         from django.http import HttpResponseForbidden
@@ -1601,22 +1602,33 @@ def triage_start_view(request, patient_id):
         is_deleted=False,
     ).exclude(status__in=['COMPLETED', 'DISCHARGED']).order_by('-visit_date').first()
 
-    if not visit:
-        # Create a new visit on the spot
+    if visit:
+        # Patient already has an active visit today — go straight to triage
+        return redirect('patients:triage', visit_number=visit.visit_number)
+
+    # No visit today — ask nurse to confirm walk-in before creating one
+    if request.method == 'POST' and request.POST.get('walkin_confirm'):
+        chief = request.POST.get('chief_complaint', '').strip()
+        if not chief:
+            messages.error(request, 'Chief complaint is required to create a walk-in visit.')
+            return render(request, 'patients/triage_walkin_confirm.html', {'patient': patient})
         from apps.core.utils import generate_visit_number
         visit = Visit.objects.create(
             patient=patient,
             visit_number=generate_visit_number(),
             visit_date=timezone.now(),
-            visit_type='RETURN',
-            chief_complaint='',
+            visit_type='NEW' if not patient.visits.filter(is_deleted=False).exists() else 'RETURN',
+            chief_complaint=chief,
             status='WAITING',
             service_tier='STANDARD',
             billing_type='SELF_PAY',
+            created_by=request.user,
         )
-        messages.info(request, f'New visit created for {patient.full_name} — please record chief complaint during triage.')
+        messages.info(request, f'Walk-in visit created for {patient.full_name}.')
+        return redirect('patients:triage', visit_number=visit.visit_number)
 
-    return redirect('patients:triage', visit_number=visit.visit_number)
+    # GET with no active visit — show confirmation form
+    return render(request, 'patients/triage_walkin_confirm.html', {'patient': patient})
 
 
 # ─────────────────────────────────────────────────────────────────────────────

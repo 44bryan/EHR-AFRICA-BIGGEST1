@@ -152,7 +152,7 @@
                 <td class="text-muted">{% if rx_item.eye != 'NA' %}{{ rx_item.get_eye_display }}{% else %}—{% endif %}</td>
                 <td class="text-center fw-bold">{{ rx_item.quantity }}</td>
                 <td class="text-center">
-                  {% if request.user.can_dispense_pharmacy %}
+                  {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
                   <button type="button" class="btn btn-sm btn-outline-primary py-0 rx-quick-add"
                           data-name="{{ rx_item.drug_name }}"
                           data-qty="{{ rx_item.quantity }}"
@@ -168,7 +168,7 @@
             </tbody>
           </table>
         </div>
-        {% if request.user.can_dispense_pharmacy %}
+        {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
         <div class="px-3 py-2 border-top bg-light d-flex align-items-center justify-content-between flex-wrap gap-2" style="font-size:.78rem;">
           <span><i class="bi bi-info-circle me-1 text-secondary"></i>Click <strong>Fill</strong> to add one drug, or <strong>Fill All Rx</strong> to add every formulary drug at once.</span>
           <button type="button" class="btn btn-sm btn-primary" id="fillAllRxBtn">
@@ -256,7 +256,7 @@
 
     {# ── Drug Add Form (only when dispensing is open) ── #}
     {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
-    {% if request.user.can_dispense_pharmacy %}
+    {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
     <div class="card border-0 shadow-sm" id="add-item-card">
       <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
         <h6 class="fw-semibold mb-0"><i class="bi bi-plus-circle me-1 text-secondary"></i>Add Drug</h6>
@@ -928,6 +928,68 @@ function validatePayment() {
   return confirm('Confirm: collect payment and dispense drugs to patient?');
 }
 
+// ── Strip concentration/% from drug name for search ───────────────────────
+// Prescription names may include "Timolol 0.5%" or "Prednisolone 1%" —
+// the formulary stores just the base name. Strip concentration for search.
+function drugSearchName(name) {
+  return name
+    .replace(/\s*\d+(\.\d+)?\s*%/g, '')        // "0.5%", "1%"
+    .replace(/\s*\d+(\.\d+)?\s*(mg|ml|mcg|g|iu|unit)\b/gi, '') // "5mg", "0.5ml"
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// ── Wire individual "Fill" buttons from prescription table ─────────────────
+document.querySelectorAll('.rx-quick-add').forEach(function(btn) {
+  btn.addEventListener('click', async function() {
+    const rawName = btn.dataset.name;
+    const qty     = btn.dataset.qty || 1;
+    const instr   = btn.dataset.instr || '';
+    const searchQ = drugSearchName(rawName);
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>';
+
+    try {
+      // Try stripped name first, then full name as fallback
+      let drug = null;
+      for (const q of [searchQ, rawName]) {
+        const r = await fetch(SEARCH_URL + '?q=' + encodeURIComponent(q));
+        const data = await r.json();
+        if (data.drugs && data.drugs.length > 0) { drug = data.drugs[0]; break; }
+      }
+      if (drug) {
+        const fd = new FormData();
+        fd.append('drug_id', drug.id);
+        fd.append('qty', qty);
+        fd.append('unit_price', drug.price);
+        fd.append('instructions', instr);
+        fd.append('csrfmiddlewaretoken', CSRF);
+        const addR = await fetch(ADD_URL, { method: 'POST', body: fd });
+        const addData = await addR.json();
+        if (addData.success || addData.item) {
+          appendItemRow(addData.item);
+          itemCount++;
+          updateTotals(parseFloat(addData.total), itemCount);
+          checkInteractions(addData.interactions);
+          btn.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Added';
+          btn.classList.replace('btn-outline-primary', 'btn-outline-success');
+          return;
+        } else {
+          btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
+        }
+      } else {
+        btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Not found';
+        btn.title = 'Drug "' + rawName + '" not in formulary — add manually below';
+        btn.classList.replace('btn-outline-primary', 'btn-outline-warning');
+      }
+    } catch(e) {
+      btn.innerHTML = '<i class="bi bi-wifi-off me-1"></i>Network error';
+    }
+    btn.disabled = false;
+  });
+});
+
 // ── Fill All Rx ────────────────────────────────────────────────────────────
 const fillAllBtn = document.getElementById('fillAllRxBtn');
 if (fillAllBtn) {
@@ -936,37 +998,49 @@ if (fillAllBtn) {
     if (!btns.length) return;
     fillAllBtn.disabled = true;
     fillAllBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Filling…';
+    let added = 0, skipped = 0;
     for (const btn of btns) {
-      const name  = btn.dataset.name;
-      const qty   = btn.dataset.qty;
-      const instr = btn.dataset.instr;
+      const rawName = btn.dataset.name;
+      const qty     = btn.dataset.qty || 1;
+      const instr   = btn.dataset.instr || '';
+      const searchQ = drugSearchName(rawName);
       try {
-        const r = await fetch(SEARCH_URL + '?q=' + encodeURIComponent(name));
-        const data = await r.json();
-        if (data.drugs && data.drugs.length > 0) {
-          const drug = data.drugs[0];
+        let drug = null;
+        for (const q of [searchQ, rawName]) {
+          const r = await fetch(SEARCH_URL + '?q=' + encodeURIComponent(q));
+          const data = await r.json();
+          if (data.drugs && data.drugs.length > 0) { drug = data.drugs[0]; break; }
+        }
+        if (drug) {
           const fd = new FormData();
           fd.append('drug_id', drug.id);
-          fd.append('qty', qty || 1);
+          fd.append('qty', qty);
           fd.append('unit_price', drug.price);
-          fd.append('instructions', instr || '');
+          fd.append('instructions', instr);
           fd.append('csrfmiddlewaretoken', CSRF);
           const addR = await fetch(ADD_URL, { method: 'POST', body: fd });
           const addData = await addR.json();
-          if (addData.success) {
+          if (addData.success || addData.item) {
             appendItemRow(addData.item);
             itemCount++;
             updateTotals(parseFloat(addData.total), itemCount);
-          }
+            checkInteractions(addData.interactions);
+            btn.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Added';
+            btn.classList.replace('btn-outline-primary', 'btn-outline-success');
+            added++;
+          } else { skipped++; }
         } else {
-          // Not in formulary — skip silently (pharmacist can add manually)
-          console.log('Not in formulary, skipped: ' + name);
+          btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Not found';
+          btn.classList.replace('btn-outline-primary', 'btn-outline-warning');
+          skipped++;
         }
-      } catch(e) { console.error(e); }
+      } catch(e) { skipped++; }
     }
     fillAllBtn.disabled = false;
-    fillAllBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Done';
-    setTimeout(() => { fillAllBtn.innerHTML = '<i class="bi bi-lightning-fill me-1"></i>Fill All Rx'; }, 2000);
+    fillAllBtn.innerHTML = added > 0
+      ? `<i class="bi bi-check-circle me-1"></i>${added} added${skipped ? ', ' + skipped + ' not found' : ''}`
+      : '<i class="bi bi-exclamation-circle me-1"></i>No drugs matched formulary';
+    setTimeout(() => { fillAllBtn.innerHTML = '<i class="bi bi-lightning-fill me-1"></i>Fill All Rx'; }, 3000);
   });
 }
 

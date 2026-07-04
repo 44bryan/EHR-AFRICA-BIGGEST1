@@ -93,7 +93,26 @@ def room_manage(request, dept_id):
     if request.method == 'POST':
         action = request.POST.get('action', 'add')
 
-        if action == 'add':
+        if action == 'bulk_add':
+            raw = request.POST.get('room_numbers', '')
+            numbers = [n.strip() for n in raw.replace(';', ',').split(',') if n.strip()]
+            if not numbers:
+                messages.error(request, 'Enter at least one room number.')
+            else:
+                added, existed = [], []
+                for rn in numbers:
+                    room, created = ConsultationRoom.objects.get_or_create(
+                        department=dept,
+                        room_number=rn,
+                        defaults={'label': f'Room {rn}'},
+                    )
+                    (added if created else existed).append(rn)
+                if added:
+                    messages.success(request, f'Added {len(added)} room(s): {", ".join(added)}.')
+                if existed:
+                    messages.info(request, f'{len(existed)} room(s) already existed: {", ".join(existed)}.')
+
+        elif action == 'add':
             room_number = request.POST.get('room_number', '').strip()
             label = request.POST.get('label', '').strip()
             if not room_number:
