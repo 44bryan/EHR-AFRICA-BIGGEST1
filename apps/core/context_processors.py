@@ -61,3 +61,32 @@ def user_notifications(request):
     except Exception:
         count = 0
     return {'unread_notifications_count': count}
+
+
+def doctor_assigned_room(request):
+    """
+    Inject the consultation room currently assigned to the logged-in doctor.
+    Available in every template as `my_room` (None if not a doctor or no room today).
+    """
+    if not request.user.is_authenticated:
+        return {'my_room': None}
+    try:
+        from apps.accounts.models import UserRole
+        clinical_roles = [
+            UserRole.OPHTHALMOLOGIST, UserRole.MEDICAL_DIRECTOR,
+            UserRole.RETINA_SPECIALIST, UserRole.GLAUCOMA_SPECIALIST,
+            UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.CATARACT_SURGEON,
+            UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
+            UserRole.NEURO_OPHTHALMOLOGIST, UserRole.UVEITIS_SPECIALIST,
+            UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST,
+            UserRole.ORTHOPTIST, UserRole.REFRACTIONIST,
+        ]
+        if request.user.role not in clinical_roles:
+            return {'my_room': None}
+        from apps.departments.models import ConsultationRoom
+        room = ConsultationRoom.objects.filter(
+            assigned_doctor=request.user, is_active=True
+        ).select_related('department').first()
+        return {'my_room': room}
+    except Exception:
+        return {'my_room': None}

@@ -23,4 +23,5 @@ urlpatterns = [
     path('clinic-nurse/', views.clinic_nurse_view, name='clinic_nurse'),
     path('clinic-nurse/call/<uuid:visit_pk>/', views.clinic_call_patient_view, name='clinic_call'),
     path('clinic-nurse/route/<uuid:visit_pk>/', views.nurse_route_patient_view, name='nurse_route'),
+    path('my-room/', views.my_room_assign_view, name='my_room_assign'),
 ]

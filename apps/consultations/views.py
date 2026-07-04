@@ -1548,6 +1548,44 @@ def nurse_route_patient_view(request, visit_pk):
     })
 
 
+# ── Doctor self-service: assign themselves to a room ─────────────────────────
+
+@login_required
+@require_POST
+def my_room_assign_view(request):
+    """
+    Doctor assigns themselves to a consultation room (or clears their assignment).
+    POST data: room_id=<uuid>  or  room_id=''  (to clear)
+    Redirects back to workstation with the selected room filter applied.
+    """
+    if not request.user.can_create_consultation():
+        return HttpResponseForbidden()
+
+    room_id = request.POST.get('room_id', '').strip()
+    from apps.departments.models import ConsultationRoom
+
+    # Clear previous assignment first (doctor can only be in one room at a time)
+    ConsultationRoom.objects.filter(assigned_doctor=request.user).update(assigned_doctor=None)
+
+    if room_id:
+        try:
+            import uuid as _uuid
+            room = ConsultationRoom.objects.get(pk=_uuid.UUID(room_id), is_active=True)
+            room.assigned_doctor = request.user
+            room.save(update_fields=['assigned_doctor'])
+            messages.success(
+                request,
+                f'You are now assigned to Room {room.room_number} ({room.department.name}).'
+            )
+            return redirect(f'{request.build_absolute_uri("/consultations/workstation/")}?room_id={room.id}')
+        except Exception:
+            messages.error(request, 'Room not found.')
+    else:
+        messages.info(request, 'Room assignment cleared. Showing all department patients.')
+
+    return redirect('consultations:workstation')
+
+
 # ── Diagnosis management (AJAX-friendly POST views) ──────────────────────────
 
 @login_required
