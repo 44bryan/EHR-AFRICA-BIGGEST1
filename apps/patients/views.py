@@ -814,8 +814,10 @@ def triage_view(request, visit_number):
     payment_paid = today_invoices.filter(
         status__in=[_IS.PAID, _IS.WAIVED, _IS.PARTIALLY_PAID]
     ).exists()
-    # Payment is blocked unless the patient has at least a partially-paid invoice today
-    payment_blocked = not payment_paid
+    # Free follow-up: patient is within the 15-day consultation window — skip payment gate
+    is_free_followup = visit.patient.is_free_followup
+    # Payment is blocked unless they paid today OR they are within the free follow-up window
+    payment_blocked = not payment_paid and not is_free_followup
 
     if request.method == 'POST':
         # Emergency override: nurse ticks "Emergency" checkbox to bypass payment
@@ -1072,6 +1074,7 @@ def triage_view(request, visit_number):
         'prev_visit': prev_visit,
         'recent_consultations': recent_consultations,
         'payment_blocked': payment_blocked,
+        'is_free_followup': is_free_followup,
     })
 
 
