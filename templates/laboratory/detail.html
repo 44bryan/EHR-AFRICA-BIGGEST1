@@ -29,9 +29,58 @@
       </button>
       {% endif %}
     {% endif %}
+    {% if order.status == 'ORDERED' %}
+    {% if request.user == order.ordered_by or request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin %}
+    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelLabModal">
+      <i class="bi bi-x-circle me-1"></i>Cancel Order
+    </button>
+    {% endif %}
+    {% endif %}
     <a href="{% url 'laboratory:list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
   </div>
 </div>
+
+{# ── Cancel Lab Order Modal ── #}
+{% if order.status == 'ORDERED' %}
+<div class="modal fade" id="cancelLabModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white py-2">
+        <h6 class="modal-title fw-bold"><i class="bi bi-x-octagon me-2"></i>Cancel Lab Order</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{% url 'laboratory:cancel' order.pk %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="mb-2">You are about to cancel the lab order for <strong>{{ order.patient.full_name }}</strong>.</p>
+          <p class="small text-muted mb-3">Tests ordered:
+            {% for item in order.items.all %}{{ item.test_type.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+          </p>
+          <label class="form-label fw-semibold small">Reason for cancellation</label>
+          <select name="cancel_reason" class="form-select form-select-sm mb-2" required>
+            <option value="">— Select reason —</option>
+            <option value="Patient unable to pay / declined">Patient unable to pay / declined</option>
+            <option value="Doctor cancelled — not clinically indicated">Doctor cancelled — not clinically indicated</option>
+            <option value="Patient left facility">Patient left facility</option>
+            <option value="Wrong test ordered — will reorder">Wrong test ordered — will reorder</option>
+            <option value="Other">Other</option>
+          </select>
+          <div class="alert alert-warning small py-2 mb-0">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            This cannot be undone. If the patient has already paid, the billing team must issue a refund separately.
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Keep Order</button>
+          <button type="submit" class="btn btn-sm btn-danger fw-bold">
+            <i class="bi bi-x-circle me-1"></i>Yes, Cancel Order
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 <div class="row g-3">
   <div class="col-md-4">
     <div class="card border-0 shadow-sm mb-3">
@@ -42,7 +91,7 @@
           <dt class="col-5 text-muted">Ordered By</dt><dd class="col-7">{{ order.ordered_by.full_name }}</dd>
           <dt class="col-5 text-muted">Date</dt><dd class="col-7">{{ order.created_at|date:"d M Y, H:i" }}</dd>
           <dt class="col-5 text-muted">Urgency</dt><dd class="col-7"><span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span></dd>
-          <dt class="col-5 text-muted">Status</dt><dd class="col-7"><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ order.get_status_display }}</span></dd>
+          <dt class="col-5 text-muted">Status</dt><dd class="col-7"><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'CANCELLED' %}bg-danger{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ order.get_status_display }}</span></dd>
           {% if order.clinical_indication %}<dt class="col-5 text-muted">Indication</dt><dd class="col-7">{{ order.clinical_indication }}</dd>{% endif %}
         </dl>
       </div>

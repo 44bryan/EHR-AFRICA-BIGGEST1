@@ -640,3 +640,63 @@ def enter_results_view(request, pk):
         'order': order,
         'items': items,
     })
+
+
+@login_required
+def cancel_lab_order(request, pk):
+    """
+    Cancel a lab order that has not yet been processed.
+    Allowed by: the doctor who ordered it, lab tech, or medical director.
+    Only orders in ORDERED status can be cancelled (not after sample collected/processing).
+    """
+    from django.views.decorators.http import require_POST
+    order = get_object_or_404(LabOrder, pk=pk, is_deleted=False)
+
+    can_cancel = (
+        request.user == order.ordered_by
+        or request.user.is_lab_tech
+        or request.user.is_medical_director
+        or request.user.is_super_admin
+    )
+    if not can_cancel:
+        return HttpResponseForbidden()
+
+    if order.status != LabOrder.Status.ORDERED:
+        messages.error(
+            request,
+            f'Cannot cancel — order is already {order.get_status_display()}. '
+            'Contact the lab technician.'
+        )
+        return redirect('laboratory:detail', pk=pk)
+
+    if request.method != 'POST':
+        return redirect('laboratory:detail', pk=pk)
+
+    reason = request.POST.get('cancel_reason', '').strip() or 'Patient unable to pay / cancelled by request'
+    order.status = LabOrder.Status.CANCELLED
+    order.notes = (order.notes + '\n' if order.notes else '') + f'CANCELLED: {reason}'
+    order.save(update_fields=['status', 'notes', 'updated_at'])
+
+    # Cancel all items too
+    order.items.update(status=LabOrder.Status.CANCELLED)
+
+    # Void any billing work order for this lab order (if billing module is active)
+    try:
+        from apps.billing.models import ServiceWorkOrder, WorkOrderStatus
+        ServiceWorkOrder.objects.filter(
+            source_ref=str(order.id),
+            status=WorkOrderStatus.PENDING,
+            is_deleted=False,
+        ).update(status=WorkOrderStatus.CANCELLED)
+    except Exception:
+        pass
+
+    messages.success(
+        request,
+        f'Lab order cancelled for {order.patient.full_name}. '
+        'Billing work order (if any) has also been voided.'
+    )
+    # Redirect back to the consultation if possible
+    if order.consultation_id:
+        return redirect('consultations:workstation')
+    return redirect('laboratory:list')

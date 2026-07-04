@@ -12,4 +12,5 @@ urlpatterns = [
     path('<uuid:pk>/collect-sample/', views.collect_sample_view, name='collect_sample'),
     path('<uuid:pk>/results/', views.enter_results_view, name='enter_results'),
     path('result/<uuid:result_id>/verify/', views.verify_result, name='verify_result'),
+    path('<uuid:pk>/cancel/', views.cancel_lab_order, name='cancel'),
 ]
