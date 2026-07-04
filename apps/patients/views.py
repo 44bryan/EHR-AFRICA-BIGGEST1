@@ -553,7 +553,7 @@ def patient_detail_view(request, patient_id):
         'can_dispatch':         u.can_do_triage,
         'can_counsel':          u.is_counseling_nurse,
         'can_book_appointment': is_doctor or u.is_receptionist or u.is_medical_director or u.is_super_admin or u.is_ceo or u.is_admin_director,
-        'can_edit_demographics': u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director,
+        'can_edit_demographics': u.is_receptionist or u.is_cashier or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director,
         'can_print_pdf':        is_doctor or u.is_medical_director or u.role == 'medical_records' or u.is_super_admin or u.is_ceo,
         'can_qr_card':          u.is_receptionist or u.is_super_admin,
         'can_full_history':     is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
