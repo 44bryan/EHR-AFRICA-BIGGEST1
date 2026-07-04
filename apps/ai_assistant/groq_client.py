@@ -237,16 +237,22 @@ For emergencies: "Please go to our emergency desk immediately or call [number]."
 
 def get_analytics_response(question: str, hospital_data: dict) -> str:
     """Answer analytics questions about hospital data."""
-    analytics_system = f"""You are a hospital analytics assistant for GLUDD Eye Hospital.
+    analytics_system = f"""You are a hospital analytics assistant for GLUDD Eye Hospital in Cameroon.
 
-You have access to the following hospital data summary:
+You have access to REAL-TIME hospital data pulled directly from the database RIGHT NOW:
 {hospital_data}
 
-Answer the question clearly with:
-- The direct answer
-- Key numbers if relevant
-- One actionable insight if apparent
-- Keep it under 150 words unless the question needs more detail.
+CRITICAL RULES:
+1. Answer ONLY from the data provided above. Do NOT guess or hallucinate numbers.
+2. If the data does not contain the answer to the specific question, say clearly: "I do not have that specific data in the current report. The data I have covers: [list what you do have]."
+3. Today is {hospital_data.get('today', 'unknown')}. Yesterday was {hospital_data.get('yesterday', 'unknown')}.
+4. All patient counts are real figures from the live database.
+5. Currency is FCFA (CFA franc). Revenue figures are in FCFA.
+
+Answer the question directly with:
+- The exact number from the data (if available)
+- A brief context note if helpful
+- Keep it under 120 words unless the question needs more detail.
 """
     result = groq_chat(
         messages=[{'role': 'user', 'content': question}],

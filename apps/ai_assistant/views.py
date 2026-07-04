@@ -643,40 +643,82 @@ def analytics_ai_view(request):
         if not question:
             return JsonResponse({'error': 'Empty question'}, status=400)
 
-        # Build hospital context dict
+        # Build comprehensive hospital context with real DB data for any date range
         from django.utils import timezone
-        from django.db.models import Count
-        from apps.patients.models import Patient
+        from django.db.models import Count, Sum
+        from apps.patients.models import Patient, Visit
         from apps.appointments.models import Appointment
         from apps.consultations.models import Consultation
 
         hospital_data = {}
         try:
             today = timezone.localdate()
+            yesterday = today - timezone.timedelta(days=1)
             week_ago = today - timezone.timedelta(days=7)
-            month_ago = today - timezone.timedelta(days=30)
+            month_start = today.replace(day=1)
+            last_month_end = month_start - timezone.timedelta(days=1)
+            last_month_start = last_month_end.replace(day=1)
+            year_start = today.replace(month=1, day=1)
 
-            total_patients = Patient.objects.filter(is_deleted=False).count()
-            new_patients_month = Patient.objects.filter(is_deleted=False, created_at__date__gte=month_ago).count()
-            today_appts = Appointment.objects.filter(appointment_date=today, is_deleted=False).count()
-            week_appts = Appointment.objects.filter(appointment_date__gte=week_ago, is_deleted=False).count()
+            def visits_in(start, end=None):
+                qs = Visit.objects.filter(is_deleted=False, visit_date__date__gte=start)
+                if end:
+                    qs = qs.filter(visit_date__date__lte=end)
+                return qs.count()
 
-            dept_counts = (
-                Consultation.objects.filter(is_deleted=False, created_at__date__gte=month_ago)
-                .values('department__name')
-                .annotate(n=Count('id'))
-                .order_by('-n')[:8]
+            def patients_reg_in(start, end=None):
+                qs = Patient.objects.filter(is_deleted=False, created_at__date__gte=start)
+                if end:
+                    qs = qs.filter(created_at__date__lte=end)
+                return qs.count()
+
+            dept_month = (
+                Consultation.objects.filter(is_deleted=False, created_at__date__gte=month_start)
+                .values('department__name').annotate(n=Count('id')).order_by('-n')[:10]
+            )
+            dept_week = (
+                Consultation.objects.filter(is_deleted=False, created_at__date__gte=week_ago)
+                .values('department__name').annotate(n=Count('id')).order_by('-n')[:10]
             )
 
+            # Payments
+            rev_today = rev_month = 0
+            try:
+                from apps.billing.models import Payment
+                rev_today = Payment.objects.filter(is_deleted=False, payment_date__date=today).aggregate(t=Sum('amount'))['t'] or 0
+                rev_month = Payment.objects.filter(is_deleted=False, payment_date__date__gte=month_start).aggregate(t=Sum('amount'))['t'] or 0
+            except Exception:
+                pass
+
             hospital_data = {
-                'total_patients': total_patients,
-                'new_patients_month': new_patients_month,
-                'today_appts': today_appts,
-                'week_appts': week_appts,
-                'dept_counts': {r['department__name']: r['n'] for r in dept_counts},
+                'report_date': str(today),
+                'today': str(today),
+                'yesterday': str(yesterday),
+                # Registrations / visits
+                'patients_registered_today': patients_reg_in(today),
+                'patients_registered_yesterday': patients_reg_in(yesterday, yesterday),
+                'patients_registered_this_week': patients_reg_in(week_ago),
+                'patients_registered_this_month': patients_reg_in(month_start),
+                'patients_registered_last_month': patients_reg_in(last_month_start, last_month_end),
+                'patients_registered_this_year': patients_reg_in(year_start),
+                'total_patients_ever': Patient.objects.filter(is_deleted=False).count(),
+                # Visits
+                'visits_today': visits_in(today),
+                'visits_yesterday': visits_in(yesterday, yesterday),
+                'visits_this_week': visits_in(week_ago),
+                'visits_this_month': visits_in(month_start),
+                # Appointments
+                'appointments_today': Appointment.objects.filter(appointment_date=today, is_deleted=False).count(),
+                'appointments_this_week': Appointment.objects.filter(appointment_date__gte=week_ago, is_deleted=False).count(),
+                # Consultations by department (this month)
+                'consultations_by_dept_this_month': {r['department__name']: r['n'] for r in dept_month},
+                'consultations_by_dept_this_week': {r['department__name']: r['n'] for r in dept_week},
+                # Revenue
+                'revenue_today_fcfa': float(rev_today),
+                'revenue_this_month_fcfa': float(rev_month),
             }
-        except Exception:
-            pass
+        except Exception as exc:
+            hospital_data = {'error': str(exc)}
 
         from . import groq_client
         response = groq_client.get_analytics_response(question, hospital_data)
