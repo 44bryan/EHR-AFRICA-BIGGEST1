@@ -606,11 +606,23 @@ def home_view(request):
             status=VisitStatus.WAITING,
         ).count()
 
+        # Full today's patient flow (all statuses) for the queue overview
+        all_today = Visit.objects.select_related(
+            'patient', 'department', 'attending_doctor'
+        ).filter(
+            visit_date__date=today,
+            is_deleted=False,
+        ).order_by('visit_date')
+
+        completed_today = all_today.filter(status=VisitStatus.COMPLETED).count()
+
         ctx.update({
             'waiting': waiting,
             'waiting_count': waiting.count(),
             'dispatched_today': dispatched_today,
-            'today_count': Visit.objects.filter(visit_date__date=today).count(),
+            'today_count': all_today.count(),
+            'all_today': all_today,
+            'completed_today': completed_today,
         })
         return render(request, 'dashboard/nurse.html', ctx)
 

@@ -462,3 +462,44 @@ def patient_imaging_list(request, patient_id):
         'patient': patient,
         'studies': studies,
     })
+
+
+@login_required
+def cancel_investigation_order(request, pk):
+    """
+    Cancel a pending investigation order.
+    Only allowed when status == ORDERED (not yet started).
+    Permitted by: the ordering doctor, investigation tech, or medical director.
+    """
+    if request.method != 'POST':
+        return redirect('investigations:detail', pk=pk)
+
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+
+    # Permission check
+    from apps.accounts.models import UserRole
+    u = request.user
+    can_cancel = (
+        u == order.ordered_by
+        or u.can_record_investigation_results
+        or u.is_medical_director
+        or u.is_super_admin
+        or u.is_admin_director
+    )
+    if not can_cancel:
+        return HttpResponseForbidden()
+
+    if order.status != InvestigationOrder.Status.ORDERED:
+        messages.error(request, 'Only pending (Ordered) investigations can be cancelled.')
+        return redirect('investigations:detail', pk=pk)
+
+    reason = request.POST.get('cancel_reason', '').strip()
+    order.status = InvestigationOrder.Status.CANCELLED
+    order.notes = (order.notes or '') + (f'\n[Cancelled by {u.get_full_name()}: {reason}]' if reason else f'\n[Cancelled by {u.get_full_name()}]')
+    order.save(update_fields=['status', 'notes', 'updated_at'])
+
+    messages.success(request, f'Investigation "{order.investigation_type.name}" cancelled.')
+
+    if order.consultation:
+        return redirect('consultations:detail', pk=order.consultation.pk)
+    return redirect('investigations:list')

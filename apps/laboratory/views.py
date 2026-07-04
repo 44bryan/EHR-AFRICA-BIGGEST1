@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseForbidden
 from django.utils import timezone
+from django.core.cache import cache
 from django.db.models import Count, Avg, Q
 from datetime import timedelta
 from .models import LabOrder, LabOrderItem, LabResult, LabTestType, SampleCollection
@@ -165,6 +166,13 @@ def lab_stats_view(request):
     import calendar
     last_day = calendar.monthrange(year, month)[1]
     month_end = _date(year, month, last_day)
+
+    # ── Cache check ───────────────────────────────────────────────────────────
+    _cache_key = f'lab_stats_{year}_{month}'
+    _cached = cache.get(_cache_key)
+    if _cached:
+        return render(request, 'laboratory/stats.html', _cached)
+    _cache_ttl = 600 if (year == today.year and month == today.month) else 86400
 
     base_orders = LabOrder.objects.filter(
         is_deleted=False,
@@ -452,6 +460,7 @@ def lab_stats_view(request):
         'total_completed_items': total_completed_items,
         'urgency_json': urgency_json,
     }
+    cache.set(_cache_key, context, _cache_ttl)
     return render(request, 'laboratory/stats.html', context)
 
 

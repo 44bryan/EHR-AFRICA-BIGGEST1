@@ -13,19 +13,25 @@
 
 {# Stats #}
 <div class="row g-3 mb-4">
-  <div class="col-sm-4">
+  <div class="col-6 col-sm-3">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="fs-2 fw-bold text-warning">{{ waiting_count }}</div>
       <div class="text-muted small">Waiting for Triage</div>
     </div>
   </div>
-  <div class="col-sm-4">
+  <div class="col-6 col-sm-3">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="fs-2 fw-bold text-success">{{ dispatched_today }}</div>
-      <div class="text-muted small">Dispatched to Doctor Today</div>
+      <div class="text-muted small">Dispatched to Doctor</div>
     </div>
   </div>
-  <div class="col-sm-4">
+  <div class="col-6 col-sm-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-info">{{ completed_today }}</div>
+      <div class="text-muted small">Completed Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-sm-3">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="fs-2 fw-bold text-primary">{{ today_count }}</div>
       <div class="text-muted small">Total Visits Today</div>
@@ -34,7 +40,7 @@
 </div>
 
 {# ── Waiting for Triage ── #}
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white py-3 d-flex justify-content-between">
     <h6 class="mb-0 fw-semibold"><i class="bi bi-hourglass-split me-2 text-warning"></i>Waiting for Triage (Parameters)</h6>
     <span class="badge bg-warning text-dark">{{ waiting_count }} patient{{ waiting_count|pluralize }}</span>
@@ -72,6 +78,74 @@
             <i class="bi bi-check-circle text-success fs-2 d-block mb-2 opacity-50"></i>
             No patients waiting. Queue is clear.
           </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Today's Full Patient Flow ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold"><i class="bi bi-list-ol me-2 text-primary"></i>Today's Complete Patient Flow</h6>
+    <span class="badge bg-primary bg-opacity-10 text-primary">{{ today_count }} visit{{ today_count|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-3">#</th>
+          <th>Patient</th>
+          <th>ID</th>
+          <th>Department</th>
+          <th>Arrived</th>
+          <th>Status</th>
+          <th class="pe-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for visit in all_today %}
+        <tr>
+          <td class="ps-3 text-muted">{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ visit.patient.full_name }}</td>
+          <td><code class="small">{{ visit.patient.patient_id }}</code></td>
+          <td class="text-muted">{{ visit.department.name|default:"—" }}</td>
+          <td class="text-muted">{{ visit.visit_date|time:"H:i" }}</td>
+          <td>
+            {% if visit.status == 'REGISTERED' %}
+              <span class="badge bg-secondary bg-opacity-75">Registered</span>
+            {% elif visit.status == 'PARAMETERS' %}
+              <span class="badge bg-warning text-dark">Triage Pending</span>
+            {% elif visit.status == 'WAITING' %}
+              <span class="badge bg-info text-dark">Waiting for Doctor</span>
+            {% elif visit.status == 'IN_PROGRESS' %}
+              <span class="badge bg-primary">With Doctor</span>
+            {% elif visit.status == 'COMPLETED' %}
+              <span class="badge bg-success">Completed</span>
+            {% elif visit.status == 'DISCHARGED' %}
+              <span class="badge bg-success bg-opacity-50">Discharged</span>
+            {% else %}
+              <span class="badge bg-light text-dark border">{{ visit.status }}</span>
+            {% endif %}
+          </td>
+          <td class="pe-3">
+            {% if visit.status == 'PARAMETERS' %}
+            <a href="{% url 'patients:triage' visit_number=visit.visit_number %}"
+               class="btn btn-xs btn-warning py-0 px-2" style="font-size:.72rem;">
+              <i class="bi bi-heart-pulse me-1"></i>Triage
+            </a>
+            {% else %}
+            <a href="{% url 'patients:detail' patient_id=visit.patient.patient_id %}"
+               class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
+              <i class="bi bi-person me-1"></i>View
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">No patients registered today.</td>
         </tr>
         {% endfor %}
       </tbody>

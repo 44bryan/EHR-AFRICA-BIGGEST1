@@ -13,6 +13,7 @@ from django.db.models.functions import TruncMonth
 from calendar import monthrange
 from django.utils import timezone
 from datetime import timedelta, date
+from django.core.cache import cache
 
 
 def _require_director(request):
@@ -464,6 +465,13 @@ def monthly_stats(request):
     period_start = today.replace(year=year, month=month, day=1)
     period_end   = today.replace(year=year, month=month, day=last_day)
 
+    # ── Cache check ───────────────────────────────────────────────────────────
+    _cache_key = f'leadership_monthly_{year}_{month}'
+    _cached = cache.get(_cache_key)
+    if _cached:
+        return render(request, 'leadership/monthly_stats.html', _cached)
+    _cache_ttl = 600 if (year == today.year and month == today.month) else 86400
+
     from apps.patients.models import Patient, Visit
     from apps.consultations.models import Consultation
     from apps.appointments.models import Appointment
@@ -685,6 +693,7 @@ def monthly_stats(request):
         'fb_detra': fb_detra,
         'fb_total': fb_total,
     }
+    cache.set(_cache_key, context, _cache_ttl)
     return render(request, 'leadership/monthly_stats.html', context)
 
 
@@ -963,6 +972,14 @@ def hospital_stats_view(request):
 
     last_day  = _cal.monthrange(year, month)[1]
     month_end = today.replace(year=year, month=month, day=last_day)
+
+    # ── Cache check ───────────────────────────────────────────────────────────
+    _cache_key = f'hospital_stats_{year}_{month}'
+    if request.GET.get('format') != 'pdf':
+        _cached = cache.get(_cache_key)
+        if _cached:
+            return render(request, 'leadership/hospital_stats.html', _cached)
+    _cache_ttl = 600 if (year == today.year and month == today.month) else 86400
 
     # Previous / next month navigation
     if month == 1:
@@ -1375,6 +1392,7 @@ def hospital_stats_view(request):
         from apps.reports.views import render_pdf
         return render_pdf('leadership/pdf/hospital_stats_pdf.html', ctx)
 
+    cache.set(_cache_key, ctx, _cache_ttl)
     return render(request, 'leadership/hospital_stats.html', ctx)
 
 
