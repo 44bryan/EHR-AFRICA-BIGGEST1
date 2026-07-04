@@ -2,6 +2,14 @@
 {% block title %}Triage — {{ patient.full_name }}{% endblock %}
 {% block page_header %}{% include 'components/patient_card.html' with patient=patient %}{% endblock %}
 
+{% block extra_css %}
+<style>
+/* Remove Bootstrap accordion active highlight — keep it plain white like doctor form */
+.triage-acc-btn:not(.collapsed) { background-color: #fff !important; color: inherit !important; box-shadow: none !important; }
+.triage-acc-btn::after { filter: none !important; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
 <div class="col-12 col-xl-10">
@@ -121,7 +129,7 @@
         <div class="alert alert-success d-flex gap-2 align-items-center mb-3 py-2" style="font-size:.85rem;">
           <i class="bi bi-patch-check-fill text-success flex-shrink-0 fs-5"></i>
           <div>
-            <strong>Consultation gratuite</strong> — {{ patient.consultation_visit_label }}. Aucun paiement requis.
+            <strong>Free Consultation</strong> — {{ patient.consultation_visit_label }}. No payment required.
           </div>
         </div>
         {% endif %}
@@ -131,18 +139,18 @@
         <div class="alert alert-danger d-flex gap-3 align-items-start mb-3 py-3" id="paymentGate">
           <i class="bi bi-cash-coin fs-3 flex-shrink-0 mt-1"></i>
           <div class="flex-grow-1">
-            <div class="fw-bold mb-1">Paiement requis avant triage</div>
-            <div class="small mb-2"><strong>{{ patient.full_name }}</strong> n'a pas encore payé les frais de consultation aujourd'hui.</div>
+            <div class="fw-bold mb-1">Payment required before triage</div>
+            <div class="small mb-2"><strong>{{ patient.full_name }}</strong> has not yet paid the consultation fee today.</div>
             <div class="d-flex flex-wrap align-items-center gap-2">
               <a href="{% url 'billing:patient_pos' patient_id=patient.patient_id %}" class="btn btn-sm btn-warning fw-semibold">
-                <i class="bi bi-cash-coin me-1"></i>Aller à la Caisse
+                <i class="bi bi-cash-coin me-1"></i>Go to Cashier
               </a>
-              <span class="text-muted small">— ou en cas d'urgence :</span>
+              <span class="text-muted small">— or in case of emergency:</span>
               <div class="form-check mb-0">
                 <input type="checkbox" class="form-check-input" id="emergencyOverrideToggle"
                        onchange="document.getElementById('emergencyField').value = this.checked ? '1' : '';">
                 <label class="form-check-label small fw-semibold text-danger" for="emergencyOverrideToggle">
-                  Urgence — bypass paiement (enregistré pour audit)
+                  Emergency — bypass payment (recorded for audit)
                 </label>
               </div>
             </div>
@@ -170,11 +178,11 @@
             {# ── Section 1: Ophthalmic Parameters ── #}
             <div class="accordion-item border mb-2 rounded">
               <h2 class="accordion-header" id="hOph">
-                <button class="accordion-button rounded fw-semibold py-3" type="button"
+                <button class="accordion-button triage-acc-btn rounded fw-semibold py-3" type="button"
                         data-bs-toggle="collapse" data-bs-target="#secOph" aria-expanded="true" aria-controls="secOph">
                   <i class="bi bi-eye me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">Paramètres Ophtalmiques</span>
-                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">AV &amp; TO</span>
+                  <span class="fs-6">Ophthalmic Parameters</span>
+                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">VA &amp; IOP</span>
                 </button>
               </h2>
               <div id="secOph" class="accordion-collapse collapse show" aria-labelledby="hOph">
@@ -182,63 +190,65 @@
                   <div class="row g-3">
                     {# VA OD #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">AV Œil Droit (OD)</label>
+                      <label class="form-label fw-semibold small">Visual Acuity Right Eye (OD)</label>
                       <select class="form-select form-select-sm" id="sel_va_r" onchange="applySelect(this,'id_visual_acuity_right','right','va')">
-                        <option value="">— Non examiné —</option>
-                        <option value="6/6">6/6 — Normale</option>
-                        <option value="6/9">6/9</option>
-                        <option value="6/12">6/12</option>
-                        <option value="6/18">6/18</option>
-                        <option value="6/24">6/24</option>
-                        <option value="6/36">6/36</option>
-                        <option value="6/60">6/60</option>
-                        <option value="3/60">3/60</option>
-                        <option value="1/60">1/60</option>
-                        <option value="CDM">CDM — Compte les Doigts</option>
-                        <option value="VBLM">VBLM — Voit Bouger la Main</option>
-                        <option value="PL+">PL+ — Perception Lumineuse</option>
-                        <option value="PL-">PL- — Pas de Perception</option>
-                        <option value="__other">Autre (préciser)</option>
+                        <option value="">— Not examined —</option>
+                        <option value="10/10">10/10 — Normal</option>
+                        <option value="9/10">9/10</option>
+                        <option value="8/10">8/10</option>
+                        <option value="7/10">7/10</option>
+                        <option value="6/10">6/10</option>
+                        <option value="5/10">5/10</option>
+                        <option value="4/10">4/10</option>
+                        <option value="3/10">3/10</option>
+                        <option value="2/10">2/10</option>
+                        <option value="1/10">1/10</option>
+                        <option value="CDM">CDM — Count Fingers</option>
+                        <option value="VBLM">VBLM — Hand Motion</option>
+                        <option value="PL+">PL+ — Light Perception</option>
+                        <option value="PL-">PL- — No Light Perception</option>
+                        <option value="__other">Other (specify)</option>
                       </select>
                       <input type="text" name="visual_acuity_right" id="id_visual_acuity_right"
                              class="form-control form-control-sm mt-1 d-none" maxlength="20"
-                             placeholder="Ex: 6/6 P, 5/10…"
+                             placeholder="e.g. 10/10 P, 1.5/10…"
                              value="{{ form.visual_acuity_right.value|default:'' }}"
                              oninput="checkVA(this.value,'right');autoSuggestPriority();">
                       <div class="vital-alert-msg text-danger small d-none" id="alert_va_right"></div>
                     </div>
                     {# VA OS #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">AV Œil Gauche (OS)</label>
+                      <label class="form-label fw-semibold small">Visual Acuity Left Eye (OS)</label>
                       <select class="form-select form-select-sm" id="sel_va_l" onchange="applySelect(this,'id_visual_acuity_left','left','va')">
-                        <option value="">— Non examiné —</option>
-                        <option value="6/6">6/6 — Normale</option>
-                        <option value="6/9">6/9</option>
-                        <option value="6/12">6/12</option>
-                        <option value="6/18">6/18</option>
-                        <option value="6/24">6/24</option>
-                        <option value="6/36">6/36</option>
-                        <option value="6/60">6/60</option>
-                        <option value="3/60">3/60</option>
-                        <option value="1/60">1/60</option>
-                        <option value="CDM">CDM — Compte les Doigts</option>
-                        <option value="VBLM">VBLM — Voit Bouger la Main</option>
-                        <option value="PL+">PL+ — Perception Lumineuse</option>
-                        <option value="PL-">PL- — Pas de Perception</option>
-                        <option value="__other">Autre (préciser)</option>
+                        <option value="">— Not examined —</option>
+                        <option value="10/10">10/10 — Normal</option>
+                        <option value="9/10">9/10</option>
+                        <option value="8/10">8/10</option>
+                        <option value="7/10">7/10</option>
+                        <option value="6/10">6/10</option>
+                        <option value="5/10">5/10</option>
+                        <option value="4/10">4/10</option>
+                        <option value="3/10">3/10</option>
+                        <option value="2/10">2/10</option>
+                        <option value="1/10">1/10</option>
+                        <option value="CDM">CDM — Count Fingers</option>
+                        <option value="VBLM">VBLM — Hand Motion</option>
+                        <option value="PL+">PL+ — Light Perception</option>
+                        <option value="PL-">PL- — No Light Perception</option>
+                        <option value="__other">Other (specify)</option>
                       </select>
                       <input type="text" name="visual_acuity_left" id="id_visual_acuity_left"
                              class="form-control form-control-sm mt-1 d-none" maxlength="20"
-                             placeholder="Ex: 6/6 P, 5/10…"
+                             placeholder="e.g. 10/10 P, 1.5/10…"
                              value="{{ form.visual_acuity_left.value|default:'' }}"
                              oninput="checkVA(this.value,'left');autoSuggestPriority();">
                       <div class="vital-alert-msg text-danger small d-none" id="alert_va_left"></div>
                     </div>
                     {# IOP OD #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">TO Œil Droit (mmHg)</label>
+                      <label class="form-label fw-semibold small">IOP Right Eye (mmHg)</label>
                       <select class="form-select form-select-sm" id="sel_iop_r" onchange="applySelect(this,'id_intraocular_pressure_right','right','iop')">
-                        <option value="">— Non mesuré —</option>
+                        <option value="">— Not measured —</option>
                         <option value="8">8 mmHg</option><option value="9">9 mmHg</option>
                         <option value="10">10 mmHg</option><option value="11">11 mmHg</option>
                         <option value="12">12 mmHg</option><option value="13">13 mmHg</option>
@@ -252,20 +262,20 @@
                         <option value="32">32 mmHg</option><option value="35">35 mmHg</option>
                         <option value="38">38 mmHg</option><option value="40">40 mmHg</option>
                         <option value=">40">&gt;40 mmHg</option>
-                        <option value="__other">Autre (préciser)</option>
+                        <option value="__other">Other (specify)</option>
                       </select>
                       <input type="text" name="intraocular_pressure_right" id="id_intraocular_pressure_right"
                              class="form-control form-control-sm mt-1 d-none" maxlength="10"
-                             placeholder="Ex: 41"
+                             placeholder="e.g. 41"
                              value="{{ form.intraocular_pressure_right.value|default:'' }}"
                              oninput="checkIOP(this.value,'right');autoSuggestPriority();">
                       <div class="vital-alert-msg small d-none" id="alert_iop_right"></div>
                     </div>
                     {# IOP OS #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">TO Œil Gauche (mmHg)</label>
+                      <label class="form-label fw-semibold small">IOP Left Eye (mmHg)</label>
                       <select class="form-select form-select-sm" id="sel_iop_l" onchange="applySelect(this,'id_intraocular_pressure_left','left','iop')">
-                        <option value="">— Non mesuré —</option>
+                        <option value="">— Not measured —</option>
                         <option value="8">8 mmHg</option><option value="9">9 mmHg</option>
                         <option value="10">10 mmHg</option><option value="11">11 mmHg</option>
                         <option value="12">12 mmHg</option><option value="13">13 mmHg</option>
@@ -279,11 +289,11 @@
                         <option value="32">32 mmHg</option><option value="35">35 mmHg</option>
                         <option value="38">38 mmHg</option><option value="40">40 mmHg</option>
                         <option value=">40">&gt;40 mmHg</option>
-                        <option value="__other">Autre (préciser)</option>
+                        <option value="__other">Other (specify)</option>
                       </select>
                       <input type="text" name="intraocular_pressure_left" id="id_intraocular_pressure_left"
                              class="form-control form-control-sm mt-1 d-none" maxlength="10"
-                             placeholder="Ex: 41"
+                             placeholder="e.g. 41"
                              value="{{ form.intraocular_pressure_left.value|default:'' }}"
                              oninput="checkIOP(this.value,'left');autoSuggestPriority();">
                       <div class="vital-alert-msg small d-none" id="alert_iop_left"></div>
@@ -296,11 +306,11 @@
             {# ── Section 2: General Vitals ── #}
             <div class="accordion-item border mb-2 rounded">
               <h2 class="accordion-header" id="hVit">
-                <button class="accordion-button collapsed rounded fw-semibold py-3" type="button"
+                <button class="accordion-button triage-acc-btn collapsed rounded fw-semibold py-3" type="button"
                         data-bs-toggle="collapse" data-bs-target="#secVit" aria-expanded="false" aria-controls="secVit">
                   <i class="bi bi-activity me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">Constantes Générales</span>
-                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">TA, Pouls, Temp, Poids</span>
+                  <span class="fs-6">General Vitals</span>
+                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">BP, Pulse, Temp, Weight</span>
                 </button>
               </h2>
               <div id="secVit" class="accordion-collapse collapse" aria-labelledby="hVit">
@@ -308,14 +318,14 @@
                   <div class="row g-3">
                     {# BP #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">Tension Artérielle</label>
+                      <label class="form-label fw-semibold small">Blood Pressure</label>
                       <select class="form-select form-select-sm" id="sel_bp" onchange="applySelect(this,'id_blood_pressure',null,'bp')">
-                        <option value="">— Non mesurée —</option>
+                        <option value="">— Not measured —</option>
                         <option value="90/60">90/60</option>
                         <option value="100/60">100/60</option>
                         <option value="100/70">100/70</option>
                         <option value="110/70">110/70</option>
-                        <option value="120/80">120/80 — Normale</option>
+                        <option value="120/80">120/80 — Normal</option>
                         <option value="130/80">130/80</option>
                         <option value="130/90">130/90</option>
                         <option value="140/90">140/90</option>
@@ -327,20 +337,20 @@
                         <option value="180/110">180/110</option>
                         <option value="180/120">180/120</option>
                         <option value="200/120">200/120</option>
-                        <option value="__other">Autre (préciser)</option>
+                        <option value="__other">Other (specify)</option>
                       </select>
                       <input type="text" name="blood_pressure" id="id_blood_pressure"
                              class="form-control form-control-sm mt-1 d-none" maxlength="15"
-                             placeholder="Ex: 125/85"
+                             placeholder="e.g. 125/85"
                              value="{{ form.blood_pressure.value|default:'' }}"
                              oninput="checkBP(this.value);autoSuggestPriority();">
                       <div class="vital-alert-msg small d-none" id="alert_bp"></div>
                     </div>
                     {# Pulse #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">Pouls (bpm)</label>
+                      <label class="form-label fw-semibold small">Pulse (bpm)</label>
                       <select class="form-select form-select-sm" id="sel_pulse" onchange="applySelect(this,'id_pulse',null,'pulse')">
-                        <option value="">— Non mesuré —</option>
+                        <option value="">— Not measured —</option>
                         <option value="45">45</option><option value="50">50</option>
                         <option value="55">55</option><option value="60">60</option>
                         <option value="65">65</option><option value="70">70</option>
@@ -351,43 +361,43 @@
                         <option value="105">105</option><option value="110">110</option>
                         <option value="115">115</option><option value="120">120</option>
                         <option value="130">130</option><option value="140">140</option>
-                        <option value="__other">Autre (préciser)</option>
+                        <option value="__other">Other (specify)</option>
                       </select>
                       <input type="text" name="pulse" id="id_pulse"
                              class="form-control form-control-sm mt-1 d-none" maxlength="5"
-                             placeholder="Ex: 88"
+                             placeholder="e.g. 88"
                              value="{{ form.pulse.value|default:'' }}"
                              oninput="checkPulse(this.value);">
                       <div class="vital-alert-msg small d-none" id="alert_pulse"></div>
                     </div>
                     {# Temperature #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">Température (°C)</label>
+                      <label class="form-label fw-semibold small">Temperature (°C)</label>
                       <select class="form-select form-select-sm" id="sel_temp" onchange="applySelect(this,'id_temperature',null,'temp')">
-                        <option value="">— Non mesurée —</option>
+                        <option value="">— Not measured —</option>
                         <option value="35.0">35.0</option><option value="35.5">35.5</option>
                         <option value="36.0">36.0</option><option value="36.5">36.5</option>
-                        <option value="37.0">37.0 — Normale</option><option value="37.5">37.5</option>
-                        <option value="38.0">38.0 — Subfébrile</option><option value="38.5">38.5 — Fièvre</option>
+                        <option value="37.0">37.0 — Normal</option><option value="37.5">37.5</option>
+                        <option value="38.0">38.0 — Subfebrile</option><option value="38.5">38.5 — Fever</option>
                         <option value="39.0">39.0</option><option value="39.5">39.5</option>
                         <option value="40.0">40.0</option><option value="40.5">40.5</option>
                         <option value="41.0">41.0</option>
-                        <option value="__other">Autre (préciser)</option>
+                        <option value="__other">Other (specify)</option>
                       </select>
                       <input type="text" name="temperature" id="id_temperature"
                              class="form-control form-control-sm mt-1 d-none" maxlength="5"
-                             placeholder="Ex: 37.8"
+                             placeholder="e.g. 37.8"
                              value="{{ form.temperature.value|default:'' }}"
                              oninput="checkTemp(this.value);">
                       <div class="vital-alert-msg small d-none" id="alert_temp"></div>
                     </div>
                     {# Weight / Height stay as free text — highly variable #}
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">Poids (kg)</label>
+                      <label class="form-label fw-semibold small">Weight (kg)</label>
                       {{ form.weight }}
                     </div>
                     <div class="col-6 col-md-3">
-                      <label class="form-label fw-semibold small">Taille (cm)</label>
+                      <label class="form-label fw-semibold small">Height (cm)</label>
                       {{ form.height }}
                     </div>
                   </div>
@@ -398,11 +408,11 @@
             {# ── Section 3: Nursing Notes ── #}
             <div class="accordion-item border mb-2 rounded">
               <h2 class="accordion-header" id="hNotes">
-                <button class="accordion-button collapsed rounded fw-semibold py-3" type="button"
+                <button class="accordion-button triage-acc-btn collapsed rounded fw-semibold py-3" type="button"
                         data-bs-toggle="collapse" data-bs-target="#secNotes" aria-expanded="false" aria-controls="secNotes">
                   <i class="bi bi-clipboard2-pulse me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">Observations Infirmières</span>
-                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">Notes &amp; Pré-auth</span>
+                  <span class="fs-6">Nursing Observations</span>
+                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">Notes &amp; Pre-auth</span>
                 </button>
               </h2>
               <div id="secNotes" class="accordion-collapse collapse" aria-labelledby="hNotes">
@@ -432,28 +442,16 @@
             {# ── Section 4: Dispatch ── #}
             <div class="accordion-item border mb-2 rounded">
               <h2 class="accordion-header" id="hDispatch">
-                <button class="accordion-button rounded fw-semibold py-3" type="button"
+                <button class="accordion-button triage-acc-btn rounded fw-semibold py-3" type="button"
                         data-bs-toggle="collapse" data-bs-target="#secDispatch" aria-expanded="true" aria-controls="secDispatch">
                   <i class="bi bi-signpost-split me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">Orientation &amp; Priorité <span class="text-danger">*</span></span>
-                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">Obligatoire</span>
+                  <span class="fs-6">Routing &amp; Priority <span class="text-danger">*</span></span>
+                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">Required</span>
                 </button>
               </h2>
               <div id="secDispatch" class="accordion-collapse collapse show" aria-labelledby="hDispatch">
                 <div class="accordion-body pt-2">
                   <label class="form-label fw-semibold small mb-2">Send Patient To <span class="text-danger">*</span></label>
-
-                  {# Quick-route buttons #}
-                  <div class="mb-3 d-flex flex-wrap gap-2" id="quickRouteButtons">
-                    {% for route in direct_routes %}
-                    <button type="button"
-                      class="btn btn-sm btn-outline-primary quick-route-btn"
-                      data-service="{{ route.code }}"
-                      onclick="selectRoute('direct', '', '{{ route.code }}', '{{ route.label }}', this)">
-                      {{ route.label }}
-                    </button>
-                    {% endfor %}
-                  </div>
 
                   {# Department dropdown #}
                   <div class="mb-3">

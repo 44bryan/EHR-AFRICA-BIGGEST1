@@ -435,6 +435,11 @@ CRITICAL — ANTI-HALLUCINATION RULES:
 """
     if patient_context:
         return GLUDD_SYSTEM_PROMPT + grounding_rule + '\n' + patient_context
+    # No patient linked — inject live hospital stats so management chat answers correctly
+    stats = build_live_hospital_stats()
+    if stats:
+        stats_rule = '\nCRITICAL — use ONLY the live data below for any statistical question. Do not invent numbers.\n'
+        return GLUDD_SYSTEM_PROMPT + grounding_rule + stats_rule + stats
     return GLUDD_SYSTEM_PROMPT + grounding_rule
 
 
@@ -473,9 +478,104 @@ Rules:
 """
 
 
+def build_live_hospital_stats() -> str:
+    """
+    Fetch live hospital stats from the DB and return as a formatted string.
+    Called by ALL chatbot modes so any AI can answer questions like
+    "how many patients today?" or "what was yesterday's revenue?" accurately.
+    """
+    try:
+        from django.utils import timezone as _tz
+        from datetime import timedelta
+        today = _tz.localdate()
+        yesterday = today - timedelta(days=1)
+        week_ago = today - timedelta(days=7)
+        month_start = today.replace(day=1)
+        last_month_end = month_start - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        year_start = today.replace(month=1, day=1)
+
+        from apps.patients.models import Patient, Visit
+        from apps.appointments.models import Appointment
+
+        def pts(start, end=None):
+            qs = Patient.objects.filter(is_deleted=False, created_at__date__gte=start)
+            if end:
+                qs = qs.filter(created_at__date__lte=end)
+            return qs.count()
+
+        def vis(start, end=None):
+            qs = Visit.objects.filter(is_deleted=False, visit_date__date__gte=start)
+            if end:
+                qs = qs.filter(visit_date__date__lte=end)
+            return qs.count()
+
+        today_visits = Visit.objects.filter(is_deleted=False, visit_date__date=today)
+        revenue_today = 0
+        revenue_month = 0
+        try:
+            from apps.billing.models import Payment
+            from django.db.models import Sum
+            revenue_today = Payment.objects.filter(
+                payment_date__date=today, is_deleted=False
+            ).aggregate(s=Sum('amount'))['s'] or 0
+            revenue_month = Payment.objects.filter(
+                payment_date__date__gte=month_start, is_deleted=False
+            ).aggregate(s=Sum('amount'))['s'] or 0
+        except Exception:
+            pass
+
+        by_status = {}
+        for v in today_visits.values('status'):
+            by_status[v['status']] = by_status.get(v['status'], 0) + 1
+
+        lines = [
+            f'\n══ LIVE HOSPITAL DATA (as of {today}) ══',
+            f'Today ({today}):',
+            f'  Patients registered today : {pts(today)}',
+            f'  Visits today              : {vis(today)}',
+            f'  Visits by status today    : {by_status}',
+            f'  Revenue today (FCFA)      : {revenue_today:,.0f}',
+            f'Yesterday ({yesterday}):',
+            f'  Patients registered       : {pts(yesterday, yesterday)}',
+            f'  Visits                    : {vis(yesterday, yesterday)}',
+            f'This week (last 7 days):',
+            f'  Patients registered       : {pts(week_ago)}',
+            f'  Visits                    : {vis(week_ago)}',
+            f'This month ({month_start}):',
+            f'  Patients registered       : {pts(month_start)}',
+            f'  Visits                    : {vis(month_start)}',
+            f'  Revenue (FCFA)            : {revenue_month:,.0f}',
+            f'Last month ({last_month_start} — {last_month_end}):',
+            f'  Patients registered       : {pts(last_month_start, last_month_end)}',
+            f'  Visits                    : {vis(last_month_start, last_month_end)}',
+            f'This year ({year_start}):',
+            f'  Patients registered       : {pts(year_start)}',
+            f'  Visits                    : {vis(year_start)}',
+            f'All time:',
+            f'  Total patients ever       : {Patient.objects.filter(is_deleted=False).count()}',
+            f'══ END LIVE DATA ══',
+        ]
+        return '\n'.join(lines)
+    except Exception as e:
+        logger.warning(f'build_live_hospital_stats error: {e}')
+        return ''
+
+
 def build_system_knowledge_prompt() -> str:
-    """Return the system prompt for SYSTEM_KNOWLEDGE context conversations."""
-    return SYSTEM_KNOWLEDGE_PROMPT
+    """Return the system prompt for SYSTEM_KNOWLEDGE context conversations.
+    Injects live hospital stats so management can ask any date/count question."""
+    stats = build_live_hospital_stats()
+    extra = f"""
+{stats}
+
+CRITICAL — HOSPITAL DATA RULES:
+1. Use ONLY the live data above to answer statistical/operational questions (patient counts, visits, revenue).
+2. Do NOT guess or invent numbers. If a period is not covered, say so clearly.
+3. Today is {stats.split('as of ')[-1].split(')')[0] if 'as of' in stats else 'today'}.
+4. Currency is FCFA. All counts are from the live database.
+""" if stats else ''
+    return SYSTEM_KNOWLEDGE_PROMPT + extra
 
 
 def suggest_diagnosis_groq(chief_complaint: str, exam_data: dict, history: str = '') -> dict:
