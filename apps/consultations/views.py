@@ -1460,6 +1460,7 @@ _NURSE_ROUTE_MAP = {
     'PEDIATRIC':   ('AT_PEDIATRIC',      'PEDIATRIC',  'Pediatric Clinic'),
     'PEDS_OPH':    ('AT_PEDIATRIC',      'PEDIATRIC',  'Pediatric Clinic'),
     'REFRACTION':  ('REFRACTION',        'REFRACTION', 'Refraction / Optometry'),
+    'CYCLO':       ('REFRACTION',        'REFRACTION', 'Cycloplegic Refraction (Pediatric)'),
     'CATARACT':    ('AT_CATARACT',       'CATARACT',   'Cataract Clinic'),
     'CORNEA':      ('AT_CORNEA',         'CORNEA',     'Cornea Clinic'),
     'UVEITIS':     ('UVEITIS',           'UVEITIS',    'Uveitis Clinic'),

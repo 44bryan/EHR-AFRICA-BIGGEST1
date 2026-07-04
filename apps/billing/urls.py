@@ -29,6 +29,8 @@ urlpatterns = [
 
     # Surgical deposit
     path('surgical-deposit/<uuid:booking_id>/', views.surgical_deposit, name='surgical_deposit'),
+    path('surgical-deposit/<uuid:booking_id>/receipt/', views.surgical_deposit_receipt, name='surgical_deposit_receipt'),
+    path('surgical-deposit/<uuid:booking_id>/return-checkin/', views.surgical_return_checkin, name='surgical_return_checkin'),
 
     # Refund
     path('invoices/<uuid:invoice_id>/refund/', views.process_refund, name='process_refund'),

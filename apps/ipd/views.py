@@ -1327,6 +1327,64 @@ def theatre_procedure_record(request, procedure_id):
             proc.surgical_booking.status = SurgicalBookingStatus.COMPLETED
             proc.surgical_booking.save(update_fields=['status', 'updated_at'])
 
+        # ── Gap 1: Auto DrugPrescription from post_op_medications ────────────
+        post_op_meds = proc.post_op_medications
+        if post_op_meds and proc.surgical_booking and proc.surgical_booking.consultation:
+            try:
+                from apps.prescriptions.models import DrugPrescription, DrugPrescriptionItem, DrugForm, RouteOfAdmin, EyeChoice
+                rx = DrugPrescription.objects.create(
+                    consultation=proc.surgical_booking.consultation,
+                    patient=proc.patient,
+                    prescribed_by=request.user,
+                    notes=f'Post-op — {proc.get_procedure_display()} [{proc.session.session_date}]',
+                    created_by=request.user,
+                )
+                for line in post_op_meds.splitlines():
+                    line = line.strip().lstrip('-•* ').strip()
+                    if line:
+                        DrugPrescriptionItem.objects.create(
+                            prescription=rx,
+                            drug_name=line,
+                            drug_form=DrugForm.EYE_DROPS,
+                            dose='As directed',
+                            frequency='As directed',
+                            duration='As directed',
+                            route=RouteOfAdmin.TOPICAL,
+                            eye=EyeChoice.NA,
+                            quantity=1,
+                        )
+            except Exception:
+                pass
+
+        # Route to Pharmacy QMS after surgery if post-op meds are prescribed
+        if post_op_meds and _qms_active():
+            try:
+                from apps.qms.models import (
+                    QueueToken, DailyTokenSequence,
+                    IssuancePoint, TIER_PRIORITY,
+                )
+                from apps.patients.models import Visit
+                today = timezone.localdate()
+                visit = Visit.objects.filter(
+                    patient=proc.patient, visit_date__date=today, is_deleted=False,
+                ).order_by('-visit_date').first()
+                tier = visit.service_tier if visit else 'STANDARD'
+                ph_token = DailyTokenSequence.next_dept_token('PHARMACY')
+                QueueToken.objects.create(
+                    token_number=ph_token,
+                    patient=proc.patient,
+                    visit=visit,
+                    patient_name=proc.patient.full_name,
+                    service_type='PHARMACY',
+                    service_tier=tier,
+                    issuance_point=IssuancePoint.SYSTEM,
+                    priority=TIER_PRIORITY.get(tier, 0),
+                    notes=f'Post-op medications — {proc.get_procedure_display()}',
+                    issued_by=request.user,
+                )
+            except Exception:
+                pass
+
         messages.success(request, f'Procedure record saved for {proc.patient.full_name}.')
         return redirect('ipd:theatre_session_detail', session_id=proc.session.pk)
 
@@ -1800,4 +1858,179 @@ def care_plan_detail(request, plan_id):
         'admission': plan.admission,
         'patient': plan.admission.patient,
         'mode': 'detail',
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PRE-OP CHECK-IN  (Gap 2)
+# Theatre / pre-op nurse checks in patients arriving for surgery day.
+# Issues a PRE_OP QMS token and marks booking as SCHEDULED.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def pre_op_checkin(request):
+    """
+    Theatre / pre-op nurse: list of today's surgical bookings.
+    One-click check-in issues a PRE_OP QMS token and marks the patient as arrived.
+    """
+    if not (request.user.is_theatre_nurse or request.user.is_anaesthetist
+            or request.user.is_super_admin or request.user.is_medical_director
+            or request.user.is_admission_officer):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    bookings = SurgicalBooking.objects.filter(
+        surgery_date__date=today,
+        is_deleted=False,
+    ).exclude(status=SurgicalBookingStatus.CANCELLED).select_related(
+        'patient', 'surgeon'
+    ).order_by('surgery_date')
+
+    if request.method == 'POST':
+        booking_id = request.POST.get('booking_id')
+        booking = get_object_or_404(SurgicalBooking, pk=booking_id, is_deleted=False)
+        patient = booking.patient
+
+        # Issue PRE_OP QMS token
+        if _qms_active():
+            try:
+                from apps.qms.models import (
+                    QueueToken, DailyTokenSequence,
+                    IssuancePoint, TIER_PRIORITY,
+                )
+                from apps.patients.models import Visit
+                visit = Visit.objects.filter(
+                    patient=patient,
+                    visit_date__date=today,
+                    is_deleted=False,
+                ).order_by('-visit_date').first()
+                tier = visit.service_tier if visit else 'STANDARD'
+                token_number = DailyTokenSequence.next_dept_token('PRE_OP')
+                QueueToken.objects.create(
+                    token_number=token_number,
+                    patient=patient,
+                    visit=visit,
+                    patient_name=patient.full_name,
+                    service_type='PRE_OP',
+                    service_tier=tier,
+                    issuance_point=IssuancePoint.SYSTEM,
+                    priority=TIER_PRIORITY.get(tier, 0),
+                    notes=f'Surgery: {booking.get_procedure_display()} | {booking.booking_number}',
+                    issued_by=request.user,
+                )
+            except Exception:
+                pass
+
+        booking.status = SurgicalBookingStatus.SCHEDULED
+        booking.save(update_fields=['status', 'updated_at'])
+        messages.success(request, f'{patient.full_name} checked in for surgery. PRE_OP token issued.')
+        return redirect('ipd:pre_op_checkin')
+
+    return render(request, 'ipd/pre_op_checkin.html', {
+        'bookings': bookings,
+        'today': today,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ADMISSION / SURGICAL STATS  (CEO, Medical Director, Admin Director, Super Admin)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def admission_stats(request):
+    """Admission Officer / leadership statistics for surgical bookings."""
+    from apps.accounts.models import UserRole
+    allowed = [
+        UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.ADMISSION_OFFICER,
+    ]
+    if request.user.role not in allowed:
+        return HttpResponseForbidden()
+
+    from django.db.models import Count, Q, Sum
+    from django.db.models.functions import TruncMonth
+
+    # ── Date range filter ─────────────────────────────────────────────────
+    period = request.GET.get('period', '30')
+    if period == 'all':
+        qs = SurgicalBooking.objects.filter(is_deleted=False)
+    else:
+        try:
+            days = int(period)
+        except ValueError:
+            days = 30
+        cutoff = timezone.localdate() - timezone.timedelta(days=days)
+        qs = SurgicalBooking.objects.filter(is_deleted=False, created_at__date__gte=cutoff)
+
+    total = qs.count()
+
+    # By status
+    by_status = dict(qs.values('status').annotate(n=Count('id')).values_list('status', 'n'))
+
+    # By surgery type (procedure)
+    by_procedure = list(
+        qs.values('procedure').annotate(n=Count('id')).order_by('-n')[:10]
+    )
+
+    # By service tier
+    from apps.patients.models import Visit
+    tier_data = {}
+    for booking in qs.select_related('patient'):
+        visit = Visit.objects.filter(
+            patient=booking.patient,
+            visit_date__date=booking.created_at.date() if booking.created_at else timezone.localdate(),
+            is_deleted=False,
+        ).order_by('-visit_date').first()
+        tier = visit.service_tier if visit else 'STANDARD'
+        tier_data[tier] = tier_data.get(tier, 0) + 1
+
+    # By gender
+    by_gender = dict(
+        qs.select_related('patient').values('patient__gender').annotate(n=Count('id')).values_list('patient__gender', 'n')
+    )
+
+    # Revenue
+    revenue = qs.aggregate(
+        total_invoiced=Sum('total_amount'),
+        total_deposited=Sum('deposit_paid'),
+    )
+
+    # Monthly trend (last 6 months)
+    monthly = list(
+        qs.annotate(month=TruncMonth('created_at'))
+        .values('month').annotate(n=Count('id')).order_by('month')
+    )
+
+    # Top surgeons
+    top_surgeons = list(
+        qs.filter(surgeon__isnull=False)
+        .values('surgeon__first_name', 'surgeon__last_name')
+        .annotate(n=Count('id')).order_by('-n')[:5]
+    )
+
+    return render(request, 'ipd/admission_stats.html', {
+        'total': total,
+        'by_status': by_status,
+        'by_procedure': by_procedure,
+        'tier_data': tier_data,
+        'by_gender': by_gender,
+        'revenue': revenue,
+        'monthly': monthly,
+        'top_surgeons': top_surgeons,
+        'period': period,
+        'booking_statuses': SurgicalBookingStatus.choices,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PRE-OP INSTRUCTION SHEET  (printable)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def preop_instruction_sheet(request, booking_id):
+    """Printable pre-operative instruction sheet for the patient."""
+    booking = get_object_or_404(SurgicalBooking, pk=booking_id, is_deleted=False)
+    return render(request, 'ipd/preop_instruction_sheet.html', {
+        'booking': booking,
+        'patient': booking.patient,
     })

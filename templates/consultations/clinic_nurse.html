@@ -235,7 +235,7 @@
             {% if v.attending_doctor %}&bull; Dr {{ v.attending_doctor.get_full_name }}{% endif %}
           </div>
         </div>
-        <div class="d-flex flex-wrap gap-1">
+        <div class="d-flex flex-wrap gap-1" id="route-btns-{{ v.pk }}">
           <button class="btn btn-sm btn-primary route-btn" data-visit="{{ v.pk }}" data-dest="GENERAL">
             <i class="bi bi-person-badge me-1"></i>Doctor (Gen.)
           </button>
@@ -269,6 +269,9 @@
           <button class="btn btn-sm btn-outline-primary route-btn" data-visit="{{ v.pk }}" data-dest="REFRACTION">
             <i class="bi bi-eyeglasses me-1"></i>Refraction
           </button>
+          <button class="btn btn-sm route-btn" data-visit="{{ v.pk }}" data-dest="CYCLO" style="border:1px solid #7c3aed;color:#7c3aed;background:#fff;">
+            <i class="bi bi-eyeglasses me-1"></i>Cyclo Refrac.
+          </button>
           <button class="btn btn-sm btn-secondary route-btn" data-visit="{{ v.pk }}" data-dest="DISCHARGE">
             <i class="bi bi-door-open me-1"></i>Done
           </button>
@@ -280,12 +283,18 @@
 </div>
 {% endif %}
 
-{# ── Call notification toast ── #}
+{# ── Toasts ── #}
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:1100;">
-  <div id="callToast" class="toast align-items-center text-bg-success border-0" role="alert" aria-live="polite">
+  <div id="callToast" class="toast align-items-center text-bg-success border-0 mb-2" role="alert" aria-live="polite">
     <div class="d-flex">
       <div class="toast-body fw-semibold" id="callToastMsg">Patient called.</div>
       <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+  <div id="routeToast" class="toast align-items-center border-0" role="alert" aria-live="polite">
+    <div class="d-flex">
+      <div class="toast-body fw-semibold" id="routeToastMsg">Patient routed.</div>
+      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
     </div>
   </div>
 </div>
@@ -297,6 +306,16 @@
 document.addEventListener('DOMContentLoaded', function () {
   const toast = new bootstrap.Toast(document.getElementById('callToast'), {delay: 4000});
   const toastMsg = document.getElementById('callToastMsg');
+  const routeToastEl = document.getElementById('routeToast');
+  const routeToastMsg = document.getElementById('routeToastMsg');
+  function showRouteToast(msg, isError) {
+    routeToastEl.classList.remove('text-bg-success', 'text-bg-danger');
+    routeToastEl.classList.add(isError ? 'text-bg-danger' : 'text-bg-success');
+    var closeBtn = routeToastEl.querySelector('.btn-close');
+    if (closeBtn) closeBtn.classList.toggle('btn-close-white', true);
+    routeToastMsg.textContent = msg;
+    bootstrap.Toast.getOrCreateInstance(routeToastEl, {delay: 5000}).show();
+  }
 
   document.querySelectorAll('.call-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -356,20 +375,22 @@ document.addEventListener('DOMContentLoaded', function () {
       .then(function(r){ return r.json(); })
       .then(function(data) {
         if (data.success) {
-          toastMsg.textContent = data.message;
-          toast.show();
+          showRouteToast('\u2713 ' + data.patient + ' \u2192 ' + data.destination, false);
           if (row) {
-            row.style.opacity = '0.4';
-            row.querySelector('.d-flex.flex-wrap').outerHTML =
-              '<span class="badge bg-success ms-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
+            row.style.opacity = '0.5';
+            var btnContainer = document.getElementById('route-btns-' + visitPk);
+            if (btnContainer) {
+              btnContainer.innerHTML =
+                '<span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
+            }
           }
         } else {
-          alert(data.error || 'Routing failed. Please refresh.');
+          showRouteToast(data.error || 'Routing failed. Please try again.', true);
           row.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = false; });
         }
       })
       .catch(function(){
-        alert('Network error. Please refresh.');
+        showRouteToast('Network error. Please refresh the page.', true);
         row.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = false; });
       });
     });

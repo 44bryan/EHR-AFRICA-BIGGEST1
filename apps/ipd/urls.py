@@ -57,4 +57,9 @@ urlpatterns = [
     # ── Nursing Care Plan (JCI COP.8) ─────────────────────────────────────────
     path('admissions/<uuid:admission_id>/care-plan/', views.care_plan_create, name='care_plan_create'),
     path('care-plan/<uuid:plan_id>/', views.care_plan_detail, name='care_plan_detail'),
+
+    # ── Pre-op Check-in, Stats & Printables ───────────────────────────────────
+    path('pre-op/checkin/', views.pre_op_checkin, name='pre_op_checkin'),
+    path('stats/', views.admission_stats, name='admission_stats'),
+    path('surgical-booking/<uuid:booking_id>/preop-sheet/', views.preop_instruction_sheet, name='preop_instruction_sheet'),
 ]

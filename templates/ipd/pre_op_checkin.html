@@ -1,0 +1,113 @@
+{% extends "layouts/base_authenticated.html" %}
+
+{% block title %}Pre-Op Check-In{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-clipboard2-pulse text-danger fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">Pre-Operative Check-In</h5>
+    <div class="text-muted small">{{ today|date:"l, d F Y" }} — Today's Surgical List</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if messages %}
+  {% for msg in messages %}
+  <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show py-2 mb-3">
+    {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{% if not bookings %}
+<div class="card border-0 shadow-sm text-center py-5">
+  <i class="bi bi-calendar-x fs-1 text-muted d-block mb-2 opacity-25"></i>
+  <p class="text-muted">No surgical procedures scheduled for today.</p>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3">
+    <span class="fw-semibold">{{ bookings|length }} procedure{{ bookings|length|pluralize }} scheduled today</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" style="font-size:.85rem;">
+      <thead class="table-light">
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Eye</th>
+          <th>Surgeon</th>
+          <th>Time</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for booking in bookings %}
+        <tr>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ booking.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.74rem;">{{ booking.patient.patient_id }}</div>
+          </td>
+          <td>
+            <div>{{ booking.get_procedure_display }}</div>
+            <div class="text-muted" style="font-size:.74rem;">{{ booking.booking_number }}</div>
+          </td>
+          <td>
+            <span class="badge bg-secondary bg-opacity-75">{{ booking.get_eye_laterality_display }}</span>
+          </td>
+          <td>{{ booking.surgeon.get_full_name|default:"—" }}</td>
+          <td>{{ booking.surgery_date|time:"H:i" }}</td>
+          <td>
+            {% if booking.status == 'SCHEDULED' %}
+              <span class="badge bg-success">Checked In</span>
+            {% elif booking.status == 'CONFIRMED' %}
+              <span class="badge bg-warning text-dark">Awaiting Check-in</span>
+            {% elif booking.status == 'PENDING_PAYMENT' %}
+              <span class="badge bg-danger">Deposit Pending</span>
+            {% elif booking.status == 'COMPLETED' %}
+              <span class="badge bg-primary">Completed</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ booking.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if booking.status == 'CONFIRMED' %}
+            <form method="post" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="booking_id" value="{{ booking.pk }}">
+              <button type="submit" class="btn btn-sm btn-success py-1 px-2" style="font-size:.75rem;"
+                      onclick="return confirm('Check in {{ booking.patient.full_name }} for surgery?')">
+                <i class="bi bi-check2-circle me-1"></i>Check In
+              </button>
+            </form>
+            {% elif booking.status == 'SCHEDULED' %}
+            <span class="text-success small"><i class="bi bi-check-circle me-1"></i>Done</span>
+            {% elif booking.status == 'PENDING_PAYMENT' %}
+            <a href="{% url 'billing:surgical_deposit' booking_id=booking.pk %}"
+               class="btn btn-sm btn-outline-danger py-1 px-2" style="font-size:.75rem;">
+              <i class="bi bi-cash me-1"></i>Collect Deposit
+            </a>
+            {% endif %}
+            <a href="{% url 'ipd:surgical_booking_detail' booking_id=booking.pk %}"
+               class="btn btn-sm btn-outline-secondary py-1 px-2 ms-1" style="font-size:.75rem;">
+              <i class="bi bi-eye"></i>
+            </a>
+            <a href="{% url 'ipd:preop_instruction_sheet' booking_id=booking.pk %}"
+               class="btn btn-sm btn-outline-info py-1 px-2 ms-1" style="font-size:.75rem;" target="_blank"
+               title="Print pre-op instruction sheet">
+              <i class="bi bi-printer"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

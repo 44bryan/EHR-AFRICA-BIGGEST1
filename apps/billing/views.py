@@ -418,6 +418,19 @@ def invoice_create(request):
     })
 
 
+def _sync_surgical_deposit(invoice):
+    """
+    If this invoice is the linked invoice of a SurgicalBooking, keep
+    booking.deposit_paid in sync with the total amount received on the invoice.
+    """
+    try:
+        booking = invoice.surgical_booking  # reverse OneToOne from ipd.SurgicalBooking
+        booking.deposit_paid = invoice.amount_paid
+        booking.save(update_fields=['deposit_paid', 'updated_at'])
+    except Exception:
+        pass
+
+
 @login_required
 def add_payment(request, invoice_id):
     if not (request.user.is_cashier or _can_cancel_invoice(request.user)):
@@ -460,6 +473,7 @@ def add_payment(request, invoice_id):
         # if the invoice contains a CONSULT or REG item (first-time payment)
         _try_open_consultation_window(invoice)
         invoice.refresh_from_db()
+        _sync_surgical_deposit(invoice)
         # ── Route patient after full payment (same logic as patient_finalize) ──
         if invoice.balance_due <= 0 and invoice.patient:
             _route_patient_after_payment(invoice, request)
@@ -1061,6 +1075,8 @@ def pos_record_payment(request, invoice_id):
     # Payment.save() already calls invoice.update_status()
     _try_open_consultation_window(invoice)
     invoice.refresh_from_db()
+    # Sync surgical booking deposit if this invoice is linked to a booking
+    _sync_surgical_deposit(invoice)
 
     resp = {
         'success': True,
@@ -1491,6 +1507,77 @@ def surgical_deposit(request, booking_id):
         'payments': payments,
         'payment_methods': PaymentMethod.choices,
         'balance_due': deposit_invoice.balance_due if deposit_invoice else booking.deposit_required or booking.total_amount or 0,
+    })
+
+
+@login_required
+@require_POST
+def surgical_return_checkin(request, booking_id):
+    """
+    Receptionist / Cashier: Patient returns later to pay surgical deposit.
+    Issues a CASHIER QMS token for the booking so cashier sees them in queue.
+    """
+    from apps.ipd.models import SurgicalBooking
+    booking = get_object_or_404(SurgicalBooking, id=booking_id, is_deleted=False)
+    patient = booking.patient
+
+    if _qms_active():
+        try:
+            from apps.qms.models import (
+                QueueToken, DailyTokenSequence,
+                IssuancePoint, TIER_PRIORITY, ServiceTier,
+            )
+            tier = ServiceTier.STANDARD
+            cash_token = DailyTokenSequence.next_dept_token('CASHIER')
+            QueueToken.objects.create(
+                token_number=cash_token,
+                patient=patient,
+                patient_name=patient.full_name,
+                service_type='CASHIER',
+                service_tier=tier,
+                issuance_point=IssuancePoint.SYSTEM,
+                priority=TIER_PRIORITY.get(tier, 0),
+                notes=(
+                    f'Returning for surgery payment — {booking.get_procedure_display()} | '
+                    f'Balance: {booking.balance_due:,.0f} FCFA | {booking.booking_number}'
+                ),
+                issued_by=request.user,
+            )
+            messages.success(request, f'Cashier token issued for {patient.full_name}. Balance: {booking.balance_due:,.0f} FCFA.')
+        except Exception as e:
+            messages.error(request, f'Could not issue token: {e}')
+    else:
+        messages.info(request, f'QMS is disabled. Direct patient to Cashier. Balance: {booking.balance_due:,.0f} FCFA.')
+    return redirect('billing:surgical_deposit', booking_id=booking.pk)
+
+
+@login_required
+def surgical_deposit_receipt(request, booking_id):
+    """Printable receipt for all deposit payments on a surgical booking."""
+    from apps.ipd.models import SurgicalBooking
+    booking = get_object_or_404(SurgicalBooking, id=booking_id, is_deleted=False)
+    from apps.billing.models import Proforma, ProformaStatus
+    deposit_invoice = None
+    proforma = Proforma.objects.filter(
+        patient=booking.patient,
+        notes__icontains=booking.booking_number,
+        is_deleted=False,
+    ).exclude(status=ProformaStatus.CANCELLED).first()
+    if proforma and proforma.invoice:
+        deposit_invoice = proforma.invoice
+    if not deposit_invoice:
+        deposit_invoice = Invoice.objects.filter(
+            patient=booking.patient,
+            notes__icontains=booking.booking_number,
+            is_deleted=False,
+        ).exclude(status=InvoiceStatus.CANCELLED).first()
+
+    payments = deposit_invoice.payments.filter(is_deleted=False).order_by('payment_date') if deposit_invoice else []
+    return render(request, 'billing/surgical_deposit_receipt.html', {
+        'booking': booking,
+        'patient': booking.patient,
+        'deposit_invoice': deposit_invoice,
+        'payments': payments,
     })
 
 

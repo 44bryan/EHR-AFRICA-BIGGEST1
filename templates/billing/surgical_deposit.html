@@ -11,6 +11,16 @@
     <div class="text-muted small mt-1">Booking {{ booking.booking_number }} &bull; {{ patient.full_name }}</div>
   </div>
   <div class="ms-auto d-flex gap-2">
+    {% if deposit_invoice and deposit_invoice.payments.count > 0 %}
+    <a href="{% url 'billing:surgical_deposit_receipt' booking_id=booking.pk %}" target="_blank"
+       class="btn btn-outline-success btn-sm">
+      <i class="bi bi-printer me-1"></i>Print Receipt
+    </a>
+    {% endif %}
+    <a href="{% url 'ipd:preop_instruction_sheet' booking_id=booking.pk %}" target="_blank"
+       class="btn btn-outline-info btn-sm">
+      <i class="bi bi-file-earmark-text me-1"></i>Pre-op Sheet
+    </a>
     <a href="{% url 'ipd:surgical_booking_detail' booking_id=booking.pk %}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-arrow-left me-1"></i>Back to Booking
     </a>
@@ -257,6 +267,25 @@
       <a href="{% url 'ipd:surgical_booking_detail' booking_id=booking.pk %}" class="alert-link ms-2">
         Return to booking &rarr;
       </a>
+    </div>
+    {% endif %}
+
+    {# ── Patient returns later — issue cashier token ── #}
+    {% if balance_due > 0 and deposit_invoice %}
+    <div class="card border-0 shadow-sm border-warning mt-3">
+      <div class="card-body py-2 d-flex align-items-center justify-content-between gap-3 flex-wrap">
+        <div style="font-size:.85rem;">
+          <i class="bi bi-clock-history text-warning me-1"></i>
+          <strong>Patient leaving without full payment?</strong>
+          Issue a Cashier ticket so they can return later and pay the balance.
+        </div>
+        <form method="post" action="{% url 'billing:surgical_return_checkin' booking_id=booking.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-warning btn-sm fw-semibold">
+            <i class="bi bi-ticket-perforated me-1"></i>Issue Return Token
+          </button>
+        </form>
+      </div>
     </div>
     {% endif %}
 

@@ -93,6 +93,7 @@ class ServiceType(models.TextChoices):
     # Pre-surgical
     COUNSELING     = 'COUNSEL',    'Surgical Counseling'
     ADMISSION      = 'ADMISSION',  'Admission'
+    PRE_OP         = 'PRE_OP',     'Pre-operative Waiting'
     # Inpatient / surgical
     THEATRE        = 'THEATRE',    'Operating Theatre'
     BILLING        = 'BILLING',    'Billing / Accounts'
