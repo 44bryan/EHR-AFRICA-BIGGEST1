@@ -1,0 +1,197 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{{ dept_name }} — Department Statistics{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-bar-chart-line text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ dept_name }} — Department Stats</h5>
+      <div class="text-muted small">{{ month_start|date:"F Y" }} — Consultations by tier, gender &amp; age</div>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <div class="btn-group btn-group-sm">
+      <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+      <span class="btn btn-outline-secondary disabled px-3">{{ month_start|date:"M Y" }}</span>
+      <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+    <form method="get" class="d-flex gap-1 align-items-center">
+      <select name="month" class="form-select form-select-sm" style="width:120px;">
+        {% for m in months_list %}
+        <option value="{{ m.value }}" {% if m.value == month %}selected{% endif %}>{{ m.label }}</option>
+        {% endfor %}
+      </select>
+      <select name="year" class="form-select form-select-sm" style="width:80px;">
+        {% for y in years %}
+        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i></button>
+    </form>
+    <a href="?year={{ year }}&month={{ month }}&format=pdf"
+       class="btn btn-sm btn-danger" target="_blank">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+    </a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPI Row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #0d6efd !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_consults|intcomma }}</div>
+        <div class="small text-muted">Total Consultations</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #0dcaf0 !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info">{{ total_male|intcomma }}</div>
+        <div class="small text-muted"><i class="bi bi-gender-male"></i> Male Patients</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #dc3545 !important;">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-danger">{{ total_female|intcomma }}</div>
+        <div class="small text-muted"><i class="bi bi-gender-female"></i> Female Patients</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100" style="border-left:4px solid #198754 !important;">
+      <div class="card-body py-3">
+        <div class="d-flex justify-content-around align-items-center">
+          <div><div class="fw-bold text-success">{{ total_children }}</div><div style="font-size:.7rem;" class="text-muted">Children</div></div>
+          <div><div class="fw-bold text-primary">{{ total_adult }}</div><div style="font-size:.7rem;" class="text-muted">Adult</div></div>
+          <div><div class="fw-bold text-warning">{{ total_elderly }}</div><div style="font-size:.7rem;" class="text-muted">Elderly</div></div>
+        </div>
+        <div class="small text-muted mt-1">WHO Age Groups</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Daily Volume Chart ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2 border-bottom">
+    <h6 class="mb-0 fw-semibold small"><i class="bi bi-graph-up me-2 text-primary"></i>Daily Consultation Volume — {{ month_start|date:"F Y" }}</h6>
+  </div>
+  <div class="card-body" style="height:200px;">
+    <canvas id="dailyChart"></canvas>
+  </div>
+</div>
+
+{# ── Tier × Gender × Age Cross-tab ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-3 border-bottom">
+    <h6 class="mb-0 fw-bold"><i class="bi bi-grid-3x3 me-2 text-primary"></i>Breakdown by Service Tier × Gender × Age Group</h6>
+    <div class="text-muted small">Children &lt;18 · Adult 18–59 · Elderly 60+ (WHO classification)</div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem;">
+        <thead class="table-light">
+          <tr>
+            <th rowspan="2" class="align-middle">Tier / Billing</th>
+            <th rowspan="2" class="text-center align-middle">Total</th>
+            <th colspan="2" class="text-center border-start">All Ages</th>
+            <th colspan="2" class="text-center border-start">Children (&lt;18)</th>
+            <th colspan="2" class="text-center border-start">Adult (18–59)</th>
+            <th colspan="2" class="text-center border-start">Elderly (60+)</th>
+          </tr>
+          <tr>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i> M</th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i> F</th>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i></th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i></th>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i></th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i></th>
+            <th class="text-center border-start"><i class="bi bi-gender-male text-primary"></i></th>
+            <th class="text-center"><i class="bi bi-gender-female text-danger"></i></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in tier_matrix %}
+          <tr>
+            <td>
+              <span class="badge rounded-pill" style="background:{{ row.color }};font-size:.72rem;">{{ row.tier }}</span>
+            </td>
+            <td class="text-center fw-bold">{{ row.total }}</td>
+            <td class="text-center text-primary border-start">{{ row.male }}</td>
+            <td class="text-center text-danger">{{ row.female }}</td>
+            <td class="text-center border-start">{{ row.children_m }}</td>
+            <td class="text-center">{{ row.children_f }}</td>
+            <td class="text-center border-start">{{ row.adult_m }}</td>
+            <td class="text-center">{{ row.adult_f }}</td>
+            <td class="text-center border-start">{{ row.elderly_m }}</td>
+            <td class="text-center">{{ row.elderly_f }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="10" class="text-center text-muted py-3">No consultations in this department for the selected period.</td></tr>
+          {% endfor %}
+        </tbody>
+        {% if tier_matrix %}
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td>TOTAL</td>
+            <td class="text-center">{{ total_consults }}</td>
+            <td class="text-center text-primary border-start">{{ total_male }}</td>
+            <td class="text-center text-danger">{{ total_female }}</td>
+            <td class="text-center border-start">{{ total_children }}</td>
+            <td class="text-center">—</td>
+            <td class="text-center border-start">{{ total_adult }}</td>
+            <td class="text-center">—</td>
+            <td class="text-center border-start">{{ total_elderly }}</td>
+            <td class="text-center">—</td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+var dailyData = {{ daily_json|safe }};
+(function waitForChart() {
+  if (typeof Chart === 'undefined') { return setTimeout(waitForChart, 60); }
+  new Chart(document.getElementById('dailyChart'), {
+    type: 'bar',
+    data: {
+      labels: dailyData.labels,
+      datasets: [{
+        label: 'Consultations',
+        data: dailyData.data,
+        backgroundColor: 'rgba(13,110,253,0.7)',
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+})();
+</script>
+{% endblock %}
