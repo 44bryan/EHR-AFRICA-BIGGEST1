@@ -1,0 +1,178 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Consultation Rooms — {{ dept.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-12 col-xl-9">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-0 fw-semibold">
+        <i class="bi bi-door-open me-2 text-primary"></i>{{ dept.name }} — Consultation Rooms
+      </h4>
+      <p class="text-muted small mb-0 mt-1">Configure door/room numbers for this department and assign doctors daily.</p>
+    </div>
+    <a href="{% url 'departments:dept_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back to Departments
+    </a>
+  </div>
+
+  {% if messages %}
+    {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="row g-3">
+
+    {# ── Left: Current Rooms ── #}
+    <div class="col-md-8">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+          <h6 class="mb-0 fw-semibold"><i class="bi bi-list-ol me-2 text-primary"></i>Configured Rooms</h6>
+          <span class="badge bg-primary bg-opacity-10 text-primary">{{ rooms|length }} room{{ rooms|length|pluralize }}</span>
+        </div>
+        <div class="card-body p-0">
+          {% if rooms %}
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="ps-3">Room / Door #</th>
+                  <th>Label</th>
+                  <th>Assigned Doctor <span class="text-muted fw-normal">(today)</span></th>
+                  <th>Status</th>
+                  <th class="text-end pe-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for room in rooms %}
+                <tr>
+                  <td class="ps-3">
+                    <span class="badge bg-primary fs-6 px-3">{{ room.room_number }}</span>
+                  </td>
+                  <td class="small">{{ room.label }}</td>
+                  <td>
+                    {# Inline doctor assignment form #}
+                    <form method="post" class="d-flex align-items-center gap-2" style="min-width:200px;">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="assign">
+                      <input type="hidden" name="room_id" value="{{ room.id }}">
+                      <select name="doctor_id" class="form-select form-select-sm" onchange="this.form.submit()" style="max-width:200px;">
+                        <option value="">— Unassigned —</option>
+                        {% for doc in doctors %}
+                        <option value="{{ doc.pk }}" {% if room.assigned_doctor and room.assigned_doctor.pk == doc.pk %}selected{% endif %}>
+                          Dr. {{ doc.last_name }} {{ doc.first_name|slice:":1" }}. ({{ doc.get_role_display }})
+                        </option>
+                        {% endfor %}
+                      </select>
+                    </form>
+                  </td>
+                  <td>
+                    {% if room.is_active %}
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">Active</span>
+                    {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary border">Inactive</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end pe-3">
+                    <div class="d-flex justify-content-end gap-1">
+                      {# Toggle active #}
+                      <form method="post" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="toggle">
+                        <input type="hidden" name="room_id" value="{{ room.id }}">
+                        <button type="submit" class="btn btn-sm {% if room.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+                                title="{% if room.is_active %}Deactivate{% else %}Activate{% endif %}">
+                          <i class="bi {% if room.is_active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+                        </button>
+                      </form>
+                      {# Delete #}
+                      <form method="post" class="d-inline"
+                            onsubmit="return confirm('Remove Room {{ room.room_number }} from {{ dept.name }}?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="room_id" value="{{ room.id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-center py-5 text-muted">
+            <i class="bi bi-door-closed display-4 d-block mb-2 opacity-25"></i>
+            No rooms configured yet.<br>
+            <small>Add room numbers using the form on the right.</small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ── Right: Add Room form ── #}
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+          <h6 class="mb-0 fw-semibold"><i class="bi bi-plus-circle me-2 text-success"></i>Add a Room</h6>
+        </div>
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+            <div class="mb-3">
+              <label class="form-label fw-semibold small">Door / Room Number <span class="text-danger">*</span></label>
+              <input type="text" name="room_number" class="form-control" required
+                     placeholder="e.g. 1, 2, 3A, B4"
+                     maxlength="10"
+                     pattern="[A-Za-z0-9\-]+"
+                     title="Numbers and letters only">
+              <div class="form-text">Match the number printed on the physical door.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold small">Custom Label <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="text" name="label" class="form-control"
+                     placeholder="e.g. Consulting Room 2"
+                     maxlength="80">
+              <div class="form-text">If blank, auto-set to "Room N".</div>
+            </div>
+            <button type="submit" class="btn btn-success w-100">
+              <i class="bi bi-plus-lg me-1"></i>Add Room
+            </button>
+          </form>
+
+          <hr class="my-3">
+
+          <div class="alert alert-info py-2 small mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>Daily Workflow:</strong> Each morning, use the <em>Assigned Doctor</em> dropdown on the left to set which doctor is in each room today. The triage nurse will see "Room 2 — Dr. Mbarga" when dispatching patients.
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mt-3">
+        <div class="card-header bg-white py-3">
+          <h6 class="mb-0 fw-semibold text-muted"><i class="bi bi-lightbulb me-2"></i>How it works</h6>
+        </div>
+        <div class="card-body small text-muted">
+          <ol class="ps-3 mb-0">
+            <li class="mb-1">Add all numbered doors for <strong>{{ dept.name }}</strong> here once.</li>
+            <li class="mb-1">Each morning, assign the doctor to their room for the day.</li>
+            <li class="mb-1">At triage, when the nurse dispatches a patient to <strong>{{ dept.name }}</strong>, a room picker appears showing "Room 1 — Dr. X", "Room 2 — Dr. Y" etc.</li>
+            <li>The patient's token will say <strong>"{{ dept.name }} — Room 2"</strong>.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+{% endblock %}

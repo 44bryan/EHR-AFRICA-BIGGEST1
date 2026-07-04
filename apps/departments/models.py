@@ -56,6 +56,45 @@ class Department(models.Model):
         return cls.objects.filter(is_active=True).exclude(code__in=non_clinical)
 
 
+class ConsultationRoom(models.Model):
+    """
+    Physical consultation room/door within a department.
+    Configured once by admin (room numbers match the actual door numbers).
+    Doctor assignment is optional and can be updated daily.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='rooms')
+    room_number = models.CharField(max_length=10, help_text='Door/room number as it appears on the door (e.g. 1, 2, 3)')
+    label = models.CharField(max_length=80, blank=True, help_text='Custom label e.g. "Consulting Room 2" — auto-filled if blank')
+    assigned_doctor = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assigned_room',
+        help_text='Doctor currently assigned to this room (update daily as needed)',
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['department', 'room_number']
+        unique_together = [['department', 'room_number']]
+        verbose_name = 'Consultation Room'
+        verbose_name_plural = 'Consultation Rooms'
+
+    def __str__(self):
+        return f'{self.department.name} — {self.display_label}'
+
+    @property
+    def display_label(self):
+        base = self.label or f'Room {self.room_number}'
+        if self.assigned_doctor:
+            return f'{base} — Dr. {self.assigned_doctor.last_name}'
+        return base
+
+    def save(self, *args, **kwargs):
+        if not self.label:
+            self.label = f'Room {self.room_number}'
+        super().save(*args, **kwargs)
+
+
 def create_default_departments():
     """Populate the six standard departments — called from a data migration."""
     defaults = [
@@ -135,6 +174,13 @@ def create_default_departments():
             'description': 'Cataract surgery, IOL biometry, post-operative care and surgical follow-ups.',
             'color_code': '#17a2b8',
             'icon': 'bi-scissors',
+        },
+        {
+            'name': 'Uveitis Clinic',
+            'code': DepartmentCode.UVEITIS,
+            'description': 'Uveitis, inflammatory eye disease, immunosuppression and ocular immunology.',
+            'color_code': '#6f42c1',
+            'icon': 'bi-droplet-half',
         },
         {
             'name': 'Investigation',
