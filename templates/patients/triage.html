@@ -297,14 +297,14 @@
             {# ── Section 4: Dispatch ── #}
             <div class="accordion-item border mb-2 rounded">
               <h2 class="accordion-header" id="hDispatch">
-                <button class="accordion-button collapsed rounded fw-semibold py-3" type="button"
-                        data-bs-toggle="collapse" data-bs-target="#secDispatch" aria-expanded="false" aria-controls="secDispatch">
+                <button class="accordion-button rounded fw-semibold py-3" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#secDispatch" aria-expanded="true" aria-controls="secDispatch">
                   <i class="bi bi-signpost-split me-2 text-danger fs-5"></i>
                   <span class="fs-6">Dispatch &amp; Priority <span class="text-danger">*</span></span>
                   <span class="ms-auto badge bg-danger bg-opacity-10 text-danger border border-danger-subtle ms-2">Required</span>
                 </button>
               </h2>
-              <div id="secDispatch" class="accordion-collapse collapse" aria-labelledby="hDispatch">
+              <div id="secDispatch" class="accordion-collapse collapse show" aria-labelledby="hDispatch">
                 <div class="accordion-body pt-2">
                   <label class="form-label fw-semibold small mb-2">Send Patient To <span class="text-danger">*</span></label>
 
@@ -332,10 +332,32 @@
                   </div>
 
                   <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
+                  <input type="hidden" name="dispatch_doctor_id" id="dispatch_doctor_id" value="">
+
+                  {# Room / Door number — appears after destination chosen #}
+                  <div id="roomPickPanel" class="d-none mb-3 p-3 border rounded" style="background:#f0f9ff;">
+                    <label class="form-label fw-semibold small mb-2">
+                      <i class="bi bi-door-open me-1 text-primary"></i>
+                      Select Consultation Room / Door <span class="text-muted fw-normal">(optional)</span>
+                    </label>
+                    <div class="d-flex flex-wrap gap-2 mb-1" id="roomBtnGroup">
+                      {% for r in "1,2,3,4,5,6,7,8,9,10"|split:"," %}
+                      <button type="button" class="btn btn-sm btn-outline-primary room-pick-btn"
+                              data-room="{{ r }}" onclick="pickRoom('{{ r }}', this)">
+                        <i class="bi bi-door-closed me-1"></i>Room {{ r }}
+                      </button>
+                      {% endfor %}
+                    </div>
+                    <button type="button" class="btn btn-xs btn-link text-secondary p-0 mt-1" onclick="clearRoom()">
+                      Clear room selection
+                    </button>
+                  </div>
 
                   <div id="routeConfirm" class="d-none mb-3">
                     <span class="badge bg-success fs-6 px-3 py-2">
-                      <i class="bi bi-arrow-right-circle me-1"></i>Routing to: <span id="routeLabel"></span>
+                      <i class="bi bi-arrow-right-circle me-1"></i>
+                      Routing to: <span id="routeLabel"></span>
+                      <span id="routeRoomLabel" class="ms-2 fw-normal fst-italic"></span>
                     </span>
                   </div>
 
@@ -406,6 +428,10 @@
 })();
 
 // ── Flexible routing ──────────────────────────────────────────────────────────
+// Services where room/door selection makes sense (multi-room departments)
+const MULTI_ROOM_SERVICES = ['GENERAL','REFRACTION','RETINA','GLAUCOMA','PEDIATRIC',
+                              'CATARACT','CORNEA','OCULOPLASTY','NEURO','UVEITIS','LOW_VIS'];
+
 function selectRoute(type, deptId, serviceCode, label, btn) {
   const deptSel   = document.getElementById('dispatch_department');
   const directInp = document.getElementById('dispatch_direct');
@@ -428,11 +454,54 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
   if (deptId || serviceCode) {
     lbl.textContent = label;
     confirmEl.classList.remove('d-none');
+    // Show room picker ONLY for standard clinical departments (not VIP/Express/Lab/Pharmacy)
+    const roomPanel = document.getElementById('roomPickPanel');
+    if (roomPanel) {
+      const isStandardClinical = MULTI_ROOM_SERVICES.includes(serviceCode);
+      const isVipOrAdmin = ['VIP_CONSULT','EXP_CONSULT','LAB','INVEST','PHARMACY','CASHIER'].includes(serviceCode);
+      const showRoom = isStandardClinical && !isVipOrAdmin;
+      roomPanel.classList.toggle('d-none', !showRoom);
+      if (!showRoom) clearRoom();
+    }
   } else {
     confirmEl.classList.add('d-none');
+    const rp = document.getElementById('roomPickPanel');
+    if (rp) rp.classList.add('d-none');
   }
   // Hide validation alert once a route is selected
   document.getElementById('routeValidationAlert').classList.add('d-none');
+}
+
+function pickRoom(roomNum, btn) {
+  document.querySelectorAll('.room-pick-btn').forEach(b => {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-outline-primary');
+  });
+  btn.classList.remove('btn-outline-primary');
+  btn.classList.add('btn-primary');
+  document.getElementById('dispatch_doctor_id').value = '';  // clear doctor assignment
+  // Store room in a hidden field via dispatch_doctor_id repurposed → use nursing_notes approach
+  document.getElementById('roomPickPanel').dataset.selected = roomNum;
+  const roomLbl = document.getElementById('routeRoomLabel');
+  if (roomLbl) roomLbl.textContent = '→ Room ' + roomNum;
+  // Append room to dispatch_direct value so it's included in notes on server
+  const diInp = document.getElementById('dispatch_direct');
+  const baseVal = diInp.dataset.baseValue || diInp.value.split('|')[0];
+  diInp.dataset.baseValue = baseVal;
+  diInp.value = baseVal + (baseVal ? '|ROOM:' + roomNum : '');
+}
+
+function clearRoom() {
+  document.querySelectorAll('.room-pick-btn').forEach(b => {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-outline-primary');
+  });
+  const roomLbl = document.getElementById('routeRoomLabel');
+  if (roomLbl) roomLbl.textContent = '';
+  const rp = document.getElementById('roomPickPanel');
+  if (rp) delete rp.dataset.selected;
+  const diInp = document.getElementById('dispatch_direct');
+  if (diInp.dataset.baseValue) diInp.value = diInp.dataset.baseValue;
 }
 
 // Validate at least one route chosen on submit + loading feedback

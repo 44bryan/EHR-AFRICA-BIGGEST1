@@ -943,14 +943,12 @@ def workstation_view(request):
             v.patient_id: v
             for v in Visit.objects.filter(
                 patient_id__in=token_patient_ids,
-                visit_date__date=today,
                 is_deleted=False,
             ).exclude(
                 status__in=[VisitStatus.COMPLETED, VisitStatus.DISCHARGED]
             ).order_by('-visit_date')
         }
         for token in waiting_tokens:
-            # Use ws_visit / ws_visit_type to avoid overwriting read-only properties
             _v = active_visits.get(token.patient_id) if token.patient_id else None
             token.ws_visit = _v
             token.ws_visit_type = getattr(_v, 'visit_type', None)

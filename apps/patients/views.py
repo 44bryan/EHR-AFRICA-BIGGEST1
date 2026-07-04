@@ -499,21 +499,44 @@ def patient_detail_view(request, patient_id):
     # Longitudinal vital signs history (last 10 visits with vitals)
     import json
     from django.core.serializers.json import DjangoJSONEncoder
+    from apps.consultations.models import Consultation as _Consult
     _vs_qs = list(
         Visit.objects.filter(
             patient=patient, is_deleted=False
-        ).exclude(vital_signs={}).order_by('-visit_date')[:10]
-        .values('visit_date', 'visit_number', 'vital_signs')
+        ).order_by('-visit_date')[:10]
+        .values('visit_date', 'visit_number', 'vital_signs', 'pk')
     )
+    # Build IOP lookup from clinical consultation data (doctor-measured)
+    _visit_pks = [v['pk'] for v in _vs_qs]
+    _clinical_iop = {}
+    for c in _Consult.objects.filter(
+        visit_id__in=_visit_pks, is_deleted=False
+    ).values('visit_id', 'department_specific_data'):
+        dsd = c.get('department_specific_data') or {}
+        iop_re = dsd.get('iop_re') or dsd.get('iop_od')
+        iop_le = dsd.get('iop_le') or dsd.get('iop_os')
+        if iop_re or iop_le:
+            _clinical_iop[str(c['visit_id'])] = {
+                'iop_re': iop_re, 'iop_le': iop_le
+            }
+
     # Normalize: convert datetime → ISO date string so JS can parse it
-    vital_signs_history = [
-        {
-            'visit_date': v['visit_date'].date().isoformat() if v['visit_date'] else None,
-            'visit_number': v['visit_number'],
-            'vital_signs': v['vital_signs'] or {},
-        }
-        for v in _vs_qs
-    ]
+    vital_signs_history = []
+    for v in _vs_qs:
+        vs = v['vital_signs'] or {}
+        # Enrich triage vital_signs with clinical IOP if not already present
+        clin = _clinical_iop.get(str(v['pk']), {})
+        if clin.get('iop_re') and not vs.get('intraocular_pressure_right'):
+            vs = dict(vs, intraocular_pressure_right=clin['iop_re'])
+        if clin.get('iop_le') and not vs.get('intraocular_pressure_left'):
+            vs = dict(vs, intraocular_pressure_left=clin['iop_le'])
+        # Only include visits that have some clinical data
+        if vs:
+            vital_signs_history.append({
+                'visit_date': v['visit_date'].date().isoformat() if v['visit_date'] else None,
+                'visit_number': v['visit_number'],
+                'vital_signs': vs,
+            })
     vital_signs_history_json = json.dumps(vital_signs_history, cls=DjangoJSONEncoder)
 
     # ── Role-based permission flags for the template ─────────────────────
@@ -828,7 +851,15 @@ def triage_view(request, visit_number):
 
         form = VitalSignsForm(request.POST)
         dept_id        = request.POST.get('dispatch_department', '').strip()
-        direct_service = request.POST.get('dispatch_direct', '').strip()
+        _direct_raw    = request.POST.get('dispatch_direct', '').strip()
+        # Room number may be appended as "GENERAL|ROOM:2" by the JS room picker
+        _room_num = ''
+        if '|ROOM:' in _direct_raw:
+            _parts = _direct_raw.split('|ROOM:', 1)
+            direct_service = _parts[0]
+            _room_num = _parts[1].strip()
+        else:
+            direct_service = _direct_raw
         priority       = request.POST.get('priority', 'NORMAL')
 
         if form.is_valid():
@@ -838,6 +869,9 @@ def triage_view(request, visit_number):
             visit.status = 'TRIAGE'
             visit.triage_nurse = request.user
             nursing_notes = request.POST.get('nursing_notes', '').strip()
+            if _room_num:
+                room_note = f'[Dispatched to Room {_room_num}]'
+                nursing_notes = (room_note + '\n' + nursing_notes).strip() if nursing_notes else room_note
             if nursing_notes:
                 visit.nursing_notes = nursing_notes
             pre_auth = request.POST.get('pre_auth_status', '').strip()
@@ -845,14 +879,59 @@ def triage_view(request, visit_number):
                 visit.pre_auth_status = pre_auth
 
             dept = None
+            # Map service type → visit status (used for both dept and direct routes)
+            _SERVICE_TO_VISIT_STATUS = {
+                'GENERAL':    'WAITING',
+                'REFRACTION': 'REFRACTION',
+                'RETINA':     'AT_RETINA',
+                'GLAUCOMA':   'AT_GLAUCOMA',
+                'PEDIATRIC':  'AT_PEDIATRIC',
+                'CORNEA':     'AT_CORNEA',
+                'OCULOPLASTY':'AT_OCULOPLASTY',
+                'NEURO':      'NEURO',
+                'CATARACT':   'CATARACT',
+                'UVEITIS':    'UVEITIS',
+                'INVEST':     'INVESTIGATION',
+                'LAB':        'WAITING',
+                'PHARMACY':   'WAITING',
+                'CASHIER':    'WAITING',
+            }
+            _SERVICE_TO_DEPT_CODE = {
+                'REFRACTION':  'REFRAC',
+                'GENERAL':     'GEN_OPH',
+                'RETINA':      'RETINA',
+                'GLAUCOMA':    'GLAUC',
+                'PEDIATRIC':   'PEDS_OPH',
+                'CORNEA':      'CORNEA',
+                'OCULOPLASTY': 'OCULOPLASTY',
+                'NEURO':       'NEURO_OPH',
+                'CATARACT':    'CATARACT',
+                'UVEITIS':     'UVEITIS',
+                'INVEST':      'INVEST',
+                'LAB':         'LAB',
+                'PHARMACY':    'PHARMACY',
+            }
+
             # Dispatch: assign to the selected department
             if dept_id:
                 try:
                     dept = Department.objects.get(pk=dept_id)
                     visit.department = dept
-                    visit.status = 'WAITING'  # now in department queue
+                    # Derive appropriate visit status from dept code
+                    svc = {v: k for k, v in _SERVICE_TO_DEPT_CODE.items()}.get(dept.code)
+                    visit.status = _SERVICE_TO_VISIT_STATUS.get(svc, 'WAITING')
                 except Department.DoesNotExist:
                     pass
+
+            # If dispatched via direct service, resolve dept + status from service type
+            if not dept and direct_service:
+                dept_code = _SERVICE_TO_DEPT_CODE.get(direct_service)
+                if dept_code:
+                    resolved = Department.objects.filter(code=dept_code).first()
+                    if resolved:
+                        dept = resolved
+                        visit.department = dept
+                visit.status = _SERVICE_TO_VISIT_STATUS.get(direct_service, 'WAITING')
 
             # Store priority in vital_signs JSON for queue ordering
             if priority != 'NORMAL':
@@ -898,6 +977,7 @@ def triage_view(request, visit_number):
                     TIER_PRIORITY, TokenStatus,
                 )
                 from django.utils import timezone as _tz
+                from django.db import transaction as _tx
                 today = _tz.localdate()
                 entry_token = QueueToken.objects.filter(
                     patient=visit.patient,
@@ -915,38 +995,39 @@ def triage_view(request, visit_number):
                 elif priority == 'URGENT':
                     base_priority += 50
 
-                # Mark the patient's PARAMETERS / PARAMS_VIP token as SERVED
-                # so they no longer appear in the triage nurse's queue
-                QueueToken.objects.filter(
-                    patient=visit.patient,
-                    issued_at__date=today,
-                    service_type__in=['PARAMETERS', 'PARAMS_VIP'],
-                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                    is_deleted=False,
-                ).update(status=TokenStatus.COMPLETED)
-
-                token_number = DailyTokenSequence.next_dept_token(service_type)
                 dest_label = direct_service or (dept.name if dept else service_type)
-                QueueToken.objects.create(
-                    token_number=token_number,
-                    patient=visit.patient,
-                    visit=visit,
-                    patient_name=visit.patient.full_name if visit.patient else '',
-                    service_type=service_type,
-                    service_tier=visit.service_tier,
-                    issuance_point=IssuancePoint.SYSTEM,
-                    priority=base_priority,
-                    entry_token=entry_token,
-                    notes=f'Dispatched to {dest_label} by {request.user.get_full_name()}. Priority: {priority}',
-                    issued_by=request.user,
-                )
+                with _tx.atomic():
+                    # Mark the patient's PARAMETERS / PARAMS_VIP token as SERVED
+                    # so they no longer appear in the triage nurse's queue
+                    QueueToken.objects.filter(
+                        patient=visit.patient,
+                        issued_at__date=today,
+                        service_type__in=['PARAMETERS', 'PARAMS_VIP'],
+                        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                        is_deleted=False,
+                    ).update(status=TokenStatus.COMPLETED)
 
-            dept_name = dept.name if dept else 'department'
+                    token_number = DailyTokenSequence.next_dept_token(service_type)
+                    QueueToken.objects.create(
+                        token_number=token_number,
+                        patient=visit.patient,
+                        visit=visit,
+                        patient_name=visit.patient.full_name if visit.patient else '',
+                        service_type=service_type,
+                        service_tier=visit.service_tier,
+                        issuance_point=IssuancePoint.SYSTEM,
+                        priority=base_priority,
+                        entry_token=entry_token,
+                        notes=f'Dispatched to {dest_label}{(" → Room " + _room_num) if _room_num else ""} by {request.user.get_full_name()}. Priority: {priority}',
+                        issued_by=request.user,
+                    )
+
+            dept_name = dept.name if dept else (direct_service or 'department')
             messages.success(
                 request,
-                f'Vitals recorded. {visit.patient.full_name} dispatched to {dept_name}.'
+                f'✓ {visit.patient.full_name} — vitals saved & dispatched to {dept_name}.'
             )
-            return redirect('opd:dashboard')
+            return redirect('consultations:triage_workstation')
     else:
         form = VitalSignsForm(initial=visit.vital_signs)
 
