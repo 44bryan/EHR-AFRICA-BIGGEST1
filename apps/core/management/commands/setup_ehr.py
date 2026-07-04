@@ -404,10 +404,21 @@ class Command(BaseCommand):
             ('Vitreous Tap Culture', 'VIT-CX', LabTestCategory.OCULAR),
         ]
         for name, code, category in tests:
-            LabTestType.objects.get_or_create(code=code, defaults={
-                'name': name,
-                'category': category,
-            })
+            try:
+                LabTestType.objects.update_or_create(
+                    code=code,
+                    defaults={'name': name, 'category': category},
+                )
+            except Exception:
+                # Name uniqueness conflict — another record has this name with a different code.
+                # Update the conflicting record to use our canonical code instead.
+                try:
+                    existing = LabTestType.objects.get(name=name)
+                    existing.code = code
+                    existing.category = category
+                    existing.save(update_fields=['code', 'category'])
+                except Exception:
+                    pass
 
     def _create_superuser(self):
         from apps.accounts.models import User, UserRole
