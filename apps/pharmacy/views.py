@@ -595,6 +595,13 @@ def complete_dispensing(request, dispensing_id):
     dispensing.amount_paid = amount
     dispensing.save(update_fields=['status', 'amount_paid'])
 
+    # Step 3b: Mark the linked prescription as dispensed so it leaves the pending queue
+    if dispensing.prescription and not dispensing.prescription.is_dispensed:
+        dispensing.prescription.is_dispensed = True
+        dispensing.prescription.dispensed_by = request.user
+        dispensing.prescription.dispensed_at = timezone.now()
+        dispensing.prescription.save(update_fields=['is_dispensed', 'dispensed_by', 'dispensed_at'])
+
     # Step 4: Close the patient visit if still in PHARMACY status
     try:
         from apps.patients.models import Visit

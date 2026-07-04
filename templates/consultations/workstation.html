@@ -56,6 +56,37 @@
   </div>
 </div>
 
+{# ── Room Filter Bar ── #}
+{% if dept_rooms %}
+<div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+  <span class="text-muted small fw-semibold"><i class="bi bi-door-open me-1"></i>Room:</span>
+  <a href="?room_id=all"
+     class="btn btn-sm {% if not selected_room %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    All {{ dept.name }}
+  </a>
+  {% for room in dept_rooms %}
+  <a href="?room_id={{ room.id }}"
+     class="btn btn-sm {% if selected_room and selected_room.id == room.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    Room {{ room.room_number }}
+    {% if room.assigned_doctor %}
+      <span class="ms-1 text-muted" style="font-size:.75rem;">— Dr. {{ room.assigned_doctor.last_name }}</span>
+    {% endif %}
+    {% if my_assigned_room and my_assigned_room.id == room.id %}
+      <span class="badge bg-success ms-1" style="font-size:.65rem;">My Room</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% if selected_room %}
+<div class="alert alert-info py-2 small mb-3">
+  <i class="bi bi-door-open me-1"></i>
+  Showing patients dispatched to <strong>Room {{ selected_room.room_number }}</strong>
+  {% if selected_room.assigned_doctor %} — Dr. {{ selected_room.assigned_doctor.get_full_name }}{% endif %}.
+  <a href="?room_id=all" class="ms-2">Show all department</a>
+</div>
+{% endif %}
+{% endif %}
+
 <div class="row g-3">
 
   {# ── Left column: patient queue ── #}
@@ -64,7 +95,11 @@
       <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
         <h6 class="mb-0 fw-semibold">
           <i class="bi bi-people-fill me-2 text-warning"></i>Waiting Queue
-          {% if dept %}<span class="text-muted fw-normal small">&mdash; {{ dept.name }}</span>{% endif %}
+          {% if selected_room %}
+            <span class="text-muted fw-normal small">&mdash; Room {{ selected_room.room_number }}</span>
+          {% elif dept %}
+            <span class="text-muted fw-normal small">&mdash; {{ dept.name }}</span>
+          {% endif %}
         </h6>
         <span class="badge bg-warning text-dark">{% if qms_on %}{{ waiting_tokens|length }}{% else %}{{ waiting_visits|length }}{% endif %}</span>
       </div>
@@ -75,7 +110,7 @@
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0 small">
             <thead class="table-light">
-              <tr><th>Token</th><th>Patient</th><th>Type</th><th>Tier</th><th>Since</th><th>Status</th><th></th></tr>
+              <tr><th>Token</th><th>Patient</th><th>Type</th><th>Tier</th>{% if not selected_room %}<th>Room</th>{% endif %}<th>Since</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
               {% for tok in waiting_tokens %}
@@ -93,6 +128,17 @@
                   {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
                   {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
                 </td>
+                {% if not selected_room %}
+                <td>
+                  {% if tok.ws_visit and tok.ws_visit.consultation_room %}
+                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle">
+                      Room {{ tok.ws_visit.consultation_room.room_number }}
+                    </span>
+                  {% else %}
+                    <span class="text-muted small">—</span>
+                  {% endif %}
+                </td>
+                {% endif %}
                 <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
                 <td>
                   {% if tok.status == 'WAITING' %}<span class="badge bg-warning text-dark">Waiting</span>

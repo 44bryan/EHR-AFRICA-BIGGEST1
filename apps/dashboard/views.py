@@ -354,7 +354,11 @@ def home_view(request):
         last_30    = today - timedelta(days=30)
 
         # ── TODAY: live patient flow ──────────────────────────────────────
-        today_visits_qs = Visit.objects.filter(visit_date__date=today, is_deleted=False)
+        # Exclude phantom visits: REGISTERED with no triage nurse and empty vitals
+        # (created by old bug when browsing a patient record; never actually processed)
+        today_visits_qs = Visit.objects.filter(visit_date__date=today, is_deleted=False).exclude(
+            status='REGISTERED', triage_nurse__isnull=True, vital_signs={}
+        )
         today_visits        = today_visits_qs.count()
         currently_inhouse   = today_visits_qs.filter(
             status__in=['WAITING', 'TRIAGE', 'IN_CONSULTATION', 'INVESTIGATION']
@@ -607,11 +611,14 @@ def home_view(request):
         ).count()
 
         # Full today's patient flow (all statuses) for the queue overview
+        # Exclude phantom visits (REGISTERED, no triage nurse, empty vitals)
         all_today = Visit.objects.select_related(
             'patient', 'department', 'attending_doctor'
         ).filter(
             visit_date__date=today,
             is_deleted=False,
+        ).exclude(
+            status='REGISTERED', triage_nurse__isnull=True, vital_signs={}
         ).order_by('visit_date')
 
         completed_today = all_today.filter(status=VisitStatus.COMPLETED).count()

@@ -134,6 +134,34 @@ class Patient(AuditModel):
         """True if patient has a valid consultation within the 15-day window."""
         return self.active_consultation_visit is not None
 
+    @property
+    def is_free_followup(self):
+        """
+        True if patient is within the 15-day consultation window.
+        < 15 days since last payment → FREE, skip cashier, go directly to clinic.
+        ≥ 15 days → expired, must pay again.
+        """
+        return self.has_active_consultation
+
+    @property
+    def consultation_visit_label(self):
+        """
+        Returns a human-readable label for the gatekeeper.
+        e.g. 'FREE FOLLOW-UP (5 days ago — 10 days remaining)'
+        """
+        from datetime import date
+        from apps.accounts.models import HospitalConfig
+        active = self.active_consultation_visit
+        if not active or not active.consultation_valid_until:
+            return 'EXPIRED / NEW PATIENT'
+        config = HospitalConfig.get()
+        days_remaining = (active.consultation_valid_until - date.today()).days
+        days_ago = config.consultation_days - days_remaining
+        return (
+            f'FREE FOLLOW-UP ({days_ago} day{"s" if days_ago != 1 else ""} ago'
+            f' — {days_remaining} day{"s" if days_remaining != 1 else ""} remaining)'
+        )
+
 
 class NextOfKin(TimeStampedModel):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='next_of_kin')
@@ -349,6 +377,16 @@ class Visit(AuditModel):
         max_length=100, blank=True,
         help_text='Insurance authorisation / policy reference number'
     )
+    # Room the patient was dispatched to at triage (set by nurse, filters doctor's queue)
+    consultation_room = models.ForeignKey(
+        'departments.ConsultationRoom',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='visits',
+        help_text='Consultation room the triage nurse sent this patient to',
+    )
+
     discharge_date = models.DateTimeField(null=True, blank=True)
     discharge_notes = models.TextField(blank=True)
 
@@ -385,6 +423,29 @@ class Visit(AuditModel):
         null=True,
         blank=True,
         related_name='visit',
+    )
+
+    # Insurance pre-authorisation status (checked at triage for insured patients)
+    PRE_AUTH_NOT_REQUIRED = 'NOT_REQUIRED'
+    PRE_AUTH_PENDING      = 'PENDING'
+    PRE_AUTH_OBTAINED     = 'OBTAINED'
+    PRE_AUTH_DENIED       = 'DENIED'
+    PRE_AUTH_STATUS_CHOICES = [
+        (PRE_AUTH_NOT_REQUIRED, 'Not Required'),
+        (PRE_AUTH_PENDING,      'Pending'),
+        (PRE_AUTH_OBTAINED,     'Obtained'),
+        (PRE_AUTH_DENIED,       'Denied / Rejected'),
+    ]
+    pre_auth_status = models.CharField(
+        max_length=20, choices=PRE_AUTH_STATUS_CHOICES,
+        default=PRE_AUTH_NOT_REQUIRED, blank=True,
+        help_text='Insurance pre-authorisation status for this visit'
+    )
+
+    # Nursing notes recorded during triage
+    nursing_notes = models.TextField(
+        blank=True,
+        help_text='Clinical observations and nursing assessment notes recorded at triage'
     )
 
     class Meta:
@@ -451,11 +512,29 @@ class Visit(AuditModel):
 
 class PreRegistration(models.Model):
     """
-    Stores patient pre-registration data in the database so any
-    receptionist can look it up by code — session-independent.
+    Stores patient pre-registration data submitted online BEFORE arrival.
+    NOT a full patient record — only becomes an EHR record after gatekeeper
+    confirms physical arrival and receptionist completes registration.
     """
+
+    class Status(models.TextChoices):
+        PENDING    = 'PENDING',    'Pending Arrival'
+        ARRIVED    = 'ARRIVED',    'Arrived — Awaiting Registration'
+        REGISTERED = 'REGISTERED', 'Registered'
+        NO_SHOW    = 'NO_SHOW',    'Did Not Show'
+        EXPIRED    = 'EXPIRED',    'Expired'
+
     code        = models.CharField(max_length=20, unique=True, db_index=True)
     data        = models.JSONField()
+    visit_date  = models.DateField(null=True, blank=True, db_index=True,
+                                   help_text='Date the patient intends to visit')
+    status      = models.CharField(max_length=15, choices=Status.choices,
+                                   default=Status.PENDING, db_index=True)
+    arrived_at  = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='confirmed_arrivals',
+    )
     created_at  = models.DateTimeField(auto_now_add=True)
     expires_at  = models.DateTimeField()
     is_used     = models.BooleanField(default=False)
@@ -464,9 +543,288 @@ class PreRegistration(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f'PreReg {self.code}'
+        return f'PreReg {self.code} [{self.status}]'
 
     @property
     def is_expired(self):
         from django.utils import timezone
         return timezone.now() > self.expires_at
+
+    def mark_arrived(self, confirmed_by_user):
+        from django.utils import timezone
+        self.status = self.Status.ARRIVED
+        self.arrived_at = timezone.now()
+        self.confirmed_by = confirmed_by_user
+        self.save(update_fields=['status', 'arrived_at', 'confirmed_by'])
+
+
+class PatientMedication(TimeStampedModel):
+    """
+    Chronic / long-term medications a patient is currently taking.
+    Used for medication reconciliation at every consultation.
+    """
+    patient = models.ForeignKey(
+        Patient, on_delete=models.CASCADE, related_name='medications'
+    )
+    drug_name = models.CharField(max_length=200, help_text='Generic or brand name of the drug')
+    dose = models.CharField(max_length=100, blank=True, help_text='e.g. 500mg, 2 drops')
+    frequency = models.CharField(max_length=100, blank=True, help_text='e.g. Once daily, BD, TDS')
+    route = models.CharField(max_length=50, blank=True, help_text='e.g. Oral, Topical, IV')
+    indication = models.CharField(max_length=200, blank=True, help_text='Condition this drug is for')
+    start_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, help_text='Is the patient currently on this medication?')
+    prescribed_by = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='prescribed_medications',
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['drug_name']
+        verbose_name = 'Patient Medication'
+        verbose_name_plural = 'Patient Medications'
+
+    def __str__(self):
+        return f"{self.drug_name} — {self.patient.full_name}"
+
+
+class PatientAllergy(TimeStampedModel):
+    """
+    Known drug and substance allergies for a patient.
+    Shown as a red warning banner during drug prescribing.
+    """
+
+    class Severity(models.TextChoices):
+        MILD = 'MILD', _('Mild')
+        MODERATE = 'MODERATE', _('Moderate')
+        SEVERE = 'SEVERE', _('Severe')
+        ANAPHYLAXIS = 'ANAPHYLAXIS', _('Anaphylaxis')
+
+    class AllergyType(models.TextChoices):
+        DRUG = 'DRUG', _('Drug / Medication')
+        FOOD = 'FOOD', _('Food')
+        ENVIRONMENTAL = 'ENV', _('Environmental')
+        LATEX = 'LATEX', _('Latex')
+        OTHER = 'OTHER', _('Other')
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='allergies')
+    allergen = models.CharField(max_length=200, help_text='Name of the drug or substance')
+    allergy_type = models.CharField(
+        max_length=10, choices=AllergyType.choices, default=AllergyType.DRUG
+    )
+    severity = models.CharField(
+        max_length=15, choices=Severity.choices, default=Severity.MODERATE
+    )
+    reaction = models.CharField(
+        max_length=200, blank=True,
+        help_text='Nature of the reaction, e.g. rash, angioedema, bronchospasm'
+    )
+    date_noted = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    recorded_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='recorded_allergies'
+    )
+
+    class Meta:
+        ordering = ['severity', 'allergen']
+        verbose_name = 'Patient Allergy'
+        verbose_name_plural = 'Patient Allergies'
+
+    def __str__(self):
+        return f"{self.allergen} ({self.get_severity_display()}) — {self.patient.full_name}"
+
+
+class ProblemStatus(models.TextChoices):
+    ACTIVE    = 'active',    _('Active')
+    RESOLVED  = 'resolved',  _('Resolved')
+    CHRONIC   = 'chronic',   _('Chronic / Ongoing')
+    MONITORED = 'monitored', _('Under Monitoring')
+
+
+class PatientProblem(TimeStampedModel):
+    """
+    Persistent problem list entry for a patient.
+    Survives across consultations — active problems are always visible.
+    """
+    patient = models.ForeignKey(
+        Patient, on_delete=models.CASCADE, related_name='problems'
+    )
+    problem = models.CharField(max_length=200, help_text='Brief problem description')
+    icd10_code = models.CharField(
+        max_length=10, blank=True,
+        help_text='ICD-10 code if known, e.g. H40.1'
+    )
+    status = models.CharField(
+        max_length=15, choices=ProblemStatus.choices, default=ProblemStatus.ACTIVE
+    )
+    onset_date = models.DateField(null=True, blank=True)
+    resolved_date = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    recorded_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='recorded_problems'
+    )
+
+    class Meta:
+        ordering = ['status', '-created_at']
+        verbose_name = 'Patient Problem'
+        verbose_name_plural = 'Patient Problems'
+
+    def __str__(self):
+        return f"{self.problem} ({self.get_status_display()}) — {self.patient.full_name}"
+
+    @property
+    def status_badge_class(self):
+        return {
+            ProblemStatus.ACTIVE:    'bg-danger',
+            ProblemStatus.CHRONIC:   'bg-warning text-dark',
+            ProblemStatus.MONITORED: 'bg-info text-dark',
+            ProblemStatus.RESOLVED:  'bg-success',
+        }.get(self.status, 'bg-secondary')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INFORMED CONSENT — JCI PFR.5 requirement
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ConsentType(models.TextChoices):
+    SURGICAL       = 'SURGICAL',       _('Surgical / Operative Consent')
+    ANAESTHESIA    = 'ANAESTHESIA',    _('Anaesthesia Consent')
+    INTRAVITREAL   = 'INTRAVITREAL',   _('Intravitreal Injection Consent')
+    LASER          = 'LASER',          _('Laser Treatment Consent')
+    PHOTOGRAPHY    = 'PHOTOGRAPHY',    _('Photography / Teaching Consent')
+    DATA_RESEARCH  = 'DATA_RESEARCH',  _('Data Sharing / Research Consent')
+    GENERAL        = 'GENERAL',        _('General Treatment Consent')
+    PROCEDURE      = 'PROCEDURE',      _('Minor Procedure Consent')
+
+
+class PatientConsent(AuditModel):
+    """
+    Informed consent record — JCI PFR.5.
+    One record per consent event (surgery, anaesthesia, laser, etc.).
+    """
+    patient = models.ForeignKey(
+        Patient, on_delete=models.CASCADE, related_name='consents'
+    )
+    consent_type = models.CharField(
+        max_length=20, choices=ConsentType.choices, default=ConsentType.GENERAL
+    )
+    procedure_name = models.CharField(
+        max_length=200,
+        help_text='Specific procedure or treatment being consented to'
+    )
+    # Link to clinical context (optional but recommended)
+    consultation = models.ForeignKey(
+        'consultations.Consultation', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='consents'
+    )
+    # Who obtained the consent
+    obtained_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True,
+        related_name='consents_obtained',
+        help_text='Doctor or nurse who obtained the consent'
+    )
+    signed_at = models.DateTimeField(
+        default=None, null=True, blank=True,
+        help_text='Date and time patient / guardian signed consent'
+    )
+
+    # Patient capacity and understanding
+    patient_has_capacity = models.BooleanField(
+        default=True,
+        help_text='Patient has mental capacity to consent'
+    )
+    patient_representative = models.CharField(
+        max_length=200, blank=True,
+        help_text='Name of guardian/representative if patient lacks capacity'
+    )
+    relationship_to_patient = models.CharField(
+        max_length=100, blank=True,
+        help_text='e.g. Spouse, Parent, Legal Guardian'
+    )
+
+    # Content of consent discussion
+    risks_explained = models.TextField(
+        help_text='Risks of the procedure explained to patient'
+    )
+    benefits_explained = models.TextField(
+        blank=True, help_text='Expected benefits explained'
+    )
+    alternatives_explained = models.TextField(
+        blank=True, help_text='Alternative treatment options discussed'
+    )
+    questions_answered = models.BooleanField(
+        default=False,
+        help_text='Patient questions were answered satisfactorily'
+    )
+    interpreter_used = models.BooleanField(
+        default=False,
+        help_text='Interpreter was used during consent discussion'
+    )
+    interpreter_name = models.CharField(max_length=200, blank=True)
+
+    # Witness
+    witness_name = models.CharField(
+        max_length=200, blank=True,
+        help_text='Name of witness to the consent signing'
+    )
+
+    # Consent document scan (optional)
+    consent_document = models.FileField(
+        upload_to='consents/%Y/%m/', null=True, blank=True,
+        help_text='Scanned signed consent form (PDF or image)'
+    )
+
+    # Validity
+    is_valid = models.BooleanField(
+        default=True,
+        help_text='Set to False if consent was revoked or is no longer valid'
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revocation_reason = models.TextField(blank=True)
+
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-signed_at', '-created_at']
+        verbose_name = 'Patient Consent'
+        verbose_name_plural = 'Patient Consents'
+
+    def __str__(self):
+        return (f"{self.get_consent_type_display()} — {self.patient.full_name} "
+                f"({self.signed_at.strftime('%d/%m/%Y') if self.signed_at else 'Pending'})")
+
+    def revoke(self, reason=''):
+        from django.utils import timezone
+        self.is_valid = False
+        self.revoked_at = timezone.now()
+        self.revocation_reason = reason
+        self.save(update_fields=['is_valid', 'revoked_at', 'revocation_reason'])
+
+    @property
+    def status_label(self):
+        if not self.signed_at:
+            return 'Pending'
+        if not self.is_valid:
+            return 'Revoked'
+        return 'Valid'
+
+    @property
+    def status_badge(self):
+        if not self.signed_at:
+            return 'bg-warning text-dark'
+        if not self.is_valid:
+            return 'bg-danger'
+        return 'bg-success'
+
+    @property
+    def severity_badge_class(self):
+        return {
+            'MILD': 'bg-warning text-dark',
+            'MODERATE': 'bg-orange text-white',
+            'SEVERE': 'bg-danger',
+            'ANAPHYLAXIS': 'bg-danger',
+        }.get(self.severity, 'bg-secondary')

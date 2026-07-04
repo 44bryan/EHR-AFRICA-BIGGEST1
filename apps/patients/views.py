@@ -940,8 +940,17 @@ def triage_view(request, visit_number):
                 vitals['priority'] = priority
                 visit.vital_signs = vitals
 
+            # Resolve and save consultation room (triage nurse selected room via JS picker)
+            if _room_num and dept:
+                from apps.departments.models import ConsultationRoom
+                room_obj = ConsultationRoom.objects.filter(
+                    department=dept, room_number=_room_num, is_active=True
+                ).first()
+                if room_obj:
+                    visit.consultation_room = room_obj
+
             visit.save(update_fields=['vital_signs', 'status', 'triage_nurse', 'department',
-                                      'nursing_notes', 'pre_auth_status', 'updated_at'])
+                                      'nursing_notes', 'pre_auth_status', 'consultation_room', 'updated_at'])
 
             # ── QMS Integration: flexible routing ─────────────────────────────
             # Priority 1: nurse picked a direct service (REFRACTION, LAB, etc.)

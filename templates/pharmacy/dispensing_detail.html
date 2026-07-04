@@ -928,15 +928,24 @@ function validatePayment() {
   return confirm('Confirm: collect payment and dispense drugs to patient?');
 }
 
-// ── Strip concentration/% from drug name for search ───────────────────────
-// Prescription names may include "Timolol 0.5%" or "Prednisolone 1%" —
-// the formulary stores just the base name. Strip concentration for search.
-function drugSearchName(name) {
-  return name
-    .replace(/\s*\d+(\.\d+)?\s*%/g, '')        // "0.5%", "1%"
-    .replace(/\s*\d+(\.\d+)?\s*(mg|ml|mcg|g|iu|unit)\b/gi, '') // "5mg", "0.5ml"
-    .replace(/\s+/g, ' ')
-    .trim();
+// ── Strip concentration + build progressive search candidates ─────────────
+// Handles: "Timolol 0.5%", "BSS 500ml Isotonic", "Pred 1% Ophthalmic Drops"
+// Returns array of candidates from most specific to least specific.
+function drugSearchCandidates(name) {
+  let stripped = name
+    .replace(/\s*\d+(\.\d+)?\s*%/g, '')         // "0.5%", "1%"
+    .replace(/\s*\d+(\.\d+)?\s*(mg|ml|mcg|g|iu|unit|drops?|tab|cap|susp)\b/gi, '') // "500ml", "5mg"
+    .replace(/\s+/g, ' ').trim();
+  const candidates = [stripped];
+  // Also try progressively shorter (remove trailing descriptor words like "Isotonic", "Ophthalmic")
+  const words = stripped.split(' ');
+  for (let i = words.length - 1; i >= 2; i--) {
+    const shorter = words.slice(0, i).join(' ');
+    if (!candidates.includes(shorter)) candidates.push(shorter);
+  }
+  // Final fallback: original raw name
+  if (!candidates.includes(name)) candidates.push(name);
+  return candidates;
 }
 
 // ── Wire individual "Fill" buttons from prescription table ─────────────────
@@ -945,15 +954,14 @@ document.querySelectorAll('.rx-quick-add').forEach(function(btn) {
     const rawName = btn.dataset.name;
     const qty     = btn.dataset.qty || 1;
     const instr   = btn.dataset.instr || '';
-    const searchQ = drugSearchName(rawName);
 
     btn.disabled = true;
     btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>';
 
     try {
-      // Try stripped name first, then full name as fallback
+      // Try each candidate (stripped → progressively shorter → original)
       let drug = null;
-      for (const q of [searchQ, rawName]) {
+      for (const q of drugSearchCandidates(rawName)) {
         const r = await fetch(SEARCH_URL + '?q=' + encodeURIComponent(q));
         const data = await r.json();
         if (data.drugs && data.drugs.length > 0) { drug = data.drugs[0]; break; }
@@ -1003,10 +1011,9 @@ if (fillAllBtn) {
       const rawName = btn.dataset.name;
       const qty     = btn.dataset.qty || 1;
       const instr   = btn.dataset.instr || '';
-      const searchQ = drugSearchName(rawName);
       try {
         let drug = null;
-        for (const q of [searchQ, rawName]) {
+        for (const q of drugSearchCandidates(rawName)) {
           const r = await fetch(SEARCH_URL + '?q=' + encodeURIComponent(q));
           const data = await r.json();
           if (data.drugs && data.drugs.length > 0) { drug = data.drugs[0]; break; }

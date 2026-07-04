@@ -946,12 +946,61 @@ def workstation_view(request):
                 is_deleted=False,
             ).exclude(
                 status__in=[VisitStatus.COMPLETED, VisitStatus.DISCHARGED]
-            ).order_by('-visit_date')
+            ).select_related('consultation_room').order_by('-visit_date')
         }
         for token in waiting_tokens:
             _v = active_visits.get(token.patient_id) if token.patient_id else None
             token.ws_visit = _v
             token.ws_visit_type = getattr(_v, 'visit_type', None)
+
+    # ── Room filtering ────────────────────────────────────────────────────
+    # Doctor can filter to their room only, or view all dept patients
+    dept_rooms = []
+    my_assigned_room = None
+    selected_room = None
+
+    if dept:
+        from apps.departments.models import ConsultationRoom
+        dept_rooms = list(
+            ConsultationRoom.objects.filter(
+                department=dept, is_active=True
+            ).select_related('assigned_doctor').order_by('room_number')
+        )
+        # Room the doctor is currently assigned to today
+        my_assigned_room = next((r for r in dept_rooms if r.assigned_doctor_id == user.pk), None)
+
+    # URL param: ?room_id=<id> or ?room_id=all (show all dept patients)
+    room_id_param = request.GET.get('room_id', '').strip()
+    if room_id_param == 'all':
+        selected_room = None  # Show all
+    elif room_id_param:
+        try:
+            selected_room = next((r for r in dept_rooms if str(r.id) == room_id_param), None)
+        except Exception:
+            selected_room = None
+    else:
+        # Default: doctor's assigned room (if any), otherwise all
+        selected_room = my_assigned_room
+
+    # Apply room filter to queue
+    if selected_room:
+        if _qms_active():
+            waiting_tokens = [
+                t for t in waiting_tokens
+                if getattr(getattr(t, 'ws_visit', None), 'consultation_room_id', None) == selected_room.id
+            ]
+        else:
+            waiting_visits = [
+                v for v in waiting_visits
+                if getattr(v, 'consultation_room_id', None) == selected_room.id
+            ]
+        # Recompute stats after filter
+        if _qms_active():
+            waiting_count = sum(1 for t in waiting_tokens if t.status == 'WAITING')
+            in_progress_count = sum(1 for t in waiting_tokens if t.status in ('CALLED', 'SERVING'))
+        else:
+            waiting_count = sum(1 for v in waiting_visits if v.status not in ('IN_CONSULTATION',))
+            in_progress_count = sum(1 for v in waiting_visits if v.status == 'IN_CONSULTATION')
 
     service_type_choices = []
     if _qms_active():
@@ -1023,6 +1072,9 @@ def workstation_view(request):
         'qms_on': _qms_active(),
         'investigation_orders_today': investigation_orders_today,
         'lab_orders_today': lab_orders_today,
+        'dept_rooms': dept_rooms,
+        'my_assigned_room': my_assigned_room,
+        'selected_room': selected_room,
     })
 
 
