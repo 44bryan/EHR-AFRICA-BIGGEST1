@@ -158,9 +158,10 @@
       </a>
       {% endif %}
       {% if request.user.can_use_ai_assistant %}
-      <a href="{% url 'ai_assistant:patient_risk' patient_id=patient.patient_id %}" class="btn btn-sm" style="background:rgba(139,92,246,.25);color:#e9d5ff;border:1px solid rgba(139,92,246,.4);">
-        <i class="bi bi-robot me-1"></i>AI Analysis
-      </a>
+      <button type="button" class="btn btn-sm" style="background:rgba(139,92,246,.25);color:#e9d5ff;border:1px solid rgba(139,92,246,.4);"
+              onclick="loadAIRisk(); setTimeout(function(){ var el=document.getElementById('aiRiskContent'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }, 300);">
+        <i class="bi bi-robot me-1"></i>AI Assist
+      </button>
       {% endif %}
     </div>
   </div>
@@ -629,11 +630,19 @@
         {# ── Longitudinal Vital Signs History ── #}
         {% if vital_signs_history %}
         <div class="card border-0 shadow-sm mt-4">
-          <div class="card-header bg-info bg-opacity-10 border-bottom py-2 d-flex justify-content-between align-items-center">
+          <div class="card-header bg-info bg-opacity-10 border-bottom py-2 d-flex flex-wrap gap-2 align-items-center justify-content-between">
             <h6 class="mb-0 small fw-bold text-uppercase"><i class="bi bi-activity me-1 text-info"></i>Vital Signs History</h6>
-            <div class="btn-group btn-group-sm" role="group">
-              <button type="button" class="btn btn-outline-secondary active" onclick="switchVitalsView('table',this)">Table</button>
-              <button type="button" class="btn btn-outline-secondary" onclick="switchVitalsView('chart',this)">Chart</button>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <select id="vitalsMetricSelect" class="form-select form-select-sm" style="width:auto;font-size:0.8rem;" onchange="vitalsUpdateChart()">
+                <option value="iop">IOP (mmHg)</option>
+                <option value="va">Visual Acuity</option>
+                <option value="bp">Blood Pressure (systolic)</option>
+                <option value="weight">Weight (kg)</option>
+              </select>
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-secondary active" onclick="switchVitalsView('table',this)">Table</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="switchVitalsView('chart',this)">Chart</button>
+              </div>
             </div>
           </div>
           <div id="vitalsTableView">
@@ -644,8 +653,8 @@
                   <th>Date</th>
                   <th>VA Right</th>
                   <th>VA Left</th>
-                  <th>IOP Right</th>
-                  <th>IOP Left</th>
+                  <th>IOP Right (mmHg)</th>
+                  <th>IOP Left (mmHg)</th>
                   <th>BP</th>
                   <th>Weight</th>
                 </tr>
@@ -667,62 +676,134 @@
           </div>
           </div>
           <div id="vitalsChartView" class="d-none p-3">
-            <canvas id="iopTrendChart" height="120"></canvas>
+            <canvas id="vitalsLineChart" height="130"></canvas>
           </div>
         </div>
 
         <script>
         (function() {
           var raw = {{ vital_signs_history_json }};
-          // Build datasets from oldest → newest
-          var sorted = raw.slice().reverse();
-          var labels = sorted.map(function(v){ return new Date(v.visit_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); });
-          var iopR = sorted.map(function(v){ var x=parseFloat(v.vital_signs.intraocular_pressure_right); return isNaN(x)?null:x; });
-          var iopL = sorted.map(function(v){ var x=parseFloat(v.vital_signs.intraocular_pressure_left); return isNaN(x)?null:x; });
+          var sorted = raw.slice().reverse();  // oldest → newest
+          var labels = sorted.map(function(v){
+            return new Date(v.visit_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'});
+          });
+
+          // VA text → numeric (10/10 scale)
+          function vaToNum(str) {
+            if (!str) return null;
+            var m = str.match(/^(\d+)\/10/);
+            if (m) return parseFloat(m[1]);
+            var lc = str.toLowerCase();
+            if (lc.indexOf('cdm') !== -1 || lc.indexOf('count') !== -1) return 0.4;
+            if (lc.indexOf('vblm') !== -1 || lc.indexOf('hand') !== -1) return 0.3;
+            if (lc === 'pl+' || lc.indexOf('pl +') !== -1) return 0.2;
+            if (lc === 'pl-' || lc.indexOf('pl -') !== -1) return 0.1;
+            return null;
+          }
+
+          // BP systolic extractor "120/80" → 120
+          function bpSys(str) {
+            if (!str) return null;
+            var m = str.match(/^(\d+)/);
+            return m ? parseFloat(m[1]) : null;
+          }
+
+          var datasets = {
+            iop: {
+              sets: [
+                { label:'IOP Right (mmHg)', data: sorted.map(function(v){ var x=parseFloat(v.vital_signs.intraocular_pressure_right); return isNaN(x)?null:x; }), borderColor:'#0891b2', backgroundColor:'rgba(8,145,178,.12)' },
+                { label:'IOP Left (mmHg)',  data: sorted.map(function(v){ var x=parseFloat(v.vital_signs.intraocular_pressure_left);  return isNaN(x)?null:x; }), borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.12)' }
+              ],
+              yTitle: 'IOP (mmHg)', yMin: 5, yMax: 35
+            },
+            va: {
+              sets: [
+                { label:'VA Right', data: sorted.map(function(v){ return vaToNum(v.vital_signs.visual_acuity_right); }),  borderColor:'#10b981', backgroundColor:'rgba(16,185,129,.12)' },
+                { label:'VA Left',  data: sorted.map(function(v){ return vaToNum(v.vital_signs.visual_acuity_left); }),   borderColor:'#6366f1', backgroundColor:'rgba(99,102,241,.12)' }
+              ],
+              yTitle: 'Visual Acuity (10/10 scale)', yMin: 0, yMax: 10
+            },
+            bp: {
+              sets: [
+                { label:'Systolic BP (mmHg)', data: sorted.map(function(v){ return bpSys(v.vital_signs.blood_pressure); }), borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,.12)' }
+              ],
+              yTitle: 'Systolic BP (mmHg)', yMin: 60, yMax: 200
+            },
+            weight: {
+              sets: [
+                { label:'Weight (kg)', data: sorted.map(function(v){ var x=parseFloat(v.vital_signs.weight); return isNaN(x)?null:x; }), borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,.12)' }
+              ],
+              yTitle: 'Weight (kg)', yMin: 0, yMax: null
+            }
+          };
 
           var chartInstance = null;
 
+          window.vitalsUpdateChart = function() {
+            var metric = document.getElementById('vitalsMetricSelect').value;
+            var cfg = datasets[metric];
+            if (!chartInstance) return;
+            var hasData = cfg.sets.some(function(s){ return s.data.some(function(x){ return x !== null; }); });
+            if (!hasData) {
+              chartInstance.data.labels = labels;
+              chartInstance.data.datasets = [];
+              chartInstance.update();
+              document.getElementById('vitalsChartView').querySelector('.vitals-no-data') && (document.getElementById('vitalsChartView').querySelector('.vitals-no-data').style.display = 'block');
+              return;
+            }
+            chartInstance.data.labels = labels;
+            chartInstance.data.datasets = cfg.sets.map(function(s){
+              return { label:s.label, data:s.data, borderColor:s.borderColor, backgroundColor:s.backgroundColor,
+                       tension:0.3, spanGaps:true, pointRadius:4, pointHoverRadius:6, fill:true, borderWidth:2 };
+            });
+            chartInstance.options.scales.y.title.text = cfg.yTitle;
+            if (cfg.yMin !== null) chartInstance.options.scales.y.suggestedMin = cfg.yMin;
+            if (cfg.yMax !== null) chartInstance.options.scales.y.suggestedMax = cfg.yMax;
+            chartInstance.update();
+          };
+
           window.switchVitalsView = function(view, btn) {
-            // Scope only to the vitals toggle btn-group
             btn.closest('.btn-group').querySelectorAll('.btn').forEach(function(b){ b.classList.remove('active'); });
             btn.classList.add('active');
+            var tableEl = document.getElementById('vitalsTableView');
+            var chartEl = document.getElementById('vitalsChartView');
             if (view === 'chart') {
-              document.getElementById('vitalsTableView').classList.add('d-none');
-              document.getElementById('vitalsChartView').classList.remove('d-none');
+              tableEl.classList.add('d-none');
+              chartEl.classList.remove('d-none');
               if (!chartInstance) {
-                var hasIopData = iopR.some(function(x){ return x !== null; }) || iopL.some(function(x){ return x !== null; });
-                if (!hasIopData) {
-                  document.getElementById('vitalsChartView').innerHTML =
-                    '<div class="text-center text-muted py-4 small"><i class="bi bi-graph-up fs-2 d-block mb-2 opacity-25"></i>' +
-                    'No IOP readings available yet.<br>IOP is recorded during clinical examination by the doctor.</div>';
-                } else {
+                (function tryChart() {
+                  if (typeof Chart === 'undefined') { return setTimeout(tryChart, 80); }
                   try {
-                    var ctx = document.getElementById('iopTrendChart').getContext('2d');
+                    var metric = document.getElementById('vitalsMetricSelect').value;
+                    var cfg = datasets[metric];
+                    var ctx = document.getElementById('vitalsLineChart').getContext('2d');
                     chartInstance = new Chart(ctx, {
                       type: 'line',
                       data: {
                         labels: labels,
-                        datasets: [
-                          { label: 'IOP Right (mmHg)', data: iopR, borderColor: '#0891b2', backgroundColor: 'rgba(8,145,178,.1)', tension: 0.3, spanGaps: true },
-                          { label: 'IOP Left (mmHg)',  data: iopL, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.1)', tension: 0.3, spanGaps: true },
-                        ]
+                        datasets: cfg.sets.map(function(s){
+                          return { label:s.label, data:s.data, borderColor:s.borderColor,
+                                   backgroundColor:s.backgroundColor, tension:0.3, spanGaps:true,
+                                   pointRadius:4, pointHoverRadius:6, fill:true, borderWidth:2 };
+                        })
                       },
                       options: {
                         responsive: true,
-                        plugins: { legend: { position: 'top' } },
+                        interaction: { mode:'index', intersect:false },
+                        plugins: { legend: { position:'top' } },
                         scales: {
-                          y: { title: { display: true, text: 'IOP (mmHg)' }, suggestedMin: 5, suggestedMax: 30 }
+                          y: { title:{ display:true, text:cfg.yTitle }, suggestedMin:cfg.yMin||0, suggestedMax:cfg.yMax||undefined }
                         }
                       }
                     });
                   } catch(e) {
-                    document.getElementById('vitalsChartView').innerHTML = '<p class="text-muted small text-center py-3">Chart unavailable — ensure Chart.js is loaded.</p>';
+                    chartEl.innerHTML = '<p class="text-muted small text-center py-3">Chart unavailable.</p>';
                   }
-                }
+                })();
               }
             } else {
-              document.getElementById('vitalsTableView').classList.remove('d-none');
-              document.getElementById('vitalsChartView').classList.add('d-none');
+              tableEl.classList.remove('d-none');
+              chartEl.classList.add('d-none');
             }
           };
         })();

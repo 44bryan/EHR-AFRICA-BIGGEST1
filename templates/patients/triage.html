@@ -761,11 +761,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ── Quick vitals templates ────────────────────────────────────────────────────
 var templates = {
-  postop:    { va_r: '6/18', va_l: '6/6', iop_r: '16', iop_l: '14', note: 'Post-operative day 1 review.' },
+  postop:    { va_r: '7/10', va_l: '9/10', iop_r: '16', iop_l: '14', note: 'Post-operative day 1 review.' },
   glaucoma:  { note: 'Glaucoma follow-up — IOP monitoring.' },
   diabetic:  { note: 'Annual diabetic eye screening.' },
   pediatric: { note: 'Paediatric eye examination.' },
-  emergency: { va_r: 'HM', note: 'EMERGENCY — urgent review required.', priority: 'EMERGENCY' }
+  emergency: { va_r: 'VBLM — Hand Motion', note: 'EMERGENCY — urgent review required.', priority: 'EMERGENCY' }
 };
 
 function applyTemplate(key) {
@@ -809,20 +809,22 @@ function highlightPriority(val) {
 highlightPriority('NORMAL');
 
 // ── Abnormal vitals detection ─────────────────────────────────────────────────
+// VA uses Cameroon 10/10 scale. Severity 0=worst, 10=best.
 var VA_SEVERITY = {
-  'NPL': 0, 'PL': 1, 'HM': 2, 'CF': 3, 'CF 1M': 3, 'CF 2M': 3,
-  '6/60': 4, '3/60': 4, '1/60': 4, '6/36': 5, '6/24': 6,
-  '6/18': 7, '6/12': 8, '6/9': 9, '6/6': 10,
+  'PL-': 0, 'PL+': 1,
+  'VBLM — HAND MOTION': 2, 'HM': 2,
+  'CDM — COUNT FINGERS': 3, 'CF': 3,
+  '1/10': 1, '2/10': 2, '3/10': 3, '4/10': 4, '5/10': 5,
+  '6/10': 6, '7/10': 7, '8/10': 8, '9/10': 9, '10/10': 10,
 };
 
 function vaLevel(val) {
   if (!val) return null;
   const upper = val.trim().toUpperCase();
   if (upper in VA_SEVERITY) return VA_SEVERITY[upper];
-  if (/^6\/\d+$/.test(upper)) {
-    const d = parseInt(upper.split('/')[1]);
-    if (d > 60) return 2; if (d > 24) return 5; if (d > 12) return 7; return 9;
-  }
+  // Parse any N/10 pattern
+  const m = upper.match(/^(\d+)\/10$/);
+  if (m) return parseInt(m[1]);
   return null;
 }
 
