@@ -103,6 +103,7 @@ class ServiceType(models.TextChoices):
     EMERGENCY      = 'EMERGENCY',  'Emergency / Casualty Eye'
     CONTACT_LENS   = 'CONTACT_LENS', 'Contact Lens Clinic'
     LOW_VISION     = 'LOW_VISION', 'Low Vision & Rehabilitation'
+    GEN_PHYS       = 'GEN_PHYS',  'General Medicine / Internal Medicine'
 
 
 class TokenStatus(models.TextChoices):

@@ -907,7 +907,22 @@ def route_to_dept(request):
         )
         if issued_at_override:
             create_kwargs['issued_at'] = issued_at_override
-        dept_token = QueueToken.objects.create(**create_kwargs)
+
+        # Dedup: if patient already has an active token for this service today,
+        # reuse it instead of creating a duplicate (prevents stacking on retries).
+        _existing_token = None
+        if visit.patient:
+            _existing_token = QueueToken.objects.filter(
+                patient=visit.patient,
+                service_type=service_type,
+                issued_at__date=timezone.localdate(),
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                is_deleted=False,
+            ).first()
+        if _existing_token:
+            dept_token = _existing_token
+        else:
+            dept_token = QueueToken.objects.create(**create_kwargs)
 
         # Complete the calling user's existing active token so the patient
         # leaves the originating queue (e.g. REFRACTION token when PEDS_REFRAC
@@ -926,6 +941,7 @@ def route_to_dept(request):
             'neuro_ophthalmologist':     'NEURO',
             'uveitis_specialist':        'UVEITIS',
             'low_vision_specialist':     'LOW_VISION',
+            'general_physician':         'GEN_PHYS',
         }
         _user_svc = _ROLE_TO_QMS_SVC.get(getattr(request.user, 'role', ''))
         if _user_svc and _user_svc != service_type and visit.patient:
@@ -1182,6 +1198,7 @@ def doctor_queue(request):
         'low_vision_specialist':     'LOW_VISION',
         'intern':                    'GENERAL',
         'medical_director':          'GENERAL',
+        'general_physician':         'GEN_PHYS',
     }
     if user.role == 'ophthalmologist':
         # Use the assigned consultation_unit (EXP_CONSULT, VIP_CONSULT, etc.)

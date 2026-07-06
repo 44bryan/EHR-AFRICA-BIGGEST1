@@ -897,6 +897,7 @@ def triage_view(request, visit_number):
                 'LAB':        'WAITING',
                 'PHARMACY':   'WAITING',
                 'CASHIER':    'WAITING',
+                'GEN_PHYS':   'WAITING',
             }
             _SERVICE_TO_DEPT_CODE = {
                 'REFRACTION':  'REFRAC',
@@ -912,6 +913,7 @@ def triage_view(request, visit_number):
                 'INVEST':      'INVEST',
                 'LAB':         'LAB',
                 'PHARMACY':    'PHARMACY',
+                'GEN_PHYS':    'GEN_PHYS',
             }
 
             # Dispatch: assign to the selected department
