@@ -806,19 +806,27 @@
 
 <script>
 function runAIDiagnosis() {
+  var form = document.getElementById('consultationForm');
+  var fd = new FormData(form);
+  var cc = (fd.get('presenting_complaint') || '').trim();
+
   var panel = document.getElementById('aiDiagPanel');
   var content = document.getElementById('aiDiagContent');
   panel.classList.remove('d-none');
+
+  if (!cc) {
+    content.innerHTML = '<div class="alert alert-warning py-2 px-3 small mb-0"><i class="bi bi-exclamation-triangle me-1"></i>Please fill in the <strong>Chief Complaint</strong> in the History section before running AI Suggest Differentials.</div>';
+    return;
+  }
+
   content.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary" role="status"></div><span class="ms-2 small text-muted">Analysing findings with AI...</span></div>';
 
-  var form = document.getElementById('consultationForm');
-  var fd = new FormData(form);
   var examData = {};
   fd.forEach(function(v, k) {
     if (k.startsWith('dept_') && v) examData[k.slice(5)] = v;
   });
   var payload = {
-    chief_complaint: fd.get('presenting_complaint') || '',
+    chief_complaint: cc,
     hpc: fd.get('history_of_presenting_complaint') || '',
     exam_data: examData,
   };

@@ -318,6 +318,50 @@ def consultation_create_view(request, patient_id):
                 except Exception:
                     pass
 
+            # ── Glasses/Contact Rx → auto-route to OPTICAL ──────────────────
+            mgmt = dept_data.get('management_plan', '')
+            has_glasses_rx = (
+                'Prescribe corrective glasses' in mgmt or
+                'Prescribe contact lenses' in mgmt or
+                dept_data.get('sub_sph_dist_od') or dept_data.get('sub_sph_dist_os') or
+                dept_data.get('final_sph_od') or dept_data.get('final_sph_os')
+            )
+            if has_glasses_rx and visit:
+                try:
+                    skip_opt = {'OPTICAL', 'BILLING', 'COMPLETED', 'DISCHARGED',
+                                'COUNSELING', 'ADMITTED', 'IN_THEATRE'}
+                    if visit.status not in skip_opt:
+                        from apps.departments.models import Department as _Dept2
+                        opt_dept = _Dept2.objects.filter(code='OPTICAL', is_active=True).first()
+                        visit.status = 'OPTICAL'
+                        _upd = ['status', 'updated_at']
+                        if opt_dept:
+                            visit.department = opt_dept
+                            _upd.append('department')
+                        visit.save(update_fields=_upd)
+                        if _qms_active():
+                            from apps.qms.models import (
+                                QueueToken, DailyTokenSequence, IssuancePoint,
+                                TokenStatus, TIER_PRIORITY,
+                            )
+                            tier = visit.service_tier or 'STANDARD'
+                            token_number = DailyTokenSequence.next_dept_token('OPTICAL')
+                            QueueToken.objects.create(
+                                token_number=token_number,
+                                service_type='OPTICAL',
+                                patient=patient,
+                                visit=visit,
+                                service_tier=tier,
+                                issuance_point=IssuancePoint.SYSTEM,
+                                priority=TIER_PRIORITY.get(tier, 0),
+                                status=TokenStatus.WAITING,
+                                notes=f'Glasses Rx by Dr. {request.user.get_full_name()}',
+                                created_by=request.user,
+                            )
+                        messages.info(request, 'Glasses prescription detected — patient sent to Optical queue.')
+                except Exception:
+                    pass  # Never block the doctor
+
             # ── Surgery recommended → auto-create COUNSELING queue token ──────
             surgery_recommended = dept_data.get('surgery_recommended', '') == 'on'
             if surgery_recommended and visit:
