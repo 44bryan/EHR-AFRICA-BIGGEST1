@@ -196,6 +196,11 @@ def consultation_create_view(request, patient_id):
 
     if request.method == 'POST':
         _dept = request.user.department
+        if _dept is None:
+            from apps.departments.models import Department as _Dept
+            _role_code = request.user.role_department_code
+            if _role_code:
+                _dept = _Dept.objects.filter(code=_role_code).first()
 
         # ── Draft mode: save minimal record so doctor can order tests first ──
         if request.POST.get('save_mode') == 'draft':
