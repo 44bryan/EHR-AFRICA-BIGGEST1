@@ -132,7 +132,9 @@ def pharmacy_dashboard(request):
         'today_dispensings': today_dispensings.count(),
         'today_revenue': pharmacy_billed_today,
         'pending_dispensings': Dispensing.objects.filter(
-            status=DispensingStatus.PENDING, is_deleted=False
+            status__in=[DispensingStatus.PENDING, DispensingStatus.PARTIAL],
+            created_at__date=today,
+            is_deleted=False,
         ).count(),
         'total_drugs': len(all_drugs),
         'pharmacy_work_orders': pharmacy_work_orders,

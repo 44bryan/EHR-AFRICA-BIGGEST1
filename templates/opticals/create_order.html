@@ -96,11 +96,11 @@
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold small">Frame Price (FCFA)</label>
-              <input type="number" name="frame_price" id="frame-price" class="form-control" min="0" step="0.01" value="0">
+              <input type="number" name="frame_price" id="frame-price" class="form-control" min="0" step="1" value="0">
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold small">Fitting Charge (FCFA)</label>
-              <input type="number" name="fitting_charge" class="form-control" min="0" step="0.01" value="0">
+              <input type="number" name="fitting_charge" class="form-control" min="0" step="1" value="0">
             </div>
 
             <!-- Lens -->
@@ -117,7 +117,7 @@
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold small">Lens Price (FCFA)</label>
-              <input type="number" name="lens_price" id="lens-price" class="form-control" min="0" step="100" value="0">
+              <input type="number" name="lens_price" id="lens-price" class="form-control" min="0" step="1" value="0">
             </div>
 
             <!-- Totals row -->
@@ -127,7 +127,7 @@
             </div>
             <div class="col-md-4">
               <label class="form-label fw-semibold small">Deposit / Payment Now (FCFA)</label>
-              <input type="number" name="deposit_paid" id="deposit-paid" class="form-control fw-bold" min="0" step="100" value="0">
+              <input type="number" name="deposit_paid" id="deposit-paid" class="form-control fw-bold" min="0" step="1" value="0">
               <div class="form-text" id="balance-hint"></div>
             </div>
             <div class="col-md-4">
@@ -186,39 +186,45 @@
 </div>
 
 <script>
+let currentTotal = 0;
+
+function fmt(n) {
+  return n.toLocaleString('fr-FR');
+}
+
 function calcTotal() {
   const fp = parseFloat(document.getElementById('frame-price').value) || 0;
   const lp = parseFloat(document.getElementById('lens-price').value) || 0;
   const fc = parseFloat(document.querySelector('[name=fitting_charge]').value) || 0;
-  const total = Math.round(fp + lp + fc);
-  document.getElementById('total-display').value = total.toLocaleString();
-  updateDepositHint(total);
+  currentTotal = Math.round(fp + lp + fc);
+  document.getElementById('total-display').value = fmt(currentTotal) + ' FCFA';
+  updateDepositHint();
 }
-function updateDepositHint(total) {
+
+function updateDepositHint() {
   const mode = document.querySelector('[name=collection_mode]:checked');
   const depositField = document.getElementById('deposit-paid');
   const hint = document.getElementById('balance-hint');
   const submitBtn = document.getElementById('submit-btn');
   if (!mode) return;
   if (mode.value === 'now') {
-    depositField.value = total;
+    depositField.value = currentTotal;
     depositField.readOnly = true;
     hint.innerHTML = '<span class="text-success fw-semibold">Full payment — patient takes glasses immediately</span>';
-    submitBtn.textContent = '';
     submitBtn.innerHTML = '<i class="bi bi-bag-check me-1"></i>Pay & Create Order';
     submitBtn.className = 'btn btn-success px-4';
   } else if (mode.value === 'later') {
     depositField.value = 0;
     depositField.readOnly = true;
-    hint.innerHTML = '<span class="text-muted">No payment now — balance of ' + total.toLocaleString() + ' FCFA due on collection</span>';
+    hint.innerHTML = '<span class="text-muted">No payment now — balance of ' + fmt(currentTotal) + ' FCFA due on collection</span>';
     submitBtn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Create Order (Pay Later)';
     submitBtn.className = 'btn btn-outline-primary px-4';
   } else {
     depositField.readOnly = false;
     const dep = parseFloat(depositField.value) || 0;
-    const bal = Math.max(0, total - dep);
+    const bal = Math.max(0, currentTotal - dep);
     hint.innerHTML = bal > 0
-      ? '<span class="text-warning">Balance due on collection: <strong>' + bal.toLocaleString() + ' FCFA</strong></span>'
+      ? '<span class="text-warning">Balance due on collection: <strong>' + fmt(bal) + ' FCFA</strong></span>'
       : '<span class="text-success">Fully paid</span>';
     submitBtn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Create Optical Order';
     submitBtn.className = 'btn btn-primary px-4';
@@ -243,14 +249,8 @@ document.getElementById('lens-select').addEventListener('change', function () {
   if (price !== undefined) { document.getElementById('lens-price').value = price; calcTotal(); }
 });
 document.querySelectorAll('[type=number]').forEach(el => el.addEventListener('input', calcTotal));
-document.querySelectorAll('[name=collection_mode]').forEach(el => el.addEventListener('change', () => {
-  const total = parseFloat(document.getElementById('total-display').value.replace(/,/g, '')) || 0;
-  updateDepositHint(total);
-}));
-document.getElementById('deposit-paid').addEventListener('input', () => {
-  const total = parseFloat(document.getElementById('total-display').value.replace(/,/g, '')) || 0;
-  updateDepositHint(total);
-});
+document.querySelectorAll('[name=collection_mode]').forEach(el => el.addEventListener('change', updateDepositHint));
+document.getElementById('deposit-paid').addEventListener('input', updateDepositHint);
 
 {% if not patient %}
 const searchInput = document.getElementById('patient-search');

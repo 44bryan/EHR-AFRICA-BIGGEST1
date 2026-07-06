@@ -1385,6 +1385,21 @@ def work_order_done(request, wo_id):
     wo.completed_by = request.user
     wo.notes = request.POST.get('notes', '').strip()
     wo.save(update_fields=['status', 'completed_at', 'completed_by', 'notes', 'updated_at'])
+
+    # If pharmacy work order, mark any pending dispensing for this patient today as dispensed
+    if getattr(wo, 'category', None) == 'PHARMACY' and wo.patient_id:
+        try:
+            from apps.pharmacy.models import Dispensing, DispensingStatus
+            today = timezone.localdate()
+            Dispensing.objects.filter(
+                patient_id=wo.patient_id,
+                status__in=[DispensingStatus.PENDING, DispensingStatus.PARTIAL],
+                created_at__date=today,
+                is_deleted=False,
+            ).update(status=DispensingStatus.DISPENSED, dispensed_at=timezone.now())
+        except Exception:
+            pass
+
     return JsonResponse({'success': True, 'wo_id': str(wo.id)})
 
 

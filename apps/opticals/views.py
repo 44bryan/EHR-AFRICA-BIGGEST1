@@ -234,6 +234,11 @@ def create_order(request):
             created_by=request.user,
         )
 
+        # Mark linked prescription as dispensed as soon as an order is placed
+        if rx:
+            rx.is_dispensed = True
+            rx.save(update_fields=['is_dispensed'])
+
         # Deduct frame stock
         if frame:
             frame.quantity_in_stock = max(0, frame.quantity_in_stock - 1)
@@ -334,10 +339,6 @@ def create_order(request):
             order.delivered_date = timezone.localdate()
             order.delivered_to = request.user
             order.save(update_fields=['status', 'delivered_date', 'delivered_to'])
-            # Mark prescription dispensed
-            if order.optical_prescription:
-                order.optical_prescription.is_dispensed = True
-                order.optical_prescription.save(update_fields=['is_dispensed'])
             # Complete the visit
             try:
                 from apps.patients.models import Visit
