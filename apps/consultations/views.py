@@ -1294,6 +1294,7 @@ _DEPT_TO_QMS_SERVICE = {
     'CATARACT':    'CATARACT',
     'UVEITIS':     'UVEITIS',
     'LOW_VIS':     'GENERAL',
+    'GEN_PHYS':    'GEN_PHYS',
 }
 
 
@@ -1510,6 +1511,7 @@ _NURSE_ROUTE_MAP = {
     'UVEITIS':     ('UVEITIS',           'UVEITIS',    'Uveitis Clinic'),
     'NEURO':       ('AT_NEURO',          'NEURO',      'Neuro-Ophthalmology'),
     'OCULOPLASTY': ('AT_OCULOPLASTY',    'OCULOPLASTY','Oculoplastics'),
+    'GEN_PHYS':    ('WAITING',           'GEN_PHYS',   'General Physician / Internist'),
     'DISCHARGE':   ('COMPLETED',         None,         'Discharge / Done'),
 }
 

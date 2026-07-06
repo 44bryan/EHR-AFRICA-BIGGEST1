@@ -146,6 +146,7 @@ def optical_prescription_new(request, consultation_pk):
         return HttpResponseForbidden()
 
     consultation = get_object_or_404(Consultation, pk=consultation_pk)
+    refraction_hint = None
 
     if request.method == 'POST':
         form = OpticalPrescriptionForm(request.POST)
@@ -222,26 +223,42 @@ def optical_prescription_new(request, consultation_pk):
                     pd_os = d.get('pd_os') or d.get('pd_dist_os', '')
                     ipd = f"{pd_od}/{pd_os}" if pd_od and pd_os else (pd_od or pd_os or '')
                     initial = {
-                        're_sphere':    d.get('pg_sph_dist_od') or d.get('final_sph_od', ''),
-                        're_cylinder':  d.get('pg_cyl_dist_od') or d.get('final_cyl_od', ''),
-                        're_axis':      d.get('pg_axis_dist_od') or d.get('final_axis_od', ''),
+                        're_sphere':    (d.get('pg_sph_dist_od') or d.get('sub_sph_dist_od')
+                                         or d.get('final_sph_od', '')),
+                        're_cylinder':  (d.get('pg_cyl_dist_od') or d.get('sub_cyl_dist_od')
+                                         or d.get('final_cyl_od', '')),
+                        're_axis':      (d.get('pg_axis_dist_od') or d.get('sub_axis_dist_od')
+                                         or d.get('final_axis_od', '')),
                         're_add':       d.get('pg_add_od') or d.get('add_od', ''),
-                        're_visual_acuity': (d.get('pg_va_dist_od') or d.get('bcva_od')
+                        're_visual_acuity': (d.get('pg_va_dist_od') or d.get('sub_va_dist_od')
+                                             or d.get('bcva_od')
                                              or d.get('va_corrected_od', '')),
-                        're_sphere_near':   d.get('pg_sph_near_od', ''),
-                        're_cylinder_near': d.get('pg_cyl_near_od', ''),
-                        're_axis_near':     d.get('pg_axis_near_od', ''),
-                        're_va_near':       d.get('pg_va_near_od', ''),
-                        'le_sphere':    d.get('pg_sph_dist_os') or d.get('final_sph_os', ''),
-                        'le_cylinder':  d.get('pg_cyl_dist_os') or d.get('final_cyl_os', ''),
-                        'le_axis':      d.get('pg_axis_dist_os') or d.get('final_axis_os', ''),
+                        're_sphere_near':   (d.get('pg_sph_near_od')
+                                             or d.get('sub_sph_near_od', '')),
+                        're_cylinder_near': (d.get('pg_cyl_near_od')
+                                             or d.get('sub_cyl_near_od', '')),
+                        're_axis_near':     (d.get('pg_axis_near_od')
+                                             or d.get('sub_axis_near_od', '')),
+                        're_va_near':       (d.get('pg_va_near_od')
+                                             or d.get('sub_va_near_od', '')),
+                        'le_sphere':    (d.get('pg_sph_dist_os') or d.get('sub_sph_dist_os')
+                                         or d.get('final_sph_os', '')),
+                        'le_cylinder':  (d.get('pg_cyl_dist_os') or d.get('sub_cyl_dist_os')
+                                         or d.get('final_cyl_os', '')),
+                        'le_axis':      (d.get('pg_axis_dist_os') or d.get('sub_axis_dist_os')
+                                         or d.get('final_axis_os', '')),
                         'le_add':       d.get('pg_add_os') or d.get('add_os', ''),
-                        'le_visual_acuity': (d.get('pg_va_dist_os') or d.get('bcva_os')
+                        'le_visual_acuity': (d.get('pg_va_dist_os') or d.get('sub_va_dist_os')
+                                             or d.get('bcva_os')
                                              or d.get('va_corrected_os', '')),
-                        'le_sphere_near':   d.get('pg_sph_near_os', ''),
-                        'le_cylinder_near': d.get('pg_cyl_near_os', ''),
-                        'le_axis_near':     d.get('pg_axis_near_os', ''),
-                        'le_va_near':       d.get('pg_va_near_os', ''),
+                        'le_sphere_near':   (d.get('pg_sph_near_os')
+                                             or d.get('sub_sph_near_os', '')),
+                        'le_cylinder_near': (d.get('pg_cyl_near_os')
+                                             or d.get('sub_cyl_near_os', '')),
+                        'le_axis_near':     (d.get('pg_axis_near_os')
+                                             or d.get('sub_axis_near_os', '')),
+                        'le_va_near':       (d.get('pg_va_near_os')
+                                             or d.get('sub_va_near_os', '')),
                         'lens_type':              d.get('lens_type', ''),
                         'interpupillary_distance': ipd,
                     }
