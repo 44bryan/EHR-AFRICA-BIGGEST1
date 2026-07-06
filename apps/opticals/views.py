@@ -320,21 +320,6 @@ def create_order(request):
 
         # ── "Pay in Full & Take Now" — auto-deliver if fully paid and in stock ──
         if collection_mode == 'now':
-            from apps.accounts.models import UserRole as _UR
-            if request.user.role == _UR.OPTICAL_DISPENSER:
-                from apps.billing.models import CashierShift, ShiftStatus
-                _today = timezone.localdate()
-                _open_shift = CashierShift.objects.filter(
-                    cashier=request.user, shift_date=_today,
-                    status=ShiftStatus.OPEN, is_deleted=False,
-                ).first()
-                if not _open_shift:
-                    messages.error(
-                        request,
-                        'Open your cash desk shift first before collecting payment. '
-                        'Click "My Cash Desk" in the sidebar.'
-                    )
-                    return redirect('opticals:order_detail', order_id=order.id)
             order.status = OpticalOrderStatus.DELIVERED
             order.delivered_date = timezone.localdate()
             order.delivered_to = request.user
@@ -476,21 +461,7 @@ def collect_payment(request, order_id):
 
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
 
-    # Require an open shift if the user is an optical dispenser (same rule as cashier POS)
     from apps.accounts.models import UserRole
-    if request.user.role == UserRole.OPTICAL_DISPENSER:
-        from apps.billing.models import CashierShift, ShiftStatus
-        today = timezone.localdate()
-        open_shift = CashierShift.objects.filter(
-            cashier=request.user, shift_date=today, status=ShiftStatus.OPEN, is_deleted=False
-        ).first()
-        if not open_shift:
-            messages.error(
-                request,
-                'You must open your cash desk shift before collecting payments. '
-                'Click "My Cash Desk" in the sidebar to open your shift.'
-            )
-            return redirect('opticals:order_detail', order_id=order.id)
 
     payment_method = request.POST.get('payment_method', PaymentMethod.CASH)
     amount_str = request.POST.get('amount', '').strip()
