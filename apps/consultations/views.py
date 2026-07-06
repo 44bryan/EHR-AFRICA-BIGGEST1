@@ -128,6 +128,20 @@ def consultation_create_view(request, patient_id):
             else:
                 return render(request, 'consultations/walkin_confirm.html', {'patient': patient})
 
+    # ── Claim mechanic: soft-assign this visit to the doctor's room if it's unclaimed ──
+    # Prevents two doctors from opening the same unassigned patient simultaneously.
+    if visit and visit.consultation_room is None:
+        try:
+            from apps.departments.models import ConsultationRoom
+            my_room = ConsultationRoom.objects.filter(
+                assigned_doctor=request.user, is_active=True
+            ).first()
+            if my_room:
+                visit.consultation_room = my_room
+                visit.save(update_fields=['consultation_room'])
+        except Exception:
+            pass
+
     # Stub passed to the template so specialty form partials can render
     # with empty data (they do: {% with d=consultation.department_specific_data %})
     class _Stub:

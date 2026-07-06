@@ -462,10 +462,27 @@
                 <div class="accordion-body pt-2">
                   <label class="form-label fw-semibold small mb-2">Send Patient To <span class="text-danger">*</span></label>
 
-                  {# Department dropdown #}
-                  <div class="mb-3">
-                    <label class="form-label small text-muted">Or choose a Clinic / Department</label>
-                    <select name="dispatch_department" id="dispatch_department" class="form-select form-select-sm" onchange="selectRoute('dept', this.value, '', this.options[this.selectedIndex].text, null)">
+                  {# ── Dispatch mode: two radio options ── #}
+                  <div class="d-flex gap-2 mb-3 flex-wrap" id="dispatchModeGroup">
+                    <label class="btn btn-outline-primary dispatch-mode-btn active" id="lbl_dept_queue" style="font-size:.82rem;">
+                      <input type="radio" name="_dispatch_mode" value="DEPT" class="d-none" id="mode_dept" checked
+                             onclick="setDispatchMode('DEPT')">
+                      <i class="bi bi-people-fill me-1"></i>Department Queue
+                      <div class="fw-normal text-muted" style="font-size:.72rem;">Any available doctor sees it</div>
+                    </label>
+                    <label class="btn btn-outline-secondary dispatch-mode-btn" id="lbl_room_queue" style="font-size:.82rem;">
+                      <input type="radio" name="_dispatch_mode" value="ROOM" class="d-none" id="mode_room"
+                             onclick="setDispatchMode('ROOM')">
+                      <i class="bi bi-door-open me-1"></i>Specific Room / Doctor
+                      <div class="fw-normal text-muted" style="font-size:.72rem;">Route to one room only</div>
+                    </label>
+                  </div>
+
+                  {# Department dropdown — always shown #}
+                  <div class="mb-2">
+                    <label class="form-label small text-muted fw-semibold">Department / Clinic</label>
+                    <select name="dispatch_department" id="dispatch_department" class="form-select form-select-sm"
+                            onchange="onDeptChange(this.value, this.options[this.selectedIndex].text)">
                       <option value="">— Select Department —</option>
                       {% for dept in departments %}
                       <option value="{{ dept.pk }}" {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
@@ -475,20 +492,20 @@
 
                   <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
 
-                  {# Department + Room picker — appears after destination chosen #}
+                  {# Room picker — only shown in ROOM mode after dept selected #}
                   <div id="roomPickPanel" class="d-none mb-3 p-3 border rounded" style="background:#f0f9ff;">
                     <div class="d-flex align-items-center justify-content-between mb-2">
                       <label class="form-label fw-semibold small mb-0">
                         <i class="bi bi-door-open me-1 text-primary"></i>
-                        <span id="roomPickDeptName">Consultation</span> — Select Room / Door
-                        <span class="text-muted fw-normal">(optional)</span>
+                        <span id="roomPickDeptName">Consultation</span> — Select Room / Doctor
                       </label>
                       <button type="button" class="btn btn-xs btn-link text-secondary p-0" onclick="clearRoom()">
                         <i class="bi bi-x"></i> Clear
                       </button>
                     </div>
-                    <div class="d-flex flex-wrap gap-2" id="roomBtnGroup">
-                      {# Dynamically populated by JS based on selected department #}
+                    <div class="d-flex flex-wrap gap-2" id="roomBtnGroup"></div>
+                    <div class="mt-1 small text-muted fst-italic" id="roomPickHint">
+                      Select a room to route patient to a specific doctor. If no room selected, dispatches to department queue.
                     </div>
                   </div>
 
@@ -620,51 +637,102 @@ function setSelectVal(selId, inpId, val) {
 }
 
 // ── Flexible routing with department-contextual room picker ───────────────────
-// Quick-route buttons (Lab, Pharmacy, Cashier, Refraction etc.) never show rooms.
-// Room picker only appears when a DEPARTMENT is chosen from the dropdown,
-// fetching configured rooms via AJAX from the departments app.
+// Two dispatch modes:
+//   DEPT — any available doctor in the department sees the patient (dept queue)
+//   ROOM — routed to a specific room/doctor (room picker appears after dept chosen)
+// Quick-route buttons (Lab, Pharmacy, Cashier, Refraction etc.) bypass modes entirely.
 
-let _currentDeptId = '';   // UUID of currently selected department
+let _currentDeptId = '';      // UUID of currently selected department
+let _dispatchMode  = 'DEPT';  // 'DEPT' | 'ROOM'
+
+function setDispatchMode(mode) {
+  _dispatchMode = mode;
+  const lblDept   = document.getElementById('lbl_dept_queue');
+  const lblRoom   = document.getElementById('lbl_room_queue');
+  const roomPanel = document.getElementById('roomPickPanel');
+  const roomHint  = document.getElementById('roomPickHint');
+
+  if (mode === 'DEPT') {
+    if (lblDept) { lblDept.classList.add('active'); lblDept.classList.replace('btn-outline-secondary', 'btn-outline-primary'); }
+    if (lblRoom) { lblRoom.classList.remove('active'); lblRoom.classList.replace('btn-outline-primary', 'btn-outline-secondary'); }
+    // Hide room panel; clear any room suffix already appended
+    if (roomPanel) roomPanel.classList.add('d-none');
+    clearRoomBtns();
+    if (roomHint) roomHint.textContent = 'Department queue — the first available doctor will see this patient.';
+  } else {
+    // ROOM mode
+    if (lblDept) { lblDept.classList.remove('active'); lblDept.classList.replace('btn-outline-primary', 'btn-outline-secondary'); }
+    if (lblRoom) { lblRoom.classList.add('active'); lblRoom.classList.replace('btn-outline-secondary', 'btn-outline-primary'); }
+    if (roomHint) roomHint.textContent = 'Select a room to route this patient to a specific doctor.';
+    // If a dept is already selected, show the room picker immediately
+    if (_currentDeptId) {
+      const deptSel = document.getElementById('dispatch_department');
+      const deptLabel = deptSel ? deptSel.options[deptSel.selectedIndex].text : '';
+      fetchRooms(_currentDeptId, deptLabel);
+    }
+  }
+}
+
+function onDeptChange(deptId, label) {
+  const directInp = document.getElementById('dispatch_direct');
+  const confirmEl = document.getElementById('routeConfirm');
+  const lbl       = document.getElementById('routeLabel');
+  const roomPanel = document.getElementById('roomPickPanel');
+
+  // Deactivate any quick-route buttons
+  document.querySelectorAll('.quick-route-btn').forEach(b => {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-outline-primary');
+  });
+
+  directInp.value = '';
+  directInp.dataset.baseValue = '';
+  _currentDeptId = deptId;
+  clearRoomBtns();
+
+  if (deptId) {
+    lbl.textContent = label;
+    confirmEl.classList.remove('d-none');
+    if (_dispatchMode === 'ROOM') {
+      fetchRooms(deptId, label);   // show room picker
+    } else {
+      // DEPT mode: just confirm the dept, no room needed
+      if (roomPanel) roomPanel.classList.add('d-none');
+    }
+  } else {
+    confirmEl.classList.add('d-none');
+    if (roomPanel) roomPanel.classList.add('d-none');
+  }
+  document.getElementById('routeValidationAlert').classList.add('d-none');
+}
 
 function selectRoute(type, deptId, serviceCode, label, btn) {
+  // Only used for quick-route direct buttons (Lab, Pharmacy, Cashier etc.)
   const deptSel   = document.getElementById('dispatch_department');
   const directInp = document.getElementById('dispatch_direct');
   const confirmEl = document.getElementById('routeConfirm');
   const lbl       = document.getElementById('routeLabel');
+  const roomPanel = document.getElementById('roomPickPanel');
 
   document.querySelectorAll('.quick-route-btn').forEach(b => {
     b.classList.remove('btn-primary');
     b.classList.add('btn-outline-primary');
   });
 
-  const roomPanel = document.getElementById('roomPickPanel');
-
   if (type === 'direct') {
-    // Quick-route button (Lab / Pharmacy / Cashier etc.) — no room picker
-    deptSel.value      = '';
-    directInp.value    = serviceCode;
+    deptSel.value               = '';
+    directInp.value             = serviceCode;
     directInp.dataset.baseValue = serviceCode;
-    _currentDeptId     = '';
+    _currentDeptId              = '';
     if (btn) { btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-primary'); }
     if (roomPanel) { roomPanel.classList.add('d-none'); clearRoomBtns(); }
-  } else {
-    // Department dropdown selected
-    directInp.value = '';
-    directInp.dataset.baseValue = '';
-    _currentDeptId = deptId;
-    if (deptId) {
-      fetchRooms(deptId, label);
-    } else {
-      if (roomPanel) { roomPanel.classList.add('d-none'); clearRoomBtns(); }
-    }
   }
 
-  if (deptId || serviceCode) {
+  if (serviceCode) {
     lbl.textContent = label;
     confirmEl.classList.remove('d-none');
   } else {
     confirmEl.classList.add('d-none');
-    if (roomPanel) roomPanel.classList.add('d-none');
   }
   document.getElementById('routeValidationAlert').classList.add('d-none');
 }
