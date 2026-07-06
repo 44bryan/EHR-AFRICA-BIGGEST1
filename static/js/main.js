@@ -302,7 +302,6 @@ function buildBreadcrumbs() {
 
   // Section labels — first URL segment → human-readable name
   const SECTIONS = {
-    'dashboard':      'Dashboard',
     'patients':       'Patients',
     'consultations':  'Consultations',
     'investigations': 'Investigations',
@@ -360,7 +359,7 @@ function buildBreadcrumbs() {
   const activeLabel = activeLink ? (activeLink.querySelector('span') || activeLink).textContent.trim() : null;
 
   const crumbs = [];
-  crumbs.push({ label: 'Home', url: '/dashboard/' });
+  crumbs.push({ label: 'Home', url: '/' });
 
   if (parts.length === 1) {
     // Root of a section — just section name (no link needed)
@@ -414,6 +413,34 @@ document.addEventListener('htmx:beforeRequest', function() {
 });
 document.addEventListener('htmx:afterOnLoad', function() {
   document.body.style.cursor = '';
+});
+
+// ── Close Bootstrap dropdowns/modals before HTMX swaps ───────────────────────
+// Prevents the UI from appearing frozen on tablets when navigating via HTMX
+// while a dropdown or modal is open (Bootstrap doesn't auto-close them).
+document.addEventListener('htmx:beforeSwap', function() {
+  // Close open dropdowns
+  document.querySelectorAll('.dropdown-menu.show').forEach(function(el) {
+    el.classList.remove('show');
+  });
+  document.querySelectorAll('[data-bs-toggle="dropdown"][aria-expanded="true"]').forEach(function(el) {
+    el.setAttribute('aria-expanded', 'false');
+    el.classList.remove('show');
+  });
+  // Hide open modals
+  document.querySelectorAll('.modal.show').forEach(function(el) {
+    try {
+      var m = bootstrap.Modal.getInstance(el);
+      if (m) m.hide();
+    } catch(e) {}
+  });
+  // Remove modal backdrop if stuck
+  document.querySelectorAll('.modal-backdrop').forEach(function(el) {
+    el.remove();
+  });
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
 });
 
 // ── Real-time Notification Toast Poller ──────────────────────────────────────
