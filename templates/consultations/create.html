@@ -383,7 +383,7 @@
 
         </div>
         <div class="mt-2 pt-2 border-top d-flex justify-content-end">
-          <button type="button" class="btn btn-sm btn-outline-success" onclick="saveDraft('history')">
+          <button type="button" class="btn btn-sm btn-outline-success" onclick="saveDraft(event,'history')">
             <i class="bi bi-cloud-check me-1"></i>Save History Draft
           </button>
         </div>
@@ -445,7 +445,7 @@
           {% include 'consultations/clinical/_gen_oph_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
         {% endif %}
         <div class="mt-2 pt-2 border-top d-flex justify-content-end">
-          <button type="button" class="btn btn-sm btn-outline-success" onclick="saveDraft('clinical')">
+          <button type="button" class="btn btn-sm btn-outline-success" onclick="saveDraft(event,'clinical')">
             <i class="bi bi-cloud-check me-1"></i>Save Clinical Draft
           </button>
         </div>
@@ -665,8 +665,8 @@ function qfPick(fieldId, sel) {
 function toggleCard(bodyId, header) {
   const body    = document.getElementById(bodyId);
   const chevron = header.querySelector('i[class*="bi-chevron"]');
-  const isHidden = body.style.display === 'none';
-  body.style.display = isHidden ? '' : 'none';
+  const isHidden = body.style.display === 'none' || getComputedStyle(body).display === 'none';
+  body.style.display = isHidden ? 'block' : 'none';
   if (chevron) {
     chevron.classList.toggle('bi-chevron-up',   isHidden);
     chevron.classList.toggle('bi-chevron-down', !isHidden);
@@ -677,7 +677,7 @@ function toggleCard(bodyId, header) {
 const _autosaveUrl = '{% url "consultations:autosave" %}';
 const _csrfToken   = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
-function saveDraft(section) {
+function saveDraft(evt, section) {
   const form      = document.getElementById('consultationForm');
   const draftPkEl = document.getElementById('draftPk');
   const patientId = document.getElementById('patientIdHidden').value;
@@ -707,7 +707,7 @@ function saveDraft(section) {
   }
 
   // Disable the button while saving
-  var btn = event.currentTarget || document.querySelector('[onclick="saveDraft(\'' + section + '\')"]');
+  var btn = (evt && evt.currentTarget) || document.querySelector('[onclick*="saveDraft"][onclick*="' + section + '"]');
 
   fetch(_autosaveUrl, { method: 'POST', body: data,
     headers: { 'X-Requested-With': 'XMLHttpRequest' }

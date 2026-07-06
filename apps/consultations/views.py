@@ -795,10 +795,16 @@ def consultation_autosave_view(request):
             return JsonResponse({'ok': False, 'error': 'patient_id required'}, status=400)
         patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
         visit   = get_object_or_404(Visit, pk=visit_id, is_deleted=False) if visit_id else None
+        _dept = request.user.department
+        if _dept is None:
+            from apps.departments.models import Department as _Dept
+            _role_code = request.user.role_department_code
+            if _role_code:
+                _dept = _Dept.objects.filter(code=_role_code).first()
         consultation = Consultation.objects.create(
             patient=patient,
             visit=visit,
-            department=request.user.department,
+            department=_dept,
             consulting_doctor=request.user,
             presenting_complaint=request.POST.get('presenting_complaint', '').strip(),
             status=ConsultationStatus.IN_PROGRESS,
