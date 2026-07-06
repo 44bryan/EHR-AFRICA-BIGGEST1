@@ -51,6 +51,7 @@ CAN_VIEW_PATIENT = (
     UserRole.INTERN,
     UserRole.ANAESTHETIST,
     UserRole.ORTHOPTIST,
+    UserRole.GENERAL_PHYSICIAN,
     # Clinical — nursing & paramedical
     UserRole.NURSE,
     UserRole.THEATRE_NURSE,
@@ -92,6 +93,7 @@ CAN_CREATE_CONSULTATION = (
     UserRole.OPTOMETRIST,
     UserRole.LOW_VISION_SPECIALIST,
     UserRole.INTERN,
+    UserRole.GENERAL_PHYSICIAN,
 )
 
 # ── Roles that can EDIT / MANAGE visits ─────────────────────────────────────
@@ -118,6 +120,7 @@ CAN_MANAGE_VISIT = (
     UserRole.OPTOMETRIST,
     UserRole.LOW_VISION_SPECIALIST,
     UserRole.INTERN,
+    UserRole.GENERAL_PHYSICIAN,
 )
 
 # ── Roles that can access billing ────────────────────────────────────────────

@@ -1,0 +1,529 @@
+{% load ehr_tags %}
+{% with d=consultation.department_specific_data %}
+
+{# ══════════════════════════════════════════════════════════════════════════════
+   GENERAL PHYSICIAN / INTERNIST — Consultation Form
+   Eye-hospital context: focus on systemic health, pre-op clearance, and
+   systemic diseases that affect the eye (DM, HTN, thyroid, etc.)
+   All fields use dept_ prefix so they are saved to department_specific_data.
+══════════════════════════════════════════════════════════════════════════════ #}
+
+<div class="mb-2">
+
+  {# ── SECTION 1: REASON FOR CONSULTATION ────────────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top bg-primary bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s1" aria-expanded="true">
+      <i class="bi bi-clipboard2-pulse text-primary"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">1. Reason for Consultation</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s1">
+    <div class="p-3">
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Referral Source / Referring Doctor</label>
+          <input type="text" name="dept_referral_source" class="form-control form-control-sm"
+                 placeholder="e.g. Dr. Mbarga — Glaucoma Clinic"
+                 value="{{ d.referral_source|default:'' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Reason for Referral</label>
+          <select name="dept_referral_reason" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            <option value="Pre-operative Medical Clearance" {% if d.referral_reason == 'Pre-operative Medical Clearance' %}selected{% endif %}>Pre-operative Medical Clearance</option>
+            <option value="Systemic Disease Management" {% if d.referral_reason == 'Systemic Disease Management' %}selected{% endif %}>Systemic Disease Management</option>
+            <option value="Medication Review" {% if d.referral_reason == 'Medication Review' %}selected{% endif %}>Medication Review</option>
+            <option value="Hypertension Control" {% if d.referral_reason == 'Hypertension Control' %}selected{% endif %}>Hypertension Control</option>
+            <option value="Diabetes Management" {% if d.referral_reason == 'Diabetes Management' %}selected{% endif %}>Diabetes Management</option>
+            <option value="Anaemia Workup" {% if d.referral_reason == 'Anaemia Workup' %}selected{% endif %}>Anaemia Workup</option>
+            <option value="General Medical Assessment" {% if d.referral_reason == 'General Medical Assessment' %}selected{% endif %}>General Medical Assessment</option>
+            <option value="Other" {% if d.referral_reason == 'Other' %}selected{% endif %}>Other</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Chief Complaint</label>
+          <textarea name="dept_chief_complaint" class="form-control form-control-sm" rows="2"
+                    placeholder="Patient's main complaint in their own words">{{ d.chief_complaint|default:'' }}</textarea>
+        </div>
+        <div class="col-md-8">
+          <label class="form-label small fw-semibold">History of Presenting Illness</label>
+          <textarea name="dept_hpi" class="form-control form-control-sm" rows="3"
+                    placeholder="Onset, duration, character, associated symptoms, aggravating/relieving factors, treatment so far">{{ d.hpi|default:'' }}</textarea>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Duration</label>
+          <input type="text" name="dept_duration" class="form-control form-control-sm"
+                 placeholder="e.g. 3 months" value="{{ d.duration|default:'' }}">
+          <label class="form-label small fw-semibold mt-2">Onset</label>
+          <select name="dept_onset" class="form-select form-select-sm">
+            <option value="">—</option>
+            <option value="Sudden" {% if d.onset == 'Sudden' %}selected{% endif %}>Sudden</option>
+            <option value="Gradual" {% if d.onset == 'Gradual' %}selected{% endif %}>Gradual</option>
+            <option value="Insidious" {% if d.onset == 'Insidious' %}selected{% endif %}>Insidious</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 2: PAST MEDICAL & SURGICAL HISTORY ─────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top bg-warning bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s2" aria-expanded="true">
+      <i class="bi bi-clock-history text-warning"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">2. Past Medical & Surgical History</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s2">
+    <div class="p-3">
+      <div class="row g-2 mb-2">
+        <div class="col-12">
+          <label class="form-label small fw-semibold mb-1">Known Conditions <span class="text-muted fw-normal">(tick all that apply)</span></label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for cond in "Diabetes Mellitus,Hypertension,Cardiac Disease,Thyroid Disease,Asthma / COPD,Renal Disease,Sickle Cell Disease,HIV / AIDS,Epilepsy,Stroke / TIA,Obesity,Other"|split:"," %}
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" name="dept_cond_{{ cond|lower|slugify }}"
+                     id="cond_{{ cond|lower|slugify }}"
+                     {% if d|get_item:'cond_'|add:cond|lower|slugify == 'on' %}checked{% endif %}>
+              <label class="form-check-label small" for="cond_{{ cond|lower|slugify }}">{{ cond }}</label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Past Medical History Details</label>
+          <textarea name="dept_pmh" class="form-control form-control-sm" rows="2"
+                    placeholder="Dates of diagnosis, control status, complications…">{{ d.pmh|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Surgical / Hospitalisation History</label>
+          <textarea name="dept_surgical_history" class="form-control form-control-sm" rows="2"
+                    placeholder="Previous operations, procedures, admissions…">{{ d.surgical_history|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Family History</label>
+          <textarea name="dept_family_history" class="form-control form-control-sm" rows="2"
+                    placeholder="DM, HTN, cardiac, cancer in first-degree relatives…">{{ d.family_history|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Social History</label>
+          <textarea name="dept_social_history" class="form-control form-control-sm" rows="2"
+                    placeholder="Smoking, alcohol, occupation, diet, activity level…">{{ d.social_history|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 3: CURRENT MEDICATIONS & ALLERGIES ──────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top bg-danger bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s3" aria-expanded="true">
+      <i class="bi bi-capsule text-danger"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">3. Current Medications & Allergies</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s3">
+    <div class="p-3">
+      <div class="row g-2">
+        <div class="col-md-8">
+          <label class="form-label small fw-semibold">Current Medications</label>
+          <textarea name="dept_current_medications" class="form-control form-control-sm" rows="3"
+                    placeholder="Drug name — dose — frequency — duration (one per line)&#10;e.g. Metformin 500mg — BD — ongoing">{{ d.current_medications|default:'' }}</textarea>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Known Drug Allergies</label>
+          <textarea name="dept_drug_allergies" class="form-control form-control-sm" rows="3"
+                    placeholder="Drug name — reaction (one per line)">{{ d.drug_allergies|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 4: REVIEW OF SYSTEMS ───────────────────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-secondary bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s4" aria-expanded="false">
+      <i class="bi bi-list-check text-secondary"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">4. Review of Systems</span>
+      <span class="badge bg-secondary ms-2" style="font-size:.65rem;">Expand to complete</span>
+      <i class="bi bi-chevron-down cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse" id="cfm_gp_s4">
+    <div class="p-3">
+      <div class="row g-3">
+        {% for system,symptoms in "Cardiovascular:Chest pain,Palpitations,Dyspnoea on exertion,Orthopnoea,Ankle swelling|Respiratory:Cough,Shortness of breath,Wheezing,Haemoptysis|Gastrointestinal:Nausea/vomiting,Abdominal pain,Diarrhoea,Constipation,Haematemesis|Neurological:Headache,Dizziness,Syncope,Weakness/numbness,Seizures|Genitourinary:Polyuria,Nocturia,Dysuria,Haematuria|Musculoskeletal:Joint pains,Muscle weakness,Swelling of joints"|split:"|" %}
+        {% with parts=system|split:":" %}
+        <div class="col-md-4">
+          <div class="fw-semibold small mb-1" style="color:#444;">{{ parts.0 }}</div>
+          {% for symptom in parts.1|split:"," %}
+          <div class="form-check form-check-sm">
+            <input class="form-check-input" type="checkbox"
+                   name="dept_ros_{{ parts.0|lower|slugify }}_{{ symptom|lower|slugify }}"
+                   id="ros_{{ parts.0|lower|slugify }}_{{ symptom|lower|slugify }}">
+            <label class="form-check-label small" for="ros_{{ parts.0|lower|slugify }}_{{ symptom|lower|slugify }}">{{ symptom }}</label>
+          </div>
+          {% endfor %}
+        </div>
+        {% endwith %}
+        {% endfor %}
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Additional ROS Notes</label>
+          <textarea name="dept_ros_notes" class="form-control form-control-sm" rows="2"
+                    placeholder="Any additional review of systems findings…">{{ d.ros_notes|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 5: PHYSICAL EXAMINATION ────────────────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-info bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s5" aria-expanded="true">
+      <i class="bi bi-person-check text-info"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">5. Physical Examination</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s5">
+    <div class="p-3">
+
+      {# Vitals #}
+      <div class="fw-semibold small text-uppercase mb-2" style="color:#555;letter-spacing:.04em;">Vital Signs</div>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">Blood Pressure (mmHg)</label>
+          <input type="text" name="dept_bp" class="form-control form-control-sm"
+                 placeholder="e.g. 130/85" value="{{ d.bp|default:'' }}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">Pulse (bpm)</label>
+          <input type="number" name="dept_pulse" class="form-control form-control-sm"
+                 placeholder="72" min="30" max="250" value="{{ d.pulse|default:'' }}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">Temperature (°C)</label>
+          <input type="text" name="dept_temperature" class="form-control form-control-sm"
+                 placeholder="37.0" value="{{ d.temperature|default:'' }}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">SpO₂ (%)</label>
+          <input type="number" name="dept_spo2" class="form-control form-control-sm"
+                 placeholder="98" min="50" max="100" value="{{ d.spo2|default:'' }}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">Resp. Rate (/min)</label>
+          <input type="number" name="dept_rr" class="form-control form-control-sm"
+                 placeholder="16" min="5" max="60" value="{{ d.rr|default:'' }}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">Weight (kg)</label>
+          <input type="number" name="dept_weight_kg" id="gp_weight" class="form-control form-control-sm"
+                 placeholder="70" step="0.1" min="1" max="300" value="{{ d.weight_kg|default:'' }}"
+                 oninput="calcBMI()">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">Height (cm)</label>
+          <input type="number" name="dept_height_cm" id="gp_height" class="form-control form-control-sm"
+                 placeholder="170" min="30" max="250" value="{{ d.height_cm|default:'' }}"
+                 oninput="calcBMI()">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold">BMI</label>
+          <input type="text" name="dept_bmi" id="gp_bmi" class="form-control form-control-sm bg-light"
+                 placeholder="Auto-calculated" readonly value="{{ d.bmi|default:'' }}">
+        </div>
+      </div>
+
+      {# General appearance + systemic exam #}
+      <div class="fw-semibold small text-uppercase mb-2 mt-3" style="color:#555;letter-spacing:.04em;">Systemic Examination</div>
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">General Appearance</label>
+          <textarea name="dept_general_appearance" class="form-control form-control-sm" rows="2"
+                    placeholder="e.g. Alert, well-nourished, not in acute distress. No pallor, jaundice, or cyanosis.">{{ d.general_appearance|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Cardiovascular System (CVS)</label>
+          <textarea name="dept_exam_cvs" class="form-control form-control-sm" rows="2"
+                    placeholder="Heart rate, rhythm, murmurs, peripheral pulses, JVP…">{{ d.exam_cvs|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Respiratory System (RS)</label>
+          <textarea name="dept_exam_rs" class="form-control form-control-sm" rows="2"
+                    placeholder="Air entry, breath sounds, adventitious sounds…">{{ d.exam_rs|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Abdomen</label>
+          <textarea name="dept_exam_abd" class="form-control form-control-sm" rows="2"
+                    placeholder="Soft/tender, organomegaly, bowel sounds…">{{ d.exam_abd|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Central Nervous System (CNS)</label>
+          <textarea name="dept_exam_cns" class="form-control form-control-sm" rows="2"
+                    placeholder="Orientation, cranial nerves, power, reflexes…">{{ d.exam_cns|default:'' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Other Findings</label>
+          <textarea name="dept_exam_other" class="form-control form-control-sm" rows="2"
+                    placeholder="Skin, lymph nodes, thyroid, musculoskeletal…">{{ d.exam_other|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 6: INVESTIGATIONS REQUESTED ────────────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-success bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s6" aria-expanded="true">
+      <i class="bi bi-droplet-half text-success"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">6. Investigations Requested</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s6">
+    <div class="p-3">
+      <div class="row g-2 mb-2">
+        <div class="col-12">
+          <label class="form-label small fw-semibold mb-1">Select Investigations <span class="text-muted fw-normal">(tick all that apply)</span></label>
+          <div class="d-flex flex-wrap gap-3">
+            {% for inv in "FBS / RBS,HbA1c,Full Blood Count (FBC),Lipid Profile,Urea & Electrolytes,Liver Function Tests,Thyroid Function Tests (TFTs),ECG,Chest X-Ray,Urinalysis,PT / INR (Coagulation),HBsAg / HIV screen,Malaria Test,Other"|split:"," %}
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" name="dept_inv_{{ inv|lower|slugify }}"
+                     id="inv_{{ inv|lower|slugify }}"
+                     {% if d|get_item:'inv_'|add:inv|lower|slugify == 'on' %}checked{% endif %}>
+              <label class="form-check-label small" for="inv_{{ inv|lower|slugify }}">{{ inv }}</label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Investigation Notes / Results Awaited</label>
+          <textarea name="dept_investigation_notes" class="form-control form-control-sm" rows="2"
+                    placeholder="Results pending, abnormal findings noted, follow-up actions…">{{ d.investigation_notes|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 7: ASSESSMENT & DIAGNOSIS ──────────────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-danger bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s7" aria-expanded="true">
+      <i class="bi bi-stethoscope text-danger"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">7. Assessment & Diagnosis</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s7">
+    <div class="p-3">
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Primary Diagnosis</label>
+          <input type="text" name="dept_diagnosis_primary" class="form-control form-control-sm"
+                 placeholder="e.g. Type 2 Diabetes Mellitus — poorly controlled"
+                 value="{{ d.diagnosis_primary|default:'' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Secondary / Co-morbid Diagnoses</label>
+          <input type="text" name="dept_diagnosis_secondary" class="form-control form-control-sm"
+                 placeholder="e.g. Hypertension, Dyslipidaemia"
+                 value="{{ d.diagnosis_secondary|default:'' }}">
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Assessment Notes</label>
+          <textarea name="dept_assessment_notes" class="form-control form-control-sm" rows="2"
+                    placeholder="Clinical reasoning, differential diagnoses, overall impression…">{{ d.assessment_notes|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 8: PRE-OPERATIVE MEDICAL CLEARANCE ─────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm border-warning">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-warning bg-opacity-20 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s8" aria-expanded="true">
+      <i class="bi bi-patch-check-fill text-warning"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">8. Pre-operative Medical Clearance</span>
+      <span class="badge bg-warning text-dark ms-2" style="font-size:.65rem;">Writes to Surgical Booking</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s8">
+    <div class="p-3">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Clearance Status <span class="text-danger">*</span></label>
+          <div class="d-flex flex-column gap-2 mt-1">
+            <label class="d-flex align-items-center gap-2 p-2 border rounded" id="lbl_clear_fit"
+                   style="cursor:pointer;{% if d.preop_clearance_status == 'FIT' %}background:#d1fae5;border-color:#16a34a !important;{% endif %}">
+              <input type="radio" name="dept_preop_clearance_status" value="FIT"
+                     onchange="updateClearanceBadge(this)"
+                     {% if d.preop_clearance_status == 'FIT' %}checked{% endif %}>
+              <span class="badge bg-success">FIT</span>
+              <span class="small">Fit for surgery — no restrictions</span>
+            </label>
+            <label class="d-flex align-items-center gap-2 p-2 border rounded" id="lbl_clear_cond"
+                   style="cursor:pointer;{% if d.preop_clearance_status == 'CONDITIONAL' %}background:#fef9c3;border-color:#ca8a04 !important;{% endif %}">
+              <input type="radio" name="dept_preop_clearance_status" value="CONDITIONAL"
+                     onchange="updateClearanceBadge(this)"
+                     {% if d.preop_clearance_status == 'CONDITIONAL' %}checked{% endif %}>
+              <span class="badge bg-warning text-dark">CONDITIONAL</span>
+              <span class="small">Fit with conditions / optimisation needed</span>
+            </label>
+            <label class="d-flex align-items-center gap-2 p-2 border rounded" id="lbl_clear_unfit"
+                   style="cursor:pointer;{% if d.preop_clearance_status == 'NOT FIT' %}background:#fee2e2;border-color:#dc2626 !important;{% endif %}">
+              <input type="radio" name="dept_preop_clearance_status" value="NOT FIT"
+                     onchange="updateClearanceBadge(this)"
+                     {% if d.preop_clearance_status == 'NOT FIT' %}checked{% endif %}>
+              <span class="badge bg-danger">NOT FIT</span>
+              <span class="small">Not fit for surgery at this time</span>
+            </label>
+          </div>
+        </div>
+        <div class="col-md-8">
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Clearance Notes / Conditions</label>
+              <textarea name="dept_preop_clearance_notes" class="form-control form-control-sm" rows="3"
+                        placeholder="e.g. BP must be &lt;140/90 before surgery. Patient is on antihypertensives — optimise dose. Repeat BP in 1 week.">{{ d.preop_clearance_notes|default:'' }}</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Anaesthetic Risk</label>
+              <select name="dept_anaesthetic_risk" class="form-select form-select-sm">
+                <option value="">— Not assessed —</option>
+                <option value="ASA I" {% if d.anaesthetic_risk == 'ASA I' %}selected{% endif %}>ASA I — Normal healthy patient</option>
+                <option value="ASA II" {% if d.anaesthetic_risk == 'ASA II' %}selected{% endif %}>ASA II — Mild systemic disease</option>
+                <option value="ASA III" {% if d.anaesthetic_risk == 'ASA III' %}selected{% endif %}>ASA III — Severe systemic disease</option>
+                <option value="ASA IV" {% if d.anaesthetic_risk == 'ASA IV' %}selected{% endif %}>ASA IV — Life-threatening systemic disease</option>
+                <option value="ASA V" {% if d.anaesthetic_risk == 'ASA V' %}selected{% endif %}>ASA V — Not expected to survive without surgery</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Clearance Valid Until</label>
+              <input type="date" name="dept_preop_clearance_valid_until" class="form-control form-control-sm"
+                     value="{{ d.preop_clearance_valid_until|default:'' }}">
+              <div class="form-text small">Leave blank if open-ended</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div id="clearanceSummaryBadge" class="d-none">
+            <div class="alert alert-success border-start border-4 border-success py-2 px-3 mb-0 small">
+              <i class="bi bi-patch-check-fill me-1"></i>
+              <strong>Clearance recorded.</strong> This will be written to the patient's surgical booking automatically on save.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {# ── SECTION 9: MANAGEMENT PLAN ──────────────────────────────────────────── #}
+  <div class="mb-3 rounded border shadow-sm">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-primary bg-opacity-10 border-bottom cfm-hdr"
+         style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s9" aria-expanded="true">
+      <i class="bi bi-card-checklist text-primary"></i>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">9. Management Plan</span>
+      <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    </div>
+    <div class="collapse show" id="cfm_gp_s9">
+    <div class="p-3">
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Medications Prescribed</label>
+          <textarea name="dept_medications_prescribed" class="form-control form-control-sm" rows="3"
+                    placeholder="Drug — dose — route — frequency — duration (one per line)&#10;e.g. Amlodipine 5mg — Oral — OD — 30 days">{{ d.medications_prescribed|default:'' }}</textarea>
+          <div class="form-text small">These will be routed to Pharmacy for dispensing.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Patient Instructions</label>
+          <textarea name="dept_patient_instructions" class="form-control form-control-sm" rows="3"
+                    placeholder="Diet, lifestyle advice, monitoring instructions…">{{ d.patient_instructions|default:'' }}</textarea>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Follow-up Interval</label>
+          <select name="dept_followup_interval" class="form-select form-select-sm">
+            <option value="">— Not specified —</option>
+            <option value="1 week" {% if d.followup_interval == '1 week' %}selected{% endif %}>1 week</option>
+            <option value="2 weeks" {% if d.followup_interval == '2 weeks' %}selected{% endif %}>2 weeks</option>
+            <option value="1 month" {% if d.followup_interval == '1 month' %}selected{% endif %}>1 month</option>
+            <option value="3 months" {% if d.followup_interval == '3 months' %}selected{% endif %}>3 months</option>
+            <option value="6 months" {% if d.followup_interval == '6 months' %}selected{% endif %}>6 months</option>
+            <option value="PRN" {% if d.followup_interval == 'PRN' %}selected{% endif %}>PRN (as needed)</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Refer Back To</label>
+          <input type="text" name="dept_refer_back_to" class="form-control form-control-sm"
+                 placeholder="e.g. Glaucoma Clinic, Surgical Team"
+                 value="{{ d.refer_back_to|default:'' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Referral to External</label>
+          <input type="text" name="dept_external_referral" class="form-control form-control-sm"
+                 placeholder="e.g. Cardiologist, Endocrinologist"
+                 value="{{ d.external_referral|default:'' }}">
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">General Notes / Additional Comments</label>
+          <textarea name="dept_gp_notes" class="form-control form-control-sm" rows="2"
+                    placeholder="Any other clinical notes…">{{ d.gp_notes|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function calcBMI() {
+  const w = parseFloat(document.getElementById('gp_weight').value);
+  const h = parseFloat(document.getElementById('gp_height').value);
+  const bmiEl = document.getElementById('gp_bmi');
+  if (w > 0 && h > 0) {
+    const bmi = (w / ((h / 100) ** 2)).toFixed(1);
+    bmiEl.value = bmi;
+    let cat = '';
+    if (bmi < 18.5) cat = ' (Underweight)';
+    else if (bmi < 25)  cat = ' (Normal)';
+    else if (bmi < 30)  cat = ' (Overweight)';
+    else                cat = ' (Obese)';
+    bmiEl.value = bmi + cat;
+  } else {
+    bmiEl.value = '';
+  }
+}
+
+function updateClearanceBadge(radio) {
+  const badge = document.getElementById('clearanceSummaryBadge');
+  if (radio.value) badge.classList.remove('d-none');
+  // Highlight selected label
+  ['lbl_clear_fit', 'lbl_clear_cond', 'lbl_clear_unfit'].forEach(id => {
+    const lbl = document.getElementById(id);
+    if (lbl) { lbl.style.background = ''; lbl.style.borderColor = ''; }
+  });
+  if (radio.value === 'FIT')         { document.getElementById('lbl_clear_fit').style.background  = '#d1fae5'; document.getElementById('lbl_clear_fit').style.borderColor  = '#16a34a'; }
+  if (radio.value === 'CONDITIONAL') { document.getElementById('lbl_clear_cond').style.background = '#fef9c3'; document.getElementById('lbl_clear_cond').style.borderColor = '#ca8a04'; }
+  if (radio.value === 'NOT FIT')     { document.getElementById('lbl_clear_unfit').style.background = '#fee2e2'; document.getElementById('lbl_clear_unfit').style.borderColor = '#dc2626'; }
+}
+
+// Show badge on page load if clearance was already saved
+document.addEventListener('DOMContentLoaded', function() {
+  const checked = document.querySelector('input[name="dept_preop_clearance_status"]:checked');
+  if (checked) {
+    document.getElementById('clearanceSummaryBadge').classList.remove('d-none');
+  }
+  // Re-calc BMI if values present
+  if (document.getElementById('gp_weight').value && document.getElementById('gp_height').value) {
+    calcBMI();
+  }
+});
+</script>
+
+{% endwith %}

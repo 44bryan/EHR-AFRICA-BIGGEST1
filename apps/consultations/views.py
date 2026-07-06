@@ -26,6 +26,7 @@ _DEPT_TO_SERVICE_TYPES = {
     'CATARACT':   ['CATARACT'],
     'UVEITIS':    ['UVEITIS'],
     'LOW_VIS':    ['LOW_VISION'],
+    'GEN_PHYS':   ['GEN_PHYS', 'GENERAL'],
     'INVEST':     ['INVEST'],
 }
 
@@ -43,6 +44,7 @@ _DEPT_TO_VISIT_STATUSES = {
     'CATARACT':    ['AT_CATARACT'],
     'UVEITIS':     ['UVEITIS'],
     'LOW_VIS':     ['WAITING', 'IN_CONSULTATION'],
+    'GEN_PHYS':    ['WAITING', 'IN_CONSULTATION'],
 }
 
 
@@ -288,6 +290,28 @@ def consultation_create_view(request, patient_id):
             visit.status = 'IN_CONSULTATION'
             visit.attending_doctor = request.user
             visit.save(update_fields=['status', 'attending_doctor'])
+
+            # ── GP pre-op clearance → write back to SurgicalBooking ────────────
+            preop_clearance = dept_data.get('preop_clearance_status', '')
+            if preop_clearance and visit:
+                try:
+                    from apps.ipd.models import SurgicalBooking
+                    booking = SurgicalBooking.objects.filter(
+                        patient=patient, is_deleted=False
+                    ).exclude(status__in=['COMPLETED', 'CANCELLED']).order_by('-surgery_date').first()
+                    if booking:
+                        clearance_notes = dept_data.get('preop_clearance_notes', '')
+                        clearance_date = dept_data.get('preop_clearance_valid_until', '')
+                        booking.pre_op_requirements = (
+                            f'[GP CLEARANCE: {preop_clearance}]\n'
+                            f'{clearance_notes}\n'
+                            f'Cleared by: Dr. {request.user.get_full_name()} on {consultation.consultation_date.strftime("%d/%m/%Y")}'
+                            + (f'\nValid until: {clearance_date}' if clearance_date else '')
+                        )
+                        booking.save(update_fields=['pre_op_requirements', 'updated_at'])
+                        messages.info(request, f'Pre-op clearance ({preop_clearance}) written to surgical booking {booking.booking_number}.')
+                except Exception:
+                    pass
 
             # ── Surgery recommended → auto-create COUNSELING queue token ──────
             surgery_recommended = dept_data.get('surgery_recommended', '') == 'on'
@@ -603,6 +627,7 @@ def consultation_complete_view(request, pk):
             'CATARACT':    ['CATARACT'],
             'UVEITIS':     ['UVEITIS'],
             'LOW_VIS':     ['LOW_VISION'],
+            'GEN_PHYS':    ['GEN_PHYS', 'GENERAL'],
         }
         try:
             from apps.qms.models import QueueToken, TokenStatus

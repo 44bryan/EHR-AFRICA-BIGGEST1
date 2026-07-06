@@ -29,6 +29,7 @@ class UserRole(models.TextChoices):
     OPTOMETRIST               = 'optometrist',               _('Optometrist / Refractionist')
     LOW_VISION_SPECIALIST     = 'low_vision_specialist',     _('Low Vision Specialist / Rehabilitation')
     INTERN                    = 'intern',                    _('Intern / House Officer')
+    GENERAL_PHYSICIAN         = 'general_physician',         _('General Physician / Internist')
     # ── Allied Clinical ──────────────────────────────────────────────────
     ANAESTHETIST              = 'anaesthetist',              _('Anaesthetist')
     ORTHOPTIST                = 'orthoptist',                _('Orthoptist / Binocular Vision Therapist')
@@ -171,6 +172,7 @@ class User(AbstractUser):
         UserRole.LOW_VISION_SPECIALIST,
         UserRole.ORTHOPTIST,
         UserRole.INTERN,
+        UserRole.GENERAL_PHYSICIAN,
     )
     NURSE_ROLES = (
         UserRole.NURSE,
@@ -393,6 +395,7 @@ class User(AbstractUser):
             UserRole.LOW_VISION_SPECIALIST:     'LOW_VIS',
             UserRole.OPHTHALMOLOGIST:           'GEN_OPH',
             UserRole.INTERN:                    'GEN_OPH',   # interns work under general ophthalmology
+            UserRole.GENERAL_PHYSICIAN:         'GEN_PHYS',
             UserRole.ORTHOPTIST:                'ORTHO',
             UserRole.INVESTIGATION_TECHNICIAN:  'INVEST',
         }
