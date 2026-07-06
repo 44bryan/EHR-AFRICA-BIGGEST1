@@ -76,7 +76,7 @@ def _doctor_choices():
         UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
         UserRole.NEURO_OPHTHALMOLOGIST, UserRole.UVEITIS_SPECIALIST,
         UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST,
-        UserRole.ORTHOPTIST, UserRole.REFRACTIONIST,
+        UserRole.ORTHOPTIST, UserRole.PEDIATRIC_REFRACTIONIST,
     ]
     return User.objects.filter(role__in=clinical_roles, is_active=True).order_by('last_name', 'first_name')
 

@@ -882,7 +882,7 @@ def cashier_pos(request, token_id):
     ).aggregate(
         total=Sum('amount'),
         cash=Sum('amount', filter=Q(payment_method=PaymentMethod.CASH)),
-        mobile=Sum('amount', filter=Q(payment_method=PaymentMethod.MOBILE)),
+        mobile=Sum('amount', filter=Q(payment_method=PaymentMethod.MOBILE_MONEY)),
     )
 
     return render(request, 'billing/cashier_pos.html', {
