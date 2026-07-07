@@ -279,6 +279,34 @@ document.addEventListener('htmx:afterSettle', function() {
   buildBreadcrumbs();
 });
 
+// ── Single quick-add helper (append one option to text input) ────────────────
+function appendComboSel(sel, inputId) {
+  var val = sel.value;
+  sel.value = '';
+  if (!val) return;
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var cur = inp.value.trim();
+  inp.value = cur ? cur + ', ' + val : val;
+}
+
+// ── Multi-select quick-add helper ────────────────────────────────────────────
+// Used by consultation forms. <select multiple> lets the user Ctrl+Click to
+// pick several options at once; clicking "Add" appends them all, comma-separated.
+function addMultiSel(selEl, inputId) {
+  if (typeof selEl === 'string') selEl = document.getElementById(selEl);
+  var inp = document.getElementById(inputId);
+  if (!selEl || !inp) return;
+  var vals = Array.from(selEl.selectedOptions)
+                  .map(function(o) { return o.value; })
+                  .filter(function(v) { return v; });
+  if (!vals.length) return;
+  var cur = inp.value.trim();
+  inp.value = cur ? cur + ', ' + vals.join(', ') : vals.join(', ');
+  selEl.selectedIndex = -1;
+  inp.focus();
+}
+
 // Back / forward: clear click tracking and re-detect purely from URL.
 window.addEventListener('popstate', function () {
   _sidebarClickedLink = null;

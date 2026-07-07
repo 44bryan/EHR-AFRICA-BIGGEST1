@@ -264,18 +264,20 @@
         </h6>
         <i class="bi bi-chevron-down text-warning"></i>
       </div>
-      <div id="bodyMgmt" class="card-body" {% if not is_resuming %}style="display:none;"{% endif %}>
+      <div id="bodyMgmt" class="card-body">
         <div class="row g-3">
           <div class="col-12">
             <label class="form-label fw-semibold small">Management Plan</label>
-            {% with cur=form.management_plan.value %}
-            <select name="management_plan" class="form-select form-select-sm">
-              <option value="">— Select management plan —</option>
-              {% for mg in "Continue current treatment,Topical medication prescribed,Systemic medication prescribed,Optical prescription issued,Referral to specialist,Surgery scheduled / planned,Added to surgical waiting list,Counselling provided,Discharge — no further follow-up,Observation only — monitor,Urgent review requested,Patient education given,Laser treatment planned,Intravitreal injection given,Investigations ordered"|split:"," %}
-              <option value="{{ mg }}" {% if cur == mg %}selected{% endif %}>{{ mg }}</option>
-              {% endfor %}
-            </select>
-            {% endwith %}
+            <div class="input-group input-group-sm">
+              <input type="text" name="management_plan" id="combo_mgmt_edit" class="form-control"
+                     placeholder="Type or quick-add →" value="{{ form.management_plan.value|default:'' }}">
+              <select class="form-select" style="max-width:220px;" onchange="appendComboSel(this,'combo_mgmt_edit')">
+                <option value="">Quick-add…</option>
+                {% for mg in "Continue current treatment,Topical medication prescribed,Systemic medication prescribed,Optical prescription issued,Referral to specialist,Surgery scheduled / planned,Added to surgical waiting list,Counselling provided,Discharge — no further follow-up,Observation only — monitor,Urgent review requested,Patient education given,Laser treatment planned,Intravitreal injection given,Investigations ordered"|split:"," %}
+                <option value="{{ mg }}">{{ mg }}</option>
+                {% endfor %}
+              </select>
+            </div>
           </div>
           <div class="col-md-3">
             <label class="form-label fw-semibold small">Follow-up Date</label>
@@ -325,18 +327,16 @@
 
 {% block extra_js %}
 <script>
-// qfAppend — used by combo-box dropdowns to append picked value to a text input
 function qfAppend(id, val) {
   var inp = document.getElementById(id);
   if (!inp || !val) return;
   inp.value = inp.value.trim() ? inp.value.trim() + '. ' + val : val;
-  inp.focus();
 }
 function qfPick(fieldId, sel) {
   var val = sel.value;
   if (!val || val === 'Other') { sel.value = ''; return; }
   var ta = document.getElementById(fieldId);
-  if (ta) { var cur = ta.value.trim(); ta.value = cur ? cur + '. ' + val : val; ta.focus(); }
+  if (ta) { var cur = ta.value.trim(); ta.value = cur ? cur + '. ' + val : val; }
   sel.value = '';
 }
 function toggleCard(bodyId, header) {
@@ -349,5 +349,15 @@ function toggleCard(bodyId, header) {
     chevron.classList.toggle('bi-chevron-down', !isHidden);
   }
 }
+
+// On edit form, expand gen_oph outer zone so existing data is visible
+document.addEventListener('DOMContentLoaded', function() {
+  var genOphBody = document.getElementById('cfm_gen_oph_body');
+  if (genOphBody) {
+    genOphBody.classList.add('show');
+    var hdr = genOphBody.previousElementSibling;
+    if (hdr) hdr.setAttribute('aria-expanded', 'true');
+  }
+});
 </script>
 {% endblock %}
