@@ -1,0 +1,314 @@
+{% load ehr_tags %}
+{# Department-aware glance summary — included in patient medical record consultation cards.
+   Context vars available: consult, dd (department_specific_data dict), vs (vital_signs) #}
+{% with dc=consult.department.code %}
+
+{% if dc == 'GEN_PHYS' %}
+{# ════ GENERAL PHYSICIAN ════════════════════════════════════════════════════ #}
+<div class="exam-grid mb-3" style="grid-template-columns:{% if dd.preop_clearance_status %}1fr 1fr 1fr{% else %}1fr 1fr{% endif %};">
+
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-heart-pulse me-1"></i>Vital Signs</div>
+    {% if dd.bp %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">BP</span><strong>{{ dd.bp }} mmHg</strong></div>{% endif %}
+    {% if dd.pulse %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">Pulse</span><strong>{{ dd.pulse }} bpm{% if dd.pulse_rhythm %} ({{ dd.pulse_rhythm }}){% endif %}</strong></div>{% endif %}
+    {% if dd.temperature %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">Temp</span><strong>{{ dd.temperature }}°C</strong></div>{% endif %}
+    {% if dd.spo2 %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">SpO₂</span><strong>{{ dd.spo2 }}%</strong></div>{% endif %}
+    {% if dd.rr %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">RR</span><strong>{{ dd.rr }}/min</strong></div>{% endif %}
+    {% if dd.bmi %}<div class="d-flex justify-content-between small py-1"><span class="text-muted">BMI</span><strong>{{ dd.bmi }}</strong></div>{% endif %}
+    {% if not dd.bp and not dd.pulse %}<span class="text-muted small">No vitals recorded</span>{% endif %}
+  </div>
+
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-stethoscope me-1"></i>Assessment</div>
+    {% if dd.diagnosis_primary %}<div class="small mb-1"><span class="text-muted">Primary:</span> <strong>{{ dd.diagnosis_primary }}</strong></div>{% endif %}
+    {% if dd.diagnosis_secondary %}<div class="small mb-1 text-muted">Co-morbid: {{ dd.diagnosis_secondary }}</div>{% endif %}
+    {% if dd.assessment_notes %}<div class="small text-muted mt-1">{{ dd.assessment_notes|truncatechars:100 }}</div>{% endif %}
+    {% if not dd.diagnosis_primary and dd.chief_complaint %}<div class="small text-muted">CC: {{ dd.chief_complaint|truncatechars:80 }}</div>{% endif %}
+  </div>
+
+  {% if dd.preop_clearance_status %}
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-patch-check me-1"></i>Pre-op Clearance</div>
+    {% if dd.preop_clearance_status == 'FIT' %}<span class="badge bg-success mb-1">FIT for surgery</span>
+    {% elif dd.preop_clearance_status == 'CONDITIONAL' %}<span class="badge bg-warning text-dark mb-1">CONDITIONAL</span>
+    {% elif dd.preop_clearance_status == 'NOT FIT' %}<span class="badge bg-danger mb-1">NOT FIT</span>{% endif %}
+    {% if dd.anaesthetic_risk %}<div class="small text-muted">{{ dd.anaesthetic_risk }}</div>{% endif %}
+    {% if dd.preop_clearance_notes %}<div class="small text-muted mt-1">{{ dd.preop_clearance_notes|truncatechars:80 }}</div>{% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% if dd.medications_prescribed %}<div class="small mb-2"><span class="text-muted fw-semibold">Rx: </span>{{ dd.medications_prescribed|truncatechars:160 }}</div>{% endif %}
+{% if dd.patient_instructions %}<div class="small mb-2"><span class="text-muted fw-semibold">Instructions: </span>{{ dd.patient_instructions }}</div>{% endif %}
+
+
+{% elif dc == 'REFRAC' or dc == 'PEDS_REFRAC' %}
+{# ════ REFRACTION / PEDIATRIC REFRACTION — VA + Rx, no IOP ════════════════ #}
+{% if dd.va_re_unaided or dd.va_le_unaided or dd.va_unaided_od or dd.va_unaided_os or vs.visual_acuity_right or vs.visual_acuity_left %}
+<div class="exam-grid mb-3">
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+    <table class="va-table">
+      <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>Corrected</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="eye-re">OD</td>
+          <td>{% if dd.va_re_unaided %}{{ dd.va_re_unaided }}{% elif dd.va_unaided_od %}{{ dd.va_unaided_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+          <td>{{ dd.va_re_ph|default:"—" }}</td>
+          <td>{% if dd.va_re_bcva %}{{ dd.va_re_bcva }}{% elif dd.va_corrected_od %}{{ dd.va_corrected_od }}{% else %}—{% endif %}</td>
+        </tr>
+        <tr>
+          <td class="eye-le">OS</td>
+          <td>{% if dd.va_le_unaided %}{{ dd.va_le_unaided }}{% elif dd.va_unaided_os %}{{ dd.va_unaided_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+          <td>{{ dd.va_le_ph|default:"—" }}</td>
+          <td>{% if dd.va_le_bcva %}{{ dd.va_le_bcva }}{% elif dd.va_corrected_os %}{{ dd.va_corrected_os }}{% else %}—{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-eyeglasses me-1"></i>Spectacle Rx</div>
+    {% with sph_od=dd|dictfirst:"rx_re_sphere,rx_sph_od,final_sph_od,pg_sph_dist_od,sub_sph_dist_od" sph_os=dd|dictfirst:"rx_le_sphere,rx_sph_os,final_sph_os,pg_sph_dist_os,sub_sph_dist_os" %}
+    {% if sph_od or sph_os %}
+    <table class="va-table">
+      <thead><tr><th>Eye</th><th>Sph</th><th>Cyl</th><th>Axis</th></tr></thead>
+      <tbody>
+        <tr><td class="eye-re">OD</td>
+          <td>{{ sph_od|default:"—" }}</td>
+          <td>{{ dd|dictfirst:"rx_re_cyl,rx_cyl_od,final_cyl_od,pg_cyl_dist_od,sub_cyl_dist_od"|default:"—" }}</td>
+          <td>{% with ax=dd|dictfirst:"rx_re_axis,rx_axis_od,final_axis_od,pg_axis_dist_od,sub_axis_dist_od" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+        </tr>
+        <tr><td class="eye-le">OS</td>
+          <td>{{ sph_os|default:"—" }}</td>
+          <td>{{ dd|dictfirst:"rx_le_cyl,rx_cyl_os,final_cyl_os,pg_cyl_dist_os,sub_cyl_dist_os"|default:"—" }}</td>
+          <td>{% with ax=dd|dictfirst:"rx_le_axis,rx_axis_os,final_axis_os,pg_axis_dist_os,sub_axis_dist_os" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% else %}<span class="text-muted small">No Rx recorded</span>{% endif %}
+    {% endwith %}
+  </div>
+</div>
+{% endif %}
+
+
+{% elif dc == 'ORTHO' %}
+{# ════ ORTHOPTIST — VA + Binocular Vision ══════════════════════════════════ #}
+<div class="exam-grid mb-3">
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+    <table class="va-table">
+      <thead><tr><th>Eye</th><th>Unaided</th><th>BCVA</th></tr></thead>
+      <tbody>
+        <tr><td class="eye-re">OD</td>
+          <td>{% if dd.va_re_unaided %}{{ dd.va_re_unaided }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+          <td>{{ dd.va_re_bcva|default:"—" }}</td>
+        </tr>
+        <tr><td class="eye-le">OS</td>
+          <td>{% if dd.va_le_unaided %}{{ dd.va_le_unaided }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+          <td>{{ dd.va_le_bcva|default:"—" }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-arrows-move me-1"></i>Binocular Vision</div>
+    {% if dd.cover_test %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">Cover Test</span><strong>{{ dd.cover_test }}</strong></div>{% endif %}
+    {% if dd.motility %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">Motility</span><strong>{{ dd.motility }}</strong></div>{% endif %}
+    {% if dd.stereopsis %}<div class="d-flex justify-content-between small py-1 border-bottom"><span class="text-muted">Stereopsis</span><strong>{{ dd.stereopsis }}</strong></div>{% endif %}
+    {% if dd.bv_status %}<div class="d-flex justify-content-between small py-1"><span class="text-muted">BV Status</span><strong>{{ dd.bv_status }}</strong></div>{% endif %}
+    {% if not dd.cover_test and not dd.motility %}<span class="text-muted small">No BV data</span>{% endif %}
+  </div>
+</div>
+
+
+{% elif dc == 'LOW_VIS' %}
+{# ════ LOW VISION — Functional VA + LV Aids ════════════════════════════════ #}
+<div class="exam-grid mb-3">
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-eye me-1"></i>Functional VA</div>
+    <table class="va-table">
+      <thead><tr><th>Eye</th><th>Distance</th><th>Near</th></tr></thead>
+      <tbody>
+        <tr><td class="eye-re">OD</td>
+          <td>{% if dd.va_re_unaided %}{{ dd.va_re_unaided }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+          <td>{{ dd.near_va_re|default:"—" }}</td>
+        </tr>
+        <tr><td class="eye-le">OS</td>
+          <td>{% if dd.va_le_unaided %}{{ dd.va_le_unaided }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+          <td>{{ dd.near_va_le|default:"—" }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-binoculars me-1"></i>Low Vision Aids</div>
+    {% if dd.lv_aid_prescribed %}<div class="small mb-1"><strong>{{ dd.lv_aid_prescribed }}</strong></div>{% endif %}
+    {% if dd.lv_goal %}<div class="small text-muted">Goal: {{ dd.lv_goal|truncatechars:80 }}</div>{% endif %}
+    {% if not dd.lv_aid_prescribed and not dd.lv_goal %}<span class="text-muted small">No LV aids recorded</span>{% endif %}
+  </div>
+</div>
+
+
+{% else %}
+{# ════ ALL EYE DEPARTMENTS: GEN_OPH · RETINA · GLAUC · UVEITIS · CATARACT · CORNEA · OCULOPLASTY · NEURO_OPH · PEDS_OPH ══ #}
+
+{# VA + IOP grid #}
+{% with va_od=dd.va_re_unaided va_os=dd.va_le_unaided iop_od=dd.iop_re iop_os=dd.iop_le %}
+{% if va_od or va_os or iop_od or iop_os or dd.va_unaided_od or dd.va_unaided_os or vs.visual_acuity_right or vs.visual_acuity_left %}
+<div class="exam-grid mb-3">
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+    <table class="va-table">
+      <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>BCVA/Corrected</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="eye-re">OD</td>
+          <td>{% if va_od %}{{ va_od }}{% elif dd.va_unaided_od %}{{ dd.va_unaided_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+          <td>{{ dd.va_re_ph|default:"—" }}</td>
+          <td>{% if dd.va_re_bcva %}{{ dd.va_re_bcva }}{% elif dd.va_corrected_od %}{{ dd.va_corrected_od }}{% else %}—{% endif %}</td>
+        </tr>
+        <tr>
+          <td class="eye-le">OS</td>
+          <td>{% if va_os %}{{ va_os }}{% elif dd.va_unaided_os %}{{ dd.va_unaided_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+          <td>{{ dd.va_le_ph|default:"—" }}</td>
+          <td>{% if dd.va_le_bcva %}{{ dd.va_le_bcva }}{% elif dd.va_corrected_os %}{{ dd.va_corrected_os }}{% else %}—{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-speedometer2 me-1"></i>IOP</div>
+    <div class="d-flex justify-content-around align-items-center" style="height:60px;">
+      <div class="text-center">
+        <div class="eye-re fw-bold" style="font-size:1.3rem;">
+          {% if iop_od %}{{ iop_od }}{% elif dd.iop_od %}{{ dd.iop_od }}{% elif vs.intraocular_pressure_right %}{{ vs.intraocular_pressure_right }}{% else %}—{% endif %}
+        </div>
+        <div style="font-size:.65rem;color:#64748b;">OD mmHg</div>
+      </div>
+      <div style="width:1px;height:40px;background:#e2e8f0;"></div>
+      <div class="text-center">
+        <div class="eye-le fw-bold" style="font-size:1.3rem;">
+          {% if iop_os %}{{ iop_os }}{% elif dd.iop_os %}{{ dd.iop_os }}{% elif vs.intraocular_pressure_left %}{{ vs.intraocular_pressure_left }}{% else %}—{% endif %}
+        </div>
+        <div style="font-size:.65rem;color:#64748b;">OS mmHg</div>
+      </div>
+    </div>
+    {% if dd.iop_method %}<div class="text-muted text-center" style="font-size:.65rem;">{{ dd.iop_method }}</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+
+{# ── Retina: Fundus findings ── #}
+{% if dc == 'RETINA' %}
+{% if dd.disc_re or dd.disc_le or dd.macula_re or dd.macula_le %}
+<div class="exam-grid mb-2">
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-circle-half me-1"></i>Fundus OD</div>
+    {% if dd.disc_re %}<div class="small"><span class="text-muted">Disc: </span>{{ dd.disc_re }}</div>{% endif %}
+    {% if dd.macula_re %}<div class="small"><span class="text-muted">Macula: </span>{{ dd.macula_re }}</div>{% endif %}
+  </div>
+  <div class="eg-box">
+    <div class="eg-label"><i class="bi bi-circle-half me-1"></i>Fundus OS</div>
+    {% if dd.disc_le %}<div class="small"><span class="text-muted">Disc: </span>{{ dd.disc_le }}</div>{% endif %}
+    {% if dd.macula_le %}<div class="small"><span class="text-muted">Macula: </span>{{ dd.macula_le }}</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+{# ── Glaucoma: Disc summary ── #}
+{% if dc == 'GLAUC' or dc == 'GLAUCOMA' %}
+{% if dd.disc_re or dd.disc_le %}
+<div class="small mb-2 p-2 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+  {% if dd.disc_re %}<span class="me-3"><span class="text-muted">Disc OD: </span><strong>{{ dd.disc_re }}</strong></span>{% endif %}
+  {% if dd.disc_le %}<span><span class="text-muted">Disc OS: </span><strong>{{ dd.disc_le }}</strong></span>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+{# ── Cataract: Lens status ── #}
+{% if dc == 'CATARACT' %}
+{% if dd.lens_re or dd.lens_le %}
+<div class="small mb-2 p-2 rounded" style="background:#fffbeb;border:1px solid #fde68a;">
+  {% if dd.lens_re %}<span class="me-3"><span class="text-muted">Lens OD: </span><strong>{{ dd.lens_re }}</strong></span>{% endif %}
+  {% if dd.lens_le %}<span><span class="text-muted">Lens OS: </span><strong>{{ dd.lens_le }}</strong></span>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+{# ── Gen Oph: Diagnosis + Refraction Rx ── #}
+{% if dc == 'GEN_OPH' %}
+{% if dd.diagnosis_re or dd.diagnosis_le %}
+<div class="small mb-2">
+  {% if dd.diagnosis_re %}<span class="me-3"><span class="text-muted">Dx OD: </span>{{ dd.diagnosis_re|truncatechars:60 }}</span>{% endif %}
+  {% if dd.diagnosis_le %}<span><span class="text-muted">Dx OS: </span>{{ dd.diagnosis_le|truncatechars:60 }}</span>{% endif %}
+</div>
+{% endif %}
+{% with sph_od=dd|dictfirst:"rx_re_sphere,rx_sph_od,final_sph_od,pg_sph_dist_od,sub_sph_dist_od" sph_os=dd|dictfirst:"rx_le_sphere,rx_sph_os,final_sph_os,pg_sph_dist_os,sub_sph_dist_os" %}
+{% if sph_od or sph_os %}
+<div class="mb-3">
+  <div class="eg-label mb-1"><i class="bi bi-eyeglasses me-1"></i>{% if dd.pg_sph_dist_od or dd.pg_sph_dist_os %}Final Prescription (Patient Glass){% else %}Refraction / Spectacle Rx{% endif %}</div>
+  <table class="rx-table">
+    <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>VA</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="eye-re">OD</td>
+        <td>{{ sph_od|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_re_cyl,rx_cyl_od,final_cyl_od,pg_cyl_dist_od,sub_cyl_dist_od"|default:"—" }}</td>
+        <td>{% with ax=dd|dictfirst:"rx_re_axis,rx_axis_od,final_axis_od,pg_axis_dist_od,sub_axis_dist_od" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+        <td>{{ dd|dictfirst:"rx_re_add,rx_add_od,add_od,pg_add_od"|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_re_va,rx_bcva_od,bcva_od,pg_va_dist_od,sub_va_dist_od"|default:"—" }}</td>
+      </tr>
+      <tr>
+        <td class="eye-le">OS</td>
+        <td>{{ sph_os|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_le_cyl,rx_cyl_os,final_cyl_os,pg_cyl_dist_os,sub_cyl_dist_os"|default:"—" }}</td>
+        <td>{% with ax=dd|dictfirst:"rx_le_axis,rx_axis_os,final_axis_os,pg_axis_dist_os,sub_axis_dist_os" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+        <td>{{ dd|dictfirst:"rx_le_add,rx_add_os,add_os,pg_add_os"|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_le_va,rx_bcva_os,bcva_os,pg_va_dist_os,sub_va_dist_os"|default:"—" }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% with lens=dd|dictfirst:"rx_lens_type,lens_type" %}{% if lens %}<div class="text-muted small mt-1">Lens: {{ lens }}</div>{% endif %}{% endwith %}
+</div>
+{% endif %}
+{% endwith %}
+{% endif %}
+
+{# ── All other eye depts: Refraction Rx if present (refractionist naming) ── #}
+{% if dc != 'GEN_OPH' %}
+{% with sph_od=dd|dictfirst:"rx_re_sphere,rx_sph_od,final_sph_od,pg_sph_dist_od,sub_sph_dist_od" sph_os=dd|dictfirst:"rx_le_sphere,rx_sph_os,final_sph_os,pg_sph_dist_os,sub_sph_dist_os" %}
+{% if sph_od or sph_os %}
+<div class="mb-3">
+  <div class="eg-label mb-1"><i class="bi bi-eyeglasses me-1"></i>{% if dd.pg_sph_dist_od or dd.pg_sph_dist_os %}Final Prescription (Patient Glass){% else %}Refraction / Spectacle Rx{% endif %}</div>
+  <table class="rx-table">
+    <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>VA</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="eye-re">OD</td>
+        <td>{{ sph_od|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_re_cyl,rx_cyl_od,final_cyl_od,pg_cyl_dist_od,sub_cyl_dist_od"|default:"—" }}</td>
+        <td>{% with ax=dd|dictfirst:"rx_re_axis,rx_axis_od,final_axis_od,pg_axis_dist_od,sub_axis_dist_od" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+        <td>{{ dd|dictfirst:"rx_re_add,rx_add_od,add_od,pg_add_od"|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_re_va,rx_bcva_od,bcva_od,pg_va_dist_od,sub_va_dist_od"|default:"—" }}</td>
+      </tr>
+      <tr>
+        <td class="eye-le">OS</td>
+        <td>{{ sph_os|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_le_cyl,rx_cyl_os,final_cyl_os,pg_cyl_dist_os,sub_cyl_dist_os"|default:"—" }}</td>
+        <td>{% with ax=dd|dictfirst:"rx_le_axis,rx_axis_os,final_axis_os,pg_axis_dist_os,sub_axis_dist_os" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
+        <td>{{ dd|dictfirst:"rx_le_add,rx_add_os,add_os,pg_add_os"|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_le_va,rx_bcva_os,bcva_os,pg_va_dist_os,sub_va_dist_os"|default:"—" }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% with lens=dd|dictfirst:"rx_lens_type,lens_type" %}{% if lens %}<div class="text-muted small mt-1">Lens: {{ lens }}</div>{% endif %}{% endwith %}
+</div>
+{% endif %}
+{% endwith %}
+{% endif %}
+
+{% endif %}{# end else (eye departments) #}
+{% endwith %}{# dc #}
