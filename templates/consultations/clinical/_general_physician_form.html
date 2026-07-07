@@ -1,62 +1,102 @@
 {% load ehr_tags %}
 {% with d=consultation.department_specific_data %}
 
-
 <div class="mb-2">
 
-  {# ── SECTION 1: REASON FOR CONSULTATION ────────────────────────────────── #}
+  {# ── SECTION 1: CHIEF COMPLAINT & HISTORY ──────────────────────────────── #}
   <div class="mb-3 rounded border shadow-sm">
     <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top bg-light border-bottom cfm-hdr"
          style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s1" aria-expanded="true">
       <i class="bi bi-clipboard2-pulse text-secondary"></i>
-      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">1. Reason for Consultation</span>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">1. Chief Complaint &amp; History</span>
       <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
     </div>
     <div class="collapse show" id="cfm_gp_s1">
     <div class="p-3">
       <div class="row g-2">
-        <div class="col-md-6">
+
+        <div class="col-md-4">
           <label class="form-label small fw-semibold">Referral Source / Referring Doctor</label>
           <input type="text" name="dept_referral_source" class="form-control form-control-sm"
                  placeholder="e.g. Dr. Mbarga — Glaucoma Clinic"
                  value="{{ d.referral_source|default:'' }}">
         </div>
-        <div class="col-md-6">
+
+        <div class="col-md-4">
           <label class="form-label small fw-semibold">Reason for Referral</label>
           <select name="dept_referral_reason" class="form-select form-select-sm">
             <option value="">— Select —</option>
-            <option value="Pre-operative Medical Clearance" {% if d.referral_reason == 'Pre-operative Medical Clearance' %}selected{% endif %}>Pre-operative Medical Clearance</option>
-            <option value="Systemic Disease Management" {% if d.referral_reason == 'Systemic Disease Management' %}selected{% endif %}>Systemic Disease Management</option>
-            <option value="Medication Review" {% if d.referral_reason == 'Medication Review' %}selected{% endif %}>Medication Review</option>
-            <option value="Hypertension Control" {% if d.referral_reason == 'Hypertension Control' %}selected{% endif %}>Hypertension Control</option>
-            <option value="Diabetes Management" {% if d.referral_reason == 'Diabetes Management' %}selected{% endif %}>Diabetes Management</option>
-            <option value="Anaemia Workup" {% if d.referral_reason == 'Anaemia Workup' %}selected{% endif %}>Anaemia Workup</option>
-            <option value="General Medical Assessment" {% if d.referral_reason == 'General Medical Assessment' %}selected{% endif %}>General Medical Assessment</option>
-            <option value="Other" {% if d.referral_reason == 'Other' %}selected{% endif %}>Other</option>
+            {% for v in "Pre-operative Medical Clearance,Systemic Disease Management,Medication Review,Hypertension Control,Diabetes Management,Anaemia Workup,Cardiac Evaluation,Thyroid Assessment,Renal Function Review,General Medical Assessment,Follow-up Chronic Disease,Other"|split:"," %}
+            <option value="{{ v }}" {% if d.referral_reason == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div class="col-12">
-          <label class="form-label small fw-semibold">Chief Complaint</label>
-          <textarea name="dept_chief_complaint" class="form-control form-control-sm" rows="2"
-                    placeholder="Patient's main complaint in their own words">{{ d.chief_complaint|default:'' }}</textarea>
-        </div>
-        <div class="col-md-8">
-          <label class="form-label small fw-semibold">History of Presenting Illness</label>
-          <textarea name="dept_hpi" class="form-control form-control-sm" rows="3"
-                    placeholder="Onset, duration, character, associated symptoms, aggravating/relieving factors, treatment so far">{{ d.hpi|default:'' }}</textarea>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label small fw-semibold">Duration</label>
-          <input type="text" name="dept_duration" class="form-control form-control-sm"
-                 placeholder="e.g. 3 months" value="{{ d.duration|default:'' }}">
-          <label class="form-label small fw-semibold mt-2">Onset</label>
+
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">Onset</label>
           <select name="dept_onset" class="form-select form-select-sm">
-            <option value="">—</option>
-            <option value="Sudden" {% if d.onset == 'Sudden' %}selected{% endif %}>Sudden</option>
-            <option value="Gradual" {% if d.onset == 'Gradual' %}selected{% endif %}>Gradual</option>
-            <option value="Insidious" {% if d.onset == 'Insidious' %}selected{% endif %}>Insidious</option>
+            {% for v in "Sudden,Gradual,Insidious"|split:"," %}
+            <option value="{{ v }}" {% if d.onset == v or not d.onset and v == 'Gradual' %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
           </select>
         </div>
+
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">Duration</label>
+          <select name="dept_duration" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "1 day,2 days,3 days,1 week,2 weeks,3 weeks,1 month,2 months,3 months,6 months,1 year,2 years,5+ years,Chronic / ongoing"|split:"," %}
+            <option value="{{ v }}" {% if d.duration == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Chief Complaint — multi-select combo #}
+        <div class="col-md-8">
+          <label class="form-label small fw-semibold mb-1">Chief Complaint</label>
+          <input type="text" name="dept_chief_complaint" id="gp_cc" class="form-control form-control-sm mb-1"
+                 placeholder="Type or Ctrl+click multiple below then Add →"
+                 value="{{ d.chief_complaint|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_cc_sel" multiple size="4" class="form-select">
+              {% for v in "Fever,Cough,Shortness of breath,Chest pain,Palpitations,Headache,Dizziness / vertigo,Fatigue / weakness,Weight loss,Weight gain,Abdominal pain,Nausea / vomiting,Diarrhoea,Constipation,Polyuria,Polydipsia,Dysuria,Haematuria,Joint pain,Back pain,Swelling — legs / ankles,Skin rash,Syncope / blackout,Seizures,Loss of appetite,Insomnia,Anxiety / stress,Routine check-up / screening,Pre-operative assessment"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_cc_sel','gp_cc')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold mb-1">Severity</label>
+          <select name="dept_severity" class="form-select form-select-sm mb-2">
+            <option value="">—</option>
+            {% for v in "Mild,Moderate,Severe,Very severe"|split:"," %}
+            <option value="{{ v }}" {% if d.severity == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+          <label class="form-label small fw-semibold mb-1">Pattern</label>
+          <select name="dept_pattern" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Constant,Intermittent,Episodic,Progressive,Improving,Fluctuating"|split:"," %}
+            <option value="{{ v }}" {% if d.pattern == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# HPI — textarea + quick-add phrases #}
+        <div class="col-12">
+          <label class="form-label small fw-semibold mb-1">History of Presenting Illness</label>
+          <textarea name="dept_hpi" id="gp_hpi" class="form-control form-control-sm mb-1" rows="2"
+                    placeholder="Onset, duration, character, associated symptoms, aggravating / relieving factors, treatment so far">{{ d.hpi|default:'' }}</textarea>
+          <select class="form-select form-select-sm" onchange="appendComboSel(this,'gp_hpi')">
+            <option value="">+ Quick-add phrase…</option>
+            {% for v in "Gradual onset over several weeks,Sudden onset,Associated with fever and chills,No fever or chills,Progressive worsening,Intermittent episodes,Relieved by rest,Worse on exertion,Associated with weight loss,No significant associated symptoms,Previously investigated — results pending,Currently on treatment with no improvement,Currently on treatment with partial improvement,No prior treatment"|split:"," %}
+            <option value="{{ v }}">{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
       </div>
     </div>
     </div>
@@ -67,12 +107,13 @@
     <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top bg-light border-bottom cfm-hdr"
          style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s2" aria-expanded="true">
       <i class="bi bi-clock-history text-secondary"></i>
-      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">2. Past Medical & Surgical History</span>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">2. Past Medical &amp; Surgical History</span>
       <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
     </div>
     <div class="collapse show" id="cfm_gp_s2">
     <div class="p-3">
-      <div class="row g-2 mb-2">
+      <div class="row g-2">
+
         <div class="col-12">
           <label class="form-label small fw-semibold mb-1">Known Conditions <span class="text-muted fw-normal">(tick all that apply)</span></label>
           <div class="d-flex flex-wrap gap-2">
@@ -86,26 +127,55 @@
             {% endfor %}
           </div>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Past Medical History Details</label>
-          <textarea name="dept_pmh" class="form-control form-control-sm" rows="2"
+          <label class="form-label small fw-semibold mb-1">Past Medical History Details</label>
+          <textarea name="dept_pmh" id="gp_pmh" class="form-control form-control-sm mb-1" rows="2"
                     placeholder="Dates of diagnosis, control status, complications…">{{ d.pmh|default:'' }}</textarea>
+          <select class="form-select form-select-sm" onchange="appendComboSel(this,'gp_pmh')">
+            <option value="">+ Quick-add…</option>
+            {% for v in "Diabetes — well controlled on metformin,Diabetes — poorly controlled (HbA1c >8%),Hypertension — on treatment controlled,Hypertension — on treatment uncontrolled,Asthma — mild intermittent,COPD — moderate stage,CKD stage 2,CKD stage 3,Previous stroke — full recovery,Previous stroke — residual deficit,Previous MI — on cardiac rehab,No significant past medical history"|split:"," %}
+            <option value="{{ v }}">{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Surgical / Hospitalisation History</label>
-          <textarea name="dept_surgical_history" class="form-control form-control-sm" rows="2"
+          <label class="form-label small fw-semibold mb-1">Surgical / Hospitalisation History</label>
+          <textarea name="dept_surgical_history" id="gp_surgical" class="form-control form-control-sm mb-1" rows="2"
                     placeholder="Previous operations, procedures, admissions…">{{ d.surgical_history|default:'' }}</textarea>
+          <select class="form-select form-select-sm" onchange="appendComboSel(this,'gp_surgical')">
+            <option value="">+ Quick-add…</option>
+            {% for v in "No previous surgery,Appendicectomy,Cholecystectomy,Hernia repair,C-section,Coronary artery bypass graft (CABG),Cardiac catheterisation,Hospitalisation for DM ketoacidosis,Hospitalisation for hypertensive crisis,Cataract surgery,Hip replacement"|split:"," %}
+            <option value="{{ v }}">{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Family History</label>
-          <textarea name="dept_family_history" class="form-control form-control-sm" rows="2"
+          <label class="form-label small fw-semibold mb-1">Family History</label>
+          <textarea name="dept_family_history" id="gp_fhx" class="form-control form-control-sm mb-1" rows="2"
                     placeholder="DM, HTN, cardiac, cancer in first-degree relatives…">{{ d.family_history|default:'' }}</textarea>
+          <select class="form-select form-select-sm" onchange="appendComboSel(this,'gp_fhx')">
+            <option value="">+ Quick-add…</option>
+            {% for v in "No significant family history,Father — hypertension,Father — diabetes,Mother — hypertension,Mother — diabetes,Sibling — diabetes,Family history of cardiac disease,Family history of stroke,Family history of cancer,Family history of sickle cell disease,Family history of epilepsy"|split:"," %}
+            <option value="{{ v }}">{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Social History</label>
-          <textarea name="dept_social_history" class="form-control form-control-sm" rows="2"
+          <label class="form-label small fw-semibold mb-1">Social History</label>
+          <textarea name="dept_social_history" id="gp_shx" class="form-control form-control-sm mb-1" rows="2"
                     placeholder="Smoking, alcohol, occupation, diet, activity level…">{{ d.social_history|default:'' }}</textarea>
+          <select class="form-select form-select-sm" onchange="appendComboSel(this,'gp_shx')">
+            <option value="">+ Quick-add…</option>
+            {% for v in "Non-smoker,Ex-smoker — stopped >5 years,Current smoker — <10 cig/day,Current smoker — >10 cig/day,No alcohol,Occasional alcohol,Moderate alcohol use,Sedentary lifestyle,Moderately active,Regularly exercises,Balanced diet,High-fat diet,Farmer,Office worker,Unemployed,Retired"|split:"," %}
+            <option value="{{ v }}">{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
+
       </div>
     </div>
     </div>
@@ -116,22 +186,41 @@
     <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top bg-light border-bottom cfm-hdr"
          style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s3" aria-expanded="true">
       <i class="bi bi-capsule text-secondary"></i>
-      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">3. Current Medications & Allergies</span>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">3. Current Medications &amp; Allergies</span>
       <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
     </div>
     <div class="collapse show" id="cfm_gp_s3">
     <div class="p-3">
       <div class="row g-2">
+
         <div class="col-md-8">
-          <label class="form-label small fw-semibold">Current Medications</label>
-          <textarea name="dept_current_medications" class="form-control form-control-sm" rows="3"
+          <label class="form-label small fw-semibold mb-1">Current Medications</label>
+          <textarea name="dept_current_medications" id="gp_meds" class="form-control form-control-sm mb-1" rows="3"
                     placeholder="Drug name — dose — frequency — duration (one per line)&#10;e.g. Metformin 500mg — BD — ongoing">{{ d.current_medications|default:'' }}</textarea>
+          <div class="input-group input-group-sm">
+            <select id="gp_meds_sel" multiple size="3" class="form-select">
+              {% for v in "Metformin 500mg — BD — ongoing,Metformin 1g — BD — ongoing,Glibenclamide 5mg — OD — ongoing,Insulin Mixtard — BD — ongoing,Amlodipine 5mg — OD — ongoing,Amlodipine 10mg — OD — ongoing,Lisinopril 5mg — OD — ongoing,Losartan 50mg — OD — ongoing,Atenolol 50mg — OD — ongoing,Hydrochlorothiazide 25mg — OD — ongoing,Furosemide 40mg — OD — ongoing,Aspirin 75mg — OD — ongoing,Atorvastatin 20mg — nocte — ongoing,Atorvastatin 40mg — nocte — ongoing,Omeprazole 20mg — OD — ongoing,Paracetamol 1g — TDS — 5 days,Amoxicillin 500mg — TDS — 7 days,None currently"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_meds_sel','gp_meds')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-md-4">
-          <label class="form-label small fw-semibold">Known Drug Allergies</label>
-          <textarea name="dept_drug_allergies" class="form-control form-control-sm" rows="3"
-                    placeholder="Drug name — reaction (one per line)">{{ d.drug_allergies|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Known Drug Allergies</label>
+          <input type="text" name="dept_drug_allergies" id="gp_allergies" class="form-control form-control-sm mb-1"
+                 placeholder="Drug — reaction" value="{{ d.drug_allergies|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_allergy_sel" multiple size="3" class="form-select">
+              {% for v in "NKDA (No known drug allergies),Penicillin — rash,Penicillin — anaphylaxis,Sulfonamides — rash,NSAIDs — GI upset,NSAIDs — bronchospasm,Aspirin — urticaria,Codeine — nausea,Metformin — GI intolerance,ACE inhibitors — cough,Contrast dye — allergy,Latex allergy"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_allergy_sel','gp_allergies')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
       </div>
     </div>
     </div>
@@ -139,7 +228,7 @@
 
   {# ── SECTION 4: REVIEW OF SYSTEMS ───────────────────────────────────────── #}
   <div class="mb-3 rounded border shadow-sm">
-    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-secondary bg-opacity-10 border-bottom cfm-hdr"
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-light border-bottom cfm-hdr"
          style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s4" aria-expanded="false">
       <i class="bi bi-list-check text-secondary"></i>
       <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">4. Review of Systems</span>
@@ -149,7 +238,7 @@
     <div class="collapse" id="cfm_gp_s4">
     <div class="p-3">
       <div class="row g-3">
-        {% for system_part in "Cardiovascular:Chest pain,Palpitations,Dyspnoea on exertion,Orthopnoea,Ankle swelling|Respiratory:Cough,Shortness of breath,Wheezing,Haemoptysis|Gastrointestinal:Nausea/vomiting,Abdominal pain,Diarrhoea,Constipation,Haematemesis|Neurological:Headache,Dizziness,Syncope,Weakness/numbness,Seizures|Genitourinary:Polyuria,Nocturia,Dysuria,Haematuria|Musculoskeletal:Joint pains,Muscle weakness,Swelling of joints"|split:"|" %}
+        {% for system_part in "Cardiovascular:Chest pain,Palpitations,Dyspnoea on exertion,Orthopnoea,Ankle swelling|Respiratory:Cough,Shortness of breath,Wheezing,Haemoptysis|Gastrointestinal:Nausea / vomiting,Abdominal pain,Diarrhoea,Constipation,Haematemesis|Neurological:Headache,Dizziness,Syncope,Weakness / numbness,Seizures|Genitourinary:Polyuria,Nocturia,Dysuria,Haematuria|Musculoskeletal:Joint pains,Muscle weakness,Swelling of joints"|split:"|" %}
         {% with parts=system_part|split:":" %}
         <div class="col-md-4">
           <div class="fw-semibold small mb-1" style="color:#444;">{{ parts.0 }}</div>
@@ -185,86 +274,168 @@
     <div class="collapse show" id="cfm_gp_s5">
     <div class="p-3">
 
-      {# Vitals #}
       <div class="fw-semibold small text-uppercase mb-2" style="color:#555;letter-spacing:.04em;">Vital Signs</div>
       <div class="row g-2 mb-3">
         <div class="col-6 col-md-3">
           <label class="form-label small fw-semibold">Blood Pressure (mmHg)</label>
-          <input type="text" name="dept_bp" class="form-control form-control-sm"
-                 placeholder="e.g. 130/85" value="{{ d.bp|default:'' }}">
+          <select name="dept_bp" class="form-select form-select-sm" onchange="gpBPOther(this)">
+            <option value="">—</option>
+            {% for v in "90/60,100/60,100/70,110/70,110/75,120/70,120/75,120/80,125/80,130/80,130/85,130/90,140/80,140/85,140/90,150/90,150/95,150/100,160/90,160/95,160/100,170/100,170/110,180/100,180/110,180/120,190/110,190/120,200/110,200/120"|split:"," %}
+            <option value="{{ v }}" {% if d.bp == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+            <option value="__other__">Other (type)…</option>
+          </select>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
           <label class="form-label small fw-semibold">Pulse (bpm)</label>
-          <input type="number" name="dept_pulse" class="form-control form-control-sm"
-                 placeholder="72" min="30" max="250" value="{{ d.pulse|default:'' }}">
+          <select name="dept_pulse" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,105,110,115,120,125,130,140,150,160"|split:"," %}
+            <option value="{{ v }}" {% if d.pulse == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="col-6 col-md-3">
-          <label class="form-label small fw-semibold">Temperature (°C)</label>
-          <input type="text" name="dept_temperature" class="form-control form-control-sm"
-                 placeholder="37.0" value="{{ d.temperature|default:'' }}">
+        <div class="col-6 col-md-2">
+          <label class="form-label small fw-semibold">Pulse Rhythm</label>
+          <select name="dept_pulse_rhythm" class="form-select form-select-sm">
+            {% for v in "Regular,Irregular,Irregularly irregular"|split:"," %}
+            <option value="{{ v }}" {% if d.pulse_rhythm == v or not d.pulse_rhythm and v == 'Regular' %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
+          <label class="form-label small fw-semibold">Temp (°C)</label>
+          <select name="dept_temperature" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "35.0,35.5,36.0,36.5,36.6,36.8,37.0,37.2,37.4,37.5,37.6,37.8,38.0,38.2,38.5,38.8,39.0,39.5,40.0,40.5,41.0"|split:"," %}
+            <option value="{{ v }}" {% if d.temperature == v or not d.temperature and v == '37.0' %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-1">
           <label class="form-label small fw-semibold">SpO₂ (%)</label>
-          <input type="number" name="dept_spo2" class="form-control form-control-sm"
-                 placeholder="98" min="50" max="100" value="{{ d.spo2|default:'' }}">
+          <select name="dept_spo2" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "70,72,74,76,78,80,82,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100"|split:"," %}
+            <option value="{{ v }}" {% if d.spo2 == v or not d.spo2 and v == '98' %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="col-6 col-md-3">
-          <label class="form-label small fw-semibold">Resp. Rate (/min)</label>
-          <input type="number" name="dept_rr" class="form-control form-control-sm"
-                 placeholder="16" min="5" max="60" value="{{ d.rr|default:'' }}">
+        <div class="col-6 col-md-2">
+          <label class="form-label small fw-semibold">Resp Rate (/min)</label>
+          <select name="dept_rr" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40"|split:"," %}
+            <option value="{{ v }}" {% if d.rr == v or not d.rr and v == '16' %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
           <label class="form-label small fw-semibold">Weight (kg)</label>
           <input type="number" name="dept_weight_kg" id="gp_weight" class="form-control form-control-sm"
                  placeholder="70" step="0.1" min="1" max="300" value="{{ d.weight_kg|default:'' }}"
                  oninput="calcBMI()">
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
           <label class="form-label small fw-semibold">Height (cm)</label>
           <input type="number" name="dept_height_cm" id="gp_height" class="form-control form-control-sm"
                  placeholder="170" min="30" max="250" value="{{ d.height_cm|default:'' }}"
                  oninput="calcBMI()">
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
           <label class="form-label small fw-semibold">BMI</label>
           <input type="text" name="dept_bmi" id="gp_bmi" class="form-control form-control-sm bg-light"
-                 placeholder="Auto-calculated" readonly value="{{ d.bmi|default:'' }}">
+                 placeholder="Auto-calc" readonly value="{{ d.bmi|default:'' }}">
         </div>
       </div>
 
-      {# General appearance + systemic exam #}
       <div class="fw-semibold small text-uppercase mb-2 mt-3" style="color:#555;letter-spacing:.04em;">Systemic Examination</div>
       <div class="row g-2">
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">General Appearance</label>
-          <textarea name="dept_general_appearance" class="form-control form-control-sm" rows="2"
-                    placeholder="e.g. Alert, well-nourished, not in acute distress. No pallor, jaundice, or cyanosis.">{{ d.general_appearance|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">General Appearance</label>
+          <input type="text" name="dept_general_appearance" id="gp_ga" class="form-control form-control-sm mb-1"
+                 placeholder="Type or quick-add →" value="{{ d.general_appearance|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_ga_sel" multiple size="3" class="form-select">
+              {% for v in "Alert and well-oriented,Alert — mildly unwell,Alert — acutely unwell,Well-nourished,Poorly nourished,Not in acute distress,In mild distress,In moderate distress,No pallor,Pallor present,No jaundice,Jaundice present,No cyanosis,Cyanosis present,Afebrile,Pyrexial,No oedema,Mild pedal oedema,Moderate pedal oedema,Obese,Overweight,Normal BMI"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_ga_sel','gp_ga')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Cardiovascular System (CVS)</label>
-          <textarea name="dept_exam_cvs" class="form-control form-control-sm" rows="2"
-                    placeholder="Heart rate, rhythm, murmurs, peripheral pulses, JVP…">{{ d.exam_cvs|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Cardiovascular System (CVS)</label>
+          <input type="text" name="dept_exam_cvs" id="gp_cvs" class="form-control form-control-sm mb-1"
+                 placeholder="Type or quick-add →" value="{{ d.exam_cvs|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_cvs_sel" multiple size="3" class="form-select">
+              {% for v in "Regular rate and rhythm,Tachycardic,Bradycardic,Irregularly irregular rhythm,S1 S2 heard — no murmur,Systolic murmur grade II/VI,Diastolic murmur,Peripheral pulses full,Weak peripheral pulses,JVP not elevated,JVP elevated,No ankle oedema,Bilateral ankle oedema,Apex beat not displaced,Apex beat displaced laterally,No cardiac heave,Parasternal heave present"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_cvs_sel','gp_cvs')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Respiratory System (RS)</label>
-          <textarea name="dept_exam_rs" class="form-control form-control-sm" rows="2"
-                    placeholder="Air entry, breath sounds, adventitious sounds…">{{ d.exam_rs|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Respiratory System (RS)</label>
+          <input type="text" name="dept_exam_rs" id="gp_rs" class="form-control form-control-sm mb-1"
+                 placeholder="Type or quick-add →" value="{{ d.exam_rs|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_rs_sel" multiple size="3" class="form-select">
+              {% for v in "Air entry equal bilaterally,Reduced air entry right base,Reduced air entry left base,Vesicular breath sounds,Bronchial breathing,No added sounds,Crepitations at bases,Crepitations throughout,Wheezing — expiratory,Wheezing — inspiratory and expiratory,Pleural rub,Chest expansion equal,Dullness to percussion,Hyper-resonant,No respiratory distress,Mild respiratory distress,Moderate respiratory distress"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_rs_sel','gp_rs')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Abdomen</label>
-          <textarea name="dept_exam_abd" class="form-control form-control-sm" rows="2"
-                    placeholder="Soft/tender, organomegaly, bowel sounds…">{{ d.exam_abd|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Abdomen</label>
+          <input type="text" name="dept_exam_abd" id="gp_abd" class="form-control form-control-sm mb-1"
+                 placeholder="Type or quick-add →" value="{{ d.exam_abd|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_abd_sel" multiple size="3" class="form-select">
+              {% for v in "Soft and non-tender,Soft — mild epigastric tenderness,Soft — RIF tenderness,Soft — generalised tenderness,Not distended,Distended,Bowel sounds present,Bowel sounds hyperactive,Bowel sounds reduced,No organomegaly,Hepatomegaly,Splenomegaly,Hepatosplenomegaly,No ascites,Ascites present,No guarding,Guarding present,Rebound tenderness,No palpable mass,Palpable mass present"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_abd_sel','gp_abd')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Central Nervous System (CNS)</label>
-          <textarea name="dept_exam_cns" class="form-control form-control-sm" rows="2"
-                    placeholder="Orientation, cranial nerves, power, reflexes…">{{ d.exam_cns|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Central Nervous System (CNS)</label>
+          <input type="text" name="dept_exam_cns" id="gp_cns" class="form-control form-control-sm mb-1"
+                 placeholder="Type or quick-add →" value="{{ d.exam_cns|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_cns_sel" multiple size="3" class="form-select">
+              {% for v in "Alert and orientated x3,Confused,GCS 15/15,Cranial nerves intact,Pupil reflexes normal,Power 5/5 all limbs,Power reduced in right limbs,Power reduced in left limbs,Reflexes normal and symmetrical,Reflexes brisk,Reflexes diminished,Sensation intact,Sensation reduced — glove and stocking,Coordination normal,Ataxic gait,Romberg negative,Romberg positive,No meningism"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_cns_sel','gp_cns')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Other Findings</label>
-          <textarea name="dept_exam_other" class="form-control form-control-sm" rows="2"
-                    placeholder="Skin, lymph nodes, thyroid, musculoskeletal…">{{ d.exam_other|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Other Findings (Skin / Thyroid / Lymph Nodes)</label>
+          <input type="text" name="dept_exam_other" id="gp_other" class="form-control form-control-sm mb-1"
+                 placeholder="Type or quick-add →" value="{{ d.exam_other|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_other_sel" multiple size="3" class="form-select">
+              {% for v in "No lymphadenopathy,Cervical lymphadenopathy,Axillary lymphadenopathy,Inguinal lymphadenopathy,Thyroid not palpable,Goitre — diffuse,Goitre — nodular,No skin lesions,Skin hyperpigmentation,Xanthelasma,Acanthosis nigricans,Diabetic dermopathy,Clubbing present,No clubbing,Koilonychia,Leukonychia"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_other_sel','gp_other')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
       </div>
     </div>
     </div>
@@ -280,25 +451,23 @@
     </div>
     <div class="collapse show" id="cfm_gp_s6">
     <div class="p-3">
-      <div class="row g-2 mb-2">
-        <div class="col-12">
-          <label class="form-label small fw-semibold mb-1">Select Investigations <span class="text-muted fw-normal">(tick all that apply)</span></label>
-          <div class="d-flex flex-wrap gap-3">
-            {% for inv in "FBS / RBS,HbA1c,Full Blood Count (FBC),Lipid Profile,Urea & Electrolytes,Liver Function Tests,Thyroid Function Tests (TFTs),ECG,Chest X-Ray,Urinalysis,PT / INR (Coagulation),HBsAg / HIV screen,Malaria Test,Other"|split:"," %}
-            <div class="form-check form-check-inline m-0">
-              <input class="form-check-input" type="checkbox" name="dept_inv_{{ inv|lower|slugify }}"
-                     id="inv_{{ inv|lower|slugify }}"
-                     {% if d|get_item:'inv_'|add:inv|lower|slugify == 'on' %}checked{% endif %}>
-              <label class="form-check-label small" for="inv_{{ inv|lower|slugify }}">{{ inv }}</label>
-            </div>
-            {% endfor %}
+      <div class="col-12 mb-2">
+        <label class="form-label small fw-semibold mb-1">Select Investigations <span class="text-muted fw-normal">(tick all that apply)</span></label>
+        <div class="d-flex flex-wrap gap-3">
+          {% for inv in "FBS / RBS,HbA1c,Full Blood Count (FBC),Lipid Profile,Urea & Electrolytes,Liver Function Tests,Thyroid Function Tests,ECG,Chest X-Ray,Urinalysis,PT / INR (Coagulation),HBsAg / HIV screen,Malaria Test,Other"|split:"," %}
+          <div class="form-check form-check-inline m-0">
+            <input class="form-check-input" type="checkbox" name="dept_inv_{{ inv|lower|slugify }}"
+                   id="inv_{{ inv|lower|slugify }}"
+                   {% if d|get_item:'inv_'|add:inv|lower|slugify == 'on' %}checked{% endif %}>
+            <label class="form-check-label small" for="inv_{{ inv|lower|slugify }}">{{ inv }}</label>
           </div>
+          {% endfor %}
         </div>
-        <div class="col-12">
-          <label class="form-label small fw-semibold">Investigation Notes / Results Awaited</label>
-          <textarea name="dept_investigation_notes" class="form-control form-control-sm" rows="2"
-                    placeholder="Results pending, abnormal findings noted, follow-up actions…">{{ d.investigation_notes|default:'' }}</textarea>
-        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label small fw-semibold">Investigation Notes / Results Awaited</label>
+        <textarea name="dept_investigation_notes" class="form-control form-control-sm" rows="2"
+                  placeholder="Results pending, abnormal findings noted, follow-up actions…">{{ d.investigation_notes|default:'' }}</textarea>
       </div>
     </div>
     </div>
@@ -309,29 +478,53 @@
     <div class="d-flex align-items-center gap-2 px-3 py-2 bg-light border-bottom cfm-hdr"
          style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#cfm_gp_s7" aria-expanded="true">
       <i class="bi bi-stethoscope text-secondary"></i>
-      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">7. Assessment & Diagnosis</span>
+      <span class="fw-bold text-uppercase" style="letter-spacing:.05em;font-size:.82rem;">7. Assessment &amp; Diagnosis</span>
       <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
     </div>
     <div class="collapse show" id="cfm_gp_s7">
     <div class="p-3">
       <div class="row g-2">
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Primary Diagnosis</label>
-          <input type="text" name="dept_diagnosis_primary" class="form-control form-control-sm"
-                 placeholder="e.g. Type 2 Diabetes Mellitus — poorly controlled"
-                 value="{{ d.diagnosis_primary|default:'' }}">
+          <label class="form-label small fw-semibold mb-1">Primary Diagnosis</label>
+          <input type="text" name="dept_diagnosis_primary" id="gp_dx1" class="form-control form-control-sm mb-1"
+                 placeholder="Type or Ctrl+click below then Add →" value="{{ d.diagnosis_primary|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_dx1_sel" multiple size="4" class="form-select">
+              {% for v in "Essential Hypertension,Type 2 Diabetes Mellitus,Type 1 Diabetes Mellitus,Dyslipidaemia,Obesity,Asthma — mild intermittent,Asthma — moderate persistent,COPD — mild,COPD — moderate,COPD — severe,Pneumonia — community acquired,Upper Respiratory Tract Infection,Gastritis / Peptic Ulcer Disease,GERD,Irritable Bowel Syndrome,Anaemia — iron deficiency,Anaemia — haemolytic,Chronic Kidney Disease,Urinary Tract Infection,Hypothyroidism,Hyperthyroidism,Osteoarthritis,Rheumatoid Arthritis,Gout,Malaria,Typhoid,HIV / AIDS,Depression,Anxiety Disorder,Pre-diabetes / IGT,Hypertensive Heart Disease,Congestive Heart Failure,Atrial Fibrillation,Ischaemic Heart Disease,Stroke — ischaemic,Stroke — haemorrhagic,Epilepsy,Migraine,Acute Gastroenteritis,Sickle Cell Disease,Normal — for pre-op assessment"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_dx1_sel','gp_dx1')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Secondary / Co-morbid Diagnoses</label>
-          <input type="text" name="dept_diagnosis_secondary" class="form-control form-control-sm"
-                 placeholder="e.g. Hypertension, Dyslipidaemia"
-                 value="{{ d.diagnosis_secondary|default:'' }}">
+          <label class="form-label small fw-semibold mb-1">Secondary / Co-morbid Diagnoses</label>
+          <input type="text" name="dept_diagnosis_secondary" id="gp_dx2" class="form-control form-control-sm mb-1"
+                 placeholder="Type or Ctrl+click below then Add →" value="{{ d.diagnosis_secondary|default:'' }}">
+          <div class="input-group input-group-sm">
+            <select id="gp_dx2_sel" multiple size="4" class="form-select">
+              {% for v in "Hypertension,Type 2 Diabetes,Dyslipidaemia,Obesity,COPD,CKD,Anaemia,Hypothyroidism,Hyperthyroidism,Atrial Fibrillation,Ischaemic Heart Disease,Heart Failure,Gout,Osteoarthritis,GERD,Depression,Anxiety,Epilepsy,HIV — on ART,None"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_dx2_sel','gp_dx2')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
         </div>
+
         <div class="col-12">
-          <label class="form-label small fw-semibold">Assessment Notes</label>
-          <textarea name="dept_assessment_notes" class="form-control form-control-sm" rows="2"
+          <label class="form-label small fw-semibold mb-1">Assessment Notes / Clinical Impression</label>
+          <textarea name="dept_assessment_notes" id="gp_assess" class="form-control form-control-sm mb-1" rows="2"
                     placeholder="Clinical reasoning, differential diagnoses, overall impression…">{{ d.assessment_notes|default:'' }}</textarea>
+          <select class="form-select form-select-sm" onchange="appendComboSel(this,'gp_assess')">
+            <option value="">+ Quick-add phrase…</option>
+            {% for v in "Likely diagnosis confirmed — clinical picture consistent,Diagnosis uncertain — investigations pending,Good overall control — continue current management,Poorly controlled — medication adjustment required,Complication identified — specialist referral indicated,For pre-operative optimisation,Stable — routine follow-up,Improving with current treatment,Not responding to current treatment — change plan"|split:"," %}
+            <option value="{{ v }}">{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
+
       </div>
     </div>
     </div>
@@ -350,7 +543,7 @@
     <div class="p-3">
       <div class="row g-3">
         <div class="col-md-4">
-          <label class="form-label small fw-semibold">Clearance Status <span class="text-danger">*</span></label>
+          <label class="form-label small fw-semibold">Clearance Status</label>
           <div class="d-flex flex-column gap-2 mt-1">
             <label class="d-flex align-items-center gap-2 p-2 border rounded" id="lbl_clear_fit"
                    style="cursor:pointer;{% if d.preop_clearance_status == 'FIT' %}background:#d1fae5;border-color:#16a34a !important;{% endif %}">
@@ -381,12 +574,18 @@
         <div class="col-md-8">
           <div class="row g-2">
             <div class="col-12">
-              <label class="form-label small fw-semibold">Clearance Notes / Conditions</label>
-              <textarea name="dept_preop_clearance_notes" class="form-control form-control-sm" rows="3"
-                        placeholder="e.g. BP must be &lt;140/90 before surgery. Patient is on antihypertensives — optimise dose. Repeat BP in 1 week.">{{ d.preop_clearance_notes|default:'' }}</textarea>
+              <label class="form-label small fw-semibold mb-1">Clearance Notes / Conditions</label>
+              <textarea name="dept_preop_clearance_notes" id="gp_clearance_notes" class="form-control form-control-sm mb-1" rows="3"
+                        placeholder="e.g. BP must be &lt;140/90 before surgery. Optimise antihypertensives. Repeat BP in 1 week.">{{ d.preop_clearance_notes|default:'' }}</textarea>
+              <select class="form-select form-select-sm" onchange="appendComboSel(this,'gp_clearance_notes')">
+                <option value="">+ Quick-add standard phrase…</option>
+                {% for v in "Patient is medically fit for surgery — no restrictions,Blood pressure must be controlled (<140/90) before surgery,Blood glucose must be optimised (HbA1c <8%) before surgery,Cardiology clearance obtained,ECG reviewed — no contraindications,Anaemia should be corrected before surgery (target Hb >10),Coagulation profile reviewed — within normal limits,Renal function acceptable — caution with nephrotoxic agents,Patient on anticoagulants — liaise with surgical team re: bridging,Patient on antiplatelet therapy — stop 5 days before surgery,Antihypertensives to be continued up to day of surgery,Metformin to be held 48h before surgery,Insulin to be adjusted per protocol on day of surgery"|split:"," %}
+                <option value="{{ v }}">{{ v }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-semibold">Anaesthetic Risk</label>
+              <label class="form-label small fw-semibold">Anaesthetic Risk (ASA)</label>
               <select name="dept_anaesthetic_risk" class="form-select form-select-sm">
                 <option value="">— Not assessed —</option>
                 <option value="ASA I" {% if d.anaesthetic_risk == 'ASA I' %}selected{% endif %}>ASA I — Normal healthy patient</option>
@@ -406,7 +605,7 @@
         </div>
         <div class="col-12">
           <div id="clearanceSummaryBadge" class="d-none">
-            <div class="alert alert-success border-start border-4 border-success py-2 px-3 mb-0 small">
+            <div class="alert alert-success py-2 px-3 mb-0 small">
               <i class="bi bi-patch-check-fill me-1"></i>
               <strong>Clearance recorded.</strong> This will be written to the patient's surgical booking automatically on save.
             </div>
@@ -428,46 +627,83 @@
     <div class="collapse show" id="cfm_gp_s9">
     <div class="p-3">
       <div class="row g-2">
+
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Medications Prescribed</label>
-          <textarea name="dept_medications_prescribed" class="form-control form-control-sm" rows="3"
-                    placeholder="Drug — dose — route — frequency — duration (one per line)&#10;e.g. Amlodipine 5mg — Oral — OD — 30 days">{{ d.medications_prescribed|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Medications Prescribed</label>
+          <textarea name="dept_medications_prescribed" id="gp_rx" class="form-control form-control-sm mb-1" rows="3"
+                    placeholder="Drug — dose — route — frequency — duration (one per line)">{{ d.medications_prescribed|default:'' }}</textarea>
+          <div class="input-group input-group-sm">
+            <select id="gp_rx_sel" multiple size="3" class="form-select">
+              {% for v in "Metformin 500mg — Oral — BD — 30 days,Metformin 1g — Oral — BD — 30 days,Amlodipine 5mg — Oral — OD — 30 days,Amlodipine 10mg — Oral — OD — 30 days,Lisinopril 5mg — Oral — OD — 30 days,Losartan 50mg — Oral — OD — 30 days,Atenolol 50mg — Oral — OD — 30 days,HCT 25mg — Oral — OD — 30 days,Furosemide 40mg — Oral — OD — 30 days,Aspirin 75mg — Oral — OD — ongoing,Atorvastatin 20mg — Oral — nocte — 30 days,Atorvastatin 40mg — Oral — nocte — 30 days,Omeprazole 20mg — Oral — OD — 14 days,Paracetamol 1g — Oral — TDS — 5 days,Ibuprofen 400mg — Oral — TDS — 5 days with food,Amoxicillin 500mg — Oral — TDS — 7 days,Ciprofloxacin 500mg — Oral — BD — 7 days,Metronidazole 400mg — Oral — TDS — 7 days,Salbutamol inhaler — 2 puffs — PRN,Beclomethasone inhaler — 2 puffs — BD,Levothyroxine 50mcg — Oral — OD — ongoing,None — no medications prescribed"|split:"," %}
+              <option value="{{ v }}">{{ v }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMultiSel('gp_rx_sel','gp_rx')"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
           <div class="form-text small">These will be routed to Pharmacy for dispensing.</div>
         </div>
+
+        {# Patient Instructions — chip buttons #}
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">Patient Instructions</label>
-          <textarea name="dept_patient_instructions" class="form-control form-control-sm" rows="3"
-                    placeholder="Diet, lifestyle advice, monitoring instructions…">{{ d.patient_instructions|default:'' }}</textarea>
+          <label class="form-label small fw-semibold mb-1">Patient Instructions</label>
+          <input type="hidden" name="dept_patient_instructions" id="gp_instr_hidden" value="{{ d.patient_instructions|default:'' }}">
+          <div id="gp_instr_chips" class="d-flex flex-wrap gap-1 mb-1">
+            {% with INSTR_LIST="Low-salt diet,Low-sugar diet,Low-fat diet,Increase fluid intake,Reduce alcohol,Stop smoking,Daily BP monitoring,Blood glucose monitoring twice daily,Exercise 30 min / 5 days per week,Weight loss target,Take medication with food,Take medication at bedtime,Do not stop medication without advice,Return if symptoms worsen,Avoid NSAIDs,Avoid nephrotoxic drugs,Rest and reduce activity" %}
+            {% for v in INSTR_LIST|split:"," %}
+            <button type="button" class="btn btn-sm py-0 px-2 {% if d.patient_instructions and v in d.patient_instructions %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                    style="font-size:.75rem;" onclick="gpToggleInstr('{{ v|escapejs }}',this)">{{ v }}</button>
+            {% endfor %}
+            {% endwith %}
+          </div>
+          <div class="input-group input-group-sm mt-1" style="max-width:360px;">
+            <input type="text" id="gp_instr_other" class="form-control" placeholder="Other instruction — type and press Add">
+            <button type="button" class="btn btn-outline-success" onclick="gpAddInstrOther()">Add</button>
+          </div>
         </div>
-        <div class="col-md-4">
+
+        <div class="col-md-3">
           <label class="form-label small fw-semibold">Follow-up Interval</label>
           <select name="dept_followup_interval" class="form-select form-select-sm">
             <option value="">— Not specified —</option>
-            <option value="1 week" {% if d.followup_interval == '1 week' %}selected{% endif %}>1 week</option>
-            <option value="2 weeks" {% if d.followup_interval == '2 weeks' %}selected{% endif %}>2 weeks</option>
-            <option value="1 month" {% if d.followup_interval == '1 month' %}selected{% endif %}>1 month</option>
-            <option value="3 months" {% if d.followup_interval == '3 months' %}selected{% endif %}>3 months</option>
-            <option value="6 months" {% if d.followup_interval == '6 months' %}selected{% endif %}>6 months</option>
-            <option value="PRN" {% if d.followup_interval == 'PRN' %}selected{% endif %}>PRN (as needed)</option>
+            {% for v in "3 days,1 week,2 weeks,1 month,3 months,6 months,1 year,PRN (as needed)"|split:"," %}
+            <option value="{{ v }}" {% if d.followup_interval == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
           </select>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label class="form-label small fw-semibold">Refer Back To</label>
-          <input type="text" name="dept_refer_back_to" class="form-control form-control-sm"
-                 placeholder="e.g. Glaucoma Clinic, Surgical Team"
-                 value="{{ d.refer_back_to|default:'' }}">
+          <select name="dept_refer_back_to" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            {% for v in "Ophthalmology — Glaucoma Clinic,Ophthalmology — Retina Clinic,Ophthalmology — General Clinic,Ophthalmology — Cataract Clinic,Ophthalmology — Paediatric Clinic,Surgical Team,Orthopaedic Team,Anaesthesia Team,Not referred back — discharged"|split:"," %}
+            <option value="{{ v }}" {% if d.refer_back_to == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="col-md-4">
-          <label class="form-label small fw-semibold">Referral to External</label>
-          <input type="text" name="dept_external_referral" class="form-control form-control-sm"
-                 placeholder="e.g. Cardiologist, Endocrinologist"
-                 value="{{ d.external_referral|default:'' }}">
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">External Specialist Referral</label>
+          <select name="dept_external_referral" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            {% for v in "Cardiologist,Endocrinologist,Nephrologist,Neurologist,Pulmonologist,Gastroenterologist,Haematologist,Oncologist,Rheumatologist,Dermatologist,Gynaecologist,Orthopaedic Surgeon,General Surgeon,ENT Specialist,Psychiatrist,Physiotherapist,Dietitian / Nutritionist"|split:"," %}
+            <option value="{{ v }}" {% if d.external_referral == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
         </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Referral Urgency</label>
+          <select name="dept_referral_urgency" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for v in "Routine,Urgent (within 2 weeks),Semi-urgent (within 1 month),Emergency (same day)"|split:"," %}
+            <option value="{{ v }}" {% if d.referral_urgency == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
         <div class="col-12">
           <label class="form-label small fw-semibold">General Notes / Additional Comments</label>
           <textarea name="dept_gp_notes" class="form-control form-control-sm" rows="2"
                     placeholder="Any other clinical notes…">{{ d.gp_notes|default:'' }}</textarea>
         </div>
+
       </div>
     </div>
     </div>
@@ -477,29 +713,34 @@
 
 <script>
 function calcBMI() {
-  const w = parseFloat(document.getElementById('gp_weight').value);
-  const h = parseFloat(document.getElementById('gp_height').value);
-  const bmiEl = document.getElementById('gp_bmi');
+  var w = parseFloat(document.getElementById('gp_weight').value);
+  var h = parseFloat(document.getElementById('gp_height').value);
+  var bmiEl = document.getElementById('gp_bmi');
   if (w > 0 && h > 0) {
-    const bmi = (w / ((h / 100) ** 2)).toFixed(1);
-    bmiEl.value = bmi;
-    let cat = '';
-    if (bmi < 18.5) cat = ' (Underweight)';
-    else if (bmi < 25)  cat = ' (Normal)';
-    else if (bmi < 30)  cat = ' (Overweight)';
-    else                cat = ' (Obese)';
+    var bmi = (w / ((h / 100) * (h / 100))).toFixed(1);
+    var cat = bmi < 18.5 ? ' (Underweight)' : bmi < 25 ? ' (Normal)' : bmi < 30 ? ' (Overweight)' : ' (Obese)';
     bmiEl.value = bmi + cat;
   } else {
     bmiEl.value = '';
   }
 }
 
+function gpBPOther(sel) {
+  if (sel.value !== '__other__') return;
+  var val = prompt('Enter blood pressure (e.g. 142/88):');
+  if (val && val.trim()) {
+    var opt = document.createElement('option');
+    opt.value = val.trim(); opt.textContent = val.trim(); opt.selected = true;
+    sel.insertBefore(opt, sel.querySelector('option[value="__other__"]'));
+    sel.value = val.trim();
+  } else { sel.value = ''; }
+}
+
 function updateClearanceBadge(radio) {
-  const badge = document.getElementById('clearanceSummaryBadge');
+  var badge = document.getElementById('clearanceSummaryBadge');
   if (radio.value) badge.classList.remove('d-none');
-  // Highlight selected label
-  ['lbl_clear_fit', 'lbl_clear_cond', 'lbl_clear_unfit'].forEach(id => {
-    const lbl = document.getElementById(id);
+  ['lbl_clear_fit','lbl_clear_cond','lbl_clear_unfit'].forEach(function(id) {
+    var lbl = document.getElementById(id);
     if (lbl) { lbl.style.background = ''; lbl.style.borderColor = ''; }
   });
   if (radio.value === 'FIT')         { document.getElementById('lbl_clear_fit').style.background  = '#d1fae5'; document.getElementById('lbl_clear_fit').style.borderColor  = '#16a34a'; }
@@ -507,16 +748,42 @@ function updateClearanceBadge(radio) {
   if (radio.value === 'NOT FIT')     { document.getElementById('lbl_clear_unfit').style.background = '#fee2e2'; document.getElementById('lbl_clear_unfit').style.borderColor = '#dc2626'; }
 }
 
-// Show badge on page load if clearance was already saved
+function gpToggleInstr(val, btn) {
+  var h = document.getElementById('gp_instr_hidden');
+  var list = h.value ? h.value.split('|').filter(function(s){ return s; }) : [];
+  var idx = list.indexOf(val);
+  if (idx === -1) {
+    list.push(val); btn.classList.remove('btn-outline-secondary'); btn.classList.add('btn-success');
+  } else {
+    list.splice(idx,1); btn.classList.remove('btn-success'); btn.classList.add('btn-outline-secondary');
+  }
+  h.value = list.join('|');
+}
+
+function gpAddInstrOther() {
+  var inp = document.getElementById('gp_instr_other');
+  var val = inp.value.trim();
+  if (!val) return;
+  var h = document.getElementById('gp_instr_hidden');
+  var list = h.value ? h.value.split('|').filter(function(s){ return s; }) : [];
+  if (list.indexOf(val) === -1) {
+    list.push(val); h.value = list.join('|');
+    var chips = document.getElementById('gp_instr_chips');
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn btn-sm py-0 px-2 btn-success';
+    btn.style.fontSize = '.75rem'; btn.textContent = val;
+    btn.onclick = function() { gpToggleInstr(val, btn); };
+    chips.appendChild(btn);
+  }
+  inp.value = '';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-  const checked = document.querySelector('input[name="dept_preop_clearance_status"]:checked');
-  if (checked) {
-    document.getElementById('clearanceSummaryBadge').classList.remove('d-none');
-  }
-  // Re-calc BMI if values present
-  if (document.getElementById('gp_weight').value && document.getElementById('gp_height').value) {
-    calcBMI();
-  }
+  var checked = document.querySelector('input[name="dept_preop_clearance_status"]:checked');
+  if (checked) document.getElementById('clearanceSummaryBadge').classList.remove('d-none');
+  var w = document.getElementById('gp_weight');
+  var hEl = document.getElementById('gp_height');
+  if (w && hEl && w.value && hEl.value) calcBMI();
 });
 </script>
 
