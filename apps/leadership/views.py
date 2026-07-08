@@ -1387,6 +1387,7 @@ def hospital_stats_view(request):
         'tier_matrix': tier_matrix,
     }
     ctx['pdf_filename'] = f'Hospital-Stats-{month_start.strftime("%b-%Y")}.pdf'
+    ctx['orientation'] = request.GET.get('orientation', 'portrait')
 
     if request.GET.get('format') == 'pdf':
         from apps.reports.views import render_pdf
@@ -1534,6 +1535,7 @@ def department_stats_view(request):
         'tier_matrix': tier_matrix,
         'daily_json': daily_json,
         'pdf_filename': f'{dept_name}-Stats-{month_start.strftime("%b-%Y")}.pdf',
+        'orientation': request.GET.get('orientation', 'portrait'),
     }
 
     if request.GET.get('format') == 'pdf':

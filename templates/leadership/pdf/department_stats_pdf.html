@@ -1,0 +1,126 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  @page { size: A4 {{ orientation|default:"portrait" }}; }
+  .kpi-row { display:flex; gap:8px; margin-bottom:14px; }
+  .kpi-box { flex:1; border:1px solid #dee2e6; border-radius:4px; padding:8px 10px; text-align:center; page-break-inside:avoid; }
+  .kpi-val { font-size:16pt; font-weight:800; color:#0d6efd; line-height:1.1; }
+  .kpi-lbl { font-size:7.5pt; color:#666; margin-top:2px; }
+  .section-title { font-size:8.5pt; font-weight:700; text-transform:uppercase; color:#0d6efd;
+    border-bottom:1.5px solid #0d6efd; padding-bottom:3px; margin:14px 0 8px; letter-spacing:.05em;
+    page-break-after:avoid; break-after:avoid; }
+  .cross-table { width:100%; border-collapse:collapse; font-size:8.5pt; }
+  .cross-table th { background:#0d6efd; color:#fff; padding:5px 8px; text-align:center;
+    border:1px solid #0a58ca; font-weight:600; }
+  .cross-table th.tier-head { text-align:left; }
+  .cross-table td { padding:4px 8px; border:1px solid #dee2e6; text-align:center; }
+  .cross-table td.tier-cell { text-align:left; font-weight:600; }
+  .cross-table tr:nth-child(even) td { background:#f8f9fa; }
+  .cross-table tfoot td { background:#e9ecef; font-weight:700; }
+  .cross-table td.m { color:#0d6efd; } .cross-table td.f { color:#dc3545; }
+  .tier-badge { display:inline-block; padding:1px 7px; border-radius:10px; color:#fff; font-size:7.5pt; font-weight:700; }
+  .tier-legend { font-size:7pt; color:#555; margin-top:4px; padding:4px 6px; background:#f8f9fa; border:1px solid #dee2e6; }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Department Statistics — {{ dept_name }} — {{ month_start|date:"F Y" }}</span>
+  <span>Generated: {% now "d M Y H:i" %}</span>
+</div>
+
+<div class="report-title">{{ dept_name|upper }} — DEPARTMENT STATISTICS — {{ month_start|date:"F Y"|upper }}</div>
+
+{# ── KPIs ── #}
+<div class="kpi-row">
+  <div class="kpi-box">
+    <div class="kpi-val">{{ total_consults|intcomma }}</div>
+    <div class="kpi-lbl">Total Consultations</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#0dcaf0;">{{ total_male|intcomma }}</div>
+    <div class="kpi-lbl">Male</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#dc3545;">{{ total_female|intcomma }}</div>
+    <div class="kpi-lbl">Female</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#198754;">{{ total_children|intcomma }}</div>
+    <div class="kpi-lbl">Children (&lt;18)</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#0d6efd;">{{ total_adult|intcomma }}</div>
+    <div class="kpi-lbl">Adult (18–59)</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#ffc107;">{{ total_elderly|intcomma }}</div>
+    <div class="kpi-lbl">Elderly (60+)</div>
+  </div>
+</div>
+
+{# ── Tier × Gender × Age Cross-tab ── #}
+<div class="section-title">Consultations by Type, Gender &amp; Age</div>
+{% if tier_matrix %}
+<table class="cross-table">
+  <thead>
+    <tr>
+      <th class="tier-head">Consultation Type</th>
+      <th>Total</th>
+      <th>Male</th>
+      <th>Female</th>
+      <th>Children &lt;18</th>
+      <th>Adults 18–59</th>
+      <th>Elderly 60+</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in tier_matrix %}
+    <tr>
+      <td class="tier-cell">
+        <span class="tier-badge" style="background:{{ row.color }};">{{ row.tier }}</span>
+      </td>
+      <td><strong>{{ row.total }}</strong></td>
+      <td class="m">{{ row.male }}</td>
+      <td class="f">{{ row.female }}</td>
+      <td>{{ row.children_m|add:row.children_f }}</td>
+      <td>{{ row.adult_m|add:row.adult_f }}</td>
+      <td>{{ row.elderly_m|add:row.elderly_f }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td class="tier-cell">TOTAL</td>
+      <td><strong>{{ total_consults }}</strong></td>
+      <td class="m"><strong>{{ total_male }}</strong></td>
+      <td class="f"><strong>{{ total_female }}</strong></td>
+      <td><strong>{{ total_children }}</strong></td>
+      <td><strong>{{ total_adult }}</strong></td>
+      <td><strong>{{ total_elderly }}</strong></td>
+    </tr>
+  </tfoot>
+</table>
+<div class="tier-legend">
+  <strong>Types:</strong>
+  Regular = standard appointment rate &nbsp;|&nbsp;
+  Express = priority service, higher rate &nbsp;|&nbsp;
+  Fast Track = urgent, skip queue &nbsp;|&nbsp;
+  VIP = premium service
+</div>
+{% else %}
+<p style="color:#888;font-style:italic;">No consultations recorded in this department for {{ month_start|date:"F Y" }}.</p>
+{% endif %}
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} — {{ dept_name }} — Confidential</span>
+  <span>{{ month_start|date:"F Y" }} &nbsp;|&nbsp; Printed: {% now "d M Y H:i" %}</span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,231 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  @page { size: A4 {{ orientation|default:"portrait" }}; }
+  .kpi-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  .kpi-box { flex: 1; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px 10px; text-align: center; page-break-inside: avoid; }
+  .kpi-val { font-size: 16pt; font-weight: 800; color: #0d6efd; line-height: 1.1; }
+  .kpi-lbl { font-size: 7.5pt; color: #666; margin-top: 2px; }
+  .kpi-sub { font-size: 6.5pt; color: #999; margin-top: 1px; }
+  .section-title { font-size: 8.5pt; font-weight: 700; text-transform: uppercase; color: #0d6efd;
+    border-bottom: 1.5px solid #0d6efd; padding-bottom: 3px; margin: 14px 0 8px; letter-spacing:.05em;
+    page-break-after: avoid; break-after: avoid; }
+  .cross-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  .cross-table th { background: #0d6efd; color: #fff; padding: 5px 8px; text-align: center;
+    border: 1px solid #0a58ca; font-weight: 600; }
+  .cross-table th.tier-head { text-align: left; }
+  .cross-table td { padding: 4px 8px; border: 1px solid #dee2e6; text-align: center; }
+  .cross-table td.tier-cell { text-align: left; font-weight: 600; }
+  .cross-table tr:nth-child(even) td { background: #f8f9fa; }
+  .cross-table tfoot td { background: #e9ecef; font-weight: 700; }
+  .cross-table td.m { color: #0d6efd; } .cross-table td.f { color: #dc3545; }
+  .tier-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; color: #fff; font-size: 7.5pt; font-weight: 700; }
+  .dept-table { width:100%; border-collapse:collapse; font-size:8.5pt; margin-top:4px; }
+  .dept-table th { background:#e9ecef; padding:4px 8px; text-align:left; font-weight:700; border:1px solid #dee2e6; }
+  .dept-table td { padding:4px 8px; border:1px solid #dee2e6; }
+  .dept-table tr:nth-child(even) td { background:#f8f9fa; }
+  .two-col { display:flex; gap:12px; page-break-inside: avoid; }
+  .two-col > div { flex:1; }
+  .tier-legend { font-size:7pt; color:#555; margin-top:4px; padding:4px 6px; background:#f8f9fa; border:1px solid #dee2e6; }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Hospital Statistics Report — {{ month_start|date:"F Y" }}</span>
+  <span>Generated: {% now "d M Y H:i" %}</span>
+</div>
+
+<div class="report-title">HOSPITAL STATISTICS — {{ month_start|date:"F Y"|upper }}</div>
+
+{# ── KPIs ── #}
+<div class="kpi-row">
+  <div class="kpi-box">
+    <div class="kpi-val">{{ total_visits|intcomma }}</div>
+    <div class="kpi-lbl">Total Visits</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#0dcaf0;">{{ total_consults|intcomma }}</div>
+    <div class="kpi-lbl">Consultations</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#198754;">{{ new_patients|intcomma }}</div>
+    <div class="kpi-lbl">New Patients</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#6366f1;">{{ followup|intcomma }}</div>
+    <div class="kpi-lbl">Follow-ups</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#dc3545;">{{ emergency|intcomma }}</div>
+    <div class="kpi-lbl">Emergencies</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#0d6efd;">{{ total_male|intcomma }}</div>
+    <div class="kpi-lbl">Male Patients</div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-val" style="color:#dc3545;">{{ total_female|intcomma }}</div>
+    <div class="kpi-lbl">Female Patients</div>
+  </div>
+</div>
+
+{# ── Tier × Gender × Age Cross-tab ── #}
+<div class="section-title">Visits by Consultation Type, Gender &amp; Age</div>
+<table class="cross-table">
+  <thead>
+    <tr>
+      <th class="tier-head">Consultation Type</th>
+      <th>Total</th>
+      <th>Male</th>
+      <th>Female</th>
+      <th>Children &lt;18</th>
+      <th>Adults 18–59</th>
+      <th>Elderly 60+</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in tier_matrix %}
+    <tr>
+      <td class="tier-cell">
+        <span class="tier-badge" style="background:{{ row.color }};">{{ row.tier }}</span>
+      </td>
+      <td><strong>{{ row.total }}</strong></td>
+      <td class="m">{{ row.male }}</td>
+      <td class="f">{{ row.female }}</td>
+      <td>{{ row.children_m|add:row.children_f }}</td>
+      <td>{{ row.adult_m|add:row.adult_f }}</td>
+      <td>{{ row.elderly_m|add:row.elderly_f }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" style="text-align:center;color:#888;padding:10px;">No visit data for this period.</td></tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td class="tier-cell">TOTAL</td>
+      <td><strong>{{ total_visits }}</strong></td>
+      <td class="m"><strong>{{ total_male }}</strong></td>
+      <td class="f"><strong>{{ total_female }}</strong></td>
+      <td>—</td><td>—</td><td>—</td>
+    </tr>
+  </tfoot>
+</table>
+<div class="tier-legend">
+  <strong>Types:</strong>
+  Regular = standard appointment rate &nbsp;|&nbsp;
+  Express = priority service, higher rate &nbsp;|&nbsp;
+  Fast Track = urgent, skip queue &nbsp;|&nbsp;
+  VIP = premium service
+</div>
+
+{# ── WHO Age Table ── #}
+<div class="section-title">WHO Age Group Distribution</div>
+<table class="dept-table">
+  <thead>
+    <tr>
+      <th>Age Band</th>
+      <th>Male</th><th>Female</th><th>Other</th><th>Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in who_table %}
+    <tr>
+      <td><strong>{{ row.band }}</strong></td>
+      <td style="color:#0d6efd;">{{ row.male }}</td>
+      <td style="color:#dc3545;">{{ row.female }}</td>
+      <td>{{ row.other }}</td>
+      <td><strong>{{ row.total }}</strong></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# ── Consultations by Department + Billing Type side by side ── #}
+<div class="two-col" style="margin-top:12px;">
+  <div>
+    <div class="section-title">Consultations by Department</div>
+    <table class="dept-table">
+      <thead>
+        <tr><th>Department</th><th>Consultations</th></tr>
+      </thead>
+      <tbody>
+        {% for row in dept_consults_table %}
+        <tr>
+          <td>{{ row.department__name|default:"Unknown" }}</td>
+          <td><strong>{{ row.count }}</strong></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" style="color:#888;">No data</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <div class="section-title">Billing Type Breakdown</div>
+    <table class="dept-table">
+      <thead>
+        <tr><th>Billing Type</th><th>Visits</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Cash / Card</td><td>{{ bt_cash }}</td></tr>
+        <tr><td>Insurance</td><td>{{ bt_insurance }}</td></tr>
+        <tr><td>HMO</td><td>{{ bt_hmo }}</td></tr>
+        <tr><td>Waiver</td><td>{{ bt_waiver }}</td></tr>
+        <tr><td>Free / Subsidised</td><td>{{ bt_free }}</td></tr>
+      </tbody>
+    </table>
+    <div class="section-title" style="margin-top:10px;">Service Tier Breakdown</div>
+    <table class="dept-table">
+      <thead>
+        <tr><th>Tier</th><th>Visits</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Regular</td><td>{{ tier_standard }}</td></tr>
+        <tr><td>Express</td><td>{{ tier_express }}</td></tr>
+        <tr><td>Fast Track</td><td>{{ tier_fast }}</td></tr>
+        <tr><td>VIP</td><td>{{ tier_vip }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── IPD / Theatre ── #}
+<div class="two-col" style="margin-top:12px;">
+  <div>
+    <div class="section-title">IPD Admissions</div>
+    <table class="dept-table">
+      <tbody>
+        <tr><td>Total Admissions</td><td><strong>{{ total_admissions }}</strong></td></tr>
+        <tr><td>Discharged</td><td>{{ discharged_count }}</td></tr>
+        <tr><td>Average LOS</td><td>{{ avg_los }} days</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <div class="section-title">Theatre &amp; Clinical Services</div>
+    <table class="dept-table">
+      <tbody>
+        <tr><td>Theatre Cases</td><td><strong>{{ total_theatre }}</strong></td></tr>
+        <tr><td>Completed</td><td>{{ completed_theatre }}</td></tr>
+        <tr><td>Optical Orders</td><td>{{ total_optical }}</td></tr>
+        <tr><td>Pharmacy Dispensings</td><td>{{ total_dispensing }}</td></tr>
+        <tr><td>Lab Orders</td><td>{{ total_lab_orders }}</td></tr>
+        <tr><td>Eye Investigations</td><td>{{ total_inv }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} — Confidential Hospital Statistics</span>
+  <span>{{ month_start|date:"F Y" }} &nbsp;|&nbsp; Printed: {% now "d M Y H:i" %}</span>
+</div>
+
+</body>
+</html>
