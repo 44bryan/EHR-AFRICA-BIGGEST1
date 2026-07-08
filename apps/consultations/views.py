@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseForbidden, JsonResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
 from django.utils import timezone
 from django.db.models import Q
 from .models import Consultation, ConsultationDiagnosis, ConsultationNote, Diagnosis, ConsultationStatus
@@ -80,6 +81,7 @@ def consultation_list_view(request):
     })
 
 
+@never_cache
 @login_required
 def consultation_create_view(request, patient_id):
     if not request.user.can_create_consultation():
@@ -503,6 +505,7 @@ def consultation_detail_view(request, pk):
     })
 
 
+@never_cache
 @login_required
 def consultation_edit_view(request, pk):
     consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
