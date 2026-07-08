@@ -206,19 +206,28 @@ def consultation_create_view(request, patient_id):
 
         # ── Draft mode: save minimal record so doctor can order tests first ──
         if request.POST.get('save_mode') == 'draft':
-            consultation = Consultation.objects.create(
-                patient=patient,
-                visit=visit,
-                department=_dept,
+            # Prevent duplicates: reuse an existing IN_PROGRESS consultation for this visit+doctor
+            consultation = Consultation.objects.filter(
+                patient=patient, visit=visit,
                 consulting_doctor=request.user,
-                presenting_complaint=', '.join(filter(None, request.POST.getlist('presenting_complaint'))),
-                history_of_presenting_complaint=', '.join(filter(None, request.POST.getlist('history_of_presenting_complaint'))),
-                ocular_history=', '.join(filter(None, request.POST.getlist('ocular_history'))),
-                systemic_history=', '.join(filter(None, request.POST.getlist('systemic_history'))),
-                drug_history=', '.join(filter(None, request.POST.getlist('drug_history'))),
                 status=ConsultationStatus.IN_PROGRESS,
-                created_by=request.user,
-            )
+                is_deleted=False,
+            ).first()
+            if consultation is None:
+                consultation = Consultation.objects.create(
+                    patient=patient,
+                    visit=visit,
+                    department=_dept,
+                    consulting_doctor=request.user,
+                    status=ConsultationStatus.IN_PROGRESS,
+                    created_by=request.user,
+                )
+            consultation.presenting_complaint = ', '.join(filter(None, request.POST.getlist('presenting_complaint')))
+            consultation.history_of_presenting_complaint = ', '.join(filter(None, request.POST.getlist('history_of_presenting_complaint')))
+            consultation.ocular_history = ', '.join(filter(None, request.POST.getlist('ocular_history')))
+            consultation.systemic_history = ', '.join(filter(None, request.POST.getlist('systemic_history')))
+            consultation.drug_history = ', '.join(filter(None, request.POST.getlist('drug_history')))
+            consultation.save()
             visit.status = 'IN_CONSULTATION'
             visit.attending_doctor = request.user
             visit.save(update_fields=['status', 'attending_doctor'])
