@@ -209,11 +209,11 @@ def consultation_create_view(request, patient_id):
                 visit=visit,
                 department=_dept,
                 consulting_doctor=request.user,
-                presenting_complaint=request.POST.get('presenting_complaint', '').strip(),
-                history_of_presenting_complaint=request.POST.get('history_of_presenting_complaint', '').strip(),
-                ocular_history=request.POST.get('ocular_history', '').strip(),
-                systemic_history=request.POST.get('systemic_history', '').strip(),
-                drug_history=request.POST.get('drug_history', '').strip(),
+                presenting_complaint=', '.join(filter(None, request.POST.getlist('presenting_complaint'))),
+                history_of_presenting_complaint=', '.join(filter(None, request.POST.getlist('history_of_presenting_complaint'))),
+                ocular_history=', '.join(filter(None, request.POST.getlist('ocular_history'))),
+                systemic_history=', '.join(filter(None, request.POST.getlist('systemic_history'))),
+                drug_history=', '.join(filter(None, request.POST.getlist('drug_history'))),
                 status=ConsultationStatus.IN_PROGRESS,
                 created_by=request.user,
             )
@@ -241,9 +241,9 @@ def consultation_create_view(request, patient_id):
 
             # Save dept_ prefixed exam fields from the same form submission
             dept_data = {
-                k[5:]: v.strip()
-                for k, v in request.POST.items()
-                if k.startswith('dept_') and v.strip()
+                k[5:]: ', '.join(filter(None, [v.strip() for v in request.POST.getlist(k)]))
+                for k in request.POST
+                if k.startswith('dept_') and any(v.strip() for v in request.POST.getlist(k))
             }
             if dept_data:
                 consultation.department_specific_data = dept_data
@@ -531,9 +531,9 @@ def consultation_edit_view(request, pk):
             c.updated_by = request.user
             # Also persist any dept_ exam fields submitted alongside
             dept_data = {
-                k[5:]: v.strip()
-                for k, v in request.POST.items()
-                if k.startswith('dept_') and v.strip()
+                k[5:]: ', '.join(filter(None, [v.strip() for v in request.POST.getlist(k)]))
+                for k in request.POST
+                if k.startswith('dept_') and any(v.strip() for v in request.POST.getlist(k))
             }
             if dept_data:
                 existing = c.department_specific_data or {}
@@ -856,7 +856,7 @@ def consultation_autosave_view(request):
             visit=visit,
             department=_dept,
             consulting_doctor=request.user,
-            presenting_complaint=request.POST.get('presenting_complaint', '').strip(),
+            presenting_complaint=', '.join(filter(None, request.POST.getlist('presenting_complaint'))),
             status=ConsultationStatus.IN_PROGRESS,
             created_by=request.user,
         )
@@ -874,7 +874,7 @@ def consultation_autosave_view(request):
         ]
         changed = ['updated_by', 'updated_at']
         for f in history_fields:
-            val = request.POST.get(f, '').strip()
+            val = ', '.join(filter(None, request.POST.getlist(f)))
             if val:
                 setattr(consultation, f, val)
                 changed.append(f)

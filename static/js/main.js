@@ -435,10 +435,46 @@ function syncChips(inputId) {
   });
 }
 
+// ── Tom Select: tag input initialiser ────────────────────────────────────────
+// Any <select data-ts="true"> in a page gets upgraded to a tag-input widget.
+// Free typing is allowed (create:true). Previously-selected items are restored
+// from the underlying <select> options that are marked selected.
+function initTomSelects(root) {
+  if (typeof TomSelect === 'undefined') return;
+  var scope = root || document;
+  scope.querySelectorAll('select[data-ts]').forEach(function(el) {
+    if (el.tomselect) return; // already initialised — skip
+    var ts = new TomSelect(el, {
+      create: true,
+      plugins: ['remove_button'],
+      maxItems: null,
+      closeAfterSelect: false,
+      selectOnTab: false,
+      placeholder: el.dataset.placeholder || 'Type or select…',
+      render: {
+        option_create: function(data, escape) {
+          return '<div class="create">Add <strong>' + escape(data.input) + '</strong>&hellip;</div>';
+        }
+      }
+    });
+    // Pre-populate from data-existing="val1, val2" (for edit/view mode)
+    var existing = el.dataset.existing || '';
+    if (existing.trim()) {
+      existing.split(',').forEach(function(v) {
+        v = v.trim();
+        if (!v) return;
+        ts.addOption({value: v, text: v});
+        ts.addItem(v, true);
+      });
+    }
+  });
+}
+
 // Run on normal page load
 document.addEventListener('DOMContentLoaded', function() {
   ehrInitOnce(); // sidebar, search, persistent listeners — once only
   ehrInit();
+  initTomSelects();
   setActiveSidebarLink();  // initial active state on fresh/hard loads
   buildBreadcrumbs();
 });
@@ -446,6 +482,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Re-run ehrInit after every HTMX swap (re-inits tooltips, modals, etc.)
 document.addEventListener('htmx:afterSwap', function() {
   ehrInit();
+  initTomSelects();
 });
 
 // Show a subtle loading indicator on HTMX navigation start
