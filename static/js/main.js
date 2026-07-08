@@ -107,10 +107,25 @@ function ehrInitOnce() {
     });
   });
 
-  // ehr-combo dropdown buttons — event delegation, works for all HTMX content
+  // ehr-combo dropdown buttons — event delegation, works for desktop + touch devices (tablet/phone)
+  var _ehrLastTouchItem = null;
+  document.addEventListener('touchend', function(e) {
+    var item = e.target.closest('.ehr-add-menu .dropdown-item');
+    if (!item) return;
+    _ehrLastTouchItem = item;
+    var val = item.textContent.trim();
+    if (!val) return;
+    var combo = item.closest('.ehr-combo');
+    var ta = combo && combo.querySelector('textarea');
+    if (!ta) return;
+    var cur = ta.value.trim();
+    ta.value = cur ? cur + ', ' + val : val;
+    ta.dispatchEvent(new Event('input'));
+  });
   document.addEventListener('click', function (e) {
     var item = e.target.closest('.ehr-add-menu .dropdown-item');
     if (!item) return;
+    if (item === _ehrLastTouchItem) { _ehrLastTouchItem = null; return; } // already handled by touchend
     var val = item.textContent.trim();
     if (!val) return;
     var combo = item.closest('.ehr-combo');
