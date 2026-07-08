@@ -16,10 +16,10 @@
 <input type="hidden" id="patientIdHidden" value="{{ patient.patient_id }}">
 <input type="hidden" id="visitIdHidden" value="{{ visit.pk|default:'' }}">
 {# Toast for draft save feedback #}
-<div id="draftToast" class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
-  <div class="toast align-items-center text-bg-success border-0" role="alert">
+<div id="draftToast" class="position-fixed top-0 start-50 translate-middle-x pt-3" style="z-index:9999;min-width:280px">
+  <div class="toast align-items-center text-bg-success border-0 shadow-lg" role="alert">
     <div class="d-flex">
-      <div class="toast-body" id="draftToastMsg"><i class="bi bi-check-circle me-1"></i>Draft saved.</div>
+      <div class="toast-body fw-semibold" id="draftToastMsg"><i class="bi bi-check-circle me-1"></i>Draft saved.</div>
       <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
     </div>
   </div>
@@ -640,22 +640,29 @@
   {% endif %}{# /GEN_PHYS management hide #}
 
   <!-- ═══════ ACTION BUTTONS — always last, always visible ═══════ -->
-  <div class="col-12 mt-3 pt-3 border-top d-flex gap-2 align-items-center flex-wrap">
-    <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-sm btn-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Cancel
-    </a>
-    {% if request.user.can_use_ai_assistant %}
-    <a href="{% url 'ai_assistant:new_conversation' %}?patient={{ patient.patient_id }}&context_type=GENERAL"
-       class="btn btn-sm btn-outline-primary" target="_blank">
-      <i class="bi bi-robot me-1"></i>AI Assistant
-    </a>
-    {% endif %}
-    <button type="submit" name="save_mode" value="draft" class="btn btn-sm btn-outline-secondary ms-auto">
-      <i class="bi bi-search-heart me-1"></i>Order Tests First
-    </button>
-    <button type="submit" class="btn btn-sm btn-primary">
-      <i class="bi bi-check-circle me-1"></i>Save &amp; Complete
-    </button>
+  <div class="col-12 mt-3 pt-3 border-top">
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-sm btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Cancel
+      </a>
+      {% if request.user.can_use_ai_assistant %}
+      <a href="{% url 'ai_assistant:new_conversation' %}?patient={{ patient.patient_id }}&context_type=GENERAL"
+         class="btn btn-sm btn-outline-primary" target="_blank">
+        <i class="bi bi-robot me-1"></i>AI Assistant
+      </a>
+      {% endif %}
+      <button type="submit" name="save_mode" value="draft" class="btn btn-sm btn-outline-secondary ms-auto">
+        <i class="bi bi-search-heart me-1"></i>Order Tests First
+      </button>
+      <button type="submit" class="btn btn-sm btn-primary">
+        <i class="bi bi-check-circle me-1"></i>Complete Consultation
+      </button>
+    </div>
+    <p class="text-muted small mt-2 mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      <strong>Complete Consultation</strong> finishes the visit immediately — prescriptions are optional and can be added from the patient record afterwards.
+      Use <strong>Order Tests First</strong> if you want to request investigations before completing.
+    </p>
   </div>
 
 </div><!-- /row -->
@@ -779,11 +786,12 @@ function saveDraft(evt, section) {
   .then(function(json) {
     if (json.ok) {
       draftPkEl.value = json.pk;
-      if (btn) { btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Saved ✓'; btn.classList.add('btn-success'); btn.classList.remove('btn-outline-success'); }
-      showDraftToast('Section draft saved ✔');
+      var savedTime = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
+      if (btn) { btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Saved at ' + savedTime; btn.classList.add('btn-success'); btn.classList.remove('btn-outline-success'); btn.disabled = false; }
+      showDraftToast('History draft saved at ' + savedTime + ' ✔');
       setTimeout(function() {
         if (btn) { btn.innerHTML = origHtml; btn.disabled = false; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-success'); }
-      }, 2500);
+      }, 8000);
     } else {
       if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
       showDraftToast('Save failed: ' + (json.error || 'unknown error'), true);
@@ -801,7 +809,7 @@ function showDraftToast(msg, isError) {
   toastMsg.innerHTML = '<i class="bi bi-' + (isError ? 'exclamation-triangle' : 'check-circle-fill') + ' me-1"></i>' + msg;
   toastEl.classList.toggle('text-bg-success', !isError);
   toastEl.classList.toggle('text-bg-danger',   isError);
-  var bsToast = new bootstrap.Toast(toastEl, { delay: 4000 });
+  var bsToast = new bootstrap.Toast(toastEl, { delay: 6000 });
   bsToast.show();
 }
 
