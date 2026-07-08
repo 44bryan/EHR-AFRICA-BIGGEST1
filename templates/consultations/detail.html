@@ -162,6 +162,13 @@
         </div>
         {% if consultation.visit and not consultation.visit.status == 'DISCHARGED' %}
         <div id="routeBannerWrap"></div>
+        {% if consultation.status == 'COMPLETED' %}
+        <button type="button" class="btn btn-sm btn-success" id="doneGoHomeBtn"
+                onclick="dischargePatient('{{ consultation.visit.pk }}')"
+                title="Mark this patient as done — they go home from here">
+          <i class="bi bi-house-check me-1"></i>Patient Going Home
+        </button>
+        {% endif %}
         <div class="dropdown" id="routeDropdownWrap">
           <button class="btn btn-sm btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown"
                   data-bs-auto-close="outside" id="routeDropdownBtn">
@@ -1295,6 +1302,35 @@ document.querySelectorAll('[onclick*="clinicalForm"]').forEach(function(btn) {
     setTimeout(() => resultsBox.classList.add('d-none'), 200);
   });
 })();
+
+// ── Discharge patient (going home, no further routing needed) ─────────────────
+function dischargePatient(visitPk) {
+  var btn = document.getElementById('doneGoHomeBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Closing…'; }
+  var fd = new FormData();
+  fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+  fd.append('destination', 'DISCHARGE');
+  fetch('/consultations/clinic-nurse/route/' + visitPk + '/', {
+    method: 'POST', body: fd,
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var wrap = document.getElementById('routeBannerWrap');
+    if (data.ok || data.success) {
+      if (btn) btn.style.display = 'none';
+      var dropWrap = document.getElementById('routeDropdownWrap');
+      if (dropWrap) dropWrap.style.display = 'none';
+      if (wrap) wrap.innerHTML = '<div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 mb-2"><i class="bi bi-house-check-fill fs-5"></i><strong>Patient discharged — visit closed. They may go home.</strong></div>';
+    } else {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-house-check me-1"></i>Patient Going Home'; }
+      if (wrap) wrap.innerHTML = '<div class="alert alert-danger py-2 px-3 mb-2 small">Could not close visit: ' + (data.error || 'Unknown error') + '</div>';
+    }
+  })
+  .catch(function() {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-house-check me-1"></i>Patient Going Home'; }
+  });
+}
 
 // ── Route patient AJAX ────────────────────────────────────────────────────────
 function sendPatientRoute(visitPk) {
