@@ -8,9 +8,8 @@
 // syncTooltips() from running on every page navigation — the main tablet lag fix.
 function ehrInitOnce() {
 
-  const toggleBtn  = document.getElementById('sidebarToggle');
-  const sidebar    = document.getElementById('sidebar');
-  const backdrop   = document.getElementById('sidebar-backdrop');
+  const sidebar  = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
   const COLLAPSED_KEY = 'ehr_sidebar_collapsed';
   const TABLET_EXPANDED_KEY = 'ehr_sidebar_tablet_expanded';
 
@@ -35,22 +34,25 @@ function ehrInitOnce() {
   const isCollapsedNow = sidebar && sidebar.classList.contains('collapsed');
   syncTooltips(isCollapsedNow);
 
-  if (toggleBtn && sidebar) {
-    toggleBtn.addEventListener('click', function () {
-      if (isPhone()) {
-        const isOpen = sidebar.classList.toggle('mobile-open');
-        if (backdrop) backdrop.classList.toggle('show', isOpen);
-      } else if (isTablet()) {
-        const isExpanded = sidebar.classList.toggle('tablet-expanded');
-        localStorage.setItem(TABLET_EXPANDED_KEY, isExpanded ? '1' : '0');
-        syncTooltips(!isExpanded);
-      } else {
-        const isCollapsed = sidebar.classList.toggle('collapsed');
-        localStorage.setItem(COLLAPSED_KEY, isCollapsed ? '1' : '0');
-        syncTooltips(isCollapsed);
-      }
-    });
-  }
+  // Sidebar toggle — event delegation so it survives HTMX page swaps.
+  // #sidebarToggle lives inside #page-content-wrapper (topbar) which HTMX replaces
+  // with outerHTML on every navigation, destroying any directly-bound listeners.
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#sidebarToggle')) return;
+    if (!sidebar) return;
+    if (isPhone()) {
+      const isOpen = sidebar.classList.toggle('mobile-open');
+      if (backdrop) backdrop.classList.toggle('show', isOpen);
+    } else if (isTablet()) {
+      const isExpanded = sidebar.classList.toggle('tablet-expanded');
+      localStorage.setItem(TABLET_EXPANDED_KEY, isExpanded ? '1' : '0');
+      syncTooltips(!isExpanded);
+    } else {
+      const isCollapsed = sidebar.classList.toggle('collapsed');
+      localStorage.setItem(COLLAPSED_KEY, isCollapsed ? '1' : '0');
+      syncTooltips(isCollapsed);
+    }
+  });
 
   if (backdrop) {
     backdrop.addEventListener('click', function () {
@@ -59,44 +61,47 @@ function ehrInitOnce() {
     });
   }
 
-  // Global patient search — wired once
-  const searchInput   = document.getElementById('globalPatientSearch');
-  const searchResults = document.getElementById('patientSearchResults');
-  if (searchInput && searchResults) {
-    let searchTimer;
-    searchInput.addEventListener('input', function () {
-      clearTimeout(searchTimer);
-      const q = this.value.trim();
-      if (q.length < 2) { searchResults.style.display = 'none'; return; }
-      searchTimer = setTimeout(() => {
-        fetch(`/api/patients/search/?q=${encodeURIComponent(q)}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.results && data.results.length > 0) {
-              searchResults.innerHTML = data.results.map(p => `
-                <a href="${p.url}" class="dropdown-item py-2 px-3" style="border-radius:6px;">
-                  <div class="fw-semibold" style="font-size:0.825rem;">${p.name}</div>
-                  <div class="text-muted" style="font-size:0.72rem;">
-                    ${p.patient_id} &middot; ${p.age}yr &middot; ${p.gender}
-                    ${p.phone ? '&middot; ' + p.phone : ''}
-                  </div>
-                </a>
-              `).join('');
-              searchResults.style.display = 'block';
-            } else {
-              searchResults.innerHTML = '<div class="dropdown-item text-muted py-2 px-3" style="font-size:0.8rem;">No patients found</div>';
-              searchResults.style.display = 'block';
-            }
-          })
-          .catch(() => { searchResults.style.display = 'none'; });
-      }, 280);
-    });
-    document.addEventListener('click', function (e) {
-      if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-        searchResults.style.display = 'none';
-      }
-    });
-  }
+  // Global patient search — event delegation so it survives HTMX page swaps.
+  // #globalPatientSearch is in the topbar (inside #page-content-wrapper) and gets
+  // replaced on every HTMX navigation. Direct binding would break after first swap.
+  let _searchTimer;
+  document.addEventListener('input', function (e) {
+    if (!e.target.matches('#globalPatientSearch')) return;
+    const searchResults = document.getElementById('patientSearchResults');
+    if (!searchResults) return;
+    clearTimeout(_searchTimer);
+    const q = e.target.value.trim();
+    if (q.length < 2) { searchResults.style.display = 'none'; return; }
+    _searchTimer = setTimeout(() => {
+      fetch(`/api/patients/search/?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.results && data.results.length > 0) {
+            searchResults.innerHTML = data.results.map(p => `
+              <a href="${p.url}" class="dropdown-item py-2 px-3" style="border-radius:6px;">
+                <div class="fw-semibold" style="font-size:0.825rem;">${p.name}</div>
+                <div class="text-muted" style="font-size:0.72rem;">
+                  ${p.patient_id} &middot; ${p.age}yr &middot; ${p.gender}
+                  ${p.phone ? '&middot; ' + p.phone : ''}
+                </div>
+              </a>
+            `).join('');
+            searchResults.style.display = 'block';
+          } else {
+            searchResults.innerHTML = '<div class="dropdown-item text-muted py-2 px-3" style="font-size:0.8rem;">No patients found</div>';
+            searchResults.style.display = 'block';
+          }
+        })
+        .catch(() => { searchResults.style.display = 'none'; });
+    }, 280);
+  });
+  document.addEventListener('click', function (e) {
+    const searchResults = document.getElementById('patientSearchResults');
+    if (!searchResults) return;
+    if (!e.target.closest('#globalPatientSearch') && !e.target.closest('#patientSearchResults')) {
+      searchResults.style.display = 'none';
+    }
+  });
 
   // Global dropdown close — one listener is enough
   document.addEventListener('click', function (e) {
