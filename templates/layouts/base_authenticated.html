@@ -44,6 +44,100 @@
 <!-- Confirm Modal -->
 {% include 'components/modal_confirm.html' %}
 
+<!-- Dashboard auto-refresh: smooth HTMX queue update every 30s on dashboard pages -->
+<script>
+(function () {
+  'use strict';
+
+  // Pages that auto-refresh — workstation has its own timer so excluded here
+  var DASHBOARD_PATHS = [
+    '/dashboard/',
+    '/reception/desk/',
+    '/reception/walk',
+    '/qms/',
+    '/leadership/',
+  ];
+
+  var _refreshTimer   = null;  // setInterval handle
+  var _countdown      = 0;
+  var _formDirty      = false;
+  var REFRESH_SECS    = 30;
+
+  function isDashboardPage() {
+    var p = window.location.pathname;
+    // Workstation has its own refresh — skip double-refresh
+    if (p.includes('/workstation')) return false;
+    return DASHBOARD_PATHS.some(function(d) { return p.startsWith(d); });
+  }
+
+  function stopRefresh() {
+    if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+    var badge = document.getElementById('ehr-refresh-badge');
+    if (badge) badge.style.display = 'none';
+  }
+
+  function doRefresh() {
+    // Use HTMX boost for a smooth partial swap (no full page reload, no sidebar flash)
+    if (window.htmx) {
+      htmx.ajax('GET', window.location.href, {
+        target: '#page-content-wrapper',
+        swap: 'outerHTML',
+        pushUrl: false
+      });
+    } else {
+      window.location.reload();
+    }
+  }
+
+  function startRefresh() {
+    stopRefresh();
+    if (!isDashboardPage()) return;
+    _formDirty = false;
+    _countdown = REFRESH_SECS;
+
+    // Show the countdown badge in topbar (created below if missing)
+    var badge = document.getElementById('ehr-refresh-badge');
+    if (!badge) return; // topbar not loaded yet — will retry after next swap
+
+    badge.style.display = '';
+    badge.title = 'Auto-refreshing queue every ' + REFRESH_SECS + 's';
+
+    _refreshTimer = setInterval(function () {
+      // Pause when tab hidden
+      if (document.visibilityState === 'hidden') return;
+      // Pause when user is typing in a form
+      if (_formDirty) {
+        var cdPause = document.getElementById('ehr-refresh-countdown');
+        if (cdPause) cdPause.textContent = '\u23F8';
+        return;
+      }
+      _countdown--;
+      var cdEl = document.getElementById('ehr-refresh-countdown');
+      if (cdEl) cdEl.textContent = _countdown + 's';
+      if (_countdown <= 0) {
+        stopRefresh();
+        doRefresh();
+      }
+    }, 1000);
+  }
+
+  // Mark dirty when any input changes (resets on next swap)
+  document.addEventListener('input',  function () { _formDirty = true; }, true);
+  document.addEventListener('change', function () { _formDirty = true; }, true);
+
+  // Start on initial load
+  document.addEventListener('DOMContentLoaded', startRefresh);
+
+  // Restart after every HTMX swap (catches navigation to/from dashboard pages)
+  document.addEventListener('htmx:afterSettle', startRefresh);
+
+  // Stop if user navigates away from a dashboard page
+  document.addEventListener('htmx:beforeRequest', function () {
+    if (!isDashboardPage()) stopRefresh();
+  });
+})();
+</script>
+
 <!-- Auto-reload on wake: only for pages that opt in via data-auto-reload on <body> -->
 <script>
 (function () {
