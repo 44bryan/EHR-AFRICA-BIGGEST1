@@ -10,6 +10,15 @@
 
 {% with dept_code=consultation.department.code %}
 
+<div id="editDraftToast" class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
+  <div class="toast align-items-center text-bg-success border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="editDraftToastMsg"><i class="bi bi-check-circle me-1"></i>Saved.</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
 <form method="post" id="consultationForm">
 {% csrf_token %}
 
@@ -104,11 +113,17 @@
       <div class="card-header bg-light border-bottom py-2 d-flex justify-content-between align-items-center"
            style="cursor:pointer;" onclick="toggleCard('bodyHistory',this)">
         <h6 class="mb-0 fw-semibold small text-uppercase text-secondary">
-          <i class="bi bi-journal-text me-1"></i>History
+          <i class="bi bi-journal-text me-1"></i>History &amp; Chief Complaint
         </h6>
-        <i class="bi bi-chevron-down text-primary"></i>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:.72rem;"
+                  onclick="event.stopPropagation();saveDraftEdit('history')">
+            <i class="bi bi-cloud-check me-1"></i>Save
+          </button>
+          <i class="bi bi-chevron-up text-primary"></i>
+        </div>
       </div>
-      <div id="bodyHistory" class="card-body" {% if not is_resuming %}style="display:none;"{% endif %}>
+      <div id="bodyHistory" class="card-body">
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label fw-semibold small">Department</label>
@@ -218,9 +233,15 @@
         <h6 class="mb-0 fw-semibold small text-uppercase text-secondary">
           <i class="bi bi-clipboard2-heart me-1"></i>Clinical Examination — {{ consultation.department.name }}
         </h6>
-        <i class="bi bi-chevron-down text-success"></i>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:.72rem;"
+                  onclick="event.stopPropagation();saveDraftEdit('clinical')">
+            <i class="bi bi-cloud-check me-1"></i>Save
+          </button>
+          <i class="bi bi-chevron-up text-success"></i>
+        </div>
       </div>
-      <div id="bodyExam" class="card-body" {% if not is_resuming %}style="display:none;"{% endif %}>
+      <div id="bodyExam" class="card-body">
         {% if dept_code == 'GEN_OPH' %}
           {% include 'consultations/clinical/_gen_oph_form.html' %}
         {% elif dept_code == 'RETINA' %}
@@ -359,5 +380,38 @@ document.addEventListener('DOMContentLoaded', function() {
     if (hdr) hdr.setAttribute('aria-expanded', 'true');
   }
 });
+
+function showEditToast(msg) {
+  var el = document.querySelector('#editDraftToast .toast');
+  if (!el) return;
+  document.getElementById('editDraftToastMsg').innerHTML = msg;
+  bootstrap.Toast.getOrCreateInstance(el, {delay:2500}).show();
+}
+
+function saveDraftEdit(section) {
+  var form = document.getElementById('consultationForm');
+  if (!form) return;
+  var data = new FormData(form);
+  data.append('_section', section);
+  var btn = event.currentTarget;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  fetch(window.location.href, {
+    method: 'POST', body: data,
+    headers: {'X-Requested-With': 'XMLHttpRequest'}
+  }).then(function(r) {
+    btn.disabled = false;
+    if (r.ok) {
+      btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Saved ✓';
+      showEditToast('<i class="bi bi-check-circle me-1"></i>Section saved successfully.');
+      setTimeout(function(){ btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save'; }, 3000);
+    } else {
+      btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save';
+    }
+  }).catch(function() {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save';
+  });
+}
 </script>
 {% endblock %}

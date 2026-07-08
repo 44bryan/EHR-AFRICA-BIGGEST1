@@ -109,6 +109,11 @@ class VitalSignsForm(forms.Form):
         widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'mmHg'}),
         label='IOP Left Eye (mmHg)'
     )
+    iop_time = forms.TimeField(
+        required=False,
+        widget=forms.TimeInput(attrs={'class': 'form-control form-control-sm', 'type': 'time'}),
+        label='IOP Time Taken'
+    )
     blood_pressure = forms.CharField(
         max_length=15, required=False,
         widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '120/80'}),

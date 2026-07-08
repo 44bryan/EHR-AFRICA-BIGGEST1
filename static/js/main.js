@@ -2,49 +2,49 @@
    EHR Africa — Main JavaScript v2
    ============================================================ */
 
-// ── Bootstrap / sidebar initializer ─────────────────────────────────────────
-// Called on fresh DOMContentLoaded AND after every HTMX page swap.
-function ehrInit() {
+// ── One-time sidebar & persistent init ──────────────────────────────────────
+// Only called ONCE on DOMContentLoaded (never on HTMX swaps).
+// Moving sidebar init here eliminates duplicate event listeners and prevents
+// syncTooltips() from running on every page navigation — the main tablet lag fix.
+function ehrInitOnce() {
 
-  /* ── Sidebar Toggle ───────────────────────────────────────── */
   const toggleBtn  = document.getElementById('sidebarToggle');
   const sidebar    = document.getElementById('sidebar');
   const backdrop   = document.getElementById('sidebar-backdrop');
   const COLLAPSED_KEY = 'ehr_sidebar_collapsed';
+  const TABLET_EXPANDED_KEY = 'ehr_sidebar_tablet_expanded';
 
   const isPhone  = () => window.innerWidth <= 768;
   const isTablet = () => window.innerWidth > 768 && window.innerWidth <= 1024;
-  const TABLET_EXPANDED_KEY = 'ehr_tablet_expanded';
 
-  // Desktop (>1024px): default to collapsed unless user explicitly expanded it
+  // Desktop: start collapsed unless user explicitly expanded
   if (window.innerWidth > 1024) {
     const desktopPref = localStorage.getItem(COLLAPSED_KEY);
-    if (desktopPref !== '0') {  // '0' = user explicitly expanded; anything else = collapsed
-      sidebar.classList.add('collapsed');
+    if (desktopPref !== '0') {
+      sidebar && sidebar.classList.add('collapsed');
       syncTooltips(true);
     }
   }
   // Tablets: start collapsed unless user explicitly expanded
   if (isTablet()) {
     if (localStorage.getItem(TABLET_EXPANDED_KEY) === '1') {
-      sidebar.classList.add('tablet-expanded');
+      sidebar && sidebar.classList.add('tablet-expanded');
     }
-    // tablets use icon-only by default (CSS handles it via :not(.tablet-expanded))
   }
+  // Init sidebar tooltips once based on current state
+  const isCollapsedNow = sidebar && sidebar.classList.contains('collapsed');
+  syncTooltips(isCollapsedNow);
 
   if (toggleBtn && sidebar) {
     toggleBtn.addEventListener('click', function () {
       if (isPhone()) {
-        // Phone: slide in/out full sidebar with backdrop overlay
         const isOpen = sidebar.classList.toggle('mobile-open');
         if (backdrop) backdrop.classList.toggle('show', isOpen);
       } else if (isTablet()) {
-        // Tablet: toggle between icon-only and full sidebar
         const isExpanded = sidebar.classList.toggle('tablet-expanded');
         localStorage.setItem(TABLET_EXPANDED_KEY, isExpanded ? '1' : '0');
         syncTooltips(!isExpanded);
       } else {
-        // Desktop: toggle icon-only / full sidebar; persist preference
         const isCollapsed = sidebar.classList.toggle('collapsed');
         localStorage.setItem(COLLAPSED_KEY, isCollapsed ? '1' : '0');
         syncTooltips(isCollapsed);
@@ -52,50 +52,22 @@ function ehrInit() {
     });
   }
 
-  // Close mobile sidebar on backdrop click
   if (backdrop) {
     backdrop.addEventListener('click', function () {
-      sidebar.classList.remove('mobile-open');
+      sidebar && sidebar.classList.remove('mobile-open');
       backdrop.classList.remove('show');
     });
   }
 
-  function syncTooltips(collapsed) {
-    // When collapsed: enable tooltips; when expanded: disable them
-    document.querySelectorAll('#sidebar [data-bs-toggle="tooltip"]').forEach(el => {
-      const tip = bootstrap.Tooltip.getInstance(el);
-      if (collapsed) {
-        if (!tip) new bootstrap.Tooltip(el, { trigger: 'hover' });
-      } else {
-        if (tip) tip.dispose();
-      }
-    });
-  }
-
-  // Init tooltips based on current state
-  const isCollapsedNow = sidebar && sidebar.classList.contains('collapsed');
-  syncTooltips(isCollapsedNow);
-
-
-  /* ── Sidebar Active Link ──────────────────────────────────── */
-  // setActiveSidebarLink() is NOT called here — it runs via its own
-  // DOMContentLoaded listener (initial load) and htmx:afterSettle (navigation).
-  // Calling it here on htmx:afterSwap would consume _pendingSidebarActivation
-  // before htmx:afterSettle gets to honour the clicked link.
-
-
-  /* ── Global Patient Search ────────────────────────────────── */
+  // Global patient search — wired once
   const searchInput   = document.getElementById('globalPatientSearch');
   const searchResults = document.getElementById('patientSearchResults');
-
   if (searchInput && searchResults) {
     let searchTimer;
-
     searchInput.addEventListener('input', function () {
       clearTimeout(searchTimer);
       const q = this.value.trim();
       if (q.length < 2) { searchResults.style.display = 'none'; return; }
-
       searchTimer = setTimeout(() => {
         fetch(`/api/patients/search/?q=${encodeURIComponent(q)}`)
           .then(r => r.json())
@@ -119,7 +91,6 @@ function ehrInit() {
           .catch(() => { searchResults.style.display = 'none'; });
       }, 280);
     });
-
     document.addEventListener('click', function (e) {
       if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
         searchResults.style.display = 'none';
@@ -127,6 +98,32 @@ function ehrInit() {
     });
   }
 
+  // Global dropdown close — one listener is enough
+  document.addEventListener('click', function (e) {
+    document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+      if (!menu.closest('.dropdown').contains(e.target)) {
+        menu.classList.remove('show');
+      }
+    });
+  });
+}
+
+function syncTooltips(collapsed) {
+  document.querySelectorAll('#sidebar [data-bs-toggle="tooltip"]').forEach(el => {
+    const tip = bootstrap.Tooltip.getInstance(el);
+    if (collapsed) {
+      if (!tip) new bootstrap.Tooltip(el, { trigger: 'hover' });
+    } else {
+      if (tip) tip.dispose();
+    }
+  });
+}
+
+// ── Bootstrap / page initializer ─────────────────────────────────────────────
+// Called on DOMContentLoaded AND after every HTMX page swap.
+// ONLY contains things that may change per page (tooltips, alerts, modals etc.)
+// Sidebar init has been moved to ehrInitOnce() above.
+function ehrInit() {
 
   /* ── Auto-dismiss alerts ──────────────────────────────────── */
   document.querySelectorAll('.alert.alert-dismissible').forEach(alert => {
@@ -179,16 +176,6 @@ function ehrInit() {
   /* ── Print button ─────────────────────────────────────────── */
   document.querySelectorAll('[data-action="print"]').forEach(btn => {
     btn.addEventListener('click', () => window.print());
-  });
-
-
-  /* ── Close dropdowns on outside click ────────────────────── */
-  document.addEventListener('click', function (e) {
-    document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
-      if (!menu.closest('.dropdown').contains(e.target)) {
-        menu.classList.remove('show');
-      }
-    });
   });
 
 } // end ehrInit
@@ -423,8 +410,34 @@ function buildBreadcrumbs() {
   container.innerHTML = html;
 }
 
+// ── Chip-button toggle helper ─────────────────────────────────────────────────
+// Replaces the double-box (text + <select multiple>) pattern.
+// Each chip is: <span class="chip-opt" data-chip-for="inputId" onclick="chipToggle(this,'inputId')">Label</span>
+function chipToggle(el, inputId) {
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var val = (el.dataset.val || el.textContent).trim();
+  var cur = inp.value.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+  var idx = cur.indexOf(val);
+  if (idx >= 0) { cur.splice(idx, 1); el.classList.remove('active'); }
+  else          { cur.push(val);       el.classList.add('active'); }
+  inp.value = cur.join(', ');
+}
+
+// Sync chip active states with current input value (call after form restore)
+function syncChips(inputId) {
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var cur = inp.value.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+  document.querySelectorAll('[data-chip-for="' + inputId + '"]').forEach(function(ch) {
+    var val = (ch.dataset.val || ch.textContent).trim();
+    ch.classList.toggle('active', cur.includes(val));
+  });
+}
+
 // Run on normal page load
 document.addEventListener('DOMContentLoaded', function() {
+  ehrInitOnce(); // sidebar, search, persistent listeners — once only
   ehrInit();
   setActiveSidebarLink();  // initial active state on fresh/hard loads
   buildBreadcrumbs();

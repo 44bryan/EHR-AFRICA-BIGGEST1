@@ -507,9 +507,15 @@ def consultation_detail_view(request, pk):
 def consultation_edit_view(request, pk):
     consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
 
-    # Only the consulting doctor or medical director can edit
-    if consultation.consulting_doctor != request.user and not request.user.is_medical_director:
-        return HttpResponseForbidden()
+    # Only the consulting doctor, medical director, or super admin can edit
+    can_edit = (
+        consultation.consulting_doctor == request.user or
+        request.user.is_medical_director or
+        request.user.is_super_admin
+    )
+    if not can_edit:
+        messages.error(request, 'You can only edit your own consultation notes.')
+        return redirect('consultations:detail', pk=pk)
 
     if consultation.status == ConsultationStatus.COMPLETED and not (
         request.user.is_medical_director or
