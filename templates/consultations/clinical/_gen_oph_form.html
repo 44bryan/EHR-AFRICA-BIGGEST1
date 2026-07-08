@@ -1058,38 +1058,127 @@ function addMgtOther() {
   function drawBase(ctx, id) {
     var sc = SIZE / 280;
     var CX = SIZE / 2, CY = SIZE / 2;
+    var isRE = (id === 're');
+    var discX = isRE ? Math.round(CX + 38 * sc) : Math.round(CX - 38 * sc);
+    var macX  = isRE ? Math.round(CX - 40 * sc) : Math.round(CX + 40 * sc);
+
     ctx.clearRect(0, 0, SIZE, SIZE);
-    // Retinal background circle
+
+    // ── 1. Retinal background ────────────────────────────────────────────────
     ctx.beginPath(); ctx.arc(CX, CY, Math.round(130 * sc), 0, 2 * Math.PI);
     ctx.fillStyle = '#f5e8d5'; ctx.fill();
     ctx.strokeStyle = '#bbb'; ctx.lineWidth = 2; ctx.stroke();
-    // Optic disc
-    var discX = (id === 're') ? Math.round(CX + 38 * sc) : Math.round(CX - 38 * sc);
-    ctx.beginPath(); ctx.ellipse(discX, CY, Math.round(18 * sc), Math.round(24 * sc), 0, 0, 2 * Math.PI);
+
+    // ── 2. RNFL arcuate bundles (nerve fibre layer) ──────────────────────────
+    // Superior arcuate RNFL bundle
+    ctx.save();
+    ctx.strokeStyle = 'rgba(210,185,140,0.55)'; ctx.lineWidth = Math.round(10 * sc);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(discX, CY - Math.round(22 * sc));
+    ctx.bezierCurveTo(
+      CX, CY - Math.round(90 * sc),
+      macX + (isRE ? 1 : -1) * Math.round(30 * sc), CY - Math.round(65 * sc),
+      macX + (isRE ? 1 : -1) * Math.round(18 * sc), CY - Math.round(18 * sc)
+    );
+    ctx.stroke();
+    // Inferior arcuate RNFL bundle
+    ctx.beginPath();
+    ctx.moveTo(discX, CY + Math.round(22 * sc));
+    ctx.bezierCurveTo(
+      CX, CY + Math.round(90 * sc),
+      macX + (isRE ? 1 : -1) * Math.round(30 * sc), CY + Math.round(65 * sc),
+      macX + (isRE ? 1 : -1) * Math.round(18 * sc), CY + Math.round(18 * sc)
+    );
+    ctx.stroke();
+    // Temporal raphe (horizontal midline fibres)
+    ctx.strokeStyle = 'rgba(210,185,140,0.30)'; ctx.lineWidth = Math.round(5 * sc);
+    ctx.beginPath();
+    ctx.moveTo(macX + (isRE ? -1 : 1) * Math.round(18 * sc), CY);
+    ctx.lineTo(isRE ? Math.round(CX - 100 * sc) : Math.round(CX + 100 * sc), CY);
+    ctx.stroke();
+    ctx.restore();
+
+    // ── 3. Optic disc ────────────────────────────────────────────────────────
+    // Disc rim (neuroretinal rim)
+    var dRx = Math.round(18 * sc), dRy = Math.round(24 * sc);
+    ctx.beginPath(); ctx.ellipse(discX, CY, dRx, dRy, 0, 0, 2 * Math.PI);
     ctx.fillStyle = '#e8d0a0'; ctx.fill();
     ctx.strokeStyle = '#b08840'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.font = 'bold ' + Math.round(8 * sc) + 'px sans-serif';
+
+    // Optic cup (C:D ~0.4 default — doctor marks actual)
+    var cupRx = Math.round(7 * sc), cupRy = Math.round(10 * sc);
+    ctx.beginPath(); ctx.ellipse(discX, CY, cupRx, cupRy, 0, 0, 2 * Math.PI);
+    ctx.fillStyle = '#fffbe8'; ctx.fill();
+    ctx.strokeStyle = '#c8a44a'; ctx.lineWidth = 1; ctx.setLineDash([2, 2]); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Central retinal vessels emerging from cup
+    var dir = isRE ? 1 : -1;
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5;
+    // Superior vessel trunk from disc
+    ctx.beginPath();
+    ctx.moveTo(discX, CY - Math.round(10 * sc));
+    ctx.lineTo(discX - dir * Math.round(5 * sc), CY - Math.round(24 * sc));
+    ctx.stroke();
+    // Inferior vessel trunk from disc
+    ctx.beginPath();
+    ctx.moveTo(discX, CY + Math.round(10 * sc));
+    ctx.lineTo(discX - dir * Math.round(5 * sc), CY + Math.round(24 * sc));
+    ctx.stroke();
+
+    // DISC label
+    ctx.font = 'bold ' + Math.round(7 * sc) + 'px sans-serif';
     ctx.fillStyle = '#7a5c00'; ctx.textAlign = 'center';
-    ctx.fillText('DISC', discX, CY + Math.round(3 * sc));
-    // Macula
-    var macX = (id === 're') ? Math.round(CX - 40 * sc) : Math.round(CX + 40 * sc);
-    ctx.beginPath(); ctx.arc(macX, CY, Math.round(18 * sc), 0, 2 * Math.PI);
-    ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1; ctx.stroke();
-    ctx.beginPath(); ctx.arc(macX, CY, Math.round(5 * sc), 0, 2 * Math.PI);
+    ctx.fillText('DISC', discX, CY - dRy - Math.round(4 * sc));
+    ctx.font = Math.round(6 * sc) + 'px sans-serif'; ctx.fillStyle = '#a07820';
+    ctx.fillText('cup', discX, CY + Math.round(3 * sc));
+
+    // ── 4. Vascular arcades ──────────────────────────────────────────────────
+    var macOff = isRE ? Math.round(18 * sc) : -Math.round(18 * sc);
+    // Superior arcade
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(discX - dir * Math.round(5 * sc), CY - Math.round(24 * sc));
+    ctx.quadraticCurveTo(CX, CY - Math.round(68 * sc), macX + macOff, CY - Math.round(45 * sc));
+    ctx.stroke();
+    // Inferior arcade
+    ctx.beginPath();
+    ctx.moveTo(discX - dir * Math.round(5 * sc), CY + Math.round(24 * sc));
+    ctx.quadraticCurveTo(CX, CY + Math.round(68 * sc), macX + macOff, CY + Math.round(45 * sc));
+    ctx.stroke();
+    // Branch vessels — nasal side
+    ctx.lineWidth = 1; ctx.strokeStyle = '#c03030';
+    ctx.beginPath();
+    ctx.moveTo(discX, CY - Math.round(14 * sc));
+    ctx.lineTo(discX + dir * Math.round(22 * sc), CY - Math.round(30 * sc));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(discX, CY + Math.round(14 * sc));
+    ctx.lineTo(discX + dir * Math.round(22 * sc), CY + Math.round(30 * sc));
+    ctx.stroke();
+
+    // ── 5. Macula / Fovea ───────────────────────────────────────────────────
+    // Outer macula ring
+    ctx.beginPath(); ctx.arc(macX, CY, Math.round(22 * sc), 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(160,130,80,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+    // Inner macula (parafoveal ring)
+    ctx.beginPath(); ctx.arc(macX, CY, Math.round(11 * sc), 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(160,130,80,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+    // Fovea centralis
+    ctx.beginPath(); ctx.arc(macX, CY, Math.round(3.5 * sc), 0, 2 * Math.PI);
     ctx.fillStyle = '#b03030'; ctx.fill();
     ctx.font = Math.round(7 * sc) + 'px sans-serif'; ctx.fillStyle = '#666';
-    ctx.fillText('fovea', macX, CY + Math.round(30 * sc));
-    // Vascular arcades
-    var macOff = (id === 're') ? Math.round(18 * sc) : -Math.round(18 * sc);
-    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(discX, CY - Math.round(24 * sc));
-    ctx.quadraticCurveTo(CX, CY - Math.round(62 * sc), macX + macOff, CY - Math.round(42 * sc));
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(discX, CY + Math.round(24 * sc));
-    ctx.quadraticCurveTo(CX, CY + Math.round(62 * sc), macX + macOff, CY + Math.round(42 * sc));
-    ctx.stroke();
+    ctx.fillText('macula', macX, CY + Math.round(35 * sc));
+    ctx.font = Math.round(6 * sc) + 'px sans-serif'; ctx.fillStyle = '#999';
+    ctx.fillText('fovea', macX, CY + Math.round(44 * sc));
+
+    // ── 6. Peripheral vessel branches ───────────────────────────────────────
+    ctx.strokeStyle = '#d05050'; ctx.lineWidth = 0.8;
+    [[macX + macOff, CY - 45, macX + macOff - dir*20*sc, CY - 65*sc],
+     [macX + macOff, CY + 45, macX + macOff - dir*20*sc, CY + 65*sc]].forEach(function(pts) {
+      ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); ctx.lineTo(pts[2], pts[3]); ctx.stroke();
+    });
   }
 
   function composite(id) {
