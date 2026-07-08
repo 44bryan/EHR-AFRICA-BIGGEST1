@@ -264,7 +264,7 @@ HOSPITAL_REG_NUMBER = env('HOSPITAL_REG_NUMBER', default='')
 
 # Session security
 SESSION_COOKIE_AGE = 28800          # 8 hours — matches a working shift
-SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # tablet-safe: session persists up to SESSION_COOKIE_AGE (8h)
 SESSION_COOKIE_HTTPONLY = True      # JS cannot read session cookie
 SESSION_COOKIE_SAMESITE = 'Lax'     # CSRF protection
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=(not DEBUG))
