@@ -1027,7 +1027,7 @@ def hospital_stats_view(request):
 
     # ── Visits by service tier ────────────────────────────────────────────────
     TIER_LABELS = {
-        'STANDARD': 'Standard',
+        'STANDARD': 'Regular',
         'EXPRESS':  'Express',
         'FAST_TRACK': 'Fast Track',
         'VIP':      'VIP',
@@ -1154,7 +1154,7 @@ def hospital_stats_view(request):
         _mx_data[_tk][_ag][_gender] += 1
 
     _TIER_ROWS = [
-        ('STANDARD',   'Standard',  '#0d6efd'),
+        ('STANDARD',   'Regular',   '#0d6efd'),
         ('EXPRESS',    'Express',   '#0dcaf0'),
         ('FAST_TRACK', 'Fast Track','#ffc107'),
         ('VIP',        'VIP',       '#dc3545'),
@@ -1467,7 +1467,7 @@ def department_stats_view(request):
         mx[tk][ag][gender] += 1
 
     TIER_ROWS = [
-        ('STANDARD',   'Standard',  '#0d6efd'),
+        ('STANDARD',   'Regular',   '#0d6efd'),
         ('EXPRESS',    'Express',   '#0dcaf0'),
         ('FAST_TRACK', 'Fast Track','#ffc107'),
         ('VIP',        'VIP',       '#dc3545'),
