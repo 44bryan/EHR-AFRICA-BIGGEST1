@@ -106,6 +106,26 @@ function ehrInitOnce() {
       }
     });
   });
+
+  // ehr-combo: event delegation — works for all HTMX-loaded selects
+  // Listens at document level so it catches selects added after initial load.
+  document.addEventListener('change', function (e) {
+    var sel = e.target;
+    if (!sel.closest || !sel.closest('.ehr-combo')) return;
+    var val = sel.value;
+    if (!val) return;
+    sel.value = '';
+    var ta = sel.previousElementSibling;
+    if (!ta || ta.tagName !== 'TEXTAREA') {
+      var combo = sel.closest('.ehr-combo');
+      ta = combo && combo.querySelector('textarea');
+    }
+    if (!ta) return;
+    var cur = ta.value.trim();
+    ta.value = cur ? cur + ', ' + val : val;
+    ta.dispatchEvent(new Event('input'));
+    ta.focus();
+  });
 }
 
 function syncTooltips(collapsed) {
