@@ -158,12 +158,8 @@
       </a>
       {% endif %}
       {% if request.user.can_use_ai_assistant %}
-      <button type="button" class="btn btn-sm" style="background:rgba(139,92,246,.25);color:#e9d5ff;border:1px solid rgba(139,92,246,.4);"
-              onclick="loadAIRisk(); setTimeout(function(){ var el=document.getElementById('aiRiskContent'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }, 300);">
-        <i class="bi bi-robot me-1"></i>AI Assist
-      </button>
       <button type="button" class="btn btn-sm" style="background:rgba(16,185,129,.25);color:#6ee7b7;border:1px solid rgba(16,185,129,.4);"
-              onclick="togglePatientChat()" title="Ask AI about this patient">
+              onclick="togglePatientChat()" title="Chat with AI about this patient's record">
         <i class="bi bi-chat-dots me-1"></i>Ask AI
       </button>
       {% endif %}
@@ -383,7 +379,7 @@
         {% for consult in consultations %}
         {% with dd=consult.department_specific_data vs=consult.visit.vital_signs %}
         <div class="consult-card">
-          <div class="cc-head" role="button" data-bs-toggle="collapse" data-bs-target="#cb-{{ consult.pk }}" aria-expanded="false" style="cursor:pointer;">
+          <div class="cc-head">
             <div class="d-flex align-items-center gap-2 flex-wrap">
               {# Dept color indicator #}
               {% with dn=consult.department.name|default:"" %}
@@ -404,125 +400,18 @@
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="text-muted small">{{ consult.consultation_date|date:"d M Y, H:i" }}</span>
-              <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary py-0" style="font-size:.72rem;" onclick="event.stopPropagation();">
+              <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary py-0" style="font-size:.72rem;">
                 <i class="bi bi-file-medical me-1"></i>Full Record
               </a>
-              <i class="bi bi-chevron-down text-muted small" style="transition:transform .2s;"></i>
             </div>
           </div>
 
-          <div class="collapse" id="cb-{{ consult.pk }}">
           <div class="cc-body">
+            {# ── Always visible: complaint, diagnoses, plan, follow-up ── #}
             {% if consult.presenting_complaint %}
-            <div class="mb-3 small"><span class="text-muted fw-semibold">Chief Complaint: </span>{{ consult.presenting_complaint }}</div>
+            <div class="mb-2 small"><span class="text-muted fw-semibold">Chief Complaint: </span>{{ consult.presenting_complaint }}</div>
             {% endif %}
 
-            {# ── Department-aware clinical summary ── #}
-            {% include 'consultations/clinical/_record_summary.html' %}
-
-            {# ── Optical prescriptions (from OpticalPrescription model) ── #}
-            {% for optical_rx in consult.optical_prescriptions.all %}
-            <div class="mb-3 p-2 rounded" style="background:#eff6ff;border:1px solid #bfdbfe;">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="small fw-bold text-primary"><i class="bi bi-eyeglasses me-1"></i>Optical Prescription — {{ optical_rx.get_prescription_type_display }}</span>
-                <div class="d-flex gap-2 align-items-center">
-                  <span class="text-muted small">{{ optical_rx.prescription_date|date:"d M Y" }}</span>
-                  <a href="{% url 'prescriptions:optical_detail' pk=optical_rx.pk %}" class="btn btn-xs btn-outline-primary py-0" style="font-size:.65rem;">
-                    <i class="bi bi-printer me-1"></i>Print
-                  </a>
-                </div>
-              </div>
-              <table class="rx-table">
-                <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>Prism</th><th>VA</th></tr></thead>
-                <tbody>
-                  <tr>
-                    <td class="eye-re">OD</td>
-                    <td>{% if optical_rx.re_sphere is None %}Plano{% elif optical_rx.re_sphere > 0 %}+{{ optical_rx.re_sphere|floatformat:2 }}{% else %}{{ optical_rx.re_sphere|floatformat:2 }}{% endif %}</td>
-                    <td>{{ optical_rx.re_cylinder|floatformat:2|default:"—" }}</td>
-                    <td>{% if optical_rx.re_axis %}{{ optical_rx.re_axis }}&deg;{% else %}—{% endif %}</td>
-                    <td>{% if optical_rx.re_add %}+{{ optical_rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
-                    <td>{% if optical_rx.re_prism %}{{ optical_rx.re_prism }}{% else %}—{% endif %}</td>
-                    <td>{{ optical_rx.re_visual_acuity|default:"—" }}</td>
-                  </tr>
-                  <tr>
-                    <td class="eye-le">OS</td>
-                    <td>{% if optical_rx.le_sphere is None %}Plano{% elif optical_rx.le_sphere > 0 %}+{{ optical_rx.le_sphere|floatformat:2 }}{% else %}{{ optical_rx.le_sphere|floatformat:2 }}{% endif %}</td>
-                    <td>{{ optical_rx.le_cylinder|floatformat:2|default:"—" }}</td>
-                    <td>{% if optical_rx.le_axis %}{{ optical_rx.le_axis }}&deg;{% else %}—{% endif %}</td>
-                    <td>{% if optical_rx.le_add %}+{{ optical_rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
-                    <td>{% if optical_rx.le_prism %}{{ optical_rx.le_prism }}{% else %}—{% endif %}</td>
-                    <td>{{ optical_rx.le_visual_acuity|default:"—" }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              {% if optical_rx.lens_type %}<div class="mt-1 small text-muted">Lens: {{ optical_rx.lens_type }}{% if optical_rx.interpupillary_distance %} · IPD: {{ optical_rx.interpupillary_distance }}mm{% endif %}</div>{% endif %}
-            </div>
-            {% endfor %}
-
-            {# ── Drug prescriptions — collapsed by default ── #}
-            {% if consult.drug_prescriptions.exists %}
-            <div class="mb-2">
-              <div class="d-flex align-items-center gap-2 mb-1" style="cursor:pointer;"
-                   onclick="var b=document.getElementById('rx-{{ consult.pk }}');var ic=this.querySelector('.bi-chevron-right,i.bi-chevron-down');if(b.style.display==='none'){b.style.display='';if(ic){ic.className='bi bi-chevron-down text-success small';}}else{b.style.display='none';if(ic){ic.className='bi bi-chevron-right text-success small';}}">
-                <i class="bi bi-chevron-right text-success small"></i>
-                <span class="small fw-semibold text-success"><i class="bi bi-capsule-pill me-1"></i>Drug Prescriptions</span>
-                <span class="badge bg-success bg-opacity-10 text-success border border-success-subtle" style="font-size:.62rem;">tap to view</span>
-              </div>
-              <div id="rx-{{ consult.pk }}" style="display:none;">
-                {% for drug_rx in consult.drug_prescriptions.all %}
-                {% if drug_rx.items.all %}
-                <div class="mb-2 p-2 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
-                  {% for item in drug_rx.items.all %}
-                  <div class="small text-muted">• {{ item.drug_name }} — {{ item.dosage|default:"" }} {{ item.frequency|default:"" }} × {{ item.duration|default:"" }}</div>
-                  {% endfor %}
-                </div>
-                {% endif %}
-                {% endfor %}
-              </div>
-            </div>
-            {% endif %}
-
-            {# ── Lab Orders ── #}
-            {% for lab in consult.lab_orders.all %}
-            <div class="mb-2 p-2 rounded" style="background:#fefce8;border:1px solid #fde68a;">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="small fw-bold text-warning-emphasis">
-                  <i class="bi bi-flask me-1"></i>Lab Request
-                  <span class="badge {% if lab.status == 'COMPLETED' %}bg-success{% elif lab.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-info{% endif %} ms-1" style="font-size:.58rem;">{{ lab.get_status_display }}</span>
-                </span>
-                <a href="{% url 'laboratory:detail' lab.pk %}" class="text-muted" style="font-size:.7rem;"><i class="bi bi-box-arrow-up-right me-1"></i>View</a>
-              </div>
-              {% for item in lab.items.all %}
-              <div class="small d-flex align-items-center gap-1 mb-1">
-                <span class="text-muted">• {{ item.test_type.name }}</span>
-                {% if item.result %}
-                  <span class="fw-bold {% if item.result.is_critical %}text-danger{% elif item.result.is_abnormal %}text-warning{% else %}text-success{% endif %}">
-                    {{ item.result.result_value }} {{ item.result.result_unit }}
-                  </span>
-                  {% if item.result.reference_range %}<span class="text-muted" style="font-size:.7rem;">(ref: {{ item.result.reference_range }})</span>{% endif %}
-                  {% if item.result.is_critical %}<span class="badge bg-danger" style="font-size:.58rem;">Critical</span>
-                  {% elif item.result.is_abnormal %}<span class="badge bg-warning text-dark" style="font-size:.58rem;">Abnormal</span>
-                  {% else %}<span class="badge bg-success" style="font-size:.58rem;">Normal</span>{% endif %}
-                {% else %}
-                  <span class="badge bg-light text-muted border" style="font-size:.58rem;">{{ item.status }}</span>
-                {% endif %}
-              </div>
-              {% endfor %}
-            </div>
-            {% endfor %}
-
-            {# ── Investigation Orders ── #}
-            {% for inv in consult.investigation_orders.all %}
-            <div class="mb-2 p-2 rounded" style="background:#fdf4ff;border:1px solid #e9d5ff;">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="small fw-bold text-purple"><i class="bi bi-search me-1"></i>Investigation: {{ inv.investigation_type.name }}</span>
-                <span class="badge {% if inv.urgency == 'EMERGENCY' %}bg-danger{% elif inv.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="font-size:.6rem;">{{ inv.urgency }}</span>
-              </div>
-              <div class="small text-muted">Status: {{ inv.get_status_display }}{% if inv.notes %} — {{ inv.notes|truncatechars:60 }}{% endif %}</div>
-            </div>
-            {% endfor %}
-
-            {# ── Diagnoses ── #}
             {% with diags=consult.consultation_diagnoses.all %}
             {% if diags %}
             <div class="mb-2">
@@ -532,17 +421,134 @@
             {% endif %}
             {% endwith %}
 
-            {# ── Management & Follow-up ── #}
             {% if consult.management_plan %}
-            <div class="small mt-2"><span class="text-muted fw-semibold">Plan: </span>{{ consult.management_plan|truncatechars:200 }}</div>
+            <div class="small mb-2"><span class="text-muted fw-semibold">Plan: </span>{{ consult.management_plan|truncatechars:200 }}</div>
             {% endif %}
             {% if consult.follow_up_date %}
-            <div class="small mt-1">
+            <div class="small mb-2">
               <i class="bi bi-calendar-check text-primary me-1"></i>
               <span class="text-muted">Follow-up:</span> <strong>{{ consult.follow_up_date|date:"d M Y" }}</strong>
               {% if consult.follow_up_instructions %} — {{ consult.follow_up_instructions|truncatechars:80 }}{% endif %}
             </div>
             {% endif %}
+
+            {# ── Clinical details toggle (exam tables, Rx, lab, investigations) ── #}
+            <div class="mt-2">
+              <div class="d-flex align-items-center gap-2 mb-2" style="cursor:pointer;"
+                   onclick="var b=document.getElementById('clin-{{ consult.pk }}');var ic=this.querySelector('i.clin-chev');var open=b.style.display!=='none';b.style.display=open?'none':'';ic.style.transform=open?'rotate(0deg)':'rotate(90deg)';">
+                <i class="clin-chev bi bi-chevron-right text-secondary small" style="transition:transform .15s;"></i>
+                <span class="small text-secondary fw-semibold">Clinical details</span>
+                {% if consult.optical_prescriptions.exists or consult.drug_prescriptions.exists or consult.lab_orders.exists or consult.investigation_orders.exists %}
+                <span class="d-flex gap-1">
+                  {% if consult.optical_prescriptions.exists %}<i class="bi bi-eyeglasses text-primary" style="font-size:.75rem;" title="Optical Rx"></i>{% endif %}
+                  {% if consult.drug_prescriptions.exists %}<i class="bi bi-capsule-pill text-success" style="font-size:.75rem;" title="Drug Rx"></i>{% endif %}
+                  {% if consult.lab_orders.exists %}<i class="bi bi-flask text-warning" style="font-size:.75rem;" title="Lab"></i>{% endif %}
+                  {% if consult.investigation_orders.exists %}<i class="bi bi-search text-purple" style="font-size:.75rem;" title="Investigation"></i>{% endif %}
+                </span>
+                {% endif %}
+              </div>
+              <div id="clin-{{ consult.pk }}" style="display:none;">
+
+                {# ── Department-aware clinical summary ── #}
+                {% include 'consultations/clinical/_record_summary.html' %}
+
+                {# ── Optical prescriptions ── #}
+                {% for optical_rx in consult.optical_prescriptions.all %}
+                <div class="mb-3 p-2 rounded" style="background:#eff6ff;border:1px solid #bfdbfe;">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small fw-bold text-primary"><i class="bi bi-eyeglasses me-1"></i>Optical Prescription — {{ optical_rx.get_prescription_type_display }}</span>
+                    <div class="d-flex gap-2 align-items-center">
+                      <span class="text-muted small">{{ optical_rx.prescription_date|date:"d M Y" }}</span>
+                      <a href="{% url 'prescriptions:optical_detail' pk=optical_rx.pk %}" class="btn btn-xs btn-outline-primary py-0" style="font-size:.65rem;">
+                        <i class="bi bi-printer me-1"></i>Print
+                      </a>
+                    </div>
+                  </div>
+                  <table class="rx-table">
+                    <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>Prism</th><th>VA</th></tr></thead>
+                    <tbody>
+                      <tr>
+                        <td class="eye-re">OD</td>
+                        <td>{% if optical_rx.re_sphere is None %}Plano{% elif optical_rx.re_sphere > 0 %}+{{ optical_rx.re_sphere|floatformat:2 }}{% else %}{{ optical_rx.re_sphere|floatformat:2 }}{% endif %}</td>
+                        <td>{{ optical_rx.re_cylinder|floatformat:2|default:"—" }}</td>
+                        <td>{% if optical_rx.re_axis %}{{ optical_rx.re_axis }}&deg;{% else %}—{% endif %}</td>
+                        <td>{% if optical_rx.re_add %}+{{ optical_rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td>{% if optical_rx.re_prism %}{{ optical_rx.re_prism }}{% else %}—{% endif %}</td>
+                        <td>{{ optical_rx.re_visual_acuity|default:"—" }}</td>
+                      </tr>
+                      <tr>
+                        <td class="eye-le">OS</td>
+                        <td>{% if optical_rx.le_sphere is None %}Plano{% elif optical_rx.le_sphere > 0 %}+{{ optical_rx.le_sphere|floatformat:2 }}{% else %}{{ optical_rx.le_sphere|floatformat:2 }}{% endif %}</td>
+                        <td>{{ optical_rx.le_cylinder|floatformat:2|default:"—" }}</td>
+                        <td>{% if optical_rx.le_axis %}{{ optical_rx.le_axis }}&deg;{% else %}—{% endif %}</td>
+                        <td>{% if optical_rx.le_add %}+{{ optical_rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td>{% if optical_rx.le_prism %}{{ optical_rx.le_prism }}{% else %}—{% endif %}</td>
+                        <td>{{ optical_rx.le_visual_acuity|default:"—" }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  {% if optical_rx.lens_type %}<div class="mt-1 small text-muted">Lens: {{ optical_rx.lens_type }}{% if optical_rx.interpupillary_distance %} · IPD: {{ optical_rx.interpupillary_distance }}mm{% endif %}</div>{% endif %}
+                </div>
+                {% endfor %}
+
+                {# ── Drug prescriptions ── #}
+                {% if consult.drug_prescriptions.exists %}
+                <div class="mb-2">
+                  {% for drug_rx in consult.drug_prescriptions.all %}
+                  {% if drug_rx.items.all %}
+                  <div class="mb-2 p-2 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+                    <div class="small fw-semibold text-success mb-1"><i class="bi bi-capsule-pill me-1"></i>Drug Prescription</div>
+                    {% for item in drug_rx.items.all %}
+                    <div class="small text-muted">• {{ item.drug_name }} — {{ item.dosage|default:"" }} {{ item.frequency|default:"" }} × {{ item.duration|default:"" }}</div>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+                  {% endfor %}
+                </div>
+                {% endif %}
+
+                {# ── Lab Orders ── #}
+                {% for lab in consult.lab_orders.all %}
+                <div class="mb-2 p-2 rounded" style="background:#fefce8;border:1px solid #fde68a;">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small fw-bold text-warning-emphasis">
+                      <i class="bi bi-flask me-1"></i>Lab Request
+                      <span class="badge {% if lab.status == 'COMPLETED' %}bg-success{% elif lab.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-info{% endif %} ms-1" style="font-size:.58rem;">{{ lab.get_status_display }}</span>
+                    </span>
+                    <a href="{% url 'laboratory:detail' lab.pk %}" class="text-muted" style="font-size:.7rem;"><i class="bi bi-box-arrow-up-right me-1"></i>View</a>
+                  </div>
+                  {% for item in lab.items.all %}
+                  <div class="small d-flex align-items-center gap-1 mb-1">
+                    <span class="text-muted">• {{ item.test_type.name }}</span>
+                    {% if item.result %}
+                      <span class="fw-bold {% if item.result.is_critical %}text-danger{% elif item.result.is_abnormal %}text-warning{% else %}text-success{% endif %}">
+                        {{ item.result.result_value }} {{ item.result.result_unit }}
+                      </span>
+                      {% if item.result.reference_range %}<span class="text-muted" style="font-size:.7rem;">(ref: {{ item.result.reference_range }})</span>{% endif %}
+                      {% if item.result.is_critical %}<span class="badge bg-danger" style="font-size:.58rem;">Critical</span>
+                      {% elif item.result.is_abnormal %}<span class="badge bg-warning text-dark" style="font-size:.58rem;">Abnormal</span>
+                      {% else %}<span class="badge bg-success" style="font-size:.58rem;">Normal</span>{% endif %}
+                    {% else %}
+                      <span class="badge bg-light text-muted border" style="font-size:.58rem;">{{ item.status }}</span>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endfor %}
+
+                {# ── Investigation Orders ── #}
+                {% for inv in consult.investigation_orders.all %}
+                <div class="mb-2 p-2 rounded" style="background:#fdf4ff;border:1px solid #e9d5ff;">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small fw-bold text-purple"><i class="bi bi-search me-1"></i>Investigation: {{ inv.investigation_type.name }}</span>
+                    <span class="badge {% if inv.urgency == 'EMERGENCY' %}bg-danger{% elif inv.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="font-size:.6rem;">{{ inv.urgency }}</span>
+                  </div>
+                  <div class="small text-muted">Status: {{ inv.get_status_display }}{% if inv.notes %} — {{ inv.notes|truncatechars:60 }}{% endif %}</div>
+                </div>
+                {% endfor %}
+
+              </div>{# /clin-detail #}
+            </div>
           </div>
 
           <div class="cc-foot">
@@ -553,7 +559,6 @@
             {% if consult.lab_orders.all %}<span class="text-warning"><i class="bi bi-flask me-1"></i>Lab ordered</span>{% endif %}
             {% if consult.investigation_orders.all %}<span class="text-purple"><i class="bi bi-search me-1"></i>Investigated</span>{% endif %}
           </div>
-          </div>{# /collapse #}
         </div>
         {% endwith %}
         {% endfor %}
@@ -748,18 +753,6 @@
         {% endif %}
 
       </div>
-
-      <script>
-      // Rotate chevron on timeline collapse show/hide
-      document.addEventListener('show.bs.collapse', function(e) {
-        var head = document.querySelector('[data-bs-target="#' + e.target.id + '"]');
-        if (head) { var ic = head.querySelector('.bi-chevron-down'); if (ic) ic.style.transform = 'rotate(180deg)'; }
-      });
-      document.addEventListener('hide.bs.collapse', function(e) {
-        var head = document.querySelector('[data-bs-target="#' + e.target.id + '"]');
-        if (head) { var ic = head.querySelector('.bi-chevron-down'); if (ic) ic.style.transform = 'rotate(0deg)'; }
-      });
-      </script>
 
       {# ══ DEPARTMENT TABS ══════════════════════════════════════════ #}
       {% if pr.tab_dept_clinical %}
@@ -1748,11 +1741,12 @@ function togglePatientChat() {
   }
 }
 
-function _appendChatMsg(role, text) {
+function _appendChatMsg(role, text, id) {
   var box = document.getElementById('chatMessages');
   if (!box) return;
   var div = document.createElement('div');
   div.style.cssText = 'margin-bottom:8px;max-width:90%;' + (role === 'user' ? 'align-self:flex-end;' : 'align-self:flex-start;');
+  if (id) div.id = id;
   var bubble = document.createElement('div');
   bubble.style.cssText = role === 'user'
     ? 'background:#0d6efd;color:#fff;padding:7px 11px;border-radius:12px 12px 3px 12px;font-size:.82rem;white-space:pre-wrap;'
@@ -1775,18 +1769,31 @@ function sendChatMessage() {
   var sendBtn = document.getElementById('chatSendBtn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
 
+  // Show typing indicator
+  var typingId = 'typing-' + Date.now();
+  _appendChatMsg('assistant', '...', typingId);
+
   fetch(_chatUrl, {
     method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-CSRFToken': _chatCsrf},
     body: JSON.stringify({question: q, history: _chatHistory.slice(0, -1)})
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok && r.status !== 500) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(function(d) {
-    var ans = d.success ? d.answer : ('Error: ' + (d.error || 'AI unavailable'));
+    var typingEl = document.getElementById(typingId);
+    if (typingEl) typingEl.remove();
+    var ans = d.success ? d.answer : ('Sorry, the AI could not respond. Reason: ' + (d.error || 'unknown error'));
     _appendChatMsg('assistant', ans);
     if (d.success) _chatHistory.push({role: 'assistant', content: d.answer});
   })
-  .catch(function() { _appendChatMsg('assistant', 'Connection error. Please try again.'); })
+  .catch(function(err) {
+    var typingEl = document.getElementById(typingId);
+    if (typingEl) typingEl.remove();
+    _appendChatMsg('assistant', 'Connection error: ' + (err.message || 'Could not reach the server. Check your network.'));
+  })
   .finally(function() {
     if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>'; }
   });
