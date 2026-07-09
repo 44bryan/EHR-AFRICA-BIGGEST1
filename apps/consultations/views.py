@@ -1604,9 +1604,35 @@ def nurse_route_patient_view(request, visit_pk):
 
     new_status, qms_service, label = route
 
-    # Update visit status
+    # Update visit status + department so the destination doctor's dashboard shows the patient
     visit.status = new_status
-    visit.save(update_fields=['status', 'updated_at'])
+    _save_fields = ['status', 'updated_at']
+    if qms_service and qms_service not in ('PHARMACY', 'CASHIER', 'COUNSEL'):
+        # Map QMS service type → department code (some differ e.g. GENERAL → GEN_OPH)
+        _svc_to_dept = {
+            'GEN_PHYS':   'GEN_PHYS',
+            'GENERAL':    'GEN_OPH',
+            'RETINA':     'RETINA',
+            'GLAUCOMA':   'GLAUC',
+            'PEDIATRIC':  'PEDS_OPH',
+            'REFRACTION': 'REFRAC',
+            'CORNEA':     'CORNEA',
+            'UVEITIS':    'UVEITIS',
+            'NEURO':      'NEURO_OPH',
+            'OCULOPLASTY':'OCULOPLASTY',
+            'LOW_VISION': 'LOW_VIS',
+            'GEN_OPH':    'GEN_OPH',
+        }
+        try:
+            from apps.departments.models import Department as _RouteDept
+            _dept_code = _svc_to_dept.get(qms_service, qms_service)
+            _dest_dept = _RouteDept.objects.filter(code=_dept_code).first()
+            if _dest_dept:
+                visit.department = _dest_dept
+                _save_fields.append('department')
+        except Exception:
+            pass
+    visit.save(update_fields=_save_fields)
 
     # Complete the current QMS token for this dept (QMS ON only)
     if _qms_active():

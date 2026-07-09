@@ -148,6 +148,30 @@
   // Restart after every HTMX swap (catches navigation to/from dashboard pages)
   document.addEventListener('htmx:afterSettle', startRefresh);
 
+  // ── Memory leak prevention: clean up before every HTMX content swap ─────
+  // Intercept setInterval so all timers created by child templates are tracked
+  // and can be cleared before the next swap (prevents stacking intervals).
+  if (!window.__ehrIntervals) {
+    window.__ehrIntervals = [];
+    var _origSetInterval = window.setInterval;
+    window.setInterval = function (fn, delay) {
+      var id = _origSetInterval.call(window, fn, delay);
+      window.__ehrIntervals.push(id);
+      return id;
+    };
+  }
+  document.addEventListener('htmx:beforeSwap', function () {
+    // Clear all child-template intervals (prevents timer stacking)
+    (window.__ehrIntervals || []).forEach(function (id) { clearInterval(id); });
+    window.__ehrIntervals = [];
+    // Destroy Chart.js instances (prevents memory leak on each refresh)
+    if (window.Chart && Chart.instances) {
+      Object.keys(Chart.instances).forEach(function (k) {
+        try { Chart.instances[k].destroy(); } catch (e) {}
+      });
+    }
+  });
+
   // Stop if user navigates away from a dashboard page
   document.addEventListener('htmx:beforeRequest', function () {
     if (!isDashboardPage()) stopRefresh();
