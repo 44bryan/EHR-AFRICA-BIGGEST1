@@ -26,10 +26,10 @@
         <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
       </button>
       <ul class="dropdown-menu">
-        <li><a class="dropdown-item" href="?year={{ year }}&month={{ month }}&format=pdf&orientation=portrait" target="_blank">
+        <li><a class="dropdown-item" href="#" onclick="captureAndExportPDF('portrait');return false;">
           <i class="bi bi-file-earmark-pdf me-2"></i>Portrait (A4)
         </a></li>
-        <li><a class="dropdown-item" href="?year={{ year }}&month={{ month }}&format=pdf&orientation=landscape" target="_blank">
+        <li><a class="dropdown-item" href="#" onclick="captureAndExportPDF('landscape');return false;">
           <i class="bi bi-file-earmark-pdf me-2"></i>Landscape (A4 wide)
         </a></li>
       </ul>
@@ -506,6 +506,8 @@
 
 {% block extra_js %}
 <script>
+var CHART_IDS = ['dailyChart','deptChart','tierChart','btChart','whoChart','surgChart','invChart','regionChart'];
+
 function printPage(orientation) {
   var id = '_print_orient_style';
   var old = document.getElementById(id);
@@ -516,6 +518,44 @@ function printPage(orientation) {
   document.head.appendChild(s);
   window.print();
   setTimeout(function() { var el = document.getElementById(id); if (el) el.remove(); }, 2000);
+}
+
+function captureAndExportPDF(orientation) {
+  var btn = event && event.target ? event.target.closest('a') : null;
+  var origText = btn ? btn.innerHTML : '';
+  if (btn) btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Capturing charts…';
+
+  // Small delay so the button text updates before we freeze the thread
+  setTimeout(function() {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '?year={{ year }}&month={{ month }}&format=pdf&orientation=' + orientation;
+    form.target = '_blank';
+
+    var csrf = document.createElement('input');
+    csrf.type = 'hidden';
+    csrf.name = 'csrfmiddlewaretoken';
+    csrf.value = '{{ csrf_token }}';
+    form.appendChild(csrf);
+
+    CHART_IDS.forEach(function(id) {
+      var canvas = document.getElementById(id);
+      if (canvas && canvas.getContext) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'chart_' + id;
+        try { inp.value = canvas.toDataURL('image/png'); } catch(e) {}
+        form.appendChild(inp);
+      }
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(function() {
+      form.remove();
+      if (btn) btn.innerHTML = origText;
+    }, 1500);
+  }, 80);
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -686,11 +726,23 @@ if (region && region.data && region.data.length > 0) {
 } // end initHospitalCharts
 </script>
 
+<div id="print-letterhead" style="display:none;">
+  <div style="border-bottom:2px solid #0d6efd;padding-bottom:8px;margin-bottom:12px;">
+    <h3 style="margin:0;font-size:14pt;font-weight:800;color:#0d6efd;">HOSPITAL STATISTICS REPORT</h3>
+    <div style="font-size:10pt;margin-top:2px;">{{ month_start|date:"F Y" }}</div>
+    <div style="font-size:8pt;color:#666;margin-top:2px;">Generated: {% now "d M Y H:i" %}</div>
+  </div>
+</div>
 <style>
 @media print {
-  .btn, .btn-group, nav, #sidebar, #topbar { display: none !important; }
-  .card { break-inside: avoid; }
-  canvas { max-height: 200px !important; }
+  #print-letterhead { display: block !important; }
+  #sidebar, #topbar, .btn, .btn-group, nav, .dropdown,
+  #ehr-refresh-badge, .page-header-actions { display: none !important; }
+  #page-content-wrapper { margin: 0 !important; padding: 0.5cm 0 !important; }
+  .card { break-inside: avoid; box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+  canvas { max-height: 180px !important; }
+  .row { break-inside: avoid; }
+  body { font-size: 10pt; }
 }
 </style>
 {% endblock %}

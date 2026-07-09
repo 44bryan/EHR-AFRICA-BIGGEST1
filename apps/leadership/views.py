@@ -1409,6 +1409,12 @@ def hospital_stats_view(request):
     ctx['orientation'] = request.GET.get('orientation', 'portrait')
 
     if request.GET.get('format') == 'pdf':
+        # Extract chart images posted from the browser (canvas.toDataURL captures)
+        chart_images = {}
+        for key, val in request.POST.items():
+            if key.startswith('chart_') and val.startswith('data:image'):
+                chart_images[key[6:]] = val  # strip 'chart_' prefix
+        ctx['chart_images'] = chart_images
         from apps.reports.views import render_pdf
         return render_pdf('leadership/pdf/hospital_stats_pdf.html', ctx)
 
