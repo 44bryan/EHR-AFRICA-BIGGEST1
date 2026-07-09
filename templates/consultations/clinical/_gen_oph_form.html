@@ -1333,17 +1333,30 @@ function addMgtOther() {
     var ov = overlays[id];
     var olCtx = ov.getContext('2d');
     olCtx.clearRect(0, 0, SIZE, SIZE);
+    var c = document.getElementById('canvas-' + id);
     var img = new Image();
     img.onload = function() {
       olCtx.drawImage(img, 0, 0);
       composite(id);
-      document.getElementById('fundoscopy-' + id + '-data').value = canvas.toDataURL('image/png');
+      document.getElementById('fundoscopy-' + id + '-data').value = c.toDataURL('image/png');
     };
     img.src = dataUrl;
   };
 
   initCanvas('re');
   initCanvas('le');
+
+  // Capture final canvas state before any parent form submits
+  document.addEventListener('submit', function() {
+    ['re', 'le'].forEach(function(id) {
+      var c = document.getElementById('canvas-' + id);
+      var inp = document.getElementById('fundoscopy-' + id + '-data');
+      if (c && inp && overlays[id]) {
+        composite(id);
+        inp.value = c.toDataURL('image/png');
+      }
+    });
+  }, true);
 })();
 </script>
 

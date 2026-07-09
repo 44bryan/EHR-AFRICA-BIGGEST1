@@ -1,55 +1,39 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize %}
-{% block title %}Leadership Command Centre — {{ HOSPITAL_NAME }}{% endblock %}
+{% load static humanize %}
+{% block title %}Performance Hub — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-speedometer2 me-2 text-primary"></i>Performance Hub</h5>
+    <div class="text-muted small">{{ today|date:"F Y" }} &bull; 30-day rolling analytics</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'leadership:finance_dashboard' %}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-cash-coin me-1"></i>Finance
+    </a>
+    <a href="{% url 'ai_assistant:analytics' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-robot me-1"></i>AI Analytics
+    </a>
+    <a href="{% url 'leadership:monthly_stats' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-file-bar-graph me-1"></i>Monthly Report
+    </a>
+  </div>
+</div>
+{% endblock %}
 
 {% block extra_css %}
 <style>
-  .kpi-card {
-    border-radius: 10px;
-    transition: transform .15s;
-  }
+  .kpi-card { border-radius: 10px; transition: transform .15s; }
   .kpi-card:hover { transform: translateY(-2px); }
-
   .kpi-value { font-size: 1.9rem; font-weight: 800; line-height: 1.1; }
   .kpi-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; margin-top: 2px; }
   .kpi-sub   { font-size: .72rem; margin-top: 4px; }
-
   .section-title {
-    font-size: .7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: #94a3b8;
-    margin: 28px 0 14px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: #94a3b8; margin: 20px 0 12px; display: flex; align-items: center; gap: 8px;
   }
-  .section-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: #e2e8f0;
-  }
-
-  .command-header {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #1e3a5f 100%);
-    border-radius: 14px;
-    padding: 24px 28px;
-    color: #fff;
-    margin-bottom: 24px;
-  }
-  .alert-banner {
-    background: rgba(239,68,68,.12);
-    border: 1px solid rgba(239,68,68,.3);
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: .8rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
+  .section-title::after { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
   .progress-thin { height: 5px; border-radius: 3px; }
   .metric-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
   .metric-row:last-child { border-bottom: none; }
@@ -58,53 +42,19 @@
 
 {% block content %}
 
-<!-- ══ COMMAND CENTRE HEADER ══════════════════════════════════════════ -->
-<div class="command-header">
-  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-    <div>
-      <div style="font-size:.75rem;opacity:.55;letter-spacing:.08em;text-transform:uppercase;">
-        {{ HOSPITAL_NAME }} &bull; Analytics &amp; Reporting Hub
-      </div>
-      <h2 class="fw-bold mb-1 mt-1" style="font-size:1.6rem;letter-spacing:-.01em;">
-        Hospital Performance Analytics
-      </h2>
-      <div style="font-size:.82rem;opacity:.7;">
-        <i class="bi bi-calendar3 me-1"></i>Period: {{ today|date:"F Y" }}
-        &nbsp;&bull;&nbsp;
-        <i class="bi bi-person-circle me-1"></i>{{ request.user.get_full_name }}
-        &nbsp;&bull;&nbsp;
-        <i class="bi bi-graph-up-arrow me-1"></i>30-day rolling analytics
-      </div>
-    </div>
-    <div class="d-flex gap-2 flex-wrap">
-      <a href="{% url 'leadership:finance_dashboard' %}" class="btn btn-sm" style="background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);">
-        <i class="bi bi-cash-coin me-1"></i>Finance Deep Dive
-      </a>
-      <a href="{% url 'ai_assistant:analytics' %}" class="btn btn-sm" style="background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);">
-        <i class="bi bi-robot me-1"></i>AI Analytics
-      </a>
-      <a href="{% url 'leadership:monthly_stats' %}" class="btn btn-sm" style="background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);">
-        <i class="bi bi-file-bar-graph me-1"></i>Monthly Report
-      </a>
-    </div>
-  </div>
-
-  <!-- Alert strip if queue is high -->
-  {% if queue_now > 30 %}
-  <div class="alert-banner mt-3">
-    <i class="bi bi-exclamation-circle-fill text-danger"></i>
-    <strong>High Queue Alert:</strong> {{ queue_now }} patients currently waiting.
-    Consider activating additional consultation rooms.
-  </div>
-  {% endif %}
-  {% if open_complaints > 0 %}
-  <div class="alert-banner mt-2" style="background:rgba(251,191,36,.1);border-color:rgba(251,191,36,.3);">
-    <i class="bi bi-chat-left-text-fill" style="color:#fbbf24;"></i>
-    <strong>{{ open_complaints }} open complaint{{ open_complaints|pluralize }}</strong> require attention.
-    <a href="{% url 'feedback:service_recovery' %}" style="color:#fbbf24;margin-left:4px;">Review &rarr;</a>
-  </div>
-  {% endif %}
+{% if queue_now > 30 %}
+<div class="alert alert-danger d-flex align-items-center gap-2 py-2 mb-3" style="font-size:.83rem;">
+  <i class="bi bi-exclamation-circle-fill"></i>
+  <strong>High Queue Alert:</strong> {{ queue_now }} patients currently waiting. Consider activating additional consultation rooms.
 </div>
+{% endif %}
+{% if open_complaints > 0 %}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3" style="font-size:.83rem;">
+  <i class="bi bi-chat-left-text-fill"></i>
+  <strong>{{ open_complaints }} open complaint{{ open_complaints|pluralize }}</strong> require attention.
+  <a href="{% url 'feedback:service_recovery' %}" class="ms-auto btn btn-sm btn-warning">Review</a>
+</div>
+{% endif %}
 
 <!-- ══ TAB NAVIGATION ════════════════════════════════════════════════ -->
 <ul class="nav nav-tabs mb-4 border-bottom" id="perfTabs" role="tablist" style="gap:4px;">
@@ -693,7 +643,7 @@
 </div><!-- /tab-content -->
 
 <!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
 <script>
 // ── Revenue 7-Day Trend ──────────────────────────────────────────────────────
 (function(){

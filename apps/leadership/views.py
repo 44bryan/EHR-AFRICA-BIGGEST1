@@ -1288,6 +1288,22 @@ def hospital_stats_view(request):
     except Exception:
         total_lab_orders = total_lab_tests = lab_abnormal = 0
 
+    # ── Visits by Region ──────────────────────────────────────────────────────
+    region_raw = (
+        base_visits
+        .exclude(patient__region='')
+        .values('patient__region')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    region_table = [
+        {'region': r['patient__region'] or 'Unknown', 'count': r['count']}
+        for r in region_raw
+    ]
+    region_labels = [r['region'] for r in region_table]
+    region_counts = [r['count'] for r in region_table]
+    region_json = json.dumps({'labels': region_labels, 'data': region_counts})
+
     # ── Eye Investigations ────────────────────────────────────────────────────
     try:
         from apps.investigations.models import InvestigationOrder, InvestigationCategory
@@ -1385,6 +1401,9 @@ def hospital_stats_view(request):
         'inv_json': inv_json,
         # Tier × Gender × Age cross-tab
         'tier_matrix': tier_matrix,
+        # Visits by region
+        'region_table': region_table,
+        'region_json': region_json,
     }
     ctx['pdf_filename'] = f'Hospital-Stats-{month_start.strftime("%b-%Y")}.pdf'
     ctx['orientation'] = request.GET.get('orientation', 'portrait')
