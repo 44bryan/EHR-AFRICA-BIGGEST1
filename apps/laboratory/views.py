@@ -604,6 +604,9 @@ def enter_results_view(request, pk):
                         'created_by': request.user,
                     }
                 )
+                # Skip verified results — they are locked
+                if result.is_verified:
+                    continue
                 result.result_value = value
                 result.result_unit = request.POST.get(f'result_unit_{item.pk}', '')
                 result.reference_range = request.POST.get(f'ref_range_{item.pk}', '')

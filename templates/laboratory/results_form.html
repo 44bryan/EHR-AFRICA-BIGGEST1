@@ -57,12 +57,21 @@
           <span class="badge {% if item.result.is_critical %}bg-danger{% elif item.result.is_abnormal %}bg-warning text-dark{% else %}bg-success{% endif %}">
             {% if item.result.is_critical %}Critical{% elif item.result.is_abnormal %}Abnormal{% else %}Normal{% endif %}
           </span>
+          {% if item.result.is_verified %}
+          <span class="badge bg-secondary ms-1"><i class="bi bi-lock-fill me-1"></i>Verified — locked</span>
+          {% endif %}
           {% else %}
           <span class="badge bg-light text-muted border">Pending</span>
           {% endif %}
         </div>
 
         <div class="card-body py-3">
+        {% if item.result and item.result.is_verified %}
+        <div class="alert alert-secondary py-2 mb-0 small">
+          <i class="bi bi-lock-fill me-1"></i>
+          This result was verified by <strong>{{ item.result.verified_by.get_full_name }}</strong> and cannot be changed.
+        </div>
+        {% else %}
 
           {% if tt.result_type == 'QUALITATIVE' %}
           <div class="mb-2">
@@ -169,19 +178,534 @@
           <input type="hidden" name="result_unit_{{ item.pk }}" value="">
 
           {% elif tt.result_type == 'PANEL' %}
-          <div class="mb-2">
-            <label class="form-label small fw-semibold mb-1">Panel Results <span class="text-danger">*</span></label>
-            <div class="mb-2">
-              <textarea name="result_value_{{ item.pk }}"
-                        class="form-control font-monospace"
-                        rows="6"
-                        placeholder="Enter each sub-result on a new line, e.g.:&#10;WBC: 7.2 x10³/µL (Normal)&#10;RBC: 4.8 x10⁶/µL (Normal)&#10;HGB: 13.5 g/dL (Normal)&#10;HCT: 41% (Normal)&#10;PLT: 220 x10³/µL (Normal)">{% if item.result %}{{ item.result.result_value }}{% endif %}</textarea>
+          {# ── Hidden textarea receives assembled result from JS ── #}
+          <textarea name="result_value_{{ item.pk }}"
+                    id="panel_hidden_{{ item.pk }}"
+                    class="panel-hidden-value"
+                    style="display:none;">{% if item.result %}{{ item.result.result_value }}{% endif %}</textarea>
+          <input type="hidden" name="result_unit_{{ item.pk }}" value="Panel">
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# FBC — Full Blood Count                                            #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% if tt.code == 'FBC' %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="table">
+            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Sample: Blood-EDTA &bull; Leave blank if not tested.</p>
+
+            {# Haematology indices #}
+            <div class="table-responsive mb-3">
+              <table class="table table-bordered table-sm align-middle mb-0" style="min-width:520px;">
+                <thead class="table-primary"><tr><th>Parameter</th><th style="min-width:110px;">Result</th><th style="min-width:70px;">Unit</th><th>Normal Range</th><th>Flag</th></tr></thead>
+                <tbody>
+                  {% for row in "Hb (Haemoglobin)|g/dL|M: 13.5–17.5 / F: 12.0–16.0,WBC (White Blood Cells)|×10⁹/L|4.0–11.0,RBC (Red Blood Cells)|×10¹²/L|M: 4.5–5.5 / F: 3.8–5.0,HCT / PCV (Haematocrit)|%|M: 40–54 / F: 36–48,MCV (Mean Cell Volume)|fL|80–100,MCH (Mean Cell Haemoglobin)|pg|27–32,MCHC (Mean Cell Hb Conc.)|g/dL|32–36,Platelets (PLT)|×10⁹/L|150–400"|split:"," %}
+                  {% with parts=row|split:"|" %}
+                  <tr>
+                    <td class="small fw-semibold">{{ parts.0 }}</td>
+                    <td><input type="number" step="any" class="form-control form-control-sm panel-field" data-label="{{ parts.0 }}" data-unit="{{ parts.1 }}" placeholder="—"></td>
+                    <td class="small text-muted">{{ parts.1 }}</td>
+                    <td class="small text-muted">{{ parts.2 }}</td>
+                    <td>
+                      <select class="form-select form-select-sm panel-flag" style="min-width:90px;">
+                        <option value="">Normal</option>
+                        <option value="L">↓ Low</option>
+                        <option value="H">↑ High</option>
+                        <option value="LL">↓↓ Very Low</option>
+                        <option value="HH">↑↑ Very High</option>
+                      </select>
+                    </td>
+                  </tr>
+                  {% endwith %}
+                  {% endfor %}
+                </tbody>
+              </table>
             </div>
-            <div class="form-text small text-muted">
-              <i class="bi bi-info-circle me-1"></i>Enter each sub-result on a separate line. Include value, unit, and flag (Normal/Abnormal/Critical).
+
+            {# Differential count #}
+            <p class="small fw-semibold mb-1 text-secondary"><i class="bi bi-bar-chart me-1"></i>Differential White Cell Count (%)</p>
+            <div class="table-responsive mb-3">
+              <table class="table table-bordered table-sm align-middle mb-0" style="min-width:520px;">
+                <thead class="table-light"><tr><th>Cell Type</th><th style="min-width:100px;">%</th><th>Absolute (×10⁹/L)</th><th>Normal %</th><th>Flag</th></tr></thead>
+                <tbody>
+                  {% for row in "Neutrophils|50–70,Lymphocytes|20–40,Monocytes|2–8,Eosinophils|1–4,Basophils|0–1,Band Forms (Bands)|0–5"|split:"," %}
+                  {% with parts=row|split:"|" %}
+                  <tr>
+                    <td class="small fw-semibold">{{ parts.0 }}</td>
+                    <td><input type="number" step="0.1" min="0" max="100" class="form-control form-control-sm panel-field" data-label="{{ parts.0 }} %" data-unit="%" placeholder="—"></td>
+                    <td><input type="number" step="0.01" class="form-control form-control-sm panel-field" data-label="{{ parts.0 }} abs" data-unit="×10⁹/L" placeholder="—"></td>
+                    <td class="small text-muted">{{ parts.1 }}</td>
+                    <td>
+                      <select class="form-select form-select-sm panel-flag" style="min-width:90px;">
+                        <option value="">Normal</option>
+                        <option value="L">↓ Low</option>
+                        <option value="H">↑ High</option>
+                      </select>
+                    </td>
+                  </tr>
+                  {% endwith %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            {# Morphology comment #}
+            <div class="row g-2">
+              <div class="col-md-8">
+                <label class="form-label small fw-semibold mb-1">Blood Film / Morphology Comment</label>
+                <textarea class="form-control form-control-sm panel-field" data-label="Morphology" data-unit="" rows="2" placeholder="e.g. Hypochromic microcytic red cells, no abnormal WBC, platelets adequate on film"></textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">ESR (if done)</label>
+                <div class="input-group input-group-sm">
+                  <input type="number" step="1" class="form-control panel-field" data-label="ESR" data-unit="mm/hr" placeholder="—">
+                  <span class="input-group-text">mm/hr</span>
+                </div>
+              </div>
             </div>
           </div>
-          <input type="hidden" name="result_unit_{{ item.pk }}" value="Panel">
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# COAGS — Coagulation Screen                                        #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% elif tt.code == 'COAGS' %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="table">
+            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Sample: Blood-Citrate (blue top)</p>
+            <div class="table-responsive mb-2">
+              <table class="table table-bordered table-sm align-middle mb-0" style="min-width:500px;">
+                <thead class="table-primary"><tr><th>Test</th><th style="min-width:110px;">Result</th><th>Unit</th><th>Normal Range</th><th>Flag</th></tr></thead>
+                <tbody>
+                  {% for row in "Prothrombin Time (PT)|seconds|11–14,INR (Int. Normalised Ratio)||0.8–1.2,APTT (Activated Partial Thromboplastin Time)|seconds|25–35,Thrombin Time (TT)|seconds|14–19,Fibrinogen|g/L|2.0–4.0,D-Dimer|mg/L FEU|<0.5"|split:"," %}
+                  {% with parts=row|split:"|" %}
+                  <tr>
+                    <td class="small fw-semibold">{{ parts.0 }}</td>
+                    <td><input type="number" step="any" class="form-control form-control-sm panel-field" data-label="{{ parts.0 }}" data-unit="{{ parts.1 }}" placeholder="—"></td>
+                    <td class="small text-muted">{{ parts.1 }}</td>
+                    <td class="small text-muted">{{ parts.2 }}</td>
+                    <td>
+                      <select class="form-select form-select-sm panel-flag" style="min-width:90px;">
+                        <option value="">Normal</option>
+                        <option value="L">↓ Low</option>
+                        <option value="H">↑ High (prolonged)</option>
+                      </select>
+                    </td>
+                  </tr>
+                  {% endwith %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <label class="form-label small fw-semibold mb-1">Comment</label>
+              <textarea class="form-control form-control-sm panel-field" data-label="Comment" data-unit="" rows="2" placeholder="Interpretation or additional notes..."></textarea>
+            </div>
+          </div>
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# UADIP — Urinalysis Dipstick                                       #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% elif tt.code == 'UADIP' %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="table">
+            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Sample: Fresh mid-stream urine. Read dipstick at correct time intervals.</p>
+            <div class="table-responsive mb-3">
+              <table class="table table-bordered table-sm align-middle mb-0" style="min-width:500px;">
+                <thead class="table-primary"><tr><th style="min-width:130px;">Parameter</th><th style="min-width:180px;">Result</th><th>Normal</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td class="small fw-semibold">Colour</td>
+                    <td>
+                      <select class="form-select form-select-sm panel-field" data-label="Colour" data-unit="">
+                        <option value="">— Select —</option>
+                        {% for c in "Pale Yellow,Yellow,Dark Yellow,Amber,Orange,Red / Pink,Brown,Green,Colourless"|split:"," %}
+                        <option value="{{ c }}">{{ c }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td class="small text-muted">Pale–Yellow</td>
+                  </tr>
+                  <tr>
+                    <td class="small fw-semibold">Appearance</td>
+                    <td>
+                      <select class="form-select form-select-sm panel-field" data-label="Appearance" data-unit="">
+                        <option value="">— Select —</option>
+                        {% for a in "Clear,Slightly Turbid,Turbid,Haemolysed,Cloudy"|split:"," %}
+                        <option value="{{ a }}">{{ a }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td class="small text-muted">Clear</td>
+                  </tr>
+                  <tr>
+                    <td class="small fw-semibold">pH</td>
+                    <td><input type="number" step="0.5" min="4" max="9" class="form-control form-control-sm panel-field" data-label="pH" data-unit="" placeholder="e.g. 6.0"></td>
+                    <td class="small text-muted">5.0 – 8.0</td>
+                  </tr>
+                  <tr>
+                    <td class="small fw-semibold">Specific Gravity</td>
+                    <td><input type="number" step="0.001" min="1.001" max="1.035" class="form-control form-control-sm panel-field" data-label="Specific Gravity" data-unit="" placeholder="e.g. 1.015"></td>
+                    <td class="small text-muted">1.001–1.030</td>
+                  </tr>
+                  {% for row in "Protein|NEG,Glucose|NEG,Ketones|NEG,Blood / Haemoglobin|NEG,Leucocytes|NEG,Nitrites|NEG,Bilirubin|NEG,Urobilinogen|Normal,"|split:"," %}
+                  {% if row %}
+                  {% with parts=row|split:"|" %}
+                  <tr>
+                    <td class="small fw-semibold">{{ parts.0 }}</td>
+                    <td>
+                      <select class="form-select form-select-sm panel-field" data-label="{{ parts.0 }}" data-unit="">
+                        <option value="">— Select —</option>
+                        {% if parts.0 == "Nitrites" %}
+                          <option value="Negative">Negative</option>
+                          <option value="Positive">Positive</option>
+                        {% elif parts.0 == "Urobilinogen" %}
+                          <option value="Normal">Normal</option>
+                          <option value="Increased">Increased (+)</option>
+                          <option value="Markedly increased">Markedly increased (++)</option>
+                        {% else %}
+                          <option value="Negative">Negative</option>
+                          <option value="Trace">Trace</option>
+                          <option value="+  (1+)">+ (1+)</option>
+                          <option value="++  (2+)">++ (2+)</option>
+                          <option value="+++  (3+)">+++ (3+)</option>
+                          <option value="++++  (4+)">++++ (4+)</option>
+                        {% endif %}
+                      </select>
+                    </td>
+                    <td class="small text-muted">{{ parts.1 }}</td>
+                  </tr>
+                  {% endwith %}
+                  {% endif %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <label class="form-label small fw-semibold mb-1">Comment / Interpretation</label>
+              <textarea class="form-control form-control-sm panel-field" data-label="Comment" data-unit="" rows="2" placeholder="e.g. Findings consistent with UTI — recommend UMCS"></textarea>
+            </div>
+          </div>
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# UMCS — Urine Microscopy, Culture & Sensitivity                    #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% elif tt.code == 'UMCS' %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="table">
+            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Sample: Mid-stream urine (MSU). Culture takes 48–72 h.</p>
+
+            <p class="small fw-bold text-uppercase text-secondary mb-1">A. Microscopy</p>
+            <div class="row g-2 mb-3">
+              {% for row in "Red Blood Cells (RBC)|/HPF|<5,White Blood Cells (WBC) / Pus Cells|/HPF|<5,Epithelial Cells|/LPF|Occasional,Casts|/LPF|None"|split:"," %}
+              {% with parts=row|split:"|" %}
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold mb-1">{{ parts.0 }}</label>
+                <div class="input-group input-group-sm">
+                  <input type="text" class="form-control panel-field" data-label="{{ parts.0 }}" data-unit="{{ parts.1 }}" placeholder="e.g. {{ parts.2 }}">
+                  <span class="input-group-text small">{{ parts.1 }} <span class="ms-1 text-muted">(N: {{ parts.2 }})</span></span>
+                </div>
+              </div>
+              {% endwith %}
+              {% endfor %}
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold mb-1">Bacteria</label>
+                <select class="form-select form-select-sm panel-field" data-label="Bacteria" data-unit="">
+                  <option value="">— Select —</option>
+                  {% for b in "None seen,Few,Moderate,Many,Numerous"|split:"," %}
+                  <option value="{{ b }}">{{ b }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold mb-1">Crystals</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="Crystals" data-unit="" placeholder="e.g. Oxalate crystals / None">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold mb-1">Yeast Cells</label>
+                <select class="form-select form-select-sm panel-field" data-label="Yeast Cells" data-unit="">
+                  <option value="">— Select —</option>
+                  {% for y in "None seen,Few,Moderate,Many"|split:"," %}
+                  <option value="{{ y }}">{{ y }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <p class="small fw-bold text-uppercase text-secondary mb-1">B. Culture Result</p>
+            <div class="row g-2 mb-3">
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Culture</label>
+                <select class="form-select form-select-sm panel-field" data-label="Culture" data-unit="">
+                  <option value="">— Select —</option>
+                  {% for c in "No growth,Growth — significant,Growth — non-significant,Contaminated — repeat,Mixed growth"|split:"," %}
+                  <option value="{{ c }}">{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Colony Count (CFU/mL)</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="Colony Count" data-unit="CFU/mL" placeholder="e.g. >10⁵ / <10³">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Organism Isolated</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="Organism" data-unit="" placeholder="e.g. E. coli / None">
+              </div>
+            </div>
+
+            <p class="small fw-bold text-uppercase text-secondary mb-1">C. Antibiotic Sensitivity</p>
+            <div class="table-responsive mb-2">
+              <table class="table table-bordered table-sm align-middle mb-0" style="min-width:500px;">
+                <thead class="table-light"><tr><th>Antibiotic</th><th style="min-width:130px;">Sensitivity</th><th>MIC / Notes</th></tr></thead>
+                <tbody id="sens_{{ item.pk }}">
+                  {% for ab in "Amoxicillin,Amoxicillin-Clavulanate (Co-Amoxiclav),Ciprofloxacin,Nitrofurantoin,Trimethoprim-Sulfamethoxazole (Septrin),Ceftriaxone,Gentamicin,Norfloxacin"|split:"," %}
+                  <tr>
+                    <td class="small">{{ ab }}</td>
+                    <td>
+                      <select class="form-select form-select-sm sens-field" data-ab="{{ ab }}" data-sens-table="{{ item.pk }}">
+                        <option value="">N/A</option>
+                        <option value="S">S — Sensitive</option>
+                        <option value="I">I — Intermediate</option>
+                        <option value="R">R — Resistant</option>
+                      </select>
+                    </td>
+                    <td><input type="text" class="form-control form-control-sm sens-notes" placeholder="—"></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              <input type="hidden" id="sens_result_{{ item.pk }}" class="sens-hidden" data-target="panel_hidden_{{ item.pk }}" data-panel-type="sens">
+            </div>
+            <div>
+              <label class="form-label small fw-semibold mb-1">Final Interpretation / Comment</label>
+              <textarea class="form-control form-control-sm panel-field" data-label="Interpretation" data-unit="" rows="2" placeholder="e.g. Significant bacteriuria. Treat with ciprofloxacin based on sensitivity."></textarea>
+            </div>
+          </div>
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# CS — General Culture & Sensitivity                                #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% elif tt.code == 'CS' %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="table">
+            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Sample: As indicated on requisition form. Culture: 48–72 h.</p>
+            <div class="row g-2 mb-3">
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Specimen Type</label>
+                <select class="form-select form-select-sm panel-field" data-label="Specimen" data-unit="">
+                  <option value="">— Select —</option>
+                  {% for s in "Blood,Urine — MSU,Wound Swab,Throat Swab,High Vaginal Swab (HVS),Sputum,Pus / Discharge,Corneal Scraping,Aqueous Humour,Vitreous,CSF,Stool,Nasal Swab,Ear Swab,Other"|split:"," %}
+                  <option value="{{ s }}">{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Gram Stain</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="Gram Stain" data-unit="" placeholder="e.g. Gram-positive cocci in clusters">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Culture Result</label>
+                <select class="form-select form-select-sm panel-field" data-label="Culture" data-unit="">
+                  <option value="">— Select —</option>
+                  {% for c in "No growth after 72 h,Growth — significant,Growth — mixed / non-significant,Contaminated — repeat"|split:"," %}
+                  <option value="{{ c }}">{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Organism Isolated</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="Organism" data-unit="" placeholder="e.g. Staphylococcus aureus / None">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Colony Count</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="Colony Count" data-unit="CFU/mL" placeholder="e.g. >10⁵ CFU/mL">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Blood Culture Bottles</label>
+                <select class="form-select form-select-sm panel-field" data-label="Blood Culture" data-unit="">
+                  <option value="">N/A</option>
+                  {% for b in "Aerobic — Positive,Anaerobic — Positive,Both Positive,Both Negative (No growth)"|split:"," %}
+                  <option value="{{ b }}">{{ b }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <p class="small fw-bold text-uppercase text-secondary mb-1">Antibiotic Sensitivity</p>
+            <div class="table-responsive mb-2">
+              <table class="table table-bordered table-sm align-middle mb-0" style="min-width:500px;">
+                <thead class="table-light"><tr><th>Antibiotic</th><th style="min-width:130px;">Sensitivity</th><th>Notes</th></tr></thead>
+                <tbody id="sens_{{ item.pk }}">
+                  {% for ab in "Penicillin,Amoxicillin-Clavulanate,Cloxacillin / Flucloxacillin,Cephalexin,Ceftriaxone,Gentamicin,Ciprofloxacin,Chloramphenicol,Tetracycline,Erythromycin / Azithromycin,Co-Trimoxazole (Septrin),Metronidazole (Flagyl),Vancomycin,Meropenem,Clindamycin"|split:"," %}
+                  <tr>
+                    <td class="small">{{ ab }}</td>
+                    <td>
+                      <select class="form-select form-select-sm sens-field" data-ab="{{ ab }}" data-sens-table="{{ item.pk }}">
+                        <option value="">N/A</option>
+                        <option value="S">S — Sensitive</option>
+                        <option value="I">I — Intermediate</option>
+                        <option value="R">R — Resistant</option>
+                      </select>
+                    </td>
+                    <td><input type="text" class="form-control form-control-sm sens-notes" placeholder="—"></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              <input type="hidden" id="sens_result_{{ item.pk }}" class="sens-hidden" data-target="panel_hidden_{{ item.pk }}" data-panel-type="sens">
+            </div>
+            <div>
+              <label class="form-label small fw-semibold mb-1">Final Interpretation</label>
+              <textarea class="form-control form-control-sm panel-field" data-label="Interpretation" data-unit="" rows="2" placeholder="Summary of sensitivity pattern and treatment recommendation..."></textarea>
+            </div>
+          </div>
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# STOOL — Stool for Ova, Cysts & Parasites                         #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% elif tt.code == 'STOOL' %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="table">
+            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Sample: Fresh stool collected in a clean container.</p>
+            <div class="row g-2 mb-3">
+              <div class="col-md-3">
+                <label class="form-label small fw-semibold mb-1">Colour</label>
+                <select class="form-select form-select-sm panel-field" data-label="Colour" data-unit="">
+                  <option value="">—</option>
+                  {% for c in "Brown,Pale / Clay,Yellow,Green,Black (Melaena),Red / Blood-stained,Mixed"|split:"," %}
+                  <option value="{{ c }}">{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-semibold mb-1">Consistency</label>
+                <select class="form-select form-select-sm panel-field" data-label="Consistency" data-unit="">
+                  <option value="">—</option>
+                  {% for c in "Formed,Semi-formed,Soft,Loose,Watery,Hard / Pellets"|split:"," %}
+                  <option value="{{ c }}">{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-semibold mb-1">Mucus</label>
+                <select class="form-select form-select-sm panel-field" data-label="Mucus" data-unit="">
+                  <option value="">—</option>
+                  {% for m in "None,Present — scanty,Present — moderate,Present — heavy"|split:"," %}
+                  <option value="{{ m }}">{{ m }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-semibold mb-1">Blood</label>
+                <select class="form-select form-select-sm panel-field" data-label="Blood" data-unit="">
+                  <option value="">—</option>
+                  {% for b in "None,Frank blood present,Occult blood positive,Occult blood negative"|split:"," %}
+                  <option value="{{ b }}">{{ b }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <p class="small fw-bold text-uppercase text-secondary mb-1">Microscopy</p>
+            <div class="row g-2 mb-3">
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">RBC / HPF</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="RBC/HPF" data-unit="/HPF" placeholder="e.g. None / 2–5">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">WBC / HPF</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="WBC/HPF" data-unit="/HPF" placeholder="e.g. None / 5–10">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Fat Globules</label>
+                <select class="form-select form-select-sm panel-field" data-label="Fat Globules" data-unit="">
+                  <option value="">—</option>
+                  {% for f in "None,Few,Moderate,Many"|split:"," %}
+                  <option value="{{ f }}">{{ f }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <p class="small fw-bold text-uppercase text-secondary mb-1">Parasitology (Ova, Cysts & Parasites)</p>
+            <div class="row g-2 mb-3">
+              {% for para in "Entamoeba histolytica,Giardia lamblia,Ascaris lumbricoides,Trichuris trichiura,Hookworm,Strongyloides stercoralis,Schistosoma mansoni,Taenia species (Tapeworm),Balantidium coli,Cryptosporidium" %}
+              <div class="col-md-4">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check">
+                    <input class="form-check-input stool-para" type="checkbox" id="para_{{ item.pk }}_{{ forloop.counter }}" value="{{ para }}" data-stool-target="panel_hidden_{{ item.pk }}">
+                    <label class="form-check-label small" for="para_{{ item.pk }}_{{ forloop.counter }}">{{ para }}</label>
+                  </div>
+                  <select class="form-select form-select-sm stool-para-grade ms-auto" style="max-width:80px;">
+                    <option value="seen">Seen</option>
+                    <option value="+">+</option>
+                    <option value="++">++</option>
+                    <option value="+++">+++</option>
+                  </select>
+                </div>
+              </div>
+              {% endfor %}
+              <div class="col-12">
+                <label class="form-label small fw-semibold mb-1">Other organisms / findings</label>
+                <input type="text" class="form-control form-control-sm panel-field" data-label="Other Parasites" data-unit="" placeholder="Free text — describe any other finding">
+              </div>
+            </div>
+            <div>
+              <label class="form-label small fw-semibold mb-1">Interpretation / Comment</label>
+              <textarea class="form-control form-control-sm panel-field" data-label="Interpretation" data-unit="" rows="2" placeholder="e.g. Cysts of Entamoeba histolytica seen — Treat with metronidazole"></textarea>
+            </div>
+          </div>
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# DIFF — Differential WCC standalone                                #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% elif tt.code == 'DIFF' %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="table">
+            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Sample: Blood-EDTA. Perform on blood film.</p>
+            <div class="table-responsive mb-2">
+              <table class="table table-bordered table-sm align-middle mb-0" style="min-width:520px;">
+                <thead class="table-primary"><tr><th>Cell Type</th><th>%</th><th>Absolute (×10⁹/L)</th><th>Normal %</th><th>Flag</th></tr></thead>
+                <tbody>
+                  {% for row in "Neutrophils (Segs)|50–70,Band Forms|0–5,Lymphocytes|20–40,Monocytes|2–8,Eosinophils|1–4,Basophils|0–1,Blasts|0,Plasma Cells|0,Atypical Lymphocytes|0"|split:"," %}
+                  {% with parts=row|split:"|" %}
+                  <tr>
+                    <td class="small fw-semibold">{{ parts.0 }}</td>
+                    <td><input type="number" step="0.1" min="0" max="100" class="form-control form-control-sm panel-field" data-label="{{ parts.0 }} %" data-unit="%" placeholder="—"></td>
+                    <td><input type="number" step="0.01" class="form-control form-control-sm panel-field" data-label="{{ parts.0 }} abs" data-unit="×10⁹/L" placeholder="—"></td>
+                    <td class="small text-muted">{{ parts.1 }}</td>
+                    <td>
+                      <select class="form-select form-select-sm panel-flag">
+                        <option value="">Normal</option>
+                        <option value="L">↓ Low</option>
+                        <option value="H">↑ High</option>
+                      </select>
+                    </td>
+                  </tr>
+                  {% endwith %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="row g-2">
+              <div class="col-md-8">
+                <label class="form-label small fw-semibold mb-1">Morphology Comment</label>
+                <textarea class="form-control form-control-sm panel-field" data-label="Morphology" data-unit="" rows="2" placeholder="Describe cell morphology, inclusions, abnormal cells..."></textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Overall Impression</label>
+                <select class="form-select form-select-sm panel-field" data-label="Impression" data-unit="">
+                  <option value="">—</option>
+                  {% for imp in "Normal differential,Left shift (band neutrophilia),Lymphocytosis,Eosinophilia,Monocytosis,Leukaemoid reaction,Blast cells seen — urgent review,Atypical lymphocytes,Pancytopenia"|split:"," %}
+                  <option value="{{ imp }}">{{ imp }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {# Generic PANEL fallback for any other panel tests                  #}
+          {# ══════════════════════════════════════════════════════════════════ #}
+          {% else %}
+          <div class="panel-structured" data-panel-target="panel_hidden_{{ item.pk }}" data-panel-type="text">
+            <label class="form-label small fw-semibold mb-1">Panel Results <span class="text-danger">*</span></label>
+            <textarea class="form-control font-monospace panel-field" data-label="Result" data-unit="" rows="6"
+                      placeholder="Enter each sub-result on a new line, e.g.:&#10;WBC: 7.2 ×10⁹/L (Normal)&#10;Hb: 13.5 g/dL (Normal)&#10;Platelets: 220 ×10⁹/L (Normal)">{% if item.result %}{{ item.result.result_value }}{% endif %}</textarea>
+            <div class="form-text small text-muted"><i class="bi bi-info-circle me-1"></i>Include value, unit, and Normal/Abnormal flag for each parameter.</div>
+          </div>
+          {% endif %}{# end panel sub-type #}
 
           {% else %}
           <div class="row g-2 align-items-end">
@@ -285,6 +809,7 @@
                    {% if item.result and item.result.comment %}value="{{ item.result.comment }}"{% endif %}>
           </div>
 
+        {% endif %}{# end verified lock #}
         </div>{# card-body #}
       </div>{# card #}
       {% endwith %}
@@ -304,6 +829,59 @@
 </div>
 
 <script>
+// ═══════════════════════════════════════════════════════════════════════════
+// STRUCTURED PANEL ASSEMBLY — collects structured sub-fields into hidden textarea
+// ═══════════════════════════════════════════════════════════════════════════
+function assemblePanel(panelDiv) {
+  var targetId = panelDiv.dataset.panelTarget;
+  var target = document.getElementById(targetId);
+  if (!target) return;
+  var lines = [];
+  var fields = panelDiv.querySelectorAll('.panel-field');
+  fields.forEach(function(f) {
+    var label = f.dataset.label || '';
+    var unit  = f.dataset.unit  || '';
+    var val   = (f.tagName === 'SELECT' ? f.options[f.selectedIndex]?.value : f.value) || '';
+    val = val.trim();
+    if (val && label) {
+      lines.push(label + ': ' + val + (unit ? ' ' + unit : ''));
+    }
+  });
+  // STOOL: parasites checkboxes
+  var parasites = panelDiv.querySelectorAll('.stool-para:checked');
+  if (parasites.length) {
+    var paraList = [];
+    parasites.forEach(function(cb) {
+      var grade = cb.closest('.d-flex')?.querySelector('.stool-para-grade');
+      paraList.push(cb.value + (grade ? ' (' + grade.value + ')' : ''));
+    });
+    lines.push('Parasites found: ' + paraList.join(', '));
+  } else {
+    var allParas = panelDiv.querySelectorAll('.stool-para');
+    if (allParas.length) lines.push('Parasites: None seen');
+  }
+  // Sensitivity tables: append S/I/R for each antibiotic
+  var sensRows = panelDiv.querySelectorAll('.sens-field');
+  var sensLines = [];
+  sensRows.forEach(function(sel) {
+    var ab  = sel.dataset.ab || '';
+    var val = sel.options[sel.selectedIndex]?.value || '';
+    if (val && ab) sensLines.push(ab + ': ' + val);
+  });
+  if (sensLines.length) {
+    lines.push('--- Sensitivity ---');
+    sensLines.forEach(function(l) { lines.push(l); });
+  }
+  target.value = lines.join('\n');
+}
+
+// Run assembly on every submit
+document.getElementById('resultsForm').addEventListener('submit', function(e) {
+  document.querySelectorAll('.panel-structured').forEach(function(div) {
+    assemblePanel(div);
+  });
+}, true); // capture phase — runs before validation
+
 // ── Auto-flag critical → also sets abnormal ──
 document.querySelectorAll('.critical-check').forEach(crit => {
   crit.addEventListener('change', function() {
@@ -382,6 +960,9 @@ document.querySelectorAll('.result-value').forEach(input => {
 
 // ── Form validation: ensure all items have a value ──
 document.getElementById('resultsForm').addEventListener('submit', function(e) {
+  // Assemble panels first (capture listener above runs first, but add as fallback)
+  document.querySelectorAll('.panel-structured').forEach(function(div) { assemblePanel(div); });
+
   let missing = 0;
   document.querySelectorAll('.result-card').forEach(card => {
     const itemId = card.dataset.itemId;
