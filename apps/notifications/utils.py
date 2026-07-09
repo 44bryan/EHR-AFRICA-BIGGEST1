@@ -143,7 +143,7 @@ def notify_lab_result_ready(lab_order):
             recipient=doctor,
             title=f'Lab result ready: {lab_order.patient.full_name}',
             message=f'Lab order #{lab_order.order_number} results are now available.',
-            link=f'/lab/{lab_order.id}/',
+            link=f'/laboratory/{lab_order.id}/',
             notification_type=NotificationType.LAB_RESULT,
             priority=NotificationPriority.NORMAL,
         )
@@ -155,7 +155,7 @@ def notify_critical_lab_result(lab_result):
     doctor = getattr(order, 'ordered_by', None)
     test_name = lab_result.order_item.test_type.name
     patient_name = order.patient.full_name
-    link = f'/lab/{order.id}/'
+    link = f'/laboratory/{order.id}/'
     title = f'CRITICAL LAB RESULT — {patient_name}'
     message = (f'{test_name}: {lab_result.result_value} {lab_result.result_unit} '
                f'[{lab_result.reference_range}] — CRITICAL VALUE')
