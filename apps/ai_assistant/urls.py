@@ -24,6 +24,8 @@ urlpatterns = [
     path('drug-interactions/', views.drug_interaction_view, name='drug_interactions'),
     # Patient AI Risk Summary
     path('patient-risk/<str:patient_id>/', views.patient_risk_summary_view, name='patient_risk'),
+    # Patient AI Chatbot
+    path('patient-chat/<str:patient_id>/', views.patient_chat_view, name='patient_chat'),
     # AI Triage Scoring
     path('triage/', views.ai_triage_view, name='triage'),
     # AI Imaging / Investigation Analysis

@@ -12,6 +12,7 @@ from .claude_client import (
     get_claude_response, suggest_diagnosis, build_exam_context,
     check_drug_interactions, get_patient_risk_summary,
     ai_triage_score, ai_analyze_investigation, ai_generate_soap_note,
+    build_patient_context, patient_chat_response,
 )
 
 
@@ -532,6 +533,35 @@ def suggest_diagnosis_view(request):
     if result['success']:
         return JsonResponse({'success': True, 'data': result['data']})
     return JsonResponse({'success': False, 'error': result.get('error', 'AI error')}, status=500)
+
+
+@login_required
+@require_POST
+def patient_chat_view(request, patient_id):
+    """
+    Patient-specific AI chatbot.
+    POST body: {question: str, history: [{role, content}, ...]}
+    Returns: {success, answer} or {success: false, error}
+    """
+    if not request.user.can_use_ai_assistant():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    question = data.get('question', '').strip()
+    history  = data.get('history', [])
+    if not question:
+        return JsonResponse({'error': 'Empty question'}, status=400)
+
+    from apps.patients.models import Patient
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+    context = build_patient_context(patient)
+    result  = patient_chat_response(context, history, question)
+    if result.get('success'):
+        return JsonResponse({'success': True, 'answer': result['text']})
+    return JsonResponse({'success': False, 'error': result.get('error', 'AI unavailable')}, status=500)
 
 
 @login_required

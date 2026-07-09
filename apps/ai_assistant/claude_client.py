@@ -104,6 +104,97 @@ def _get_json_fn():
         return groq_json
 
 
+def build_patient_context(patient):
+    """Compile a patient's full chart into a text context block for the AI."""
+    lines = [
+        f"PATIENT: {patient.full_name}",
+        f"ID: {patient.patient_id} | DOB: {patient.date_of_birth} | Age: {patient.age} | Gender: {patient.get_gender_display()}",
+        f"Phone: {patient.phone or 'N/A'}",
+    ]
+    if getattr(patient, 'region', None):
+        lines.append(f"Region: {patient.region}")
+
+    # Allergies
+    try:
+        from apps.patients.models import PatientAllergy
+        allergies = list(PatientAllergy.objects.filter(patient=patient, is_deleted=False)
+                         .values_list('allergen', flat=True))
+        lines.append(f"Allergies: {', '.join(allergies) if allergies else 'None documented'}")
+    except Exception:
+        pass
+
+    # Recent visits
+    try:
+        from apps.patients.models import Visit
+        visits = list(Visit.objects.filter(patient=patient, is_deleted=False)
+                      .order_by('-visit_date').select_related('department')[:10])
+        if visits:
+            lines.append("\nRECENT VISITS:")
+            for v in visits:
+                dept = v.department.name if v.department else 'Unknown'
+                lines.append(f"  {v.visit_date.strftime('%d %b %Y')} — {dept} — Status: {v.status}")
+    except Exception:
+        pass
+
+    # Recent consultations
+    try:
+        from apps.consultations.models import Consultation
+        consults = list(Consultation.objects.filter(patient=patient, is_deleted=False)
+                        .order_by('-consultation_date').select_related('department')[:6])
+        if consults:
+            lines.append("\nCONSULTATIONS:")
+            for c in consults:
+                dept = c.department.name if c.department else 'Unknown'
+                lines.append(f"  [{c.consultation_date.strftime('%d %b %Y')} — {dept}]")
+                if c.presenting_complaint:
+                    lines.append(f"    Complaint: {c.presenting_complaint[:200]}")
+                if c.primary_diagnosis:
+                    lines.append(f"    Diagnosis: {c.primary_diagnosis}")
+                if c.management_plan:
+                    lines.append(f"    Plan: {c.management_plan[:200]}")
+    except Exception:
+        pass
+
+    # Drug prescriptions
+    try:
+        from apps.prescriptions.models import DrugPrescription, DrugPrescriptionItem
+        rxs = list(DrugPrescription.objects.filter(patient=patient, is_deleted=False)
+                   .order_by('-created_at')[:4])
+        if rxs:
+            lines.append("\nDRUG PRESCRIPTIONS:")
+            for rx in rxs:
+                items = list(DrugPrescriptionItem.objects.filter(prescription=rx)
+                             .values_list('drug_name', flat=True))
+                lines.append(f"  {rx.created_at.strftime('%d %b %Y')}: {', '.join(items) or 'No items'}")
+    except Exception:
+        pass
+
+    return "\n".join(lines)
+
+
+def patient_chat_response(patient_context, history, question):
+    """
+    Answer a clinical question about a specific patient using their chart as context.
+    history: list of {'role': 'user'|'assistant', 'content': str}
+    Returns {'success': bool, 'text': str, 'error': str}
+    """
+    chat_fn = _get_chat_fn()
+    system_prompt = (
+        OPHTHALMOLOGY_SYSTEM_PROMPT
+        + "\n\n--- PATIENT CHART CONTEXT (this conversation only) ---\n"
+        + patient_context
+        + "\n\nYou are the clinical AI assistant for this patient. Answer questions about their "
+          "medical history, diagnoses, medications and management based on the chart data above. "
+          "Be concise and clinically precise. If information is not in the data, say so clearly."
+    )
+    messages = [h for h in history[-10:] if h.get('role') in ('user', 'assistant') and h.get('content')]
+    messages.append({'role': 'user', 'content': question})
+    try:
+        return chat_fn(messages=messages, system=system_prompt, max_tokens=1024)
+    except Exception as e:
+        return {'success': False, 'error': str(e), 'text': ''}
+
+
 def get_claude_response(conversation, user_message_text):
     """
     Send a message to the AI and return the response.
