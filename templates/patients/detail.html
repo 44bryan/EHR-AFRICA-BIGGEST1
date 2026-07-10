@@ -407,7 +407,7 @@
     <div class="tab-content">
 
       {# ══ TIMELINE TAB ══════════════════════════════════════════════ #}
-      <div class="tab-pane fade show active" id="tab-timeline">
+      <div class="tab-pane fade{% if pr.tab_timeline %} show active{% endif %}" id="tab-timeline">
         {% if consultations %}
         {% for consult in consultations %}
         {% with dd=consult.department_specific_data vs=consult.visit.vital_signs %}
@@ -783,6 +783,13 @@
           };
         })();
         </script>
+        {% endif %}
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-clipboard2 fs-1 d-block mb-3 opacity-40"></i>
+          <strong class="d-block mb-1">No consultations recorded yet</strong>
+          <small>Consultation history will appear here once the first visit is recorded.</small>
+        </div>
         {% endif %}
 
       </div>
@@ -1904,6 +1911,28 @@ document.addEventListener('keydown', function(e) {
   }
 });
 {% endif %}
+
+// ── Ensure first visible tab is always active on page load ──────────────
+(function() {
+  var nav = document.getElementById('patientTabs');
+  if (!nav) return;
+  // Remove show/active from timeline pane if its nav tab wasn't rendered
+  var tlLink = nav.querySelector('a[href="#tab-timeline"]');
+  var tlPane = document.getElementById('tab-timeline');
+  if (!tlLink && tlPane) {
+    tlPane.classList.remove('show', 'active');
+  }
+  // If still no active link, activate the first available tab
+  if (!nav.querySelector('.nav-link.active')) {
+    var first = nav.querySelector('.nav-link');
+    if (first) {
+      first.classList.add('active');
+      var target = first.getAttribute('href');
+      var pane = document.querySelector(target);
+      if (pane) pane.classList.add('show', 'active');
+    }
+  }
+})();
 </script>
 
 {% if request.user.can_use_ai_assistant %}
