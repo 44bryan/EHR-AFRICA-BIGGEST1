@@ -42,29 +42,40 @@ def _split_reasoning(raw: str) -> tuple[str, str]:
     clean = _THINK_RE.sub('', raw).strip()
     return clean, reasoning
 
-GLUDD_SYSTEM_PROMPT = """You are an AI clinical assistant embedded in GLUDD Specialist Eye Hospital's Electronic Health Record system in Cameroon.
+GLUDD_SYSTEM_PROMPT = """You are an advanced AI clinical assistant embedded in GLUDD Specialist Eye Hospital's Electronic Health Record system in Cameroon.
+
+When a patient record is provided you have access to their COMPLETE medical history including:
+- All consultation records with full examination findings and diagnoses
+- Complete laboratory results (haematology, biochemistry, serology, microbiology) with reference ranges and critical flags
+- All ophthalmic investigation results: OCT layer analysis, Humphrey Visual Field (MD/PSD/VFI/SITA), Biometry (IOL Master/A-scan), Fundus Photography, Fluorescein Angiography (FFA), B-scan ultrasound, Corneal Topography (Pentacam), Pachymetry, ERG, Refraction — with full structured data and technician reports
+- All imaging studies with radiology/technician reports
+- All drug and optical prescriptions with full dosage details
+- Problem list, allergies, medical history, family history
 
 You assist:
-- Ophthalmologists: diagnosis support, management guidance, drug information
-- Nurses: triage guidance, parameter interpretation
+- Ophthalmologists: deep diagnosis support, investigation interpretation, management guidance, surgical planning
+- Nurses: triage guidance, parameter interpretation, care planning
 - Reception staff: patient queries, appointment information
 - Management: analytics and hospital performance data
 
 Context — GLUDD Eye Hospital, Cameroon:
 - Specialist ophthalmology centre
 - Departments: General Ophthalmology, Retina, Glaucoma, Cataract/Surgical, Cornea,
-  Oculoplastics, Neuro-ophthalmology, Paediatric Ophthalmology, Refraction/Optometry
+  Oculoplastics, Neuro-ophthalmology, Paediatric Ophthalmology, Refraction/Optometry, Low Vision
 - Services: OPD, IPD, Theatre, Laboratory, Pharmacy, Optical Shop
 - Patient tiers: Standard, Express, Fast Track, VIP
-- Insurance accepted from CNPS, Activa, Sanlam, Allianz, AXA and others
+- Insurance: CNPS, Activa, Sanlam, Allianz, AXA and others
+- Local disease burden: glaucoma (high), sickle cell retinopathy, onchocerciasis, diabetic retinopathy, trachoma
 
 Rules:
 1. Clinical decisions always rest with qualified doctors — you support, not replace
-2. Be concise and precise — doctors are busy
-3. Use proper ophthalmic terminology
+2. Be concise and precise — doctors are busy; structure complex answers with clear headings
+3. Use proper ophthalmic and medical terminology
 4. Flag emergencies prominently (sight-threatening, life-threatening)
-5. Consider sub-Saharan African disease patterns and resource availability
-6. Never fabricate drug doses — say "verify with current BNF/formulary"
+5. For investigation interpretation: Key Findings → Clinical Significance → Recommended Action
+6. Consider sub-Saharan African disease patterns and resource availability
+7. Never fabricate drug doses — say "verify with current BNF/formulary"
+8. If patient data is not in the record, say "not documented" — never invent patient-specific values
 """
 
 
@@ -407,6 +418,87 @@ def build_live_patient_context(conversation) -> str:
                     f'CC: {c.presenting_complaint[:60]} | '
                     f'Dx: {dx or "—"}'
                 )
+    except Exception:
+        pass
+
+    # ── Lab results (full history) ────────────────────────────────────────
+    try:
+        from apps.laboratory.models import LabOrder
+        all_lab_orders = LabOrder.objects.filter(
+            patient=patient, is_deleted=False
+        ).prefetch_related('items__result', 'items__test_type').order_by('-created_at')[:20]
+        seen_labs = set()
+        lab_lines = []
+        for lab in all_lab_orders:
+            date_str = lab.created_at.strftime('%d %b %Y')
+            for item in lab.items.all():
+                try:
+                    r = item.result
+                    uid = f"{item.test_type.name}_{r.result_date.date()}"
+                    if uid in seen_labs:
+                        continue
+                    seen_labs.add(uid)
+                    flag = ' ⚠CRITICAL' if r.is_critical else (' ↑ABNORMAL' if r.is_abnormal else ' ✓normal')
+                    comment = f" — {r.comment}" if r.comment else ''
+                    lab_lines.append(
+                        f'  [{date_str}] {item.test_type.name}: '
+                        f'{r.result_value} {r.result_unit or ""} '
+                        f'(ref: {r.reference_range or "N/A"}){flag}{comment}'
+                    )
+                except Exception:
+                    pass
+        if lab_lines:
+            lines.append('\n── Lab Results ──')
+            lines.extend(lab_lines)
+    except Exception:
+        pass
+
+    # ── Investigation results (OCT, VF, Biometry, etc.) ──────────────────
+    try:
+        from apps.investigations.models import InvestigationOrder
+        all_invs = InvestigationOrder.objects.filter(
+            patient=patient, is_deleted=False, status='COMPLETED'
+        ).select_related('investigation_type').prefetch_related('result').order_by('-created_at')[:20]
+        inv_lines = []
+        for inv in all_invs:
+            inv_name = inv.investigation_type.name if inv.investigation_type else 'Investigation'
+            eye = inv.get_eye_display()
+            try:
+                res = inv.result
+                date_str = res.result_date.strftime('%d %b %Y') if res.result_date else '—'
+                normal_tag = ' ✓NORMAL' if res.is_normal else (' ABNORMAL' if res.is_normal is False else '')
+                inv_lines.append(f'\n  [{date_str}] {inv_name} ({eye}){normal_tag}')
+                inv_lines.append(f'    Indication: {inv.clinical_indication}')
+                if res.interpretation:
+                    inv_lines.append(f'    Interpretation: {res.interpretation[:500]}')
+                if res.result_data and isinstance(res.result_data, dict):
+                    for k, v in res.result_data.items():
+                        if v and k != 'ai_analysis' and str(v).strip():
+                            inv_lines.append(f'    {k.replace("_"," ").title()}: {v}')
+            except Exception:
+                inv_lines.append(f'  {inv_name} ({eye}): pending')
+        if inv_lines:
+            lines.append('\n── Investigation Results ──')
+            lines.extend(inv_lines)
+    except Exception:
+        pass
+
+    # ── Imaging studies ───────────────────────────────────────────────────
+    try:
+        from apps.investigations.models import ImagingStudy
+        studies = ImagingStudy.objects.filter(
+            patient=patient, is_deleted=False
+        ).order_by('-study_date')[:15]
+        study_lines = []
+        for s in studies:
+            date_str = s.study_date.strftime('%d %b %Y') if s.study_date else '—'
+            reported = ' [REPORTED]' if s.is_reported else ' [AWAITING REPORT]'
+            study_lines.append(f'\n  [{date_str}] {s.get_modality_display()} — {s.description}{reported}')
+            if s.report:
+                study_lines.append(f'    Report: {s.report[:600]}')
+        if study_lines:
+            lines.append('\n── Imaging Studies ──')
+            lines.extend(study_lines)
     except Exception:
         pass
 

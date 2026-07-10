@@ -8,33 +8,49 @@ from django.conf import settings
 
 logger = logging.getLogger('apps.ai_assistant')
 
-OPHTHALMOLOGY_SYSTEM_PROMPT = """You are an AI clinical decision support assistant embedded in an Electronic Health Record system for a specialist ophthalmology hospital in Cameroon.
+OPHTHALMOLOGY_SYSTEM_PROMPT = """You are an advanced AI clinical decision support assistant embedded in an Electronic Health Record system for GLUDD Specialist Eye Hospital in Cameroon.
+
+You have access to the patient's COMPLETE medical record, including:
+- Full consultation history with all examination findings and diagnoses
+- All laboratory results (haematology, biochemistry, serology, microbiology, urinalysis) with reference ranges and abnormal flags
+- All ophthalmic investigation results: OCT, Humphrey Visual Field, Fundus Photography, Fluorescein Angiography (FFA), Biometry (IOL Master/A-scan), B-scan ultrasound, Corneal Topography (Pentacam), Pachymetry, ERG, Refraction results — with full structured data and reports
+- All imaging studies with radiologist/technician reports
+- All drug and optical prescriptions
+- Problem list, allergies, medical history, family history, social history
 
 Your role is to assist qualified ophthalmologists and medical staff with:
-- Differential diagnosis suggestions for ophthalmic presentations
-- Clinical management guidance based on current evidence
-- Drug information (especially ophthalmic drugs — eye drops, intravitreal agents)
-- Interpretation of investigation results (OCT, visual fields, fundus findings)
-- ICD-10 coding assistance for ophthalmic diagnoses
-- Ophthalmic surgical planning information
-- Paediatric ophthalmology guidance
-- Glaucoma and retinal disease management
+- Advanced differential diagnosis using ALL available clinical and investigation data
+- Deep interpretation of investigation results: OCT layers, visual field patterns (MD, PSD, VFI trends), biometry for IOL calculation, corneal topography indices, fundus findings, FFA leak patterns
+- Clinical management guidance based on current evidence (AAO, NICE, WHO, ICO guidelines)
+- Drug information (ophthalmic drops, intravitreal agents, systemic drugs for ocular disease)
+- Drug interaction checking and dosage guidance
+- ICD-10 coding for ophthalmic and systemic diagnoses
+- Surgical planning: IOL selection, surgical risk assessment, post-op monitoring
+- Paediatric ophthalmology, amblyopia management, strabismus
+- Glaucoma staging and management (IOP targets, nerve fibre layer analysis)
+- Retinal disease: diabetic retinopathy grading, AMD staging, RD risk
+- Research context: disease prevalence, clinical trial data, evidence levels
+- Patient summary: synthesise the full record into a coherent clinical narrative
 
-IMPORTANT DISCLAIMERS:
-1. You are a clinical decision SUPPORT tool. All clinical decisions must be made by qualified medical professionals.
-2. Never contradict a treating physician's direct clinical judgment.
-3. Always recommend verification against current clinical guidelines.
-4. For emergency situations, recommend immediate clinical attention.
-5. You do not have access to real-time drug databases — always verify drug interactions with current resources.
+IMPORTANT RULES:
+1. You are a clinical decision SUPPORT tool — all final clinical decisions rest with qualified medical professionals.
+2. Never contradict a treating physician's direct clinical judgment without strong evidence.
+3. Always recommend verification of drug doses against current formulary (BNF, WHO).
+4. Flag sight-threatening and life-threatening emergencies prominently.
+5. If data is not in the record, say "not documented" — do NOT fabricate patient-specific values.
+6. Cite evidence levels when making recommendations (Grade A/B/C, Level I/II/III).
 
 RESPONSE FORMAT:
 - Be concise and clinically precise
-- Use proper medical terminology
-- Structure responses with clear headings when appropriate
-- Cite evidence levels when making recommendations (e.g., Grade A, B, C)
-- Flag important red-flag symptoms or emergency situations prominently
+- Use proper ophthalmic terminology
+- Structure responses with clear headings for complex analyses
+- For investigation interpretation, structure as: Key Findings → Clinical Significance → Recommended Action
+- For differential diagnoses, rank by likelihood with supporting/opposing features
 
-You are operating in an African hospital context (Cameroon) — consider local disease prevalence, available treatments, and resource limitations where relevant."""
+Hospital context — Cameroon:
+- Consider local disease burden: glaucoma (high prevalence), sickle cell retinopathy, onchocerciasis, trachoma, diabetic eye disease, vitamin A deficiency
+- Consider available resources and realistic treatment options in sub-Saharan Africa
+- Currency FCFA, language context French/English bilingual"""
 
 
 def build_consultation_context(consultation):
@@ -359,6 +375,91 @@ def build_patient_context(patient):
     except Exception:
         pass
 
+    # ── 8. ALL LAB RESULTS (full history, deduplicated) ───────────────────
+    try:
+        from apps.laboratory.models import LabOrder
+        all_lab_orders = LabOrder.objects.filter(
+            patient=patient, is_deleted=False
+        ).prefetch_related('items__result', 'items__test_type').order_by('-created_at')[:25]
+        seen_results = set()
+        lab_history = []
+        for lab in all_lab_orders:
+            date_str = lab.created_at.strftime('%d %b %Y')
+            for item in lab.items.all():
+                try:
+                    r = item.result
+                    uid = f"{item.test_type.name}_{r.result_date.date()}"
+                    if uid in seen_results:
+                        continue
+                    seen_results.add(uid)
+                    flag = ' ⚠CRITICAL' if r.is_critical else (' ↑↓ABNORMAL' if r.is_abnormal else ' ✓normal')
+                    comment = f" — {r.comment}" if r.comment else ""
+                    lab_history.append(
+                        f"  [{date_str}] {item.test_type.name}: "
+                        f"{r.result_value} {r.result_unit or ''} "
+                        f"(ref: {r.reference_range or 'N/A'}){flag}{comment}"
+                    )
+                except Exception:
+                    lab_history.append(f"  [{date_str}] {item.test_type.name}: pending")
+        if lab_history:
+            lines.append("\n── COMPLETE LAB HISTORY ──")
+            lines.extend(lab_history)
+    except Exception:
+        pass
+
+    # ── 9. ALL INVESTIGATION RESULTS (full structured data) ───────────────
+    try:
+        from apps.investigations.models import InvestigationOrder
+        all_invs = InvestigationOrder.objects.filter(
+            patient=patient, is_deleted=False, status='COMPLETED'
+        ).select_related('investigation_type').prefetch_related('result').order_by('-created_at')[:20]
+        inv_lines = []
+        for inv in all_invs:
+            inv_name = inv.investigation_type.name if inv.investigation_type else 'Investigation'
+            eye = inv.get_eye_display()
+            try:
+                res = inv.result
+                date_str = res.result_date.strftime('%d %b %Y') if res.result_date else 'Unknown date'
+                normal_tag = ' ✓NORMAL' if res.is_normal else (' ABNORMAL' if res.is_normal is False else '')
+                verified = ' [VERIFIED]' if res.is_verified else ''
+                inv_lines.append(f"\n  [{date_str}] {inv_name} ({eye}){normal_tag}{verified}")
+                inv_lines.append(f"    Indication: {inv.clinical_indication}")
+                if res.interpretation:
+                    inv_lines.append(f"    Interpretation: {res.interpretation[:500]}")
+                if res.result_data and isinstance(res.result_data, dict):
+                    import json as _json
+                    for k, v in res.result_data.items():
+                        if v and k != 'ai_analysis' and str(v).strip():
+                            inv_lines.append(f"    {k.replace('_', ' ').title()}: {v}")
+            except Exception:
+                inv_lines.append(f"  {inv_name} ({eye}): {inv.get_status_display()}")
+        if inv_lines:
+            lines.append("\n── COMPLETE INVESTIGATION RESULTS ──")
+            lines.extend(inv_lines)
+    except Exception:
+        pass
+
+    # ── 10. IMAGING STUDIES (OCT, VF, FFA, Biometry, B-Scan, etc.) ────────
+    try:
+        from apps.investigations.models import ImagingStudy
+        studies = ImagingStudy.objects.filter(
+            patient=patient, is_deleted=False
+        ).order_by('-study_date')[:20]
+        study_lines = []
+        for s in studies:
+            date_str = s.study_date.strftime('%d %b %Y') if s.study_date else 'Unknown date'
+            reported = ' [REPORTED]' if s.is_reported else ' [AWAITING REPORT]'
+            study_lines.append(f"\n  [{date_str}] {s.get_modality_display()} — {s.description}{reported}")
+            if s.report:
+                study_lines.append(f"    Report: {s.report[:800]}")
+            if s.series_count > 1:
+                study_lines.append(f"    Series: {s.series_count}")
+        if study_lines:
+            lines.append("\n── IMAGING STUDIES ──")
+            lines.extend(study_lines)
+    except Exception:
+        pass
+
     lines.append("\n" + "=" * 60)
     lines.append("END OF PATIENT RECORD")
     lines.append("=" * 60)
@@ -383,7 +484,7 @@ def patient_chat_response(patient_context, history, question):
     messages = [h for h in history[-10:] if h.get('role') in ('user', 'assistant') and h.get('content')]
     messages.append({'role': 'user', 'content': question})
     try:
-        return chat_fn(messages=messages, system=system_prompt, max_tokens=1024)
+        return chat_fn(messages=messages, system=system_prompt, max_tokens=2048)
     except Exception as e:
         return {'success': False, 'error': str(e), 'text': ''}
 
