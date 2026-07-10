@@ -270,9 +270,12 @@ SESSION_COOKIE_SAMESITE = 'Lax'     # CSRF protection
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=(not DEBUG))
 
 # CSRF cookie
-CSRF_COOKIE_HTTPONLY = False        # Django requires JS to read it for AJAX
+CSRF_COOKIE_HTTPONLY = False        # JS must read it for AJAX
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=(not DEBUG))
+# Trusted origins — required for Django 4+ on non-localhost LAN/production hosts.
+# Set in .env as: CSRF_TRUSTED_ORIGINS=http://192.168.30.169,http://192.168.200.254
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost', 'http://127.0.0.1'])
 
 # Security headers (applied by SecurityMiddleware)
 SECURE_BROWSER_XSS_FILTER = True        # X-XSS-Protection: 1; mode=block

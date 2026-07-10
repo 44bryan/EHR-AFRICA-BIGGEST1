@@ -764,61 +764,115 @@
           <span class="badge bg-secondary">{{ dept_consults|length }} visit{{ dept_consults|length|pluralize }}</span>
         </div>
 
-        {# ── Compact comparison table (international EHR standard) ── #}
-        <div class="table-responsive">
-          <table class="table table-hover align-middle small mb-0" style="font-size:.8rem;">
-            <thead class="table-light">
-              <tr>
-                <th style="white-space:nowrap;">Date</th>
-                <th>Doctor</th>
-                <th title="Visual Acuity Right Eye">VA OD</th>
-                <th title="Visual Acuity Left Eye">VA OS</th>
-                <th title="Intraocular Pressure Right">IOP OD</th>
-                <th title="Intraocular Pressure Left">IOP OS</th>
-                <th>Diagnosis</th>
-                <th title="Prescriptions / Orders">Rx</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for consult in dept_consults %}
-              {% with vs=consult.visit.vital_signs %}
-              <tr style="cursor:pointer;" onclick="window.location='{% url 'consultations:detail' pk=consult.pk %}'">
-                <td class="text-nowrap">
-                  {{ consult.consultation_date|date:"d M Y" }}
-                  {% if consult.status == 'COMPLETED' %}<br><span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.58rem;">Done</span>
-                  {% elif consult.status == 'IN_PROGRESS' %}<br><span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:.58rem;">Active</span>{% endif %}
-                </td>
-                <td class="text-nowrap">Dr. {{ consult.consulting_doctor.get_full_name|default:consult.consulting_doctor.username }}</td>
-                <td>{% if vs %}{{ vs.visual_acuity_right|default:"—" }}{% else %}—{% endif %}</td>
-                <td>{% if vs %}{{ vs.visual_acuity_left|default:"—" }}{% else %}—{% endif %}</td>
-                <td>{% if vs %}{{ vs.intraocular_pressure_right|default:"—" }}{% else %}—{% endif %}</td>
-                <td>{% if vs %}{{ vs.intraocular_pressure_left|default:"—" }}{% else %}—{% endif %}</td>
-                <td>
-                  {% with diags=consult.consultation_diagnoses.all %}
-                  {% if diags %}{% for cd in diags %}{{ cd.diagnosis.description|truncatechars:45 }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
-                  {% else %}<span class="text-muted">—</span>{% endif %}
-                  {% endwith %}
-                </td>
-                <td class="text-nowrap">
-                  {% if consult.optical_prescriptions.exists %}<i class="bi bi-eyeglasses text-primary" title="Optical Rx"></i>{% endif %}
-                  {% if consult.drug_prescriptions.exists %}<i class="bi bi-capsule-pill text-success ms-1" title="Drug Rx"></i>{% endif %}
-                  {% if consult.lab_orders.exists %}<i class="bi bi-flask text-warning ms-1" title="Lab order"></i>{% endif %}
-                  {% if consult.investigation_orders.exists %}<i class="bi bi-search text-purple ms-1" title="Investigation"></i>{% endif %}
-                </td>
-                <td>
-                  <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary py-0" style="font-size:.7rem;" onclick="event.stopPropagation();">
-                    <i class="bi bi-file-medical me-1"></i>View
-                  </a>
-                </td>
-              </tr>
-              {% endwith %}
-              {% empty %}
-              <tr><td colspan="9" class="text-center text-muted py-4"><i class="bi bi-inbox me-1"></i>No records in this department</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        {# ── Same card format as timeline, filtered to this department ── #}
+        {% for consult in dept_consults %}
+        {% with dd=consult.department_specific_data vs=consult.visit.vital_signs %}
+        <div class="consult-card">
+          <div class="cc-head">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <strong class="small">Dr. {{ consult.consulting_doctor.get_full_name|default:consult.consulting_doctor.username }}</strong>
+              {% if consult.status == 'COMPLETED' %}<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.62rem;">Completed</span>
+              {% elif consult.status == 'IN_PROGRESS' %}<span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:.62rem;">In Progress</span>{% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted small">{{ consult.consultation_date|date:"d M Y, H:i" }}</span>
+              <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary py-0" style="font-size:.72rem;">
+                <i class="bi bi-file-medical me-1"></i>Full Record
+              </a>
+            </div>
+          </div>
+          <div class="cc-body">
+            {# Always visible: complaint, diagnoses, plan, follow-up #}
+            {% if consult.presenting_complaint %}
+            <div class="mb-2 small"><span class="text-muted fw-semibold">Chief Complaint: </span>{{ consult.presenting_complaint }}</div>
+            {% endif %}
+            {% with diags=consult.consultation_diagnoses.all %}
+            {% if diags %}
+            <div class="mb-2">
+              <span class="text-muted small fw-semibold">Diagnosis: </span>
+              {% for cd in diags %}<span class="diag-badge">{{ cd.diagnosis.description|truncatechars:60 }}</span>{% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+            {% if consult.management_plan %}
+            <div class="small mb-2"><span class="text-muted fw-semibold">Plan: </span>{{ consult.management_plan|truncatechars:200 }}</div>
+            {% endif %}
+            {% if consult.follow_up_date %}
+            <div class="small mb-2">
+              <i class="bi bi-calendar-check text-primary me-1"></i>
+              <span class="text-muted">Follow-up:</span> <strong>{{ consult.follow_up_date|date:"d M Y" }}</strong>
+            </div>
+            {% endif %}
+
+            {# Clinical details toggle #}
+            <div class="mt-2">
+              <div class="d-flex align-items-center gap-2 mb-2" style="cursor:pointer;"
+                   onclick="var b=document.getElementById('dclin-{{ consult.pk }}');var ic=this.querySelector('i.dclin-chev');var open=b.style.display!=='none';b.style.display=open?'none':'';ic.style.transform=open?'rotate(0deg)':'rotate(90deg)';">
+                <i class="dclin-chev bi bi-chevron-right text-secondary small" style="transition:transform .15s;"></i>
+                <span class="small text-secondary fw-semibold">Clinical details</span>
+                {% if consult.optical_prescriptions.exists or consult.drug_prescriptions.exists or consult.lab_orders.exists or consult.investigation_orders.exists %}
+                <span class="d-flex gap-1">
+                  {% if consult.optical_prescriptions.exists %}<i class="bi bi-eyeglasses text-primary" style="font-size:.75rem;"></i>{% endif %}
+                  {% if consult.drug_prescriptions.exists %}<i class="bi bi-capsule-pill text-success" style="font-size:.75rem;"></i>{% endif %}
+                  {% if consult.lab_orders.exists %}<i class="bi bi-flask text-warning" style="font-size:.75rem;"></i>{% endif %}
+                  {% if consult.investigation_orders.exists %}<i class="bi bi-search text-purple" style="font-size:.75rem;"></i>{% endif %}
+                </span>
+                {% endif %}
+              </div>
+              <div id="dclin-{{ consult.pk }}" style="display:none;">
+                {% include 'consultations/clinical/_record_summary.html' %}
+                {% for optical_rx in consult.optical_prescriptions.all %}
+                <div class="mb-2 p-2 rounded" style="background:#eff6ff;border:1px solid #bfdbfe;">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small fw-bold text-primary"><i class="bi bi-eyeglasses me-1"></i>{{ optical_rx.get_prescription_type_display }}</span>
+                    <a href="{% url 'prescriptions:optical_detail' pk=optical_rx.pk %}" class="btn btn-xs btn-outline-primary py-0" style="font-size:.65rem;"><i class="bi bi-printer"></i> Print</a>
+                  </div>
+                  <table class="rx-table">
+                    <thead><tr><th>Eye</th><th>Sphere</th><th>Cylinder</th><th>Axis</th><th>Add</th><th>VA</th></tr></thead>
+                    <tbody>
+                      <tr><td class="eye-re">OD</td>
+                        <td>{% if optical_rx.re_sphere is None %}Plano{% elif optical_rx.re_sphere > 0 %}+{{ optical_rx.re_sphere|floatformat:2 }}{% else %}{{ optical_rx.re_sphere|floatformat:2 }}{% endif %}</td>
+                        <td>{{ optical_rx.re_cylinder|floatformat:2|default:"—" }}</td>
+                        <td>{% if optical_rx.re_axis %}{{ optical_rx.re_axis }}&deg;{% else %}—{% endif %}</td>
+                        <td>{% if optical_rx.re_add %}+{{ optical_rx.re_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td>{{ optical_rx.re_visual_acuity|default:"—" }}</td></tr>
+                      <tr><td class="eye-le">OS</td>
+                        <td>{% if optical_rx.le_sphere is None %}Plano{% elif optical_rx.le_sphere > 0 %}+{{ optical_rx.le_sphere|floatformat:2 }}{% else %}{{ optical_rx.le_sphere|floatformat:2 }}{% endif %}</td>
+                        <td>{{ optical_rx.le_cylinder|floatformat:2|default:"—" }}</td>
+                        <td>{% if optical_rx.le_axis %}{{ optical_rx.le_axis }}&deg;{% else %}—{% endif %}</td>
+                        <td>{% if optical_rx.le_add %}+{{ optical_rx.le_add|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td>{{ optical_rx.le_visual_acuity|default:"—" }}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                {% endfor %}
+                {% if consult.drug_prescriptions.exists %}
+                {% for drug_rx in consult.drug_prescriptions.all %}{% if drug_rx.items.all %}
+                <div class="mb-2 p-2 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+                  <div class="small fw-semibold text-success mb-1"><i class="bi bi-capsule-pill me-1"></i>Drug Prescription</div>
+                  {% for item in drug_rx.items.all %}
+                  <div class="small text-muted">• {{ item.drug_name }} — {{ item.dosage|default:"" }} {{ item.frequency|default:"" }} × {{ item.duration|default:"" }}</div>
+                  {% endfor %}
+                </div>
+                {% endif %}{% endfor %}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="cc-foot">
+            <span>Visit: <code>{{ consult.visit.visit_number }}</code></span>
+            <span>{{ consult.visit.visit_date|date:"d M Y" }}</span>
+            {% if consult.optical_prescriptions.all %}<span class="text-primary"><i class="bi bi-eyeglasses me-1"></i>Rx issued</span>{% endif %}
+            {% if consult.drug_prescriptions.all %}<span class="text-success"><i class="bi bi-capsule-pill me-1"></i>Drugs prescribed</span>{% endif %}
+            {% if consult.lab_orders.all %}<span class="text-warning"><i class="bi bi-flask me-1"></i>Lab ordered</span>{% endif %}
+          </div>
         </div>
+        {% endwith %}
+        {% empty %}
+        <div class="text-center py-5 text-muted">
+          <i class="bi bi-inbox fs-2 d-block mb-2 opacity-40"></i>No records in this department
+        </div>
+        {% endfor %}
       </div>
       {% endwith %}
       {% endfor %}
