@@ -64,6 +64,7 @@ def patient_search_q(query, prefix=''):
         combined &= (
             Q(**{f'{p}patient_id__icontains': term}) |
             Q(**{f'{p}first_name__icontains': term}) |
+            Q(**{f'{p}middle_name__icontains': term}) |
             Q(**{f'{p}last_name__icontains': term}) |
             Q(**{f'{p}phone_number__icontains': term})
         )

@@ -18,109 +18,98 @@
         <h6 class="mb-0 fw-semibold"><i class="bi bi-search me-2 text-primary"></i>Find Patient</h6>
       </div>
       <div class="card-body">
-        <form method="get">
-          <div class="input-group mb-3">
-            <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Name, Patient ID or Phone…" autofocus>
-            <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i></button>
-          </div>
-        </form>
 
-        {% if q and not patients and not selected_patient %}
-        <div class="alert alert-warning py-2">
-          <i class="bi bi-exclamation-triangle me-2"></i>No patient found for "<strong>{{ q }}</strong>"
+        {# Live search input — results appear as you type #}
+        <div class="input-group mb-2" id="searchBox">
+          <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+          <input type="text" id="walkInSearch" class="form-control border-start-0 ps-0"
+                 placeholder="Type name, ID or phone number…"
+                 autofocus autocomplete="off">
+          <span class="input-group-text bg-white d-none" id="searchSpinner">
+            <span class="spinner-border spinner-border-sm text-primary"></span>
+          </span>
         </div>
-        {% endif %}
+        <div id="walkInResults" class="list-group mb-2"></div>
+        <div id="walkInNotFound" class="alert alert-warning py-2 d-none">
+          <i class="bi bi-exclamation-triangle me-2"></i>No patient found. Try Patient ID or phone, or register as new.
+        </div>
 
-        {% if patients %}
-        <div class="list-group">
-          {% for p in patients %}
-          <a href="?patient={{ p.patient_id }}" class="list-group-item list-group-item-action py-2">
-            <div class="d-flex justify-content-between">
-              <div>
-                <div class="fw-semibold">{{ p.full_name }}</div>
-                <div class="text-muted small">{{ p.patient_id }} &middot; {{ p.age_display }} &middot; {{ p.get_gender_display }}</div>
-              </div>
-              <div class="text-muted small">{{ p.phone_number }}</div>
+        {# Selected patient panel #}
+        <div id="selectedPanel" class="{% if not selected_patient %}d-none{% endif %}">
+          <div class="alert alert-success py-2 d-flex align-items-center gap-3 mb-0">
+            <i class="bi bi-check-circle-fill fs-4 text-success"></i>
+            <div>
+              <div class="fw-bold" id="selName">{% if selected_patient %}{{ selected_patient.full_name }}{% endif %}</div>
+              <div class="small text-muted" id="selMeta">{% if selected_patient %}{{ selected_patient.patient_id }} &middot; {{ selected_patient.age_display }} &middot; {{ selected_patient.phone_number }}{% endif %}</div>
             </div>
-          </a>
-          {% endfor %}
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="clearSelection()">
+              <i class="bi bi-x-lg me-1"></i>Change
+            </button>
+          </div>
+          <div id="followupBanner" class="{% if not active_consult_visit %}d-none{% endif %} alert alert-info py-2 mb-0 mt-1 d-flex align-items-center gap-2 border-start border-4 border-info rounded-0">
+            <i class="bi bi-calendar2-check text-info fs-5"></i>
+            <div class="small">
+              <strong>Active Consultation — No Payment Needed.</strong>
+              Valid until <strong id="followupDate">{% if active_consult_visit %}{{ active_consult_visit.consultation_valid_until|date:"d M Y" }}{% endif %}</strong>.
+              Route as <strong>Follow-up</strong> — skip cashier.
+            </div>
+          </div>
         </div>
-        {% endif %}
 
-        {% if selected_patient %}
-        {# Selected patient card #}
-        <div class="alert alert-success py-2 d-flex align-items-center gap-3 mb-0">
-          <i class="bi bi-check-circle-fill fs-4 text-success"></i>
-          <div>
-            <div class="fw-bold">{{ selected_patient.full_name }}</div>
-            <div class="small">{{ selected_patient.patient_id }} &middot; {{ selected_patient.age_display }} &middot; {{ selected_patient.phone_number }}</div>
-          </div>
-          <a href="?" class="btn btn-sm btn-outline-secondary ms-auto">Change</a>
-        </div>
-        {# 15-day consultation window alert #}
-        {% if active_consult_visit %}
-        <div class="alert alert-info py-2 mb-0 mt-1 d-flex align-items-center gap-2 rounded-0 border-start border-4 border-info">
-          <i class="bi bi-calendar2-check text-info fs-5"></i>
-          <div class="small">
-            <strong>Active Consultation — No Payment Needed.</strong>
-            Valid until <strong>{{ active_consult_visit.consultation_valid_until|date:"d M Y" }}</strong>
-            ({{ active_consult_visit.consultation_days_remaining }} day{{ active_consult_visit.consultation_days_remaining|pluralize }} left).
-            Route as <strong>Follow-up</strong> — skip cashier.
-          </div>
-        </div>
-        {% endif %}
-        {% endif %}
+        {# Hidden patient_id for the check-in form #}
+        <input type="hidden" id="selectedPatientId" value="{{ selected_patient.patient_id|default:'' }}">
+
       </div>
-
-      {% if not selected_patient %}
       <div class="card-footer bg-white border-top">
-        <div class="text-center text-muted small mb-2">Patient not in system?</div>
+        <div class="text-center text-muted small mb-2">Patient not registered yet?</div>
         <a href="{% url 'patients:register' %}" class="btn btn-outline-primary w-100">
           <i class="bi bi-person-plus me-2"></i>Register New Patient
         </a>
       </div>
-      {% endif %}
     </div>
   </div>
 
   {# ── Right: Consultation Setup ── #}
   <div class="col-lg-7">
-    <div class="card border-0 shadow-sm {% if not selected_patient %}opacity-50{% endif %}">
+    <div class="card border-0 shadow-sm" id="consultCard">
       <div class="card-header bg-white py-3">
         <h6 class="mb-0 fw-semibold"><i class="bi bi-clipboard2-check me-2 text-success"></i>Consultation Details</h6>
       </div>
       <div class="card-body">
-        {% if not selected_patient %}
-        <div class="text-center text-muted py-5">
+
+        {# Placeholder shown until patient is selected #}
+        <div id="consultPlaceholder" class="{% if selected_patient %}d-none{% endif %} text-center text-muted py-5">
           <i class="bi bi-search-circle fs-1 mb-2 d-block"></i>
-          <strong>Search and select a patient</strong><br>
-          <small>or register a new walk-in patient first</small>
+          <strong>Search and select a patient on the left</strong><br>
+          <small>Results appear automatically as you type</small>
         </div>
-        {% else %}
-        <form method="post" action="{% url 'reception:walk_in' %}">
+
+        {# Check-in form — shown once patient selected #}
+        <form method="post" action="{% url 'reception:walk_in' %}" id="checkinForm"
+              class="{% if not selected_patient %}d-none{% endif %}">
           {% csrf_token %}
           <input type="hidden" name="action" value="checkin">
-          <input type="hidden" name="patient_id" value="{{ selected_patient.patient_id }}">
+          <input type="hidden" name="patient_id" id="formPatientId" value="{{ selected_patient.patient_id|default:'' }}">
 
           {# ── Service Tier ── #}
           <div class="mb-4">
-            <label class="form-label fw-semibold">Consultation Type <span class="text-danger">*</span></label>
+            <label class="form-label fw-semibold">Service Tier <span class="text-danger">*</span></label>
             <div class="row g-2">
               {% for value, label in tier_choices %}
               <div class="col-6">
                 <input type="radio" class="btn-check" name="service_tier" id="tier_{{ value }}" value="{{ value }}"
                   {% if value == 'STANDARD' %}checked{% endif %} required>
-                <label class="btn w-100 btn-outline-primary text-start" for="tier_{{ value }}" style="white-space: pre-wrap;">
+                <label class="btn w-100 btn-outline-primary text-start" for="tier_{{ value }}">
                   <div class="fw-bold">
-                    {% if value == 'VIP' %}<i class="bi bi-star-fill me-1 text-warning"></i>{% elif value == 'FAST_TRACK' %}<i class="bi bi-lightning-charge me-1 text-info"></i>{% elif value == 'EXPRESS' %}<i class="bi bi-lightning me-1"></i>{% else %}<i class="bi bi-person me-1"></i>{% endif %}{{ label }}
+                    {% if value == 'VIP' %}<i class="bi bi-star-fill me-1 text-warning"></i>
+                    {% elif value == 'FAST_TRACK' %}<i class="bi bi-lightning-charge me-1 text-info"></i>
+                    {% elif value == 'EXPRESS' %}<i class="bi bi-lightning me-1"></i>
+                    {% else %}<i class="bi bi-person me-1"></i>{% endif %}{{ label }}
                   </div>
                 </label>
               </div>
               {% endfor %}
             </div>
-            <small class="text-muted d-block mt-2">
-              <strong>STANDARD:</strong> Regular queue · <strong>EXPRESS:</strong> Faster · <strong>FAST_TRACK:</strong> Expedited · <strong>VIP:</strong> Priority
-            </small>
           </div>
 
           {# ── Department ── #}
@@ -137,7 +126,7 @@
           {# ── Visit Type ── #}
           <div class="mb-3">
             <label class="form-label fw-semibold">Visit Type <span class="text-danger">*</span></label>
-            <select name="appointment_type" class="form-select" required>
+            <select name="appointment_type" id="apptType" class="form-select" required>
               <option value="NEW">New Patient</option>
               <option value="FOLLOW_UP">Follow-up</option>
               <option value="REVIEW">Review</option>
@@ -158,10 +147,105 @@
             </button>
           </div>
         </form>
-        {% endif %}
       </div>
     </div>
   </div>
 
 </div>
+
+<script>
+const SEARCH_URL = '{% url "patients:search" %}';
+let _searchTimer = null;
+
+document.getElementById('walkInSearch').addEventListener('input', function() {
+  const q = this.value.trim();
+  clearTimeout(_searchTimer);
+  document.getElementById('walkInResults').innerHTML = '';
+  document.getElementById('walkInNotFound').classList.add('d-none');
+
+  if (q.length < 2) return;
+
+  document.getElementById('searchSpinner').classList.remove('d-none');
+  _searchTimer = setTimeout(() => doSearch(q), 300);
+});
+
+function doSearch(q) {
+  fetch(SEARCH_URL + '?q=' + encodeURIComponent(q))
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('searchSpinner').classList.add('d-none');
+      const box = document.getElementById('walkInResults');
+      box.innerHTML = '';
+      const results = data.results || [];
+      if (results.length === 0) {
+        document.getElementById('walkInNotFound').classList.remove('d-none');
+        return;
+      }
+      results.forEach(p => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'list-group-item list-group-item-action py-2 text-start';
+
+        let badge = '';
+        if (p.status === 'FREE_FOLLOWUP') {
+          badge = '<span class="badge bg-success ms-2">Free Follow-up</span>';
+        } else if (p.status === 'NEW') {
+          badge = '<span class="badge bg-secondary ms-2">New</span>';
+        }
+
+        item.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">${p.name}${badge}</div>
+              <div class="text-muted small">${p.patient_id} &middot; Age ${p.age} &middot; ${p.gender || ''}</div>
+            </div>
+            <div class="text-muted small">${p.phone || ''}</div>
+          </div>`;
+        item.addEventListener('click', () => selectPatient(p));
+        box.appendChild(item);
+      });
+    })
+    .catch(() => {
+      document.getElementById('searchSpinner').classList.add('d-none');
+    });
+}
+
+function selectPatient(p) {
+  // Clear search UI
+  document.getElementById('walkInSearch').value = '';
+  document.getElementById('walkInResults').innerHTML = '';
+  document.getElementById('walkInNotFound').classList.add('d-none');
+
+  // Fill selected panel
+  document.getElementById('selName').textContent = p.name;
+  document.getElementById('selMeta').textContent = p.patient_id + ' · Age ' + p.age + (p.phone ? ' · ' + p.phone : '');
+  document.getElementById('selectedPatientId').value = p.patient_id;
+  document.getElementById('formPatientId').value = p.patient_id;
+  document.getElementById('selectedPanel').classList.remove('d-none');
+
+  // Follow-up banner
+  const banner = document.getElementById('followupBanner');
+  if (p.status === 'FREE_FOLLOWUP') {
+    banner.classList.remove('d-none');
+    // Auto-set visit type to FOLLOW_UP
+    document.getElementById('apptType').value = 'FOLLOW_UP';
+  } else {
+    banner.classList.add('d-none');
+  }
+
+  // Show check-in form
+  document.getElementById('consultPlaceholder').classList.add('d-none');
+  document.getElementById('checkinForm').classList.remove('d-none');
+}
+
+function clearSelection() {
+  document.getElementById('selectedPanel').classList.add('d-none');
+  document.getElementById('checkinForm').classList.add('d-none');
+  document.getElementById('consultPlaceholder').classList.remove('d-none');
+  document.getElementById('selectedPatientId').value = '';
+  document.getElementById('formPatientId').value = '';
+  document.getElementById('walkInSearch').value = '';
+  document.getElementById('walkInSearch').focus();
+}
+</script>
 {% endblock %}
