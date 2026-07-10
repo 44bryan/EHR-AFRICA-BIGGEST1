@@ -105,71 +105,263 @@ def _get_json_fn():
 
 
 def build_patient_context(patient):
-    """Compile a patient's full chart into a text context block for the AI."""
+    """
+    Compile a patient's COMPLETE medical record into a text context block for the AI.
+    Includes demographics, medical history, problem list, all consultations with full
+    clinical data, lab results, investigations, optical Rx, drug Rx, and vital signs.
+    """
     phone = getattr(patient, 'phone_number', None) or getattr(patient, 'phone', None) or 'N/A'
     lines = [
-        f"PATIENT: {patient.full_name}",
-        f"ID: {patient.patient_id} | DOB: {patient.date_of_birth} | Age: {patient.age} | Gender: {patient.get_gender_display()}",
-        f"Phone: {phone}",
+        "=" * 60,
+        f"PATIENT MEDICAL RECORD",
+        "=" * 60,
+        f"Name:   {patient.full_name}",
+        f"ID:     {patient.patient_id}",
+        f"DOB:    {patient.date_of_birth}  |  Age: {patient.age}  |  Gender: {patient.get_gender_display()}",
+        f"Phone:  {phone}",
     ]
-    if getattr(patient, 'region', None):
-        lines.append(f"Region: {patient.region}")
+    for attr in ('region', 'occupation', 'address', 'nationality'):
+        val = getattr(patient, attr, None)
+        if val:
+            lines.append(f"{attr.capitalize()}: {val}")
 
-    # Allergies
+    # ── 1. ALLERGIES ──────────────────────────────────────────────────────
     try:
         from apps.patients.models import PatientAllergy
-        allergies = list(PatientAllergy.objects.filter(patient=patient, is_deleted=False)
-                         .values_list('allergen', flat=True))
-        lines.append(f"Allergies: {', '.join(allergies) if allergies else 'None documented'}")
+        allergies = PatientAllergy.objects.filter(patient=patient, is_deleted=False)
+        if allergies.exists():
+            lines.append("\n⚠ ALLERGIES:")
+            for a in allergies:
+                sev = getattr(a, 'severity', '') or ''
+                rxn = getattr(a, 'reaction', '') or ''
+                lines.append(f"  • {a.allergen}{' — ' + sev if sev else ''}{' (' + rxn + ')' if rxn else ''}")
+        else:
+            lines.append("\nAllergies: None documented")
     except Exception:
         pass
 
-    # Recent visits
+    # ── 2. MEDICAL HISTORY ────────────────────────────────────────────────
     try:
-        from apps.patients.models import Visit
-        visits = list(Visit.objects.filter(patient=patient, is_deleted=False)
-                      .order_by('-visit_date').select_related('department')[:10])
-        if visits:
-            lines.append("\nRECENT VISITS:")
-            for v in visits:
-                dept = v.department.name if v.department else 'Unknown'
-                lines.append(f"  {v.visit_date.strftime('%d %b %Y')} — {dept} — Status: {v.status}")
+        mh = patient.medical_history
+        lines.append("\n── MEDICAL HISTORY ──")
+        if mh.chronic_conditions:
+            lines.append(f"  Chronic Conditions:      {mh.chronic_conditions}")
+        if mh.systemic_history:
+            lines.append(f"  Systemic History:        {mh.systemic_history}")
+        if mh.previous_eye_conditions:
+            lines.append(f"  Previous Eye Conditions: {mh.previous_eye_conditions}")
+        if mh.previous_eye_surgeries:
+            lines.append(f"  Previous Eye Surgeries:  {mh.previous_eye_surgeries}")
+        if mh.spectacle_history:
+            lines.append(f"  Spectacle History:       {mh.spectacle_history}")
+        if mh.previous_surgeries:
+            lines.append(f"  Previous Surgeries:      {mh.previous_surgeries}")
+        if mh.current_medications:
+            lines.append(f"  Current Medications:     {mh.current_medications}")
+        if mh.family_ocular_history:
+            lines.append(f"  Family Ocular History:   {mh.family_ocular_history}")
+        if mh.social_history:
+            lines.append(f"  Social History:          {mh.social_history}")
+        if mh.known_allergies:
+            lines.append(f"  Known Allergies (notes): {mh.known_allergies}")
     except Exception:
         pass
 
-    # Recent consultations
+    # ── 3. ACTIVE MEDICATIONS ─────────────────────────────────────────────
     try:
-        from apps.consultations.models import Consultation
-        consults = list(Consultation.objects.filter(patient=patient, is_deleted=False)
-                        .order_by('-consultation_date').select_related('department')[:6])
+        from apps.patients.models import PatientMedication
+        meds = PatientMedication.objects.filter(patient=patient, is_active=True)
+        if meds.exists():
+            lines.append("\n── CURRENT MEDICATIONS ──")
+            for m in meds:
+                parts = [m.drug_name]
+                if m.dose: parts.append(m.dose)
+                if m.frequency: parts.append(m.frequency)
+                if m.route: parts.append(m.route)
+                if m.indication: parts.append(f"for {m.indication}")
+                lines.append(f"  • {' — '.join(parts)}")
+    except Exception:
+        pass
+
+    # ── 4. PROBLEM LIST ───────────────────────────────────────────────────
+    try:
+        from apps.patients.models import PatientProblem
+        problems = PatientProblem.objects.filter(
+            patient=patient, status__in=['ACTIVE', 'CHRONIC', 'MONITORED']
+        ).order_by('status', '-created_at')
+        if problems.exists():
+            lines.append("\n── PROBLEM LIST ──")
+            for p in problems:
+                code = f" [{p.icd10_code}]" if p.icd10_code else ""
+                onset = f" (onset: {p.onset_date})" if p.onset_date else ""
+                lines.append(f"  • [{p.get_status_display()}] {p.problem}{code}{onset}")
+                if p.notes:
+                    lines.append(f"    Notes: {p.notes[:150]}")
+    except Exception:
+        pass
+
+    # ── 5. CONSULTATIONS (full clinical detail) ───────────────────────────
+    try:
+        from apps.consultations.models import Consultation, ConsultationDiagnosis
+        consults = list(
+            Consultation.objects.filter(patient=patient, is_deleted=False)
+            .order_by('-consultation_date')
+            .select_related('department', 'consulting_doctor')
+            .prefetch_related('consultation_diagnoses__diagnosis',
+                              'drug_prescriptions__items',
+                              'optical_prescriptions',
+                              'lab_orders__items__result',
+                              'investigation_orders__result')[:12]
+        )
         if consults:
-            lines.append("\nCONSULTATIONS:")
+            lines.append("\n── CONSULTATION RECORDS ──")
             for c in consults:
                 dept = c.department.name if c.department else 'Unknown'
-                lines.append(f"  [{c.consultation_date.strftime('%d %b %Y')} — {dept}]")
+                doc = c.consulting_doctor.get_full_name() if c.consulting_doctor else 'Unknown'
+                lines.append(f"\n  [{c.consultation_date.strftime('%d %b %Y %H:%M')}] {dept} — Dr. {doc} ({c.get_status_display()})")
+
                 if c.presenting_complaint:
-                    lines.append(f"    Complaint: {c.presenting_complaint[:200]}")
-                if c.primary_diagnosis:
-                    lines.append(f"    Diagnosis: {c.primary_diagnosis}")
+                    lines.append(f"    Complaint:    {c.presenting_complaint}")
+                if c.history_of_presenting_complaint:
+                    lines.append(f"    HPC:          {c.history_of_presenting_complaint[:300]}")
+                if c.ocular_history:
+                    lines.append(f"    Ocular Hx:    {c.ocular_history[:200]}")
+                if c.systemic_history:
+                    lines.append(f"    Systemic Hx:  {c.systemic_history[:200]}")
+                if c.drug_history:
+                    lines.append(f"    Drug Hx:      {c.drug_history[:200]}")
+                if c.family_history:
+                    lines.append(f"    Family Hx:    {c.family_history[:150]}")
+
+                # Vital signs from this visit
+                try:
+                    vs = c.visit.vital_signs if c.visit else None
+                    if vs:
+                        va_r = getattr(vs, 'visual_acuity_right', None) or vs.get('visual_acuity_right', '') if isinstance(vs, dict) else getattr(vs, 'visual_acuity_right', '')
+                        va_l = getattr(vs, 'visual_acuity_left', None) or vs.get('visual_acuity_left', '') if isinstance(vs, dict) else getattr(vs, 'visual_acuity_left', '')
+                        iop_r = getattr(vs, 'intraocular_pressure_right', None) or vs.get('intraocular_pressure_right', '') if isinstance(vs, dict) else getattr(vs, 'intraocular_pressure_right', '')
+                        iop_l = getattr(vs, 'intraocular_pressure_left', None) or vs.get('intraocular_pressure_left', '') if isinstance(vs, dict) else getattr(vs, 'intraocular_pressure_left', '')
+                        if any([va_r, va_l, iop_r, iop_l]):
+                            lines.append(f"    VA:  OD {va_r or 'N/R'}  |  OS {va_l or 'N/R'}")
+                            lines.append(f"    IOP: OD {iop_r or 'N/R'} mmHg  |  OS {iop_l or 'N/R'} mmHg")
+                except Exception:
+                    pass
+
+                # Department-specific exam data (JSON)
+                try:
+                    dd = c.department_specific_data
+                    if dd and isinstance(dd, dict):
+                        exam_lines = []
+                        for key, val in dd.items():
+                            if val and str(val).strip() and str(val) not in ('None', '{}', '[]', ''):
+                                label = key.replace('_', ' ').title()
+                                exam_lines.append(f"      {label}: {val}")
+                        if exam_lines:
+                            lines.append("    Examination Findings:")
+                            lines.extend(exam_lines[:20])  # cap at 20 fields
+                except Exception:
+                    pass
+
+                # Diagnoses
+                try:
+                    diags = c.consultation_diagnoses.all()
+                    if diags:
+                        diag_strs = []
+                        for cd in diags:
+                            lat = f" ({cd.get_laterality_display()})" if cd.laterality and cd.laterality != 'BILATERAL' else ""
+                            pri = " [PRIMARY]" if cd.is_primary else ""
+                            diag_strs.append(f"{cd.diagnosis.icd10_code} {cd.diagnosis.description}{lat}{pri}")
+                        lines.append(f"    Diagnoses:    {' | '.join(diag_strs)}")
+                except Exception:
+                    pass
+
                 if c.management_plan:
-                    lines.append(f"    Plan: {c.management_plan[:200]}")
+                    lines.append(f"    Plan:         {c.management_plan[:300]}")
+                if c.follow_up_date:
+                    lines.append(f"    Follow-up:    {c.follow_up_date.strftime('%d %b %Y')}"
+                                 + (f" — {c.follow_up_instructions[:100]}" if c.follow_up_instructions else ""))
+
+                # Lab orders & results for this consultation
+                try:
+                    for lab in c.lab_orders.all():
+                        items_info = []
+                        for item in lab.items.all():
+                            test_name = item.test_type.name
+                            try:
+                                r = item.result
+                                flag = ' ⚠CRITICAL' if r.is_critical else (' ↑↓ABNORMAL' if r.is_abnormal else ' ✓NORMAL')
+                                items_info.append(f"{test_name}: {r.result_value} {r.result_unit} (ref: {r.reference_range}){flag}")
+                            except Exception:
+                                items_info.append(f"{test_name}: pending")
+                        if items_info:
+                            lines.append(f"    Lab ({lab.get_status_display()}): {' | '.join(items_info)}")
+                except Exception:
+                    pass
+
+                # Investigation results
+                try:
+                    for inv in c.investigation_orders.all():
+                        inv_name = inv.investigation_type.name if inv.investigation_type else 'Investigation'
+                        try:
+                            res = inv.result
+                            lines.append(f"    Investigation — {inv_name}: {getattr(res, 'findings', '') or getattr(res, 'result_summary', '') or 'Result recorded'}")
+                        except Exception:
+                            lines.append(f"    Investigation — {inv_name}: {inv.get_status_display()}")
+                except Exception:
+                    pass
+
     except Exception:
         pass
 
-    # Drug prescriptions
+    # ── 6. OPTICAL PRESCRIPTIONS ──────────────────────────────────────────
+    try:
+        from apps.prescriptions.models import OpticalPrescription
+        rxs = OpticalPrescription.objects.filter(
+            patient=patient, is_deleted=False
+        ).order_by('-prescription_date')[:8]
+        if rxs.exists():
+            lines.append("\n── OPTICAL PRESCRIPTIONS ──")
+            for rx in rxs:
+                lines.append(f"  [{rx.prescription_date.strftime('%d %b %Y')}] {rx.get_prescription_type_display()}"
+                             + (" — Dispensed" if rx.is_dispensed else ""))
+                def _sph(v):
+                    if v is None: return 'Plano'
+                    return f"+{v:.2f}" if v > 0 else f"{v:.2f}"
+                lines.append(f"    OD: Sph {_sph(rx.re_sphere)}  Cyl {rx.re_cylinder or '—'}  "
+                             f"Ax {rx.re_axis or '—'}  Add {'+'+str(rx.re_add) if rx.re_add else '—'}  VA {rx.re_visual_acuity or '—'}")
+                lines.append(f"    OS: Sph {_sph(rx.le_sphere)}  Cyl {rx.le_cylinder or '—'}  "
+                             f"Ax {rx.le_axis or '—'}  Add {'+'+str(rx.le_add) if rx.le_add else '—'}  VA {rx.le_visual_acuity or '—'}")
+                if rx.lens_type:
+                    lines.append(f"    Lens: {rx.lens_type}"
+                                 + (f"  IPD: {rx.interpupillary_distance}mm" if rx.interpupillary_distance else ""))
+    except Exception:
+        pass
+
+    # ── 7. DRUG PRESCRIPTIONS (with full dosage) ──────────────────────────
     try:
         from apps.prescriptions.models import DrugPrescription, DrugPrescriptionItem
-        rxs = list(DrugPrescription.objects.filter(patient=patient, is_deleted=False)
-                   .order_by('-created_at')[:4])
-        if rxs:
-            lines.append("\nDRUG PRESCRIPTIONS:")
+        rxs = DrugPrescription.objects.filter(
+            patient=patient, is_deleted=False
+        ).order_by('-created_at')[:8]
+        if rxs.exists():
+            lines.append("\n── DRUG PRESCRIPTIONS ──")
             for rx in rxs:
-                items = list(DrugPrescriptionItem.objects.filter(prescription=rx)
-                             .values_list('drug_name', flat=True))
-                lines.append(f"  {rx.created_at.strftime('%d %b %Y')}: {', '.join(items) or 'No items'}")
+                doc = rx.prescribed_by.get_full_name() if getattr(rx, 'prescribed_by', None) else ''
+                lines.append(f"  [{rx.created_at.strftime('%d %b %Y')}]{' — Dr. ' + doc if doc else ''}")
+                for item in DrugPrescriptionItem.objects.filter(prescription=rx):
+                    parts = [f"• {item.drug_name}"]
+                    if item.dosage: parts.append(item.dosage)
+                    if item.frequency: parts.append(item.frequency)
+                    if item.duration: parts.append(f"× {item.duration}")
+                    if getattr(item, 'route', None): parts.append(item.route)
+                    if getattr(item, 'instructions', None): parts.append(item.instructions)
+                    lines.append(f"    {' — '.join(parts)}")
     except Exception:
         pass
 
+    lines.append("\n" + "=" * 60)
+    lines.append("END OF PATIENT RECORD")
+    lines.append("=" * 60)
     return "\n".join(lines)
 
 
