@@ -106,10 +106,11 @@ def _get_json_fn():
 
 def build_patient_context(patient):
     """Compile a patient's full chart into a text context block for the AI."""
+    phone = getattr(patient, 'phone_number', None) or getattr(patient, 'phone', None) or 'N/A'
     lines = [
         f"PATIENT: {patient.full_name}",
         f"ID: {patient.patient_id} | DOB: {patient.date_of_birth} | Age: {patient.age} | Gender: {patient.get_gender_display()}",
-        f"Phone: {patient.phone or 'N/A'}",
+        f"Phone: {phone}",
     ]
     if getattr(patient, 'region', None):
         lines.append(f"Region: {patient.region}")

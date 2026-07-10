@@ -555,13 +555,17 @@ def patient_chat_view(request, patient_id):
     if not question:
         return JsonResponse({'error': 'Empty question'}, status=400)
 
-    from apps.patients.models import Patient
-    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
-    context = build_patient_context(patient)
-    result  = patient_chat_response(context, history, question)
-    if result.get('success'):
-        return JsonResponse({'success': True, 'answer': result['text']})
-    return JsonResponse({'success': False, 'error': result.get('error', 'AI unavailable')}, status=500)
+    try:
+        from apps.patients.models import Patient
+        patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+        context = build_patient_context(patient)
+        result  = patient_chat_response(context, history, question)
+        if result.get('success'):
+            return JsonResponse({'success': True, 'answer': result['text']})
+        return JsonResponse({'success': False, 'error': result.get('error', 'AI unavailable')})
+    except Exception as e:
+        logger.error(f'patient_chat_view error: {e}', exc_info=True)
+        return JsonResponse({'success': False, 'error': f'Server error: {e}'})
 
 
 @login_required
