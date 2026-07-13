@@ -306,7 +306,32 @@
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label small fw-medium">Cell Phone Number *</label>
-              {% render_field form.phone_number class="form-control" placeholder="e.g. 6XXXXXXXX" %}
+              <div class="input-group">
+                <select name="phone_country_code" id="id_phone_country_code" class="form-select" style="max-width:130px;" onchange="syncPhoneCode()">
+                  <option value="+237" selected>🇨🇲 +237</option>
+                  <option value="+234">🇳🇬 +234</option>
+                  <option value="+235">🇹🇩 +235</option>
+                  <option value="+236">🇨🇫 +236</option>
+                  <option value="+242">🇨🇬 +242</option>
+                  <option value="+243">🇨🇩 +243</option>
+                  <option value="+241">🇬🇦 +241</option>
+                  <option value="+240">🇬🇶 +240</option>
+                  <option value="+233">🇬🇭 +233</option>
+                  <option value="+221">🇸🇳 +221</option>
+                  <option value="+225">🇨🇮 +225</option>
+                  <option value="+254">🇰🇪 +254</option>
+                  <option value="+256">🇺🇬 +256</option>
+                  <option value="+27">🇿🇦 +27</option>
+                  <option value="+33">🇫🇷 +33</option>
+                  <option value="+44">🇬🇧 +44</option>
+                  <option value="+49">🇩🇪 +49</option>
+                  <option value="+1">🇺🇸 +1</option>
+                  <option value="+86">🇨🇳 +86</option>
+                  <option value="+91">🇮🇳 +91</option>
+                  <option value="+961">🇱🇧 +961</option>
+                </select>
+                {% render_field form.phone_number class="form-control" placeholder="6XXXXXXXX" %}
+              </div>
               {% if form.phone_number.errors %}<div class="text-danger small mt-1">{{ form.phone_number.errors.0 }}</div>{% endif %}
               <div class="form-check mt-2">
                 <input class="form-check-input" type="checkbox" name="phone_is_whatsapp" id="id_phone_is_whatsapp"
@@ -438,42 +463,6 @@
         </div>
       </div>
 
-      <!-- NATURE OF CONSULTATION -->
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-white border-bottom py-3">
-          <h6 class="fw-bold mb-0"><i class="bi bi-clipboard2-pulse me-2 text-info"></i>Nature of Consultation</h6>
-        </div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Consultation Type *</label>
-              <select name="service_tier" class="form-select" id="id_service_tier" onchange="onTierChange(this.value)">
-                <option value="STANDARD"   {% if init_service_tier == 'STANDARD'   or not init_service_tier %}selected{% endif %}>Standard</option>
-                <option value="FAST_TRACK" {% if init_service_tier == 'FAST_TRACK' %}selected{% endif %}>Fast Track</option>
-                <option value="VIP"        {% if init_service_tier == 'VIP'        %}selected{% endif %}>VIP</option>
-                <option value="EXPRESS"    {% if init_service_tier == 'EXPRESS'    %}selected{% endif %}>Express</option>
-              </select>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small fw-medium">Payment / Billing Type *</label>
-              <select name="billing_type" class="form-select" id="id_billing_type" onchange="onBillingChange(this.value)">
-                <option value="SELF_PAY"  {% if init_billing_type == 'SELF_PAY'  or not init_billing_type %}selected{% endif %}>Self Pay (Cash / Card)</option>
-                <option value="HMO"       {% if init_billing_type == 'HMO'       %}selected{% endif %}>HMO / Managed Care (Insured)</option>
-                <option value="INSURANCE" {% if init_billing_type == 'INSURANCE' %}selected{% endif %}>Insurance Company (Insured)</option>
-                <option value="WAIVER"    {% if init_billing_type == 'WAIVER'    %}selected{% endif %}>Waiver / Exempt</option>
-                <option value="FREE"      {% if init_billing_type == 'FREE'      %}selected{% endif %}>Free / Subsidised</option>
-              </select>
-            </div>
-            <div class="col-12" id="insurance_row" style="display:none;">
-              <label class="form-label small fw-medium">Insurance Company / HMO Name</label>
-              <input type="text" name="insurance_company" class="form-control"
-                     placeholder="e.g. CNPS, Activa, Sanlam"
-                     value="{{ init_insurance_company }}">
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- VISIT QUESTIONS -->
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white border-bottom py-3">
@@ -482,50 +471,43 @@
         <div class="card-body">
           <div class="row g-3">
 
+            <!-- Referral — cascading questions -->
             <div class="col-12">
-              <label class="form-label small fw-medium">Have you ever registered or consulted at this hospital? *</label>
-              <div class="d-flex gap-4 mt-1">
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="previously_registered"
-                         id="prev_yes" value="true"
-                         {% if init_prev_registered == 'true' %}checked{% endif %}>
-                  <label class="form-check-label fw-medium" for="prev_yes">Yes</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="previously_registered"
-                         id="prev_no" value="false"
-                         {% if init_prev_registered != 'true' %}checked{% endif %}>
-                  <label class="form-check-label fw-medium" for="prev_no">No</label>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-12 mt-2">
-              <label class="form-label small fw-medium">Do you have a referral letter from another hospital or doctor? *</label>
+              <label class="form-label small fw-medium">Does the patient have a referral letter from another hospital or doctor?</label>
               <div class="d-flex gap-4 mt-1">
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="has_referral_letter"
                          id="ref_yes" value="true"
                          {% if init_has_referral == 'true' %}checked{% endif %}
-                         onchange="document.getElementById('referral_upload').style.display='block'">
+                         onchange="showReferralDetails(true)">
                   <label class="form-check-label fw-medium" for="ref_yes">Yes</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="has_referral_letter"
                          id="ref_no" value="false"
                          {% if init_has_referral != 'true' %}checked{% endif %}
-                         onchange="document.getElementById('referral_upload').style.display='none'">
+                         onchange="showReferralDetails(false)">
                   <label class="form-check-label fw-medium" for="ref_no">No</label>
                 </div>
               </div>
             </div>
 
-            <div class="col-12" id="referral_upload"
-                 style="display:{% if init_has_referral == 'true' %}block{% else %}none{% endif %};">
-              <label class="form-label small fw-medium">Upload Referral Letter (scan / photo)</label>
-              <input type="file" name="referral_document" class="form-control"
-                     accept=".pdf,.jpg,.jpeg,.png">
-              <div class="form-text">Accepted: PDF, JPG, PNG. Max 5 MB.</div>
+            <div id="referral_details" style="display:{% if init_has_referral == 'true' %}block{% else %}none{% endif %};" class="col-12">
+              <div class="border rounded p-3 bg-light">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label small fw-medium">Referring Hospital / Doctor Name</label>
+                    <input type="text" name="referral_hospital" class="form-control"
+                           placeholder="e.g. Hôpital Central de Yaoundé">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label small fw-medium">Upload Referral Letter <span class="text-muted fw-normal">(scan / photo)</span></label>
+                    <input type="file" name="referral_document" class="form-control"
+                           accept=".pdf,.jpg,.jpeg,.png">
+                    <div class="form-text">PDF, JPG or PNG. Max 5 MB. Attached to patient file.</div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div class="col-12 mt-2">
@@ -535,6 +517,92 @@
             </div>
 
           </div>
+        </div>
+      </div>
+
+      <!-- MEDICAL INTAKE ASSESSMENT -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-heart-pulse me-2 text-danger"></i>Medical Intake Assessment <span class="badge bg-secondary fw-normal ms-2">Filled by Receptionist</span></h6>
+        </div>
+        <div class="card-body">
+
+          <!-- Eye Complaints -->
+          <p class="small fw-semibold text-muted mb-2">Eye Complaints <span class="fw-normal">(tick all that apply)</span></p>
+          <div class="row g-2 mb-4">
+            {% for complaint in "Blurred vision,Eye pain,Red eye,Foreign body sensation,Watery / tearing eyes,Itching,Double vision (diplopia),Light sensitivity,Floaters or flashes,Sudden vision loss,Discharge from eye,Swollen eyelids" %}
+            <div class="col-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="intake_eye_complaints"
+                       id="ec_{{ forloop.counter }}" value="{{ complaint }}">
+                <label class="form-check-label small" for="ec_{{ forloop.counter }}">{{ complaint }}</label>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Allergy Section -->
+          <p class="small fw-semibold text-muted mb-2">Known Allergies</p>
+          <div class="row g-3 mb-4">
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="intake_nkda" id="id_nkda" value="1"
+                       onchange="document.getElementById('allergy_details_wrap').style.display=this.checked?'none':'block'">
+                <label class="form-check-label fw-medium" for="id_nkda">NKDA — No Known Drug Allergies</label>
+              </div>
+            </div>
+            <div id="allergy_details_wrap" class="col-12">
+              <div class="row g-2">
+                <div class="col-md-4">
+                  <label class="form-label small">Drug Allergy</label>
+                  <input type="text" name="intake_drug_allergy" class="form-control form-control-sm" placeholder="e.g. Penicillin, Aspirin">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Food Allergy</label>
+                  <input type="text" name="intake_food_allergy" class="form-control form-control-sm" placeholder="e.g. Nuts, Shellfish">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Environmental Allergy</label>
+                  <input type="text" name="intake_env_allergy" class="form-control form-control-sm" placeholder="e.g. Dust, Pollen">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Disability -->
+          <p class="small fw-semibold text-muted mb-2">Disability Status <span class="fw-normal">(tick all that apply)</span></p>
+          <div class="row g-2 mb-4">
+            {% for disability in "None,Visual impairment,Physical disability,Hearing impairment,Speech impairment,Cognitive / intellectual disability,Albinism,Other" %}
+            <div class="col-6 col-md-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="intake_disability"
+                       id="dis_{{ forloop.counter }}" value="{{ disability }}">
+                <label class="form-check-label small" for="dis_{{ forloop.counter }}">{{ disability }}</label>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Medical Flags -->
+          <p class="small fw-semibold text-muted mb-2">Known Medical Conditions <span class="fw-normal">(tick all patient confirms)</span></p>
+          <div class="row g-2">
+            {% for condition in "Diabetes Mellitus,Hypertension,Asthma,Sickle Cell Disease,HIV / AIDS,Heart Disease,Kidney Disease,Thyroid Disorder,Epilepsy,Glaucoma (known),Cataract (known),Other systemic condition" %}
+            <div class="col-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="intake_medical_flags"
+                       id="mf_{{ forloop.counter }}" value="{{ condition }}">
+                <label class="form-check-label small" for="mf_{{ forloop.counter }}">{{ condition }}</label>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+
         </div>
       </div>
 
@@ -574,13 +642,6 @@
         </div>
       </div>
 
-      <!-- Tier badge -->
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body text-center py-3">
-          <div class="small text-muted mb-1">Consultation Type Selected</div>
-          <span id="tier_badge" class="badge fs-6 px-4 py-2 bg-secondary">Standard</span>
-        </div>
-      </div>
 
       <!-- Duplicate patient warning panel (shown by JS when a match is found) -->
       <div id="duplicateWarning" class="alert alert-warning border-start border-4 border-warning mb-3" style="display:none;">
@@ -633,23 +694,21 @@ function calcAge() {
 document.getElementById('id_dob')?.addEventListener('change', calcAge);
 calcAge();
 
-// Tier badge colours
-const TIER_LABELS = {STANDARD:'Standard', FAST_TRACK:'Fast Track', VIP:'VIP', EXPRESS:'Express'};
-const TIER_COLORS = {STANDARD:'bg-secondary', FAST_TRACK:'bg-warning text-dark', VIP:'bg-dark', EXPRESS:'bg-primary'};
-function onTierChange(val) {
-  const badge = document.getElementById('tier_badge');
-  if (!badge) return;
-  badge.textContent = TIER_LABELS[val] || val;
-  badge.className = 'badge fs-6 px-4 py-2 ' + (TIER_COLORS[val] || 'bg-secondary');
+// Referral cascade
+function showReferralDetails(show) {
+  const el = document.getElementById('referral_details');
+  if (el) el.style.display = show ? 'block' : 'none';
 }
-(function(){ const s = document.getElementById('id_service_tier'); if(s) onTierChange(s.value); })();
 
-// Show insurance field
-function onBillingChange(val) {
-  const row = document.getElementById('insurance_row');
-  if (row) row.style.display = (val === 'HMO' || val === 'INSURANCE') ? 'block' : 'none';
-}
-(function(){ const b = document.getElementById('id_billing_type'); if(b) onBillingChange(b.value); })();
+// Phone country code — combine on submit
+function syncPhoneCode() { /* code stored as separate POST field, view handles it */ }
+document.querySelector('form')?.addEventListener('submit', function() {
+  const codeEl = document.getElementById('id_phone_country_code');
+  const phoneEl = document.getElementById('id_phone_number');
+  if (codeEl && phoneEl && phoneEl.value && !phoneEl.value.startsWith('+')) {
+    phoneEl.value = codeEl.value + phoneEl.value;
+  }
+});
 
 // ── Nationality → Country auto-fill ──────────────────────────────────────────
 const NATIONALITY_COUNTRY = {
@@ -797,5 +856,74 @@ function updateDobComputed() {
   dobEl?.addEventListener('change', checkDuplicates);
   phoneEl?.addEventListener('blur', checkDuplicates);
 })();
+
+// ── Address auto-fill: Quarter → Town + Division / Town → Division ────────────
+const QUARTER_TOWN = {
+  // Yaoundé
+  'bastos':'Yaoundé','biyem-assi':'Yaoundé','essos':'Yaoundé','nlongkak':'Yaoundé',
+  'messa':'Yaoundé','omnisports':'Yaoundé','mvog-ada':'Yaoundé','tsinga':'Yaoundé',
+  'ekounou':'Yaoundé','nkoldongo':'Yaoundé','mendong':'Yaoundé','djoungolo':'Yaoundé',
+  'mfandena':'Yaoundé','efoulan':'Yaoundé','ngoa-ekelle':'Yaoundé','elig-essono':'Yaoundé',
+  'obili':'Yaoundé','mvog-beti':'Yaoundé','simbock':'Yaoundé','oliga':'Yaoundé',
+  'emana':'Yaoundé','tongolo':'Yaoundé','nkomo':'Yaoundé','mvan':'Yaoundé',
+  // Douala
+  'bonanjo':'Douala','akwa':'Douala','deido':'Douala','new bell':'Douala',
+  'bonapriso':'Douala','bepanda':'Douala','makepe':'Douala','ndog-bong':'Douala',
+  'ndokoti':'Douala','kotto':'Douala','logbaba':'Douala','bali':'Douala',
+  'bonaberi':'Douala','yassa':'Douala','nkongmondo':'Douala','pk8':'Douala',
+  // Bafoussam
+  'banengo':'Bafoussam','kamkop':'Bafoussam','tougang':'Bafoussam','tamdja':'Bafoussam',
+  // Bamenda
+  'nkwen':'Bamenda','up station':'Bamenda','mile 2':'Bamenda','mile 4':'Bamenda',
+  // Garoua
+  'plateau':'Garoua','yelwa':'Garoua',
+};
+
+const TOWN_DIVISION = {
+  'Yaoundé':'Mfoundi','Douala':'Wouri','Bafoussam':'Mifi','Bamenda':'Mezam',
+  'Garoua':'Bénoué','Maroua':'Diamaré','Ngaoundéré':'Vina','Bertoua':'Lom-et-Djérem',
+  'Ebolowa':'Mvila','Buea':'Fako','Limbe':'Fako','Kumba':'Meme','Tiko':'Fako',
+  'Kribi':'Océan','Edéa':'Sanaga-Maritime','Mbalmayo':"Nyong-et-So'o",
+  'Sangmélima':'Dja-et-Lobo','Bafang':'Haut-Nkam','Dschang':'Menoua',
+  'Mbouda':'Bamboutos','Foumban':'Noun','Nkongsamba':'Mungo','Mbanga':'Mungo',
+  'Loum':'Mungo','Kumbo':'Bui','Wum':'Menchum','Nkambe':'Donga-Mantung',
+  'Mamfe':'Manyu','Eseka':'Nyong-et-Kellé','Obala':'Lekié','Mfou':'Méfou-et-Afamba',
+  'Bafia':'Mbam-et-Inoubou','Ntui':'Mbam-et-Kim','Batouri':'Kadey',
+  'Abong-Mbang':'Haut-Nyong','Yokadouma':'Boumba-et-Ngoko','Meiganga':'Mbéré',
+  'Banyo':'Mayo-Banyo','Tibati':'Djerem','Guider':'Mayo-Louti',
+  'Kousseri':'Logone-et-Chari','Mora':'Mayo-Sava','Kaélé':'Mayo-Kani',
+  'Yagoua':'Mayo-Danay','Garoua-Boulai':'Lom-et-Djérem',
+};
+
+function onQuarterChange(val) {
+  const key = val.trim().toLowerCase();
+  const town = QUARTER_TOWN[key];
+  if (!town) return;
+  const townEl = document.getElementById('id_village_town');
+  if (townEl && !townEl.value) {
+    townEl.value = town;
+    onTownChange(town);
+  }
+}
+
+function onTownChange(val) {
+  const div = TOWN_DIVISION[val];
+  if (!div) return;
+  const divEl = document.getElementById('id_division');
+  if (divEl) {
+    // Try to match existing option
+    for (const opt of divEl.options) {
+      if (opt.value === div || opt.text === div) {
+        divEl.value = opt.value;
+        return;
+      }
+    }
+    // If not found as option (e.g. text input), set value directly
+    divEl.value = div;
+  }
+}
+
+document.getElementById('id_quarter')?.addEventListener('blur', function(){ onQuarterChange(this.value); });
+document.getElementById('id_village_town')?.addEventListener('blur', function(){ onTownChange(this.value); });
 </script>
 {% endblock %}

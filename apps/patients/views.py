@@ -118,10 +118,36 @@ def patient_register_view(request):
                         pass
             # ─────────────────────────────────────────────────────────────────
 
+            # Prepend country code to phone if present
+            _phone_code = request.POST.get('phone_country_code', '')
+            if _phone_code and patient.phone_number and not patient.phone_number.startswith('+'):
+                patient.phone_number = _phone_code + patient.phone_number
+
             patient.registered_by = request.user
             patient.created_by = request.user
             patient.save()
-            MedicalHistory.objects.create(patient=patient, created_by=request.user)
+
+            # ── Pre-populate MedicalHistory from intake assessment ────────────
+            _allergy_parts = []
+            if request.POST.get('intake_nkda'):
+                _allergy_parts.append('NKDA (No Known Drug Allergies)')
+            if request.POST.get('intake_drug_allergy', '').strip():
+                _allergy_parts.append('Drug: ' + request.POST['intake_drug_allergy'].strip())
+            if request.POST.get('intake_food_allergy', '').strip():
+                _allergy_parts.append('Food: ' + request.POST['intake_food_allergy'].strip())
+            if request.POST.get('intake_env_allergy', '').strip():
+                _allergy_parts.append('Environmental: ' + request.POST['intake_env_allergy'].strip())
+            _allergy_text = '; '.join(_allergy_parts)
+            _med_flags = request.POST.getlist('intake_medical_flags')
+            _cond_text = ', '.join(_med_flags)
+            mh = MedicalHistory.objects.create(patient=patient, created_by=request.user)
+            if _allergy_text or _cond_text:
+                if _allergy_text:
+                    mh.known_allergies = _allergy_text
+                if _cond_text:
+                    mh.chronic_conditions = _cond_text
+                mh.save(update_fields=['known_allergies', 'chronic_conditions'])
+            # ─────────────────────────────────────────────────────────────────
             if nok_form.is_valid() and nok_form.cleaned_data.get('full_name'):
                 nok = nok_form.save(commit=False)
                 nok.patient = patient
@@ -138,11 +164,12 @@ def patient_register_view(request):
             visit_kwargs = dict(
                 patient=patient,
                 chief_complaint=request.POST.get('chief_complaint', ''),
-                service_tier=request.POST.get('service_tier', 'STANDARD'),
-                billing_type=request.POST.get('billing_type', 'SELF_PAY'),
-                insurance_company=request.POST.get('insurance_company', ''),
-                previously_registered=_parse_bool(request.POST.get('previously_registered')),
+                service_tier='STANDARD',
+                billing_type='SELF_PAY',
                 has_referral_letter=_parse_bool(request.POST.get('has_referral_letter')),
+                referral_hospital=request.POST.get('referral_hospital', ''),
+                intake_disability=','.join(request.POST.getlist('intake_disability')),
+                intake_eye_complaints=','.join(request.POST.getlist('intake_eye_complaints')),
                 patient_signature=request.POST.get('patient_signature', ''),
                 created_by=request.user,
             )

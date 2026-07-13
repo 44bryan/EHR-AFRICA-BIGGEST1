@@ -401,6 +401,22 @@ class Visit(AuditModel):
     discharge_date = models.DateTimeField(null=True, blank=True)
     discharge_notes = models.TextField(blank=True)
 
+    # ── Referral source ───────────────────────────────────────────────────────
+    referral_hospital = models.CharField(
+        max_length=150, blank=True,
+        help_text='Name of hospital or doctor that referred this patient'
+    )
+
+    # ── Reception intake assessment (filled by receptionist at registration) ──
+    intake_disability = models.CharField(
+        max_length=200, blank=True,
+        help_text='Disability status declared at intake (comma-separated)'
+    )
+    intake_eye_complaints = models.TextField(
+        blank=True,
+        help_text='Eye complaints ticked by receptionist at intake'
+    )
+
     # Registration card questions
     previously_registered = models.BooleanField(
         null=True, blank=True,
