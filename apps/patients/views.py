@@ -66,7 +66,16 @@ def patient_register_view(request):
     if request.method == 'POST':
         form = PatientRegistrationForm(request.POST, request.FILES)
         nok_form = NextOfKinForm(request.POST, prefix='nok')
-        if form.is_valid():
+        _dob_mode = request.POST.get('dob_mode', 'exact')
+        _dob_computed = request.POST.get('dob_computed', '').strip()
+        _form_valid = form.is_valid()
+        if _form_valid and _dob_mode == 'exact' and not form.cleaned_data.get('date_of_birth'):
+            form.add_error('date_of_birth', 'Please enter the date of birth, or choose an approximation mode.')
+            _form_valid = False
+        if _form_valid and _dob_mode != 'exact' and not _dob_computed:
+            messages.error(request, 'Please complete the date of birth section.')
+            _form_valid = False
+        if _form_valid:
             from django.db import transaction
             # ── Hard duplicate check — prevent double registration ────────────
             _data = form.cleaned_data
@@ -94,6 +103,21 @@ def patient_register_view(request):
                 })
             # ─────────────────────────────────────────────────────────────────
             patient = form.save(commit=False)
+
+            # ── Approximate DOB handling ──────────────────────────────────────
+            dob_mode = request.POST.get('dob_mode', 'exact')
+            if dob_mode != 'exact':
+                dob_computed = request.POST.get('dob_computed', '').strip()
+                if dob_computed:
+                    try:
+                        from datetime import date as _date
+                        y, m, d = map(int, dob_computed.split('-'))
+                        patient.date_of_birth = _date(y, m, d)
+                        patient.dob_is_approximate = True
+                    except (ValueError, TypeError):
+                        pass
+            # ─────────────────────────────────────────────────────────────────
+
             patient.registered_by = request.user
             patient.created_by = request.user
             patient.save()

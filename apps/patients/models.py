@@ -67,6 +67,16 @@ class Patient(AuditModel):
     region       = models.CharField(max_length=50,  blank=True, help_text='Region (e.g. Centre, Littoral)')
     country      = models.CharField(max_length=50,  default='Cameroon')
 
+    # ── Approximate DOB support ───────────────────────────────────────────────
+    dob_is_approximate = models.BooleanField(
+        default=False,
+        help_text='True when DOB was estimated from year, year+month, or age only'
+    )
+
+    # ── Additional contact / address fields ───────────────────────────────────
+    postal_code = models.CharField(max_length=10, blank=True, help_text='Zip / Postal code (optional)')
+    phone_is_whatsapp = models.BooleanField(default=False, help_text='Phone number is also a WhatsApp number')
+
     photo = models.ImageField(upload_to='patients/photos/', null=True, blank=True)
     registration_date = models.DateField(auto_now_add=True)
     registered_by = models.ForeignKey(
@@ -111,7 +121,8 @@ class Patient(AuditModel):
     @property
     def age_display(self):
         a = self.age
-        return f"{a} year{'s' if a != 1 else ''}"
+        prefix = '~' if self.dob_is_approximate else ''
+        return f"{prefix}{a} year{'s' if a != 1 else ''}"
 
     def get_absolute_url(self):
         from django.urls import reverse

@@ -23,36 +23,42 @@ class PatientRegistrationForm(forms.ModelForm):
         choices=CAMEROON_REGIONS, required=False,
         widget=forms.Select(attrs={'class': 'form-select'})
     )
+    # date_of_birth not required at form level — view handles approximate modes
+    date_of_birth = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+    )
 
     class Meta:
         model = Patient
         fields = [
             'first_name', 'middle_name', 'last_name',
             'date_of_birth', 'gender', 'marital_status',
-            'phone_number', 'email',
-            'post_address', 'quarter', 'village_town', 'division', 'region', 'country',
+            'phone_number', 'phone_is_whatsapp', 'email',
+            'post_address', 'postal_code', 'quarter', 'village_town', 'division', 'region', 'country',
             'nationality', 'occupation', 'religion',
             'blood_group', 'genotype', 'photo',
         ]
         widgets = {
-            'first_name':    forms.TextInput(attrs={'class': 'form-control'}),
-            'middle_name':   forms.TextInput(attrs={'class': 'form-control'}),
-            'last_name':     forms.TextInput(attrs={'class': 'form-control'}),
-            'date_of_birth': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'gender':        forms.Select(attrs={'class': 'form-select'}),
-            'marital_status':forms.Select(attrs={'class': 'form-select'}),
-            'phone_number':  forms.TextInput(attrs={'class': 'form-control', 'placeholder': '6XXXXXXXX'}),
-            'email':         forms.EmailInput(attrs={'class': 'form-control'}),
-            'post_address':  forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'P.O. Box (optional)'}),
-            'quarter':       forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Bastos, Biyem-Assi'}),
-            'village_town':  forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Yaoundé, Douala'}),
-            'division':      forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Mfoundi, Wouri'}),
-            'country':       forms.TextInput(attrs={'class': 'form-control'}),
-            'nationality':   forms.TextInput(attrs={'class': 'form-control'}),
-            'occupation':    forms.TextInput(attrs={'class': 'form-control'}),
-            'religion':      forms.TextInput(attrs={'class': 'form-control'}),
-            'blood_group':   forms.Select(attrs={'class': 'form-select'}),
-            'genotype':      forms.Select(attrs={'class': 'form-select'}),
+            'first_name':       forms.TextInput(attrs={'class': 'form-control'}),
+            'middle_name':      forms.TextInput(attrs={'class': 'form-control'}),
+            'last_name':        forms.TextInput(attrs={'class': 'form-control'}),
+            'gender':           forms.Select(attrs={'class': 'form-select'}),
+            'marital_status':   forms.Select(attrs={'class': 'form-select'}),
+            'phone_number':     forms.TextInput(attrs={'class': 'form-control', 'placeholder': '6XXXXXXXX'}),
+            'phone_is_whatsapp':forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'email':            forms.EmailInput(attrs={'class': 'form-control'}),
+            'post_address':     forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'P.O. Box (optional)'}),
+            'postal_code':      forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. 00237 (optional)'}),
+            'quarter':          forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Bastos, Biyem-Assi'}),
+            'village_town':     forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Yaoundé, Douala'}),
+            'division':         forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Mfoundi, Wouri'}),
+            'country':          forms.TextInput(attrs={'class': 'form-control'}),
+            'nationality':      forms.TextInput(attrs={'class': 'form-control'}),
+            'occupation':       forms.TextInput(attrs={'class': 'form-control'}),
+            'religion':         forms.TextInput(attrs={'class': 'form-control'}),
+            'blood_group':      forms.Select(attrs={'class': 'form-select'}),
+            'genotype':         forms.Select(attrs={'class': 'form-select'}),
         }
 
 

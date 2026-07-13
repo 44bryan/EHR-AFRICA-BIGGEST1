@@ -97,15 +97,69 @@
               {% render_field form.last_name class="form-control" placeholder="Last Name" %}
               {% if form.last_name.errors %}<div class="text-danger small mt-1">{{ form.last_name.errors.0 }}</div>{% endif %}
             </div>
-            <div class="col-md-4">
+            <!-- DOB — mode switcher -->
+            <div class="col-md-8">
               <label class="form-label small fw-medium">Date of Birth *</label>
-              {% render_field form.date_of_birth class="form-control" type="date" id="id_dob" %}
-              {% if form.date_of_birth.errors %}<div class="text-danger small mt-1">{{ form.date_of_birth.errors.0 }}</div>{% endif %}
+              <div class="d-flex flex-wrap gap-3 mb-2">
+                <div class="form-check form-check-inline mb-0">
+                  <input class="form-check-input" type="radio" name="dob_mode" id="dob_mode_exact" value="exact" checked onchange="switchDobMode(this.value)">
+                  <label class="form-check-label small fw-medium" for="dob_mode_exact">Exact Date</label>
+                </div>
+                <div class="form-check form-check-inline mb-0">
+                  <input class="form-check-input" type="radio" name="dob_mode" id="dob_mode_year" value="year_only" onchange="switchDobMode(this.value)">
+                  <label class="form-check-label small" for="dob_mode_year">Year Only</label>
+                </div>
+                <div class="form-check form-check-inline mb-0">
+                  <input class="form-check-input" type="radio" name="dob_mode" id="dob_mode_ym" value="year_month" onchange="switchDobMode(this.value)">
+                  <label class="form-check-label small" for="dob_mode_ym">Year + Month</label>
+                </div>
+                <div class="form-check form-check-inline mb-0">
+                  <input class="form-check-input" type="radio" name="dob_mode" id="dob_mode_age" value="age_only" onchange="switchDobMode(this.value)">
+                  <label class="form-check-label small" for="dob_mode_age">Age Only</label>
+                </div>
+              </div>
+              <!-- hidden field stores the computed approximate DOB -->
+              <input type="hidden" name="dob_computed" id="id_dob_computed">
+
+              <!-- Exact date panel -->
+              <div id="dob_exact_wrap">
+                {% render_field form.date_of_birth class="form-control" type="date" id="id_dob" %}
+                {% if form.date_of_birth.errors %}<div class="text-danger small mt-1">{{ form.date_of_birth.errors.0 }}</div>{% endif %}
+              </div>
+
+              <!-- Year only panel -->
+              <div id="dob_year_wrap" style="display:none;">
+                <input type="number" id="id_dob_year" class="form-control" placeholder="e.g. 1985" min="1900" max="2030" oninput="updateDobComputed()">
+                <div class="form-text text-warning mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Approximate — stored as 1 July of this year</div>
+              </div>
+
+              <!-- Year + Month panel -->
+              <div id="dob_ym_wrap" style="display:none;">
+                <div class="d-flex gap-2">
+                  <input type="number" id="id_dob_year_ym" class="form-control" placeholder="Year e.g. 1985" min="1900" max="2030" oninput="updateDobComputed()">
+                  <select id="id_dob_month" class="form-select" onchange="updateDobComputed()">
+                    <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                    <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                    <option value="7" selected>July</option><option value="8">August</option><option value="9">September</option>
+                    <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                  </select>
+                </div>
+                <div class="form-text text-warning mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Approximate — stored as the 15th of this month</div>
+              </div>
+
+              <!-- Age only panel -->
+              <div id="dob_age_wrap" style="display:none;">
+                <input type="number" id="id_dob_age" class="form-control" placeholder="Current age e.g. 35" min="0" max="120" oninput="updateDobComputed()">
+                <div class="form-text text-warning mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Approximate — stored as 1 January of estimated birth year</div>
+              </div>
             </div>
+
             <div class="col-md-4">
               <label class="form-label small fw-medium">Age</label>
-              <input type="text" id="age_display" class="form-control bg-light" readonly
-                     placeholder="Auto-calculated from Date of Birth">
+              <input type="text" id="age_display" class="form-control bg-light" readonly placeholder="Auto-calculated">
+              <div id="dob_approx_badge" style="display:none;" class="mt-1">
+                <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Approximate DOB</span>
+              </div>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-medium">Gender *</label>
@@ -228,10 +282,12 @@
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-medium">Country</label>
-              <input type="text" name="country" id="id_country" class="form-control"
+              <input type="text" name="country" id="id_country" class="form-control bg-light"
                      placeholder="Auto-filled from nationality"
-                     value="{{ form.country.value|default:'Cameroon' }}">
-              <div class="form-text" style="font-size:.72rem;">Auto-fills when nationality is selected</div>
+                     value="{{ form.country.value|default:'Cameroon' }}" readonly>
+              <div class="form-text" style="font-size:.72rem;">
+                <i class="bi bi-lock-fill me-1 text-secondary"></i>Auto-filled from nationality — <a href="#" onclick="document.getElementById('id_country').readOnly=false;document.getElementById('id_country').classList.remove('bg-light');this.parentElement.innerHTML='';return false;" class="text-muted">unlock to edit</a>
+              </div>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-medium">Occupation</label>
@@ -252,6 +308,13 @@
               <label class="form-label small fw-medium">Cell Phone Number *</label>
               {% render_field form.phone_number class="form-control" placeholder="e.g. 6XXXXXXXX" %}
               {% if form.phone_number.errors %}<div class="text-danger small mt-1">{{ form.phone_number.errors.0 }}</div>{% endif %}
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="phone_is_whatsapp" id="id_phone_is_whatsapp"
+                       value="on" {% if form.phone_is_whatsapp.value %}checked{% endif %}>
+                <label class="form-check-label small" for="id_phone_is_whatsapp">
+                  <i class="bi bi-whatsapp text-success me-1"></i>This number is on WhatsApp
+                </label>
+              </div>
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-medium">Email Address</label>
@@ -361,6 +424,15 @@
                 </optgroup>
                 <option value="Outside Cameroon">Outside Cameroon</option>
               </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">P.O. Box / Postal Address</label>
+              {% render_field form.post_address class="form-control" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-medium">Postal / Zip Code <span class="text-muted fw-normal">(optional)</span></label>
+              {% render_field form.postal_code class="form-control" placeholder="e.g. BP 1234 or leave blank" %}
+              <div class="form-text">Most patients in Cameroon don't use zip codes — leave blank if unsure.</div>
             </div>
           </div>
         </div>
@@ -611,12 +683,64 @@ const NATIONALITY_COUNTRY = {
 };
 function onNationalityChange(val) {
   const countryInput = document.getElementById('id_country');
-  if (countryInput && val && NATIONALITY_COUNTRY[val]) {
+  if (!countryInput) return;
+  if (val && NATIONALITY_COUNTRY[val]) {
     countryInput.value = NATIONALITY_COUNTRY[val];
+    countryInput.readOnly = true;
+    countryInput.classList.add('bg-light');
   }
 }
 // Trigger on page load to sync existing value
 (function(){ const s = document.getElementById('id_nationality'); if(s && s.value) onNationalityChange(s.value); })();
+
+// ── Approximate DOB mode switcher ─────────────────────────────────────────────
+function switchDobMode(mode) {
+  document.getElementById('dob_exact_wrap').style.display = mode === 'exact'      ? '' : 'none';
+  document.getElementById('dob_year_wrap').style.display  = mode === 'year_only'  ? '' : 'none';
+  document.getElementById('dob_ym_wrap').style.display    = mode === 'year_month' ? '' : 'none';
+  document.getElementById('dob_age_wrap').style.display   = mode === 'age_only'   ? '' : 'none';
+  const badge = document.getElementById('dob_approx_badge');
+  if (badge) badge.style.display = mode !== 'exact' ? '' : 'none';
+  updateDobComputed();
+}
+
+function updateDobComputed() {
+  const mode = (document.querySelector('input[name="dob_mode"]:checked') || {}).value || 'exact';
+  const computed = document.getElementById('id_dob_computed');
+  const display  = document.getElementById('age_display');
+  if (!computed) return;
+
+  const today = new Date();
+  if (mode === 'exact') {
+    computed.value = '';
+    calcAge();
+    return;
+  }
+
+  let yr, mo, age, approxDate;
+  if (mode === 'year_only') {
+    yr = parseInt((document.getElementById('id_dob_year') || {}).value || 0);
+    if (!yr) { computed.value = ''; if(display) display.value = ''; return; }
+    approxDate = yr + '-07-01';
+    age = today.getFullYear() - yr;
+    if (today.getMonth() < 6) age--;  // before July
+  } else if (mode === 'year_month') {
+    yr = parseInt((document.getElementById('id_dob_year_ym') || {}).value || 0);
+    mo = parseInt((document.getElementById('id_dob_month') || {}).value || 7);
+    if (!yr) { computed.value = ''; if(display) display.value = ''; return; }
+    approxDate = yr + '-' + String(mo).padStart(2,'0') + '-15';
+    age = today.getFullYear() - yr;
+    if (today.getMonth() + 1 < mo) age--;
+  } else if (mode === 'age_only') {
+    age = parseInt((document.getElementById('id_dob_age') || {}).value || 0);
+    if (!age) { computed.value = ''; if(display) display.value = ''; return; }
+    yr = today.getFullYear() - age;
+    approxDate = yr + '-01-01';
+  }
+
+  computed.value = approxDate || '';
+  if (display && age >= 0) display.value = '~' + age + ' year' + (age !== 1 ? 's' : '') + ' (approx.)';
+}
 
 // ── Duplicate patient detection ──────────────────────────────────────────────
 (function() {
