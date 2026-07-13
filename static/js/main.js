@@ -182,8 +182,9 @@ function ehrInit() {
 
 
   /* ── Global Tooltips (non-sidebar) ───────────────────────── */
+  // getOrCreateInstance prevents duplicate tooltip instances on HTMX swaps (tablet lag fix)
   document.querySelectorAll('[data-bs-toggle="tooltip"]:not(#sidebar *)').forEach(el => {
-    new bootstrap.Tooltip(el);
+    bootstrap.Tooltip.getOrCreateInstance(el);
   });
 
 
