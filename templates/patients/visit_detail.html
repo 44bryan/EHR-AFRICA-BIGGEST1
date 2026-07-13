@@ -199,7 +199,67 @@ function loadQueueStatus(patientId) {
       <div class="col-md-3"><span class="text-muted">Full Name</span><br><strong>{{ patient.full_name }}</strong></div>
       <div class="col-md-3"><span class="text-muted">Age / Gender</span><br><strong>{{ patient.age_display }} / {{ patient.get_gender_display }}</strong></div>
       <div class="col-md-3"><span class="text-muted">Blood Group</span><br><strong>{{ patient.blood_group }} / {{ patient.genotype }}</strong></div>
+      {% if patient.phone_number %}
+      <div class="col-md-3"><span class="text-muted">Phone</span><br><strong>{{ patient.phone_number }}{% if patient.phone_is_whatsapp %} <i class="bi bi-whatsapp text-success ms-1"></i>{% endif %}</strong></div>
+      {% endif %}
+      {% if patient.dob_is_approximate %}
+      <div class="col-md-3"><span class="text-muted">Date of Birth</span><br><strong>{{ patient.date_of_birth|date:"d M Y" }} <span class="badge bg-warning text-dark ms-1" style="font-size:.6rem;">Approximate</span></strong></div>
+      {% endif %}
+      {% if visit.referral_hospital %}
+      <div class="col-md-6"><span class="text-muted">Referred From</span><br><strong><i class="bi bi-hospital me-1 text-info"></i>{{ visit.referral_hospital }}</strong></div>
+      {% endif %}
     </div>
+
+    {# ── Intake Assessment (filled by receptionist at registration) ── #}
+    {% if visit.intake_eye_complaints or visit.intake_disability or visit.chief_complaint %}
+    <hr class="my-2">
+    <div class="fw-semibold mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;">
+      <i class="bi bi-clipboard2-pulse me-1 text-danger"></i>Receptionist Intake Assessment
+    </div>
+    <div class="row g-2">
+      {% if visit.chief_complaint %}
+      <div class="col-md-12">
+        <span class="text-muted">Chief Complaint / Reason for Visit</span><br>
+        <strong>{{ visit.chief_complaint }}</strong>
+      </div>
+      {% endif %}
+      {% if visit.intake_eye_complaints %}
+      <div class="col-md-12">
+        <span class="text-muted">Eye Complaints (ticked at intake)</span><br>
+        <div class="d-flex flex-wrap gap-1 mt-1">
+          {% for complaint in visit.intake_eye_complaints|split:"," %}
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:.72rem;">{{ complaint|striptags }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if visit.intake_disability %}
+      <div class="col-md-6">
+        <span class="text-muted">Disability Declaration</span><br>
+        <div class="d-flex flex-wrap gap-1 mt-1">
+          {% for d in visit.intake_disability|split:"," %}
+          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size:.72rem;">{{ d }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Patient Consent Signature ── #}
+    {% if visit.patient_signature %}
+    <hr class="my-2">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div>
+        <div class="fw-semibold mb-1" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;">
+          <i class="bi bi-pen me-1 text-primary"></i>Patient Consent Signature
+        </div>
+        <img src="{{ visit.patient_signature }}" alt="Patient signature"
+             style="max-height:60px;max-width:220px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;padding:4px;">
+        <div class="text-muted mt-1" style="font-size:.65rem;">Signed at registration — {{ visit.created_at|date:"d M Y, H:i" }}</div>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 
