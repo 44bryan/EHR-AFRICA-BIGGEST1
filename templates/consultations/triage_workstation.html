@@ -9,6 +9,14 @@
   #triageSearchResults .t-item:hover { background:#fff5f5; }
   #triageSearchResults .t-avatar { width:38px;height:38px;border-radius:50%;background:#dc3545;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0; }
   #triageSearchBox { position:relative; }
+  /* Queue position badge */
+  .queue-pos { display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:50%;font-size:.75rem;font-weight:700;
+    flex-shrink:0; }
+  .queue-pos-1  { background:#198754;color:#fff; }   /* green — next up */
+  .queue-pos-gt { background:#dee2e6;color:#495057; } /* grey  — later */
+  /* Row highlight for next-up patient */
+  tr.is-next-up { background:#f0fff4 !important; }
 </style>
 {% endblock %}
 
@@ -68,6 +76,38 @@
                  placeholder="Type patient name, ID or phone…" autocomplete="off">
           <div id="triageSearchResults"></div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ══ Skip-Queue Reason Modal ══ #}
+<div class="modal fade" id="skipQueueModal" tabindex="-1" aria-labelledby="skipQueueModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-warning py-2">
+        <h6 class="modal-title fw-bold" id="skipQueueModalLabel">
+          <i class="bi bi-exclamation-triangle me-2"></i>Queue Skip — Reason Required
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          <strong id="skipPatientName">This patient</strong> is not next in queue.
+          <span id="skipAheadMsg"></span>
+          Please give an audit reason for skipping ahead.
+        </div>
+        <label class="form-label fw-semibold">Reason for skipping ahead <span class="text-danger">*</span></label>
+        <textarea id="skipReasonText" class="form-control" rows="3"
+                  placeholder="e.g. Patient's condition is urgent, patient requested priority, interpreter available now…"></textarea>
+        <div class="invalid-feedback" id="skipReasonError">Please enter a reason.</div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning btn-sm fw-bold" id="skipConfirmBtn">
+          <i class="bi bi-check2 me-1"></i>Record Reason &amp; Proceed
+        </button>
       </div>
     </div>
   </div>
@@ -179,19 +219,30 @@
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
         <tr>
+          <th style="width:36px;">#</th>
           <th>Token</th>
           <th>Patient</th>
           <th>Tier</th>
           <th>Waiting Since</th>
           <th>Chief Complaint</th>
-          <th>Visit Status</th>
+          {% if is_head_of_triage %}<th>Location</th>{% endif %}
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for tok in parameters_queue %}
-        <tr>
-          <td><span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span></td>
+        <tr class="{% if forloop.first %}is-next-up{% endif %}">
+          <td>
+            <span class="queue-pos {% if forloop.first %}queue-pos-1{% else %}queue-pos-gt{% endif %}">
+              {{ forloop.counter }}
+            </span>
+          </td>
+          <td>
+            <span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span>
+            {% if forloop.first %}
+              <div class="text-success" style="font-size:.65rem;font-weight:700;">NEXT UP</div>
+            {% endif %}
+          </td>
           <td class="fw-semibold">
             {{ tok.display_name }}
             {% if tok.patient %}
@@ -207,28 +258,31 @@
               <span class="badge bg-secondary">Standard</span>
             {% endif %}
           </td>
-          <td class="text-muted">
-            {{ tok.issued_at|time:"H:i" }}
-            {% now "H:i" as now_time %}
-          </td>
+          <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
           <td class="text-muted">
             {% if tok.ws_visit %}{{ tok.ws_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
           </td>
+          {% if is_head_of_triage %}
           <td>
             {% if tok.ws_visit %}
               <span class="badge bg-light text-dark border" style="font-size:.65rem;">
                 {{ tok.ws_visit.get_status_display }}
               </span>
             {% else %}
-              <span class="text-muted small">No visit</span>
+              <span class="text-muted small">—</span>
             {% endif %}
           </td>
+          {% endif %}
           <td>
             {% if tok.patient and tok.ws_visit %}
-            <a href="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}"
-               class="btn btn-sm btn-danger">
+            <button type="button"
+               class="btn btn-sm btn-danger triage-btn"
+               data-position="{{ forloop.counter }}"
+               data-token-id="{{ tok.pk }}"
+               data-patient-name="{{ tok.display_name }}"
+               data-triage-url="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}">
               <i class="bi bi-heart-pulse me-1"></i>Record Vitals
-            </a>
+            </button>
             {% elif tok.patient %}
             <a href="{% url 'patients:detail' patient_id=tok.patient.patient_id %}"
                class="btn btn-sm btn-outline-secondary">
@@ -267,24 +321,33 @@
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
         <tr>
+          <th style="width:36px;">#</th>
           <th>Token</th>
           <th>Patient</th>
           <th>Tier</th>
           <th>Since</th>
           <th>Chief Complaint</th>
-          <th>Visit Status</th>
+          {% if is_head_of_triage %}<th>Location</th>{% endif %}
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for tok in vip_params_queue %}
-        <tr class="{% if tok.service_tier == 'VIP' %}table-purple{% endif %}"
-            style="{% if tok.service_tier == 'VIP' %}background:#f5f3ff;{% endif %}">
+        <tr class="{% if forloop.first %}is-next-up{% endif %}"
+            style="{% if tok.service_tier == 'VIP' and not forloop.first %}background:#f5f3ff;{% endif %}">
+          <td>
+            <span class="queue-pos {% if forloop.first %}queue-pos-1{% else %}queue-pos-gt{% endif %}">
+              {{ forloop.counter }}
+            </span>
+          </td>
           <td>
             <span class="badge fs-6"
                   style="background:{% if tok.service_tier == 'VIP' %}#7c3aed{% elif tok.service_tier == 'FAST_TRACK' %}#d97706{% else %}#0891b2{% endif %};">
               {{ tok.display_token_number }}
             </span>
+            {% if forloop.first %}
+              <div class="text-success" style="font-size:.65rem;font-weight:700;">NEXT UP</div>
+            {% endif %}
           </td>
           <td class="fw-semibold">
             {{ tok.display_name }}
@@ -311,22 +374,28 @@
           <td class="text-muted">
             {% if tok.ws_visit %}{{ tok.ws_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
           </td>
+          {% if is_head_of_triage %}
           <td>
             {% if tok.ws_visit %}
               <span class="badge bg-light text-dark border" style="font-size:.65rem;">
                 {{ tok.ws_visit.get_status_display }}
               </span>
             {% else %}
-              <span class="text-muted small">No visit</span>
+              <span class="text-muted small">—</span>
             {% endif %}
           </td>
+          {% endif %}
           <td>
             {% if tok.patient and tok.ws_visit %}
-            <a href="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}"
-               class="btn btn-sm fw-bold"
-               style="background:#7c3aed;color:white;border:none;">
+            <button type="button"
+               class="btn btn-sm fw-bold triage-btn"
+               style="background:#7c3aed;color:white;border:none;"
+               data-position="{{ forloop.counter }}"
+               data-token-id="{{ tok.pk }}"
+               data-patient-name="{{ tok.display_name }}"
+               data-triage-url="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}">
               <i class="bi bi-heart-pulse me-1"></i>Record Vitals
-            </a>
+            </button>
             {% elif tok.patient %}
             <a href="{% url 'patients:detail' patient_id=tok.patient.patient_id %}"
                class="btn btn-sm btn-outline-secondary">
@@ -424,13 +493,89 @@
   }, 1000);
 })();
 
+// ── Queue skip-reason enforcement ─────────────────────────────────────────────
+(function () {
+  var skipModal  = new bootstrap.Modal(document.getElementById('skipQueueModal'));
+  var reasonText = document.getElementById('skipReasonText');
+  var confirmBtn = document.getElementById('skipConfirmBtn');
+  var nameEl     = document.getElementById('skipPatientName');
+  var aheadEl    = document.getElementById('skipAheadMsg');
+
+  var _pendingUrl    = '';
+  var _pendingToken  = '';
+
+  document.querySelectorAll('.triage-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var pos      = parseInt(this.dataset.position, 10);
+      var name     = this.dataset.patientName || 'This patient';
+      var url      = this.dataset.triageUrl;
+      var tokenId  = this.dataset.tokenId;
+
+      if (pos === 1) {
+        // First in queue — proceed directly, no reason needed
+        window.location.href = url;
+        return;
+      }
+
+      // Not first — collect reason before proceeding
+      _pendingUrl   = url;
+      _pendingToken = tokenId;
+      nameEl.textContent  = name;
+      aheadEl.textContent = pos > 2
+        ? ' There ' + (pos - 1) + ' patient(s) ahead.'
+        : ' There is 1 patient ahead.';
+      reasonText.value = '';
+      reasonText.classList.remove('is-invalid');
+      skipModal.show();
+    });
+  });
+
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', function() {
+      var reason = reasonText.value.trim();
+      if (!reason) {
+        reasonText.classList.add('is-invalid');
+        return;
+      }
+      reasonText.classList.remove('is-invalid');
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Saving…';
+
+      var csrfToken = document.cookie.match(/csrftoken=([^;]+)/);
+      csrfToken = csrfToken ? csrfToken[1] : '';
+
+      fetch('{% url "consultations:skip_queue_reason" %}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken },
+        body: 'token_id=' + encodeURIComponent(_pendingToken)
+            + '&reason='   + encodeURIComponent(reason)
+            + '&redirect_url=' + encodeURIComponent(_pendingUrl),
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          window.location.href = _pendingUrl;
+        } else {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Record Reason & Proceed';
+          alert(data.error || 'Could not save reason.');
+        }
+      })
+      .catch(function() {
+        // Network error — still let nurse proceed (don't block care)
+        window.location.href = _pendingUrl;
+      });
+    });
+  }
+})();
+
+// ── Triage Patient search modal ────────────────────────────────────────────────
 (function () {
   const modal  = document.getElementById('triagePatientModal');
   const input  = document.getElementById('triageSearchInput');
   const results= document.getElementById('triageSearchResults');
   if (!input) return;
 
-  // Auto-focus input when modal opens, clear previous results
   if (modal) {
     modal.addEventListener('shown.bs.modal', function () {
       input.value = '';

@@ -1314,6 +1314,14 @@ def triage_workstation_view(request):
         except Exception:
             pass
 
+    # Head of triage (Nurse Director / Medical Director / Super Admin) can see
+    # all patient statuses + locations.  Regular triage nurses see only the queue.
+    is_head_of_triage = (
+        request.user.is_nurse_director
+        or request.user.is_medical_director
+        or request.user.is_super_admin
+    )
+
     return render(request, 'consultations/triage_workstation.html', {
         'parameters_queue': parameters_queue,
         'vip_params_queue': vip_params_queue,
@@ -1323,6 +1331,7 @@ def triage_workstation_view(request):
         'today': today,
         'show_mode': show_mode,
         'assigned_counter': assigned_counter,
+        'is_head_of_triage': is_head_of_triage,
         'total_standard': total_standard,
         'total_vip_express': total_vip_express,
         'total_waiting': len(parameters_queue) + len(vip_params_queue),
@@ -1580,6 +1589,11 @@ _NURSE_ROUTE_MAP = {
     'NEURO':       ('AT_NEURO',          'NEURO',      'Neuro-Ophthalmology'),
     'OCULOPLASTY': ('AT_OCULOPLASTY',    'OCULOPLASTY','Oculoplastics'),
     'GEN_PHYS':    ('WAITING',           'GEN_PHYS',   'General Physician / Internist'),
+    'LOW_VISION':  ('WAITING',           'LOW_VISION', 'Low Vision & Rehabilitation'),
+    'INSUR_CONSULT':('WAITING',          'INSUR_CONSULT','Insurance Consultation'),
+    'CONTACT_LENS':('WAITING',           'CONTACT_LENS','Contact Lens Clinic'),
+    'LASER':       ('WAITING',           'LASER',      'Laser Clinic'),
+    'INJECTION':   ('WAITING',           'INJECTION',  'Injection Clinic'),
     'DISCHARGE':   ('COMPLETED',         None,         'Discharge / Done'),
 }
 
@@ -1687,6 +1701,40 @@ def nurse_route_patient_view(request, visit_pk):
         'destination': label,
         'message': f'{visit.patient.full_name} routed to {label}.',
     })
+
+
+# ── Triage skip-queue audit ───────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def skip_queue_reason_view(request):
+    """
+    Record an audit reason when a triage nurse selects a patient that is NOT
+    first in the queue.  Updates the QueueToken notes and returns the triage URL.
+    """
+    if not request.user.can_do_triage() and not request.user.is_super_admin:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    token_id    = request.POST.get('token_id', '').strip()
+    reason      = request.POST.get('reason', '').strip()
+    redirect_url = request.POST.get('redirect_url', '')
+
+    if not reason:
+        return JsonResponse({'error': 'A reason is required.'}, status=400)
+
+    if token_id:
+        try:
+            from apps.qms.models import QueueToken
+            token = QueueToken.objects.get(pk=token_id, is_deleted=False)
+            note = (
+                f'[QUEUE SKIP — {request.user.get_full_name()} — {timezone.localdate()}]: {reason}'
+            )
+            token.notes = (note + '\n' + token.notes) if token.notes else note
+            token.save(update_fields=['notes'])
+        except Exception:
+            pass
+
+    return JsonResponse({'success': True, 'redirect_url': redirect_url})
 
 
 # ── Doctor self-service: assign themselves to a room ─────────────────────────
