@@ -1,0 +1,163 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  @page { size: A4 landscape; }
+  .aging-table { width:100%; border-collapse:collapse; font-size:8.5pt; margin-bottom:14px; }
+  .aging-table th { background:#0d6efd; color:#fff; padding:5px 8px; text-align:left; border:1px solid #0a58ca; }
+  .aging-table th.num { text-align:right; }
+  .aging-table td { padding:4px 8px; border:1px solid #dee2e6; }
+  .aging-table td.num { text-align:right; }
+  .aging-table tr:nth-child(even) td { background:#f8f9fa; }
+  .aging-table tfoot td { font-weight:800; background:#e9ecef; }
+  .bucket-header { background:#495057; color:#fff; padding:6px 12px; font-weight:700; font-size:9pt;
+    border-radius:3px; margin:12px 0 4px; }
+  .bucket-0 { background:#198754; }
+  .bucket-1 { background:#856404; }
+  .bucket-2 { background:#dc3545; }
+  .bucket-3 { background:#7f0000; }
+  .corp-table { width:100%; border-collapse:collapse; font-size:9pt; }
+  .corp-table th { background:#e9ecef; padding:5px 8px; border:1px solid #dee2e6; text-align:left; }
+  .corp-table td { padding:4px 8px; border:1px solid #dee2e6; }
+  .grand-box { border:2px solid #dc3545; border-radius:6px; padding:12px 16px; text-align:center; margin:14px 0; }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Accounts Receivable Aging Report</span>
+  <span>As of {{ today|date:"d F Y" }} &nbsp;|&nbsp; Generated: {% now "d M Y H:i" %}</span>
+</div>
+
+<div class="report-title">A/R AGING REPORT — AS AT {{ today|date:"d F Y"|upper }}</div>
+
+<!-- Grand Total -->
+<div class="grand-box">
+  <div style="font-size:8pt;font-weight:700;text-transform:uppercase;color:#555;letter-spacing:.05em;">Total Outstanding Receivables</div>
+  <div style="font-size:20pt;font-weight:900;color:#dc3545;">{{ grand_total|floatformat:0|intcomma }} FCFA</div>
+</div>
+
+{% for key in bucket_order %}
+{% with bucket=buckets|default:key %}
+{% with b=buckets %}
+{% endwith %}
+{% endwith %}
+{% endfor %}
+
+<!-- Aging Buckets -->
+{% for key in bucket_order %}
+{% with b=buckets %}
+  {% if key == 'current' %}{% with rows=b.current.rows lbl=b.current.label tot=b.current.total cls="bucket-0" %}
+  <div class="bucket-header {{ cls }}">{{ lbl }} — {{ tot|floatformat:0|intcomma }} FCFA ({{ rows|length }} invoice{{ rows|length|pluralize }})</div>
+  {% if rows %}
+  <table class="aging-table">
+    <thead><tr><th>Invoice #</th><th>Issue Date</th><th>Patient</th><th>Patient ID</th><th>Corporate</th><th class="num">Total (FCFA)</th><th class="num">Paid (FCFA)</th><th class="num">Balance (FCFA)</th><th class="num">Age (Days)</th></tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td>{{ r.invoice.invoice_number }}</td>
+      <td>{{ r.invoice.issue_date|date:"d/m/Y" }}</td>
+      <td>{{ r.patient.full_name }}</td>
+      <td>{{ r.patient.patient_id }}</td>
+      <td>{{ r.invoice.corporate_account.name|default:"—" }}</td>
+      <td class="num">{{ r.total|floatformat:0|intcomma }}</td>
+      <td class="num">{{ r.paid|floatformat:0|intcomma }}</td>
+      <td class="num"><strong>{{ r.balance|floatformat:0|intcomma }}</strong></td>
+      <td class="num">{{ r.age_days }}</td>
+    </tr>{% endfor %}</tbody>
+    <tfoot><tr><td colspan="7"><strong>Subtotal</strong></td><td class="num"><strong>{{ tot|floatformat:0|intcomma }} FCFA</strong></td><td></td></tr></tfoot>
+  </table>
+  {% endif %}
+  {% endwith %}{% endif %}
+
+  {% if key == 'days31' %}{% with rows=b.days31.rows lbl=b.days31.label tot=b.days31.total cls="bucket-1" %}
+  <div class="bucket-header {{ cls }}">{{ lbl }} — {{ tot|floatformat:0|intcomma }} FCFA ({{ rows|length }} invoice{{ rows|length|pluralize }})</div>
+  {% if rows %}
+  <table class="aging-table">
+    <thead><tr><th>Invoice #</th><th>Issue Date</th><th>Patient</th><th>Patient ID</th><th>Corporate</th><th class="num">Total (FCFA)</th><th class="num">Paid (FCFA)</th><th class="num">Balance (FCFA)</th><th class="num">Age (Days)</th></tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td>{{ r.invoice.invoice_number }}</td><td>{{ r.invoice.issue_date|date:"d/m/Y" }}</td>
+      <td>{{ r.patient.full_name }}</td><td>{{ r.patient.patient_id }}</td>
+      <td>{{ r.invoice.corporate_account.name|default:"—" }}</td>
+      <td class="num">{{ r.total|floatformat:0|intcomma }}</td>
+      <td class="num">{{ r.paid|floatformat:0|intcomma }}</td>
+      <td class="num"><strong>{{ r.balance|floatformat:0|intcomma }}</strong></td>
+      <td class="num">{{ r.age_days }}</td>
+    </tr>{% endfor %}</tbody>
+    <tfoot><tr><td colspan="7"><strong>Subtotal</strong></td><td class="num"><strong>{{ tot|floatformat:0|intcomma }} FCFA</strong></td><td></td></tr></tfoot>
+  </table>
+  {% endif %}
+  {% endwith %}{% endif %}
+
+  {% if key == 'days61' %}{% with rows=b.days61.rows lbl=b.days61.label tot=b.days61.total cls="bucket-2" %}
+  <div class="bucket-header {{ cls }}">{{ lbl }} — {{ tot|floatformat:0|intcomma }} FCFA ({{ rows|length }} invoice{{ rows|length|pluralize }})</div>
+  {% if rows %}
+  <table class="aging-table">
+    <thead><tr><th>Invoice #</th><th>Issue Date</th><th>Patient</th><th>Patient ID</th><th>Corporate</th><th class="num">Total (FCFA)</th><th class="num">Paid (FCFA)</th><th class="num">Balance (FCFA)</th><th class="num">Age (Days)</th></tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td>{{ r.invoice.invoice_number }}</td><td>{{ r.invoice.issue_date|date:"d/m/Y" }}</td>
+      <td>{{ r.patient.full_name }}</td><td>{{ r.patient.patient_id }}</td>
+      <td>{{ r.invoice.corporate_account.name|default:"—" }}</td>
+      <td class="num">{{ r.total|floatformat:0|intcomma }}</td>
+      <td class="num">{{ r.paid|floatformat:0|intcomma }}</td>
+      <td class="num"><strong>{{ r.balance|floatformat:0|intcomma }}</strong></td>
+      <td class="num">{{ r.age_days }}</td>
+    </tr>{% endfor %}</tbody>
+    <tfoot><tr><td colspan="7"><strong>Subtotal</strong></td><td class="num"><strong>{{ tot|floatformat:0|intcomma }} FCFA</strong></td><td></td></tr></tfoot>
+  </table>
+  {% endif %}
+  {% endwith %}{% endif %}
+
+  {% if key == 'days90' %}{% with rows=b.days90.rows lbl=b.days90.label tot=b.days90.total cls="bucket-3" %}
+  <div class="bucket-header {{ cls }}">{{ lbl }} — {{ tot|floatformat:0|intcomma }} FCFA ({{ rows|length }} invoice{{ rows|length|pluralize }})</div>
+  {% if rows %}
+  <table class="aging-table">
+    <thead><tr><th>Invoice #</th><th>Issue Date</th><th>Patient</th><th>Patient ID</th><th>Corporate</th><th class="num">Total (FCFA)</th><th class="num">Paid (FCFA)</th><th class="num">Balance (FCFA)</th><th class="num">Age (Days)</th></tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td>{{ r.invoice.invoice_number }}</td><td>{{ r.invoice.issue_date|date:"d/m/Y" }}</td>
+      <td>{{ r.patient.full_name }}</td><td>{{ r.patient.patient_id }}</td>
+      <td>{{ r.invoice.corporate_account.name|default:"—" }}</td>
+      <td class="num">{{ r.total|floatformat:0|intcomma }}</td>
+      <td class="num">{{ r.paid|floatformat:0|intcomma }}</td>
+      <td class="num"><strong>{{ r.balance|floatformat:0|intcomma }}</strong></td>
+      <td class="num">{{ r.age_days }}</td>
+    </tr>{% endfor %}</tbody>
+    <tfoot><tr><td colspan="7"><strong>Subtotal</strong></td><td class="num"><strong>{{ tot|floatformat:0|intcomma }} FCFA</strong></td><td></td></tr></tfoot>
+  </table>
+  {% endif %}
+  {% endwith %}{% endif %}
+{% endwith %}
+{% endfor %}
+
+<!-- Corporate AR Summary -->
+{% if corporate_ar %}
+<div class="section-title" style="margin-top:14px;">Corporate Account Receivables</div>
+<table class="corp-table">
+  <thead><tr><th>Corporate Account</th><th style="text-align:right;">Outstanding Balance (FCFA)</th></tr></thead>
+  <tbody>
+    {% for row in corporate_ar %}
+    <tr>
+      <td>{{ row.account.name }}</td>
+      <td style="text-align:right;font-weight:700;color:#dc3545;">{{ row.balance|floatformat:0|intcomma }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- Authorisation -->
+<div class="signature-block" style="margin-top:28px;display:flex;justify-content:space-between;gap:40px;">
+  <div class="signature-line">Prepared by (Finance/Billing)<br>&nbsp;<br>&nbsp;</div>
+  <div class="signature-line">Reviewed by (Finance Director)<br>&nbsp;<br>&nbsp;</div>
+  <div class="signature-line">Approved by (CEO / MD)<br>&nbsp;<br>&nbsp;</div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} — Confidential A/R Report</span>
+  <span>As at {{ today|date:"d M Y" }} &nbsp;|&nbsp; Printed: {% now "d M Y H:i" %}</span>
+</div>
+
+</body>
+</html>

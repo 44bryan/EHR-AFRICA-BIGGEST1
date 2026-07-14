@@ -1,0 +1,108 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  @page { size: A4 portrait; }
+  .svc-table { width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:14px; }
+  .svc-table th { background:#0d6efd; color:#fff; padding:5px 10px; text-align:left; border:1px solid #0a58ca; font-weight:600; }
+  .svc-table th.num { text-align:right; }
+  .svc-table td { padding:5px 10px; border:1px solid #dee2e6; }
+  .svc-table td.num { text-align:right; }
+  .svc-table tr:nth-child(even) td { background:#f8f9fa; }
+  .svc-table tfoot td { font-weight:800; background:#e9ecef; }
+  .bar { height:8px; background:#0d6efd; border-radius:2px; display:inline-block; max-width:120px; }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Top Revenue-Generating Services</span>
+  <span>{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }} &nbsp;|&nbsp; Generated: {% now "d M Y H:i" %}</span>
+</div>
+
+<div class="report-title">TOP SERVICES REPORT — {{ date_from|date:"d M Y"|upper }} TO {{ date_to|date:"d M Y"|upper }}</div>
+
+<!-- By Category -->
+<div class="section-title">Revenue by Service Category</div>
+<table class="svc-table">
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th class="num">Transactions</th>
+      <th class="num">Revenue (FCFA)</th>
+      <th class="num">% of Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in by_cat %}
+    <tr>
+      <td><strong>{{ cat_labels|default:row.category }}</strong></td>
+      <td class="num">{{ row.count }}</td>
+      <td class="num"><strong>{{ row.revenue|floatformat:0|intcomma }}</strong></td>
+      <td class="num">
+        {% if total_revenue and total_revenue > 0 %}
+        {{ row.revenue|floatformat:0 }}
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4" style="color:#888;text-align:center;">No data.</td></tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td>TOTAL</td>
+      <td class="num"></td>
+      <td class="num">{{ total_revenue|floatformat:0|intcomma }} FCFA</td>
+      <td class="num">100%</td>
+    </tr>
+  </tfoot>
+</table>
+
+<!-- Top 50 Individual Services -->
+<div class="section-title">Top Individual Services (by Revenue)</div>
+<table class="svc-table">
+  <thead>
+    <tr>
+      <th style="width:4%;">#</th>
+      <th>Service / Description</th>
+      <th>Category</th>
+      <th class="num">Count</th>
+      <th class="num">Revenue (FCFA)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in services %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td><strong>{{ row.description }}</strong></td>
+      <td style="color:#666;">{{ cat_labels|default:row.category }}</td>
+      <td class="num">{{ row.count }}</td>
+      <td class="num"><strong>{{ row.revenue|floatformat:0|intcomma }}</strong></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" style="color:#888;text-align:center;">No service data for this period.</td></tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr><td colspan="4">PERIOD TOTAL</td><td class="num"><strong>{{ total_revenue|floatformat:0|intcomma }} FCFA</strong></td></tr>
+  </tfoot>
+</table>
+
+<!-- Authorisation -->
+<div class="signature-block" style="margin-top:28px;display:flex;justify-content:space-between;gap:40px;">
+  <div class="signature-line">Finance Director<br>&nbsp;<br>&nbsp;</div>
+  <div class="signature-line">Medical Director / CEO<br>&nbsp;<br>&nbsp;</div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} — Confidential Revenue Report</span>
+  <span>Period {{ date_from|date:"d M Y" }} to {{ date_to|date:"d M Y" }} &nbsp;|&nbsp; Printed: {% now "d M Y H:i" %}</span>
+</div>
+
+</body>
+</html>

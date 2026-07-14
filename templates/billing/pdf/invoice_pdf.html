@@ -1,0 +1,180 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  @page { size: A4 portrait; margin: 1.4cm 1.8cm; }
+  .inv-meta { display:flex; justify-content:space-between; margin-bottom:14px; }
+  .inv-meta-block { font-size:9pt; }
+  .inv-meta-block .label { font-weight:700; color:#555; font-size:8pt; text-transform:uppercase; letter-spacing:.04em; }
+  .inv-meta-block .val { font-size:10.5pt; font-weight:800; color:#0d6efd; }
+  .items-table { width:100%; border-collapse:collapse; font-size:9pt; margin:12px 0; }
+  .items-table th { background:#0d6efd; color:#fff; padding:6px 10px; text-align:left; font-weight:600; }
+  .items-table th.num { text-align:right; }
+  .items-table td { padding:5px 10px; border-bottom:1px solid #dee2e6; }
+  .items-table td.num { text-align:right; }
+  .items-table tr:nth-child(even) td { background:#f8f9fa; }
+  .totals-block { width:260px; margin-left:auto; border:1px solid #dee2e6; border-radius:4px; overflow:hidden; font-size:9.5pt; }
+  .totals-block tr td { padding:5px 10px; border-bottom:1px solid #dee2e6; }
+  .totals-block tr:last-child td { background:#0d6efd; color:#fff; font-weight:800; font-size:11pt; border-bottom:none; }
+  .totals-block td.lbl { color:#555; }
+  .status-badge { display:inline-block; padding:3px 12px; border-radius:12px; font-size:9pt; font-weight:700; }
+  .status-PAID { background:#d4edda; color:#155724; }
+  .status-ISSUED { background:#fff3cd; color:#856404; }
+  .status-PARTIALLY_PAID { background:#d1ecf1; color:#0c5460; }
+  .status-CANCELLED { background:#f8d7da; color:#721c24; }
+  .payments-table { width:100%; border-collapse:collapse; font-size:8.5pt; margin-top:6px; }
+  .payments-table th { background:#e9ecef; padding:4px 8px; text-align:left; border:1px solid #dee2e6; }
+  .payments-table td { padding:4px 8px; border:1px solid #dee2e6; }
+  .watermark-paid { position:fixed; top:40%; left:50%; transform:translate(-50%,-50%) rotate(-30deg);
+    font-size:72pt; font-weight:900; color:rgba(25,135,84,.08); pointer-events:none; z-index:0; white-space:nowrap; }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Official Invoice</span>
+  <span>Invoice #{{ invoice.invoice_number }} &nbsp;|&nbsp; {{ invoice.issue_date|date:"d M Y" }}</span>
+</div>
+
+{% if invoice.status == 'PAID' %}
+<div class="watermark-paid">PAID</div>
+{% endif %}
+
+<div class="inv-meta">
+  <div class="inv-meta-block">
+    <div class="label">Bill To</div>
+    <div style="font-size:11pt;font-weight:700;">{{ invoice.patient.full_name }}</div>
+    <div style="font-size:8.5pt;color:#555;">
+      Patient ID: {{ invoice.patient.patient_id }}<br>
+      {% if invoice.patient.date_of_birth %}DOB: {{ invoice.patient.date_of_birth|date:"d M Y" }} &nbsp;|&nbsp; {% endif %}
+      {{ invoice.patient.get_gender_display }}<br>
+      {% if invoice.patient.phone %}Tel: {{ invoice.patient.phone }}{% endif %}
+    </div>
+  </div>
+  <div class="inv-meta-block" style="text-align:right;">
+    <div class="label">Invoice Details</div>
+    <div class="val">{{ invoice.invoice_number }}</div>
+    <div style="font-size:8.5pt;color:#555;">
+      Date: {{ invoice.issue_date|date:"d M Y" }}<br>
+      {% if invoice.due_date %}Due: {{ invoice.due_date|date:"d M Y" }}<br>{% endif %}
+      Status: <span class="status-badge status-{{ invoice.status }}">{{ invoice.get_status_display }}</span>
+    </div>
+  </div>
+</div>
+
+{% if invoice.corporate_account %}
+<div class="info-box" style="margin-bottom:10px;font-size:8.5pt;">
+  <strong>Corporate Account:</strong> {{ invoice.corporate_account.name }}
+</div>
+{% endif %}
+
+<!-- Line Items -->
+<table class="items-table">
+  <thead>
+    <tr>
+      <th style="width:5%;">#</th>
+      <th>Description</th>
+      <th style="width:15%;">Category</th>
+      <th class="num" style="width:10%;">Qty</th>
+      <th class="num" style="width:15%;">Unit Price (FCFA)</th>
+      <th class="num" style="width:15%;">Total (FCFA)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td><strong>{{ item.description }}</strong></td>
+      <td style="color:#666;">{{ item.get_category_display }}</td>
+      <td class="num">{{ item.quantity }}</td>
+      <td class="num">{{ item.unit_price|floatformat:0|intcomma }}</td>
+      <td class="num"><strong>{{ item.line_total|floatformat:0|intcomma }}</strong></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" style="color:#888;text-align:center;padding:12px;">No items on this invoice.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Totals -->
+<table class="totals-block">
+  <tr>
+    <td class="lbl">Subtotal</td>
+    <td style="text-align:right;">{{ invoice.total|floatformat:0|intcomma }} FCFA</td>
+  </tr>
+  {% if invoice.discount_amount %}
+  <tr>
+    <td class="lbl">Discount</td>
+    <td style="text-align:right;color:#dc3545;">- {{ invoice.discount_amount|floatformat:0|intcomma }} FCFA</td>
+  </tr>
+  {% endif %}
+  <tr>
+    <td class="lbl">Amount Paid</td>
+    <td style="text-align:right;color:#198754;">{{ invoice.amount_paid|floatformat:0|intcomma }} FCFA</td>
+  </tr>
+  <tr>
+    <td><strong>Balance Due</strong></td>
+    <td style="text-align:right;"><strong>{{ invoice.balance_due|floatformat:0|intcomma }} FCFA</strong></td>
+  </tr>
+</table>
+
+<!-- Payments received -->
+{% if payments %}
+<div class="section" style="margin-top:16px;">
+  <div class="section-title">Payments Received</div>
+  <table class="payments-table">
+    <thead>
+      <tr>
+        <th>Date &amp; Time</th>
+        <th>Method</th>
+        <th>Reference</th>
+        <th>Received By</th>
+        <th style="text-align:right;">Amount (FCFA)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pmt in payments %}
+      <tr>
+        <td>{{ pmt.payment_date|date:"d M Y H:i" }}</td>
+        <td>{{ pmt.get_payment_method_display }}</td>
+        <td>{{ pmt.reference_number|default:"—" }}</td>
+        <td>{{ pmt.received_by.get_full_name|default:"—" }}</td>
+        <td style="text-align:right;font-weight:600;">{{ pmt.amount|floatformat:0|intcomma }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if invoice.notes %}
+<div class="info-box" style="margin-top:14px;font-size:8.5pt;">
+  <strong>Notes:</strong> {{ invoice.notes }}
+</div>
+{% endif %}
+
+<!-- Signature block -->
+<div class="signature-block" style="margin-top:28px;display:flex;justify-content:space-between;">
+  <div class="signature-line">
+    Cashier / Billing Officer<br>
+    {{ invoice.created_by.get_full_name|default:"" }}<br>
+    {{ invoice.issue_date|date:"d M Y" }}
+  </div>
+  <div class="signature-line">
+    Patient / Guardian Acknowledgement<br>
+    &nbsp;<br>
+    &nbsp;
+  </div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} &nbsp;|&nbsp; {{ hospital_address }}</span>
+  <span>Invoice {{ invoice.invoice_number }} &nbsp;|&nbsp; Generated: {% now "d M Y H:i" %} &nbsp;|&nbsp; This is an official tax invoice.</span>
+</div>
+
+</body>
+</html>

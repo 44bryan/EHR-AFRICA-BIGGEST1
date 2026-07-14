@@ -1281,12 +1281,18 @@ def receipt_view(request, invoice_id):
             .order_by('-issued_at')
             .first()
         )
-    return render(request, 'billing/receipt.html', {
+    ctx = {
         'invoice': invoice,
         'items': items,
         'payments': payments,
         'today_token': today_token,
-    })
+    }
+    if request.GET.get('format') == 'pdf':
+        return _render_pdf(
+            'billing/pdf/invoice_pdf.html', ctx,
+            f'invoice_{invoice.invoice_number}.pdf',
+        )
+    return render(request, 'billing/receipt.html', ctx)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1786,10 +1792,16 @@ def shift_open(request):
 def shift_detail(request, shift_id):
     """Shift detail + printable handover slip."""
     shift = get_object_or_404(CashierShift, id=shift_id, is_deleted=False)
-    return render(request, 'billing/shift_detail.html', {
+    ctx = {
         'shift': shift,
         'today': timezone.localdate(),
-    })
+    }
+    if request.GET.get('format') == 'pdf':
+        return _render_pdf(
+            'billing/pdf/shift_reconciliation_pdf.html', ctx,
+            f'shift_{shift.cashier.username}_{shift.shift_date}.pdf',
+        )
+    return render(request, 'billing/shift_detail.html', ctx)
 
 
 @login_required
@@ -2729,7 +2741,7 @@ def report_daily_summary(request):
     net_revenue = float(revenue_total) - float(refund_total)
     net_position = net_revenue - float(expense_total)
 
-    return render(request, 'billing/reports/daily_summary.html', {
+    ctx = {
         'report_date': report_date,
         'prev_date': (report_date - _td(days=1)).isoformat(),
         'next_date': (report_date + _td(days=1)).isoformat(),
@@ -2750,7 +2762,13 @@ def report_daily_summary(request):
         'cat_labels': dict(ServiceCategory.choices),
         'expense_cat_labels': dict(ExpenseCategory.choices),
         'payments': payments.order_by('payment_date'),
-    })
+    }
+    if request.GET.get('format') == 'pdf':
+        return _render_pdf(
+            'billing/pdf/daily_summary_pdf.html', ctx,
+            f'daily_summary_{report_date}.pdf',
+        )
+    return render(request, 'billing/reports/daily_summary.html', ctx)
 
 
 @login_required
@@ -2844,7 +2862,7 @@ def report_pl(request):
     else:
         next_month = f'{yr}-{mo+1:02d}'
 
-    return render(request, 'billing/reports/pl.html', {
+    ctx = {
         'month_label': mo_start.strftime('%B %Y'),
         'mo_start': mo_start, 'mo_end': mo_end,
         'rev_total': rev_total,
@@ -2863,7 +2881,13 @@ def report_pl(request):
         'cat_labels': dict(ServiceCategory.choices),
         'exp_cat_labels': dict(ExpenseCategory.choices),
         'method_labels': dict(PaymentMethod.choices),
-    })
+    }
+    if request.GET.get('format') == 'pdf':
+        return _render_pdf(
+            'billing/pdf/pl_pdf.html', ctx,
+            f'pl_report_{month_str}.pdf',
+        )
+    return render(request, 'billing/reports/pl.html', ctx)
 
 
 @login_required
@@ -2910,7 +2934,7 @@ def report_top_services(request):
 
     total_revenue = sum(float(r['revenue']) for r in qs)
 
-    return render(request, 'billing/reports/top_services.html', {
+    ctx = {
         'services': list(qs),
         'by_cat': list(by_cat),
         'total_revenue': total_revenue,
@@ -2920,7 +2944,13 @@ def report_top_services(request):
         'date_to_str': date_to_str,
         'cat_labels': dict(ServiceCategory.choices),
         'today': today,
-    })
+    }
+    if request.GET.get('format') == 'pdf':
+        return _render_pdf(
+            'billing/pdf/top_services_pdf.html', ctx,
+            f'top_services_{date_from_str}_{date_to_str}.pdf',
+        )
+    return render(request, 'billing/reports/top_services.html', ctx)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3266,13 +3296,16 @@ def ar_aging_report(request):
 
     corporate_ar.sort(key=lambda x: x['balance'], reverse=True)
 
-    return render(request, 'billing/ar_aging.html', {
+    ctx = {
         'today': today,
         'buckets': buckets,
         'grand_total': grand_total,
         'corporate_ar': corporate_ar,
         'bucket_order': ['current', 'days31', 'days61', 'days90'],
-    })
+    }
+    if request.GET.get('format') == 'pdf':
+        return _render_pdf('billing/pdf/ar_aging_pdf.html', ctx, f'ar_aging_{today}.pdf')
+    return render(request, 'billing/ar_aging.html', ctx)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3763,17 +3796,14 @@ def _csv_response(filename):
 
 
 def _render_pdf(template_name, context, filename):
-    """Render a template to PDF via WeasyPrint and return an HttpResponse."""
-    from django.template.loader import render_to_string
-    try:
-        import weasyprint
-        html_string = render_to_string(template_name, context)
-        pdf_bytes = weasyprint.HTML(string=html_string, base_url='/').write_pdf()
-        response = HttpResponse(pdf_bytes, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        return response
-    except Exception as e:
-        return HttpResponse(f'PDF generation failed: {e}. Please use CSV export.', content_type='text/plain', status=500)
+    """
+    Render a template to PDF using the shared render_pdf engine.
+    Automatically injects hospital letterhead, logo (base64), and hospital contact details.
+    Falls back to browser-print HTML if WeasyPrint is unavailable.
+    """
+    from apps.reports.views import render_pdf as _shared_render_pdf
+    context['pdf_filename'] = filename
+    return _shared_render_pdf(template_name, context)
 
 
 def _log_financial(request, action, invoice, extra=None):

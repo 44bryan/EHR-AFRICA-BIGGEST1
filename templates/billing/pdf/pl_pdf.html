@@ -1,0 +1,129 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  @page { size: A4 portrait; }
+  .kpi-row { display:flex; gap:10px; margin-bottom:14px; }
+  .kpi-box { flex:1; border:1px solid #dee2e6; border-radius:4px; padding:8px 10px; text-align:center; }
+  .kpi-val { font-size:14pt; font-weight:800; line-height:1.1; }
+  .kpi-lbl { font-size:7.5pt; color:#666; margin-top:2px; }
+  .pl-table { width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:12px; }
+  .pl-table th { background:#e9ecef; padding:5px 10px; text-align:left; border:1px solid #dee2e6; font-weight:700; }
+  .pl-table td { padding:5px 10px; border:1px solid #dee2e6; }
+  .pl-table td.amt { text-align:right; font-weight:600; }
+  .pl-table tr:nth-child(even) td { background:#f8f9fa; }
+  .pl-table tfoot td { font-weight:800; font-size:10pt; background:#0d6efd; color:#fff; }
+  .pl-summary { border:2px solid #dee2e6; border-radius:6px; overflow:hidden; margin-bottom:14px; font-size:9.5pt; }
+  .pl-summary tr td { padding:7px 14px; border-bottom:1px solid #dee2e6; }
+  .pl-summary tr:last-child td { border-bottom:none; }
+  .pl-summary .grand-row td { background:#0d6efd; color:#fff; font-weight:800; font-size:12pt; }
+  .pl-summary .grand-row.loss td { background:#dc3545; }
+  .pl-summary td.lbl { color:#555; font-weight:600; }
+  .pl-summary td.val { text-align:right; }
+  .two-col { display:flex; gap:14px; }
+  .two-col > div { flex:1; }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Monthly Profit &amp; Loss Statement</span>
+  <span>Period: {{ mo_start|date:"d M Y" }} — {{ mo_end|date:"d M Y" }} &nbsp;|&nbsp; Generated: {% now "d M Y H:i" %}</span>
+</div>
+
+<div class="report-title">PROFIT &amp; LOSS STATEMENT — {{ month_label|upper }}</div>
+
+<!-- P&L Summary -->
+<table class="pl-summary">
+  <tr><td class="lbl">Gross Revenue (Payments Collected)</td><td class="val"><strong>{{ rev_total|floatformat:0|intcomma }} FCFA</strong></td></tr>
+  <tr><td class="lbl" style="color:#dc3545;">Less: Refunds &amp; Reversals</td><td class="val" style="color:#dc3545;">({{ ref_total|floatformat:0|intcomma }} FCFA)</td></tr>
+  <tr><td class="lbl"><strong>Net Revenue</strong></td><td class="val"><strong>{{ net_revenue|floatformat:0|intcomma }} FCFA</strong></td></tr>
+  <tr><td class="lbl" style="color:#dc3545;">Less: Total Operating Expenses</td><td class="val" style="color:#dc3545;">({{ exp_total|floatformat:0|intcomma }} FCFA)</td></tr>
+  <tr class="grand-row {% if gross_profit < 0 %}loss{% endif %}">
+    <td>{% if gross_profit >= 0 %}NET PROFIT{% else %}NET LOSS{% endif %}</td>
+    <td style="text-align:right;">{{ gross_profit|floatformat:0|intcomma }} FCFA</td>
+  </tr>
+</table>
+
+<div class="two-col">
+  <!-- Revenue by Category -->
+  <div>
+    <div class="section-title">Revenue by Service Category</div>
+    <table class="pl-table">
+      <thead><tr><th>Category</th><th class="amt">Revenue (FCFA)</th></tr></thead>
+      <tbody>
+        {% for row in rev_by_cat %}
+        <tr>
+          <td>{{ cat_labels|default:row.category }}</td>
+          <td class="amt">{{ row.total|floatformat:0|intcomma }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" style="color:#888;text-align:center;">No revenue data.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td>TOTAL</td><td class="amt">{{ net_revenue|floatformat:0|intcomma }} FCFA</td></tr>
+      </tfoot>
+    </table>
+  </div>
+  <!-- Expenses by Category -->
+  <div>
+    <div class="section-title">Expenses by Category</div>
+    <table class="pl-table">
+      <thead><tr><th>Category</th><th class="amt">Amount (FCFA)</th></tr></thead>
+      <tbody>
+        {% for row in exp_by_cat %}
+        <tr>
+          <td>{{ exp_cat_labels|default:row.category }}</td>
+          <td class="amt" style="color:#dc3545;">{{ row.total|floatformat:0|intcomma }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" style="color:#888;text-align:center;">No expenses.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td>TOTAL</td><td class="amt" style="color:#dc3545;">{{ exp_total|floatformat:0|intcomma }} FCFA</td></tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="section-title">Revenue by Payment Method</div>
+<table class="pl-table">
+  <thead><tr><th>Payment Method</th><th class="amt">Amount (FCFA)</th></tr></thead>
+  <tbody>
+    {% for row in rev_by_method %}
+    <tr>
+      <td>{{ method_labels|default:row.payment_method }}</td>
+      <td class="amt">{{ row.total|floatformat:0|intcomma }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="2" style="color:#888;text-align:center;">No payment data.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Additional context -->
+<div class="info-box" style="margin-top:12px;font-size:8.5pt;">
+  <strong>Note:</strong> Total invoiced this month: <strong>{{ invoiced_total|floatformat:0|intcomma }} FCFA</strong>.
+  Difference between invoiced and collected represents outstanding receivables.
+</div>
+
+<!-- Authorisation -->
+<div class="signature-block" style="margin-top:32px;display:flex;justify-content:space-between;gap:40px;">
+  <div class="signature-line">Finance Director<br>&nbsp;<br>&nbsp;</div>
+  <div class="signature-line">Chief Executive Officer<br>&nbsp;<br>&nbsp;</div>
+  <div class="signature-line">Medical Director<br>&nbsp;<br>&nbsp;</div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} — Confidential Financial Statement</span>
+  <span>P&amp;L {{ month_label }} &nbsp;|&nbsp; Printed: {% now "d M Y H:i" %}</span>
+</div>
+
+</body>
+</html>
