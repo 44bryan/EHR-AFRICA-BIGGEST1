@@ -187,18 +187,17 @@ def investigation_order_view(request, consultation_pk):
                     )
                 except Exception:
                     pass  # Never block the doctor
-                if payment_waived:
-                    messages.success(
-                        request,
-                        f'Investigation ordered: {order.investigation_type.name}. '
-                        f'Payment waived ({waive_reason}) — sent directly to investigation queue.'
-                    )
-                else:
-                    messages.success(
-                        request,
-                        f'Investigation ordered: {order.investigation_type.name}. '
-                        'Direct patient to cashier — queue activates after payment.'
-                    )
+                # Auto-route patient to investigation queue
+                try:
+                    from apps.core.patient_flow import auto_route_to_investigation
+                    auto_route_to_investigation(consultation, ordered_by=request.user)
+                except Exception:
+                    pass
+                messages.success(
+                    request,
+                    f'Investigation ordered: {order.investigation_type.name}. '
+                    'Patient has been routed to the investigation queue automatically.'
+                )
                 return redirect('consultations:detail', pk=consultation_pk)
     else:
         form = InvestigationOrderForm()
@@ -338,6 +337,14 @@ def verify_result_view(request, pk):
     result.verified_at = timezone.now()
     result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'updated_at'])
     messages.success(request, f'Result verified by {request.user.get_full_name()}.')
+    # Check if all results are done — auto-return patient to doctor queue
+    try:
+        visit = order.consultation.visit if order.consultation else None
+        if visit:
+            from apps.core.patient_flow import check_and_autoreturn_to_doctor
+            check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
+    except Exception:
+        pass
     return redirect('investigations:detail', pk=pk)
 
 

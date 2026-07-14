@@ -1,0 +1,159 @@
+"""
+Patient flow helpers — shared across lab, investigations, and other modules.
+Do NOT import Django models at module level here (circular import risk).
+"""
+from apps.core.context_processors import qms_active as _qms_active
+
+
+def _auto_route_to_dept(visit, visit_status, qms_service_type, dept_code, triggered_by, notes=''):
+    """
+    Generic helper: update visit.status and create a QMS token for a department.
+    Safe to call multiple times — skips if visit is already at target or beyond
+    COMPLETED/DISCHARGED.
+    """
+    if not visit:
+        return
+    terminal = {'BILLING', 'COMPLETED', 'DISCHARGED', 'CANCELLED'}
+    if visit.status in terminal:
+        return
+
+    from apps.departments.models import Department
+    dept = Department.objects.filter(code=dept_code, is_active=True).first()
+
+    visit.status = visit_status
+    update_fields = ['status', 'updated_at']
+    if dept:
+        visit.department = dept
+        update_fields.append('department')
+    visit.save(update_fields=update_fields)
+
+    if _qms_active():
+        try:
+            from apps.qms.models import (
+                QueueToken, DailyTokenSequence, IssuancePoint, TokenStatus
+            )
+            token_number = DailyTokenSequence.next_dept_token(qms_service_type)
+            QueueToken.objects.create(
+                token_number=token_number,
+                service_type=qms_service_type,
+                patient=visit.patient,
+                visit=visit,
+                service_tier=getattr(visit, 'service_tier', 'STANDARD'),
+                issuance_point=IssuancePoint.SYSTEM,
+                status=TokenStatus.WAITING,
+                notes=notes,
+                issued_by=triggered_by,
+            )
+        except Exception:
+            pass
+
+
+def auto_route_to_lab(consultation, ordered_by):
+    """
+    After a lab order is placed, route the patient to the LAB queue.
+    If patient is already at LABORATORY (multiple orders), skip.
+    """
+    try:
+        visit = getattr(consultation, 'visit', None)
+        if not visit:
+            return
+        if visit.status == 'LABORATORY':
+            return  # Already routed — multiple orders, don't double-queue
+        _auto_route_to_dept(
+            visit=visit,
+            visit_status='LABORATORY',
+            qms_service_type='LAB',
+            dept_code='LAB',
+            triggered_by=ordered_by,
+            notes='Auto-routed after lab order placed.',
+        )
+    except Exception:
+        pass
+
+
+def auto_route_to_investigation(consultation, ordered_by):
+    """
+    After an investigation order is placed, route patient to INVESTIGATION queue.
+    If patient is already at INVESTIGATION, skip.
+    """
+    try:
+        visit = getattr(consultation, 'visit', None)
+        if not visit:
+            return
+        if visit.status == 'INVESTIGATION':
+            return
+        _auto_route_to_dept(
+            visit=visit,
+            visit_status='INVESTIGATION',
+            qms_service_type='INVEST',
+            dept_code='INVEST',
+            triggered_by=ordered_by,
+            notes='Auto-routed after investigation order placed.',
+        )
+    except Exception:
+        pass
+
+
+def check_and_autoreturn_to_doctor(visit, triggered_by=None):
+    """
+    Called after a lab or investigation result is verified.
+    Checks if ALL pending lab + investigation orders/results for this visit are done.
+    If so, automatically routes patient back to the doctor's queue (WAITING / GENERAL).
+
+    Only triggers when visit.status is LABORATORY or INVESTIGATION.
+    """
+    try:
+        if not visit:
+            return
+        if visit.status not in ('LABORATORY', 'INVESTIGATION'):
+            return
+
+        from apps.laboratory.models import LabOrder, LabResult
+        from apps.investigations.models import InvestigationOrder, InvestigationResult
+
+        # Unfinished lab orders (no result yet)
+        pending_lab = LabOrder.objects.filter(
+            consultation__visit=visit,
+            is_deleted=False,
+            status__in=['ORDERED', 'SAMPLE_COLLECTED', 'PROCESSING'],
+        ).count()
+
+        # Unverified lab results
+        unverified_lab = LabResult.objects.filter(
+            order_item__order__consultation__visit=visit,
+            order_item__order__is_deleted=False,
+            is_verified=False,
+            is_deleted=False,
+        ).count()
+
+        # Unfinished investigation orders
+        pending_invest = InvestigationOrder.objects.filter(
+            consultation__visit=visit,
+            is_deleted=False,
+            status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+        ).count()
+
+        # Unverified investigation results
+        unverified_invest = InvestigationResult.objects.filter(
+            order__consultation__visit=visit,
+            order__is_deleted=False,
+            is_verified=False,
+            is_deleted=False,
+        ).count()
+
+        total_pending = pending_lab + unverified_lab + pending_invest + unverified_invest
+
+        if total_pending > 0:
+            return  # More results still expected
+
+        # All done — return patient to doctor queue
+        _auto_route_to_dept(
+            visit=visit,
+            visit_status='WAITING',
+            qms_service_type='GENERAL',
+            dept_code='OPD',
+            triggered_by=triggered_by,
+            notes='Auto-returned after all results verified.',
+        )
+    except Exception:
+        pass

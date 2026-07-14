@@ -28,4 +28,6 @@ urlpatterns = [
     path('sysadmin/recycle-bin/<str:model>/<str:pk>/delete/', views.recycle_bin_delete, name='recycle_bin_delete'),
     # Legacy redirect — old receipts linked to this before the POS refactor
     path('dashboard/cashier/', RedirectView.as_view(url='/billing/pos/', permanent=False)),
+    # Cashier self-select desk/tier
+    path('cashier/select-desk/', views.cashier_select_desk, name='cashier_select_desk'),
 ]

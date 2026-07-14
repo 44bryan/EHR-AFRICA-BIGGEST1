@@ -1,0 +1,160 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Select Your Cashier Desk{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+  <div class="col-md-7 col-lg-5">
+    <div class="card border-0 shadow">
+      <div class="card-header bg-white border-0 pt-4 pb-2 text-center">
+        <i class="bi bi-cash-coin fs-1 text-success d-block mb-2"></i>
+        <h5 class="fw-bold mb-0">Select Your Cashier Desk</h5>
+        <p class="text-muted small mt-1 mb-0">
+          Choose which patient tier you will serve today.
+          This determines your queue — you can change it at any time.
+        </p>
+      </div>
+      <div class="card-body px-4 pb-4">
+
+        {% include "components/alerts.html" %}
+
+        {% if current_station %}
+        <div class="alert alert-info border-0 small py-2 mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Current desk: <strong>{{ current_station }}</strong>
+        </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'dashboard:cashier_select_desk' %}">
+          {% csrf_token %}
+          <div class="row g-3 mb-4">
+
+            {# Standard desk #}
+            <div class="col-6">
+              <label class="desk-card w-100 text-center p-3 border rounded-3 cursor-pointer
+                {% if current_station == 'STANDARD' %}border-primary bg-primary bg-opacity-10{% endif %}"
+                style="cursor:pointer;">
+                <input type="radio" name="station" value="STANDARD" class="d-none desk-radio"
+                  {% if current_station == 'STANDARD' %}checked{% endif %}>
+                <i class="bi bi-person fs-2 text-secondary d-block mb-1"></i>
+                <span class="fw-semibold">Standard</span>
+                <div class="text-muted" style="font-size:.75rem;">Regular OPD patients</div>
+              </label>
+            </div>
+
+            {# Express / Fast Track desk #}
+            <div class="col-6">
+              <label class="desk-card w-100 text-center p-3 border rounded-3 cursor-pointer
+                {% if current_station == 'FAST_TRACK' %}border-warning bg-warning bg-opacity-10{% endif %}"
+                style="cursor:pointer;">
+                <input type="radio" name="station" value="FAST_TRACK" class="d-none desk-radio"
+                  {% if current_station == 'FAST_TRACK' %}checked{% endif %}>
+                <i class="bi bi-lightning-charge fs-2 text-warning d-block mb-1"></i>
+                <span class="fw-semibold">Express / Fast Track</span>
+                <div class="text-muted" style="font-size:.75rem;">Express + Fast Track tier</div>
+              </label>
+            </div>
+
+            {# VIP desk #}
+            <div class="col-6">
+              <label class="desk-card w-100 text-center p-3 border rounded-3 cursor-pointer
+                {% if current_station == 'VIP' %}border-danger bg-danger bg-opacity-10{% endif %}"
+                style="cursor:pointer;">
+                <input type="radio" name="station" value="VIP" class="d-none desk-radio"
+                  {% if current_station == 'VIP' %}checked{% endif %}>
+                <i class="bi bi-stars fs-2 text-danger d-block mb-1"></i>
+                <span class="fw-semibold">VIP</span>
+                <div class="text-muted" style="font-size:.75rem;">VIP patients only</div>
+              </label>
+            </div>
+
+            {# Insured desk #}
+            <div class="col-6">
+              <label class="desk-card w-100 text-center p-3 border rounded-3 cursor-pointer
+                {% if current_station == 'INSURED' %}border-info bg-info bg-opacity-10{% endif %}"
+                style="cursor:pointer;">
+                <input type="radio" name="station" value="INSURED" class="d-none desk-radio"
+                  {% if current_station == 'INSURED' %}checked{% endif %}>
+                <i class="bi bi-shield-check fs-2 text-info d-block mb-1"></i>
+                <span class="fw-semibold">Insured</span>
+                <div class="text-muted" style="font-size:.75rem;">Insurance patients</div>
+              </label>
+            </div>
+
+            {# All patients #}
+            <div class="col-12">
+              <label class="desk-card w-100 text-center p-3 border rounded-3 cursor-pointer
+                {% if current_station == 'ALL' or not current_station %}border-dark bg-dark bg-opacity-10{% endif %}"
+                style="cursor:pointer;">
+                <input type="radio" name="station" value="ALL" class="d-none desk-radio"
+                  {% if current_station == 'ALL' or not current_station %}checked{% endif %}>
+                <i class="bi bi-grid fs-2 text-dark d-block mb-1"></i>
+                <span class="fw-semibold">All Patients</span>
+                <div class="text-muted" style="font-size:.75rem;">See every tier in one queue</div>
+              </label>
+            </div>
+
+          </div>
+
+          <button type="submit" class="btn btn-success w-100 fw-bold">
+            <i class="bi bi-check-lg me-2"></i>Confirm Desk &amp; Go to Workstation
+          </button>
+          <a href="{% url 'dashboard:home' %}" class="btn btn-link w-100 text-muted small mt-1">
+            Cancel — keep current desk
+          </a>
+        </form>
+      </div>
+    </div>
+
+    {% if counters %}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white small fw-semibold py-2">
+        <i class="bi bi-display me-1 text-secondary"></i>Physical Cashier Counters Today
+      </div>
+      <ul class="list-group list-group-flush small">
+        {% for c in counters %}
+        <li class="list-group-item d-flex justify-content-between py-2">
+          <span>{{ c.name }} <code class="text-muted">{{ c.code }}</code></span>
+          <span class="badge {% if c.is_active %}bg-success bg-opacity-75{% else %}bg-secondary{% endif %}">
+            {{ c.get_tier_label }}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<style>
+.desk-card { transition: border-color .15s, background .15s; border-width: 2px !important; }
+.desk-card:hover { background: #f8f9fa; }
+input.desk-radio:checked + * { }  /* handled by label classes above */
+</style>
+<script>
+(function () {
+  const radios = document.querySelectorAll('.desk-radio');
+  const labels = document.querySelectorAll('.desk-card');
+  const colourMap = {
+    STANDARD:   ['border-primary',  'bg-primary',  'bg-opacity-10'],
+    FAST_TRACK: ['border-warning',  'bg-warning',  'bg-opacity-10'],
+    VIP:        ['border-danger',   'bg-danger',   'bg-opacity-10'],
+    INSURED:    ['border-info',     'bg-info',     'bg-opacity-10'],
+    ALL:        ['border-dark',     'bg-dark',     'bg-opacity-10'],
+  };
+  function refresh() {
+    radios.forEach(function (r) {
+      const lbl = r.closest('.desk-card');
+      // Strip all highlight classes
+      Object.values(colourMap).flat().forEach(function (c) { lbl.classList.remove(c); });
+      lbl.classList.remove('border-primary','border-warning','border-danger','border-info','border-dark');
+      if (r.checked) {
+        const cls = colourMap[r.value] || [];
+        cls.forEach(function (c) { lbl.classList.add(c); });
+      }
+    });
+  }
+  radios.forEach(function (r) { r.addEventListener('change', refresh); });
+})();
+</script>
+{% endblock %}

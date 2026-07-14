@@ -475,6 +475,14 @@ def verify_result(request, result_id):
     result.verified_at = timezone.now()
     result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'updated_at'])
     messages.success(request, 'Result verified.')
+    # Check if all results are done — auto-return patient to doctor queue
+    try:
+        visit = result.order_item.order.consultation.visit if result.order_item.order.consultation else None
+        if visit:
+            from apps.core.patient_flow import check_and_autoreturn_to_doctor
+            check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
+    except Exception:
+        pass
     return redirect('laboratory:detail', pk=result.order_item.order.pk)
 
 
@@ -515,10 +523,16 @@ def lab_order_view(request, consultation_pk):
                     )
             except Exception:
                 pass
+            # Auto-route patient to lab queue
+            try:
+                from apps.core.patient_flow import auto_route_to_lab
+                auto_route_to_lab(consultation, ordered_by=request.user)
+            except Exception:
+                pass
             messages.success(
                 request,
                 f'Lab order created ({len(selected_tests)} test(s)). '
-                'Direct patient to cashier to pay — lab queue will activate after payment.'
+                'Patient has been routed to the lab queue automatically.'
             )
             return redirect('consultations:detail', pk=consultation_pk)
         elif not selected_tests:

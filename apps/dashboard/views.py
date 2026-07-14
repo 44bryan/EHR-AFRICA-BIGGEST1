@@ -911,6 +911,12 @@ def home_view(request):
     if user.role == 'cashier':
         from apps.billing.models import Invoice, InvoiceStatus, Payment
 
+        # First-time login: redirect to desk selection if no station chosen yet
+        from apps.accounts.models import CashierStation
+        _station_val = getattr(user, 'cashier_station', None)
+        if not _station_val:
+            return redirect('dashboard:cashier_select_desk')
+
         if _qms_active():
             from apps.qms.models import ServiceCounter, QueueToken, TokenStatus
             counter = ServiceCounter.objects.filter(
@@ -1202,6 +1208,51 @@ def home_view(request):
 
     # Fallback
     return render(request, 'dashboard/medical_director.html', ctx)
+
+
+# ── Cashier: self-select their desk/tier ──────────────────────────────────────
+
+@login_required
+def cashier_select_desk(request):
+    """
+    Cashier chooses their own workstation tier (Standard / VIP / Express / All).
+    POST: {'station': 'STANDARD'|'FAST_TRACK'|'VIP'|'INSURED'|'ALL'}
+    GET:  renders the desk selection page.
+    """
+    from django.http import JsonResponse
+    from django.views.decorators.http import require_http_methods
+    from apps.accounts.models import CashierStation
+
+    if request.user.role not in ('cashier', 'chief_cashier') and not request.user.is_super_admin:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        from django.contrib import messages
+        station = request.POST.get('station', '').strip().upper()
+        valid = [c for c, _ in CashierStation.choices]
+        if station not in valid:
+            from django.http import HttpResponseBadRequest
+            return HttpResponseBadRequest('Invalid station.')
+        request.user.cashier_station = station
+        request.user.save(update_fields=['cashier_station'])
+        messages.success(request, f'Desk set to: {dict(CashierStation.choices).get(station, station)}')
+        return redirect('dashboard:home')
+
+    # GET — show selection UI
+    from apps.accounts.models import CashierStation
+    if _qms_active():
+        from apps.qms.models import ServiceCounter
+        counters = list(ServiceCounter.objects.filter(
+            service_type='CASHIER', is_active=True
+        ).order_by('name'))
+    else:
+        counters = []
+    return render(request, 'dashboard/cashier_select_desk.html', {
+        'stations': CashierStation.choices,
+        'current_station': getattr(request.user, 'cashier_station', 'ALL'),
+        'counters': counters,
+    })
 
 
 # ── Super Admin Panel ─────────────────────────────────────────────────────────

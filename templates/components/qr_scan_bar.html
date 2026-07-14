@@ -1,0 +1,49 @@
+{#
+  QR / Barcode Scan Bar — drop anywhere a workstation needs instant patient lookup.
+  Usage:
+    {% include "components/qr_scan_bar.html" with scan_url_prefix="/patients/" scan_url_suffix="/" placeholder="…" %}
+  Builds: /patients/<scanned-id>/
+  Defaults to /patients/<id>/ (patient detail).
+  The input accepts input from a USB barcode scanner (HID keystrokes ending in Enter) or typing.
+#}
+<div class="card border-0 shadow-sm mb-3" style="background:linear-gradient(90deg,#eff6ff 0%,#f8fafc 100%);">
+  <div class="card-body py-2 px-3">
+    <div class="d-flex align-items-center gap-3">
+      <i class="bi bi-qr-code-scan fs-4 text-primary flex-shrink-0"></i>
+      <div class="flex-grow-1">
+        <input
+          id="qrScanInput"
+          type="text"
+          class="form-control form-control-sm fw-semibold border-primary"
+          placeholder="{{ placeholder|default:'Scan patient card or type Patient ID…' }}"
+          autocomplete="off"
+          autofocus
+          data-url-prefix="{{ scan_url_prefix|default:'/patients/' }}"
+          data-url-suffix="{{ scan_url_suffix|default:'/' }}"
+        />
+      </div>
+      <span class="text-muted small d-none d-sm-inline text-nowrap">
+        <i class="bi bi-lightning-charge-fill text-warning me-1"></i>Instant lookup
+      </span>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var inp = document.getElementById('qrScanInput');
+  if (!inp) return;
+  inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var val = inp.value.trim();
+      if (!val) return;
+      var url = (inp.dataset.urlPrefix || '/patients/') + encodeURIComponent(val) + (inp.dataset.urlSuffix || '/');
+      window.location.href = url;
+    }
+  });
+  // Auto-focus on any click in the page to keep scanner active
+  document.addEventListener('click', function (e) {
+    if (!inp.contains(e.target)) return;
+  });
+})();
+</script>
