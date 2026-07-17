@@ -64,13 +64,13 @@ def lab_dashboard(request):
 
     # Patients waiting at lab (visit status = LABORATORY, today)
     from apps.patients.models import Visit
-    waiting_visits = list(
-        Visit.objects.filter(
-            visit_date__date=today,
-            status='LABORATORY',
-            is_deleted=False,
-        ).select_related('patient', 'attending_doctor').order_by('visit_date')
-    )
+    _pt = getattr(request.user, 'patient_tier', 'ALL')
+    _lab_qs = Visit.objects.filter(visit_date__date=today, status='LABORATORY', is_deleted=False)
+    if _pt == 'VIP':
+        _lab_qs = _lab_qs.filter(service_tier='VIP')
+    elif _pt == 'STANDARD':
+        _lab_qs = _lab_qs.exclude(service_tier='VIP')
+    waiting_visits = list(_lab_qs.select_related('patient', 'attending_doctor').order_by('visit_date'))
 
     # Annotate each pending order with payment status and elapsed time
     pending_orders = list(pending_orders)

@@ -73,6 +73,20 @@ class CashierStation(models.TextChoices):
     INSURED    = 'INSURED',    _('Insured / HMO')
 
 
+class PatientTier(models.TextChoices):
+    """
+    For downstream clinical staff (pharmacist, lab tech, refractionist,
+    investigations, cashier, triage nurse) — which service tier's patients
+    this account sees in their queue.
+    ALL      = sees every patient regardless of tier (default)
+    STANDARD = sees only standard-tier patients
+    VIP      = sees only VIP-tier patients
+    """
+    ALL      = 'ALL',      _('All Tiers')
+    STANDARD = 'STANDARD', _('Standard Only')
+    VIP      = 'VIP',      _('VIP Only')
+
+
 class ConsultationUnit(models.TextChoices):
     """
     For OPHTHALMOLOGIST accounts only — indicates which consultation desk/unit
@@ -110,6 +124,13 @@ class User(AbstractUser):
         default=ConsultationUnit.GENERAL,
         blank=True,
         help_text='For Ophthalmologist accounts only — which consultation desk this doctor is assigned to (General, Express, VIP, Insurance). Determines which QMS queue they see.',
+    )
+    patient_tier = models.CharField(
+        max_length=10,
+        choices=PatientTier.choices,
+        default=PatientTier.ALL,
+        blank=True,
+        help_text='For pharmacists, lab techs, refractionists, cashiers, triage nurses — which patient tier this account serves. VIP staff see only VIP patients; Standard staff see only standard patients; ALL sees everyone.',
     )
     department = models.ForeignKey(
         'departments.Department',

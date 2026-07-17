@@ -1022,14 +1022,22 @@ def workstation_view(request):
                 from django.db.models import Q as _Q
                 # Tokens assigned to this doctor specifically (VIP/Express dispatch)
                 # OR tokens in the tier pool with no specific doctor assigned
+                _token_qs = QueueToken.objects.filter(
+                    _Q(assigned_doctor=user) |
+                    _Q(assigned_doctor__isnull=True, service_type__in=service_types),
+                    token_date=today,
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    is_deleted=False,
+                )
+                # Non-doctor staff (refractionist, optometrist, etc.) respect patient_tier
+                if dept_code != 'GEN_OPH':
+                    _pt = getattr(user, 'patient_tier', 'ALL')
+                    if _pt == 'VIP':
+                        _token_qs = _token_qs.filter(service_tier='VIP')
+                    elif _pt == 'STANDARD':
+                        _token_qs = _token_qs.exclude(service_tier='VIP')
                 waiting_tokens = list(
-                    QueueToken.objects.filter(
-                        _Q(assigned_doctor=user) |
-                        _Q(assigned_doctor__isnull=True, service_type__in=service_types),
-                        token_date=today,
-                        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                        is_deleted=False,
-                    ).select_related('patient', 'counter', 'assigned_doctor')
+                    _token_qs.select_related('patient', 'counter', 'assigned_doctor')
                     .order_by('-priority', 'issued_at')
                 )
         except Exception:

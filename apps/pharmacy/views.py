@@ -85,14 +85,15 @@ def pharmacy_dashboard(request):
     from apps.patients.models import Visit
     from apps.prescriptions.models import DrugPrescription
     work_order_patient_ids = {wo.patient_id for wo in pharmacy_work_orders}
+    _pt = getattr(request.user, 'patient_tier', 'ALL')
+    _pharm_qs = Visit.objects.filter(visit_date__date=today, status='PHARMACY', is_deleted=False)
+    if _pt == 'VIP':
+        _pharm_qs = _pharm_qs.filter(service_tier='VIP')
+    elif _pt == 'STANDARD':
+        _pharm_qs = _pharm_qs.exclude(service_tier='VIP')
     waiting_visits = list(
-        Visit.objects.filter(
-            visit_date__date=today,
-            status='PHARMACY',
-            is_deleted=False,
-        ).exclude(
-            patient_id__in=work_order_patient_ids,
-        ).select_related('patient', 'attending_doctor').order_by('visit_date')
+        _pharm_qs.exclude(patient_id__in=work_order_patient_ids)
+        .select_related('patient', 'attending_doctor').order_by('visit_date')
     )
     # Attach latest pending prescription to each visit
     if waiting_visits:

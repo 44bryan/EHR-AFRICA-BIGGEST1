@@ -27,13 +27,19 @@ def investigation_workstation_view(request):
     if _qms_active():
         try:
             from apps.qms.models import QueueToken, TokenStatus
+            _invest_qs = QueueToken.objects.filter(
+                service_type='INVEST',
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                token_date=today,
+            )
+            _pt = getattr(request.user, 'patient_tier', 'ALL')
+            if _pt == 'VIP':
+                _invest_qs = _invest_qs.filter(service_tier='VIP')
+            elif _pt == 'STANDARD':
+                _invest_qs = _invest_qs.exclude(service_tier='VIP')
             queued_tokens = list(
-                QueueToken.objects.filter(
-                    service_type='INVEST',
-                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                    token_date=today,
-                ).select_related('visit__patient', 'visit__attending_doctor')
-                .order_by('issued_at')
+                _invest_qs.select_related('visit__patient', 'visit__attending_doctor')
+                .order_by('-priority', 'issued_at')
             )
         except Exception:
             queued_tokens = []
