@@ -23,6 +23,7 @@ urlpatterns = [
     path('visit/<str:visit_number>/triage/', views.triage_view, name='triage'),
     path('<str:patient_id>/triage-start/', views.triage_start_view, name='triage_start'),
     path('visit/<str:visit_number>/discharge/', views.discharge_view, name='discharge'),
+    path('visit/<str:visit_number>/change-tier/', views.change_visit_tier_view, name='change_visit_tier'),
     path('<str:patient_id>/', views.patient_detail_view, name='detail'),
     path('<str:patient_id>/edit/', views.patient_edit_view, name='edit'),
     path('<str:patient_id>/history/', views.medical_history_view, name='history'),

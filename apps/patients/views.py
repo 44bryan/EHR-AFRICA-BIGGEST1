@@ -836,6 +836,42 @@ def visit_detail_view(request, visit_number):
 
 
 @login_required
+@require_POST
+def change_visit_tier_view(request, visit_number):
+    """Allow Chief Cashier or Medical Director to change the service tier of an open visit."""
+    u = request.user
+    if not (u.is_chief_cashier or u.is_medical_director or u.is_super_admin):
+        messages.error(request, "Only Chief Cashier or Medical Director can change a patient's service tier.")
+        return redirect('patients:visit_detail', visit_number=visit_number)
+
+    visit = get_object_or_404(Visit, visit_number=visit_number)
+
+    from .models import ServiceTier
+    new_tier = request.POST.get('service_tier', '').strip()
+    if new_tier not in dict(ServiceTier.choices):
+        messages.error(request, "Invalid service tier selected.")
+        return redirect('patients:visit_detail', visit_number=visit_number)
+
+    if visit.status == 'DISCHARGED':
+        messages.error(request, "Cannot change tier on a discharged visit.")
+        return redirect('patients:visit_detail', visit_number=visit_number)
+
+    old_tier = visit.service_tier
+    if old_tier == new_tier:
+        messages.info(request, "Tier unchanged.")
+        return redirect('patients:visit_detail', visit_number=visit_number)
+
+    visit.service_tier = new_tier
+    visit.save(update_fields=['service_tier'])
+
+    messages.success(
+        request,
+        f"Service tier changed from {old_tier} to {new_tier} for visit {visit.visit_number}."
+    )
+    return redirect('patients:visit_detail', visit_number=visit_number)
+
+
+@login_required
 def triage_view(request, visit_number):
     """OPD Nurses and Medical Director record vitals and dispatch patients."""
     if not request.user.can_do_triage() and not request.user.is_super_admin:
