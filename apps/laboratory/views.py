@@ -64,13 +64,17 @@ def lab_dashboard(request):
 
     # Patients waiting at lab (visit status = LABORATORY, today)
     from apps.patients.models import Visit
+    from django.db.models import Case, When, IntegerField, Value as _V
+    _tier_order = Case(When(service_tier='VIP', then=_V(3)), When(service_tier='FAST_TRACK', then=_V(2)),
+                       When(service_tier='EXPRESS', then=_V(1)), default=_V(0), output_field=IntegerField())
     _pt = getattr(request.user, 'patient_tier', 'ALL')
     _lab_qs = Visit.objects.filter(visit_date__date=today, status='LABORATORY', is_deleted=False)
     if _pt == 'VIP':
         _lab_qs = _lab_qs.filter(service_tier='VIP')
     elif _pt == 'STANDARD':
         _lab_qs = _lab_qs.exclude(service_tier='VIP')
-    waiting_visits = list(_lab_qs.select_related('patient', 'attending_doctor').order_by('visit_date'))
+    waiting_visits = list(_lab_qs.select_related('patient', 'attending_doctor')
+                          .annotate(_tier_order=_tier_order).order_by('-_tier_order', 'visit_date'))
 
     # Annotate each pending order with payment status and elapsed time
     pending_orders = list(pending_orders)

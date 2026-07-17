@@ -85,6 +85,9 @@ def pharmacy_dashboard(request):
     from apps.patients.models import Visit
     from apps.prescriptions.models import DrugPrescription
     work_order_patient_ids = {wo.patient_id for wo in pharmacy_work_orders}
+    from django.db.models import Case, When, IntegerField, Value as _V
+    _tier_order = Case(When(service_tier='VIP', then=_V(3)), When(service_tier='FAST_TRACK', then=_V(2)),
+                       When(service_tier='EXPRESS', then=_V(1)), default=_V(0), output_field=IntegerField())
     _pt = getattr(request.user, 'patient_tier', 'ALL')
     _pharm_qs = Visit.objects.filter(visit_date__date=today, status='PHARMACY', is_deleted=False)
     if _pt == 'VIP':
@@ -93,7 +96,8 @@ def pharmacy_dashboard(request):
         _pharm_qs = _pharm_qs.exclude(service_tier='VIP')
     waiting_visits = list(
         _pharm_qs.exclude(patient_id__in=work_order_patient_ids)
-        .select_related('patient', 'attending_doctor').order_by('visit_date')
+        .select_related('patient', 'attending_doctor')
+        .annotate(_tier_order=_tier_order).order_by('-_tier_order', 'visit_date')
     )
     # Attach latest pending prescription to each visit
     if waiting_visits:
