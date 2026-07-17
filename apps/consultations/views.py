@@ -1260,7 +1260,7 @@ def vip_dashboard_view(request):
         try:
             from apps.qms.models import QueueToken, TokenStatus
             for tok in QueueToken.objects.filter(
-                service_tier='VIP', token_date=today, is_deleted=False,
+                service_type='VIP_CONSULT', token_date=today, is_deleted=False,
             ).exclude(
                 status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED]
             ).select_related('patient', 'assigned_doctor'):
