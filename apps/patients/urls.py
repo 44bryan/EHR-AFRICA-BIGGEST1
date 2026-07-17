@@ -6,8 +6,11 @@ app_name = 'patients'
 urlpatterns = [
     path('', views.patient_list_view, name='list'),
     path('register/', views.patient_register_view, name='register'),
+    path('register/checkin-existing/', views.checkin_existing_patient, name='checkin_existing'),
     path('register/ajax/', views.patient_register_ajax, name='register_ajax'),
+    path('register/emergency/', views.emergency_register_view, name='emergency_register'),
     path('search/', views.patient_search_api, name='search'),
+    path('duplicate-check/', views.duplicate_check_api, name='duplicate_check'),
 
     # ── Public QR / pre-registration (must come BEFORE <str:patient_id>/) ──
     path('checkin/', views.qr_checkin_view, name='qr_checkin'),
@@ -24,4 +27,31 @@ urlpatterns = [
     path('<str:patient_id>/edit/', views.patient_edit_view, name='edit'),
     path('<str:patient_id>/history/', views.medical_history_view, name='history'),
     path('<str:patient_id>/qr/', views.qr_generate_view, name='qr_generate'),
+    path('<str:patient_id>/card/', views.registration_card_view, name='registration_card'),
+
+    # ── Chronic medications ─────────────────────────────────────────────────
+    path('<str:patient_id>/medications/add/', views.medication_add_view, name='medication_add'),
+    path('<str:patient_id>/medications/<int:med_id>/toggle/', views.medication_toggle_view, name='medication_toggle'),
+
+    # ── Allergies ───────────────────────────────────────────────────────────
+    path('<str:patient_id>/allergies/add/', views.allergy_add_view, name='allergy_add'),
+    path('<str:patient_id>/allergies/<int:allergy_id>/delete/', views.allergy_delete_view, name='allergy_delete'),
+
+    # ── Insurance ───────────────────────────────────────────────────────────
+    path('<str:patient_id>/insurance/add/', views.insurance_add_view, name='insurance_add'),
+    path('<str:patient_id>/insurance/<int:ins_id>/deactivate/', views.insurance_deactivate_view, name='insurance_deactivate'),
+
+    # ── Problem List ─────────────────────────────────────────────────────────
+    path('<str:patient_id>/problems/add/', views.problem_add_view, name='problem_add'),
+    path('<str:patient_id>/problems/<int:problem_id>/update-status/', views.problem_update_status_view, name='problem_update_status'),
+    path('<str:patient_id>/problems/<int:problem_id>/delete/', views.problem_delete_view, name='problem_delete'),
+
+    # ── Informed Consent (JCI PFR.5) ────────────────────────────────────────
+    path('<str:patient_id>/consents/', views.consent_list_view, name='consent_list'),
+    path('<str:patient_id>/consents/new/', views.consent_create_view, name='consent_create'),
+    path('<str:patient_id>/consents/<uuid:consent_id>/', views.consent_detail_view, name='consent_detail'),
+
+    # ── Documents / Scanned Records ─────────────────────────────────────────
+    path('<str:patient_id>/documents/upload/', views.document_upload_view, name='document_upload'),
+    path('<str:patient_id>/documents/<uuid:doc_id>/delete/', views.document_delete_view, name='document_delete'),
 ]

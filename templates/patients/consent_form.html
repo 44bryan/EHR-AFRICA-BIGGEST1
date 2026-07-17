@@ -1,161 +1,410 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load static %}
 
-{% block title %}New Consent — {{ patient.full_name }}{% endblock %}
+{% block title %}Digital Consent — {{ patient.full_name }}{% endblock %}
 
 {% block breadcrumb %}
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{% url 'patients:list' %}">Patients</a></li>
     <li class="breadcrumb-item"><a href="{% url 'patients:detail' patient_id=patient.patient_id %}">{{ patient.full_name }}</a></li>
+    {% if not is_registration_flow %}
     <li class="breadcrumb-item"><a href="{% url 'patients:consent_list' patient_id=patient.patient_id %}">Consents</a></li>
-    <li class="breadcrumb-item active">New Consent</li>
+    {% endif %}
+    <li class="breadcrumb-item active">{% if is_registration_flow %}General Consent to Treat{% else %}New Consent{% endif %}</li>
   </ol>
 </nav>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-10">
-    <div class="card">
-      <div class="card-header d-flex align-items-center gap-2">
-        <i class="bi bi-file-earmark-check text-primary"></i>
-        <strong>Informed Consent — {{ patient.full_name }}</strong>
-        <span class="badge bg-primary bg-opacity-10 text-primary ms-2">JCI PFR.5</span>
-      </div>
-      <div class="card-body">
-        <form method="post" enctype="multipart/form-data">
-          {% csrf_token %}
 
+{% if is_registration_flow %}
+<!-- Registration flow banner -->
+<div class="alert alert-info border-0 d-flex align-items-center gap-2 mb-3" style="background:#eff6ff;">
+  <i class="bi bi-info-circle-fill text-primary fs-5"></i>
+  <div>
+    <strong>Step: General Consent to Treat</strong> — Patient <strong>{{ patient.full_name }}</strong>
+    (ID: <code>{{ patient.patient_id }}</code>) has been registered. Please obtain their consent to
+    general treatment before proceeding.
+  </div>
+</div>
+{% endif %}
+
+<div class="row justify-content-center">
+  <div class="col-lg-10 col-xl-9">
+
+    <!-- Printable consent document header -->
+    <div id="consent-doc" class="card mb-0" style="border:2px solid #1e40af;">
+
+      <!-- Hospital header -->
+      <div class="card-header py-3 text-center" style="background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);color:#fff;">
+        <h5 class="mb-0 fw-bold">{{ HOSPITAL_NAME }}</h5>
+        <div class="small opacity-75">{{ HOSPITAL_ADDRESS }} &bull; {{ HOSPITAL_PHONE }}</div>
+        <div class="mt-2 fs-6 fw-semibold text-warning">INFORMED CONSENT FORM</div>
+        <div class="small opacity-75">JCI Standard PFR.5 — Patient Rights &amp; Responsibilities</div>
+      </div>
+
+      <div class="card-body p-4">
+        <form method="post" enctype="multipart/form-data" id="consent-form">
+          {% csrf_token %}
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+
+          <!-- Patient info summary -->
+          <div class="row g-2 mb-4 p-3 rounded-3" style="background:#f0f9ff;border:1px solid #bae6fd;">
+            <div class="col-sm-4">
+              <div class="small text-muted">Patient Name</div>
+              <div class="fw-semibold">{{ patient.full_name }}</div>
+            </div>
+            <div class="col-sm-3">
+              <div class="small text-muted">Patient ID</div>
+              <div class="fw-semibold font-monospace">{{ patient.patient_id }}</div>
+            </div>
+            <div class="col-sm-3">
+              <div class="small text-muted">Date of Birth</div>
+              <div class="fw-semibold">{{ patient.date_of_birth|date:"d/m/Y"|default:"—" }}</div>
+            </div>
+            <div class="col-sm-2">
+              <div class="small text-muted">Gender</div>
+              <div class="fw-semibold">{{ patient.get_gender_display|default:"—" }}</div>
+            </div>
+          </div>
+
+          <!-- Consent Type + Procedure + Date -->
           <div class="row g-3 mb-4">
             <div class="col-md-4">
-              <label class="form-label">Consent Type <span class="text-danger">*</span></label>
-              <select name="consent_type" class="form-select" required>
+              <label class="form-label fw-semibold">Consent Type <span class="text-danger">*</span></label>
+              <select name="consent_type" id="consent_type" class="form-select" required
+                      onchange="prefillConsentText(this.value)">
                 {% for val, label in consent_types %}
-                  <option value="{{ val }}">{{ label }}</option>
+                  <option value="{{ val }}"{% if val == prefill_type %} selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
             </div>
             <div class="col-md-5">
-              <label class="form-label">Procedure / Treatment <span class="text-danger">*</span></label>
-              <input type="text" name="procedure_name" class="form-control" required
-                     placeholder="e.g. Phacoemulsification Right Eye">
+              <label class="form-label fw-semibold">Procedure / Treatment <span class="text-danger">*</span></label>
+              <input type="text" name="procedure_name" id="procedure_name" class="form-control" required
+                     value="{{ prefill_procedure }}"
+                     placeholder="e.g. General Ophthalmic Consultation &amp; Treatment">
             </div>
             <div class="col-md-3">
-              <label class="form-label">Date & Time Signed</label>
+              <label class="form-label fw-semibold">Date &amp; Time Signed</label>
               <input type="datetime-local" name="signed_at" class="form-control"
-                     value="{{ now|date:'Y-m-d' }}T{{ now|time:'H:i' }}">
+                     value="{{ now_iso }}">
+            </div>
+          </div>
+
+          <!-- Consent narrative text -->
+          <div class="card mb-4" style="border-color:#e0e7ff;background:#fafbff;">
+            <div class="card-header py-2" style="background:#e0e7ff;">
+              <strong class="text-primary">Consent Declaration</strong>
+            </div>
+            <div class="card-body">
+              <div class="mb-2 small text-muted">
+                This text is read to / by the patient. You may edit it to match the specific
+                procedure discussed.
+              </div>
+              <textarea name="risks_explained" id="consent_text" class="form-control" rows="7"
+                        placeholder="Describe the procedure, risks, benefits and alternatives discussed with the patient..."
+                        required>{{ prefill_text }}</textarea>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4">
+                  <textarea name="benefits_explained" class="form-control form-control-sm" rows="2"
+                            placeholder="Benefits explained (optional)..."></textarea>
+                </div>
+                <div class="col-md-4">
+                  <textarea name="alternatives_explained" class="form-control form-control-sm" rows="2"
+                            placeholder="Alternatives discussed (optional)..."></textarea>
+                </div>
+                <div class="col-md-4">
+                  <textarea name="notes" class="form-control form-control-sm" rows="2"
+                            placeholder="Additional notes..."></textarea>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- Patient Capacity -->
-          <div class="card mb-3" style="border-color:#e2e8f0;">
+          <div class="card mb-4" style="border-color:#e2e8f0;">
             <div class="card-header py-2" style="background:#f8fafc;">
-              <strong class="fs-7">Patient Capacity & Representative</strong>
+              <strong>Patient Capacity &amp; Understanding</strong>
             </div>
             <div class="card-body">
-              <div class="row g-3">
-                <div class="col-12">
-                  <div class="form-check">
+              <div class="row g-3 align-items-start">
+                <div class="col-md-4">
+                  <div class="form-check mb-2">
                     <input class="form-check-input" type="checkbox" name="patient_has_capacity"
                            id="has_capacity" checked
-                           onchange="document.getElementById('rep-fields').style.display=this.checked?'none':'flex'">
+                           onchange="document.getElementById('rep-fields').classList.toggle('d-none',this.checked)">
                     <label class="form-check-label" for="has_capacity">
-                      Patient has mental capacity to consent
+                      Patient has capacity to consent
                     </label>
                   </div>
-                </div>
-                <div class="col-12" id="rep-fields" style="display:none;">
-                  <div class="row g-3">
-                    <div class="col-md-6">
-                      <label class="form-label">Representative Name</label>
-                      <input type="text" name="patient_representative" class="form-control"
-                             placeholder="Full name of guardian/representative">
-                    </div>
-                    <div class="col-md-6">
-                      <label class="form-label">Relationship to Patient</label>
-                      <input type="text" name="relationship_to_patient" class="form-control"
-                             placeholder="e.g. Spouse, Parent, Legal Guardian">
-                    </div>
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="questions_answered" id="q_answered" checked>
+                    <label class="form-check-label" for="q_answered">Questions answered satisfactorily</label>
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Consent Content -->
-          <div class="card mb-3" style="border-color:#e2e8f0;">
-            <div class="card-header py-2" style="background:#f8fafc;">
-              <strong class="fs-7">Consent Discussion Content</strong>
-            </div>
-            <div class="card-body">
-              <div class="row g-3">
-                <div class="col-12">
-                  <label class="form-label">Risks Explained <span class="text-danger">*</span></label>
-                  <textarea name="risks_explained" class="form-control" rows="3" required
-                            placeholder="Describe the risks discussed with the patient..."></textarea>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Benefits Explained</label>
-                  <textarea name="benefits_explained" class="form-control" rows="2"
-                            placeholder="Expected benefits of the procedure..."></textarea>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Alternatives Discussed</label>
-                  <textarea name="alternatives_explained" class="form-control" rows="2"
-                            placeholder="Alternative treatment options discussed..."></textarea>
-                </div>
-                <div class="col-md-4">
-                  <div class="form-check mt-3">
-                    <input class="form-check-input" type="checkbox" name="questions_answered" id="q_answered">
-                    <label class="form-check-label" for="q_answered">Patient questions answered satisfactorily</label>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="form-check mt-3">
+                  <div class="form-check">
                     <input class="form-check-input" type="checkbox" name="interpreter_used" id="interp_used"
-                           onchange="document.getElementById('interp-name').style.display=this.checked?'block':'none'">
+                           onchange="document.getElementById('interp-name').classList.toggle('d-none',!this.checked)">
                     <label class="form-check-label" for="interp_used">Interpreter used</label>
                   </div>
-                  <div id="interp-name" style="display:none;" class="mt-2">
+                  <div id="interp-name" class="mt-2 d-none">
                     <input type="text" name="interpreter_name" class="form-control form-control-sm"
                            placeholder="Interpreter name">
                   </div>
                 </div>
-                <div class="col-md-4">
-                  <label class="form-label">Witness Name</label>
-                  <input type="text" name="witness_name" class="form-control"
-                         placeholder="Name of witness">
+                <div class="col-md-8 d-none" id="rep-fields">
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <label class="form-label small">Representative Name</label>
+                      <input type="text" name="patient_representative" class="form-control form-control-sm"
+                             placeholder="Full name of guardian/representative">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small">Relationship to Patient</label>
+                      <input type="text" name="relationship_to_patient" class="form-control form-control-sm"
+                             placeholder="e.g. Spouse, Parent, Legal Guardian">
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-4 offset-md-0">
+                  <label class="form-label small">Witness Name</label>
+                  <input type="text" name="witness_name" class="form-control form-control-sm"
+                         placeholder="Name of witness present">
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Document Upload -->
-          <div class="row g-3 mb-4">
-            <div class="col-md-6">
-              <label class="form-label">Signed Consent Document (scan)</label>
-              <input type="file" name="consent_document" class="form-control"
-                     accept=".pdf,.jpg,.jpeg,.png">
-              <div class="form-text">Optional — upload scanned signed consent form</div>
+          <!-- Digital Signature Pad -->
+          <div class="card mb-4" style="border-color:#e2e8f0;">
+            <div class="card-header py-2 d-flex align-items-center justify-content-between" style="background:#f8fafc;">
+              <strong>Patient / Guardian Signature <span class="text-danger">*</span></strong>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearSig()">
+                  <i class="bi bi-x-circle me-1"></i>Clear
+                </button>
+                <span id="sig-saved-badge" class="badge bg-success d-none align-self-center">
+                  <i class="bi bi-check-circle me-1"></i>Signature captured
+                </span>
+              </div>
             </div>
-            <div class="col-md-6">
-              <label class="form-label">Notes</label>
-              <textarea name="notes" class="form-control" rows="3"
-                        placeholder="Additional notes..."></textarea>
+            <div class="card-body p-3">
+              <p class="small text-muted mb-2">
+                I, the patient or authorised representative, confirm that the above information was explained to me
+                in a language I understand, I have had the opportunity to ask questions, and I voluntarily agree
+                to the proposed treatment/procedure.
+              </p>
+              <div class="border rounded-3 position-relative" style="background:#fff;touch-action:none;">
+                <canvas id="sig-canvas" width="700" height="160"
+                        style="width:100%;height:160px;cursor:crosshair;display:block;border-radius:0.5rem;">
+                </canvas>
+                <div id="sig-placeholder" class="position-absolute top-50 start-50 translate-middle text-muted small"
+                     style="pointer-events:none;">
+                  Sign here (touch or mouse)
+                </div>
+              </div>
+              <input type="hidden" name="patient_signature" id="sig-data">
+              <div class="mt-2 d-flex justify-content-between align-items-center">
+                <span class="small text-muted">
+                  <i class="bi bi-shield-check me-1 text-success"></i>
+                  Signature stored securely with timestamp
+                </span>
+                <span class="small text-muted" id="sig-timestamp"></span>
+              </div>
             </div>
           </div>
 
-          <div class="d-flex gap-2 justify-content-end">
+          <!-- Document upload (optional) -->
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label">Attach Signed Paper Form (optional)</label>
+              <input type="file" name="consent_document" class="form-control"
+                     accept=".pdf,.jpg,.jpeg,.png">
+              <div class="form-text">Upload scanned copy if a paper form was also signed.</div>
+            </div>
+          </div>
+
+          <!-- Action buttons -->
+          <div class="d-flex gap-2 justify-content-between align-items-center pt-2 border-top">
+            {% if is_registration_flow %}
+            <a href="{% url 'patients:detail' patient_id=patient.patient_id %}"
+               class="btn btn-link text-muted text-decoration-none">
+              Skip for now
+            </a>
+            {% else %}
             <a href="{% url 'patients:consent_list' patient_id=patient.patient_id %}"
                class="btn btn-outline-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">
-              <i class="bi bi-check-lg me-1"></i>Save Consent Record
+            {% endif %}
+            <button type="submit" class="btn btn-primary px-4" id="submit-btn" onclick="captureSig(event)">
+              <i class="bi bi-check-circle me-1"></i>
+              {% if is_registration_flow %}Confirm &amp; Proceed{% else %}Save Consent Record{% endif %}
             </button>
           </div>
+
         </form>
       </div>
-    </div>
+    </div><!-- /card -->
+
   </div>
 </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Consent text templates ─────────────────────────────────────────────────
+const CONSENT_TEMPLATES = {
+  GENERAL: {
+    procedure: 'General Ophthalmic Consultation & Treatment',
+    text: `I understand that I am attending {{ HOSPITAL_NAME }} for ophthalmic examination and treatment.\n\nRisks explained: Eye examinations and treatments may involve dilating eye drops (which temporarily blur near vision and cause light sensitivity for 4–6 hours), contact tonometry, and fundus photography. These are generally safe with minimal risk.\n\nBenefits explained: Accurate diagnosis and appropriate treatment plan to preserve and improve vision.\n\nAlternatives: Declining examination means conditions may go undetected or untreated.\n\nI voluntarily consent to the examinations, tests, and treatments deemed necessary by the attending clinician, and understand that additional consent will be sought before any surgical or invasive procedure.`
+  },
+  SURGICAL: {
+    procedure: '',
+    text: `Surgical procedure risks, benefits, and alternatives have been explained to me in detail, including the risk of infection, bleeding, anaesthetic complications, and procedure-specific risks. I understand that no guarantee of outcome can be given. I consent to the procedure listed above and to any additional measures the surgeon considers necessary during the operation.`
+  },
+  INTRAVITREAL: {
+    procedure: 'Intravitreal Injection',
+    text: `Risks explained: Intravitreal injection carries a small risk of infection (endophthalmitis <1:1000), retinal detachment, bleeding, raised eye pressure, and cataract formation. The procedure involves an injection into the vitreous cavity of the eye under sterile conditions with topical anaesthesia.\n\nBenefits: Treatment is intended to preserve or improve vision by delivering medication directly to the back of the eye.\n\nAlternatives: Observation (risk of continued vision loss), laser treatment (if applicable).`
+  },
+  LASER: {
+    procedure: 'Laser Treatment',
+    text: `Risks explained: Laser treatment to the eye carries risks including temporary visual disturbance, pain, and in rare cases worsening of the condition being treated. The specific type and risks of laser treatment have been explained.\n\nBenefits: Laser treatment is intended to stabilise or improve the ocular condition.\n\nAlternatives: Observation, medication, or surgical intervention.`
+  },
+  ANAESTHESIA: {
+    procedure: 'Anaesthesia',
+    text: `The risks of anaesthesia have been explained including allergic reactions, nausea, and in rare cases more serious complications. Type of anaesthesia proposed: [local/general/sedation]. I understand the anaesthetist will monitor me throughout and adjust as required.`
+  },
+  PHOTOGRAPHY: {
+    procedure: 'Clinical Photography & Teaching',
+    text: `I consent to clinical photography, video recording, and use of images for the purpose of medical records, clinical audit, medical education, and research. My identity will be protected unless specific written consent is given for identifiable use.`
+  },
+  DATA_RESEARCH: {
+    procedure: 'Data Sharing & Research',
+    text: `I consent to my anonymised clinical data being used for medical research and audit purposes. I understand I can withdraw this consent at any time without affecting my care.`
+  },
+  PROCEDURE: {
+    procedure: 'Minor Procedure',
+    text: `The proposed minor procedure, its risks, benefits, and alternatives have been explained to me. I understand the procedure will be performed under local anaesthesia or without anaesthesia as appropriate.`
+  }
+};
+
+function prefillConsentText(type) {
+  const tpl = CONSENT_TEMPLATES[type];
+  if (!tpl) return;
+  const textEl = document.getElementById('consent_text');
+  const procEl = document.getElementById('procedure_name');
+  // Only overwrite if field is empty or was a previous prefill
+  if (!textEl.dataset.edited) textEl.value = tpl.text;
+  if (procEl && !procEl.dataset.edited && tpl.procedure) procEl.value = tpl.procedure;
+}
+
+document.getElementById('consent_text').addEventListener('input', function() {
+  this.dataset.edited = '1';
+});
+document.getElementById('procedure_name').addEventListener('input', function() {
+  this.dataset.edited = '1';
+});
+
+// ── Signature Pad ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('sig-canvas');
+const ctx = canvas.getContext('2d');
+const placeholder = document.getElementById('sig-placeholder');
+let drawing = false;
+let hasSig = false;
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  // Save existing drawing
+  const imgData = hasSig ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if (imgData) ctx.putImageData(imgData, 0, 0);
+}
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (e.touches) {
+    return {
+      x: e.touches[0].clientX - rect.left,
+      y: e.touches[0].clientY - rect.top
+    };
+  }
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function startDraw(e) {
+  e.preventDefault();
+  drawing = true;
+  placeholder.style.display = 'none';
+  const pos = getPos(e);
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+}
+
+function draw(e) {
+  if (!drawing) return;
+  e.preventDefault();
+  const pos = getPos(e);
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+  hasSig = true;
+}
+
+function endDraw(e) {
+  if (!drawing) return;
+  drawing = false;
+  if (hasSig) {
+    document.getElementById('sig-saved-badge').classList.remove('d-none');
+    document.getElementById('sig-timestamp').textContent =
+      'Signed at ' + new Date().toLocaleTimeString();
+  }
+}
+
+function clearSig() {
+  const rect = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  hasSig = false;
+  document.getElementById('sig-data').value = '';
+  document.getElementById('sig-saved-badge').classList.add('d-none');
+  document.getElementById('sig-timestamp').textContent = '';
+  placeholder.style.display = '';
+}
+
+function captureSig(e) {
+  if (!hasSig) {
+    // Signature is optional — allow submit without it
+    return true;
+  }
+  document.getElementById('sig-data').value = canvas.toDataURL('image/png');
+}
+
+// Mouse events
+canvas.addEventListener('mousedown', startDraw);
+canvas.addEventListener('mousemove', draw);
+canvas.addEventListener('mouseup', endDraw);
+canvas.addEventListener('mouseleave', endDraw);
+
+// Touch events (tablet / phone)
+canvas.addEventListener('touchstart', startDraw, { passive: false });
+canvas.addEventListener('touchmove', draw, { passive: false });
+canvas.addEventListener('touchend', endDraw);
+
+// Init
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+ctx.strokeStyle = '#1e293b';
+ctx.lineWidth = 2.5;
+ctx.lineCap = 'round';
+ctx.lineJoin = 'round';
+
+// Prefill on page load
+prefillConsentText(document.getElementById('consent_type').value);
+</script>
 {% endblock %}

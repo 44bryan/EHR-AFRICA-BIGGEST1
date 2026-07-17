@@ -16,43 +16,41 @@ def opd_dashboard(request):
     from apps.departments.models import Department
     from apps.dashboard.views import _compute_ai_triage
 
-    visits_qs = Visit.objects.filter(
-        visit_date__date=today, is_deleted=False
-    ).select_related('patient', 'department', 'attending_doctor', 'triage_nurse')
-
     from apps.patients.models import VisitStatus
-    total_today = visits_qs.count()
-    # Waiting = registered at gate but not yet with doctor
-    waiting = visits_qs.filter(status__in=[
-        VisitStatus.REGISTERED, VisitStatus.AT_RECEPTIONIST,
-        VisitStatus.AT_CASHIER,
-    ]).count()
-    # In triage = at parameters stage (includes legacy TRIAGE status)
-    in_triage = visits_qs.filter(status__in=[
-        VisitStatus.PARAMETERS, VisitStatus.TRIAGE,
-    ]).count()
-    in_consultation = visits_qs.filter(status=VisitStatus.IN_CONSULTATION).count()
-    discharged = visits_qs.filter(status__in=[
-        VisitStatus.DISCHARGED, VisitStatus.COMPLETED,
-    ]).count()
 
-    # Triage queue: active patients only — ordered by arrival time
-    triage_queue = list(
-        visits_qs.exclude(status__in=[
-            VisitStatus.DISCHARGED, VisitStatus.COMPLETED,
-        ]).order_by('visit_date')
+    # Single query: fetch all today's visits once, compute all counts in Python
+    visits_today = list(
+        Visit.objects.filter(visit_date__date=today, is_deleted=False)
+        .select_related('patient', 'department', 'attending_doctor', 'triage_nurse')
     )
+
+    _WAITING_ST  = {VisitStatus.REGISTERED, VisitStatus.AT_RECEPTIONIST, VisitStatus.AT_CASHIER}
+    _TRIAGE_ST   = {VisitStatus.PARAMETERS, VisitStatus.TRIAGE}
+    _DONE_ST     = {VisitStatus.DISCHARGED, VisitStatus.COMPLETED}
+
+    total_today      = len(visits_today)
+    waiting          = sum(1 for v in visits_today if v.status in _WAITING_ST)
+    in_triage        = sum(1 for v in visits_today if v.status in _TRIAGE_ST)
+    in_consultation  = sum(1 for v in visits_today if v.status == VisitStatus.IN_CONSULTATION)
+    discharged       = sum(1 for v in visits_today if v.status in _DONE_ST)
+
+    # Triage queue: active patients only — sorted by AI priority then arrival
+    triage_queue = [v for v in visits_today if v.status not in _DONE_ST]
     for v in triage_queue:
         v.ai_priority, v.ai_priority_reason = _compute_ai_triage(v)
     _order = {'EMERGENCY': 0, 'URGENT': 1, 'ROUTINE': 2}
     triage_queue.sort(key=lambda v: (_order.get(v.ai_priority, 3), str(v.visit_date)))
 
+    # Single query for departments
     departments = Department.objects.filter(is_active=True).order_by('name')
 
-    # OPDVisit stats for backward compat
-    opd_visits_today = OPDVisit.objects.filter(visit_date=today)
-    by_status = opd_visits_today.values('status').annotate(count=Count('id'))
+    # OPDVisit stats — single aggregate query
+    by_status = (
+        OPDVisit.objects.filter(visit_date=today)
+        .values('status').annotate(count=Count('id'))
+    )
     status_counts = {s['status']: s['count'] for s in by_status}
+    opd_total = sum(status_counts.values())
 
     context = {
         'today': today,
@@ -63,8 +61,7 @@ def opd_dashboard(request):
         'discharged': discharged,
         'triage_queue': triage_queue,
         'departments': departments,
-        # OPD visit stats
-        'opd_total': opd_visits_today.count(),
+        'opd_total': opd_total,
         'opd_registered': status_counts.get(OPDVisitStatus.REGISTERED, 0),
         'opd_with_doctor': status_counts.get(OPDVisitStatus.WITH_DOCTOR, 0),
         'opd_completed': status_counts.get(OPDVisitStatus.COMPLETED, 0),

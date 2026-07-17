@@ -214,10 +214,24 @@ class QueueToken(TimeStampedModel):
         'self', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='dept_tokens'
     )
+    # For VIP/Express: dispatch to a specific named doctor
+    assigned_doctor = models.ForeignKey(
+        'accounts.User', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='assigned_consultation_tokens',
+        help_text='VIP/Express only: specific doctor this patient is assigned to see.'
+    )
 
     class Meta:
         ordering = ['-priority', 'issued_at']
         unique_together = [('token_number', 'token_date')]
+        indexes = [
+            # Queue display: "show all WAITING tokens for CONSULTATION today"
+            models.Index(fields=['token_date', 'status', 'service_type'], name='qt_date_status_svc_idx'),
+            # Patient lookup: "what's this patient's token today?"
+            models.Index(fields=['patient', 'token_date'], name='qt_patient_date_idx'),
+            # Analytics: wait-time reports by service_type
+            models.Index(fields=['service_type', 'status'], name='qt_svc_status_idx'),
+        ]
 
     def __str__(self):
         return f"Token {self.token_number}"

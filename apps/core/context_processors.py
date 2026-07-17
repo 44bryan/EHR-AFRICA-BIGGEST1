@@ -2,6 +2,7 @@
 Global template context processors.
 """
 from django.conf import settings
+from django.core.cache import cache
 
 
 def hospital_settings(request):
@@ -20,12 +21,17 @@ def hospital_settings(request):
 
 
 def hospital_modules(request):
-    """Inject active-module flags into every template as `modules`."""
-    try:
-        from apps.accounts.models import HospitalConfig
-        cfg = HospitalConfig.get()
-    except Exception:
-        cfg = None
+    """Inject active-module flags into every template as `modules`.
+    Cached for 60 s — HospitalConfig rarely changes mid-session.
+    """
+    cfg = cache.get('hospital_config_obj')
+    if cfg is None:
+        try:
+            from apps.accounts.models import HospitalConfig
+            cfg = HospitalConfig.get()
+            cache.set('hospital_config_obj', cfg, 60)
+        except Exception:
+            cfg = None
     return {'modules': cfg}
 
 
@@ -34,12 +40,17 @@ def qms_active():
     Returns True if the Queue Management System module is enabled.
     Import this anywhere in views: `from apps.core.context_processors import qms_active`
     When QMS is disabled, all token creation and queue reads should be skipped.
+    Cached for 60 s to avoid a DB hit on every single view.
     """
-    try:
-        from apps.accounts.models import HospitalConfig
-        return HospitalConfig.get().module_qms
-    except Exception:
-        return True  # default to enabled if config is unavailable
+    result = cache.get('qms_active_flag')
+    if result is None:
+        try:
+            from apps.accounts.models import HospitalConfig
+            result = HospitalConfig.get().module_qms
+        except Exception:
+            result = True  # default to enabled if config is unavailable
+        cache.set('qms_active_flag', result, 60)
+    return result
 
 
 def session_slot(request):
@@ -52,14 +63,20 @@ def session_slot(request):
 
 
 def user_notifications(request):
-    """Inject unread notification count for authenticated users."""
+    """Inject unread notification count for authenticated users.
+    Cached per user for 30 s — badge updates are not real-time critical.
+    """
     if not request.user.is_authenticated:
         return {'unread_notifications_count': 0}
-    try:
-        from apps.notifications.models import Notification
-        count = Notification.objects.filter(recipient=request.user, is_read=False).count()
-    except Exception:
-        count = 0
+    cache_key = f'notif_count_{request.user.pk}'
+    count = cache.get(cache_key)
+    if count is None:
+        try:
+            from apps.notifications.models import Notification
+            count = Notification.objects.filter(recipient=request.user, is_read=False).count()
+        except Exception:
+            count = 0
+        cache.set(cache_key, count, 30)
     return {'unread_notifications_count': count}
 
 
@@ -67,6 +84,7 @@ def doctor_assigned_room(request):
     """
     Inject the consultation room currently assigned to the logged-in doctor.
     Available in every template as `my_room` (None if not a doctor or no room today).
+    Cached per user for 60 s — room assignments don't change per-request.
     """
     if not request.user.is_authenticated:
         return {'my_room': None}
@@ -83,10 +101,17 @@ def doctor_assigned_room(request):
         ]
         if request.user.role not in clinical_roles:
             return {'my_room': None}
-        from apps.departments.models import ConsultationRoom
-        room = ConsultationRoom.objects.filter(
-            assigned_doctor=request.user, is_active=True
-        ).select_related('department').first()
+        cache_key = f'doctor_room_{request.user.pk}'
+        room = cache.get(cache_key)
+        if room is None:
+            from apps.departments.models import ConsultationRoom
+            room = ConsultationRoom.objects.filter(
+                assigned_doctor=request.user, is_active=True
+            ).select_related('department').first()
+            # Cache None as a sentinel so we don't re-query for unassigned doctors
+            cache.set(cache_key, room or 'NONE', 60)
+        if room == 'NONE':
+            room = None
         return {'my_room': room}
     except Exception:
         return {'my_room': None}

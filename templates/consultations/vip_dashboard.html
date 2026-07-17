@@ -1,0 +1,230 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}VIP Patient Tracker{% endblock %}
+
+{% block extra_css %}
+<style>
+.vip-row { border-left: 4px solid #7c3aed !important; }
+.vip-badge { background: #7c3aed; color: #fff; font-size: .68rem; padding: .25em .55em; border-radius: 4px; }
+.status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Header ── #}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0">
+      <i class="bi bi-gem me-2" style="color:#7c3aed;"></i>VIP Patient Tracker
+    </h5>
+    <div class="text-muted small">{{ today|date:"l, d F Y" }} — live status across all departments</div>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+    <a href="{% url 'consultations:workstation' %}?queue=VIP" class="btn btn-sm btn-outline-warning">
+      <i class="bi bi-hospital me-1"></i>VIP Workstation
+    </a>
+    <a href="{% url 'consultations:triage_workstation' %}?tier=VIP" class="btn btn-sm btn-outline-info">
+      <i class="bi bi-heart-pulse me-1"></i>VIP Triage
+    </a>
+  </div>
+</div>
+
+{# ── Stat cards ── #}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #7c3aed !important;">
+      <div class="h2 fw-bold mb-0" style="color:#7c3aed;">{{ total_today }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-gem me-1"></i>Total VIP Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-info mb-0">{{ in_triage }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-heart-pulse me-1"></i>In Triage</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-success mb-0">{{ in_consult }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-person-check me-1"></i>In Consultation</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold text-secondary mb-0">{{ discharged_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Discharged</div>
+    </div>
+  </div>
+</div>
+
+{# ── Active VIP patients ── #}
+{% if active_vip %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #7c3aed !important;">
+  <div class="card-header d-flex justify-content-between align-items-center py-2" style="background:#f5f0ff;">
+    <h6 class="mb-0 fw-bold" style="color:#7c3aed;">
+      <i class="bi bi-person-walking me-2"></i>Active VIP Patients — {{ active_vip|length }}
+    </h6>
+    <small class="text-muted">Live status — auto-refreshes every 30s</small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Current Location</th>
+          <th>Doctor</th>
+          <th>Triage Nurse</th>
+          <th>Arrived</th>
+          <th>Token</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in active_vip %}
+        {% with sl=status_label|default:{} %}
+        {% with lbl=sl|default_if_none:"" %}
+        <tr class="vip-row">
+          <td>
+            <span class="vip-badge me-1"><i class="bi bi-gem"></i> VIP</span>
+            <div class="fw-semibold mt-1">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% with info=status_label|default:{} %}
+            {% with status_info=info.items %}
+            {# Inline status display — colour coded #}
+            {% if v.status == 'IN_CONSULTATION' %}
+              <span class="badge bg-success"><i class="bi bi-person-check me-1"></i>In Consultation</span>
+            {% elif v.status == 'PARAMETERS' or v.status == 'TRIAGE' %}
+              <span class="badge bg-info text-dark"><i class="bi bi-heart-pulse me-1"></i>Triage / Parameters</span>
+            {% elif v.status == 'WAITING' %}
+              <span class="badge bg-primary"><i class="bi bi-hourglass-split me-1"></i>Waiting for Doctor</span>
+            {% elif v.status == 'INVESTIGATION' %}
+              <span class="badge bg-primary"><i class="bi bi-activity me-1"></i>Eye Investigations</span>
+            {% elif v.status == 'LABORATORY' %}
+              <span class="badge bg-info text-dark"><i class="bi bi-eyedropper me-1"></i>Laboratory</span>
+            {% elif v.status == 'PHARMACY' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-capsule me-1"></i>Pharmacy</span>
+            {% elif v.status == 'BILLING' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-cash me-1"></i>Cashier — Final Bill</span>
+            {% elif v.status == 'AT_CASHIER' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-cash-coin me-1"></i>Cashier — Payment</span>
+            {% elif v.status == 'REFRACTION' %}
+              <span class="badge bg-primary"><i class="bi bi-eyeglasses me-1"></i>Refraction</span>
+            {% elif v.status == 'OPTICAL' %}
+              <span class="badge bg-info text-dark"><i class="bi bi-eyeglasses me-1"></i>Optical Shop</span>
+            {% elif v.status == 'COUNSELING' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-chat-square-heart me-1"></i>Surgical Counseling</span>
+            {% elif v.status == 'ADMITTED' %}
+              <span class="badge bg-danger"><i class="bi bi-hospital me-1"></i>Admitted / IPD</span>
+            {% elif v.status == 'IN_THEATRE' %}
+              <span class="badge bg-danger"><i class="bi bi-scissors me-1"></i>In Theatre</span>
+            {% elif v.status == 'AT_RETINA' %}
+              <span class="badge bg-dark"><i class="bi bi-eye me-1"></i>Retina Clinic</span>
+            {% elif v.status == 'AT_GLAUCOMA' %}
+              <span class="badge bg-dark"><i class="bi bi-eye me-1"></i>Glaucoma Clinic</span>
+            {% elif v.status == 'AT_CORNEA' %}
+              <span class="badge bg-dark"><i class="bi bi-eye me-1"></i>Cornea Clinic</span>
+            {% elif v.status == 'AT_CATARACT' %}
+              <span class="badge bg-dark"><i class="bi bi-eye me-1"></i>Cataract Clinic</span>
+            {% elif v.status == 'AT_PEDIATRIC' %}
+              <span class="badge bg-dark"><i class="bi bi-person-hearts me-1"></i>Pediatric Clinic</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ v.get_status_display }}</span>
+            {% endif %}
+            {% if v.department %}
+            <div class="text-muted" style="font-size:.7rem;" class="mt-1">{{ v.department.name }}</div>
+            {% endif %}
+            {% endwith %}{% endwith %}
+          </td>
+          <td>
+            {% if v.attending_doctor %}
+            <span class="small">Dr. {{ v.attending_doctor.get_full_name }}</span>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if v.triage_nurse %}
+            <span class="small text-muted">{{ v.triage_nurse.get_full_name }}</span>
+            {% else %}
+            <span class="text-muted small">Not triaged</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="small text-muted">{{ v.visit_date|date:"H:i" }}</span>
+          </td>
+          <td>
+            {% if v.current_token %}
+            <span class="badge bg-light text-dark border" style="font-size:.7rem;">
+              {{ v.current_token.token_number }} &mdash; {{ v.current_token.get_status_display }}
+            </span>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'patients:visit_detail' visit_number=v.visit_number %}"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-gem fs-1 d-block mb-3 opacity-25" style="color:#7c3aed;"></i>
+    <h5>No active VIP patients right now</h5>
+    <p class="small">All VIP patients for today have been discharged or none have arrived yet.</p>
+  </div>
+</div>
+{% endif %}
+
+{# ── Discharged today ── #}
+{% if discharged_today %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold text-secondary">
+      <i class="bi bi-check-circle me-2"></i>Discharged Today — {{ discharged_count }}
+    </h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Doctor</th><th>Discharged</th></tr>
+      </thead>
+      <tbody>
+        {% for v in discharged_today %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td class="text-muted">{% if v.attending_doctor %}Dr. {{ v.attending_doctor.last_name }}{% else %}—{% endif %}</td>
+          <td class="text-muted">{{ v.updated_at|date:"H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh every 30 seconds
+let _t = 30;
+setInterval(() => { _t--; if (_t <= 0) location.reload(); }, 1000);
+</script>
+{% endblock %}

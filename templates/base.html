@@ -88,5 +88,35 @@
 <script src="{% static 'vendor/htmx.min.js' %}"></script>
 <!-- Custom JS -->
 <script src="{% static 'js/main.js' %}?v=20260708c"></script>
+
+<!-- Chart.js print handler: resize all charts to full width before the print dialog opens -->
+<script>
+(function () {
+  if (typeof window.matchMedia !== 'function') return;
+  var mql = window.matchMedia('print');
+
+  function resizeChartsForPrint() {
+    if (typeof Chart === 'undefined') return;
+    // Resize every registered Chart.js instance to fill its container
+    Object.values(Chart.instances).forEach(function (chart) {
+      var canvas = chart.canvas;
+      var container = canvas.parentElement;
+      if (!container) return;
+      // Force canvas to fill the container at print width
+      canvas.style.width  = '100%';
+      canvas.style.height = '340px';
+      chart.resize();
+    });
+  }
+
+  // beforeprint fires in Chrome, Firefox, Edge before the print dialog
+  window.addEventListener('beforeprint', resizeChartsForPrint);
+
+  // matchMedia fallback for Safari
+  if (mql.addListener) {
+    mql.addListener(function (e) { if (e.matches) resizeChartsForPrint(); });
+  }
+})();
+</script>
 </body>
 </html>

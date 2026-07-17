@@ -57,7 +57,7 @@ def desk(request):
     if qms_active():
         from apps.qms.models import QueueToken, TokenStatus, ServiceType
         queue = QueueToken.objects.filter(
-            issued_at__date=today,
+            token_date=today,
             is_deleted=False,
             service_type=ServiceType.RECEPTIONIST,
         ).exclude(
@@ -106,8 +106,17 @@ def walk_in(request):
 
         # Check if selected patient has an active consultation (no payment needed)
         active_consult_visit = None
+        last_dept = None          # pre-fill department for returning specialist patients
+        last_dept_is_specialist = False
         if selected_patient:
             active_consult_visit = selected_patient.active_consultation_visit
+            if active_consult_visit and active_consult_visit.department:
+                last_dept = active_consult_visit.department
+                _SPECIALIST_CODES = {
+                    'GLAUC', 'RETINA', 'PEDS_OPH', 'CORNEA',
+                    'OCULOPLASTY', 'NEURO_OPH', 'UVEITIS', 'CATARACT',
+                }
+                last_dept_is_specialist = last_dept.code in _SPECIALIST_CODES
 
         return render(request, 'reception/walk_in.html', {
             'q': q,
@@ -118,6 +127,8 @@ def walk_in(request):
             'tier_meta': TIER_META,
             'today': today,
             'active_consult_visit': active_consult_visit,
+            'last_dept': last_dept,
+            'last_dept_is_specialist': last_dept_is_specialist,
         })
 
     # ── Step 2: process walk-in ────────────────────────────────────────────
@@ -154,20 +165,66 @@ def walk_in(request):
         # QMS priority from tier
         priority = TIER_META.get(tier, {}).get('priority', 0)
 
+        # ── Determine QMS service type and Visit status based on department ─────
+        # Specialist-unit follow-ups bypass general triage and go directly to their
+        # unit nurse queue — just like appointment check-in for specialist units.
+        # This covers the case where a Glaucoma/Retina doctor said "come back next
+        # week" without creating a formal appointment. Patient is within 15-day window
+        # so no payment is needed, but they should NOT join the general triage queue.
+        dept_code = department.code if department else 'GEN_OPH'
+
+        # dept_code → QMS service type for specialist units
+        _SPECIALIST_QMS_MAP = {
+            'GLAUC':       'GLAUCOMA',
+            'RETINA':      'RETINA',
+            'PEDS_OPH':    'PEDIATRIC',
+            'CORNEA':      'CORNEA',
+            'OCULOPLASTY': 'OCULOPLASTY',
+            'NEURO_OPH':   'NEURO',
+            'UVEITIS':     'UVEITIS',
+            'CATARACT':    'CATARACT',
+            'LAB':         'LAB',
+            'INVEST':      'INVEST',
+            'REFRAC':      'REFRACTION',
+            'OPTICAL':     'OPTICAL',
+        }
+        # dept_code → Visit.status for specialist units (skip triage entirely)
+        _SPECIALIST_VISIT_STATUS = {
+            'GLAUC':       'AT_GLAUCOMA',
+            'RETINA':      'AT_RETINA',
+            'PEDS_OPH':    'AT_PEDIATRIC',
+            'CORNEA':      'AT_CORNEA',
+            'OCULOPLASTY': 'AT_OCULOPLASTY',
+            'NEURO_OPH':   'AT_NEURO',
+            'UVEITIS':     'UVEITIS',
+            'CATARACT':    'AT_CATARACT',
+        }
+
+        is_specialist_unit = dept_code in _SPECIALIST_VISIT_STATUS
+
+        if not consultation_valid:
+            qms_service_type_str = 'CASHIER'
+            initial_visit_status = 'AT_CASHIER'
+        elif is_specialist_unit:
+            # Returning to specialist unit within 15-day window:
+            # bypass general triage → go directly to unit nurse queue
+            qms_service_type_str = _SPECIALIST_QMS_MAP[dept_code]
+            initial_visit_status = _SPECIALIST_VISIT_STATUS[dept_code]
+        else:
+            # Generalist: route to tier-specific triage queue
+            # Express/FT/VIP go to PARAMS_VIP (their own nurse), Standard goes to PARAMETERS
+            if tier in ('EXPRESS', 'FAST_TRACK', 'VIP'):
+                qms_service_type_str = 'PARAMS_VIP'
+            else:
+                qms_service_type_str = 'PARAMETERS'
+            initial_visit_status = 'PARAMETERS'
+
         # Issue QMS token (only when QMS module is active)
         token = None
         if qms_active():
             from apps.qms.models import ServiceType, QueueToken, DailyTokenSequence
-            dept_code = department.code if department else 'GEN_OPH'
-            if consultation_valid:
-                service_map = {
-                    'LAB': ServiceType.LABORATORY,
-                    'INVEST': ServiceType.INVESTIGATION,
-                    'REFRAC': ServiceType.OPTICAL,
-                }
-                service_type = service_map.get(dept_code, ServiceType.GENERAL)
-            else:
-                service_type = ServiceType.CASHIER
+            # Map string → ServiceType enum value (they match by value)
+            service_type = qms_service_type_str
             token_number = DailyTokenSequence.next_token(service_type)
             token = QueueToken.objects.create(
                 token_number=token_number,
@@ -191,12 +248,6 @@ def walk_in(request):
             booked_by=request.user,
             created_by=request.user,
         )
-
-        # Correct OPD flow:
-        #   New / expired consultation → AT_CASHIER (pays first, then goes to triage)
-        #   Follow-up within 15 days  → PARAMETERS  (skip cashier, go straight to triage)
-        # In BOTH cases triage records vitals before the doctor sees the patient.
-        initial_visit_status = 'PARAMETERS' if consultation_valid else 'AT_CASHIER'
         visit = Visit.objects.create(
             patient=patient,
             department=department,

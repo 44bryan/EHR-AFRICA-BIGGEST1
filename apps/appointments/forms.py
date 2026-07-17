@@ -25,3 +25,6 @@ class AppointmentForm(forms.ModelForm):
         # department and doctor are optional — model allows null
         self.fields['department'].required = False
         self.fields['doctor'].required = False
+        # service_tier has a model default (STANDARD); pre-select it so user doesn't get a required error
+        self.fields['service_tier'].required = False
+        self.fields['service_tier'].initial = 'STANDARD'

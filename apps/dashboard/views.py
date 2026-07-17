@@ -662,7 +662,7 @@ def home_view(request):
                 if service_types:
                     waiting_tokens = list(
                         QueueToken.objects.filter(
-                            issued_at__date=today,
+                            token_date=today,
                             service_type__in=service_types,
                             status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                             is_deleted=False,
@@ -1075,7 +1075,7 @@ def home_view(request):
             try:
                 from apps.qms.models import QueueToken, TokenStatus, ServiceType
                 queue_patients = QueueToken.objects.filter(
-                    issued_at__date=today,
+                    token_date=today,
                     service_type=ServiceType.RECEPTIONIST,
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED],
                     is_deleted=False

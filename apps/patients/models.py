@@ -483,6 +483,8 @@ class Visit(AuditModel):
             # Dashboard queries visits by date constantly
             models.Index(fields=['visit_date'], name='visit_date_idx'),
             models.Index(fields=['patient', '-visit_date'], name='visit_patient_date_idx'),
+            # Workflow dashboards filter by status (WAITING, IN_CONSULTATION, etc.)
+            models.Index(fields=['status', 'visit_date'], name='visit_status_date_idx'),
         ]
 
     def __str__(self):
@@ -814,6 +816,12 @@ class PatientConsent(AuditModel):
     revocation_reason = models.TextField(blank=True)
 
     notes = models.TextField(blank=True)
+
+    # Digital signature — base64 data URL captured on a canvas pad
+    patient_signature = models.TextField(
+        blank=True,
+        help_text='Base64-encoded digital signature drawn by patient or representative'
+    )
 
     class Meta:
         ordering = ['-signed_at', '-created_at']

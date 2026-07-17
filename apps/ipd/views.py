@@ -150,13 +150,13 @@ def counseling_queue(request):
             waiting = QueueToken.objects.filter(
                 service_type='COUNSEL',
                 status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                issued_at__date=today,
+                token_date=today,
                 is_deleted=False,
             ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
             completed_today = QueueToken.objects.filter(
                 service_type='COUNSEL',
                 status=TokenStatus.COMPLETED,
-                issued_at__date=today,
+                token_date=today,
                 is_deleted=False,
             ).count()
         except Exception:
@@ -245,7 +245,7 @@ def counseling_record(request, visit_id):
                     visit=visit,
                     service_type='COUNSEL',
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                    issued_at__date=today,
+                    token_date=today,
                     is_deleted=False,
                 ).first()
                 if counsel_token:
@@ -338,7 +338,7 @@ def surgical_booking_queue(request):
             waiting = QueueToken.objects.filter(
                 service_type='ADMISSION',
                 status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                issued_at__date=today,
+                token_date=today,
                 is_deleted=False,
             ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
         except Exception:
@@ -526,7 +526,7 @@ def surgical_booking_create(request, visit_id):
                     visit=visit,
                     service_type='ADMISSION',
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                    issued_at__date=today,
+                    token_date=today,
                     is_deleted=False,
                 ).first()
                 if adm_token:
@@ -600,7 +600,7 @@ def surgical_booking_create(request, visit_id):
                     visit=visit,
                     service_type='ADMISSION',
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                    issued_at__date=timezone.localdate(),
+                    token_date=timezone.localdate(),
                     is_deleted=False,
                 ).first()
                 if adm_token2:

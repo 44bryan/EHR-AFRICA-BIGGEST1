@@ -7,5 +7,88 @@
     <i class="bi bi-plus-circle me-1"></i>Record New Cycle
   </a>
 </div>
-<div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Cycle No.</th><th>Method</th><th>Start Time</th><th>Duration</th><th>Operator</th><th>BI Test</th><th>Successful</th></tr></thead><tbody>{% for c in cycles %}<tr><td>{{ c.cycle_number }}</td><td>{{ c.get_method_display }}</td><td>{{ c.start_time|date:"d M Y H:i" }}</td><td>{{ c.duration_minutes|default:"-" }} min</td><td>{{ c.operator.get_full_name }}</td><td><span class="badge {% if c.bi_test_result == 'PASS' %}bg-success{% elif c.bi_test_result == 'FAIL' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ c.bi_test_result }}</span></td><td>{% if c.is_successful %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-danger">No</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="7" class="text-center text-muted py-4">No sterilization cycles recorded</td></tr>{% endfor %}</tbody></table></div></div></div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Cycle No.</th>
+            <th>Method</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Duration</th>
+            <th>Operator</th>
+            <th>BI Test</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cycles %}
+          <tr>
+            <td class="small fw-semibold">{{ c.cycle_number }}</td>
+            <td class="small">{{ c.get_method_display }}</td>
+            <td class="small">{{ c.start_time|date:"d M Y H:i" }}</td>
+            <td class="small">{% if c.end_time %}{{ c.end_time|date:"H:i" }}{% else %}<span class="text-warning">In Progress</span>{% endif %}</td>
+            <td class="small">{{ c.duration_minutes|default:"—" }} min</td>
+            <td class="small">{{ c.operator.get_full_name }}</td>
+            <td>
+              <span class="badge {% if c.bi_test_result == 'PASS' %}bg-success{% elif c.bi_test_result == 'FAIL' %}bg-danger{% else %}bg-secondary{% endif %}">
+                {{ c.bi_test_result|default:"—" }}
+              </span>
+            </td>
+            <td>
+              {% if c.end_time %}
+                <span class="badge bg-success-subtle text-success">Complete</span>
+              {% else %}
+                <span class="badge bg-warning-subtle text-warning">Running</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not c.end_time %}
+              <button class="btn btn-xs btn-success py-0 px-2" style="font-size:.7rem;"
+                      data-bs-toggle="modal" data-bs-target="#completeModal{{ c.pk|stringformat:'s'|slice:':8' }}">
+                <i class="bi bi-check2 me-1"></i>Complete
+              </button>
+              {# Modal for BI result #}
+              <div class="modal fade" id="completeModal{{ c.pk|stringformat:'s'|slice:':8' }}" tabindex="-1">
+                <div class="modal-dialog modal-sm">
+                  <div class="modal-content">
+                    <form method="post" action="{% url 'cssd:complete_cycle' cycle_id=c.pk %}">
+                      {% csrf_token %}
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Complete Cycle {{ c.cycle_number }}</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <label class="form-label small fw-semibold">Biological Indicator (BI) Result</label>
+                        <select name="bi_test_result" class="form-select form-select-sm">
+                          <option value="NOT_DONE">Not Done</option>
+                          <option value="PASS">Pass ✓</option>
+                          <option value="FAIL">Fail ✗</option>
+                        </select>
+                      </div>
+                      <div class="modal-footer py-2">
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                          <i class="bi bi-check2-circle me-1"></i>Mark Complete &amp; Release Instruments
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-4">No sterilization cycles recorded</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 {% endblock %}

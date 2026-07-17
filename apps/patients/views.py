@@ -270,7 +270,13 @@ def patient_register_view(request):
             if qms_token_id:
                 # Return to receptionist queue so staff can handle the next patient
                 return redirect('qms:receptionist')
-            return redirect('patients:detail', patient_id=patient.patient_id)
+            # Redirect new patient to General Consent form before continuing to their record
+            from urllib.parse import quote
+            next_path = f'/patients/{patient.patient_id}/'
+            return redirect(
+                f'/patients/{patient.patient_id}/consents/new/'
+                f'?type=GENERAL&next={quote(next_path, safe="")}'
+            )
     else:
         g = request.GET
         # Do NOT pre-fill first_name with the full patient name from the QMS token
@@ -842,6 +848,23 @@ def triage_view(request, visit_number):
     from apps.qms.models import ServiceType
     departments = Department.objects.filter(is_active=True).order_by('name')
 
+    # GEN_OPH doctors for VIP/Express dispatch picker (serialized for JS)
+    import json as _json
+    from apps.accounts.models import User as _User, UserRole as _UserRole
+    _gph_qs = list(
+        _User.objects.filter(
+            role=_UserRole.OPHTHALMOLOGIST,
+            is_active=True, is_deleted=False,
+        ).order_by('consultation_unit', 'last_name')
+        .values('id', 'first_name', 'last_name', 'consultation_unit')
+    )
+    gph_doctors = _gph_qs
+    gph_doctors_json = _json.dumps([
+        {'id': str(d['id']), 'first_name': d['first_name'], 'last_name': d['last_name'],
+         'consultation_unit': d['consultation_unit'] or 'GENERAL'}
+        for d in _gph_qs
+    ])
+
     # All routable destinations: departments + direct service queues
     # Nurse can pick ANY of these regardless of patient tier or path
     direct_routes = [
@@ -888,6 +911,7 @@ def triage_view(request, visit_number):
             return render(request, 'patients/triage.html', {
                 'visit': visit, 'patient': patient, 'form': form,
                 'departments': departments, 'direct_routes': direct_routes,
+                'gph_doctors_json': gph_doctors_json,
                 'med_history': med_history, 'prev_visit': prev_visit,
                 'recent_consultations': [],
                 'payment_blocked': True,
@@ -1035,6 +1059,13 @@ def triage_view(request, visit_number):
             else:
                 service_type = None
 
+            # Doctor assignment: nurse picks named doctor for VIP/Express dispatch
+            _assigned_doctor_id = request.POST.get('assigned_doctor_id', '').strip()
+            _assigned_doctor = None
+            if _assigned_doctor_id and service_type in ('VIP_CONSULT', 'EXP_CONSULT'):
+                from apps.accounts.models import User as _DocUser
+                _assigned_doctor = _DocUser.objects.filter(pk=_assigned_doctor_id, is_active=True).first()
+
             if service_type:
                 from apps.qms.models import (
                     QueueToken, DailyTokenSequence, IssuancePoint,
@@ -1045,7 +1076,7 @@ def triage_view(request, visit_number):
                 today = _tz.localdate()
                 entry_token = QueueToken.objects.filter(
                     patient=visit.patient,
-                    issued_at__date=today,
+                    token_date=today,
                     issuance_point__in=[
                         IssuancePoint.GATE, IssuancePoint.VIP_RECEPTION,
                         IssuancePoint.EXPRESS_DESK, IssuancePoint.CASHIER,
@@ -1065,13 +1096,14 @@ def triage_view(request, visit_number):
                     # so they no longer appear in the triage nurse's queue
                     QueueToken.objects.filter(
                         patient=visit.patient,
-                        issued_at__date=today,
+                        token_date=today,
                         service_type__in=['PARAMETERS', 'PARAMS_VIP'],
                         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                         is_deleted=False,
                     ).update(status=TokenStatus.COMPLETED)
 
                     token_number = DailyTokenSequence.next_dept_token(service_type)
+                    _doctor_note = f' → Dr. {_assigned_doctor.get_full_name()}' if _assigned_doctor else ''
                     QueueToken.objects.create(
                         token_number=token_number,
                         patient=visit.patient,
@@ -1082,7 +1114,8 @@ def triage_view(request, visit_number):
                         issuance_point=IssuancePoint.SYSTEM,
                         priority=base_priority,
                         entry_token=entry_token,
-                        notes=f'Dispatched to {dest_label}{(" → Room " + _room_num) if _room_num else ""} by {request.user.get_full_name()}. Priority: {priority}',
+                        assigned_doctor=_assigned_doctor,
+                        notes=f'Dispatched to {dest_label}{_doctor_note}{(" → Room " + _room_num) if _room_num else ""} by {request.user.get_full_name()}. Priority: {priority}',
                         issued_by=request.user,
                     )
 
@@ -1132,6 +1165,7 @@ def triage_view(request, visit_number):
         'form': form,
         'departments': departments,
         'direct_routes': direct_routes,
+        'gph_doctors_json': gph_doctors_json,
         'med_history': med_history,
         'prev_visit': prev_visit,
         'recent_consultations': recent_consultations,
@@ -1260,9 +1294,20 @@ def patient_search_api(request):
         ).prefetch_related('visits')[:5]
     else:
         from apps.core.utils import patient_search_q
+        from django.db.models import Prefetch
+        from datetime import date as _date
+        _today_date = _date.today()
         patients = Patient.objects.filter(
             is_active=True
-        ).filter(patient_search_q(query)).prefetch_related('visits')[:10]
+        ).filter(patient_search_q(query)).prefetch_related(
+            Prefetch(
+                'visits',
+                queryset=Visit.objects.filter(is_deleted=False).order_by('-visit_date'),
+                to_attr='_prefetched_visits',
+            )
+        )[:10]
+        # Force evaluation so prefetch runs once for all patients
+        patients = list(patients)
 
     today = timezone.localdate()
 
@@ -1295,14 +1340,32 @@ def patient_search_api(request):
 
     results = []
     for p in patients:
-        has_any_visit = p.visits.filter(is_deleted=False).exists()
-        is_free = p.is_free_followup
+        # Use prefetch cache — avoids per-patient DB queries
+        cached_visits = getattr(p, '_prefetched_visits', None)
+        if cached_visits is None:
+            # exact=True path: no prefetch, fall back to queryset
+            cached_visits = list(p.visits.filter(is_deleted=False).order_by('-visit_date'))
+        has_any_visit = bool(cached_visits)
+        # Check free follow-up using cached visits (no DB hit)
+        active_visit = next(
+            (v for v in cached_visits if v.consultation_valid_until and v.consultation_valid_until >= _today_date),
+            None,
+        )
+        is_free = active_visit is not None
         if not has_any_visit:
             status = 'NEW'
             status_label = 'New Patient'
         elif is_free:
             status = 'FREE_FOLLOWUP'
-            status_label = p.consultation_visit_label
+            # Build label from cached visit — no DB hit
+            from apps.accounts.models import HospitalConfig as _HC
+            _cfg = _HC.get()
+            _days_remaining = (active_visit.consultation_valid_until - _today_date).days
+            _days_ago = _cfg.consultation_days - _days_remaining
+            status_label = (
+                f'FREE FOLLOW-UP ({_days_ago} day{"s" if _days_ago != 1 else ""} ago'
+                f' — {_days_remaining} day{"s" if _days_remaining != 1 else ""} remaining)'
+            )
         else:
             status = 'RETURNING'
             status_label = 'Returning — pay consultation'
@@ -2250,7 +2313,6 @@ def consent_create_view(request, patient_id):
     """Create a new informed consent record."""
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent, ConsentType
-    from apps.consultations.models import Consultation
 
     if request.method == 'POST':
         signed_at_str = request.POST.get('signed_at', '').strip()
@@ -2276,25 +2338,37 @@ def consent_create_view(request, patient_id):
             interpreter_name=request.POST.get('interpreter_name', '').strip(),
             witness_name=request.POST.get('witness_name', '').strip(),
             notes=request.POST.get('notes', '').strip(),
+            patient_signature=request.POST.get('patient_signature', '').strip(),
             created_by=request.user,
         )
-        # Handle optional document upload
         if 'consent_document' in request.FILES:
             consent.consent_document = request.FILES['consent_document']
             consent.save(update_fields=['consent_document'])
 
         messages.success(request, f'Consent recorded for {patient.full_name}.')
+
+        # Honour ?next= redirect (used by registration flow)
+        next_url = request.POST.get('next', '').strip()
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect('patients:consent_list', patient_id=patient_id)
 
-    # GET — render form
-    recent_consultations = Consultation.objects.filter(
-        patient=patient, is_deleted=False
-    ).order_by('-consultation_date')[:5]
+    # GET — collect context
+    prefill_type = request.GET.get('type', ConsentType.GENERAL)
+    next_url = request.GET.get('next', '')
+    is_registration_flow = bool(next_url)
+
+    now = timezone.localtime(timezone.now())
 
     return render(request, 'patients/consent_form.html', {
         'patient': patient,
         'consent_types': ConsentType.choices,
-        'recent_consultations': recent_consultations,
+        'prefill_type': prefill_type,
+        'prefill_procedure': '',
+        'prefill_text': '',
+        'next_url': next_url,
+        'is_registration_flow': is_registration_flow,
+        'now_iso': now.strftime('%Y-%m-%dT%H:%M'),
     })
 
 

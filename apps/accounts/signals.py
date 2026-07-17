@@ -38,7 +38,7 @@ _ROLE_COUNTER_MAP = {
     'glaucoma_specialist':      ('GLAUCOMA',      '',               'Glaucoma Clinic'),
     'cataract_surgeon':         ('CATARACT',      '',               'Cataract Clinic'),
     'pediatric_ophthalmologist':('PEDIATRIC',     '',               'Pediatric Clinic'),
-    'pediatric_refractionist':  ('PEDIATRIC',     '',               'Pediatric Refraction'),
+    'pediatric_refractionist':  ('REFRACTION',    '',               'Pediatric Refraction'),
     'cornea_specialist':        ('CORNEA',        '',               'Cornea Clinic'),
     'oculoplastics_surgeon':    ('OCULOPLASTY',   '',               'Oculoplastics'),
     'neuro_ophthalmologist':    ('NEURO',         '',               'Neuro-Ophthalmology'),

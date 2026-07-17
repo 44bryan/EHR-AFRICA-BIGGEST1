@@ -994,19 +994,43 @@ def workstation_view(request):
     # ── QMS waiting queue for this doctor's speciality ─────────────────────
     waiting_tokens = []
     waiting_visits = []  # used when QMS is OFF
+    queue_filter = request.GET.get('queue', '').upper()  # VIP|GENERAL|ALL|'' (GEN_OPH only)
 
     if _qms_active() and dept_code:
         try:
             from apps.qms.models import QueueToken, TokenStatus
             service_types = _DEPT_TO_SERVICE_TYPES.get(dept_code, [])
+            # GEN_OPH doctors: support queue toggle (?queue=VIP|GENERAL|ALL)
+            # falling back to their consultation_unit setting if no override
+            if dept_code == 'GEN_OPH':
+                if queue_filter == 'VIP':
+                    service_types = ['VIP_CONSULT']
+                elif queue_filter == 'GENERAL':
+                    service_types = ['GENERAL']
+                elif queue_filter == 'ALL':
+                    service_types = ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT']
+                else:
+                    _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+                    _unit_svc_map = {
+                        'GENERAL':  ['GENERAL'],
+                        'EXPRESS':  ['EXP_CONSULT'],
+                        'VIP':      ['VIP_CONSULT'],
+                        'INSURED':  ['INSUR_CONSULT'],
+                    }
+                    service_types = _unit_svc_map.get(_cu, ['GENERAL'])
             if service_types:
+                from django.db.models import Q as _Q
+                # Tokens assigned to this doctor specifically (VIP/Express dispatch)
+                # OR tokens in the tier pool with no specific doctor assigned
                 waiting_tokens = list(
                     QueueToken.objects.filter(
-                        issued_at__date=today,
-                        service_type__in=service_types,
+                        _Q(assigned_doctor=user) |
+                        _Q(assigned_doctor__isnull=True, service_type__in=service_types),
+                        token_date=today,
                         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                         is_deleted=False,
-                    ).select_related('patient', 'counter').order_by('-priority', 'issued_at')
+                    ).select_related('patient', 'counter', 'assigned_doctor')
+                    .order_by('-priority', 'issued_at')
                 )
         except Exception:
             pass
@@ -1094,17 +1118,26 @@ def workstation_view(request):
         # Default: doctor's assigned room (if any), otherwise all
         selected_room = my_assigned_room
 
-    # Apply room filter to queue
+    # Apply room filter to queue.
+    # Rule: only EXCLUDE patients assigned to a DIFFERENT room.
+    #       Patients with NO room (e.g. intra-session routing, direct referrals)
+    #       appear in ALL room views so they are never silently dropped.
     if selected_room:
         if _qms_active():
             waiting_tokens = [
                 t for t in waiting_tokens
-                if getattr(getattr(t, 'ws_visit', None), 'consultation_room_id', None) == selected_room.id
+                if (
+                    getattr(getattr(t, 'ws_visit', None), 'consultation_room_id', None) is None
+                    or getattr(getattr(t, 'ws_visit', None), 'consultation_room_id', None) == selected_room.id
+                )
             ]
         else:
             waiting_visits = [
                 v for v in waiting_visits
-                if getattr(v, 'consultation_room_id', None) == selected_room.id
+                if (
+                    getattr(v, 'consultation_room_id', None) is None
+                    or getattr(v, 'consultation_room_id', None) == selected_room.id
+                )
             ]
         # Recompute stats after filter
         if _qms_active():
@@ -1187,6 +1220,93 @@ def workstation_view(request):
         'dept_rooms': dept_rooms,
         'my_assigned_room': my_assigned_room,
         'selected_room': selected_room,
+        'queue_filter': queue_filter if dept_code == 'GEN_OPH' else '',
+    })
+
+
+# ── VIP Dashboard ─────────────────────────────────────────────────────────────
+
+@login_required
+def vip_dashboard_view(request):
+    """
+    Live VIP patient tracker — shows every VIP patient today with their
+    current location/status across all departments.
+    """
+    from apps.patients.models import Visit, VisitStatus
+    if not (request.user.can_create_consultation() or request.user.can_do_triage()
+            or request.user.is_medical_director or request.user.is_super_admin
+            or request.user.is_receptionist or request.user.role in ('cashier', 'chief_cashier')):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+
+    active_vip = list(
+        Visit.objects.filter(
+            service_tier='VIP', visit_date__date=today, is_deleted=False,
+        ).exclude(
+            status__in=[VisitStatus.COMPLETED, VisitStatus.DISCHARGED]
+        ).select_related('patient', 'department', 'attending_doctor', 'triage_nurse')
+        .order_by('visit_date')
+    )
+
+    discharged_today = Visit.objects.filter(
+        service_tier='VIP', visit_date__date=today, is_deleted=False,
+        status__in=[VisitStatus.COMPLETED, VisitStatus.DISCHARGED]
+    ).select_related('patient', 'attending_doctor').order_by('-updated_at')
+
+    # Active QMS tokens for VIP visits to show current queue position
+    vip_tokens = {}
+    if _qms_active():
+        try:
+            from apps.qms.models import QueueToken, TokenStatus
+            for tok in QueueToken.objects.filter(
+                service_tier='VIP', token_date=today, is_deleted=False,
+            ).exclude(
+                status__in=[TokenStatus.COMPLETED, TokenStatus.CANCELLED]
+            ).select_related('patient', 'assigned_doctor'):
+                if tok.patient_id:
+                    vip_tokens[tok.patient_id] = tok
+        except Exception:
+            pass
+
+    # Attach token to each visit for easy access in template
+    for v in active_vip:
+        v.current_token = vip_tokens.get(v.patient_id)
+
+    _STATUS_LABEL = {
+        'REGISTERED': ('Registration', 'secondary'),
+        'AT_RECEPTIONIST': ('Reception', 'secondary'),
+        'AT_CASHIER': ('Cashier — Payment', 'warning'),
+        'PARAMETERS': ('Triage / Parameters', 'info'),
+        'TRIAGE': ('Triage / Parameters', 'info'),
+        'WAITING': ('Waiting for Doctor', 'primary'),
+        'IN_CONSULTATION': ('In Consultation', 'success'),
+        'INVESTIGATION': ('Eye Investigations', 'primary'),
+        'LABORATORY': ('Laboratory', 'info'),
+        'PHARMACY': ('Pharmacy', 'warning'),
+        'BILLING': ('Cashier — Final Bill', 'warning'),
+        'REFRACTION': ('Refraction / Optometry', 'primary'),
+        'OPTICAL': ('Optical Shop', 'info'),
+        'COUNSELING': ('Surgical Counseling', 'warning'),
+        'ADMITTED': ('Admitted / IPD', 'danger'),
+        'IN_THEATRE': ('In Theatre', 'danger'),
+    }
+
+    total_today = len(active_vip) + discharged_today.count()
+    in_consult = sum(1 for v in active_vip if v.status == 'IN_CONSULTATION')
+    in_triage = sum(1 for v in active_vip if v.status in ('PARAMETERS', 'TRIAGE'))
+    waiting = sum(1 for v in active_vip if v.status == 'WAITING')
+
+    return render(request, 'consultations/vip_dashboard.html', {
+        'active_vip': active_vip,
+        'discharged_today': discharged_today,
+        'today': today,
+        'status_label': _STATUS_LABEL,
+        'total_today': total_today,
+        'in_consult': in_consult,
+        'in_triage': in_triage,
+        'waiting': waiting,
+        'discharged_count': discharged_today.count(),
     })
 
 
@@ -1244,7 +1364,7 @@ def triage_workstation_view(request):
             if show_mode in ('STANDARD', 'ALL'):
                 parameters_queue = list(
                     QueueToken.objects.filter(
-                        issued_at__date=today,
+                        token_date=today,
                         service_type='PARAMETERS',
                         status__in=active_statuses,
                         is_deleted=False,
@@ -1255,7 +1375,7 @@ def triage_workstation_view(request):
             if show_mode in ('VIP', 'ALL'):
                 vip_params_queue = list(
                     QueueToken.objects.filter(
-                        issued_at__date=today,
+                        token_date=today,
                         service_type='PARAMS_VIP',
                         status__in=active_statuses,
                         is_deleted=False,
@@ -1305,7 +1425,7 @@ def triage_workstation_view(request):
         try:
             from apps.qms.models import QueueToken as _QueueToken
             all_today = _QueueToken.objects.filter(
-                issued_at__date=today,
+                token_date=today,
                 service_type__in=['PARAMETERS', 'PARAMS_VIP'],
                 is_deleted=False,
             )
@@ -1416,10 +1536,14 @@ def clinic_nurse_view(request):
         try:
             from apps.qms.models import QueueToken, TokenStatus
             svc_type = _DEPT_TO_QMS_SERVICE.get(dept_code)
+            # GEN_OPH nurses serve only their tier's consultation queue
+            if dept_code == 'GEN_OPH':
+                _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+                svc_type = {'GENERAL': 'GENERAL', 'EXPRESS': 'EXP_CONSULT', 'VIP': 'VIP_CONSULT', 'INSURED': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
             if svc_type:
                 waiting_tokens = list(
                     QueueToken.objects.filter(
-                        issued_at__date=today,
+                        token_date=today,
                         service_type=svc_type,
                         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                         is_deleted=False,
@@ -1543,11 +1667,15 @@ def clinic_call_patient_view(request, visit_pk):
             from apps.qms.models import QueueToken, TokenStatus
             dept_code = user.role_department_code or (user.department.code if user.department else None)
             svc_type = _DEPT_TO_QMS_SERVICE.get(dept_code) if dept_code else None
+            # GEN_OPH: resolve to the correct tier's service type
+            if dept_code == 'GEN_OPH':
+                _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+                svc_type = {'GENERAL': 'GENERAL', 'EXPRESS': 'EXP_CONSULT', 'VIP': 'VIP_CONSULT', 'INSURED': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
             if svc_type:
                 token = QueueToken.objects.filter(
                     patient=visit.patient,
                     service_type=svc_type,
-                    issued_at__date=timezone.localdate(),
+                    token_date=timezone.localdate(),
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED],
                     is_deleted=False,
                 ).first()
@@ -1618,6 +1746,56 @@ def nurse_route_patient_view(request, visit_pk):
 
     new_status, qms_service, label = route
 
+    # Tier-aware routing: after triage, send patient to the correct tier's doctor queue
+    # Standard → GENERAL, Express/FT → EXP_CONSULT, VIP → VIP_CONSULT
+    if new_status == 'WAITING' and qms_service == 'GENERAL':
+        _tier = getattr(visit, 'service_tier', 'STANDARD') or 'STANDARD'
+        if _tier == 'VIP':
+            qms_service = 'VIP_CONSULT'
+        elif _tier in ('EXPRESS', 'FAST_TRACK'):
+            qms_service = 'EXP_CONSULT'
+
+    # ── VIP Specialist Invite ─────────────────────────────────────────────────
+    # For VIP patients needing a specialist: the specialist comes TO the VIP room.
+    # Instead of routing the patient out, notify the specialist and keep patient in VIP.
+    _VIP_SPECIALIST_DESTS = {'RETINA', 'GLAUCOMA', 'PEDIATRIC', 'CORNEA', 'OCULOPLASTY', 'NEURO', 'UVEITIS', 'CATARACT'}
+    _DEST_TO_ROLE = {
+        'RETINA':      'RETINA_SPECIALIST',
+        'GLAUCOMA':    'GLAUCOMA_SPECIALIST',
+        'PEDIATRIC':   'PEDIATRIC_OPHTHALMOLOGIST',
+        'CORNEA':      'CORNEA_SPECIALIST',
+        'OCULOPLASTY': 'OCULOPLASTICS_SURGEON',
+        'NEURO':       'NEURO_OPHTHALMOLOGIST',
+        'UVEITIS':     'UVEITIS_SPECIALIST',
+        'CATARACT':    'CATARACT_SURGEON',
+    }
+    if getattr(visit, 'service_tier', 'STANDARD') == 'VIP' and destination in _VIP_SPECIALIST_DESTS:
+        specialist_role = _DEST_TO_ROLE.get(destination)
+        if specialist_role:
+            try:
+                from apps.notifications.utils import notify_role
+                from apps.notifications.models import NotificationPriority
+                notify_role(
+                    role=specialist_role,
+                    title=f'VIP Specialist Request — {visit.patient.full_name}',
+                    message=(
+                        f'Dr. {user.get_full_name()} requests your consultation for '
+                        f'VIP patient {visit.patient.full_name} (ID: {visit.patient.patient_id}). '
+                        f'Please come to the VIP Consultation Room.'
+                    ),
+                    link=f'/patients/{visit.patient.patient_id}/',
+                    priority=NotificationPriority.URGENT,
+                )
+            except Exception:
+                pass
+        return JsonResponse({
+            'success': True,
+            'patient': visit.patient.full_name,
+            'destination': label,
+            'message': f'Specialist notified. {visit.patient.full_name} remains in VIP Room.',
+            'vip_invite': True,
+        })
+
     # Update visit status + department so the destination doctor's dashboard shows the patient
     visit.status = new_status
     _save_fields = ['status', 'updated_at']
@@ -1655,6 +1833,10 @@ def nurse_route_patient_view(request, visit_pk):
             from django.db import transaction as _tx
             dept_code = user.role_department_code or (user.department.code if user.department else None)
             svc_type = _DEPT_TO_QMS_SERVICE.get(dept_code) if dept_code else None
+            # GEN_OPH: resolve to the correct tier's service type
+            if dept_code == 'GEN_OPH':
+                _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+                svc_type = {'GENERAL': 'GENERAL', 'EXPRESS': 'EXP_CONSULT', 'VIP': 'VIP_CONSULT', 'INSURED': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
             today = timezone.localdate()
 
             with _tx.atomic():
@@ -1663,7 +1845,7 @@ def nurse_route_patient_view(request, visit_pk):
                     QueueToken.objects.filter(
                         patient=visit.patient,
                         service_type=svc_type,
-                        issued_at__date=today,
+                        token_date=today,
                         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                         is_deleted=False,
                     ).update(status=TokenStatus.COMPLETED, completed_at=timezone.now())
@@ -1673,7 +1855,7 @@ def nurse_route_patient_view(request, visit_pk):
                     already_waiting = QueueToken.objects.filter(
                         patient=visit.patient,
                         service_type=qms_service,
-                        issued_at__date=today,
+                        token_date=today,
                         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                         is_deleted=False,
                     ).exists()
@@ -1700,6 +1882,229 @@ def nurse_route_patient_view(request, visit_pk):
         'patient': visit.patient.full_name,
         'destination': label,
         'message': f'{visit.patient.full_name} routed to {label}.',
+    })
+
+
+# ── Specialist Unit Nurse Queue ───────────────────────────────────────────────
+# This is the "Rooming" workflow used in Epic Ophthalmology and similar systems.
+# A CONSULTATION_NURSE assigned to a specialist unit (Glaucoma, Retina, etc.)
+# sees only their unit's patients, enters pre-screening data (IOP, VA, notes),
+# then clicks "Ready for Doctor" to route the patient into the doctor's queue.
+#
+# Returning-appointment flow for specialist units:
+#   Reception check-in → Visit.status = AT_GLAUCOMA/AT_RETINA/etc.
+#   → appears here (unit queue, bypasses general triage)
+#   → nurse does pre-screen → sends to doctor
+#   → doctor opens workstation with vital_signs already filled
+
+# dept_code → VisitStatus values that indicate "waiting in this unit"
+_UNIT_WAITING_STATUSES = {
+    'GLAUC':       ['AT_GLAUCOMA'],
+    'RETINA':      ['AT_RETINA'],
+    'PEDS_OPH':    ['AT_PEDIATRIC'],
+    'CORNEA':      ['AT_CORNEA'],
+    'OCULOPLASTY': ['AT_OCULOPLASTY'],
+    'NEURO_OPH':   ['AT_NEURO'],
+    'UVEITIS':     ['UVEITIS'],
+    'CATARACT':    ['AT_CATARACT'],
+}
+
+
+@login_required
+def unit_nurse_queue_view(request):
+    """
+    Specialist Unit Nurse Queue — pre-screening workstation.
+
+    Accessible to: CONSULTATION_NURSE, MEDICAL_DIRECTOR, SUPER_ADMIN.
+    Scoped automatically to the nurse's assigned department.
+    """
+    user = request.user
+    if not (user.is_consultation_nurse or user.is_medical_director or user.is_super_admin):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    dept = user.department
+    dept_code = (user.role_department_code or (dept.code if dept else None))
+
+    # Medical Director / Super Admin can switch departments via ?dept=
+    dept_code_override = request.GET.get('dept', '').upper()
+    if dept_code_override and (user.is_medical_director or user.is_super_admin):
+        dept_code = dept_code_override
+        from apps.departments.models import Department as _D
+        dept = _D.objects.filter(code=dept_code).first()
+
+    from apps.departments.models import Department as _Dept
+    all_specialist_depts = list(
+        _Dept.objects.filter(
+            code__in=list(_UNIT_WAITING_STATUSES.keys()), is_active=True
+        ).order_by('name')
+    ) if (user.is_medical_director or user.is_super_admin) else []
+
+    waiting_statuses = _UNIT_WAITING_STATUSES.get(dept_code, [])
+
+    # Waiting: patients in the unit queue (returned from appointment check-in
+    # or sent here by triage nurse)
+    waiting_visits = []
+    if waiting_statuses and dept:
+        waiting_visits = list(
+            Visit.objects.filter(
+                visit_date__date=today,
+                status__in=waiting_statuses,
+                department=dept,
+                is_deleted=False,
+            ).select_related('patient', 'triage_nurse', 'appointment')
+            .prefetch_related('patient__consents')
+            .order_by('visit_date')
+        )
+
+    # In consultation: currently with doctor in this unit today
+    in_consult_visits = []
+    if dept:
+        in_consult_visits = list(
+            Visit.objects.filter(
+                visit_date__date=today,
+                status='IN_CONSULTATION',
+                department=dept,
+                is_deleted=False,
+            ).select_related('patient', 'attending_doctor').order_by('-visit_date')
+        )
+
+    # Stats
+    total_today = Visit.objects.filter(
+        visit_date__date=today, department=dept, is_deleted=False
+    ).count() if dept else 0
+    done_today = Visit.objects.filter(
+        visit_date__date=today, department=dept, is_deleted=False,
+        status__in=['COMPLETED', 'DISCHARGED']
+    ).count() if dept else 0
+
+    # Pre-screen field definitions per unit — shown in the inline entry panel
+    _UNIT_PRESCREEN_FIELDS = {
+        'GLAUC': [
+            ('iop_right', 'IOP Right (mmHg)', 'number'),
+            ('iop_left',  'IOP Left (mmHg)',  'number'),
+            ('va_right',  'VA Right',          'text'),
+            ('va_left',   'VA Left',           'text'),
+            ('vf_done',   'Visual Fields Done?','checkbox'),
+            ('pachymetry_right', 'Pachymetry R (µm)', 'number'),
+            ('pachymetry_left',  'Pachymetry L (µm)', 'number'),
+        ],
+        'RETINA': [
+            ('va_right',  'VA Right',               'text'),
+            ('va_left',   'VA Left',                'text'),
+            ('oct_done',  'OCT Done?',              'checkbox'),
+            ('ffa_done',  'FFA Done?',              'checkbox'),
+            ('iop_right', 'IOP Right (mmHg)',       'number'),
+            ('iop_left',  'IOP Left (mmHg)',        'number'),
+        ],
+        'PEDS_OPH': [
+            ('va_right',      'VA Right',           'text'),
+            ('va_left',       'VA Left',            'text'),
+            ('cover_test',    'Cover Test Result',  'text'),
+            ('iop_right',     'IOP Right',          'number'),
+            ('iop_left',      'IOP Left',           'number'),
+            ('cycloplegic',   'Cycloplegia done?',  'checkbox'),
+        ],
+        'CORNEA': [
+            ('va_right',  'VA Right',               'text'),
+            ('va_left',   'VA Left',                'text'),
+            ('iop_right', 'IOP Right',              'number'),
+            ('iop_left',  'IOP Left',               'number'),
+            ('topo_done', 'Corneal Topo Done?',     'checkbox'),
+        ],
+        'CATARACT': [
+            ('va_right',  'BCVA Right',             'text'),
+            ('va_left',   'BCVA Left',              'text'),
+            ('iop_right', 'IOP Right',              'number'),
+            ('iop_left',  'IOP Left',               'number'),
+            ('biometry',  'Biometry Done?',         'checkbox'),
+        ],
+    }
+    prescreen_fields = _UNIT_PRESCREEN_FIELDS.get(dept_code, [
+        ('iop_right', 'IOP Right (mmHg)', 'number'),
+        ('iop_left',  'IOP Left (mmHg)',  'number'),
+        ('va_right',  'VA Right',         'text'),
+        ('va_left',   'VA Left',          'text'),
+    ])
+
+    return render(request, 'consultations/unit_queue.html', {
+        'dept': dept,
+        'dept_code': dept_code,
+        'all_specialist_depts': all_specialist_depts,
+        'waiting_visits': waiting_visits,
+        'in_consult_visits': in_consult_visits,
+        'waiting_count': len(waiting_visits),
+        'in_consult_count': len(in_consult_visits),
+        'total_today': total_today,
+        'done_today': done_today,
+        'today': today,
+        'prescreen_fields': prescreen_fields,
+    })
+
+
+@login_required
+@require_POST
+def unit_prescreen_save_view(request, visit_pk):
+    """
+    AJAX: Save pre-screening data entered by unit nurse into Visit.vital_signs,
+    then mark patient as ready for doctor (status → IN_CONSULTATION).
+    """
+    user = request.user
+    if not (user.is_consultation_nurse or user.is_medical_director or user.is_super_admin):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    visit = get_object_or_404(Visit, pk=visit_pk, is_deleted=False)
+    data = visit.vital_signs or {}
+
+    # Merge incoming values into vital_signs JSON
+    for key, val in request.POST.items():
+        if key.startswith('_') or key == 'csrfmiddlewaretoken':
+            continue
+        if val == 'on':
+            data[key] = True
+        elif val.strip():
+            # Try numeric coercion
+            try:
+                data[key] = float(val) if '.' in val else int(val)
+            except ValueError:
+                data[key] = val
+
+    # Nurse notes go into a dedicated key
+    nurse_notes = request.POST.get('nurse_notes', '').strip()
+    if nurse_notes:
+        data['nurse_notes'] = nurse_notes
+
+    data['prescreened_by'] = user.get_full_name()
+    data['prescreened_at'] = timezone.now().isoformat()
+
+    visit.vital_signs = data
+    visit.triage_nurse = user
+    visit.status = 'IN_CONSULTATION'
+    visit.save(update_fields=['vital_signs', 'triage_nurse', 'status', 'updated_at'])
+
+    # QMS: mark any unit token as SERVING
+    try:
+        from apps.qms.models import QueueToken, TokenStatus
+        dept = visit.department
+        dept_code = dept.code if dept else None
+        svc_type = _DEPT_TO_QMS_SERVICE.get(dept_code) if dept_code else None
+        if svc_type:
+            QueueToken.objects.filter(
+                patient=visit.patient,
+                service_type=svc_type,
+                token_date=timezone.localdate(),
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED],
+                is_deleted=False,
+            ).update(status=TokenStatus.SERVING)
+    except Exception:
+        pass
+
+    return JsonResponse({
+        'success': True,
+        'visit_number': visit.visit_number,
+        'patient': visit.patient.full_name,
+        'message': f'{visit.patient.full_name} sent to doctor.',
     })
 
 

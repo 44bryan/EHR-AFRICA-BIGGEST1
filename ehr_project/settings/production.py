@@ -19,6 +19,17 @@ from .base import *  # noqa
 # ── Core ──────────────────────────────────────────────────────────────────────
 DEBUG = False
 
+# ── Template caching — parse each template once, store in memory ───────────
+# In production, APP_DIRS is replaced with the CachedLoader so templates are
+# loaded from disk only once per process restart, not on every request.
+TEMPLATES[0]['APP_DIRS'] = False  # noqa: F405
+TEMPLATES[0]['OPTIONS']['loaders'] = [  # noqa: F405
+    ('django.template.loaders.cached.Loader', [
+        'django.template.loaders.filesystem.Loader',
+        'django.template.loaders.app_directories.Loader',
+    ])
+]
+
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])

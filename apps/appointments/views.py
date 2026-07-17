@@ -129,6 +129,8 @@ def appointment_book_view(request):
                 appt = form.save(commit=False)
                 appt.booked_by = request.user
                 appt.created_by = request.user
+                if not appt.service_tier:
+                    appt.service_tier = 'STANDARD'
                 appt.save()
                 # ── Audit log ─────────────────────────────────────────────────
                 try:
@@ -156,6 +158,18 @@ def appointment_book_view(request):
         initial = {}
         if patient:
             initial['patient'] = patient
+        # Pre-fill reason when coming from a consultation referral
+        ref_pk = request.GET.get('ref')
+        if ref_pk:
+            try:
+                from apps.consultations.models import Consultation
+                ref_consult = Consultation.objects.get(pk=ref_pk)
+                initial['reason'] = (
+                    f"Referred by Dr. {ref_consult.consulting_doctor.full_name} "
+                    f"on {ref_consult.consultation_date.strftime('%d %b %Y')}."
+                )
+            except Exception:
+                pass
         form = AppointmentForm(initial=initial)
 
     return render(request, 'appointments/book.html', {
@@ -199,6 +213,29 @@ def appointment_check_in_view(request, pk):
             "Consultation period has expired or no prior payment found. Patient directed to cashier."
         )
 
+    # ── Determine correct Visit status based on appointment department ──────────
+    # Specialist-unit returning patients bypass general triage and go straight
+    # to their unit nurse queue (AT_GLAUCOMA, AT_RETINA, etc.).
+    # Generalist / unrecognised departments → WAITING (normal triage dispatch).
+    _SPECIALIST_UNIT_STATUS = {
+        'GLAUC':       'AT_GLAUCOMA',
+        'RETINA':      'AT_RETINA',
+        'PEDS_OPH':    'AT_PEDIATRIC',
+        'CORNEA':      'AT_CORNEA',
+        'OCULOPLASTY': 'AT_OCULOPLASTY',
+        'NEURO_OPH':   'AT_NEURO',
+        'UVEITIS':     'UVEITIS',
+        'CATARACT':    'AT_CATARACT',
+    }
+    dept_code = appt.department.code if appt.department else None
+    unit_status = _SPECIALIST_UNIT_STATUS.get(dept_code) if dept_code else None
+    if consultation_valid and unit_status:
+        initial_visit_status = unit_status   # → goes directly to unit nurse queue
+    elif consultation_valid:
+        initial_visit_status = 'WAITING'     # → generalist triage dispatch
+    else:
+        initial_visit_status = 'AT_CASHIER'  # → pay first
+
     # Create visit
     visit, created = Visit.objects.get_or_create(
         appointment=appt,
@@ -207,7 +244,8 @@ def appointment_check_in_view(request, pk):
             'department': appt.department,
             'visit_type': visit_type,
             'chief_complaint': appt.reason,
-            'status': 'WAITING',
+            'status': initial_visit_status,
+            'service_tier': appt.service_tier or 'STANDARD',
             'created_by': request.user,
         }
     )
@@ -215,10 +253,30 @@ def appointment_check_in_view(request, pk):
     if _qms_active():
         try:
             from apps.qms.models import QueueToken, DailyTokenSequence, ServiceType
-            service_type = ServiceType.GENERAL if consultation_valid else ServiceType.CASHIER
             tier = appt.service_tier or 'STANDARD'
             TIER_PRIORITY = {'STANDARD': 0, 'EXPRESS': 1, 'FAST_TRACK': 1, 'VIP': 2}
+
+            # ── Tier-aware QMS routing ─────────────────────────────────────────
+            _unit_to_qms = {
+                'AT_GLAUCOMA':    'GLAUCOMA',  'AT_RETINA':      'RETINA',
+                'AT_PEDIATRIC':   'PEDIATRIC', 'AT_CORNEA':      'CORNEA',
+                'AT_OCULOPLASTY': 'OCULOPLASTY','AT_NEURO':      'NEURO',
+                'UVEITIS':        'UVEITIS',   'AT_CATARACT':    'CATARACT',
+            }
+            if not consultation_valid:
+                service_type = ServiceType.CASHIER
+            elif unit_status:
+                # Specialist appointment → bypass triage → unit nurse queue
+                service_type = _unit_to_qms.get(unit_status, 'GENERAL')
+            elif tier in ('EXPRESS', 'FAST_TRACK'):
+                service_type = 'EXP_CONSULT'
+            elif tier == 'VIP':
+                service_type = 'VIP_CONSULT'
+            else:
+                service_type = ServiceType.GENERAL  # STANDARD → general doctor queue
+
             token_number = DailyTokenSequence.next_token(service_type)
+            _assigned_doc = appt.doctor if tier == 'VIP' and appt.doctor else None
             token = QueueToken.objects.create(
                 token_number=token_number,
                 patient=patient,
@@ -226,6 +284,7 @@ def appointment_check_in_view(request, pk):
                 service_type=service_type,
                 priority=TIER_PRIORITY.get(tier, 0),
                 issued_by=request.user,
+                assigned_doctor=_assigned_doc,
             )
             messages.success(request, f'Patient checked in. Token: {token.token_number} | Visit: {visit.visit_number}')
             return redirect('reception:confirmation', token_pk=token.pk)
@@ -353,15 +412,41 @@ def update_status_view(request, pk):
     appt.status = new_status
     if new_status == Appointment.Status.CHECKED_IN:
         appt.save(update_fields=['status'])
-        # Auto-create a patient visit on check-in
+        # Auto-create a patient visit with correct unit routing (same logic as
+        # appointment_check_in_view so specialist patients go to unit nurse queue)
         from apps.patients.models import Visit
+        patient = appt.patient
+        active_visit = patient.active_consultation_visit
+        consultation_valid = active_visit is not None
+
+        _SPECIALIST_UNIT_STATUS = {
+            'GLAUC':       'AT_GLAUCOMA',
+            'RETINA':      'AT_RETINA',
+            'PEDS_OPH':    'AT_PEDIATRIC',
+            'CORNEA':      'AT_CORNEA',
+            'OCULOPLASTY': 'AT_OCULOPLASTY',
+            'NEURO_OPH':   'AT_NEURO',
+            'UVEITIS':     'UVEITIS',
+            'CATARACT':    'AT_CATARACT',
+        }
+        dept_code = appt.department.code if appt.department else None
+        unit_status = _SPECIALIST_UNIT_STATUS.get(dept_code) if dept_code else None
+
+        if consultation_valid and unit_status:
+            initial_status = unit_status
+        elif consultation_valid:
+            initial_status = 'WAITING'
+        else:
+            initial_status = 'AT_CASHIER'
+
         Visit.objects.get_or_create(
             appointment=appt,
             defaults={
-                'patient': appt.patient,
+                'patient': patient,
                 'department': appt.department,
                 'visit_type': 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW',
                 'chief_complaint': appt.reason,
+                'status': initial_status,
                 'created_by': request.user,
             }
         )

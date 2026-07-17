@@ -6,6 +6,7 @@ app_name = 'consultations'
 urlpatterns = [
     path('', views.consultation_list_view, name='list'),
     path('workstation/', views.workstation_view, name='workstation'),
+    path('vip/', views.vip_dashboard_view, name='vip_dashboard'),
     path('triage/', views.triage_workstation_view, name='triage_workstation'),
     path('new/<str:patient_id>/', views.consultation_create_view, name='create'),
     path('<uuid:pk>/', views.consultation_detail_view, name='detail'),
@@ -25,4 +26,7 @@ urlpatterns = [
     path('clinic-nurse/route/<uuid:visit_pk>/', views.nurse_route_patient_view, name='nurse_route'),
     path('my-room/', views.my_room_assign_view, name='my_room_assign'),
     path('skip-queue/', views.skip_queue_reason_view, name='skip_queue_reason'),
+    # ── Specialist Unit Nurse Queue (Rooming / Pre-screening) ───────────────
+    path('unit-queue/', views.unit_nurse_queue_view, name='unit_queue'),
+    path('unit-queue/prescreen/<uuid:visit_pk>/', views.unit_prescreen_save_view, name='unit_prescreen'),
 ]

@@ -46,13 +46,25 @@
               <i class="bi bi-x-lg me-1"></i>Change
             </button>
           </div>
-          <div id="followupBanner" class="{% if not active_consult_visit %}d-none{% endif %} alert alert-info py-2 mb-0 mt-1 d-flex align-items-center gap-2 border-start border-4 border-info rounded-0">
-            <i class="bi bi-calendar2-check text-info fs-5"></i>
-            <div class="small">
-              <strong>Active Consultation — No Payment Needed.</strong>
-              Valid until <strong id="followupDate">{% if active_consult_visit %}{{ active_consult_visit.consultation_valid_until|date:"d M Y" }}{% endif %}</strong>.
-              Route as <strong>Follow-up</strong> — skip cashier.
+          <div id="followupBanner" class="{% if not active_consult_visit %}d-none{% endif %} alert alert-info py-2 mb-0 mt-1 border-start border-4 border-info rounded-0">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-calendar2-check text-info fs-5 flex-shrink-0"></i>
+              <div class="small">
+                <strong>Active Consultation — No Payment Needed.</strong>
+                Valid until <strong id="followupDate">{% if active_consult_visit %}{{ active_consult_visit.consultation_valid_until|date:"d M Y" }}{% endif %}</strong>.
+                Route as <strong>Follow-up</strong> — skip cashier.
+              </div>
             </div>
+            {% if last_dept_is_specialist %}
+            <div class="mt-2 small d-flex align-items-start gap-2 rounded" style="background:#e0f2fe;padding:6px 10px;">
+              <i class="bi bi-arrow-right-circle-fill text-primary mt-1 flex-shrink-0"></i>
+              <span>
+                Last seen in <strong>{{ last_dept.name }}</strong> — department pre-selected below.
+                Patient will go <strong>directly to the {{ last_dept.name }} Unit Nurse Queue</strong>,
+                bypassing general triage.
+              </span>
+            </div>
+            {% endif %}
           </div>
         </div>
 
@@ -115,12 +127,22 @@
           {# ── Department ── #}
           <div class="mb-3">
             <label class="form-label fw-semibold">Department / Clinic <span class="text-danger">*</span></label>
-            <select name="department" class="form-select" required>
+            <select name="department" id="deptSelect" class="form-select" required>
               <option value="">— Select Department —</option>
               {% for dept in departments %}
-              <option value="{{ dept.pk }}">{{ dept.name }}</option>
+              <option value="{{ dept.pk }}"
+                {% if last_dept and dept.pk == last_dept.pk %}selected{% endif %}>
+                {{ dept.name }}
+                {% if last_dept and dept.pk == last_dept.pk %} ← last visit{% endif %}
+              </option>
               {% endfor %}
             </select>
+            {% if last_dept_is_specialist %}
+            <div class="form-text text-primary">
+              <i class="bi bi-info-circle me-1"></i>
+              Pre-selected from last visit. Change if patient is here for a different unit.
+            </div>
+            {% endif %}
           </div>
 
           {# ── Visit Type ── #}

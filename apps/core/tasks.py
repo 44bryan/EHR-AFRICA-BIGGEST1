@@ -119,3 +119,60 @@ def daily_backup_task(self):
             raise self.retry(exc=exc)
         except self.MaxRetriesExceededError:
             return {'status': 'failed', 'error': str(exc)}
+
+
+@shared_task(name='appointments.mark_no_shows', bind=True, max_retries=1, default_retry_delay=120)
+def mark_no_show_appointments_task(self):
+    """
+    End-of-day job — marks all SCHEDULED or CONFIRMED appointments for TODAY
+    that were never checked in as NO_SHOW.
+
+    Standard in Epic/Cerner: runs at 19:00 (7pm) Africa/Douala daily.
+    Logic:
+      - Appointment.appointment_date == today
+      - status IN (SCHEDULED, CONFIRMED)       ← never arrived
+      - NOT CHECKED_IN / COMPLETED / CANCELLED ← exclude patients who came
+    Creates a notification for the Medical Director and logs the count.
+    """
+    from apps.appointments.models import Appointment
+
+    today = timezone.localdate()
+
+    qs = Appointment.objects.filter(
+        appointment_date=today,
+        status__in=[Appointment.Status.SCHEDULED, Appointment.Status.CONFIRMED],
+        is_deleted=False,
+    )
+
+    count = qs.count()
+    if count == 0:
+        logger.info('mark_no_shows: no pending appointments for %s — nothing to do.', today)
+        return {'status': 'ok', 'no_shows_marked': 0, 'date': str(today)}
+
+    updated = qs.update(status=Appointment.Status.NO_SHOW)
+
+    logger.info('mark_no_shows: marked %d appointment(s) as NO_SHOW for %s', updated, today)
+
+    # Notify Medical Director so they can follow up
+    try:
+        from apps.notifications.models import Notification
+        from apps.accounts.models import User, UserRole
+        directors = User.objects.filter(
+            role__in=[UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN],
+            is_active=True,
+        )
+        for director in directors:
+            Notification.objects.create(
+                recipient=director,
+                title=f'End-of-Day: {updated} No-Show(s) — {today.strftime("%d %b %Y")}',
+                message=(
+                    f'{updated} appointment(s) scheduled for today were not checked in '
+                    f'and have been automatically marked as No-Show. '
+                    f'Review at /appointments/?date={today}&status=NO_SHOW'
+                ),
+                notification_type='WARNING',
+            )
+    except Exception as e:
+        logger.warning('mark_no_shows: could not send notifications — %s', e)
+
+    return {'status': 'ok', 'no_shows_marked': updated, 'date': str(today)}

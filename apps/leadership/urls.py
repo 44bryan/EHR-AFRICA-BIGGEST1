@@ -13,4 +13,5 @@ urlpatterns = [
     path('analytics/', analytics_views.analytics_dashboard, name='analytics_dashboard'),
     path('analytics/data/', analytics_views.analytics_data_json, name='analytics_data'),
     path('hospital-stats/', views.hospital_stats_view, name='hospital_stats'),
+    path('my-dept-stats/', views.department_stats_view, name='department_stats'),
 ]

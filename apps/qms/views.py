@@ -44,7 +44,7 @@ def _slip_layout(user):
 def _active_tokens_today():
     today = timezone.localdate()
     return QueueToken.objects.filter(
-        issued_at__date=today, is_deleted=False
+        token_date=today, is_deleted=False
     )
 
 
@@ -414,7 +414,7 @@ def vip_reception_issue(request):
         if patient:
             existing = QueueToken.objects.filter(
                 patient=patient,
-                issued_at__date=today,
+                token_date=today,
                 issuance_point__in=[
                     IssuancePoint.GATE, IssuancePoint.VIP_RECEPTION,
                     IssuancePoint.EXPRESS_DESK, IssuancePoint.CASHIER,
@@ -508,7 +508,7 @@ def express_desk_issue(request):
         if patient:
             existing = QueueToken.objects.filter(
                 patient=patient,
-                issued_at__date=today,
+                token_date=today,
                 issuance_point__in=[
                     IssuancePoint.GATE, IssuancePoint.VIP_RECEPTION,
                     IssuancePoint.EXPRESS_DESK, IssuancePoint.CASHIER,
@@ -598,7 +598,7 @@ def cashier_issue(request):
         if patient:
             existing = QueueToken.objects.filter(
                 patient=patient,
-                issued_at__date=today,
+                token_date=today,
                 issuance_point__in=[IssuancePoint.GATE, IssuancePoint.CASHIER],
                 is_deleted=False,
             ).first()
@@ -672,7 +672,7 @@ def receptionist_queue(request):
     qs = QueueToken.objects.filter(
         service_type=ServiceType.RECEPTIONIST,
         status=TokenStatus.WAITING,
-        issued_at__date=today,
+        token_date=today,
         is_deleted=False,
     ).select_related('patient')
 
@@ -686,13 +686,13 @@ def receptionist_queue(request):
         return QueueToken.objects.filter(
             service_type=ServiceType.RECEPTIONIST,
             status=TokenStatus.WAITING,
-            issued_at__date=today,
+            token_date=today,
             is_deleted=False,
             service_tier__in=tiers,
         ).count()
 
     tier_counts = {
-        'ALL':      QueueToken.objects.filter(service_type=ServiceType.RECEPTIONIST, status=TokenStatus.WAITING, issued_at__date=today, is_deleted=False).count(),
+        'ALL':      QueueToken.objects.filter(service_type=ServiceType.RECEPTIONIST, status=TokenStatus.WAITING, token_date=today, is_deleted=False).count(),
         'STANDARD': _count([ServiceTier.STANDARD]),
         'VIP':      _count([ServiceTier.VIP]),
         'EXPRESS':  _count([ServiceTier.EXPRESS, ServiceTier.FAST_TRACK]),
@@ -767,7 +767,7 @@ def receptionist_complete_registration(request, token_id):
         cashier_before = QueueToken.objects.filter(
             service_type=ServiceType.CASHIER,
             status=TokenStatus.WAITING,
-            issued_at__date=today,
+            token_date=today,
             issued_at__lte=original_arrival,
             service_tier=token.service_tier,
             is_deleted=False,
@@ -822,7 +822,7 @@ def route_to_dept(request):
         today = timezone.localdate()
         entry_token = QueueToken.objects.filter(
             patient=visit.patient,
-            issued_at__date=today,
+            token_date=today,
             issuance_point__in=[IssuancePoint.GATE, IssuancePoint.CASHIER],
             is_deleted=False,
         ).first()
@@ -865,7 +865,7 @@ def route_to_dept(request):
             QueueToken.objects.filter(
                 service_type=service_type,
                 status=TokenStatus.WAITING,
-                issued_at__date=today,
+                token_date=today,
                 is_deleted=False,
             ).order_by('-priority', 'issued_at')
             .values('issued_at', 'priority')[:insert_after]
@@ -915,7 +915,7 @@ def route_to_dept(request):
             _existing_token = QueueToken.objects.filter(
                 patient=visit.patient,
                 service_type=service_type,
-                issued_at__date=timezone.localdate(),
+                token_date=timezone.localdate(),
                 status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                 is_deleted=False,
             ).first()
@@ -948,7 +948,7 @@ def route_to_dept(request):
             QueueToken.objects.filter(
                 patient=visit.patient,
                 service_type=_user_svc,
-                issued_at__date=timezone.localdate(),
+                token_date=timezone.localdate(),
                 status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                 is_deleted=False,
             ).update(status=TokenStatus.COMPLETED, completed_at=timezone.now())
@@ -1037,7 +1037,7 @@ def counter_view(request, counter_id):
     waiting = QueueToken.objects.filter(
         service_type=counter.service_type,
         status=TokenStatus.WAITING,
-        issued_at__date=today,
+        token_date=today,
         is_deleted=False,
         service_tier__in=served_tiers,
     ).select_related('patient').order_by('-priority', 'issued_at')
@@ -1072,7 +1072,7 @@ def call_next(request, counter_id):
         next_token = QueueToken.objects.select_for_update().filter(
             service_type=counter.service_type,
             status=TokenStatus.WAITING,
-            issued_at__date=today,
+            token_date=today,
             is_deleted=False,
             service_tier__in=served_tiers,
         ).order_by('-priority', 'issued_at').first()
@@ -1213,7 +1213,7 @@ def doctor_queue(request):
         waiting = QueueToken.objects.filter(
             service_type=service_type,
             status=TokenStatus.WAITING,
-            issued_at__date=today,
+            token_date=today,
             is_deleted=False,
         ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
         dept_name = dict(ServiceType.choices).get(service_type, service_type)
@@ -1652,7 +1652,7 @@ def queue_stats(request):
         waiting = QueueToken.objects.filter(
             service_type=code,
             status=TokenStatus.WAITING,
-            issued_at__date=today,
+            token_date=today,
             is_deleted=False,
         ).count()
         stats[code] = {'label': label, 'waiting': waiting}
@@ -1666,7 +1666,7 @@ def patient_queue_status(request, patient_id):
     today = timezone.localdate()
     tokens = QueueToken.objects.filter(
         patient=patient,
-        issued_at__date=today,
+        token_date=today,
         is_deleted=False,
     ).select_related('counter').order_by('issued_at')
 
@@ -1690,7 +1690,7 @@ def daily_census(request):
     from django.db.models import Count
 
     entry_tokens = QueueToken.objects.filter(
-        issued_at__date=today,
+        token_date=today,
         issuance_point__in=[
             IssuancePoint.GATE, IssuancePoint.CASHIER,
             IssuancePoint.VIP_RECEPTION, IssuancePoint.EXPRESS_DESK,

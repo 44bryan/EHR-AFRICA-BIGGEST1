@@ -515,28 +515,49 @@ document.addEventListener('htmx:afterOnLoad', function() {
 // Prevents the UI from appearing frozen on tablets when navigating via HTMX
 // while a dropdown or modal is open (Bootstrap doesn't auto-close them).
 document.addEventListener('htmx:beforeSwap', function() {
-  // Close open dropdowns
+  // Dispose tooltip instances on elements about to be replaced
+  // (topbar is inside #page-content-wrapper and gets swapped out)
+  document.querySelectorAll('[data-bs-toggle="tooltip"]:not(#sidebar *)').forEach(function(el) {
+    try { var t = bootstrap.Tooltip.getInstance(el); if (t) t.dispose(); } catch(e) {}
+  });
+
+  // Dispose dropdown instances to prevent Popper.js orphan references
+  document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(el) {
+    try { var d = bootstrap.Dropdown.getInstance(el); if (d) d.dispose(); } catch(e) {}
+  });
+
+  // Close any open dropdowns (belt + suspenders)
   document.querySelectorAll('.dropdown-menu.show').forEach(function(el) {
     el.classList.remove('show');
   });
-  document.querySelectorAll('[data-bs-toggle="dropdown"][aria-expanded="true"]').forEach(function(el) {
+  document.querySelectorAll('[aria-expanded="true"]').forEach(function(el) {
     el.setAttribute('aria-expanded', 'false');
     el.classList.remove('show');
   });
+
   // Hide open modals
   document.querySelectorAll('.modal.show').forEach(function(el) {
-    try {
-      var m = bootstrap.Modal.getInstance(el);
-      if (m) m.hide();
-    } catch(e) {}
+    try { var m = bootstrap.Modal.getInstance(el); if (m) m.hide(); } catch(e) {}
+    el.classList.remove('show');
+    el.style.display = 'none';
   });
-  // Remove modal backdrop if stuck
-  document.querySelectorAll('.modal-backdrop').forEach(function(el) {
+
+  // Hide open offcanvas panels
+  document.querySelectorAll('.offcanvas.show').forEach(function(el) {
+    try { var o = bootstrap.Offcanvas.getInstance(el); if (o) o.hide(); } catch(e) {}
+    el.classList.remove('show', 'showing', 'hiding');
+  });
+
+  // Remove ALL Bootstrap backdrops (modal + offcanvas)
+  document.querySelectorAll('.modal-backdrop, .offcanvas-backdrop').forEach(function(el) {
     el.remove();
   });
-  document.body.classList.remove('modal-open');
+
+  // Reset body state fully — Bootstrap sets overflow/paddingRight on scroll-lock
+  document.body.classList.remove('modal-open', 'offcanvas-open');
   document.body.style.overflow = '';
   document.body.style.paddingRight = '';
+  document.body.style.pointerEvents = '';
 });
 
 // ── Real-time Notification Toast Poller ──────────────────────────────────────
@@ -625,6 +646,9 @@ document.addEventListener('htmx:beforeSwap', function() {
   style.textContent = '@keyframes slideInRight{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}';
   document.head.appendChild(style);
 
-  // First poll after 10s, then every 30s
-  setTimeout(() => { _poll(); setInterval(_poll, 30000); }, 10000);
+  // First poll after 10s, then every 30s.
+  // Use the original (unpatched) setInterval so this is never cleared by the
+  // htmx:beforeSwap interval cleanup (which intentionally kills page-specific timers).
+  var _rawInterval = window.__origSetInterval || window.setInterval;
+  setTimeout(() => { _poll(); _rawInterval(_poll, 30000); }, 10000);
 })();

@@ -62,7 +62,7 @@
   var _refreshTimer   = null;  // setInterval handle
   var _countdown      = 0;
   var _formDirty      = false;
-  var REFRESH_SECS    = 30;
+  var REFRESH_SECS    = 60;
 
   // Stats/report pages should never auto-refresh even if under a dashboard prefix
   var EXCLUDE_REFRESH_PATHS = [
@@ -92,11 +92,18 @@
   function doRefresh() {
     // Use HTMX boost for a smooth partial swap (no full page reload, no sidebar flash)
     if (window.htmx) {
+      // Preserve scroll position so tablet users don't lose their place mid-queue
+      var _scrollY = window.scrollY || document.documentElement.scrollTop || 0;
       htmx.ajax('GET', window.location.href, {
         target: '#page-content-wrapper',
-        swap: 'outerHTML',
+        swap: 'outerHTML scroll:false',
         select: '#page-content-wrapper',
         pushUrl: false
+      });
+      // Restore scroll after settle (HTMX may reset it)
+      document.addEventListener('htmx:afterSettle', function _restoreScroll() {
+        window.scrollTo(0, _scrollY);
+        document.removeEventListener('htmx:afterSettle', _restoreScroll);
       });
     } else {
       window.location.reload();
@@ -154,6 +161,9 @@
   if (!window.__ehrIntervals) {
     window.__ehrIntervals = [];
     var _origSetInterval = window.setInterval;
+    // Expose the raw setInterval so long-lived persistent timers (e.g. notification
+    // poller) can bypass the cleanup sweep that runs on every HTMX content swap.
+    window.__origSetInterval = _origSetInterval;
     window.setInterval = function (fn, delay) {
       var id = _origSetInterval.call(window, fn, delay);
       window.__ehrIntervals.push(id);

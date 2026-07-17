@@ -329,6 +329,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'notifications.daily_inventory_alerts',
         'schedule': crontab(hour=8, minute=0),
     },
+    # 19:00 — mark any SCHEDULED/CONFIRMED appointments not yet checked in as NO_SHOW
+    'daily-mark-no-shows': {
+        'task': 'appointments.mark_no_shows',
+        'schedule': crontab(hour=19, minute=0),
+    },
 }
 
 # DICOM Imaging Viewer

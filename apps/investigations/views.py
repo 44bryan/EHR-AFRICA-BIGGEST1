@@ -31,7 +31,7 @@ def investigation_workstation_view(request):
                 QueueToken.objects.filter(
                     service_type='INVEST',
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                    issued_at__date=today,
+                    token_date=today,
                 ).select_related('visit__patient', 'visit__attending_doctor')
                 .order_by('issued_at')
             )

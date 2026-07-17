@@ -56,6 +56,45 @@
   </div>
 </div>
 
+{# ── Queue Toggle (GEN_OPH doctors only — switch between General / VIP / All) ── #}
+{% if dept_code == 'GEN_OPH' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
+    <span class="small fw-semibold text-muted me-1"><i class="bi bi-funnel me-1"></i>Viewing Queue:</span>
+    <div class="btn-group btn-group-sm" role="group">
+      <a href="?queue=GENERAL{% if selected_room %}&room_id={{ selected_room.id }}{% endif %}"
+         class="btn {% if queue_filter == 'GENERAL' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}">
+        <i class="bi bi-people me-1"></i>General
+      </a>
+      <a href="?queue=VIP{% if selected_room %}&room_id={{ selected_room.id }}{% endif %}"
+         class="btn {% if queue_filter == 'VIP' %}btn-warning active text-dark{% else %}btn-outline-warning{% endif %}">
+        <i class="bi bi-gem me-1"></i>VIP
+      </a>
+      <a href="?queue=ALL{% if selected_room %}&room_id={{ selected_room.id }}{% endif %}"
+         class="btn {% if queue_filter == 'ALL' %}btn-primary active{% else %}btn-outline-primary{% endif %}">
+        <i class="bi bi-grid me-1"></i>All Tiers
+      </a>
+      {% if not queue_filter %}
+      <a href="?{% if selected_room %}room_id={{ selected_room.id }}{% endif %}"
+         class="btn btn-dark active">
+        <i class="bi bi-person-badge me-1"></i>My Unit
+      </a>
+      {% else %}
+      <a href="?{% if selected_room %}room_id={{ selected_room.id }}{% endif %}"
+         class="btn btn-outline-dark">
+        <i class="bi bi-person-badge me-1"></i>My Unit
+      </a>
+      {% endif %}
+    </div>
+    {% if queue_filter == 'VIP' %}
+    <span class="badge ms-2" style="background:#7c3aed;font-size:.75rem;">
+      <i class="bi bi-star-fill me-1"></i>VIP Queue Active — only VIP patients shown
+    </span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {# ── Room Assignment + Filter Bar ── #}
 {% if dept_rooms %}
 <div class="card border-0 shadow-sm mb-3">
@@ -178,6 +217,11 @@
                   {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
                   {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
                   {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+                  {% if tok.assigned_doctor_id %}
+                    {% if tok.assigned_doctor_id == request.user.pk %}
+                      <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;" title="Assigned directly to you"><i class="bi bi-person-check"></i> For You</span>
+                    {% endif %}
+                  {% endif %}
                 </td>
                 {% if not selected_room %}
                 <td>

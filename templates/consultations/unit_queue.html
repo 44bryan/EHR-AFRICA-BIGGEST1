@@ -1,0 +1,352 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load static %}
+
+{% block title %}{{ dept.name|default:"Unit" }} Nurse Queue{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item active">{{ dept.name|default:"Unit" }} — Nurse Pre-screening Queue</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+
+<!-- Department switcher (Medical Director / Super Admin) -->
+{% if all_specialist_depts %}
+<div class="d-flex gap-2 flex-wrap mb-3">
+  {% for d in all_specialist_depts %}
+  <a href="?dept={{ d.code }}"
+     class="btn btn-sm {% if d.code == dept_code %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    {{ d.name }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Stats strip -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0" style="background:#fff7ed;">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-warning">{{ waiting_count }}</div>
+        <div class="small text-muted">Awaiting Pre-screen</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0" style="background:#eff6ff;">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-primary">{{ in_consult_count }}</div>
+        <div class="small text-muted">With Doctor</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0" style="background:#f0fdf4;">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-success">{{ done_today }}</div>
+        <div class="small text-muted">Completed Today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0" style="background:#faf5ff;">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-purple" style="color:#7c3aed;">{{ total_today }}</div>
+        <div class="small text-muted">Total Today</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  <!-- LEFT: Waiting queue -->
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center justify-content-between py-2"
+           style="background:#fff7ed;border-bottom:2px solid #f59e0b;">
+        <div class="fw-semibold d-flex align-items-center gap-2">
+          <span class="badge bg-warning text-dark rounded-pill">{{ waiting_count }}</span>
+          Awaiting Pre-screening
+        </div>
+        <button class="btn btn-sm btn-outline-warning" onclick="location.reload()">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+      <div class="card-body p-0">
+
+        {% if not dept %}
+        <div class="text-center py-5 text-muted">
+          <i class="bi bi-building fs-2 mb-2 d-block"></i>
+          No department assigned to your account.<br>
+          <span class="small">Ask your administrator to assign you to a specialist unit.</span>
+        </div>
+
+        {% elif not waiting_visits %}
+        <div class="text-center py-5 text-muted">
+          <i class="bi bi-check-circle fs-2 mb-2 d-block text-success"></i>
+          No patients waiting — queue is clear.
+        </div>
+
+        {% else %}
+        <div class="list-group list-group-flush" id="waiting-list">
+          {% for visit in waiting_visits %}
+          <div class="list-group-item p-3" id="visit-row-{{ visit.pk }}">
+            <div class="d-flex align-items-start gap-3">
+
+              <!-- Position + Avatar -->
+              <div class="text-center" style="min-width:36px;">
+                <div class="fw-bold text-muted small">#{{ forloop.counter }}</div>
+                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white mt-1"
+                     style="width:36px;height:36px;background:#f59e0b;font-size:0.9rem;">
+                  {{ visit.patient.first_name|first }}{{ visit.patient.last_name|first }}
+                </div>
+              </div>
+
+              <!-- Patient info -->
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <strong class="fs-6">{{ visit.patient.full_name }}</strong>
+                  {% if visit.visit_type == 'FOLLOW_UP' %}
+                  <span class="badge bg-info bg-opacity-15 text-info border border-info border-opacity-25">Follow-up</span>
+                  {% endif %}
+                  {% if visit.patient.medical_history.known_allergies %}
+                  <span class="badge bg-danger" title="{{ visit.patient.medical_history.known_allergies }}">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>Allergy
+                  </span>
+                  {% endif %}
+                </div>
+                <div class="text-muted small d-flex gap-3 flex-wrap">
+                  <span><i class="bi bi-person me-1"></i>{{ visit.patient.patient_id }}</span>
+                  <span><i class="bi bi-clock me-1"></i>Arrived {{ visit.visit_date|time:"H:i" }}</span>
+                  {% if visit.appointment %}
+                  <span class="text-success"><i class="bi bi-calendar-check me-1"></i>Appointment</span>
+                  {% endif %}
+                </div>
+                {% if visit.chief_complaint %}
+                <div class="mt-1 small text-secondary">
+                  <i class="bi bi-chat-left-text me-1"></i>{{ visit.chief_complaint|truncatechars:80 }}
+                </div>
+                {% endif %}
+
+                <!-- Last visit vital signs summary (returning patient context) -->
+                {% if visit.vital_signs %}
+                <div class="mt-2 d-flex gap-2 flex-wrap">
+                  {% if visit.vital_signs.iop_right %}
+                  <span class="badge bg-light text-dark border">Last IOP R: {{ visit.vital_signs.iop_right }}</span>
+                  {% endif %}
+                  {% if visit.vital_signs.iop_left %}
+                  <span class="badge bg-light text-dark border">Last IOP L: {{ visit.vital_signs.iop_left }}</span>
+                  {% endif %}
+                  {% if visit.vital_signs.va_right %}
+                  <span class="badge bg-light text-dark border">VA R: {{ visit.vital_signs.va_right }}</span>
+                  {% endif %}
+                  {% if visit.vital_signs.va_left %}
+                  <span class="badge bg-light text-dark border">VA L: {{ visit.vital_signs.va_left }}</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+              </div>
+
+              <!-- Action buttons -->
+              <div class="d-flex flex-column gap-2">
+                <button class="btn btn-sm btn-outline-primary"
+                        onclick="openPrescreen('{{ visit.pk }}', '{{ visit.patient.full_name|escapejs }}')"
+                        title="Open pre-screening panel">
+                  <i class="bi bi-clipboard-pulse"></i>
+                  <span class="d-none d-md-inline ms-1">Pre-screen</span>
+                </button>
+                <a href="{% url 'patients:detail' patient_id=visit.patient.patient_id %}"
+                   class="btn btn-sm btn-outline-secondary" target="_blank" title="View patient record">
+                  <i class="bi bi-person-lines-fill"></i>
+                </a>
+              </div>
+
+            </div>
+
+            <!-- Pre-screening inline panel (hidden by default) -->
+            <div id="prescreen-{{ visit.pk }}" class="mt-3 d-none">
+              <div class="p-3 rounded-3" style="background:#fffbeb;border:1px solid #f59e0b;">
+                <div class="fw-semibold mb-3 text-warning-emphasis">
+                  <i class="bi bi-clipboard-pulse me-1"></i>
+                  Pre-screening — {{ visit.patient.full_name }}
+                </div>
+                <form onsubmit="submitPrescreen(event, '{{ visit.pk }}')">
+                  {% csrf_token %}
+                  <div class="row g-2 mb-3">
+                    {% for field_key, field_label, field_type in prescreen_fields %}
+                    <div class="col-6 col-md-3">
+                      {% if field_type == 'checkbox' %}
+                      <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" name="{{ field_key }}" id="f_{{ visit.pk }}_{{ field_key }}" value="on">
+                        <label class="form-check-label small" for="f_{{ visit.pk }}_{{ field_key }}">{{ field_label }}</label>
+                      </div>
+                      {% else %}
+                      <label class="form-label small fw-semibold">{{ field_label }}</label>
+                      <input type="{{ field_type }}" name="{{ field_key }}"
+                             class="form-control form-control-sm"
+                             placeholder="{{ field_label }}"
+                             step="{% if field_type == 'number' %}0.1{% endif %}">
+                      {% endif %}
+                    </div>
+                    {% endfor %}
+                    <div class="col-12">
+                      <label class="form-label small fw-semibold">Nurse Notes</label>
+                      <textarea name="nurse_notes" class="form-control form-control-sm" rows="2"
+                                placeholder="Any observations before doctor sees patient..."></textarea>
+                    </div>
+                  </div>
+                  <div class="d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="closePrescreen('{{ visit.pk }}')">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-warning fw-semibold" id="send-btn-{{ visit.pk }}">
+                      <i class="bi bi-send-check me-1"></i>Save &amp; Send to Doctor
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: With doctor / Appointment context -->
+  <div class="col-lg-5">
+
+    <!-- Currently with doctor -->
+    <div class="card mb-4">
+      <div class="card-header py-2 d-flex align-items-center gap-2"
+           style="background:#eff6ff;border-bottom:2px solid #3b82f6;">
+        <span class="badge bg-primary rounded-pill">{{ in_consult_count }}</span>
+        <span class="fw-semibold">Currently With Doctor</span>
+      </div>
+      <div class="card-body p-0">
+        {% if not in_consult_visits %}
+        <div class="text-center py-4 text-muted small">No patients in consultation.</div>
+        {% else %}
+        <ul class="list-group list-group-flush">
+          {% for visit in in_consult_visits %}
+          <li class="list-group-item d-flex align-items-center gap-3 py-2 px-3">
+            <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold"
+                 style="width:32px;height:32px;background:#3b82f6;font-size:0.8rem;flex-shrink:0;">
+              {{ visit.patient.first_name|first }}{{ visit.patient.last_name|first }}
+            </div>
+            <div class="flex-grow-1 min-w-0">
+              <div class="fw-semibold text-truncate">{{ visit.patient.full_name }}</div>
+              <div class="small text-muted">
+                {% if visit.attending_doctor %}Dr. {{ visit.attending_doctor.get_full_name }}{% else %}Unassigned{% endif %}
+              </div>
+            </div>
+            <a href="{% url 'patients:detail' patient_id=visit.patient.patient_id %}"
+               class="btn btn-xs btn-outline-secondary" target="_blank">
+              <i class="bi bi-eye"></i>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- How this works (collapsible help panel) -->
+    <div class="card border-0" style="background:#f0fdf4;">
+      <div class="card-body p-3">
+        <div class="fw-semibold text-success mb-2">
+          <i class="bi bi-info-circle me-1"></i>How this queue works
+        </div>
+        <ol class="small text-secondary ps-3 mb-0">
+          <li class="mb-1">Receptionist checks in patient appointment</li>
+          <li class="mb-1">System detects <strong>{{ dept.name|default:"this unit" }}</strong> appointment → patient appears here automatically</li>
+          <li class="mb-1">You enter IOP, VA, and any notes in the pre-screen panel</li>
+          <li class="mb-1">Click <strong>"Save &amp; Send to Doctor"</strong> — patient moves to doctor's workstation</li>
+          <li>Doctor opens workstation with your data already filled in</li>
+        </ol>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openPrescreen(visitPk, name) {
+  document.querySelectorAll('[id^="prescreen-"]').forEach(el => el.classList.add('d-none'));
+  document.getElementById('prescreen-' + visitPk).classList.remove('d-none');
+  document.getElementById('prescreen-' + visitPk).scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function closePrescreen(visitPk) {
+  document.getElementById('prescreen-' + visitPk).classList.add('d-none');
+}
+
+function submitPrescreen(e, visitPk) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('send-btn-' + visitPk);
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
+
+  const data = new FormData(form);
+
+  fetch(`/consultations/unit-queue/prescreen/${visitPk}/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': data.get('csrfmiddlewaretoken') },
+    body: data,
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.success) {
+      const row = document.getElementById('visit-row-' + visitPk);
+      row.style.transition = 'opacity 0.4s';
+      row.style.opacity = '0';
+      setTimeout(() => row.remove(), 400);
+      showToast(res.message, 'success');
+      // Update stats
+      const badge = document.querySelector('[id="waiting-list"]')
+                    ?.closest('.card')?.querySelector('.badge');
+      if (badge) {
+        const n = parseInt(badge.textContent) - 1;
+        badge.textContent = Math.max(0, n);
+      }
+    } else {
+      showToast(res.error || 'Error saving pre-screen data.', 'danger');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-send-check me-1"></i>Save & Send to Doctor';
+    }
+  })
+  .catch(() => {
+    showToast('Network error. Please try again.', 'danger');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-send-check me-1"></i>Save & Send to Doctor';
+  });
+}
+
+function showToast(msg, type) {
+  const id = 'toast-' + Date.now();
+  const div = document.createElement('div');
+  div.id = id;
+  div.className = `alert alert-${type} alert-dismissible position-fixed bottom-0 end-0 m-3 shadow`;
+  div.style.zIndex = 9999;
+  div.innerHTML = msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 5000);
+}
+
+// Auto-refresh every 60s (same as rest of system)
+let countdown = 60;
+setInterval(() => {
+  countdown--;
+  if (countdown <= 0) location.reload();
+}, 1000);
+</script>
+{% endblock %}
