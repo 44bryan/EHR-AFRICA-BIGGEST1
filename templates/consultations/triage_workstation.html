@@ -49,10 +49,15 @@
        class="btn btn-sm {% if show_mode == 'STANDARD' %}btn-primary{% else %}btn-outline-primary{% endif %}">
       <i class="bi bi-person me-1"></i>Standard
     </a>
+    <a href="?tier=EXPRESS"
+       class="btn btn-sm {% if show_mode == 'EXPRESS' %}active{% else %}btn-outline-warning{% endif %}"
+       style="{% if show_mode == 'EXPRESS' %}background:#d97706;color:white;border-color:#d97706;{% else %}color:#d97706;{% endif %}">
+      <i class="bi bi-lightning me-1"></i>Express/FT
+    </a>
     <a href="?tier=VIP"
        class="btn btn-sm {% if show_mode == 'VIP' %}btn-purple{% else %}btn-outline-secondary{% endif %}"
        style="{% if show_mode == 'VIP' %}background:#7c3aed;color:white;border-color:#7c3aed;{% endif %}">
-      <i class="bi bi-stars me-1"></i>VIP / Express
+      <i class="bi bi-gem me-1"></i>VIP Only
     </a>
     <a href="?tier=ALL"
        class="btn btn-sm {% if show_mode == 'ALL' %}btn-dark{% else %}btn-outline-dark{% endif %}">
@@ -125,11 +130,25 @@
     </div>
   </div>
   <div class="col-6 col-md-3">
+    {% if show_mode == 'VIP' %}
+    <div class="card border-0 shadow-sm text-center py-3" style="border-left:3px solid #7c3aed !important;">
+      <div class="h2 fw-bold mb-0" style="color:#7c3aed">{{ vip_params_queue|length }}</div>
+      <div class="text-muted small mt-1">VIP Waiting</div>
+      <div class="text-muted" style="font-size:.7rem;">{{ total_vip_only }} total today</div>
+    </div>
+    {% elif show_mode == 'EXPRESS' %}
+    <div class="card border-0 shadow-sm text-center py-3" style="border-left:3px solid #d97706 !important;">
+      <div class="h2 fw-bold mb-0" style="color:#d97706">{{ vip_params_queue|length }}</div>
+      <div class="text-muted small mt-1">Express / FT Waiting</div>
+      <div class="text-muted" style="font-size:.7rem;">{{ total_express }} total today</div>
+    </div>
+    {% else %}
     <div class="card border-0 shadow-sm text-center py-3" style="border-left:3px solid #7c3aed !important;">
       <div class="h2 fw-bold mb-0" style="color:#7c3aed">{{ vip_params_queue|length }}</div>
       <div class="text-muted small mt-1">VIP / Express Waiting</div>
       <div class="text-muted" style="font-size:.7rem;">{{ total_vip_express }} total today</div>
     </div>
+    {% endif %}
   </div>
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm text-center py-3">
@@ -149,11 +168,15 @@
 <div class="row g-4">
 <div class="col-lg-8">
 
-{% if show_mode == 'VIP' and not assigned_counter %}
+{% if show_mode == 'VIP' and not assigned_counter and nurse_patient_tier != 'VIP' %}
 <div class="alert alert-warning py-2 small mb-3">
   <i class="bi bi-info-circle me-1"></i>
-  You are not assigned to a counter. Ask your supervisor to assign you to a VIP/Express Parameters counter.
-  You can still see all patients below.
+  You are not assigned to a counter. Ask your supervisor to assign you to a VIP Parameters counter, or set your Patient Tier to <strong>VIP Only</strong> in the Staff Hub.
+</div>
+{% elif show_mode == 'EXPRESS' and not assigned_counter and nurse_patient_tier != 'EXPRESS' %}
+<div class="alert alert-warning py-2 small mb-3">
+  <i class="bi bi-info-circle me-1"></i>
+  You are not assigned to an Express/Fast Track counter. Ask your supervisor to set your Patient Tier to <strong>Express/FT</strong> in the Staff Hub.
 </div>
 {% endif %}
 
@@ -310,14 +333,25 @@
 
 {# ══ VIP / Express Parameters Queue ══ #}
 {% if show_mode != 'STANDARD' %}
+{% if show_mode == 'EXPRESS' %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #d97706 !important;">
+  <div class="card-header border-bottom d-flex justify-content-between align-items-center py-2"
+       style="background:linear-gradient(135deg,#fffbeb,#fef3c7);">
+    <h6 class="mb-0 fw-semibold" style="color:#92400e;">
+      <i class="bi bi-lightning me-2"></i>Express / Fast Track — Parameters
+    </h6>
+    <span class="badge rounded-pill bg-warning text-dark">{{ vip_params_queue|length }}</span>
+  </div>
+{% else %}
 <div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #7c3aed !important;">
   <div class="card-header border-bottom d-flex justify-content-between align-items-center py-2"
        style="background:linear-gradient(135deg,#f5f3ff,#ede9fe);">
     <h6 class="mb-0 fw-semibold" style="color:#5b21b6;">
-      <i class="bi bi-stars me-2"></i>VIP / Express / Fast Track — Parameters
+      <i class="bi bi-gem me-2"></i>{% if show_mode == 'VIP' %}VIP — Parameters{% else %}VIP / Express / Fast Track — Parameters{% endif %}
     </h6>
     <span class="badge rounded-pill" style="background:#7c3aed;">{{ vip_params_queue|length }}</span>
   </div>
+{% endif %}
   {% if vip_params_queue %}
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
@@ -415,7 +449,9 @@
   {% else %}
   <div class="card-body text-center text-muted py-5">
     <i class="bi bi-check-circle fs-2 d-block mb-2 text-success"></i>
-    No VIP / Express patients waiting.
+    {% if show_mode == 'EXPRESS' %}No Express / Fast Track patients waiting.
+    {% elif show_mode == 'VIP' %}No VIP patients waiting.
+    {% else %}No VIP / Express patients waiting.{% endif %}
   </div>
   {% endif %}
 </div>

@@ -1347,17 +1347,24 @@ def triage_workstation_view(request):
     # Manual override via URL param
     tier_filter = request.GET.get('tier', '').upper()
 
-    # Determine default view based on counter assignment
+    # Determine default view based on counter assignment or patient_tier field
+    _nurse_pt = getattr(request.user, 'patient_tier', 'ALL')  # ALL/STANDARD/EXPRESS/VIP
     if tier_filter:
-        show_mode = tier_filter  # 'STANDARD', 'VIP', or 'ALL'
+        show_mode = tier_filter  # 'STANDARD', 'EXPRESS', 'VIP', or 'ALL'
     elif assigned_counter:
         tiers = assigned_counter.get_serves_tiers()
         if 'VIP' in tiers or 'EXPRESS' in tiers or 'FAST_TRACK' in tiers:
-            show_mode = 'VIP'
+            show_mode = 'VIP'   # shows the PARAMS_VIP queue
         else:
             show_mode = 'STANDARD'
+    elif _nurse_pt == 'VIP':
+        show_mode = 'VIP'       # VIP triage sector — PARAMS_VIP filtered to VIP only
+    elif _nurse_pt == 'EXPRESS':
+        show_mode = 'EXPRESS'   # Express/FastTrack sector — PARAMS_VIP filtered to EXPRESS+FT
+    elif _nurse_pt == 'STANDARD':
+        show_mode = 'STANDARD'  # Standard triage sector — PARAMETERS queue only
     else:
-        show_mode = 'ALL'  # Medical director / no counter = see everything
+        show_mode = 'ALL'       # Supervisors / unassigned → see everything
 
     active_statuses = ['WAITING', 'CALLED', 'SERVING']
 
@@ -1380,14 +1387,23 @@ def triage_workstation_view(request):
                 )
 
             # ── VIP / Express Parameters queue ────────────────────────────────
-            if show_mode in ('VIP', 'ALL'):
+            # show_mode='VIP'     → PARAMS_VIP tokens where service_tier=VIP only
+            # show_mode='EXPRESS' → PARAMS_VIP tokens where service_tier=EXPRESS or FAST_TRACK
+            # show_mode='ALL'     → all PARAMS_VIP tokens (supervisors)
+            if show_mode in ('VIP', 'EXPRESS', 'ALL'):
+                _pvip_qs = QueueToken.objects.filter(
+                    token_date=today,
+                    service_type='PARAMS_VIP',
+                    status__in=active_statuses,
+                    is_deleted=False,
+                )
+                if show_mode == 'VIP':
+                    _pvip_qs = _pvip_qs.filter(service_tier='VIP')
+                elif show_mode == 'EXPRESS':
+                    _pvip_qs = _pvip_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                # show_mode='ALL' → no additional filter (counter-assigned supervisors)
                 vip_params_queue = list(
-                    QueueToken.objects.filter(
-                        token_date=today,
-                        service_type='PARAMS_VIP',
-                        status__in=active_statuses,
-                        is_deleted=False,
-                    ).select_related('patient', 'counter').order_by('-priority', 'issued_at')
+                    _pvip_qs.select_related('patient', 'counter').order_by('-priority', 'issued_at')
                 )
         except Exception:
             pass
@@ -1428,7 +1444,7 @@ def triage_workstation_view(request):
     triaged_today = triaged_visits.count()
 
     # ── Tier breakdown for stats strip ────────────────────────────────────────
-    total_standard = total_vip_express = 0
+    total_standard = total_express = total_vip_express = 0
     if _qms_active():
         try:
             from apps.qms.models import QueueToken as _QueueToken
@@ -1437,10 +1453,20 @@ def triage_workstation_view(request):
                 service_type__in=['PARAMETERS', 'PARAMS_VIP'],
                 is_deleted=False,
             )
-            total_standard = all_today.filter(service_type='PARAMETERS').count()
+            total_standard    = all_today.filter(service_type='PARAMETERS').count()
             total_vip_express = all_today.filter(service_type='PARAMS_VIP').count()
+            total_express     = all_today.filter(
+                service_type='PARAMS_VIP',
+                service_tier__in=['EXPRESS', 'FAST_TRACK'],
+            ).count()
+            total_vip_only    = all_today.filter(
+                service_type='PARAMS_VIP',
+                service_tier='VIP',
+            ).count()
         except Exception:
-            pass
+            total_vip_only = 0
+    else:
+        total_vip_only = 0
 
     # Head of triage (Nurse Director / Medical Director / Super Admin) can see
     # all patient statuses + locations.  Regular triage nurses see only the queue.
@@ -1458,9 +1484,12 @@ def triage_workstation_view(request):
         'triaged_visits': triaged_visits,
         'today': today,
         'show_mode': show_mode,
+        'nurse_patient_tier': _nurse_pt,
         'assigned_counter': assigned_counter,
         'is_head_of_triage': is_head_of_triage,
         'total_standard': total_standard,
+        'total_express': total_express,
+        'total_vip_only': total_vip_only,
         'total_vip_express': total_vip_express,
         'total_waiting': len(parameters_queue) + len(vip_params_queue),
         'qms_on': _qms_active(),

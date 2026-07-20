@@ -78,12 +78,14 @@ class PatientTier(models.TextChoices):
     For downstream clinical staff (pharmacist, lab tech, refractionist,
     investigations, cashier, triage nurse) — which service tier's patients
     this account sees in their queue.
-    ALL      = sees every patient regardless of tier (default)
-    STANDARD = sees only standard-tier patients
-    VIP      = sees only VIP-tier patients
+    ALL      = sees every patient regardless of tier (default, supervisors)
+    STANDARD = sees only standard-tier patients  (standard triage sector)
+    EXPRESS  = sees only Express + Fast Track patients (express triage sector)
+    VIP      = sees only VIP-tier patients  (VIP triage sector)
     """
     ALL      = 'ALL',      _('All Tiers')
     STANDARD = 'STANDARD', _('Standard Only')
+    EXPRESS  = 'EXPRESS',  _('Express / Fast Track Only')
     VIP      = 'VIP',      _('VIP Only')
 
 
