@@ -51,7 +51,7 @@
               <thead class="table-light">
                 <tr>
                   <th class="ps-3">Room / Door #</th>
-                  <th>Label</th>
+                  <th>Tier</th>
                   <th>Assigned Doctor <span class="text-muted fw-normal">(today)</span></th>
                   <th>Status</th>
                   <th class="text-end pe-3">Actions</th>
@@ -59,18 +59,25 @@
               </thead>
               <tbody>
                 {% for room in rooms %}
-                <tr>
+                <tr {% if room.room_tier == 'VIP' %}style="background:#faf7ff;"{% endif %}>
                   <td class="ps-3">
-                    <span class="badge bg-primary fs-6 px-3">{{ room.room_number }}</span>
+                    <span class="badge fs-6 px-3
+                      {% if room.room_tier == 'VIP' %}text-white
+                      {% elif room.room_tier == 'EXPRESS' %}bg-warning text-dark
+                      {% elif room.room_tier == 'FAST_TRACK' %}bg-info text-dark
+                      {% else %}bg-primary{% endif %}"
+                      {% if room.room_tier == 'VIP' %}style="background:#7c3aed;"{% endif %}>
+                      {{ room.room_number }}
+                    </span>
                   </td>
-                  <td class="small">{{ room.label }}</td>
                   <td>
-                    {# Inline doctor assignment form #}
-                    <form method="post" class="d-flex align-items-center gap-2" style="min-width:200px;">
+                    {# Tier badge + inline tier change — submitted along with doctor assignment #}
+                    <form method="post" class="d-flex align-items-center gap-2">
                       {% csrf_token %}
                       <input type="hidden" name="action" value="assign">
                       <input type="hidden" name="room_id" value="{{ room.id }}">
-                      <select name="doctor_id" class="form-select form-select-sm" onchange="this.form.submit()" style="max-width:200px;">
+                      {# Doctor dropdown #}
+                      <select name="doctor_id" class="form-select form-select-sm" style="max-width:190px;">
                         <option value="">— Unassigned —</option>
                         {% for doc in doctors %}
                         <option value="{{ doc.pk }}" {% if room.assigned_doctor and room.assigned_doctor.pk == doc.pk %}selected{% endif %}>
@@ -78,7 +85,47 @@
                         </option>
                         {% endfor %}
                       </select>
+                      {# Tier dropdown #}
+                      <select name="room_tier" class="form-select form-select-sm" style="max-width:130px;"
+                              title="Service tier for this room">
+                        <option value="STANDARD" {% if room.room_tier == 'STANDARD' %}selected{% endif %}>Standard</option>
+                        <option value="EXPRESS"  {% if room.room_tier == 'EXPRESS'  %}selected{% endif %}>Express</option>
+                        <option value="FAST_TRACK" {% if room.room_tier == 'FAST_TRACK' %}selected{% endif %}>Fast Track</option>
+                        <option value="VIP"      {% if room.room_tier == 'VIP'      %}selected{% endif %}>
+                          &#xE901; VIP
+                        </option>
+                      </select>
+                      <button type="submit" class="btn btn-sm btn-outline-primary" title="Save doctor + tier">
+                        <i class="bi bi-check-lg"></i>
+                      </button>
                     </form>
+                  </td>
+                  <td>
+                    {% if room.assigned_doctor %}
+                    <span class="fw-semibold small">Dr. {{ room.assigned_doctor.last_name }}</span>
+                    <span class="badge ms-1
+                      {% if room.room_tier == 'VIP' %}text-white
+                      {% elif room.room_tier == 'EXPRESS' %}bg-warning text-dark
+                      {% elif room.room_tier == 'FAST_TRACK' %}bg-info text-dark
+                      {% else %}bg-secondary{% endif %}"
+                      {% if room.room_tier == 'VIP' %}style="background:#7c3aed;"{% endif %}
+                      style="font-size:.65rem;">
+                      {% if room.room_tier == 'VIP' %}<i class="bi bi-gem me-1"></i>{% endif %}
+                      {{ room.get_room_tier_display }}
+                    </span>
+                    {% else %}
+                    <span class="text-muted small fst-italic">Unassigned</span>
+                    <span class="badge
+                      {% if room.room_tier == 'VIP' %}text-white
+                      {% elif room.room_tier == 'EXPRESS' %}bg-warning text-dark
+                      {% elif room.room_tier == 'FAST_TRACK' %}bg-info text-dark
+                      {% else %}bg-secondary{% endif %} ms-1"
+                      {% if room.room_tier == 'VIP' %}style="background:#7c3aed;"{% endif %}
+                      style="font-size:.65rem;">
+                      {% if room.room_tier == 'VIP' %}<i class="bi bi-gem me-1"></i>{% endif %}
+                      {{ room.get_room_tier_display }}
+                    </span>
+                    {% endif %}
                   </td>
                   <td>
                     {% if room.is_active %}
@@ -157,7 +204,11 @@
 
           <div class="alert alert-info py-2 small mb-0">
             <i class="bi bi-info-circle me-1"></i>
-            <strong>Daily Workflow:</strong> Each morning, use the <em>Assigned Doctor</em> dropdown to set which doctor is in each room. The triage nurse sees <strong>"Room 2 — Dr. Mbarga"</strong> when dispatching patients.<br><br>
+            <strong>Daily Workflow:</strong> Each morning, set which doctor is in each room and confirm the room's <strong>tier</strong> (Standard / Express / VIP). The triage nurse sees <strong>"Room 2 — Dr. Mbarga [VIP]"</strong> and the system automatically routes to the correct QMS queue.<br><br>
+            <strong>Tier Effects:</strong><br>
+            <span class="badge bg-secondary me-1">Standard</span> → GENERAL queue &nbsp;
+            <span class="badge bg-warning text-dark me-1">Express</span> → EXPRESS queue &nbsp;
+            <span class="badge me-1 text-white" style="background:#7c3aed;">VIP</span> → VIP_CONSULT queue (direct to doctor)<br><br>
             <i class="bi bi-arrow-right me-1"></i><strong>No rooms yet?</strong> Add them above — e.g. type <em>1,2,3</em> to add three rooms at once.
           </div>
         </div>
@@ -170,9 +221,10 @@
         <div class="card-body small text-muted">
           <ol class="ps-3 mb-0">
             <li class="mb-2">Add all door numbers for <strong>{{ dept.name }}</strong> once (e.g. 1, 2, 3).</li>
-            <li class="mb-2">Each morning, select which doctor is in each room using the dropdown.</li>
-            <li class="mb-2">When the triage nurse dispatches a patient to <strong>{{ dept.name }}</strong>, they pick from <em>"Room 1 — Dr. X"</em>, <em>"Room 2 — Dr. Y"</em> etc.</li>
-            <li>If no rooms are configured, patients are sent to the department queue without a room number.</li>
+            <li class="mb-2">Set each room's <strong>tier</strong> (Standard/Express/VIP) — VIP rooms route to the VIP consultation queue.</li>
+            <li class="mb-2">Each morning, assign which doctor is in each room. The triage nurse sees <em>"Room 5 — Dr. Johnson [VIP]"</em>.</li>
+            <li class="mb-2">Selecting a VIP room automatically dispatches to <strong>VIP_CONSULT</strong> and assigns the room's doctor to the token.</li>
+            <li>If no rooms are configured, patients go to the general department queue.</li>
           </ol>
         </div>
       </div>

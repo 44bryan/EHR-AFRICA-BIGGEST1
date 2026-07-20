@@ -1058,9 +1058,18 @@ def triage_view(request, visit_number):
                 from apps.departments.models import ConsultationRoom
                 room_obj = ConsultationRoom.objects.filter(
                     department=dept, room_number=_room_num, is_active=True
-                ).first()
+                ).select_related('assigned_doctor').first()
                 if room_obj:
                     visit.consultation_room = room_obj
+                    # Auto-assign doctor from room if no explicit doctor was picked
+                    # and the room is a premium tier (VIP/Express/Fast Track)
+                    if (not _assigned_doctor and room_obj.assigned_doctor
+                            and room_obj.room_tier in ('VIP', 'EXPRESS', 'FAST_TRACK')):
+                        _assigned_doctor = room_obj.assigned_doctor
+                    # For ALL tiers: if service_type was auto-derived from room tier,
+                    # override it now to be consistent with the room's tier_service_type
+                    if service_type in ('GENERAL', 'VIP_CONSULT', 'EXP_CONSULT') and room_obj.room_tier != 'STANDARD':
+                        service_type = room_obj.tier_service_type
 
             visit.save(update_fields=['vital_signs', 'status', 'triage_nurse', 'department',
                                       'nursing_notes', 'pre_auth_status', 'consultation_room', 'updated_at'])

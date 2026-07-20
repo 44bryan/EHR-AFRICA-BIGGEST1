@@ -131,6 +131,7 @@ def room_manage(request, dept_id):
         elif action == 'assign':
             room_id = request.POST.get('room_id')
             doctor_id = request.POST.get('doctor_id', '')
+            new_tier = request.POST.get('room_tier', '').strip()
             room = get_object_or_404(ConsultationRoom, pk=room_id, department=dept)
             if doctor_id:
                 try:
@@ -139,7 +140,10 @@ def room_manage(request, dept_id):
                     room.assigned_doctor = None
             else:
                 room.assigned_doctor = None
-            room.save(update_fields=['assigned_doctor'])
+            from .models import RoomTier
+            if new_tier in dict(RoomTier.choices):
+                room.room_tier = new_tier
+            room.save(update_fields=['assigned_doctor', 'room_tier'])
             messages.success(request, f'{room.display_label} assignment updated.')
 
         elif action == 'toggle':
@@ -185,6 +189,9 @@ def room_ajax(request, dept_id):
             'room_number': r.room_number,
             'label': r.display_label,
             'doctor': r.assigned_doctor.get_full_name() if r.assigned_doctor else None,
+            'doctor_id': str(r.assigned_doctor.pk) if r.assigned_doctor else None,
+            'room_tier': r.room_tier,
+            'service_type': r.tier_service_type,
         }
         for r in rooms
     ]

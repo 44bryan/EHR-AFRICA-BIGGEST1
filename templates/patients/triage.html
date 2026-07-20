@@ -500,7 +500,49 @@
                     </select>
                   </div>
 
+                  {# ── Quick-route direct buttons ── #}
+                  <div class="mb-2">
+                    <label class="form-label small text-muted fw-semibold">Or Route Directly To</label>
+                    <div class="d-flex flex-wrap gap-2">
+                      {% for route in direct_routes %}
+                      <button type="button"
+                              class="btn btn-sm btn-outline-primary quick-route-btn
+                                     {% if route.code == 'VIP_CONSULT' %}btn-outline-warning text-warning-emphasis{% endif %}
+                                     {% if route.code == 'EXP_CONSULT' %}btn-outline-success{% endif %}"
+                              onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
+                        {% if route.code == 'VIP_CONSULT' %}<i class="bi bi-gem me-1"></i>{% endif %}
+                        {% if route.code == 'EXP_CONSULT' %}<i class="bi bi-lightning-charge me-1"></i>{% endif %}
+                        {% if route.code == 'LAB' %}<i class="bi bi-eyedropper me-1"></i>{% endif %}
+                        {% if route.code == 'PHARMACY' %}<i class="bi bi-capsule me-1"></i>{% endif %}
+                        {% if route.code == 'CASHIER' %}<i class="bi bi-cash-coin me-1"></i>{% endif %}
+                        {% if route.code == 'REFRACTION' %}<i class="bi bi-eyeglasses me-1"></i>{% endif %}
+                        {% if route.code == 'INVEST' %}<i class="bi bi-activity me-1"></i>{% endif %}
+                        {{ route.label }}
+                      </button>
+                      {% endfor %}
+                    </div>
+                  </div>
+
                   <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
+                  <input type="hidden" name="assigned_doctor_id" id="assigned_doctor_id" value="">
+
+                  {# Doctor picker — shown when VIP/Express direct route is selected #}
+                  <div id="doctorPickPanel" class="d-none mb-3 p-3 border rounded" style="background:#fff8f0;border-color:#fd7e14 !important;">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <label class="form-label fw-semibold small mb-0 text-warning-emphasis">
+                        <i class="bi bi-person-badge me-1"></i>Assign to Doctor <span class="text-muted fw-normal">(optional — leave blank for tier pool)</span>
+                      </label>
+                      <button type="button" class="btn btn-xs btn-link text-secondary p-0" onclick="clearDoctorPick()">
+                        <i class="bi bi-x"></i> Clear
+                      </button>
+                    </div>
+                    <select id="doctorPickSelect" class="form-select form-select-sm" onchange="pickDoctor(this.value, this.options[this.selectedIndex].text)">
+                      <option value="">— Any available doctor in this tier —</option>
+                    </select>
+                    <div id="doctorPickBadge" class="mt-2 d-none">
+                      <span class="badge bg-warning text-dark"><i class="bi bi-person-check me-1"></i><span id="doctorPickName"></span></span>
+                    </div>
+                  </div>
 
                   {# Room picker — only shown in ROOM mode after dept selected #}
                   <div id="roomPickPanel" class="d-none mb-3 p-3 border rounded" style="background:#f0f9ff;">
@@ -756,13 +798,22 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
   document.getElementById('routeValidationAlert').classList.add('d-none');
 }
 
+// Tier styling helpers
+const TIER_STYLE = {
+  VIP:        { btn: 'room-tier-vip',        icon: '<i class="bi bi-gem me-1" style="color:#7c3aed;"></i>', badge: '<span class="badge ms-1 text-white" style="background:#7c3aed;font-size:.6rem;">VIP</span>' },
+  EXPRESS:    { btn: 'room-tier-express',     icon: '<i class="bi bi-lightning-charge me-1 text-warning"></i>', badge: '<span class="badge bg-warning text-dark ms-1" style="font-size:.6rem;">EXP</span>' },
+  FAST_TRACK: { btn: 'room-tier-fast',        icon: '<i class="bi bi-skip-forward-fill me-1 text-info"></i>', badge: '<span class="badge bg-info text-dark ms-1" style="font-size:.6rem;">FAST</span>' },
+  STANDARD:   { btn: 'room-tier-std',         icon: '<i class="bi bi-door-open me-1"></i>', badge: '' },
+};
+// Map room tier → QMS service type
+const ROOM_TIER_TO_SERVICE = { VIP: 'VIP_CONSULT', EXPRESS: 'EXP_CONSULT', FAST_TRACK: 'EXP_CONSULT', STANDARD: 'GENERAL' };
+
 function fetchRooms(deptId, deptLabel) {
-  const roomPanel   = document.getElementById('roomPickPanel');
-  const deptNameEl  = document.getElementById('roomPickDeptName');
-  const roomBtnGrp  = document.getElementById('roomBtnGroup');
+  const roomPanel  = document.getElementById('roomPickPanel');
+  const deptNameEl = document.getElementById('roomPickDeptName');
+  const roomBtnGrp = document.getElementById('roomBtnGroup');
   if (!roomPanel) return;
 
-  // Show panel with loading state while fetching
   roomPanel.classList.remove('d-none');
   if (deptNameEl) deptNameEl.textContent = deptLabel;
   roomBtnGrp.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Loading rooms…</span>';
@@ -776,13 +827,45 @@ function fetchRooms(deptId, deptLabel) {
           + '<a href="/departments/' + deptId + '/rooms/" target="_blank">Add rooms</a>.</span>';
         return;
       }
+      // Sort: VIP rooms first, then by room_number
+      const visitTier = '{{ visit.service_tier }}';
+      data.rooms.sort(function(a, b) {
+        const tierOrder = { VIP: 0, FAST_TRACK: 1, EXPRESS: 2, STANDARD: 3 };
+        const ao = tierOrder[a.room_tier] ?? 3, bo = tierOrder[b.room_tier] ?? 3;
+        if (ao !== bo) return ao - bo;
+        return String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true});
+      });
+
       data.rooms.forEach(function(room) {
+        const tier = room.room_tier || 'STANDARD';
+        const ts   = TIER_STYLE[tier] || TIER_STYLE.STANDARD;
+
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'btn btn-sm btn-outline-primary room-pick-btn';
-        btn.dataset.room = room.room_number;
-        btn.innerHTML = '<i class="bi bi-door-open me-1"></i>' + room.label;
-        btn.onclick = function() { pickRoom(room.room_number, btn); };
+        btn.dataset.room       = room.room_number;
+        btn.dataset.roomTier   = tier;
+        btn.dataset.serviceType= room.service_type || 'GENERAL';
+        btn.dataset.doctorId   = room.doctor_id || '';
+        btn.dataset.doctorName = room.doctor || '';
+
+        // Highlight recommended tier matching the patient's visit tier
+        const isMatch = (tier === visitTier) ||
+                        (visitTier === 'FAST_TRACK' && tier === 'EXPRESS') ||
+                        (visitTier === 'STANDARD' && tier === 'STANDARD');
+
+        let btnClass = 'btn btn-sm room-pick-btn ' + ts.btn + ' ';
+        if (tier === 'VIP')        btnClass += 'btn-outline-secondary';
+        else if (tier === 'EXPRESS')  btnClass += 'btn-outline-warning';
+        else if (tier === 'FAST_TRACK') btnClass += 'btn-outline-info';
+        else btnClass += 'btn-outline-primary';
+        if (isMatch) btnClass += ' border-2';
+
+        btn.className = btnClass;
+        btn.style.cssText = tier === 'VIP' ? 'border-color:#7c3aed;color:#7c3aed;' : '';
+        btn.innerHTML = ts.icon + room.label + ts.badge;
+        if (isMatch) btn.innerHTML += ' <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;" title="Matches patient tier"></i>';
+
+        btn.onclick = function() { pickRoom(room.room_number, tier, room.service_type, room.doctor_id, room.doctor, btn); };
         roomBtnGrp.appendChild(btn);
       });
     })
@@ -791,22 +874,48 @@ function fetchRooms(deptId, deptLabel) {
     });
 }
 
-function pickRoom(roomNum, btn) {
+function pickRoom(roomNum, roomTier, serviceType, doctorId, doctorName, btn) {
+  // Clear all room buttons
   document.querySelectorAll('.room-pick-btn').forEach(b => {
-    b.classList.remove('btn-primary');
-    b.classList.add('btn-outline-primary');
+    b.classList.remove('btn-primary', 'btn-warning', 'btn-info', 'btn-secondary');
+    const dt = b.dataset.roomTier || 'STANDARD';
+    if (dt === 'VIP')        { b.style.background = ''; b.style.color = '#7c3aed'; }
+    else if (dt === 'EXPRESS') { b.style.background = ''; b.style.color = ''; }
+    else                     { b.style.background = ''; b.style.color = ''; }
   });
-  btn.classList.remove('btn-outline-primary');
-  btn.classList.add('btn-primary');
 
+  // Activate selected button
+  if (roomTier === 'VIP') { btn.style.background = '#7c3aed'; btn.style.color = '#fff'; btn.style.borderColor = '#7c3aed'; }
+  else if (roomTier === 'EXPRESS')    { btn.classList.add('btn-warning'); }
+  else if (roomTier === 'FAST_TRACK') { btn.classList.add('btn-info'); }
+  else                                { btn.classList.add('btn-primary'); }
+
+  // Set dispatch_direct = SERVICE_TYPE|ROOM:N  (e.g. VIP_CONSULT|ROOM:5)
+  const svc   = serviceType || ROOM_TIER_TO_SERVICE[roomTier] || 'GENERAL';
+  const diInp = document.getElementById('dispatch_direct');
+  diInp.value = svc + '|ROOM:' + roomNum;
+  diInp.dataset.baseValue = svc;
+
+  // Show route confirm
   const roomLbl = document.getElementById('routeRoomLabel');
   if (roomLbl) roomLbl.textContent = '— Room ' + roomNum;
 
-  // Store room appended to dispatch_direct: "DEPT_UUID|ROOM:N" or "SERVICECODE|ROOM:N"
-  const diInp = document.getElementById('dispatch_direct');
-  const base  = diInp.dataset.baseValue || diInp.value.split('|')[0] || '';
-  diInp.dataset.baseValue = base;
-  diInp.value = base ? base + '|ROOM:' + roomNum : '|ROOM:' + roomNum;
+  // Auto-populate doctor if room has one assigned
+  const docPanel = document.getElementById('doctorPickPanel');
+  const docInput = document.getElementById('assigned_doctor_id');
+  if (doctorId && (roomTier === 'VIP' || roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK')) {
+    if (docPanel) docPanel.classList.remove('d-none');
+    if (docInput) docInput.value = doctorId;
+    const badge = document.getElementById('doctorPickBadge');
+    const name  = document.getElementById('doctorPickName');
+    if (badge) badge.classList.remove('d-none');
+    if (name)  name.textContent = 'Dr. ' + (doctorName || '');
+    const sel = document.getElementById('doctorPickSelect');
+    if (sel) sel.value = doctorId;
+  } else if (docPanel && roomTier === 'STANDARD') {
+    docPanel.classList.add('d-none');
+    if (docInput) docInput.value = '';
+  }
 }
 
 function clearRoomBtns() {
@@ -1044,5 +1153,84 @@ initSelect('sel_pulse',  'id_pulse');
 initSelect('sel_temp',   'id_temperature');
 
 checkAllVitals();
+
+// ── Doctor dispatch picker (VIP / Express) ────────────────────────────────────
+// gph_doctors: [{id, first_name, last_name, consultation_unit}, ...]
+const GPH_DOCTORS = {{ gph_doctors_json|default:"[]"|safe }};
+const UNIT_LABEL  = { GENERAL: 'General', EXPRESS: 'Express', VIP: 'VIP', INSURED: 'Insurance' };
+// Which service codes require the doctor picker
+const DOCTOR_PICK_SERVICES = new Set(['VIP_CONSULT', 'EXP_CONSULT']);
+// Filter doctors by unit matching the service code
+const UNIT_FOR_SERVICE = { VIP_CONSULT: 'VIP', EXP_CONSULT: 'EXPRESS' };
+
+function showDoctorPicker(serviceCode) {
+  const panel  = document.getElementById('doctorPickPanel');
+  const sel    = document.getElementById('doctorPickSelect');
+  if (!panel || !sel) return;
+  // Rebuild options
+  sel.innerHTML = '<option value="">— Any available doctor in this tier —</option>';
+  const wantedUnit = UNIT_FOR_SERVICE[serviceCode] || null;
+  GPH_DOCTORS.forEach(function(doc) {
+    const unit = (doc.consultation_unit || 'GENERAL').toUpperCase();
+    if (wantedUnit && unit !== wantedUnit) return; // filter by tier
+    const name = doc.first_name + ' ' + doc.last_name;
+    const lbl  = name + (UNIT_LABEL[unit] ? ' (' + UNIT_LABEL[unit] + ')' : '');
+    sel.insertAdjacentHTML('beforeend', `<option value="${doc.id}">${lbl}</option>`);
+  });
+  // If no doctors match the tier, show all
+  if (sel.options.length === 1 && wantedUnit) {
+    GPH_DOCTORS.forEach(function(doc) {
+      const unit = (doc.consultation_unit || 'GENERAL').toUpperCase();
+      const name = doc.first_name + ' ' + doc.last_name;
+      const lbl  = name + (UNIT_LABEL[unit] ? ' (' + UNIT_LABEL[unit] + ')' : '');
+      sel.insertAdjacentHTML('beforeend', `<option value="${doc.id}">${lbl}</option>`);
+    });
+  }
+  clearDoctorPick();
+  panel.classList.remove('d-none');
+}
+
+function hideDoctorPicker() {
+  const panel = document.getElementById('doctorPickPanel');
+  if (panel) panel.classList.add('d-none');
+  clearDoctorPick();
+}
+
+function pickDoctor(id, label) {
+  document.getElementById('assigned_doctor_id').value = id;
+  const badge    = document.getElementById('doctorPickBadge');
+  const nameSpan = document.getElementById('doctorPickName');
+  if (id) {
+    if (nameSpan) nameSpan.textContent = label;
+    if (badge)    badge.classList.remove('d-none');
+  } else {
+    if (badge) badge.classList.add('d-none');
+  }
+}
+
+function clearDoctorPick() {
+  document.getElementById('assigned_doctor_id').value = '';
+  const sel   = document.getElementById('doctorPickSelect');
+  const badge = document.getElementById('doctorPickBadge');
+  if (sel)   sel.value = '';
+  if (badge) badge.classList.add('d-none');
+}
+
+// Patch selectRoute to toggle doctor picker
+const _origSelectRoute = selectRoute;
+selectRoute = function(type, deptId, serviceCode, label, btn) {
+  _origSelectRoute(type, deptId, serviceCode, label, btn);
+  if (DOCTOR_PICK_SERVICES.has(serviceCode)) {
+    showDoctorPicker(serviceCode);
+  } else {
+    hideDoctorPicker();
+  }
+};
+// Also hide picker when dept queue is selected
+const _origOnDeptChange = onDeptChange;
+onDeptChange = function(deptId, label) {
+  _origOnDeptChange(deptId, label);
+  hideDoctorPicker();
+};
 </script>
 {% endblock %}

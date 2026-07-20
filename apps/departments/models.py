@@ -56,11 +56,19 @@ class Department(models.Model):
         return cls.objects.filter(is_active=True).exclude(code__in=non_clinical)
 
 
+class RoomTier(models.TextChoices):
+    STANDARD   = 'STANDARD',   _('Standard')
+    EXPRESS    = 'EXPRESS',    _('Express')
+    FAST_TRACK = 'FAST_TRACK', _('Fast Track')
+    VIP        = 'VIP',        _('VIP')
+
+
 class ConsultationRoom(models.Model):
     """
     Physical consultation room/door within a department.
     Configured once by admin (room numbers match the actual door numbers).
     Doctor assignment is optional and can be updated daily.
+    room_tier controls which QMS service_type is created when a patient is dispatched here.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='rooms')
@@ -70,6 +78,12 @@ class ConsultationRoom(models.Model):
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='assigned_room',
         help_text='Doctor currently assigned to this room (update daily as needed)',
+    )
+    room_tier = models.CharField(
+        max_length=12,
+        choices=RoomTier.choices,
+        default=RoomTier.STANDARD,
+        help_text='Service tier this room handles — determines QMS queue on dispatch',
     )
     is_active = models.BooleanField(default=True)
 
@@ -88,6 +102,16 @@ class ConsultationRoom(models.Model):
         if self.assigned_doctor:
             return f'{base} — Dr. {self.assigned_doctor.last_name}'
         return base
+
+    @property
+    def tier_service_type(self):
+        """Maps room_tier to the QMS service_type to use when dispatching here."""
+        return {
+            'VIP':        'VIP_CONSULT',
+            'EXPRESS':    'EXP_CONSULT',
+            'FAST_TRACK': 'EXP_CONSULT',
+            'STANDARD':   'GENERAL',
+        }.get(self.room_tier, 'GENERAL')
 
     def save(self, *args, **kwargs):
         if not self.label:
