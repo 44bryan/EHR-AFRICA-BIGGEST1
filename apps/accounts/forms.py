@@ -42,7 +42,7 @@ class UserCreateForm(forms.ModelForm):
         fields = [
             'first_name', 'last_name', 'email', 'username',
             'employee_id', 'role', 'department', 'phone_number', 'profile_photo',
-            'cashier_station', 'consultation_unit',
+            'cashier_station', 'consultation_unit', 'patient_tier',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -55,6 +55,7 @@ class UserCreateForm(forms.ModelForm):
             'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
             'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
             'consultation_unit': forms.Select(attrs={'class': 'form-select', 'id': 'id_consultation_unit'}),
+            'patient_tier': forms.Select(attrs={'class': 'form-select', 'id': 'id_patient_tier'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -67,6 +68,10 @@ class UserCreateForm(forms.ModelForm):
     def clean_cashier_station(self):
         # Always return a valid non-empty value — default to 'ALL' for non-cashier roles
         val = self.cleaned_data.get('cashier_station')
+        return val if val else 'ALL'
+
+    def clean_patient_tier(self):
+        val = self.cleaned_data.get('patient_tier')
         return val if val else 'ALL'
 
     def clean_employee_id(self):
@@ -106,7 +111,7 @@ class UserEditForm(forms.ModelForm):
         fields = [
             'first_name', 'last_name', 'email',
             'role', 'department', 'phone_number', 'profile_photo', 'is_active',
-            'cashier_station', 'consultation_unit',
+            'cashier_station', 'consultation_unit', 'patient_tier',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -117,10 +122,15 @@ class UserEditForm(forms.ModelForm):
             'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
             'cashier_station': forms.Select(attrs={'class': 'form-select', 'id': 'id_cashier_station'}),
             'consultation_unit': forms.Select(attrs={'class': 'form-select', 'id': 'id_consultation_unit'}),
+            'patient_tier': forms.Select(attrs={'class': 'form-select', 'id': 'id_patient_tier'}),
         }
 
     def clean_cashier_station(self):
         val = self.cleaned_data.get('cashier_station')
+        return val if val else 'ALL'
+
+    def clean_patient_tier(self):
+        val = self.cleaned_data.get('patient_tier')
         return val if val else 'ALL'
 
 

@@ -59,6 +59,17 @@
               <div class="text-muted small mt-1">Which consultation queue this doctor is assigned to (General, VIP, Express, Insurance).</div>
             </div>
 
+            {# patient_tier — hidden by default, shown for nurses, pharmacists, lab, optical, cashiers #}
+            {% elif field.name == 'patient_tier' %}
+            <div class="col-md-6 d-none" id="patient_tier_row">
+              <label class="form-label fw-semibold small">
+                <i class="bi bi-layers me-1 text-warning"></i>Patient Tier <span class="text-danger">*</span>
+              </label>
+              {{ field }}
+              {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors.0 }}</div>{% endif %}
+              <div class="text-muted small mt-1">Which patient tier this staff member serves — VIP staff see only VIP patients; All Tiers sees everyone.</div>
+            </div>
+
             {# department — shown for all, but label changes per role #}
             {% elif field.name == 'department' %}
             <div class="col-md-6" id="department_row">
@@ -98,6 +109,7 @@
 const roleSelect      = document.getElementById('id_role');
 const stationRow      = document.getElementById('cashier_station_row');
 const unitRow         = document.getElementById('consultation_unit_row');
+const tierRow         = document.getElementById('patient_tier_row');
 const deptRow         = document.getElementById('department_row');
 const deptLabelText   = document.getElementById('department_label_text');
 const deptHelp        = document.getElementById('department_help');
@@ -107,6 +119,15 @@ const CASHIER_ROLES = ['cashier', 'billing_officer'];
 
 // Roles that need consultation_unit (ophthalmologist desk picker)
 const CONSULT_UNIT_ROLES = ['ophthalmologist'];
+
+// Roles that need patient_tier assignment
+const PATIENT_TIER_ROLES = [
+  'nurse', 'consultation_nurse', 'theatre_nurse', 'ward_nurse',
+  'pharmacist', 'optical_dispenser',
+  'lab_technician', 'investigation_technician',
+  'optometrist', 'low_vision_specialist', 'orthoptist',
+  'cashier', 'billing_officer', 'chief_cashier',
+];
 
 // Roles where department means "consultation room assignment"
 const ROOM_NURSE_ROLES = ['consultation_nurse'];
@@ -131,6 +152,9 @@ function updateFields() {
 
   // consultation_unit: only ophthalmologist
   if (unitRow) unitRow.classList.toggle('d-none', !CONSULT_UNIT_ROLES.includes(val));
+
+  // patient_tier: nurses, pharmacists, lab, optical, cashiers
+  if (tierRow) tierRow.classList.toggle('d-none', !PATIENT_TIER_ROLES.includes(val));
 
   // department: update label & help text based on role
   if (deptLabelText && deptHelp) {
