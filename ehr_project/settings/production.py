@@ -40,10 +40,12 @@ DATABASES = {
     'default': env.db('DATABASE_URL')
 }
 DATABASES['default']['CONN_MAX_AGE'] = 60          # persistent connections
-DATABASES['default']['OPTIONS'] = {
-    'connect_timeout': 10,
-    'options': '-c statement_timeout=30000',        # 30-second query timeout
-}
+# PostgreSQL-specific connection options — skip for SQLite
+if 'postgresql' in DATABASES['default'].get('ENGINE', ''):
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 10,
+        'options': '-c statement_timeout=30000',    # 30-second query timeout
+    }
 
 # ── Cache — Redis ─────────────────────────────────────────────────────────────
 CACHES = {
