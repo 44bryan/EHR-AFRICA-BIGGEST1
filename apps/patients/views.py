@@ -1294,6 +1294,8 @@ def triage_view(request, visit_number):
         'recent_consultations': recent_consultations,
         'payment_blocked': payment_blocked,
         'is_free_followup': is_free_followup,
+        # Nurse's assigned tier — used by room picker to show same-tier rooms first
+        'nurse_patient_tier': getattr(request.user, 'patient_tier', 'ALL'),
     })
 
 

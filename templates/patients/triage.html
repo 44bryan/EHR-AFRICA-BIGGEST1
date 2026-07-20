@@ -505,13 +505,45 @@
                     <label class="form-label small text-muted fw-semibold">Or Route Directly To</label>
                     <div class="d-flex flex-wrap gap-2">
                       {% for route in direct_routes %}
+                      {# VIP_CONSULT button — highlighted when patient is VIP #}
+                      {% if route.code == 'VIP_CONSULT' %}
+                        {% if visit.service_tier == 'VIP' %}
+                        <button type="button"
+                                class="btn btn-sm fw-semibold quick-route-btn"
+                                style="background:#7c3aed;color:#fff;border-color:#7c3aed;"
+                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
+                          <i class="bi bi-gem me-1"></i>{{ route.label }}
+                          <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;"></i>
+                        </button>
+                        {% else %}
+                        <button type="button"
+                                class="btn btn-sm quick-route-btn btn-outline-secondary"
+                                style="color:#7c3aed;border-color:#7c3aed;"
+                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
+                          <i class="bi bi-gem me-1"></i>{{ route.label }}
+                        </button>
+                        {% endif %}
+                      {# EXP_CONSULT button — highlighted when patient is Express or Fast Track #}
+                      {% elif route.code == 'EXP_CONSULT' %}
+                        {% if visit.service_tier == 'EXPRESS' or visit.service_tier == 'FAST_TRACK' %}
+                        <button type="button"
+                                class="btn btn-sm btn-warning fw-semibold quick-route-btn"
+                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
+                          <i class="bi bi-lightning-charge me-1"></i>{{ route.label }}
+                          <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;"></i>
+                        </button>
+                        {% else %}
+                        <button type="button"
+                                class="btn btn-sm btn-outline-success quick-route-btn"
+                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
+                          <i class="bi bi-lightning-charge me-1"></i>{{ route.label }}
+                        </button>
+                        {% endif %}
+                      {# All other quick routes (Lab, Pharmacy, Cashier, Refraction, Investigations) #}
+                      {% else %}
                       <button type="button"
-                              class="btn btn-sm btn-outline-primary quick-route-btn
-                                     {% if route.code == 'VIP_CONSULT' %}btn-outline-warning text-warning-emphasis{% endif %}
-                                     {% if route.code == 'EXP_CONSULT' %}btn-outline-success{% endif %}"
+                              class="btn btn-sm btn-outline-primary quick-route-btn"
                               onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
-                        {% if route.code == 'VIP_CONSULT' %}<i class="bi bi-gem me-1"></i>{% endif %}
-                        {% if route.code == 'EXP_CONSULT' %}<i class="bi bi-lightning-charge me-1"></i>{% endif %}
                         {% if route.code == 'LAB' %}<i class="bi bi-eyedropper me-1"></i>{% endif %}
                         {% if route.code == 'PHARMACY' %}<i class="bi bi-capsule me-1"></i>{% endif %}
                         {% if route.code == 'CASHIER' %}<i class="bi bi-cash-coin me-1"></i>{% endif %}
@@ -519,6 +551,7 @@
                         {% if route.code == 'INVEST' %}<i class="bi bi-activity me-1"></i>{% endif %}
                         {{ route.label }}
                       </button>
+                      {% endif %}
                       {% endfor %}
                     </div>
                   </div>
@@ -827,18 +860,48 @@ function fetchRooms(deptId, deptLabel) {
           + '<a href="/departments/' + deptId + '/rooms/" target="_blank">Add rooms</a>.</span>';
         return;
       }
-      // Sort: VIP rooms first, then by room_number
-      const visitTier = '{{ visit.service_tier }}';
+      // Nurse's assigned tier (from server context) — rooms in this tier appear first
+      const nurseTier = '{{ nurse_patient_tier }}';   // ALL / STANDARD / EXPRESS / VIP
+      const visitTier = '{{ visit.service_tier }}';   // patient's tier
+
+      // Determine which room tiers count as "my tier" for this nurse
+      function isNurseTier(roomTier) {
+        if (nurseTier === 'ALL') return true;           // supervisor sees all equally
+        if (nurseTier === 'VIP') return roomTier === 'VIP';
+        if (nurseTier === 'EXPRESS') return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
+        if (nurseTier === 'STANDARD') return roomTier === 'STANDARD';
+        return true;
+      }
+
+      // Sort: nurse's tier rooms first, then by room_number within each group
+      const tierPriority = { VIP: 0, FAST_TRACK: 1, EXPRESS: 2, STANDARD: 3 };
       data.rooms.sort(function(a, b) {
-        const tierOrder = { VIP: 0, FAST_TRACK: 1, EXPRESS: 2, STANDARD: 3 };
-        const ao = tierOrder[a.room_tier] ?? 3, bo = tierOrder[b.room_tier] ?? 3;
+        const aNurse = isNurseTier(a.room_tier || 'STANDARD') ? 0 : 1;
+        const bNurse = isNurseTier(b.room_tier || 'STANDARD') ? 0 : 1;
+        if (aNurse !== bNurse) return aNurse - bNurse;
+        const ao = tierPriority[a.room_tier] ?? 3, bo = tierPriority[b.room_tier] ?? 3;
         if (ao !== bo) return ao - bo;
         return String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true});
       });
 
+      let addedSeparator = false;
+
       data.rooms.forEach(function(room) {
         const tier = room.room_tier || 'STANDARD';
         const ts   = TIER_STYLE[tier] || TIER_STYLE.STANDARD;
+
+        // Insert "Cross-Tier Dispatch" separator before the first other-tier room
+        if (!addedSeparator && !isNurseTier(tier) && nurseTier !== 'ALL') {
+          addedSeparator = true;
+          const sep = document.createElement('div');
+          sep.className = 'w-100 mt-2 mb-1';
+          sep.innerHTML = '<div class="d-flex align-items-center gap-2">'
+            + '<hr class="flex-grow-1 m-0" style="border-color:#dee2e6;">'
+            + '<span class="text-muted fst-italic" style="font-size:.72rem;white-space:nowrap;">'
+            + '<i class="bi bi-shuffle me-1"></i>Cross-Tier Dispatch</span>'
+            + '<hr class="flex-grow-1 m-0" style="border-color:#dee2e6;"></div>';
+          roomBtnGrp.appendChild(sep);
+        }
 
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -848,22 +911,27 @@ function fetchRooms(deptId, deptLabel) {
         btn.dataset.doctorId   = room.doctor_id || '';
         btn.dataset.doctorName = room.doctor || '';
 
-        // Highlight recommended tier matching the patient's visit tier
-        const isMatch = (tier === visitTier) ||
+        // A room is "recommended" if it matches BOTH patient tier AND nurse tier
+        const isPatientTierMatch = (tier === visitTier) ||
                         (visitTier === 'FAST_TRACK' && tier === 'EXPRESS') ||
                         (visitTier === 'STANDARD' && tier === 'STANDARD');
+        const isMyTier = isNurseTier(tier);
 
         let btnClass = 'btn btn-sm room-pick-btn ' + ts.btn + ' ';
-        if (tier === 'VIP')        btnClass += 'btn-outline-secondary';
-        else if (tier === 'EXPRESS')  btnClass += 'btn-outline-warning';
+        if (tier === 'VIP')         btnClass += 'btn-outline-secondary';
+        else if (tier === 'EXPRESS')    btnClass += 'btn-outline-warning';
         else if (tier === 'FAST_TRACK') btnClass += 'btn-outline-info';
-        else btnClass += 'btn-outline-primary';
-        if (isMatch) btnClass += ' border-2';
+        else                            btnClass += 'btn-outline-primary';
+        if (isMyTier && isPatientTierMatch) btnClass += ' border-2';
 
+        // Dim cross-tier rooms slightly
         btn.className = btnClass;
         btn.style.cssText = tier === 'VIP' ? 'border-color:#7c3aed;color:#7c3aed;' : '';
+        if (!isMyTier) btn.style.opacity = '0.65';
+
         btn.innerHTML = ts.icon + room.label + ts.badge;
-        if (isMatch) btn.innerHTML += ' <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;" title="Matches patient tier"></i>';
+        if (isMyTier && isPatientTierMatch)
+          btn.innerHTML += ' <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;" title="Recommended for this patient"></i>';
 
         btn.onclick = function() { pickRoom(room.room_number, tier, room.service_type, room.doctor_id, room.doctor, btn); };
         roomBtnGrp.appendChild(btn);
