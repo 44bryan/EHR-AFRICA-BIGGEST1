@@ -1,0 +1,122 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}VIP Welcome Slip — {{ patient.full_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  .print-card { box-shadow: none !important; border: 2px solid #7c3aed !important; }
+  body { background: #fff !important; }
+}
+.vip-card {
+  max-width: 520px;
+  margin: 0 auto;
+  border: 2px solid #7c3aed;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.vip-header {
+  background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%);
+  color: #fff;
+  padding: 1.5rem 2rem;
+}
+.vip-body { padding: 1.5rem 2rem; background: #faf5ff; }
+.vip-footer { padding: 1rem 2rem; background: #ede9fe; border-top: 1px solid #ddd6fe; }
+.tier-gem { font-size: 3rem; color: #c4b5fd; }
+.info-row { display: flex; justify-content: space-between; padding: .4rem 0; border-bottom: 1px dashed #ddd6fe; font-size: .9rem; }
+.info-row:last-child { border-bottom: none; }
+.info-label { color: #6d28d9; font-weight: 600; }
+.info-val { color: #1e1b4b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="no-print mb-3 d-flex gap-2 align-items-center">
+  <button onclick="window.print()" class="btn btn-sm btn-primary">
+    <i class="bi bi-printer me-1"></i>Print Slip
+  </button>
+  <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Visit
+  </a>
+</div>
+
+<div class="vip-card shadow print-card">
+
+  {# ── Header ── #}
+  <div class="vip-header">
+    <div class="d-flex align-items-center gap-3">
+      <i class="bi bi-gem tier-gem"></i>
+      <div>
+        <div class="fw-bold" style="font-size:1.5rem;letter-spacing:.06em;">VIP PATIENT</div>
+        <div style="opacity:.85;font-size:.9rem;">Premium Consultation Service</div>
+      </div>
+      <span class="ms-auto badge border" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.4)!important;font-size:.9rem;padding:.5rem 1rem;">
+        {{ visit.visit_number }}
+      </span>
+    </div>
+  </div>
+
+  {# ── Body ── #}
+  <div class="vip-body">
+    <div class="text-center mb-4">
+      <div class="fw-bold" style="font-size:1.3rem;color:#4c1d95;">{{ patient.full_name }}</div>
+      <div class="text-muted small">{{ patient.patient_id }} &bull; {{ patient.age_display }}
+        {% if patient.gender %} &bull; {{ patient.get_gender_display }}{% endif %}
+      </div>
+    </div>
+
+    <div class="info-row">
+      <span class="info-label">Visit Date</span>
+      <span class="info-val">{{ visit.visit_date|date:"d M Y, H:i" }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Service Tier</span>
+      <span class="info-val fw-bold" style="color:#7c3aed;">
+        <i class="bi bi-gem me-1"></i>{{ visit.get_service_tier_display }}
+      </span>
+    </div>
+    {% if visit.consultation_room %}
+    <div class="info-row">
+      <span class="info-label">Consultation Room</span>
+      <span class="info-val fw-bold">{{ visit.consultation_room.display_label }}</span>
+    </div>
+    {% endif %}
+    {% if visit.attending_doctor %}
+    <div class="info-row">
+      <span class="info-label">Your Doctor</span>
+      <span class="info-val fw-bold">Dr. {{ visit.attending_doctor.get_full_name }}</span>
+    </div>
+    {% endif %}
+    {% if visit.department %}
+    <div class="info-row">
+      <span class="info-label">Department</span>
+      <span class="info-val">{{ visit.department.name }}</span>
+    </div>
+    {% endif %}
+    <div class="info-row">
+      <span class="info-label">Visit Type</span>
+      <span class="info-val">{{ visit.get_visit_type_display }}</span>
+    </div>
+    {% if visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' %}
+    <div class="info-row">
+      <span class="info-label">Billing</span>
+      <span class="info-val">
+        {{ visit.get_billing_type_display }}
+        {% if visit.insurance_company %} — {{ visit.insurance_company }}{% endif %}
+      </span>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Footer ── #}
+  <div class="vip-footer">
+    <div class="text-center small" style="color:#6d28d9;">
+      <i class="bi bi-star-fill me-1" style="color:#a78bfa;"></i>
+      <strong>Welcome to our VIP service.</strong> A dedicated team member will escort you. Please present this slip at each station.
+    </div>
+    <div class="text-center mt-2 text-muted" style="font-size:.72rem;">
+      EHR Africa &bull; Issued {{ visit.visit_date|date:"d M Y H:i" }}
+    </div>
+  </div>
+</div>
+{% endblock %}

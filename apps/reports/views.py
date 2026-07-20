@@ -487,8 +487,15 @@ def revenue_report_view(request):
             r = 0
         monthly_revenue.append({'month': d.strftime('%b %Y'), 'revenue': float(r)})
 
+    rev_by_tier = []
+    vip_visits_month = 0
+    express_visits_month = 0
+    fast_visits_month = 0
+    standard_visits_month = 0
+
     try:
         from apps.billing.models import Payment
+        from apps.patients.models import Visit
         raw = list(
             Payment.objects.filter(
                 payment_date__date__gte=month_start, is_deleted=False
@@ -501,6 +508,31 @@ def revenue_report_view(request):
         rev_year = float(Payment.objects.filter(
             payment_date__date__gte=year_start, is_deleted=False
         ).aggregate(t=Sum('amount'))['t'] or 0)
+
+        # ── Revenue by service tier (month) ───────────────────────────────────
+        for tier_code, tier_label in [('VIP', 'VIP'), ('EXPRESS', 'Express'),
+                                       ('FAST_TRACK', 'Fast Track'), ('STANDARD', 'Standard')]:
+            tier_rev = Payment.objects.filter(
+                payment_date__date__gte=month_start,
+                invoice__visit__service_tier=tier_code,
+                is_deleted=False,
+            ).aggregate(t=Sum('amount'))['t'] or 0
+            tier_count = Visit.objects.filter(
+                visit_date__date__gte=month_start,
+                service_tier=tier_code,
+                is_deleted=False,
+            ).count()
+            rev_by_tier.append({
+                'tier': tier_code,
+                'label': tier_label,
+                'revenue': float(tier_rev),
+                'count': tier_count,
+            })
+
+        vip_visits_month      = next((r['count'] for r in rev_by_tier if r['tier'] == 'VIP'), 0)
+        express_visits_month  = next((r['count'] for r in rev_by_tier if r['tier'] == 'EXPRESS'), 0)
+        fast_visits_month     = next((r['count'] for r in rev_by_tier if r['tier'] == 'FAST_TRACK'), 0)
+        standard_visits_month = next((r['count'] for r in rev_by_tier if r['tier'] == 'STANDARD'), 0)
     except Exception:
         pass
 
@@ -509,6 +541,11 @@ def revenue_report_view(request):
         'rev_by_method': rev_by_method,
         'rev_month': rev_month,
         'rev_year': rev_year,
+        'rev_by_tier': rev_by_tier,
+        'vip_visits_month': vip_visits_month,
+        'express_visits_month': express_visits_month,
+        'fast_visits_month': fast_visits_month,
+        'standard_visits_month': standard_visits_month,
         'today': today,
         'month_start': month_start,
     })

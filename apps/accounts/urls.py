@@ -16,6 +16,8 @@ urlpatterns = [
     path('staff/', views.staff_hub_view, name='staff_hub'),
     path('staff/<uuid:pk>/toggle-active/', views.toggle_user_active_view, name='toggle_active'),
     path('staff/<uuid:pk>/reset-password/', views.reset_staff_password_view, name='reset_password'),
+    path('staff/<uuid:pk>/set-patient-tier/', views.set_patient_tier_view, name='set_patient_tier'),
+    path('staff/<uuid:pk>/set-consult-unit/', views.set_consultation_unit_view, name='set_consult_unit'),
     # Two-Factor Authentication
     path('2fa/verify/', views.two_fa_verify_view, name='two_fa_verify'),
     path('2fa/setup/', views.two_fa_setup_view, name='two_fa_setup'),

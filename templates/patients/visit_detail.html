@@ -19,10 +19,22 @@
     <span class="text-muted small ms-2">{{ visit.visit_date|date:"d M Y, H:i" }}</span>
     {% if visit.department %}<span class="badge bg-light text-dark border ms-1">{{ visit.department.name }}</span>{% endif %}
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 flex-wrap">
     <a href="{% url 'reports:visit_summary_pdf' pk=visit.pk %}" class="btn btn-sm btn-outline-danger" target="_blank">
       <i class="bi bi-file-pdf me-1"></i>Print Summary
     </a>
+    {% if visit.service_tier == 'VIP' %}
+    <a href="{% url 'patients:vip_slip' visit_number=visit.visit_number %}" target="_blank"
+       class="btn btn-sm fw-semibold" style="background:#7c3aed;color:#fff;">
+      <i class="bi bi-gem me-1"></i>VIP Slip
+    </a>
+    {% endif %}
+    {% if request.user.is_chief_cashier or request.user.is_medical_director or request.user.is_super_admin or request.user.is_admin_director %}
+    <a href="{% url 'patients:tier_change_log' visit_number=visit.visit_number %}"
+       class="btn btn-sm btn-outline-secondary" title="View tier change audit log">
+      <i class="bi bi-clock-history me-1"></i>Tier Log
+    </a>
+    {% endif %}
     <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Patient Record
     </a>
@@ -582,7 +594,7 @@ function loadQueueStatus(patientId) {
           <p class="text-muted small mb-3">
             Old visit records are <strong>not</strong> affected — only this visit's queue routing changes from this point forward.
           </p>
-          <div class="mb-0">
+          <div class="mb-3">
             <label class="form-label fw-semibold small">New Tier</label>
             <select name="service_tier" class="form-select form-select-sm" required>
               <option value="STANDARD" {% if visit.service_tier == 'STANDARD' %}selected{% endif %}>Standard</option>
@@ -590,6 +602,11 @@ function loadQueueStatus(patientId) {
               <option value="FAST_TRACK" {% if visit.service_tier == 'FAST_TRACK' %}selected{% endif %}>Fast Track</option>
               <option value="VIP" {% if visit.service_tier == 'VIP' %}selected{% endif %}>VIP</option>
             </select>
+          </div>
+          <div class="mb-0">
+            <label class="form-label fw-semibold small">Reason <span class="text-muted fw-normal">(optional — for audit log)</span></label>
+            <input type="text" name="reason" class="form-control form-control-sm"
+                   placeholder="e.g. Patient upgraded by medical director, Insurance approval">
           </div>
         </div>
         <div class="modal-footer py-2">

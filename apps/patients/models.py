@@ -539,6 +539,28 @@ class Visit(AuditModel):
         return self.vital_signs.get('intraocular_pressure_left', 'N/R')
 
 
+class VisitTierChange(TimeStampedModel):
+    """
+    Audit log — every time a Visit's service_tier is changed by authorised staff.
+    JCI compliance: COP / Governance trail for tier upgrades/downgrades.
+    """
+    visit      = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name='tier_changes')
+    old_tier   = models.CharField(max_length=12)
+    new_tier   = models.CharField(max_length=12)
+    changed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, related_name='tier_changes_made'
+    )
+    reason     = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Visit Tier Change'
+        verbose_name_plural = 'Visit Tier Changes'
+
+    def __str__(self):
+        return f'{self.visit.visit_number}: {self.old_tier} → {self.new_tier} ({self.changed_by})'
+
+
 class PreRegistration(models.Model):
     """
     Stores patient pre-registration data submitted online BEFORE arrival.

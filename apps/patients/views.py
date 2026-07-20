@@ -836,6 +836,35 @@ def visit_detail_view(request, visit_number):
 
 
 @login_required
+def vip_slip_view(request, visit_number):
+    """Printable VIP welcome slip — shown at reception after VIP registration."""
+    visit = get_object_or_404(Visit, visit_number=visit_number)
+    patient = visit.patient
+    return render(request, 'patients/vip_slip.html', {
+        'visit': visit,
+        'patient': patient,
+    })
+
+
+@login_required
+def tier_change_log_view(request, visit_number):
+    """Audit trail of all tier changes for a visit — JCI governance view."""
+    u = request.user
+    if not (u.is_chief_cashier or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo or u.is_finance_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    visit = get_object_or_404(Visit, visit_number=visit_number)
+    from .models import VisitTierChange
+    changes = VisitTierChange.objects.filter(visit=visit).select_related('changed_by')
+    return render(request, 'patients/tier_change_log.html', {
+        'visit': visit,
+        'patient': visit.patient,
+        'changes': changes,
+    })
+
+
+@login_required
 @require_POST
 def change_visit_tier_view(request, visit_number):
     """Allow Chief Cashier or Medical Director to change the service tier of an open visit."""
@@ -863,6 +892,55 @@ def change_visit_tier_view(request, visit_number):
 
     visit.service_tier = new_tier
     visit.save(update_fields=['service_tier'])
+
+    # ── Audit log ─────────────────────────────────────────────────────────────
+    from .models import VisitTierChange
+    reason = request.POST.get('reason', '').strip()
+    VisitTierChange.objects.create(
+        visit=visit,
+        old_tier=old_tier,
+        new_tier=new_tier,
+        changed_by=u,
+        reason=reason,
+    )
+
+    # ── Auto-void WAITING QMS tokens for this visit and issue a new one ───────
+    if _qms_active():
+        try:
+            from apps.qms.models import (
+                QueueToken, TokenStatus, DailyTokenSequence, IssuancePoint, TIER_PRIORITY,
+            )
+            _TIER_TO_SERVICE = {
+                'VIP':        'VIP_CONSULT',
+                'EXPRESS':    'EXP_CONSULT',
+                'FAST_TRACK': 'EXP_CONSULT',
+                'STANDARD':   'GENERAL',
+            }
+            # Cancel any WAITING tokens for this visit
+            cancelled = QueueToken.objects.filter(
+                visit=visit,
+                status=TokenStatus.WAITING,
+            ).update(status=TokenStatus.CANCELLED, notes='Tier changed — re-queued at new tier')
+
+            # Create a new token at the correct service_type
+            new_service_type = _TIER_TO_SERVICE.get(new_tier, 'GENERAL')
+            token_number = DailyTokenSequence.next_dept_token(new_service_type)
+            QueueToken.objects.create(
+                token_number=token_number,
+                service_type=new_service_type,
+                patient=visit.patient,
+                visit=visit,
+                service_tier=new_tier,
+                issuance_point=IssuancePoint.SYSTEM,
+                priority=TIER_PRIORITY.get(new_tier, 0),
+                status=TokenStatus.WAITING,
+                notes=f'Re-queued after tier change ({old_tier} → {new_tier}) by {u.get_full_name()}',
+                created_by=u,
+            )
+            if cancelled:
+                messages.info(request, f'{cancelled} previous queue token(s) cancelled and re-issued at {new_tier} tier.')
+        except Exception as exc:
+            messages.warning(request, f'Tier updated but QMS re-queue failed: {exc}')
 
     messages.success(
         request,

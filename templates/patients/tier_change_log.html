@@ -1,0 +1,62 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Tier Change Log — {{ visit.visit_number }}{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>Tier Change Audit Log</h5>
+    <div class="text-muted small">Visit {{ visit.visit_number }} &bull; {{ patient.full_name }}</div>
+  </div>
+  <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Visit
+  </a>
+</div>
+
+{% if changes %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-3">Date / Time</th>
+          <th>From Tier</th>
+          <th>To Tier</th>
+          <th>Changed By</th>
+          <th class="pe-3">Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ch in changes %}
+        <tr>
+          <td class="ps-3 text-muted">{{ ch.created_at|date:"d M Y H:i" }}</td>
+          <td>
+            <span class="badge {% if ch.old_tier == 'VIP' %}text-white{% elif ch.old_tier == 'EXPRESS' %}bg-warning text-dark{% elif ch.old_tier == 'FAST_TRACK' %}bg-info text-dark{% else %}bg-secondary{% endif %}"
+                  {% if ch.old_tier == 'VIP' %}style="background:#7c3aed;"{% endif %}>
+              {% if ch.old_tier == 'VIP' %}<i class="bi bi-gem me-1"></i>{% endif %}{{ ch.old_tier }}
+            </span>
+          </td>
+          <td>
+            <span class="badge {% if ch.new_tier == 'VIP' %}text-white{% elif ch.new_tier == 'EXPRESS' %}bg-warning text-dark{% elif ch.new_tier == 'FAST_TRACK' %}bg-info text-dark{% else %}bg-secondary{% endif %}"
+                  {% if ch.new_tier == 'VIP' %}style="background:#7c3aed;"{% endif %}>
+              {% if ch.new_tier == 'VIP' %}<i class="bi bi-gem me-1"></i>{% endif %}{{ ch.new_tier }}
+            </span>
+            <i class="bi bi-arrow-right ms-1 text-muted" style="font-size:.7rem;"></i>
+          </td>
+          <td>
+            {% if ch.changed_by %}
+            <span class="fw-semibold">{{ ch.changed_by.get_full_name }}</span>
+            <span class="text-muted ms-1">({{ ch.changed_by.get_role_display }})</span>
+            {% else %}<span class="text-muted">System</span>{% endif %}
+          </td>
+          <td class="pe-3 text-muted fst-italic">{{ ch.reason|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle me-2"></i>No tier changes recorded for this visit.
+</div>
+{% endif %}
+{% endblock %}

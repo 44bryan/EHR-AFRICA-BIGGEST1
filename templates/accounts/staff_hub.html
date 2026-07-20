@@ -122,7 +122,7 @@
           <thead class="table-light">
             <tr>
               <th>Staff Member</th>
-              <th>Role</th>
+              <th>Role / Queue Tier</th>
               <th>Department</th>
               <th>Status</th>
               <th>Last Login</th>
@@ -155,6 +155,32 @@
                   {% else %}bg-secondary{% endif %}">
                   {{ staff.get_role_display }}
                 </span>
+                {# Consultation unit for doctors #}
+                {% if staff.is_doctor or staff.role == 'ophthalmologist' or staff.role == 'medical_director' %}
+                <form method="post" action="{% url 'accounts:set_consult_unit' pk=staff.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <select name="consultation_unit" class="form-select form-select-sm d-inline-block mt-1"
+                          style="max-width:120px;font-size:.68rem;" onchange="this.form.submit()"
+                          title="Consultation unit (which queue this doctor serves)">
+                    <option value="GENERAL"   {% if staff.consultation_unit == 'GENERAL'   %}selected{% endif %}>General</option>
+                    <option value="EXPRESS"   {% if staff.consultation_unit == 'EXPRESS'   %}selected{% endif %}>Express</option>
+                    <option value="VIP"       {% if staff.consultation_unit == 'VIP'       %}selected{% endif %}>VIP</option>
+                    <option value="INSURANCE" {% if staff.consultation_unit == 'INSURANCE' %}selected{% endif %}>Insurance</option>
+                  </select>
+                </form>
+                {% else %}
+                {# Patient tier for non-doctor clinical staff #}
+                <form method="post" action="{% url 'accounts:set_patient_tier' pk=staff.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <select name="patient_tier" class="form-select form-select-sm d-inline-block mt-1"
+                          style="max-width:110px;font-size:.68rem;" onchange="this.form.submit()"
+                          title="Which patient tier this staff member serves">
+                    <option value="ALL"       {% if staff.patient_tier == 'ALL'       %}selected{% endif %}>All Tiers</option>
+                    <option value="VIP"       {% if staff.patient_tier == 'VIP'       %}selected{% endif %}>VIP Only</option>
+                    <option value="STANDARD"  {% if staff.patient_tier == 'STANDARD'  %}selected{% endif %}>Standard</option>
+                  </select>
+                </form>
+                {% endif %}
               </td>
               <td class="text-muted">{{ staff.department.name|default:"—" }}</td>
               <td>
