@@ -189,6 +189,26 @@
 })();
 </script>
 
+<!-- HTMX error fallback: if a boost/AJAX request fails on tablet, do a full reload so the page never goes stale -->
+<script>
+(function () {
+  'use strict';
+  function _fallbackReload(evt) {
+    // Only fall back on network errors or 5xx — not 4xx (auth redirect handled by Django)
+    var status = evt && evt.detail && evt.detail.xhr ? evt.detail.xhr.status : 0;
+    if (status >= 400 && status < 500) return; // 4xx — let Django redirect handle it
+    try { window.location.reload(); } catch (e) {}
+  }
+  // sendError fires when the XHR itself fails (no network, timeout, CORS)
+  document.addEventListener('htmx:sendError', _fallbackReload);
+  // responseError fires on non-2xx responses not handled by htmx
+  document.addEventListener('htmx:responseError', function(evt) {
+    var status = evt && evt.detail && evt.detail.xhr ? evt.detail.xhr.status : 0;
+    if (status >= 500) _fallbackReload(evt);
+  });
+})();
+</script>
+
 <!-- Auto-reload on wake: only for pages that opt in via data-auto-reload on <body> -->
 <script>
 (function () {
