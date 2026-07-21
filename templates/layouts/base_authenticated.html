@@ -50,13 +50,14 @@
 (function () {
   'use strict';
 
-  // Pages that auto-refresh — workstation has its own timer so excluded here
+  // Pages that auto-refresh every 60 s
   var DASHBOARD_PATHS = [
     '/dashboard/',
     '/reception/desk/',
     '/reception/walk',
     '/qms/',
     '/leadership/',
+    '/consultations/queue',
   ];
 
   var _refreshTimer   = null;  // setInterval handle
@@ -234,21 +235,41 @@
 })();
 </script>
 
-<!-- Auto-reload on wake: only for pages that opt in via data-auto-reload on <body> -->
+<!-- Auto-reload on wake: global — any page idle > 4 min reloads automatically.
+     Also catches browser bfcache (back-forward cache) which serves stale snapshots. -->
 <script>
 (function () {
-  var body = document.body;
-  if (!body || !body.dataset.autoReload) return;
-  var RELOAD_AFTER_MS = parseInt(body.dataset.autoReload, 10) * 1000 || 120000;
-  var hiddenAt = 0;
+  'use strict';
+
+  // ── 1. bfcache fix: if the browser restores a page from bfcache, force fresh load ──
+  // Safari, Chrome, Firefox all support this event. persisted=true means bfcache.
+  window.addEventListener('pageshow', function (evt) {
+    if (evt.persisted) {
+      window.location.reload();
+    }
+  });
+
+  // ── 2. Idle-wake reload: if tablet has been in background for > 4 min, reload ──
+  // Skip on pages with forms that the user is actively filling in.
+  var IDLE_RELOAD_MS = 4 * 60 * 1000; // 4 minutes
+  var _hiddenAt = 0;
+  var _formTouched = false;
+
+  // Track if user has touched any form field (reset on each page swap)
+  document.addEventListener('input',  function () { _formTouched = true; _formDirty = true; }, true);
+  document.addEventListener('change', function () { _formTouched = true; _formDirty = true; }, true);
+  document.addEventListener('htmx:afterSettle', function () { _formTouched = false; _formDirty = false; });
+
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') {
-      hiddenAt = Date.now();
-    } else if (document.visibilityState === 'visible' && hiddenAt > 0) {
-      if (Date.now() - hiddenAt >= RELOAD_AFTER_MS) {
+      _hiddenAt = Date.now();
+    } else if (document.visibilityState === 'visible' && _hiddenAt > 0) {
+      var away = Date.now() - _hiddenAt;
+      _hiddenAt = 0;
+      // Don't reload if user is mid-form or idle time is short
+      if (!_formTouched && away >= IDLE_RELOAD_MS) {
         window.location.reload();
       }
-      hiddenAt = 0;
     }
   });
 })();

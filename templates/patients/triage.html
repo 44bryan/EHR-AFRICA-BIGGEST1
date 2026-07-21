@@ -59,8 +59,6 @@
     font-size:     0.85rem !important;
     border-radius: 10px !important;
   }
-  /* Room picker buttons */
-  .room-pick-btn { min-height: 50px !important; }
   /* Step labels */
   #quickRouteGrid { gap: 10px !important; }
   /* Submit button */
@@ -645,7 +643,9 @@
                       <i class="bi bi-x"></i> Clear
                     </button>
                   </div>
-                  <div class="d-flex flex-wrap gap-2" id="roomBtnGroup"></div>
+                  <select id="roomBtnGroup" class="form-select form-select-sm mt-1">
+                    <option value="">— Select a room —</option>
+                  </select>
                   <div class="mt-1 text-muted fst-italic" id="roomPickHint" style="font-size:.68rem;">
                     Select a room — doctor pre-filled from daily assignment.
                   </div>
@@ -986,156 +986,66 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
   document.getElementById('routeValidationAlert').classList.add('d-none');
 }
 
-// Tier styling helpers
-const TIER_STYLE = {
-  VIP:        { btn: 'room-tier-vip',        icon: '<i class="bi bi-gem me-1" style="color:#7c3aed;"></i>', badge: '<span class="badge ms-1 text-white" style="background:#7c3aed;font-size:.6rem;">VIP</span>' },
-  EXPRESS:    { btn: 'room-tier-express',     icon: '<i class="bi bi-lightning-charge me-1 text-warning"></i>', badge: '<span class="badge bg-warning text-dark ms-1" style="font-size:.6rem;">EXP</span>' },
-  FAST_TRACK: { btn: 'room-tier-fast',        icon: '<i class="bi bi-skip-forward-fill me-1 text-info"></i>', badge: '<span class="badge bg-info text-dark ms-1" style="font-size:.6rem;">FAST</span>' },
-  STANDARD:   { btn: 'room-tier-std',         icon: '<i class="bi bi-door-open me-1"></i>', badge: '' },
-};
 // Map room tier → QMS service type
-const ROOM_TIER_TO_SERVICE = { VIP: 'VIP_CONSULT', EXPRESS: 'EXP_CONSULT', FAST_TRACK: 'EXP_CONSULT', STANDARD: 'GENERAL' };
+const ROOM_TIER_TO_SERVICE = { VIP: 'VIP_CONSULT', EXPRESS: 'EXP_CONSULT', FAST_TRACK: 'EXP_CONSULT', STANDARD: 'GENERAL', ALL: 'GENERAL' };
+const ROOM_TIER_LABELS = { VIP: 'VIP', EXPRESS: 'Express', FAST_TRACK: 'Fast Track', STANDARD: 'Standard', ALL: 'All Tiers' };
 
 function fetchRooms(deptId, deptLabel) {
   const roomPanel  = document.getElementById('roomPickPanel');
   const deptNameEl = document.getElementById('roomPickDeptName');
-  const roomBtnGrp = document.getElementById('roomBtnGroup');
-  if (!roomPanel) return;
+  const roomSel    = document.getElementById('roomBtnGroup');
+  if (!roomPanel || !roomSel) return;
 
   roomPanel.classList.remove('d-none');
   if (deptNameEl) deptNameEl.textContent = deptLabel;
-  roomBtnGrp.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Loading rooms…</span>';
+  roomSel.innerHTML = '<option value="">Loading rooms…</option>';
+  roomSel.disabled = true;
 
   fetch(`/departments/${deptId}/rooms-ajax/`)
     .then(r => r.json())
-    .then(data => {
-      roomBtnGrp.innerHTML = '';
+    .then(function(data) {
+      roomSel.innerHTML = '<option value="">— Select a room —</option>';
+      roomSel.disabled = false;
       if (!data.rooms || data.rooms.length === 0) {
-        roomBtnGrp.innerHTML = '<span class="text-muted small fst-italic">No rooms configured for this department yet. '
-          + '<a href="/departments/' + deptId + '/rooms/" target="_blank">Add rooms</a>.</span>';
+        roomSel.innerHTML = '<option value="">No rooms configured for this department yet.</option>';
+        roomSel.disabled = true;
         return;
       }
-
-      const nurseTier = '{{ nurse_patient_tier }}';  // ALL / STANDARD / EXPRESS / VIP
-      const visitTier = '{{ visit.service_tier }}';  // patient's tier
-
-      // Which room tiers belong to this nurse's scope?
-      function isNurseTier(roomTier) {
-        if (nurseTier === 'ALL') return true;
-        if (nurseTier === 'VIP')      return roomTier === 'VIP';
-        if (nurseTier === 'EXPRESS')  return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
-        if (nurseTier === 'STANDARD') return roomTier === 'STANDARD';
-        return true;
-      }
-
-      // Is this room compatible with the patient's tier?
-      function isPatientTierCompatible(roomTier, pTier) {
-        if (pTier === 'VIP')        return roomTier === 'VIP';
-        if (pTier === 'EXPRESS')    return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
-        if (pTier === 'FAST_TRACK') return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
-        return roomTier === 'STANDARD';
-      }
-
-      // Build one room button
-      function makeRoomBtn(room, primary) {
-        const tier = room.room_tier || 'STANDARD';
-        const ts   = TIER_STYLE[tier] || TIER_STYLE.STANDARD;
-        const patientMatch = nurseTier === 'ALL' ? true : isPatientTierCompatible(tier, visitTier);
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.dataset.room        = room.room_number;
-        btn.dataset.roomTier    = tier;
-        btn.dataset.serviceType = room.service_type || 'GENERAL';
-        btn.dataset.doctorId    = room.doctor_id || '';
-        btn.dataset.doctorName  = room.doctor || '';
-
-        let cls = 'btn room-pick-btn ' + ts.btn + ' ';
-        if (primary) {
-          // Primary (nurse's tier) — solid coloured, full size
-          cls += 'btn-sm border-2 ';
-          if (tier === 'VIP')             cls += 'btn-outline-secondary';
-          else if (tier === 'EXPRESS')    cls += 'btn-outline-warning';
-          else if (tier === 'FAST_TRACK') cls += 'btn-outline-info';
-          else                            cls += 'btn-outline-primary';
-        } else {
-          // Secondary (other tiers) — smaller, muted
-          cls += 'btn-sm ';
-          if (tier === 'VIP')             cls += 'btn-outline-secondary';
-          else if (tier === 'EXPRESS')    cls += 'btn-outline-warning';
-          else if (tier === 'FAST_TRACK') cls += 'btn-outline-info';
-          else                            cls += 'btn-outline-primary';
-          btn.style.opacity = '0.65';
-          btn.style.fontSize = '.75rem';
-        }
-        btn.className = cls;
-        if (tier === 'VIP') { btn.style.borderColor = '#7c3aed'; btn.style.color = '#7c3aed'; }
-
-        let html = ts.icon + room.label + ts.badge;
-        // Doctor name below room label (for primary tier rooms)
-        if (primary && room.doctor) {
-          html += ' <small class="d-block fw-normal text-muted" style="font-size:.65rem;">Dr. ' + room.doctor.split(' ').pop() + '</small>';
-        }
-        if (primary && patientMatch) {
-          html += ' <i class="bi bi-check-circle-fill ms-1" style="font-size:.65rem;" title="Recommended for this patient"></i>';
-        }
-        btn.innerHTML = html;
-        btn.onclick = function() { pickRoom(room.room_number, tier, room.service_type, room.doctor_id, room.doctor, btn); };
-        return btn;
-      }
-
-      // Show all rooms without tier restrictions
-      const allRooms = data.rooms.slice().sort(
-        (a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true})
-      );
-
-      if (allRooms.length === 0) {
-        const msg = document.createElement('span');
-        msg.className = 'text-muted small fst-italic';
-        msg.textContent = 'No rooms configured for this department yet.';
-        roomBtnGrp.appendChild(msg);
-      } else {
-        const wrap = document.createElement('div');
-        wrap.className = 'd-flex flex-wrap gap-2';
-        allRooms.forEach(r => wrap.appendChild(makeRoomBtn(r, true)));
-        roomBtnGrp.appendChild(wrap);
-      }
+      window._roomsData = {};
+      data.rooms.slice()
+        .sort(function(a, b) { return String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true}); })
+        .forEach(function(room) {
+          window._roomsData[room.room_number] = room;
+          var opt = document.createElement('option');
+          opt.value = room.room_number;
+          var tier = room.room_tier || 'STANDARD';
+          var label = 'Room ' + room.room_number + '  [' + (ROOM_TIER_LABELS[tier] || tier) + ']';
+          if (room.doctor) label += '  —  Dr. ' + room.doctor.split(' ').pop();
+          opt.textContent = label;
+          roomSel.appendChild(opt);
+        });
     })
     .catch(function() {
-      roomBtnGrp.innerHTML = '<span class="text-muted small">Could not load rooms.</span>';
+      roomSel.innerHTML = '<option value="">Could not load rooms — check department rooms.</option>';
+      roomSel.disabled = true;
     });
 }
 
-function pickRoom(roomNum, roomTier, serviceType, doctorId, doctorName, btn) {
-  // Clear all room buttons
-  document.querySelectorAll('.room-pick-btn').forEach(b => {
-    b.classList.remove('btn-primary', 'btn-warning', 'btn-info', 'btn-secondary');
-    const dt = b.dataset.roomTier || 'STANDARD';
-    if (dt === 'VIP')        { b.style.background = ''; b.style.color = '#7c3aed'; }
-    else if (dt === 'EXPRESS') { b.style.background = ''; b.style.color = ''; }
-    else                     { b.style.background = ''; b.style.color = ''; }
-  });
-
-  // Activate selected button
-  if (roomTier === 'VIP') { btn.style.background = '#7c3aed'; btn.style.color = '#fff'; btn.style.borderColor = '#7c3aed'; }
-  else if (roomTier === 'EXPRESS')    { btn.classList.add('btn-warning'); }
-  else if (roomTier === 'FAST_TRACK') { btn.classList.add('btn-info'); }
-  else                                { btn.classList.add('btn-primary'); }
-
+function pickRoom(roomNum, roomTier, serviceType, doctorId, doctorName) {
   // Set dispatch_direct = SERVICE_TYPE|ROOM:N  (e.g. VIP_CONSULT|ROOM:5)
   const svc   = serviceType || ROOM_TIER_TO_SERVICE[roomTier] || 'GENERAL';
   const diInp = document.getElementById('dispatch_direct');
   diInp.value = svc + '|ROOM:' + roomNum;
   diInp.dataset.baseValue = svc;
 
-  // Show route confirm
+  // Show room label in confirm banner
   const roomLbl = document.getElementById('routeRoomLabel');
   if (roomLbl) roomLbl.textContent = '— Room ' + roomNum;
 
   // Auto-populate doctor if room has one assigned
   const docPanel = document.getElementById('doctorPickPanel');
   const docInput = document.getElementById('assigned_doctor_id');
-  if (doctorId && (roomTier === 'VIP' || roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK')) {
+  if (doctorId && (roomTier === 'VIP' || roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK' || roomTier === 'ALL')) {
     if (docPanel) docPanel.classList.remove('d-none');
     if (docInput) docInput.value = doctorId;
     const badge = document.getElementById('doctorPickBadge');
@@ -1144,17 +1054,15 @@ function pickRoom(roomNum, roomTier, serviceType, doctorId, doctorName, btn) {
     if (name)  name.textContent = 'Dr. ' + (doctorName || '');
     const sel = document.getElementById('doctorPickSelect');
     if (sel) sel.value = doctorId;
-  } else if (docPanel && roomTier === 'STANDARD') {
+  } else if (docPanel) {
     docPanel.classList.add('d-none');
     if (docInput) docInput.value = '';
   }
 }
 
 function clearRoomBtns() {
-  document.querySelectorAll('.room-pick-btn').forEach(b => {
-    b.classList.remove('btn-primary');
-    b.classList.add('btn-outline-primary');
-  });
+  const roomSel = document.getElementById('roomBtnGroup');
+  if (roomSel && roomSel.tagName === 'SELECT') roomSel.value = '';
   const roomLbl = document.getElementById('routeRoomLabel');
   if (roomLbl) roomLbl.textContent = '';
   const diInp = document.getElementById('dispatch_direct');
@@ -1166,6 +1074,16 @@ function clearRoom() {
   const rp = document.getElementById('roomPickPanel');
   if (rp) delete rp.dataset.selected;
 }
+
+// Room select — pick room on change
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.id === 'roomBtnGroup') {
+    var roomNum = e.target.value;
+    if (!roomNum) { clearRoomBtns(); return; }
+    var room = window._roomsData && window._roomsData[roomNum];
+    if (room) pickRoom(room.room_number, room.room_tier || 'STANDARD', room.service_type, room.doctor_id, room.doctor);
+  }
+});
 
 // Validate at least one route chosen on submit + loading feedback
 document.addEventListener('DOMContentLoaded', function() {
