@@ -1363,8 +1363,10 @@ def triage_workstation_view(request):
         show_mode = 'EXPRESS'   # Express/FastTrack sector — PARAMS_VIP filtered to EXPRESS+FT
     elif _nurse_pt == 'STANDARD':
         show_mode = 'STANDARD'  # Standard triage sector — PARAMETERS queue only
+    elif user.is_super_admin or user.is_medical_director or user.role == 'nurse_director' or user.is_ceo:
+        show_mode = 'ALL'       # Supervisors see all tiers
     else:
-        show_mode = 'ALL'       # Supervisors / unassigned → see everything
+        show_mode = 'STANDARD'  # Unassigned nurses default to standard queue only
 
     active_statuses = ['WAITING', 'CALLED', 'SERVING']
 
