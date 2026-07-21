@@ -1152,6 +1152,8 @@ def triage_view(request, visit_number):
             _SERVICE_TO_DEPT_CODE = {
                 'REFRACTION':  'REFRAC',
                 'GENERAL':     'GEN_OPH',
+                'VIP_CONSULT': 'GEN_OPH',   # VIP consultation → General Ophthalmology dept
+                'EXP_CONSULT': 'GEN_OPH',   # Express consultation → General Ophthalmology dept
                 'RETINA':      'RETINA',
                 'GLAUCOMA':    'GLAUC',
                 'PEDIATRIC':   'PEDS_OPH',
