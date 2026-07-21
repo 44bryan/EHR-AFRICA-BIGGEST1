@@ -1138,6 +1138,26 @@ def triage_view(request, visit_number):
                     department=dept, room_number=_room_num, is_active=True
                 ).select_related('assigned_doctor').first()
                 if room_obj:
+                    # Tier enforcement: reject mismatched room unless supervisor
+                    _TIER_ALLOWED_ROOMS = {
+                        'VIP':        ['VIP'],
+                        'EXPRESS':    ['EXPRESS', 'FAST_TRACK'],
+                        'FAST_TRACK': ['EXPRESS', 'FAST_TRACK'],
+                        'STANDARD':   ['STANDARD'],
+                    }
+                    _nurse_is_supervisor = (
+                        request.user.is_super_admin or request.user.is_medical_director
+                        or request.user.is_ceo or getattr(request.user, 'role', '') == 'nurse_director'
+                        or getattr(request.user, 'patient_tier', 'ALL') == 'ALL'
+                    )
+                    _allowed = _TIER_ALLOWED_ROOMS.get(visit.service_tier, ['STANDARD'])
+                    if not _nurse_is_supervisor and room_obj.room_tier not in _allowed:
+                        messages.error(
+                            request,
+                            f'Cannot dispatch {visit.get_service_tier_display()} patient to a '
+                            f'{room_obj.room_tier} room. Please choose a matching room.'
+                        )
+                        return redirect('patients:triage', visit_number=visit.visit_number)
                     visit.consultation_room = room_obj
                     # Auto-assign doctor from room if no explicit doctor was picked
                     # and the room is a premium tier (VIP/Express/Fast Track)

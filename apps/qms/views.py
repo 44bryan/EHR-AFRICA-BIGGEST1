@@ -1641,6 +1641,72 @@ def names_board(request):
     return render(request, 'qms/names_board.html', context)
 
 
+def consult_room_display(request):
+    """
+    Consultation room call display — for TV/screen mounted outside consultation rooms.
+    Shows which token number is NOW SERVING in each room.
+    No login required (public display inside facility).
+    """
+    today = timezone.localdate()
+
+    # All consultation tokens called or serving today that have a room assigned
+    CONSULT_TYPES = [
+        'GENERAL', 'VIP_CONSULT', 'EXP_CONSULT',
+        'RETINA', 'GLAUCOMA', 'PEDIATRIC', 'CORNEA',
+        'OCULOPLASTY', 'NEURO', 'CATARACT', 'UVEITIS',
+    ]
+    active_tokens = (
+        QueueToken.objects
+        .filter(
+            token_date=today,
+            service_type__in=CONSULT_TYPES,
+            status__in=[TokenStatus.CALLED, TokenStatus.SERVING],
+            is_deleted=False,
+        )
+        .select_related('visit__consultation_room', 'assigned_doctor', 'entry_token')
+        .order_by('-called_at')
+    )
+
+    # Build room cards — keyed by room label
+    rooms = {}
+    no_room_tokens = []
+    for token in active_tokens:
+        room = getattr(getattr(token, 'visit', None), 'consultation_room', None)
+        if room:
+            key = str(room.pk)
+            if key not in rooms:
+                rooms[key] = {
+                    'room': room,
+                    'tokens': [],
+                }
+            rooms[key]['tokens'].append(token)
+        else:
+            no_room_tokens.append(token)
+
+    room_cards = sorted(rooms.values(), key=lambda r: str(r['room'].room_number))
+
+    # Recent completions (last 5, for "just served" row)
+    recent_done = (
+        QueueToken.objects
+        .filter(
+            token_date=today,
+            service_type__in=CONSULT_TYPES,
+            status=TokenStatus.COMPLETED,
+            is_deleted=False,
+        )
+        .select_related('visit__consultation_room', 'assigned_doctor')
+        .order_by('-completed_at')[:5]
+    )
+
+    context = {
+        'room_cards':     room_cards,
+        'no_room_tokens': no_room_tokens,
+        'recent_done':    recent_done,
+        'today':          today,
+    }
+    return render(request, 'qms/consult_room_display.html', context)
+
+
 # ── JSON / HTMX endpoints ─────────────────────────────────────────────────────
 
 @login_required

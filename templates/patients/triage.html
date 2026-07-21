@@ -911,10 +911,17 @@ function fetchRooms(deptId, deptLabel) {
         btn.dataset.doctorId   = room.doctor_id || '';
         btn.dataset.doctorName = room.doctor || '';
 
-        // A room is "recommended" if it matches BOTH patient tier AND nurse tier
-        const isPatientTierMatch = (tier === visitTier) ||
-                        (visitTier === 'FAST_TRACK' && tier === 'EXPRESS') ||
-                        (visitTier === 'STANDARD' && tier === 'STANDARD');
+        // Tier match: which room tiers are valid for this patient's tier?
+        function isPatientTierCompatible(roomTier, pTier) {
+          if (pTier === 'VIP')        return roomTier === 'VIP';
+          if (pTier === 'EXPRESS')    return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
+          if (pTier === 'FAST_TRACK') return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
+          return roomTier === 'STANDARD';  // STANDARD patient → STANDARD rooms only
+        }
+
+        const isPatientTierMatch = nurseTier === 'ALL'   // supervisors can cross-dispatch freely
+          ? true
+          : isPatientTierCompatible(tier, visitTier);
         const isMyTier = isNurseTier(tier);
 
         let btnClass = 'btn btn-sm room-pick-btn ' + ts.btn + ' ';
@@ -924,10 +931,15 @@ function fetchRooms(deptId, deptLabel) {
         else                            btnClass += 'btn-outline-primary';
         if (isMyTier && isPatientTierMatch) btnClass += ' border-2';
 
-        // Dim cross-tier rooms slightly
+        // Disable cross-tier rooms — prevent sending VIP to standard rooms and vice-versa
         btn.className = btnClass;
         btn.style.cssText = tier === 'VIP' ? 'border-color:#7c3aed;color:#7c3aed;' : '';
-        if (!isMyTier) btn.style.opacity = '0.65';
+        if (!isPatientTierMatch) {
+          btn.disabled = true;
+          btn.style.opacity = '0.45';
+          btn.style.cursor = 'not-allowed';
+          btn.title = 'This room is for ' + tier + ' patients only — patient is ' + visitTier;
+        }
 
         btn.innerHTML = ts.icon + room.label + ts.badge;
         if (isMyTier && isPatientTierMatch)
