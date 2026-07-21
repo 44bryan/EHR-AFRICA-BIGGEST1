@@ -957,92 +957,131 @@ function fetchRooms(deptId, deptLabel) {
           + '<a href="/departments/' + deptId + '/rooms/" target="_blank">Add rooms</a>.</span>';
         return;
       }
-      // Nurse's assigned tier (from server context) — rooms in this tier appear first
-      const nurseTier = '{{ nurse_patient_tier }}';   // ALL / STANDARD / EXPRESS / VIP
-      const visitTier = '{{ visit.service_tier }}';   // patient's tier
 
-      // Determine which room tiers count as "my tier" for this nurse
+      const nurseTier = '{{ nurse_patient_tier }}';  // ALL / STANDARD / EXPRESS / VIP
+      const visitTier = '{{ visit.service_tier }}';  // patient's tier
+
+      // Which room tiers belong to this nurse's scope?
       function isNurseTier(roomTier) {
-        if (nurseTier === 'ALL') return true;           // supervisor sees all equally
-        if (nurseTier === 'VIP') return roomTier === 'VIP';
-        if (nurseTier === 'EXPRESS') return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
+        if (nurseTier === 'ALL') return true;
+        if (nurseTier === 'VIP')      return roomTier === 'VIP';
+        if (nurseTier === 'EXPRESS')  return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
         if (nurseTier === 'STANDARD') return roomTier === 'STANDARD';
         return true;
       }
 
-      // Sort: nurse's tier rooms first, then by room_number within each group
-      const tierPriority = { VIP: 0, FAST_TRACK: 1, EXPRESS: 2, STANDARD: 3 };
-      data.rooms.sort(function(a, b) {
-        const aNurse = isNurseTier(a.room_tier || 'STANDARD') ? 0 : 1;
-        const bNurse = isNurseTier(b.room_tier || 'STANDARD') ? 0 : 1;
-        if (aNurse !== bNurse) return aNurse - bNurse;
-        const ao = tierPriority[a.room_tier] ?? 3, bo = tierPriority[b.room_tier] ?? 3;
-        if (ao !== bo) return ao - bo;
-        return String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true});
-      });
+      // Is this room compatible with the patient's tier?
+      function isPatientTierCompatible(roomTier, pTier) {
+        if (pTier === 'VIP')        return roomTier === 'VIP';
+        if (pTier === 'EXPRESS')    return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
+        if (pTier === 'FAST_TRACK') return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
+        return roomTier === 'STANDARD';
+      }
 
-      let addedSeparator = false;
-
-      data.rooms.forEach(function(room) {
+      // Build one room button
+      function makeRoomBtn(room, primary) {
         const tier = room.room_tier || 'STANDARD';
         const ts   = TIER_STYLE[tier] || TIER_STYLE.STANDARD;
-
-        // Insert "Cross-Tier Dispatch" separator before the first other-tier room
-        if (!addedSeparator && !isNurseTier(tier) && nurseTier !== 'ALL') {
-          addedSeparator = true;
-          const sep = document.createElement('div');
-          sep.className = 'w-100 mt-2 mb-1';
-          sep.innerHTML = '<div class="d-flex align-items-center gap-2">'
-            + '<hr class="flex-grow-1 m-0" style="border-color:#dee2e6;">'
-            + '<span class="text-muted fst-italic" style="font-size:.72rem;white-space:nowrap;">'
-            + '<i class="bi bi-shuffle me-1"></i>Cross-Tier Dispatch</span>'
-            + '<hr class="flex-grow-1 m-0" style="border-color:#dee2e6;"></div>';
-          roomBtnGrp.appendChild(sep);
-        }
+        const patientMatch = nurseTier === 'ALL' ? true : isPatientTierCompatible(tier, visitTier);
 
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.dataset.room       = room.room_number;
-        btn.dataset.roomTier   = tier;
-        btn.dataset.serviceType= room.service_type || 'GENERAL';
-        btn.dataset.doctorId   = room.doctor_id || '';
-        btn.dataset.doctorName = room.doctor || '';
+        btn.dataset.room        = room.room_number;
+        btn.dataset.roomTier    = tier;
+        btn.dataset.serviceType = room.service_type || 'GENERAL';
+        btn.dataset.doctorId    = room.doctor_id || '';
+        btn.dataset.doctorName  = room.doctor || '';
 
-        // Tier match: which room tiers are valid for this patient's tier?
-        function isPatientTierCompatible(roomTier, pTier) {
-          if (pTier === 'VIP')        return roomTier === 'VIP';
-          if (pTier === 'EXPRESS')    return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
-          if (pTier === 'FAST_TRACK') return roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK';
-          return roomTier === 'STANDARD';  // STANDARD patient → STANDARD rooms only
+        let cls = 'btn room-pick-btn ' + ts.btn + ' ';
+        if (primary) {
+          // Primary (nurse's tier) — solid coloured, full size
+          cls += 'btn-sm border-2 ';
+          if (tier === 'VIP')             cls += 'btn-outline-secondary';
+          else if (tier === 'EXPRESS')    cls += 'btn-outline-warning';
+          else if (tier === 'FAST_TRACK') cls += 'btn-outline-info';
+          else                            cls += 'btn-outline-primary';
+        } else {
+          // Secondary (other tiers) — smaller, muted
+          cls += 'btn-sm ';
+          if (tier === 'VIP')             cls += 'btn-outline-secondary';
+          else if (tier === 'EXPRESS')    cls += 'btn-outline-warning';
+          else if (tier === 'FAST_TRACK') cls += 'btn-outline-info';
+          else                            cls += 'btn-outline-primary';
+          btn.style.opacity = '0.65';
+          btn.style.fontSize = '.75rem';
         }
+        btn.className = cls;
+        if (tier === 'VIP') { btn.style.borderColor = '#7c3aed'; btn.style.color = '#7c3aed'; }
 
-        const isPatientTierMatch = nurseTier === 'ALL'   // supervisors can cross-dispatch freely
-          ? true
-          : isPatientTierCompatible(tier, visitTier);
-        const isMyTier = isNurseTier(tier);
-
-        let btnClass = 'btn btn-sm room-pick-btn ' + ts.btn + ' ';
-        if (tier === 'VIP')             btnClass += 'btn-outline-secondary';
-        else if (tier === 'EXPRESS')    btnClass += 'btn-outline-warning';
-        else if (tier === 'FAST_TRACK') btnClass += 'btn-outline-info';
-        else                            btnClass += 'btn-outline-primary';
-        if (isMyTier) btnClass += ' border-2';
-
-        btn.className = btnClass;
-        btn.style.cssText = tier === 'VIP' ? 'border-color:#7c3aed;color:#7c3aed;' : '';
-        // Never disable rooms — nurse can see and select any room; backend enforces tier
-        if (!isPatientTierMatch) {
-          btn.style.opacity = '0.55';
-          btn.title = 'Cross-tier: room is ' + tier + ', patient is ' + visitTier;
+        let html = ts.icon + room.label + ts.badge;
+        // Doctor name below room label (for primary tier rooms)
+        if (primary && room.doctor) {
+          html += ' <small class="d-block fw-normal text-muted" style="font-size:.65rem;">Dr. ' + room.doctor.split(' ').pop() + '</small>';
         }
-
-        btn.innerHTML = ts.icon + room.label + ts.badge;
-        if (isMyTier && isPatientTierMatch)
-          btn.innerHTML += ' <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;" title="Recommended for this patient"></i>';
-
+        if (primary && patientMatch) {
+          html += ' <i class="bi bi-check-circle-fill ms-1" style="font-size:.65rem;" title="Recommended for this patient"></i>';
+        }
+        btn.innerHTML = html;
         btn.onclick = function() { pickRoom(room.room_number, tier, room.service_type, room.doctor_id, room.doctor, btn); };
-        roomBtnGrp.appendChild(btn);
-      });
+        return btn;
+      }
+
+      const myRooms    = data.rooms.filter(r => isNurseTier(r.room_tier || 'STANDARD'));
+      const otherRooms = data.rooms.filter(r => !isNurseTier(r.room_tier || 'STANDARD'));
+
+      // Sort by room number within each group
+      const sortByNum = (a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true});
+      myRooms.sort(sortByNum);
+      otherRooms.sort(sortByNum);
+
+      // ── My-tier rooms (primary, always visible) ──────────────────
+      if (myRooms.length === 0 && nurseTier !== 'ALL') {
+        const msg = document.createElement('span');
+        msg.className = 'text-muted small fst-italic';
+        msg.textContent = 'No rooms configured for your tier yet.';
+        roomBtnGrp.appendChild(msg);
+      } else {
+        const myWrap = document.createElement('div');
+        myWrap.className = 'd-flex flex-wrap gap-2';
+        myRooms.forEach(r => myWrap.appendChild(makeRoomBtn(r, true)));
+        roomBtnGrp.appendChild(myWrap);
+      }
+
+      // ── Other-tier rooms (collapsed by default unless ALL) ───────
+      if (otherRooms.length > 0 && nurseTier !== 'ALL') {
+        const toggleId = 'otherRooms_' + deptId.replace(/-/g, '');
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.style.cssText = 'margin-top:8px;font-size:.72rem;color:#6b7280;background:none;'
+          + 'border:1px dashed #d1d5db;border-radius:6px;padding:3px 10px;cursor:pointer;';
+        toggle.innerHTML = '<i class="bi bi-shuffle me-1"></i>Other tiers ('
+          + otherRooms.length + ' room' + (otherRooms.length > 1 ? 's' : '')
+          + ') <i class="bi bi-chevron-down" style="font-size:.6rem;"></i>';
+
+        const otherWrap = document.createElement('div');
+        otherWrap.id = toggleId;
+        otherWrap.style.display = 'none';
+        otherWrap.style.marginTop = '6px';
+
+        const innerWrap = document.createElement('div');
+        innerWrap.className = 'd-flex flex-wrap gap-2';
+        otherRooms.forEach(r => innerWrap.appendChild(makeRoomBtn(r, false)));
+        otherWrap.appendChild(innerWrap);
+
+        toggle.addEventListener('click', function() {
+          const open = otherWrap.style.display !== 'none';
+          otherWrap.style.display = open ? 'none' : 'block';
+          const chev = toggle.querySelector('.bi-chevron-down,.bi-chevron-up');
+          if (chev) chev.className = chev.className.replace(
+            open ? 'bi-chevron-up' : 'bi-chevron-down',
+            open ? 'bi-chevron-down' : 'bi-chevron-up'
+          );
+        });
+
+        roomBtnGrp.appendChild(toggle);
+        roomBtnGrp.appendChild(otherWrap);
+      }
     })
     .catch(function() {
       roomBtnGrp.innerHTML = '<span class="text-muted small">Could not load rooms.</span>';
