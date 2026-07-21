@@ -541,19 +541,21 @@
                 <div class="accordion-body pt-2">
                   <label class="form-label fw-semibold small mb-2">Send Patient To <span class="text-danger">*</span></label>
 
-                  {# ── Dispatch mode: two radio options ── #}
+                  {# ── Dispatch mode: two card-style radio options ── #}
                   <div class="d-flex gap-2 mb-3 flex-wrap" id="dispatchModeGroup">
-                    <label class="btn btn-outline-primary dispatch-mode-btn active" id="lbl_dept_queue" style="font-size:.82rem;">
-                      <input type="radio" name="_dispatch_mode" value="DEPT" class="d-none" id="mode_dept" checked
-                             onclick="setDispatchMode('DEPT')">
+                    <label id="lbl_dept_queue" onclick="setDispatchMode('DEPT')"
+                           style="cursor:pointer;border:2px solid #0d6efd;border-radius:8px;padding:8px 14px;min-width:160px;
+                                  background:#eff6ff;font-size:.82rem;font-weight:600;color:#1d4ed8;user-select:none;">
+                      <input type="radio" name="_dispatch_mode" value="DEPT" class="d-none" id="mode_dept" checked>
                       <i class="bi bi-people-fill me-1"></i>Department Queue
-                      <div class="fw-normal text-muted" style="font-size:.72rem;">Any available doctor sees it</div>
+                      <div style="font-weight:400;font-size:.7rem;color:#6b7280;margin-top:2px;">Any available doctor sees it</div>
                     </label>
-                    <label class="btn btn-outline-secondary dispatch-mode-btn" id="lbl_room_queue" style="font-size:.82rem;">
-                      <input type="radio" name="_dispatch_mode" value="ROOM" class="d-none" id="mode_room"
-                             onclick="setDispatchMode('ROOM')">
+                    <label id="lbl_room_queue" onclick="setDispatchMode('ROOM')"
+                           style="cursor:pointer;border:2px solid #d1d5db;border-radius:8px;padding:8px 14px;min-width:160px;
+                                  background:#fff;font-size:.82rem;font-weight:600;color:#374151;user-select:none;">
+                      <input type="radio" name="_dispatch_mode" value="ROOM" class="d-none" id="mode_room">
                       <i class="bi bi-door-open me-1"></i>Specific Room / Doctor
-                      <div class="fw-normal text-muted" style="font-size:.72rem;">Route to one room only</div>
+                      <div style="font-weight:400;font-size:.7rem;color:#6b7280;margin-top:2px;">Route to one room only</div>
                     </label>
                   </div>
 
@@ -826,19 +828,21 @@ function setDispatchMode(mode) {
   const roomPanel = document.getElementById('roomPickPanel');
   const roomHint  = document.getElementById('roomPickHint');
 
+  function _modeCard(el, active) {
+    if (!el) return;
+    el.style.border     = active ? '2px solid #0d6efd' : '2px solid #d1d5db';
+    el.style.background = active ? '#eff6ff' : '#fff';
+    el.style.color      = active ? '#1d4ed8' : '#374151';
+  }
+
   if (mode === 'DEPT') {
-    if (lblDept) { lblDept.classList.add('active'); lblDept.classList.replace('btn-outline-secondary', 'btn-outline-primary'); }
-    if (lblRoom) { lblRoom.classList.remove('active'); lblRoom.classList.replace('btn-outline-primary', 'btn-outline-secondary'); }
-    // Hide room panel; clear any room suffix already appended
+    _modeCard(lblDept, true);
+    _modeCard(lblRoom, false);
     if (roomPanel) roomPanel.classList.add('d-none');
     clearRoomBtns();
-    if (roomHint) roomHint.textContent = 'Department queue — the first available doctor will see this patient.';
   } else {
-    // ROOM mode
-    if (lblDept) { lblDept.classList.remove('active'); lblDept.classList.replace('btn-outline-primary', 'btn-outline-secondary'); }
-    if (lblRoom) { lblRoom.classList.add('active'); lblRoom.classList.replace('btn-outline-secondary', 'btn-outline-primary'); }
-    if (roomHint) roomHint.textContent = 'Select a room to route this patient to a specific doctor.';
-    // If a dept is already selected, show the room picker immediately
+    _modeCard(lblDept, false);
+    _modeCard(lblRoom, true);
     if (_currentDeptId) {
       const deptSel = document.getElementById('dispatch_department');
       const deptLabel = deptSel ? deptSel.options[deptSel.selectedIndex].text : '';
