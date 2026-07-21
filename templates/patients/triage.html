@@ -7,6 +7,22 @@
 /* Remove Bootstrap accordion active highlight — keep it plain white like doctor form */
 .triage-acc-btn:not(.collapsed) { background-color: #fff !important; color: inherit !important; box-shadow: none !important; }
 .triage-acc-btn::after { filter: none !important; }
+
+/* ── Quick-route destination buttons — distinct colour per destination ── */
+.qr-lab        { background:#d1fae5; color:#065f46; border:2px solid #059669; }
+.qr-pharmacy   { background:#cffafe; color:#164e63; border:2px solid #0891b2; }
+.qr-cashier    { background:#fef3c7; color:#78350f; border:2px solid #d97706; }
+.qr-refraction { background:#ede9fe; color:#4c1d95; border:2px solid #7c3aed; }
+.qr-invest     { background:#fee2e2; color:#7f1d1d; border:2px solid #dc2626; }
+.qr-default    { background:#f1f5f9; color:#1e293b; border:2px solid #94a3b8; }
+
+/* Selected state — bright ring + check icon */
+.qr-lab.qr-selected        { background:#059669; color:#fff; border-color:#065f46; }
+.qr-pharmacy.qr-selected   { background:#0891b2; color:#fff; border-color:#164e63; }
+.qr-cashier.qr-selected    { background:#d97706; color:#fff; border-color:#78350f; }
+.qr-refraction.qr-selected { background:#7c3aed; color:#fff; border-color:#4c1d95; }
+.qr-invest.qr-selected     { background:#dc2626; color:#fff; border-color:#7f1d1d; }
+.qr-default.qr-selected    { background:#334155; color:#fff; border-color:#1e293b; }
 </style>
 {% endblock %}
 
@@ -592,10 +608,16 @@
                           <i class="bi bi-lightning-charge me-1"></i>{{ route.label }}
                         </button>
                         {% endif %}
-                      {# All other quick routes (Lab, Pharmacy, Cashier, Refraction, Investigations) #}
+                      {# All other quick routes — each with a distinct colour ── #}
                       {% else %}
                       <button type="button"
-                              class="btn btn-sm btn-outline-primary quick-route-btn"
+                              class="btn btn-sm fw-semibold quick-route-btn
+                                {% if route.code == 'LAB' %}qr-lab
+                                {% elif route.code == 'PHARMACY' %}qr-pharmacy
+                                {% elif route.code == 'CASHIER' %}qr-cashier
+                                {% elif route.code == 'REFRACTION' %}qr-refraction
+                                {% elif route.code == 'INVEST' %}qr-invest
+                                {% else %}qr-default{% endif %}"
                               onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
                         {% if route.code == 'LAB' %}<i class="bi bi-eyedropper me-1"></i>{% endif %}
                         {% if route.code == 'PHARMACY' %}<i class="bi bi-capsule me-1"></i>{% endif %}
@@ -603,6 +625,7 @@
                         {% if route.code == 'REFRACTION' %}<i class="bi bi-eyeglasses me-1"></i>{% endif %}
                         {% if route.code == 'INVEST' %}<i class="bi bi-activity me-1"></i>{% endif %}
                         {{ route.label }}
+                        <i class="bi bi-check-circle-fill ms-1 qr-check d-none" style="font-size:.7rem;"></i>
                       </button>
                       {% endif %}
                       {% endfor %}
@@ -866,9 +889,12 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
   const lbl       = document.getElementById('routeLabel');
   const roomPanel = document.getElementById('roomPickPanel');
 
+  // Deselect all quick-route buttons (remove selected state + hide check icons)
   document.querySelectorAll('.quick-route-btn').forEach(b => {
-    b.classList.remove('btn-primary');
-    b.classList.add('btn-outline-primary');
+    b.classList.remove('qr-selected', 'btn-primary');
+    b.classList.add('btn-outline-primary');  // fallback for non-qr-* buttons
+    var chk = b.querySelector('.qr-check');
+    if (chk) chk.classList.add('d-none');
   });
 
   if (type === 'direct') {
@@ -876,7 +902,17 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
     directInp.value             = serviceCode;
     directInp.dataset.baseValue = serviceCode;
     _currentDeptId              = '';
-    if (btn) { btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-primary'); }
+    if (btn) {
+      btn.classList.remove('btn-outline-primary');
+      // If this is a colour-coded qr-* button, use selected state; else fall back to btn-primary
+      if ([...btn.classList].some(c => c.startsWith('qr-'))) {
+        btn.classList.add('qr-selected');
+      } else {
+        btn.classList.add('btn-primary');
+      }
+      var chk = btn.querySelector('.qr-check');
+      if (chk) chk.classList.remove('d-none');
+    }
     if (roomPanel) { roomPanel.classList.add('d-none'); clearRoomBtns(); }
   }
 
