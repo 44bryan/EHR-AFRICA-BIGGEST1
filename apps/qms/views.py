@@ -1201,9 +1201,19 @@ def doctor_queue(request):
         'general_physician':         'GEN_PHYS',
     }
     if user.role == 'ophthalmologist':
-        # Use the assigned consultation_unit (EXP_CONSULT, VIP_CONSULT, etc.)
-        # Falls back to GENERAL if unit not set
-        service_type = getattr(user, 'consultation_unit', None) or 'GENERAL'
+        # Map consultation_unit to canonical service_type (include legacy aliases)
+        _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+        _cu_svc = {
+            'GENERAL':       'GENERAL',
+            'VIP_CONSULT':   'VIP_CONSULT',
+            'VIP':           'VIP_CONSULT',
+            'EXP_CONSULT':   'EXP_CONSULT',
+            'EXPRESS':       'EXP_CONSULT',
+            'INSUR_CONSULT': 'INSUR_CONSULT',
+            'INSURANCE':     'INSUR_CONSULT',
+            'ALL':           'GENERAL',  # ALL-tier doctors see GENERAL pool by default here
+        }
+        service_type = _cu_svc.get(_cu, 'GENERAL')
     else:
         service_type = _ROLE_TO_SERVICE.get(user.role)
 

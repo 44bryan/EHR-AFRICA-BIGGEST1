@@ -685,7 +685,20 @@ def home_view(request):
         if _qms_active() and dept_code:
             try:
                 from apps.qms.models import QueueToken, TokenStatus
-                service_types = _DEPT_SVC = _DEPT_TO_SVC.get(dept_code, [])
+                service_types = _DEPT_TO_SVC.get(dept_code, [])
+                # GEN_OPH: narrow to the nurse's own tier instead of all 4 queues
+                if dept_code == 'GEN_OPH':
+                    _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+                    _cu_svc_map = {
+                        'VIP_CONSULT':   ['VIP_CONSULT'],
+                        'VIP':           ['VIP_CONSULT'],
+                        'EXP_CONSULT':   ['EXP_CONSULT'],
+                        'EXPRESS':       ['EXP_CONSULT'],
+                        'INSUR_CONSULT': ['INSUR_CONSULT'],
+                        'INSURANCE':     ['INSUR_CONSULT'],
+                        'ALL':           ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
+                    }
+                    service_types = _cu_svc_map.get(_cu, ['GENERAL'])
                 if service_types:
                     waiting_tokens = list(
                         QueueToken.objects.filter(

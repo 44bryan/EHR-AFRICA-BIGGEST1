@@ -1588,6 +1588,7 @@ def clinic_nurse_view(request):
     waiting_tokens = []    # QMS mode
     waiting_visits = []    # No-QMS mode
     in_consult_visits = [] # Patients currently being seen by doctor (both modes)
+    _nurse_tier = getattr(user, 'patient_tier', 'ALL')  # used in both QMS and no-QMS blocks
 
     if qms_on and dept_code:
         # ── QMS ON: show QMS queue tokens for this department ────────────────
@@ -1597,7 +1598,15 @@ def clinic_nurse_view(request):
             # GEN_OPH nurses serve only their tier's consultation queue
             if dept_code == 'GEN_OPH':
                 _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
-                svc_type = {'GENERAL': 'GENERAL', 'EXP_CONSULT': 'EXP_CONSULT', 'VIP_CONSULT': 'VIP_CONSULT', 'INSUR_CONSULT': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
+                svc_type = {
+                    'GENERAL':       'GENERAL',
+                    'EXP_CONSULT':   'EXP_CONSULT',
+                    'EXPRESS':       'EXP_CONSULT',    # legacy alias
+                    'VIP_CONSULT':   'VIP_CONSULT',
+                    'VIP':           'VIP_CONSULT',    # legacy alias
+                    'INSUR_CONSULT': 'INSUR_CONSULT',
+                    'INSURANCE':     'INSUR_CONSULT',  # legacy alias
+                }.get(_cu, 'GENERAL')
             if svc_type:
                 waiting_tokens = list(
                     QueueToken.objects.filter(
@@ -1626,19 +1635,24 @@ def clinic_nurse_view(request):
     elif not qms_on and dept_code:
         # ── QMS OFF: show Visits with dept-specific waiting statuses ─────────
         waiting_statuses = _DEPT_TO_WAITING_STATUSES.get(dept_code, ['WAITING'])
-        waiting_visits = list(
-            Visit.objects.filter(
-                visit_date__date=today,
-                status__in=waiting_statuses,
-                is_deleted=False,
-            ).select_related('patient', 'triage_nurse', 'attending_doctor')
-            .order_by('visit_date')  # first in, first out
-        )
+        _nq_qs = Visit.objects.filter(
+            visit_date__date=today,
+            status__in=waiting_statuses,
+            is_deleted=False,
+        ).select_related('patient', 'triage_nurse', 'attending_doctor')
         if dept:
-            waiting_visits = [v for v in waiting_visits if v.department_id == dept.id]
+            _nq_qs = _nq_qs.filter(department=dept)
+        # Tier isolation for GEN_OPH — VIP nurses only see VIP visits, etc.
+        if dept_code == 'GEN_OPH':
+            if _nurse_tier == 'VIP':
+                _nq_qs = _nq_qs.filter(service_tier='VIP')
+            elif _nurse_tier in ('EXPRESS', 'FAST_TRACK'):
+                _nq_qs = _nq_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+            elif _nurse_tier == 'STANDARD':
+                _nq_qs = _nq_qs.filter(service_tier='STANDARD')
+        waiting_visits = list(_nq_qs.order_by('visit_date'))
 
     # ── Patients currently IN_CONSULTATION in this dept today (both modes) ──
-    _nurse_tier = getattr(user, 'patient_tier', 'ALL')
     if dept:
         _ic_qs = Visit.objects.filter(
             visit_date__date=today,
