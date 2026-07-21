@@ -1458,6 +1458,13 @@ def department_stats_view(request):
     dept_code = getattr(user, 'role_department_code', None)
     dept_name = dept_code or 'Your Department'
 
+    # Determine user's tier scope — scoped nurses see only their tier's data
+    _user_tier = getattr(user, 'patient_tier', 'ALL')
+    _is_supervisor = (
+        _user_tier == 'ALL' or user.is_super_admin or user.is_medical_director or user.is_ceo
+        or getattr(user, 'role', '') in ('nurse_director', 'admin', 'senior_accountant', 'finance_director')
+    )
+
     # Consultations for this department
     dept_qs = Consultation.objects.filter(
         is_deleted=False,
@@ -1466,6 +1473,16 @@ def department_stats_view(request):
     )
     if dept_code:
         dept_qs = dept_qs.filter(department__code=dept_code)
+
+    # Tier scoping: non-supervisor nurses only see their own tier's consultations
+    if not _is_supervisor:
+        _tier_map = {
+            'VIP': ['VIP'],
+            'EXPRESS': ['EXPRESS', 'FAST_TRACK'],
+            'STANDARD': ['STANDARD'],
+        }
+        _allowed_tiers = _tier_map.get(_user_tier, ['STANDARD'])
+        dept_qs = dept_qs.filter(visit__service_tier__in=_allowed_tiers)
 
     total_consults = dept_qs.count()
 
@@ -1545,6 +1562,8 @@ def department_stats_view(request):
     ctx = {
         'dept_name': dept_name,
         'dept_code': dept_code,
+        'user_tier': _user_tier,
+        'is_supervisor': _is_supervisor,
         'month_start': month_start,
         'year': year, 'month': month,
         'months_list': [{'value': m, 'label': today.replace(year=year, month=m, day=1).strftime('%B')} for m in range(1, 13)],

@@ -1619,14 +1619,24 @@ def clinic_nurse_view(request):
             waiting_visits = [v for v in waiting_visits if v.department_id == dept.id]
 
     # ── Patients currently IN_CONSULTATION in this dept today (both modes) ──
+    _nurse_tier = getattr(user, 'patient_tier', 'ALL')
     if dept:
+        _ic_qs = Visit.objects.filter(
+            visit_date__date=today,
+            status='IN_CONSULTATION',
+            department=dept,
+            is_deleted=False,
+        )
+        # Scope to nurse's tier — a VIP nurse only sees VIP patients in consultation
+        if _nurse_tier == 'VIP':
+            _ic_qs = _ic_qs.filter(service_tier='VIP')
+        elif _nurse_tier == 'EXPRESS':
+            _ic_qs = _ic_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+        elif _nurse_tier == 'STANDARD':
+            _ic_qs = _ic_qs.filter(service_tier='STANDARD')
+        # ALL / supervisor → no tier filter
         in_consult_visits = list(
-            Visit.objects.filter(
-                visit_date__date=today,
-                status='IN_CONSULTATION',
-                department=dept,
-                is_deleted=False,
-            ).select_related('patient', 'attending_doctor').order_by('-visit_date')
+            _ic_qs.select_related('patient', 'attending_doctor').order_by('-visit_date')
         )
 
     # ── Today's stats for this dept ────────────────────────────────────────
@@ -1653,12 +1663,19 @@ def clinic_nurse_view(request):
             ).values_list('visit_id', flat=True)
         )
         if done_visit_ids:
+            _rtr_qs = Visit.objects.filter(
+                id__in=done_visit_ids,
+                status='IN_CONSULTATION',
+                is_deleted=False,
+            )
+            if _nurse_tier == 'VIP':
+                _rtr_qs = _rtr_qs.filter(service_tier='VIP')
+            elif _nurse_tier == 'EXPRESS':
+                _rtr_qs = _rtr_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+            elif _nurse_tier == 'STANDARD':
+                _rtr_qs = _rtr_qs.filter(service_tier='STANDARD')
             ready_to_route = list(
-                Visit.objects.filter(
-                    id__in=done_visit_ids,
-                    status='IN_CONSULTATION',
-                    is_deleted=False,
-                ).select_related('patient', 'attending_doctor').order_by('visit_date')
+                _rtr_qs.select_related('patient', 'attending_doctor').order_by('visit_date')
             )
 
     return render(request, 'consultations/clinic_nurse.html', {
@@ -1673,6 +1690,7 @@ def clinic_nurse_view(request):
         'waiting_count': len(waiting_tokens) if qms_on else len(waiting_visits),
         'in_consult_count': len(in_consult_visits),
         'completed_today': completed_today,
+        'nurse_tier': _nurse_tier,
         'today': today,
     })
 
