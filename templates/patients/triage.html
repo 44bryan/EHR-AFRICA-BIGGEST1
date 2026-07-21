@@ -571,7 +571,6 @@
 
                   {# ── Quick-route direct buttons ── #}
                   <div class="mb-2">
-                    <label class="form-label small text-muted fw-semibold">Or Route Directly To</label>
                     <div class="d-flex flex-wrap gap-2">
                       {% for route in direct_routes %}
                       {# VIP_CONSULT button — highlighted when patient is VIP #}
@@ -854,10 +853,13 @@ function onDeptChange(deptId, label) {
   const lbl       = document.getElementById('routeLabel');
   const roomPanel = document.getElementById('roomPickPanel');
 
-  // Deactivate any quick-route buttons
+  // Deactivate any quick-route buttons (only reset non-qr-* buttons to outline-primary)
   document.querySelectorAll('.quick-route-btn').forEach(b => {
-    b.classList.remove('btn-primary');
-    b.classList.add('btn-outline-primary');
+    b.classList.remove('btn-primary', 'qr-selected');
+    const hasQrClass = [...b.classList].some(c => c.startsWith('qr-'));
+    if (!hasQrClass) b.classList.add('btn-outline-primary');
+    var chk = b.querySelector('.qr-check');
+    if (chk) chk.classList.add('d-none');
   });
 
   directInp.value = '';
@@ -889,10 +891,11 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
   const lbl       = document.getElementById('routeLabel');
   const roomPanel = document.getElementById('roomPickPanel');
 
-  // Deselect all quick-route buttons (remove selected state + hide check icons)
+  // Deselect all quick-route buttons (only reset non-qr-* to outline-primary)
   document.querySelectorAll('.quick-route-btn').forEach(b => {
     b.classList.remove('qr-selected', 'btn-primary');
-    b.classList.add('btn-outline-primary');  // fallback for non-qr-* buttons
+    const hasQrClass = [...b.classList].some(c => c.startsWith('qr-'));
+    if (!hasQrClass) b.classList.add('btn-outline-primary');
     var chk = b.querySelector('.qr-check');
     if (chk) chk.classList.add('d-none');
   });
@@ -1019,20 +1022,18 @@ function fetchRooms(deptId, deptLabel) {
         const isMyTier = isNurseTier(tier);
 
         let btnClass = 'btn btn-sm room-pick-btn ' + ts.btn + ' ';
-        if (tier === 'VIP')         btnClass += 'btn-outline-secondary';
+        if (tier === 'VIP')             btnClass += 'btn-outline-secondary';
         else if (tier === 'EXPRESS')    btnClass += 'btn-outline-warning';
         else if (tier === 'FAST_TRACK') btnClass += 'btn-outline-info';
         else                            btnClass += 'btn-outline-primary';
-        if (isMyTier && isPatientTierMatch) btnClass += ' border-2';
+        if (isMyTier) btnClass += ' border-2';
 
-        // Disable cross-tier rooms — prevent sending VIP to standard rooms and vice-versa
         btn.className = btnClass;
         btn.style.cssText = tier === 'VIP' ? 'border-color:#7c3aed;color:#7c3aed;' : '';
+        // Never disable rooms — nurse can see and select any room; backend enforces tier
         if (!isPatientTierMatch) {
-          btn.disabled = true;
-          btn.style.opacity = '0.45';
-          btn.style.cursor = 'not-allowed';
-          btn.title = 'This room is for ' + tier + ' patients only — patient is ' + visitTier;
+          btn.style.opacity = '0.55';
+          btn.title = 'Cross-tier: room is ' + tier + ', patient is ' + visitTier;
         }
 
         btn.innerHTML = ts.icon + room.label + ts.badge;
