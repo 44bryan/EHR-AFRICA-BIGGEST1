@@ -823,7 +823,26 @@ def cashier_queue(request):
 def cashier_pos(request, token_id):
     """Main POS view — displays the cashier point-of-sale interface."""
     from apps.qms.models import QueueToken
+    from apps.accounts.models import CashierStation as _CS
     token = get_object_or_404(QueueToken, id=token_id, is_deleted=False)
+
+    # ── Tier guard: cashier can only bill their own tier's patients ──────────
+    _station = getattr(request.user, 'cashier_station', _CS.ALL)
+    _STATION_TIERS = {
+        _CS.STANDARD:   ['STANDARD'],
+        _CS.FAST_TRACK: ['EXPRESS', 'FAST_TRACK'],
+        _CS.VIP:        ['VIP'],
+    }
+    if _station in _STATION_TIERS and token.service_tier not in _STATION_TIERS[_station]:
+        messages.error(
+            request,
+            f'You are assigned to the {_station} counter and cannot bill a '
+            f'{token.get_service_tier_display()} patient. '
+            f'Please route this patient to the correct cashier counter.'
+        )
+        return redirect('billing:cashier_queue')
+    # ────────────────────────────────────────────────────────────────────────
+
     patient = token.patient
 
     invoice = None
