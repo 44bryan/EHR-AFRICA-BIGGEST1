@@ -958,6 +958,22 @@ def triage_view(request, visit_number):
 
     visit = get_object_or_404(Visit, visit_number=visit_number)
 
+    # ── Cross-tier detection ─────────────────────────────────────────────────
+    _nurse_tier = getattr(request.user, 'patient_tier', 'ALL')
+    _nurse_is_supervisor = (
+        request.user.is_super_admin or request.user.is_medical_director
+        or request.user.is_ceo or getattr(request.user, 'role', '') == 'nurse_director'
+        or _nurse_tier == 'ALL'
+    )
+    _NURSE_COMPAT = {
+        'VIP': ('VIP',), 'EXPRESS': ('EXPRESS', 'FAST_TRACK'),
+        'FAST_TRACK': ('EXPRESS', 'FAST_TRACK'), 'STANDARD': ('STANDARD',),
+    }
+    _cross_tier = (
+        not _nurse_is_supervisor
+        and visit.service_tier not in _NURSE_COMPAT.get(_nurse_tier, ('VIP', 'EXPRESS', 'FAST_TRACK', 'STANDARD'))
+    )
+
     from apps.departments.models import Department
     from apps.qms.models import ServiceType
     departments = Department.objects.filter(is_active=True).order_by('name')
@@ -1055,6 +1071,39 @@ def triage_view(request, visit_number):
 
         if form.is_valid():
             cd = form.cleaned_data
+
+            # ── Cross-tier audit guard ───────────────────────────────────────
+            if _cross_tier:
+                _ct_reason = request.POST.get('cross_tier_reason', '').strip()
+                if len(_ct_reason) < 10:
+                    messages.error(
+                        request,
+                        'A reason (minimum 10 characters) is required to triage a patient '
+                        'outside your assigned tier.'
+                    )
+                    return redirect('patients:triage', visit_number=visit.visit_number)
+                _ct_change_tier = request.POST.get('change_patient_tier') == '1'
+                from apps.accounts.models import UserAuditLog as _UAL
+                _UAL.log(
+                    user=request.user,
+                    action=_UAL.Action.UPDATE_RECORD,
+                    target_model='Visit',
+                    target_id=str(visit.pk),
+                    extra_data={
+                        'action_type': 'CROSS_TIER_TRIAGE',
+                        'nurse_tier': _nurse_tier,
+                        'patient_tier': visit.service_tier,
+                        'reason': _ct_reason,
+                        'tier_changed': _ct_change_tier,
+                        'new_tier': _nurse_tier if _ct_change_tier else None,
+                    },
+                    request=request,
+                )
+                if _ct_change_tier:
+                    visit.service_tier = _nurse_tier
+            else:
+                _ct_change_tier = False
+
             vitals = {k: str(v) for k, v in cd.items() if v not in (None, '', 'None')}
             visit.vital_signs = vitals
             visit.status = 'TRIAGE'
@@ -1169,8 +1218,11 @@ def triage_view(request, visit_number):
                     if service_type in ('GENERAL', 'VIP_CONSULT', 'EXP_CONSULT') and room_obj.room_tier != 'STANDARD':
                         service_type = room_obj.tier_service_type
 
-            visit.save(update_fields=['vital_signs', 'status', 'triage_nurse', 'department',
-                                      'nursing_notes', 'pre_auth_status', 'consultation_room', 'updated_at'])
+            _save_fields = ['vital_signs', 'status', 'triage_nurse', 'department',
+                            'nursing_notes', 'pre_auth_status', 'consultation_room', 'updated_at']
+            if _ct_change_tier:
+                _save_fields.append('service_tier')
+            visit.save(update_fields=_save_fields)
 
             # ── QMS Integration: flexible routing ─────────────────────────────
             # Priority 1: nurse picked a direct service (REFRACTION, LAB, etc.)
@@ -1315,7 +1367,10 @@ def triage_view(request, visit_number):
         'payment_blocked': payment_blocked,
         'is_free_followup': is_free_followup,
         # Nurse's assigned tier — used by room picker to show same-tier rooms first
-        'nurse_patient_tier': getattr(request.user, 'patient_tier', 'ALL'),
+        'nurse_patient_tier': _nurse_tier,
+        # Cross-tier audit
+        'cross_tier': _cross_tier,
+        'nurse_tier_display': request.user.get_patient_tier_display(),
     })
 
 

@@ -11,6 +11,59 @@
 {% endblock %}
 
 {% block content %}
+
+{% if cross_tier %}
+<!-- ── Cross-Tier Audit Modal — auto-opens when nurse tier ≠ patient tier ── -->
+<div class="modal fade" id="crossTierModal" tabindex="-1"
+     data-bs-backdrop="static" data-bs-keyboard="false" aria-modal="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content shadow-lg">
+      <div class="modal-header py-3" style="background:#fef3c7;border-bottom:2px solid #d97706;">
+        <h5 class="modal-title fw-bold text-dark">
+          <i class="bi bi-exclamation-triangle-fill me-2 text-warning"></i>Cross-Tier Action Required
+        </h5>
+      </div>
+      <div class="modal-body pt-4">
+        <div class="alert alert-warning py-2 small mb-3">
+          This patient is classified as <strong>{{ visit.get_service_tier_display }}</strong>
+          but you are assigned to <strong>{{ nurse_tier_display }}</strong> triage.
+        </div>
+        <p class="text-muted small mb-3">
+          You can still proceed, but you must provide a documented reason.
+          This action will be saved in the audit log and visible to supervisors.
+        </p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold small">
+            Reason for cross-tier action <span class="text-danger">*</span>
+          </label>
+          <textarea id="ctReasonInput" class="form-control" rows="3"
+            placeholder="e.g. VIP nurse unavailable, patient came to wrong desk, emergency situation..."></textarea>
+          <div class="text-danger small mt-1 d-none" id="ctReasonErr">Please enter at least 10 characters.</div>
+          <div class="text-muted small mt-1">Minimum 10 characters — this will be logged.</div>
+        </div>
+        <div class="form-check border rounded p-3 bg-light">
+          <input class="form-check-input" type="checkbox" id="ctChangeTier">
+          <label class="form-check-label small" for="ctChangeTier">
+            <strong>Also reclassify patient tier</strong> from
+            <span class="badge bg-secondary">{{ visit.get_service_tier_display }}</span> →
+            <span class="badge bg-primary">{{ nurse_tier_display }}</span>
+            <span class="text-muted d-block mt-1">Only check if this is an intentional tier change, not a temporary override.</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <a href="{% url 'patients:visit_detail' visit.visit_number %}" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-left me-1"></i>Cancel — Go Back
+        </a>
+        <button type="button" class="btn btn-warning fw-semibold" id="ctProceedBtn">
+          <i class="bi bi-check-circle me-1"></i>Proceed with Reason
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="row justify-content-center">
 <div class="col-12 col-xl-10">
     <div class="card border-0 shadow-sm">
@@ -647,6 +700,11 @@
               <i class="bi bi-send me-1" id="submitIcon"></i><span id="submitTxt">Save Vitals &amp; Dispatch</span>
             </button>
           </div>
+
+          {% if cross_tier %}
+          <input type="hidden" name="cross_tier_reason" id="ctReasonHidden" value="">
+          <input type="hidden" name="change_patient_tier" id="ctChangeTierHidden" value="0">
+          {% endif %}
 
         </form>
       </div>
@@ -1313,4 +1371,38 @@ onDeptChange = function(deptId, label) {
   hideDoctorPicker();
 };
 </script>
+
+{% if cross_tier %}
+<script>
+// Cross-tier modal: auto-open, validate reason, copy to hidden fields before submit
+(function () {
+  var modal = new bootstrap.Modal(document.getElementById('crossTierModal'), {backdrop: 'static', keyboard: false});
+  modal.show();
+
+  document.getElementById('ctProceedBtn').addEventListener('click', function () {
+    var reason = (document.getElementById('ctReasonInput').value || '').trim();
+    var errEl  = document.getElementById('ctReasonErr');
+    if (reason.length < 10) {
+      document.getElementById('ctReasonInput').classList.add('is-invalid');
+      errEl.classList.remove('d-none');
+      return;
+    }
+    document.getElementById('ctReasonInput').classList.remove('is-invalid');
+    errEl.classList.add('d-none');
+    document.getElementById('ctReasonHidden').value = reason;
+    document.getElementById('ctChangeTierHidden').value =
+      document.getElementById('ctChangeTier').checked ? '1' : '0';
+    modal.hide();
+  });
+
+  // If user tries to submit without going through modal, re-open it
+  document.getElementById('triageForm').addEventListener('submit', function (e) {
+    if (!document.getElementById('ctReasonHidden').value) {
+      e.preventDefault();
+      modal.show();
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
