@@ -24,6 +24,53 @@ def dept_list(request):
 
 
 @login_required
+def dept_create(request):
+    """Create a brand-new department (free code — not restricted to predefined list)."""
+    if not _can_manage_departments(request.user):
+        return HttpResponseForbidden()
+    doctors = User.objects.filter(
+        role__in=[
+            UserRole.MEDICAL_DIRECTOR, UserRole.OPHTHALMOLOGIST,
+            UserRole.RETINA_SPECIALIST, UserRole.GLAUCOMA_SPECIALIST,
+            UserRole.PEDIATRIC_OPHTHALMOLOGIST, UserRole.CATARACT_SURGEON,
+            UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
+            UserRole.NEURO_OPHTHALMOLOGIST, UserRole.UVEITIS_SPECIALIST,
+            UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST,
+            UserRole.ORTHOPTIST, UserRole.PEDIATRIC_REFRACTIONIST,
+        ],
+        is_active=True,
+    ).order_by('last_name')
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        code = request.POST.get('code', '').strip().upper().replace(' ', '_')
+        if not name or not code:
+            messages.error(request, 'Name and code are required.')
+            return redirect('departments:dept_create')
+        if Department.objects.filter(code=code).exists():
+            messages.error(request, f'A department with code "{code}" already exists.')
+            return redirect('departments:dept_create')
+        hod_id = request.POST.get('head_of_department')
+        hod = None
+        if hod_id:
+            hod = User.objects.filter(pk=hod_id).first()
+        dept = Department.objects.create(
+            name=name,
+            code=code,
+            description=request.POST.get('description', '').strip(),
+            location=request.POST.get('location', '').strip(),
+            color_code=request.POST.get('color_code', '#0d6efd').strip(),
+            icon=request.POST.get('icon', 'bi-building').strip(),
+            head_of_department=hod,
+            is_active=True,
+        )
+        messages.success(request, f'Department "{dept.name}" created.')
+        return redirect('departments:dept_list')
+
+    return render(request, 'departments/dept_create.html', {'doctors': doctors})
+
+
+@login_required
 def dept_edit(request, dept_id):
     if not _can_manage_departments(request.user):
         return HttpResponseForbidden()
@@ -266,7 +313,7 @@ def room_ajax(request, dept_id):
             'doctor': r.assigned_doctor.get_full_name() if r.assigned_doctor else None,
             'doctor_id': str(r.assigned_doctor.pk) if r.assigned_doctor else None,
             'room_tier': r.room_tier,
-            'service_type': r.tier_service_type,
+            'service_type': r.tier_service_type(),
         }
         for r in rooms
     ]

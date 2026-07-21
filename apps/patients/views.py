@@ -1211,24 +1211,13 @@ def triage_view(request, visit_number):
                         or request.user.is_ceo or getattr(request.user, 'role', '') == 'nurse_director'
                         or getattr(request.user, 'patient_tier', 'ALL') == 'ALL'
                     )
-                    _allowed = _TIER_ALLOWED_ROOMS.get(visit.service_tier, ['STANDARD'])
-                    if not _nurse_is_supervisor and room_obj.room_tier not in _allowed:
-                        messages.error(
-                            request,
-                            f'Cannot dispatch {visit.get_service_tier_display()} patient to a '
-                            f'{room_obj.room_tier} room. Please choose a matching room.'
-                        )
-                        return redirect('patients:triage', visit_number=visit.visit_number)
                     visit.consultation_room = room_obj
-                    # Auto-assign doctor from room if no explicit doctor was picked
-                    # and the room is a premium tier (VIP/Express/Fast Track)
-                    if (not _assigned_doctor and room_obj.assigned_doctor
-                            and room_obj.room_tier in ('VIP', 'EXPRESS', 'FAST_TRACK')):
+                    # Auto-assign doctor from room if none was explicitly picked
+                    if not _assigned_doctor and room_obj.assigned_doctor:
                         _assigned_doctor = room_obj.assigned_doctor
-                    # For ALL tiers: if service_type was auto-derived from room tier,
-                    # override it now to be consistent with the room's tier_service_type
-                    if service_type in ('GENERAL', 'VIP_CONSULT', 'EXP_CONSULT') and room_obj.room_tier != 'STANDARD':
-                        service_type = room_obj.tier_service_type
+                    # Derive service_type from room tier; for ALL rooms, follow patient's tier
+                    if service_type in ('GENERAL', 'VIP_CONSULT', 'EXP_CONSULT'):
+                        service_type = room_obj.tier_service_type(patient_tier=visit.service_tier)
 
             _save_fields = ['vital_signs', 'status', 'triage_nurse', 'department',
                             'nursing_notes', 'pre_auth_status', 'consultation_room', 'updated_at']
@@ -1308,6 +1297,17 @@ def triage_view(request, visit_number):
                         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                         is_deleted=False,
                     ).update(status=TokenStatus.COMPLETED)
+
+                    # Idempotency guard: if a dispatch token already exists for
+                    # this visit today, cancel it before re-dispatching.
+                    # This prevents double-tap on tablet from creating two tokens.
+                    QueueToken.objects.filter(
+                        visit=visit,
+                        token_date=today,
+                        is_deleted=False,
+                    ).exclude(
+                        service_type__in=['PARAMETERS', 'PARAMS_VIP']
+                    ).update(status=TokenStatus.CANCELLED)
 
                     token_number = DailyTokenSequence.next_dept_token(service_type)
                     _doctor_note = f' → Dr. {_assigned_doctor.get_full_name()}' if _assigned_doctor else ''

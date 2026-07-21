@@ -8,21 +8,79 @@
 .triage-acc-btn:not(.collapsed) { background-color: #fff !important; color: inherit !important; box-shadow: none !important; }
 .triage-acc-btn::after { filter: none !important; }
 
-/* ── Quick-route destination buttons — distinct colour per destination ── */
-.qr-lab        { background:#d1fae5; color:#065f46; border:2px solid #059669; }
-.qr-pharmacy   { background:#cffafe; color:#164e63; border:2px solid #0891b2; }
-.qr-cashier    { background:#fef3c7; color:#78350f; border:2px solid #d97706; }
-.qr-refraction { background:#ede9fe; color:#4c1d95; border:2px solid #7c3aed; }
-.qr-invest     { background:#fee2e2; color:#7f1d1d; border:2px solid #dc2626; }
-.qr-default    { background:#f1f5f9; color:#1e293b; border:2px solid #94a3b8; }
+/* ── Quick-route destination buttons — neutral default, color on select only ── */
+.qr-lab, .qr-pharmacy, .qr-cashier, .qr-refraction, .qr-invest, .qr-default {
+  background: #fff;
+  color: #374151;
+  border: 1.5px solid #d1d5db;
+}
+/* Selected state — filled with destination colour */
+.qr-lab.qr-selected        { background:#059669; color:#fff; border-color:#059669; }
+.qr-pharmacy.qr-selected   { background:#0891b2; color:#fff; border-color:#0891b2; }
+.qr-cashier.qr-selected    { background:#d97706; color:#fff; border-color:#d97706; }
+.qr-refraction.qr-selected { background:#7c3aed; color:#fff; border-color:#7c3aed; }
+.qr-invest.qr-selected     { background:#dc2626; color:#fff; border-color:#dc2626; }
+.qr-default.qr-selected    { background:#334155; color:#fff; border-color:#334155; }
 
-/* Selected state — bright ring + check icon */
-.qr-lab.qr-selected        { background:#059669; color:#fff; border-color:#065f46; }
-.qr-pharmacy.qr-selected   { background:#0891b2; color:#fff; border-color:#164e63; }
-.qr-cashier.qr-selected    { background:#d97706; color:#fff; border-color:#78350f; }
-.qr-refraction.qr-selected { background:#7c3aed; color:#fff; border-color:#4c1d95; }
-.qr-invest.qr-selected     { background:#dc2626; color:#fff; border-color:#7f1d1d; }
-.qr-default.qr-selected    { background:#334155; color:#fff; border-color:#1e293b; }
+/* ── Tablet optimisation (portrait 768–991 px, landscape up to ~1199 px) ────
+   Goal: every tappable element ≥ 44 px tall, legible without zooming         */
+@media (max-width: 1199px) {
+  /* Form controls inside the triage form only — scoped to avoid breaking other cards */
+  #triageForm .form-select, #triageForm .form-select-sm,
+  #triageForm .form-control, #triageForm .form-control-sm {
+    min-height: 44px !important;
+    font-size:  0.95rem !important;
+    padding:    8px 10px !important;
+  }
+  /* Accordion section headers */
+  .accordion-button { min-height: 54px !important; font-size: 1rem !important; }
+  /* Any small btn (quick templates, etc.) */
+  .btn-sm {
+    min-height: 40px;
+    padding:    0 14px !important;
+    font-size:  0.88rem !important;
+  }
+  /* Priority card-labels */
+  #priorityButtons label {
+    min-height:  54px !important;
+    padding-top: 10px !important;
+    font-size:   0.88rem !important;
+  }
+  /* Dispatch mode cards */
+  #lbl_dept_queue, #lbl_room_queue {
+    min-height: 60px !important;
+    padding:    10px 14px !important;
+    font-size:  0.88rem !important;
+  }
+  /* Quick-route destination tiles */
+  .quick-route-btn {
+    min-height:    46px !important;
+    padding:       10px 16px !important;
+    font-size:     0.85rem !important;
+    border-radius: 10px !important;
+  }
+  /* Room picker buttons */
+  .room-pick-btn { min-height: 50px !important; }
+  /* Step labels */
+  #quickRouteGrid { gap: 10px !important; }
+  /* Submit button */
+  #submitBtn { min-height: 54px; font-size: 1.05rem; }
+  /* Form labels — easier to read */
+  .form-label { font-size: 0.9rem !important; margin-bottom: 6px !important; }
+  /* Bottom padding so last section isn't hidden under the sticky dispatch bar */
+  #triageForm { padding-bottom: 80px; }
+}
+
+/* ── Sticky dispatch bar ─────────────────────────────────────────────────── */
+.triage-submit-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  background: #fff;
+  border-top: 2px solid #e2e8f0;
+  box-shadow: 0 -3px 12px rgba(0,0,0,.08);
+  padding: 12px 0 14px;
+}
 </style>
 {% endblock %}
 
@@ -148,15 +206,15 @@
                     <div class="fw-semibold small text-secondary mb-1"><i class="bi bi-clock-history me-1"></i>Last Visit Vitals — {{ prev_visit.visit_date|date:"d M Y" }}</div>
                     <div class="row g-2 small">
                       {% if pv.visual_acuity_right or pv.visual_acuity_left %}
-                      <div class="col-6 col-md-3"><span class="text-muted">VA OD:</span> <strong>{{ pv.visual_acuity_right|default:"—" }}</strong></div>
-                      <div class="col-6 col-md-3"><span class="text-muted">VA OS:</span> <strong>{{ pv.visual_acuity_left|default:"—" }}</strong></div>
+                      <div class="col-6 col-lg-3"><span class="text-muted">VA OD:</span> <strong>{{ pv.visual_acuity_right|default:"—" }}</strong></div>
+                      <div class="col-6 col-lg-3"><span class="text-muted">VA OS:</span> <strong>{{ pv.visual_acuity_left|default:"—" }}</strong></div>
                       {% endif %}
                       {% if pv.intraocular_pressure_right or pv.intraocular_pressure_left %}
-                      <div class="col-6 col-md-3"><span class="text-muted">IOP OD:</span> <strong>{{ pv.intraocular_pressure_right|default:"—" }} mmHg</strong></div>
-                      <div class="col-6 col-md-3"><span class="text-muted">IOP OS:</span> <strong>{{ pv.intraocular_pressure_left|default:"—" }} mmHg</strong></div>
+                      <div class="col-6 col-lg-3"><span class="text-muted">IOP OD:</span> <strong>{{ pv.intraocular_pressure_right|default:"—" }} mmHg</strong></div>
+                      <div class="col-6 col-lg-3"><span class="text-muted">IOP OS:</span> <strong>{{ pv.intraocular_pressure_left|default:"—" }} mmHg</strong></div>
                       {% endif %}
-                      {% if pv.blood_pressure %}<div class="col-6 col-md-3"><span class="text-muted">BP:</span> <strong>{{ pv.blood_pressure }}</strong></div>{% endif %}
-                      {% if pv.pulse %}<div class="col-6 col-md-3"><span class="text-muted">Pulse:</span> <strong>{{ pv.pulse }} bpm</strong></div>{% endif %}
+                      {% if pv.blood_pressure %}<div class="col-6 col-lg-3"><span class="text-muted">BP:</span> <strong>{{ pv.blood_pressure }}</strong></div>{% endif %}
+                      {% if pv.pulse %}<div class="col-6 col-lg-3"><span class="text-muted">Pulse:</span> <strong>{{ pv.pulse }} bpm</strong></div>{% endif %}
                     </div>
                   </div>
                   {% endwith %}
@@ -267,7 +325,7 @@
                 <div class="accordion-body pt-2">
                   <div class="row g-3">
                     {# VA OD #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Visual Acuity Right Eye (OD)</label>
                       <select class="form-select form-select-sm" id="sel_va_r" onchange="applySelect(this,'id_visual_acuity_right','right','va')">
                         <option value="">— Not examined —</option>
@@ -295,7 +353,7 @@
                       <div class="vital-alert-msg text-danger small d-none" id="alert_va_right"></div>
                     </div>
                     {# VA OS #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Visual Acuity Left Eye (OS)</label>
                       <select class="form-select form-select-sm" id="sel_va_l" onchange="applySelect(this,'id_visual_acuity_left','left','va')">
                         <option value="">— Not examined —</option>
@@ -323,7 +381,7 @@
                       <div class="vital-alert-msg text-danger small d-none" id="alert_va_left"></div>
                     </div>
                     {# IOP OD #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">IOP Right Eye (mmHg)</label>
                       <select class="form-select form-select-sm" id="sel_iop_r" onchange="applySelect(this,'id_intraocular_pressure_right','right','iop')">
                         <option value="">— Not measured —</option>
@@ -350,7 +408,7 @@
                       <div class="vital-alert-msg small d-none" id="alert_iop_right"></div>
                     </div>
                     {# IOP OS #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">IOP Left Eye (mmHg)</label>
                       <select class="form-select form-select-sm" id="sel_iop_l" onchange="applySelect(this,'id_intraocular_pressure_left','left','iop')">
                         <option value="">— Not measured —</option>
@@ -377,7 +435,7 @@
                       <div class="vital-alert-msg small d-none" id="alert_iop_left"></div>
                     </div>
                     {# IOP Time #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">IOP Time Taken</label>
                       <input type="time" name="iop_time" id="id_iop_time"
                              class="form-control form-control-sm"
@@ -405,7 +463,7 @@
                 <div class="accordion-body pt-2">
                   <div class="row g-3">
                     {# BP #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Blood Pressure</label>
                       <select class="form-select form-select-sm" id="sel_bp" onchange="applySelect(this,'id_blood_pressure',null,'bp')">
                         <option value="">— Not measured —</option>
@@ -435,7 +493,7 @@
                       <div class="vital-alert-msg small d-none" id="alert_bp"></div>
                     </div>
                     {# Pulse #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Pulse (bpm)</label>
                       <select class="form-select form-select-sm" id="sel_pulse" onchange="applySelect(this,'id_pulse',null,'pulse')">
                         <option value="">— Not measured —</option>
@@ -459,7 +517,7 @@
                       <div class="vital-alert-msg small d-none" id="alert_pulse"></div>
                     </div>
                     {# Temperature #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Temperature (°C)</label>
                       <select class="form-select form-select-sm" id="sel_temp" onchange="applySelect(this,'id_temperature',null,'temp')">
                         <option value="">— Not measured —</option>
@@ -480,11 +538,11 @@
                       <div class="vital-alert-msg small d-none" id="alert_temp"></div>
                     </div>
                     {# Weight / Height stay as free text — highly variable #}
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Weight (kg)</label>
                       {{ form.weight }}
                     </div>
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Height (cm)</label>
                       {{ form.height }}
                     </div>
@@ -527,193 +585,181 @@
               </div>
             </div>
 
-            {# ── Section 4: Dispatch ── #}
-            <div class="accordion-item border mb-2 rounded">
-              <h2 class="accordion-header" id="hDispatch">
-                <button class="accordion-button triage-acc-btn collapsed rounded fw-semibold py-3" type="button"
-                        data-bs-toggle="collapse" data-bs-target="#secDispatch" aria-expanded="false" aria-controls="secDispatch">
-                  <i class="bi bi-signpost-split me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">Routing &amp; Priority <span class="text-danger">*</span></span>
-                  <span class="ms-auto badge bg-danger ms-2" style="font-weight:400;font-size:.68rem;">Required — tap to open</span>
-                </button>
-              </h2>
-              <div id="secDispatch" class="accordion-collapse collapse" aria-labelledby="hDispatch">
-                <div class="accordion-body pt-2">
-                  <label class="form-label fw-semibold small mb-2">Send Patient To <span class="text-danger">*</span></label>
+            {# ── Section 4: Routing & Priority (always visible — required) ── #}
+            <div class="card border-0 shadow-sm mb-2">
+              <div class="card-header py-2 d-flex align-items-center justify-content-between"
+                   style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+                <span class="fw-semibold small">
+                  <i class="bi bi-signpost-split me-2" style="color:#6366f1;"></i>Routing &amp; Priority
+                  <span class="text-danger ms-1">*</span>
+                </span>
+                <span id="routeConfirmBadge" class="badge d-none"
+                      style="background:#dcfce7;color:#15803d;font-size:.72rem;font-weight:500;padding:4px 10px;">
+                  <i class="bi bi-check-circle-fill me-1"></i>
+                  <span id="routeLabel"></span><span id="routeRoomLabel" class="ms-1 fw-normal fst-italic"></span>
+                </span>
+              </div>
+              <div class="card-body pt-3 pb-2">
 
-                  {# ── Dispatch mode: two card-style radio options ── #}
-                  <div class="d-flex gap-2 mb-3 flex-wrap" id="dispatchModeGroup">
-                    <label id="lbl_dept_queue" onclick="setDispatchMode('DEPT')"
-                           style="cursor:pointer;border:2px solid #0d6efd;border-radius:8px;padding:8px 14px;min-width:160px;
-                                  background:#eff6ff;font-size:.82rem;font-weight:600;color:#1d4ed8;user-select:none;">
-                      <input type="radio" name="_dispatch_mode" value="DEPT" class="d-none" id="mode_dept" checked>
-                      <i class="bi bi-people-fill me-1"></i>Department Queue
-                      <div style="font-weight:400;font-size:.7rem;color:#6b7280;margin-top:2px;">Any available doctor sees it</div>
-                    </label>
-                    <label id="lbl_room_queue" onclick="setDispatchMode('ROOM')"
-                           style="cursor:pointer;border:2px solid #d1d5db;border-radius:8px;padding:8px 14px;min-width:160px;
-                                  background:#fff;font-size:.82rem;font-weight:600;color:#374151;user-select:none;">
-                      <input type="radio" name="_dispatch_mode" value="ROOM" class="d-none" id="mode_room">
-                      <i class="bi bi-door-open me-1"></i>Specific Room / Doctor
-                      <div style="font-weight:400;font-size:.7rem;color:#6b7280;margin-top:2px;">Route to one room only</div>
-                    </label>
-                  </div>
-
-                  {# Department dropdown — always shown #}
-                  <div class="mb-2">
-                    <label class="form-label small text-muted fw-semibold">Department / Clinic</label>
-                    <select name="dispatch_department" id="dispatch_department" class="form-select form-select-sm"
-                            onchange="onDeptChange(this.value, this.options[this.selectedIndex].text)">
-                      <option value="">— Select Department —</option>
-                      {% for dept in departments %}
-                      <option value="{{ dept.pk }}" {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
-                      {% endfor %}
-                    </select>
-                  </div>
-
-                  {# ── Quick-route direct buttons ── #}
-                  <div class="mb-2">
-                    <div class="d-flex flex-wrap gap-2">
-                      {% for route in direct_routes %}
-                      {# VIP_CONSULT button — highlighted when patient is VIP #}
-                      {% if route.code == 'VIP_CONSULT' %}
-                        {% if visit.service_tier == 'VIP' %}
-                        <button type="button"
-                                class="btn btn-sm fw-semibold quick-route-btn"
-                                style="background:#7c3aed;color:#fff;border-color:#7c3aed;"
-                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
-                          <i class="bi bi-gem me-1"></i>{{ route.label }}
-                          <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;"></i>
-                        </button>
-                        {% else %}
-                        <button type="button"
-                                class="btn btn-sm quick-route-btn btn-outline-secondary"
-                                style="color:#7c3aed;border-color:#7c3aed;"
-                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
-                          <i class="bi bi-gem me-1"></i>{{ route.label }}
-                        </button>
-                        {% endif %}
-                      {# EXP_CONSULT button — highlighted when patient is Express or Fast Track #}
-                      {% elif route.code == 'EXP_CONSULT' %}
-                        {% if visit.service_tier == 'EXPRESS' or visit.service_tier == 'FAST_TRACK' %}
-                        <button type="button"
-                                class="btn btn-sm btn-warning fw-semibold quick-route-btn"
-                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
-                          <i class="bi bi-lightning-charge me-1"></i>{{ route.label }}
-                          <i class="bi bi-check-circle-fill ms-1" style="font-size:.7rem;"></i>
-                        </button>
-                        {% else %}
-                        <button type="button"
-                                class="btn btn-sm btn-outline-success quick-route-btn"
-                                onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
-                          <i class="bi bi-lightning-charge me-1"></i>{{ route.label }}
-                        </button>
-                        {% endif %}
-                      {# All other quick routes — each with a distinct colour ── #}
-                      {% else %}
-                      <button type="button"
-                              class="btn btn-sm fw-semibold quick-route-btn
-                                {% if route.code == 'LAB' %}qr-lab
-                                {% elif route.code == 'PHARMACY' %}qr-pharmacy
-                                {% elif route.code == 'CASHIER' %}qr-cashier
-                                {% elif route.code == 'REFRACTION' %}qr-refraction
-                                {% elif route.code == 'INVEST' %}qr-invest
-                                {% else %}qr-default{% endif %}"
-                              onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)">
-                        {% if route.code == 'LAB' %}<i class="bi bi-eyedropper me-1"></i>{% endif %}
-                        {% if route.code == 'PHARMACY' %}<i class="bi bi-capsule me-1"></i>{% endif %}
-                        {% if route.code == 'CASHIER' %}<i class="bi bi-cash-coin me-1"></i>{% endif %}
-                        {% if route.code == 'REFRACTION' %}<i class="bi bi-eyeglasses me-1"></i>{% endif %}
-                        {% if route.code == 'INVEST' %}<i class="bi bi-activity me-1"></i>{% endif %}
-                        {{ route.label }}
-                        <i class="bi bi-check-circle-fill ms-1 qr-check d-none" style="font-size:.7rem;"></i>
-                      </button>
-                      {% endif %}
-                      {% endfor %}
-                    </div>
-                  </div>
-
-                  <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
-                  <input type="hidden" name="assigned_doctor_id" id="assigned_doctor_id" value="">
-
-                  {# Doctor picker — shown when VIP/Express direct route is selected #}
-                  <div id="doctorPickPanel" class="d-none mb-3 p-3 border rounded" style="background:#fff8f0;border-color:#fd7e14 !important;">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                      <label class="form-label fw-semibold small mb-0 text-warning-emphasis">
-                        <i class="bi bi-person-badge me-1"></i>Assign to Doctor <span class="text-muted fw-normal">(optional — leave blank for tier pool)</span>
-                      </label>
-                      <button type="button" class="btn btn-xs btn-link text-secondary p-0" onclick="clearDoctorPick()">
-                        <i class="bi bi-x"></i> Clear
-                      </button>
-                    </div>
-                    <select id="doctorPickSelect" class="form-select form-select-sm" onchange="pickDoctor(this.value, this.options[this.selectedIndex].text)">
-                      <option value="">— Any available doctor in this tier —</option>
-                    </select>
-                    <div id="doctorPickBadge" class="mt-2 d-none">
-                      <span class="badge bg-warning text-dark"><i class="bi bi-person-check me-1"></i><span id="doctorPickName"></span></span>
-                    </div>
-                  </div>
-
-                  {# Room picker — only shown in ROOM mode after dept selected #}
-                  <div id="roomPickPanel" class="d-none mb-3 p-3 border rounded" style="background:#f0f9ff;">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                      <label class="form-label fw-semibold small mb-0">
-                        <i class="bi bi-door-open me-1 text-primary"></i>
-                        <span id="roomPickDeptName">Consultation</span> — Select Room / Doctor
-                      </label>
-                      <button type="button" class="btn btn-xs btn-link text-secondary p-0" onclick="clearRoom()">
-                        <i class="bi bi-x"></i> Clear
-                      </button>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2" id="roomBtnGroup"></div>
-                    <div class="mt-1 small text-muted fst-italic" id="roomPickHint">
-                      Select a room to route patient to a specific doctor. If no room selected, dispatches to department queue.
-                    </div>
-                  </div>
-
-                  <div id="routeConfirm" class="d-none mb-3">
-                    <span class="badge bg-success fs-6 px-3 py-2">
-                      <i class="bi bi-arrow-right-circle me-1"></i>
-                      Routing to: <span id="routeLabel"></span>
-                      <span id="routeRoomLabel" class="ms-2 fw-normal fst-italic"></span>
-                    </span>
-                  </div>
-
-                  {# Priority selector #}
-                  <label class="form-label fw-semibold small mb-1">Urgency / Priority</label>
-                  <div id="priorityButtons" class="d-flex gap-2 flex-wrap mb-1">
-                    <label class="btn btn-sm btn-outline-secondary priority-btn" id="lbl_normal">
-                      <input type="radio" name="priority" value="NORMAL" class="d-none" id="pri_normal" checked>
-                      <i class="bi bi-circle me-1"></i>Normal
-                    </label>
-                    <label class="btn btn-sm btn-outline-warning priority-btn" id="lbl_urgent">
-                      <input type="radio" name="priority" value="URGENT" class="d-none" id="pri_urgent">
-                      <i class="bi bi-exclamation-circle me-1"></i>Urgent
-                    </label>
-                    <label class="btn btn-sm btn-outline-danger priority-btn" id="lbl_emergency">
-                      <input type="radio" name="priority" value="EMERGENCY" class="d-none" id="pri_emergency">
-                      <i class="bi bi-exclamation-triangle me-1"></i>Emergency
-                    </label>
-                  </div>
-                  <div id="prioritySuggestion" class="small text-muted mb-2 d-none">
-                    <i class="bi bi-robot me-1"></i><span id="prioritySuggestionText"></span>
-                  </div>
-
-                  {# Triage notes #}
-                  <label class="form-label fw-semibold small mt-2">
-                    <i class="bi bi-pencil me-1"></i>Triage Notes <span class="text-muted fw-normal">(optional)</span>
-                  </label>
-                  <textarea name="triage_notes" class="form-control form-control-sm" rows="2"
-                            placeholder="e.g. Sudden loss of vision OD. Patient distressed.">{{ visit.vital_signs.triage_notes|default:'' }}</textarea>
-
+                {# Step 1 — Where is the patient going? #}
+                <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.05em;font-size:.68rem;">
+                  <i class="bi bi-1-circle-fill me-1" style="color:#6366f1;"></i>Send Patient To
                 </div>
+
+                {# Department dropdown #}
+                <div class="mb-3">
+                  <select name="dispatch_department" id="dispatch_department" class="form-select form-select-sm"
+                          onchange="onDeptChange(this.value, this.options[this.selectedIndex].text)">
+                    <option value="">— Select Department / Clinic —</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.pk }}" {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                {# Mode selector (Dept queue vs. specific room) #}
+                <div class="d-flex gap-2 mb-3" id="dispatchModeGroup">
+                  <label id="lbl_dept_queue" onclick="setDispatchMode('DEPT')"
+                         style="cursor:pointer;flex:1;border:2px solid #0d6efd;border-radius:8px;padding:7px 12px;
+                                background:#eff6ff;font-size:.8rem;font-weight:600;color:#1d4ed8;user-select:none;">
+                    <input type="radio" name="_dispatch_mode" value="DEPT" class="d-none" id="mode_dept" checked>
+                    <i class="bi bi-people-fill me-1"></i>Department Queue
+                    <div style="font-weight:400;font-size:.68rem;color:#6b7280;margin-top:1px;">Any available doctor</div>
+                  </label>
+                  <label id="lbl_room_queue" onclick="setDispatchMode('ROOM')"
+                         style="cursor:pointer;flex:1;border:2px solid #d1d5db;border-radius:8px;padding:7px 12px;
+                                background:#fff;font-size:.8rem;font-weight:600;color:#374151;user-select:none;">
+                    <input type="radio" name="_dispatch_mode" value="ROOM" class="d-none" id="mode_room">
+                    <i class="bi bi-door-open me-1"></i>Specific Room
+                    <div style="font-weight:400;font-size:.68rem;color:#6b7280;margin-top:1px;">Route to one doctor</div>
+                  </label>
+                </div>
+
+                {# Room picker — shown in ROOM mode #}
+                <div id="roomPickPanel" class="d-none mb-3 rounded p-2" style="background:#f1f5f9;border:1px solid #e2e8f0;">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="small fw-semibold text-muted">
+                      <i class="bi bi-door-open me-1"></i><span id="roomPickDeptName">Department</span> — Rooms
+                    </span>
+                    <button type="button" class="btn btn-xs btn-link text-secondary p-0 small" onclick="clearRoom()">
+                      <i class="bi bi-x"></i> Clear
+                    </button>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2" id="roomBtnGroup"></div>
+                  <div class="mt-1 text-muted fst-italic" id="roomPickHint" style="font-size:.68rem;">
+                    Select a room — doctor pre-filled from daily assignment.
+                  </div>
+                </div>
+
+                {# Quick-route destination tiles (Lab, Pharmacy, Cashier, Refraction, Investigations, VIP, Express) #}
+                <div class="d-flex flex-wrap gap-2 mb-3" id="quickRouteGrid">
+                  {% for route in direct_routes %}
+                  <button type="button"
+                          id="qr_btn_{{ route.code }}"
+                          class="quick-route-btn"
+                          onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)"
+                          style="display:inline-flex;align-items:center;gap:6px;
+                                 border:1.5px solid #d1d5db;border-radius:8px;
+                                 background:#fff;color:#374151;
+                                 font-size:.78rem;font-weight:500;
+                                 padding:6px 12px;cursor:pointer;
+                                 {% if route.code == 'VIP_CONSULT' and visit.service_tier == 'VIP' %}
+                                   border-color:#7c3aed;background:#f5f3ff;color:#5b21b6;
+                                 {% elif route.code == 'EXP_CONSULT' and visit.service_tier in 'EXPRESS,FAST_TRACK' %}
+                                   border-color:#d97706;background:#fffbeb;color:#92400e;
+                                 {% endif %}">
+                    <i class="bi
+                      {% if route.code == 'LAB' %}bi-eyedropper
+                      {% elif route.code == 'PHARMACY' %}bi-capsule-pill
+                      {% elif route.code == 'CASHIER' %}bi-cash-coin
+                      {% elif route.code == 'REFRACTION' %}bi-eyeglasses
+                      {% elif route.code == 'INVEST' %}bi-activity
+                      {% elif route.code == 'VIP_CONSULT' %}bi-gem
+                      {% elif route.code == 'EXP_CONSULT' %}bi-lightning-charge
+                      {% else %}bi-arrow-right-circle{% endif %}
+                      " style="font-size:.9rem;
+                      {% if route.code == 'LAB' %}color:#0891b2;
+                      {% elif route.code == 'PHARMACY' %}color:#16a34a;
+                      {% elif route.code == 'CASHIER' %}color:#d97706;
+                      {% elif route.code == 'REFRACTION' %}color:#7c3aed;
+                      {% elif route.code == 'INVEST' %}color:#dc2626;
+                      {% elif route.code == 'VIP_CONSULT' %}color:#7c3aed;
+                      {% elif route.code == 'EXP_CONSULT' %}color:#d97706;
+                      {% endif %}"></i>
+                    {{ route.label }}
+                    <i class="bi bi-check-circle-fill qr-check d-none" style="font-size:.7rem;color:#15803d;"></i>
+                  </button>
+                  {% endfor %}
+                </div>
+
+                <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
+                <input type="hidden" name="assigned_doctor_id" id="assigned_doctor_id" value="">
+
+                {# Doctor picker — VIP/Express direct route #}
+                <div id="doctorPickPanel" class="d-none mb-3 p-2 rounded" style="background:#fff8f0;border:1px solid #fed7aa;">
+                  <div class="d-flex align-items-center justify-content-between mb-1">
+                    <span class="small fw-semibold" style="color:#92400e;">
+                      <i class="bi bi-person-badge me-1"></i>Assign Doctor
+                      <span class="fw-normal text-muted">(optional)</span>
+                    </span>
+                    <button type="button" class="btn btn-xs btn-link text-secondary p-0 small" onclick="clearDoctorPick()">
+                      <i class="bi bi-x"></i> Clear
+                    </button>
+                  </div>
+                  <select id="doctorPickSelect" class="form-select form-select-sm" onchange="pickDoctor(this.value, this.options[this.selectedIndex].text)">
+                    <option value="">— Any available doctor in this tier —</option>
+                  </select>
+                  <div id="doctorPickBadge" class="mt-1 d-none">
+                    <span class="badge bg-warning text-dark"><i class="bi bi-person-check me-1"></i><span id="doctorPickName"></span></span>
+                  </div>
+                </div>
+
+                <div id="routeConfirm" class="d-none"></div>{# kept for JS compat — visual confirm moved to header badge #}
+
+                <hr class="my-2" style="border-color:#e2e8f0;">
+
+                {# Step 2 — Priority #}
+                <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.05em;font-size:.68rem;">
+                  <i class="bi bi-2-circle-fill me-1" style="color:#6366f1;"></i>Urgency / Priority
+                </div>
+                <div class="d-flex gap-2 mb-2" id="priorityButtons">
+                  <label id="lbl_normal"
+                         style="cursor:pointer;flex:1;text-align:center;border:2px solid #9ca3af;border-radius:8px;
+                                padding:6px 4px;font-size:.8rem;font-weight:600;color:#374151;background:#f9fafb;user-select:none;">
+                    <input type="radio" name="priority" value="NORMAL" class="d-none" id="pri_normal" checked>
+                    <i class="bi bi-circle me-1"></i>Normal
+                  </label>
+                  <label id="lbl_urgent"
+                         style="cursor:pointer;flex:1;text-align:center;border:2px solid #d1d5db;border-radius:8px;
+                                padding:6px 4px;font-size:.8rem;font-weight:600;color:#6b7280;background:#fff;user-select:none;">
+                    <input type="radio" name="priority" value="URGENT" class="d-none" id="pri_urgent">
+                    <i class="bi bi-exclamation-circle me-1"></i>Urgent
+                  </label>
+                  <label id="lbl_emergency"
+                         style="cursor:pointer;flex:1;text-align:center;border:2px solid #d1d5db;border-radius:8px;
+                                padding:6px 4px;font-size:.8rem;font-weight:600;color:#6b7280;background:#fff;user-select:none;">
+                    <input type="radio" name="priority" value="EMERGENCY" class="d-none" id="pri_emergency">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Emergency
+                  </label>
+                </div>
+                <div id="prioritySuggestion" class="small text-muted mb-2 d-none">
+                  <i class="bi bi-robot me-1"></i><span id="prioritySuggestionText"></span>
+                </div>
+
+                {# Step 3 — Triage Notes #}
+                <div class="fw-semibold small text-uppercase text-muted mb-1 mt-2" style="letter-spacing:.05em;font-size:.68rem;">
+                  <i class="bi bi-3-circle-fill me-1" style="color:#6366f1;"></i>Triage Notes <span class="fw-normal text-muted" style="text-transform:none;">(optional)</span>
+                </div>
+                <textarea name="triage_notes" class="form-control form-control-sm" rows="2"
+                          placeholder="e.g. Sudden loss of vision OD. Patient distressed.">{{ visit.vital_signs.triage_notes|default:'' }}</textarea>
+
               </div>
             </div>
 
           </div>{# /accordion #}
 
           {# ── Submit bar ── #}
-          <div class="d-flex gap-2 justify-content-end pt-3 mt-2 border-top flex-wrap">
+          <div class="triage-submit-bar d-flex gap-2 justify-content-end flex-wrap">
             {% if payment_blocked %}
             <small class="text-danger me-auto align-self-center"><i class="bi bi-lock-fill me-1"></i>Unlock by paying or ticking Emergency above</small>
             {% endif %}
@@ -871,9 +917,12 @@ function onDeptChange(deptId, label) {
   _currentDeptId = deptId;
   clearRoomBtns();
 
+  const badge = document.getElementById('routeConfirmBadge');
   if (deptId) {
     lbl.textContent = label;
+    document.getElementById('routeRoomLabel').textContent = '';
     confirmEl.classList.remove('d-none');
+    if (badge) badge.classList.remove('d-none');
     if (_dispatchMode === 'ROOM') {
       fetchRooms(deptId, label);   // show room picker
     } else {
@@ -882,6 +931,7 @@ function onDeptChange(deptId, label) {
     }
   } else {
     confirmEl.classList.add('d-none');
+    if (badge) badge.classList.add('d-none');
     if (roomPanel) roomPanel.classList.add('d-none');
   }
   document.getElementById('routeValidationAlert').classList.add('d-none');
@@ -923,11 +973,15 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
     if (roomPanel) { roomPanel.classList.add('d-none'); clearRoomBtns(); }
   }
 
+  const badge = document.getElementById('routeConfirmBadge');
   if (serviceCode) {
     lbl.textContent = label;
+    document.getElementById('routeRoomLabel').textContent = '';
     confirmEl.classList.remove('d-none');
+    if (badge) badge.classList.remove('d-none');
   } else {
     confirmEl.classList.add('d-none');
+    if (badge) badge.classList.add('d-none');
   }
   document.getElementById('routeValidationAlert').classList.add('d-none');
 }
@@ -1030,61 +1084,21 @@ function fetchRooms(deptId, deptLabel) {
         return btn;
       }
 
-      const myRooms    = data.rooms.filter(r => isNurseTier(r.room_tier || 'STANDARD'));
-      const otherRooms = data.rooms.filter(r => !isNurseTier(r.room_tier || 'STANDARD'));
+      // Show all rooms without tier restrictions
+      const allRooms = data.rooms.slice().sort(
+        (a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true})
+      );
 
-      // Sort by room number within each group
-      const sortByNum = (a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true});
-      myRooms.sort(sortByNum);
-      otherRooms.sort(sortByNum);
-
-      // ── My-tier rooms (primary, always visible) ──────────────────
-      if (myRooms.length === 0 && nurseTier !== 'ALL') {
+      if (allRooms.length === 0) {
         const msg = document.createElement('span');
         msg.className = 'text-muted small fst-italic';
-        msg.textContent = 'No rooms configured for your tier yet.';
+        msg.textContent = 'No rooms configured for this department yet.';
         roomBtnGrp.appendChild(msg);
       } else {
-        const myWrap = document.createElement('div');
-        myWrap.className = 'd-flex flex-wrap gap-2';
-        myRooms.forEach(r => myWrap.appendChild(makeRoomBtn(r, true)));
-        roomBtnGrp.appendChild(myWrap);
-      }
-
-      // ── Other-tier rooms (collapsed by default unless ALL) ───────
-      if (otherRooms.length > 0 && nurseTier !== 'ALL') {
-        const toggleId = 'otherRooms_' + deptId.replace(/-/g, '');
-
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.style.cssText = 'margin-top:8px;font-size:.72rem;color:#6b7280;background:none;'
-          + 'border:1px dashed #d1d5db;border-radius:6px;padding:3px 10px;cursor:pointer;';
-        toggle.innerHTML = '<i class="bi bi-shuffle me-1"></i>Other tiers ('
-          + otherRooms.length + ' room' + (otherRooms.length > 1 ? 's' : '')
-          + ') <i class="bi bi-chevron-down" style="font-size:.6rem;"></i>';
-
-        const otherWrap = document.createElement('div');
-        otherWrap.id = toggleId;
-        otherWrap.style.display = 'none';
-        otherWrap.style.marginTop = '6px';
-
-        const innerWrap = document.createElement('div');
-        innerWrap.className = 'd-flex flex-wrap gap-2';
-        otherRooms.forEach(r => innerWrap.appendChild(makeRoomBtn(r, false)));
-        otherWrap.appendChild(innerWrap);
-
-        toggle.addEventListener('click', function() {
-          const open = otherWrap.style.display !== 'none';
-          otherWrap.style.display = open ? 'none' : 'block';
-          const chev = toggle.querySelector('.bi-chevron-down,.bi-chevron-up');
-          if (chev) chev.className = chev.className.replace(
-            open ? 'bi-chevron-up' : 'bi-chevron-down',
-            open ? 'bi-chevron-down' : 'bi-chevron-up'
-          );
-        });
-
-        roomBtnGrp.appendChild(toggle);
-        roomBtnGrp.appendChild(otherWrap);
+        const wrap = document.createElement('div');
+        wrap.className = 'd-flex flex-wrap gap-2';
+        allRooms.forEach(r => wrap.appendChild(makeRoomBtn(r, true)));
+        roomBtnGrp.appendChild(wrap);
       }
     })
     .catch(function() {
@@ -1155,6 +1169,7 @@ function clearRoom() {
 
 // Validate at least one route chosen on submit + loading feedback
 document.addEventListener('DOMContentLoaded', function() {
+  var _triageSubmitting = false;  // double-tap guard
   document.getElementById('triageForm').addEventListener('submit', function(e) {
     const dept   = document.getElementById('dispatch_department').value;
     const direct = document.getElementById('dispatch_direct').value;
@@ -1162,7 +1177,6 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       const alertEl = document.getElementById('routeValidationAlert');
       alertEl.classList.remove('d-none');
-      // Open Dispatch section so the user sees the problem
       const dispatchCollapse = document.getElementById('secDispatch');
       if (dispatchCollapse && !dispatchCollapse.classList.contains('show')) {
         new bootstrap.Collapse(dispatchCollapse, {show: true});
@@ -1170,7 +1184,10 @@ document.addEventListener('DOMContentLoaded', function() {
       alertEl.scrollIntoView({behavior: 'smooth', block: 'center'});
       return;
     }
-    // Show loading state
+    // Prevent double-tap (tablet) from submitting twice
+    if (_triageSubmitting) { e.preventDefault(); return; }
+    _triageSubmitting = true;
+    // Show loading state on button
     const btn  = document.getElementById('submitBtn');
     const icon = document.getElementById('submitIcon');
     const txt  = document.getElementById('submitTxt');
@@ -1219,15 +1236,24 @@ function setPriority(val) {
   if (radio) { radio.checked = true; highlightPriority(val); }
 }
 function highlightPriority(val) {
-  document.querySelectorAll('.priority-btn').forEach(btn => {
-    btn.classList.remove('active', 'btn-secondary', 'btn-warning', 'btn-danger',
-                         'btn-outline-secondary', 'btn-outline-warning', 'btn-outline-danger');
+  const cfg = {
+    NORMAL:    { border:'#9ca3af', bg:'#f9fafb', color:'#374151' },
+    URGENT:    { border:'#f59e0b', bg:'#fffbeb', color:'#92400e' },
+    EMERGENCY: { border:'#dc2626', bg:'#fef2f2', color:'#991b1b' },
+  };
+  ['NORMAL','URGENT','EMERGENCY'].forEach(v => {
+    const el = document.getElementById('lbl_' + v.toLowerCase());
+    if (!el) return;
+    if (v === val) {
+      el.style.border     = '2px solid ' + (cfg[v].border);
+      el.style.background = cfg[v].bg;
+      el.style.color      = cfg[v].color;
+    } else {
+      el.style.border     = '2px solid #d1d5db';
+      el.style.background = '#fff';
+      el.style.color      = '#6b7280';
+    }
   });
-  const map = { NORMAL: ['btn-outline-secondary', 'btn-secondary'],
-                URGENT: ['btn-outline-warning',   'btn-warning'],
-                EMERGENCY: ['btn-outline-danger',  'btn-danger'] };
-  const lbl = document.getElementById('lbl_' + val.toLowerCase());
-  if (lbl && map[val]) { lbl.classList.add('active', map[val][1]); }
 }
 highlightPriority('NORMAL');
 
