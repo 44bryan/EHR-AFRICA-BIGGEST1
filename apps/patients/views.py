@@ -996,7 +996,7 @@ def triage_view(request, visit_number):
     _gph_qs = list(
         _User.objects.filter(
             role=_UserRole.OPHTHALMOLOGIST,
-            is_active=True, is_deleted=False,
+            is_active=True,
         ).order_by('consultation_unit', 'last_name')
         .values('id', 'first_name', 'last_name', 'consultation_unit')
     )
