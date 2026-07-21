@@ -577,18 +577,50 @@
                 <input type="checkbox" name="intake_nkda" id="id_nkda" value="1" class="d-none">
               </div>
               <div id="allergy_details_wrap">
-                <div class="row g-2">
-                  <div class="col-md-4">
-                    <label class="form-label small fw-medium">Drug Allergy</label>
-                    <input type="text" name="intake_drug_allergy" class="form-control" placeholder="e.g. Penicillin, Aspirin">
+                {# Hidden inputs carry the comma-joined selected values to the view #}
+                <input type="hidden" name="intake_drug_allergy" id="h_drug_allergy">
+                <input type="hidden" name="intake_food_allergy" id="h_food_allergy">
+                <input type="hidden" name="intake_env_allergy"  id="h_env_allergy">
+
+                {# ── Drug Allergies ── #}
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold text-danger"><i class="bi bi-capsule me-1"></i>Drug Allergies <small class="text-muted fw-normal">(tap all that apply)</small></label>
+                  <div class="d-flex flex-wrap gap-1" id="drug_pills">
+                    {% for drug in "Penicillin / Amoxicillin,Ampicillin,Cloxacillin,Erythromycin / Azithromycin,Ciprofloxacin,Tetracycline,Metronidazole,Septrin / Sulfonamides,Chloramphenicol,Aspirin,Ibuprofen / NSAIDs,Diclofenac,Paracetamol,Codeine / Opioids,Gentamicin eye drops,Timolol / Betaxolol eye drops,Dexamethasone,Atropine eye drops,Tetracaine / Local anaesthetic,Contrast dye,Latex"|split:"," %}
+                    <button type="button" class="btn btn-sm btn-outline-danger rounded-pill allergy-pill" data-group="drug" onclick="toggleAllergyPill(this,'drug')">{{ drug }}</button>
+                    {% endfor %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill allergy-pill" data-group="drug" data-other="1" onclick="toggleOtherAllergy(this,'drug_other_wrap')">+ Other</button>
                   </div>
-                  <div class="col-md-4">
-                    <label class="form-label small fw-medium">Food Allergy</label>
-                    <input type="text" name="intake_food_allergy" class="form-control" placeholder="e.g. Nuts, Shellfish">
+                  <div id="drug_other_wrap" class="mt-1 d-none">
+                    <input type="text" id="drug_other_input" class="form-control form-control-sm" placeholder="Specify other drug allergy…" oninput="syncOther('drug')">
                   </div>
-                  <div class="col-md-4">
-                    <label class="form-label small fw-medium">Environmental Allergy</label>
-                    <input type="text" name="intake_env_allergy" class="form-control" placeholder="e.g. Dust, Pollen">
+                </div>
+
+                {# ── Food Allergies ── #}
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold text-warning"><i class="bi bi-egg-fried me-1"></i>Food Allergies <small class="text-muted fw-normal">(tap all that apply)</small></label>
+                  <div class="d-flex flex-wrap gap-1" id="food_pills">
+                    {% for food in "Nuts / Groundnuts,Peanuts,Shellfish / Shrimp,Fish,Milk / Dairy,Eggs,Wheat / Gluten,Soy / Soybean,Sesame seeds,Yam / Cassava,Beans / Legumes,Maize / Corn"|split:"," %}
+                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill allergy-pill" data-group="food" onclick="toggleAllergyPill(this,'food')">{{ food }}</button>
+                    {% endfor %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill allergy-pill" data-group="food" data-other="1" onclick="toggleOtherAllergy(this,'food_other_wrap')">+ Other</button>
+                  </div>
+                  <div id="food_other_wrap" class="mt-1 d-none">
+                    <input type="text" id="food_other_input" class="form-control form-control-sm" placeholder="Specify other food allergy…" oninput="syncOther('food')">
+                  </div>
+                </div>
+
+                {# ── Environmental Allergies ── #}
+                <div class="mb-2">
+                  <label class="form-label small fw-semibold text-success"><i class="bi bi-wind me-1"></i>Environmental Allergies <small class="text-muted fw-normal">(tap all that apply)</small></label>
+                  <div class="d-flex flex-wrap gap-1" id="env_pills">
+                    {% for env in "Dust / Dust mites,Pollen / Flowers,Animal fur / Dander,Mould / Fungus,Smoke,Chemical fumes,Perfume / Cosmetics,Insect stings,Sunlight / Heat,Cold air,Chlorine / Pool water,Rubber / Latex"|split:"," %}
+                    <button type="button" class="btn btn-sm btn-outline-success rounded-pill allergy-pill" data-group="env" onclick="toggleAllergyPill(this,'env')">{{ env }}</button>
+                    {% endfor %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill allergy-pill" data-group="env" data-other="1" onclick="toggleOtherAllergy(this,'env_other_wrap')">+ Other</button>
+                  </div>
+                  <div id="env_other_wrap" class="mt-1 d-none">
+                    <input type="text" id="env_other_input" class="form-control form-control-sm" placeholder="Specify other environmental allergy…" oninput="syncOther('env')">
                   </div>
                 </div>
               </div>
@@ -833,6 +865,58 @@ function showReferralDetails(show) {
 function toggleAllergyDetails(isNkda) {
   document.getElementById('id_nkda').checked = isNkda;
   document.getElementById('allergy_details_wrap').style.display = isNkda ? 'none' : 'block';
+}
+
+// ── Allergy pill multi-select ──────────────────────────────────────────────
+const _ALLERGY_ACTIVE_CLS = { drug: 'btn-danger', food: 'btn-warning', env: 'btn-success' };
+const _ALLERGY_OUTLINE_CLS = { drug: 'btn-outline-danger', food: 'btn-outline-warning', env: 'btn-outline-success' };
+
+function _syncAllergyHidden(group) {
+  const pills = document.querySelectorAll('.allergy-pill[data-group="' + group + '"]:not([data-other])');
+  const selected = [];
+  pills.forEach(function(btn) {
+    if (btn.classList.contains(_ALLERGY_ACTIVE_CLS[group])) selected.push(btn.textContent.trim());
+  });
+  // Append "other" text if present
+  const otherInp = document.getElementById(group + '_other_input');
+  if (otherInp && otherInp.value.trim()) selected.push(otherInp.value.trim());
+  document.getElementById('h_' + group + '_allergy').value = selected.join(', ');
+}
+
+function toggleAllergyPill(btn, group) {
+  const active = _ALLERGY_ACTIVE_CLS[group];
+  const outline = _ALLERGY_OUTLINE_CLS[group];
+  if (btn.classList.contains(active)) {
+    btn.classList.remove(active);
+    btn.classList.add(outline);
+  } else {
+    btn.classList.remove(outline);
+    btn.classList.add(active);
+  }
+  _syncAllergyHidden(group);
+}
+
+function toggleOtherAllergy(btn, wrapId) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const hidden = wrap.classList.contains('d-none');
+  wrap.classList.toggle('d-none', !hidden);
+  if (hidden) {
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-secondary');
+    document.getElementById(wrapId.replace('_wrap','_input'))?.focus();
+  } else {
+    btn.classList.remove('btn-secondary');
+    btn.classList.add('btn-outline-secondary');
+    const inp = document.getElementById(wrapId.replace('_wrap','_input'));
+    if (inp) inp.value = '';
+    const group = wrapId.replace('_other_wrap','');
+    _syncAllergyHidden(group);
+  }
+}
+
+function syncOther(group) {
+  _syncAllergyHidden(group);
 }
 
 // Pill button toggle (eye complaints, disability)
