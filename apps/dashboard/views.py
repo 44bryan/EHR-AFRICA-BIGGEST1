@@ -560,6 +560,21 @@ def home_view(request):
         else:
             queue_qs = queue_qs.none()
 
+        # Tier isolation: GEN_OPH doctors with a specific consultation_unit only
+        # see visits for their tier — prevents VIP doctors seeing Express patients
+        # and vice versa on the home dashboard, matching the workstation behaviour.
+        _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+        _CU_TIER_MAP = {
+            'VIP_CONSULT':   ['VIP'],
+            'VIP':           ['VIP'],
+            'EXP_CONSULT':   ['EXPRESS', 'FAST_TRACK'],
+            'EXPRESS':       ['EXPRESS', 'FAST_TRACK'],
+            'INSUR_CONSULT': ['STANDARD'],   # insured patients typically STANDARD tier
+            'INSURANCE':     ['STANDARD'],
+        }
+        if _cu in _CU_TIER_MAP:
+            queue_qs = queue_qs.filter(service_tier__in=_CU_TIER_MAP[_cu])
+
         # Annotate each queued visit with AI triage priority
         queue_list = list(queue_qs)
         for v in queue_list:
