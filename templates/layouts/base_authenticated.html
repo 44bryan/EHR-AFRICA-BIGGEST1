@@ -75,12 +75,19 @@
     '/leadership/analytics',
   ];
 
+  // True if the current page has a data-entry form — never auto-refresh those
+  function _hasPostForm() {
+    return !!document.querySelector('form[method="post"], form[method="POST"]');
+  }
+
   function isDashboardPage() {
     var p = window.location.pathname;
     // Workstation has its own refresh — skip double-refresh
     if (p.includes('/workstation')) return false;
     // Stats/report pages should not auto-refresh
     if (EXCLUDE_REFRESH_PATHS.some(function(x) { return p.startsWith(x); })) return false;
+    // Never auto-refresh a page with a data-entry form (triage, registration, consultations…)
+    if (_hasPostForm()) return false;
     return DASHBOARD_PATHS.some(function(d) { return p.startsWith(d); });
   }
 
@@ -91,6 +98,8 @@
   }
 
   function doRefresh() {
+    // Final guard — never refresh a page that has a data-entry form
+    if (_hasPostForm()) return;
     // Use HTMX boost for a smooth partial swap (no full page reload, no sidebar flash)
     if (window.htmx) {
       // Preserve scroll position so tablet users don't lose their place mid-queue
@@ -130,6 +139,8 @@
     _refreshTimer = setInterval(function () {
       // Pause when tab hidden
       if (document.visibilityState === 'hidden') return;
+      // Stop entirely if a form appeared on this page (e.g. via partial HTMX swap)
+      if (_hasPostForm()) { stopRefresh(); return; }
       // Pause when user is typing in a form
       if (_formDirty) {
         var cdPause = document.getElementById('ehr-refresh-countdown');
@@ -198,6 +209,8 @@
     // Only fall back on network errors or 5xx — not 4xx (auth redirect handled by Django)
     var status = evt && evt.detail && evt.detail.xhr ? evt.detail.xhr.status : 0;
     if (status >= 400 && status < 500) return; // 4xx — let Django redirect handle it
+    // Never wipe a data-entry form on network error
+    if (document.querySelector('form[method="post"], form[method="POST"]')) return;
     try { window.location.reload(); } catch (e) {}
   }
   // sendError fires when the XHR itself fails (no network, timeout, CORS)
@@ -242,9 +255,9 @@
   'use strict';
 
   // ── 1. bfcache fix: if the browser restores a page from bfcache, force fresh load ──
-  // Safari, Chrome, Firefox all support this event. persisted=true means bfcache.
+  // Skip reload if the restored page has a data-entry form — would wipe user input.
   window.addEventListener('pageshow', function (evt) {
-    if (evt.persisted) {
+    if (evt.persisted && !document.querySelector('form[method="post"], form[method="POST"]')) {
       window.location.reload();
     }
   });
