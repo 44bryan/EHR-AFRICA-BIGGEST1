@@ -1021,11 +1021,13 @@ def workstation_view(request):
                     service_types = _unit_svc_map.get(_cu, ['GENERAL'])
             if service_types:
                 from django.db.models import Q as _Q
-                # Tokens assigned to this doctor specifically (VIP/Express dispatch)
-                # OR tokens in the tier pool with no specific doctor assigned
+                # Both assigned-doctor tokens AND pool tokens must match this doctor's
+                # service_type list — prevents VIP tokens leaking into Express queues
+                # and vice versa even when a doctor was explicitly assigned
                 _token_qs = QueueToken.objects.filter(
                     _Q(assigned_doctor=user) |
-                    _Q(assigned_doctor__isnull=True, service_type__in=service_types),
+                    _Q(assigned_doctor__isnull=True),
+                    service_type__in=service_types,
                     token_date=today,
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                     is_deleted=False,
