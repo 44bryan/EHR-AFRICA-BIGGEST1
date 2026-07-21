@@ -1012,14 +1012,26 @@ function fetchRooms(deptId, deptLabel) {
         return;
       }
       window._roomsData = {};
+      // Sort: patient-tier-matching rooms first, then ALL-tier, then others, then by room number
+      var patientTier = '{{ visit.service_tier }}';
+      var tierRank = function(r) {
+        if (r.room_tier === patientTier) return 0;
+        if (r.room_tier === 'ALL') return 1;
+        return 2;
+      };
       data.rooms.slice()
-        .sort(function(a, b) { return String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true}); })
+        .sort(function(a, b) {
+          var tr = tierRank(a) - tierRank(b);
+          if (tr !== 0) return tr;
+          return String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true});
+        })
         .forEach(function(room) {
           window._roomsData[room.room_number] = room;
           var opt = document.createElement('option');
           opt.value = room.room_number;
           var tier = room.room_tier || 'STANDARD';
-          var label = 'Room ' + room.room_number + '  [' + (ROOM_TIER_LABELS[tier] || tier) + ']';
+          var prefix = (tierRank(room) === 0) ? '★ ' : '';
+          var label = prefix + 'Room ' + room.room_number + '  [' + (ROOM_TIER_LABELS[tier] || tier) + ']';
           if (room.doctor) label += '  —  Dr. ' + room.doctor.split(' ').pop();
           opt.textContent = label;
           roomSel.appendChild(opt);
@@ -1319,11 +1331,11 @@ checkAllVitals();
 // ── Doctor dispatch picker (VIP / Express) ────────────────────────────────────
 // gph_doctors: [{id, first_name, last_name, consultation_unit}, ...]
 const GPH_DOCTORS = {{ gph_doctors_json|default:"[]"|safe }};
-const UNIT_LABEL  = { GENERAL: 'General', EXPRESS: 'Express', VIP: 'VIP', INSURED: 'Insurance' };
+const UNIT_LABEL  = { GENERAL: 'General', EXP_CONSULT: 'Express', VIP_CONSULT: 'VIP', INSUR_CONSULT: 'Insurance', ALL: 'All Tiers' };
 // Which service codes require the doctor picker
 const DOCTOR_PICK_SERVICES = new Set(['VIP_CONSULT', 'EXP_CONSULT']);
-// Filter doctors by unit matching the service code
-const UNIT_FOR_SERVICE = { VIP_CONSULT: 'VIP', EXP_CONSULT: 'EXPRESS' };
+// Filter doctors by unit matching the service code (ALL-tier doctors serve any queue)
+const UNIT_FOR_SERVICE = { VIP_CONSULT: 'VIP_CONSULT', EXP_CONSULT: 'EXP_CONSULT' };
 
 function showDoctorPicker(serviceCode) {
   const panel  = document.getElementById('doctorPickPanel');
@@ -1334,7 +1346,7 @@ function showDoctorPicker(serviceCode) {
   const wantedUnit = UNIT_FOR_SERVICE[serviceCode] || null;
   GPH_DOCTORS.forEach(function(doc) {
     const unit = (doc.consultation_unit || 'GENERAL').toUpperCase();
-    if (wantedUnit && unit !== wantedUnit) return; // filter by tier
+    if (wantedUnit && unit !== wantedUnit && unit !== 'ALL') return; // filter by tier; ALL-unit doctors serve any queue
     const name = doc.first_name + ' ' + doc.last_name;
     const lbl  = name + (UNIT_LABEL[unit] ? ' (' + UNIT_LABEL[unit] + ')' : '');
     sel.insertAdjacentHTML('beforeend', `<option value="${doc.id}">${lbl}</option>`);
