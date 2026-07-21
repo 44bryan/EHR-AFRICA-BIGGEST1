@@ -486,6 +486,42 @@
         </div>
       </div>
 
+      <!-- NEXT OF KIN -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between"
+             role="button" data-bs-toggle="collapse" data-bs-target="#sec_nok" aria-expanded="true" style="cursor:pointer;">
+          <h6 class="fw-bold mb-0">
+            <i class="bi bi-people me-2 text-info"></i>Next of Kin
+            <span class="badge bg-secondary fw-normal ms-2" style="font-size:.7rem;">Emergency Contact</span>
+          </h6>
+          <i class="bi bi-chevron-up text-muted sec-chevron" id="chev_sec_nok"></i>
+        </div>
+        <div class="collapse show card-body" id="sec_nok">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Full Name</label>
+              {% render_field nok_form.full_name class="form-control" placeholder="Next of Kin full name" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Relationship</label>
+              {% render_field nok_form.relationship class="form-control" placeholder="e.g. Spouse, Parent, Sibling, Child" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Phone Number</label>
+              {% render_field nok_form.phone_number class="form-control" placeholder="e.g. 677000000" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-medium">Email <span class="text-muted fw-normal">(optional)</span></label>
+              {% render_field nok_form.email class="form-control" placeholder="email@example.com" %}
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-medium">Address <span class="text-muted fw-normal">(optional)</span></label>
+              {% render_field nok_form.address class="form-control" rows="2" placeholder="Next of kin home address" %}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- VISIT QUESTIONS -->
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between"
@@ -803,6 +839,49 @@
         <p class="small text-muted mb-0">If this is genuinely a new patient, you may proceed with registration below.</p>
       </div>
 
+      <!-- Visit Details — Tier only (billing is set by the cashier) -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between"
+             role="button" data-bs-toggle="collapse" data-bs-target="#sec_visit" aria-expanded="true" style="cursor:pointer;">
+          <h6 class="fw-bold mb-0"><i class="bi bi-layers me-2 text-primary"></i>Service Tier</h6>
+          <i class="bi bi-chevron-up text-muted sec-chevron"></i>
+        </div>
+        <div class="collapse show card-body" id="sec_visit">
+          <label class="form-label small fw-medium">Select Tier *</label>
+          <div class="d-grid gap-2" id="tier_picker">
+            <label class="tier-opt d-flex align-items-center gap-3 p-3 border rounded-3" style="cursor:pointer;">
+              <input type="radio" name="service_tier" value="STANDARD" class="form-check-input mt-0 flex-shrink-0"
+                     {% if init_service_tier == 'STANDARD' or not init_service_tier %}checked{% endif %}
+                     onchange="highlightTier()">
+              <span class="badge bg-secondary px-3 py-2" style="font-size:.8rem;min-width:90px;text-align:center;">Standard</span>
+              <span class="small text-muted">Regular OPD queue</span>
+            </label>
+            <label class="tier-opt d-flex align-items-center gap-3 p-3 border rounded-3" style="cursor:pointer;">
+              <input type="radio" name="service_tier" value="FAST_TRACK" class="form-check-input mt-0 flex-shrink-0"
+                     {% if init_service_tier == 'FAST_TRACK' %}checked{% endif %}
+                     onchange="highlightTier()">
+              <span class="badge px-3 py-2" style="background:linear-gradient(135deg,#d97706,#ea580c);font-size:.8rem;min-width:90px;text-align:center;">Fast Track</span>
+              <span class="small text-muted">Priority service, faster routing</span>
+            </label>
+            <label class="tier-opt d-flex align-items-center gap-3 p-3 border rounded-3" style="cursor:pointer;">
+              <input type="radio" name="service_tier" value="EXPRESS" class="form-check-input mt-0 flex-shrink-0"
+                     {% if init_service_tier == 'EXPRESS' %}checked{% endif %}
+                     onchange="highlightTier()">
+              <span class="badge px-3 py-2" style="background:linear-gradient(135deg,#0891b2,#0284c7);font-size:.8rem;min-width:90px;text-align:center;">Express</span>
+              <span class="small text-muted">Express lane — corporate / insured</span>
+            </label>
+            <label class="tier-opt d-flex align-items-center gap-3 p-3 border rounded-3" style="cursor:pointer;">
+              <input type="radio" name="service_tier" value="VIP" class="form-check-input mt-0 flex-shrink-0"
+                     {% if init_service_tier == 'VIP' %}checked{% endif %}
+                     onchange="highlightTier()">
+              <span class="badge px-3 py-2" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);font-size:.8rem;min-width:90px;text-align:center;"><i class="bi bi-stars me-1"></i>VIP</span>
+              <span class="small text-muted">Premium suite — dedicated staff</span>
+            </label>
+          </div>
+          <div class="form-text mt-2" style="font-size:.72rem;"><i class="bi bi-info-circle me-1"></i>Billing type (cash/HMO/insurance) is set by the cashier when processing payment.</div>
+        </div>
+      </div>
+
       <!-- Submit -->
       <div class="d-grid gap-2">
         <button type="submit" class="btn btn-primary btn-lg">
@@ -827,6 +906,21 @@ if (!window.SignaturePad && !window._ehrSigPadLoading) {
 }
 </script>
 <script>
+// ── Tier picker — highlight selected tier option ──────────────────────────
+function highlightTier() {
+  document.querySelectorAll('#tier_picker .tier-opt').forEach(function(lbl) {
+    var inp = lbl.querySelector('input[type=radio]');
+    if (inp && inp.checked) {
+      lbl.classList.add('border-primary');
+      lbl.style.background = '#f0f7ff';
+    } else {
+      lbl.classList.remove('border-primary');
+      lbl.style.background = '';
+    }
+  });
+}
+highlightTier();
+
 // Photo preview
 document.querySelector('input[type=file][name="photo"]')?.addEventListener('change', function(e) {
   const file = e.target.files[0];

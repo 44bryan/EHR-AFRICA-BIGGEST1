@@ -164,8 +164,9 @@ def patient_register_view(request):
             visit_kwargs = dict(
                 patient=patient,
                 chief_complaint=request.POST.get('chief_complaint', ''),
-                service_tier='STANDARD',
-                billing_type='SELF_PAY',
+                service_tier=request.POST.get('service_tier', 'STANDARD'),
+                billing_type=request.POST.get('billing_type', 'SELF_PAY'),
+                insurance_company=request.POST.get('insurance_company', ''),
                 has_referral_letter=_parse_bool(request.POST.get('has_referral_letter')),
                 referral_hospital=request.POST.get('referral_hospital', ''),
                 intake_disability=','.join(request.POST.getlist('intake_disability')),

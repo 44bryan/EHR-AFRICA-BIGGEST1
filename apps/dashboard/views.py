@@ -595,12 +595,24 @@ def home_view(request):
     # ── OPD Nurse (triage + dispatch) ─────────────────────────────────────
     if user.is_opd_nurse:
         # Patients at the parameters/triage station (waiting to have vitals recorded)
-        waiting = Visit.objects.select_related(
+        _nurse_tier = getattr(user, 'patient_tier', 'ALL')
+        _NURSE_TIER_COMPAT = {
+            'VIP':        ['VIP'],
+            'EXPRESS':    ['EXPRESS', 'FAST_TRACK'],
+            'FAST_TRACK': ['EXPRESS', 'FAST_TRACK'],
+            'STANDARD':   ['STANDARD'],
+        }
+        _waiting_qs = Visit.objects.select_related(
             'patient', 'department'
         ).filter(
             visit_date__date=today,
             status='PARAMETERS',
         ).order_by('visit_date')
+        if _nurse_tier != 'ALL':
+            _waiting_qs = _waiting_qs.filter(
+                service_tier__in=_NURSE_TIER_COMPAT.get(_nurse_tier, [])
+            )
+        waiting = _waiting_qs
 
         # Patients dispatched to doctor (post-triage, waiting for consultation)
         dispatched_today = Visit.objects.select_related(
@@ -950,17 +962,28 @@ def home_view(request):
         except Exception:
             cashier_queue = []
 
-        # Without QMS: show visits with AT_CASHIER status (patients waiting to pay)
+        # Without QMS: show visits with AT_CASHIER status filtered by cashier's station/tier
         from apps.patients.models import Visit
+        from apps.accounts.models import CashierStation as _CS
         pending_payment_visits = []
         if not _qms_active():
-            pending_payment_visits = list(
-                Visit.objects.filter(
-                    visit_date__date=today,
-                    status='AT_CASHIER',
-                    is_deleted=False,
-                ).select_related('patient').order_by('visit_date')
-            )
+            _pv_qs = Visit.objects.filter(
+                visit_date__date=today,
+                status='AT_CASHIER',
+                is_deleted=False,
+            ).select_related('patient').order_by('visit_date')
+            _station = getattr(user, 'cashier_station', _CS.ALL)
+            _tier_map_visits = {
+                _CS.STANDARD:   ['STANDARD'],
+                _CS.FAST_TRACK: ['EXPRESS', 'FAST_TRACK'],
+                _CS.VIP:        ['VIP'],
+            }
+            if _station in _tier_map_visits:
+                _pv_qs = _pv_qs.filter(service_tier__in=_tier_map_visits[_station])
+            elif _station == _CS.INSURED:
+                _pv_qs = _pv_qs.filter(billing_type__in=['HMO', 'INSURANCE'])
+            # _CS.ALL → no filter, show everything
+            pending_payment_visits = list(_pv_qs)
 
         # Only this cashier's own collections today — 0 if no shift open yet
         revenue_today = Payment.objects.filter(
