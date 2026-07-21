@@ -1148,6 +1148,8 @@ def triage_view(request, visit_number):
                 'PHARMACY':   'WAITING',
                 'CASHIER':    'WAITING',
                 'GEN_PHYS':   'WAITING',
+                'VIP_CONSULT':'WAITING',
+                'EXP_CONSULT':'WAITING',
             }
             _SERVICE_TO_DEPT_CODE = {
                 'REFRACTION':  'REFRAC',
@@ -1193,6 +1195,15 @@ def triage_view(request, visit_number):
             if priority != 'NORMAL':
                 vitals['priority'] = priority
                 visit.vital_signs = vitals
+
+            # ── Doctor assignment and service_type — init BEFORE room block ────────
+            _assigned_doctor_id = request.POST.get('assigned_doctor_id', '').strip()
+            _assigned_doctor = None
+            if _assigned_doctor_id:
+                from apps.accounts.models import User as _DocUser
+                _assigned_doctor = _DocUser.objects.filter(pk=_assigned_doctor_id, is_active=True).first()
+            # service_type starts as direct_service; room block may refine for ALL-tier rooms
+            service_type = direct_service or None
 
             # Resolve and save consultation room (triage nurse selected room via JS picker)
             if _room_num and dept:
@@ -1258,20 +1269,11 @@ def triage_view(request, visit_number):
                 'CASHIER':    'CASHIER',
             }
 
-            # Determine service_type — fully flexible
-            if direct_service:
-                service_type = direct_service
-            elif dept:
+            # Finalize service_type: if not already set by direct_service or room block,
+            # derive from department code
+            if service_type is None and dept:
                 service_type = _DEPT_TO_SERVICE_TYPE.get(dept.code, dept.code[:12].upper())
-            else:
-                service_type = None
-
-            # Doctor assignment: nurse picks named doctor for VIP/Express dispatch
-            _assigned_doctor_id = request.POST.get('assigned_doctor_id', '').strip()
-            _assigned_doctor = None
-            if _assigned_doctor_id and service_type in ('VIP_CONSULT', 'EXP_CONSULT'):
-                from apps.accounts.models import User as _DocUser
-                _assigned_doctor = _DocUser.objects.filter(pk=_assigned_doctor_id, is_active=True).first()
+            # (_assigned_doctor already resolved above before room block)
 
             if service_type:
                 from apps.qms.models import (
