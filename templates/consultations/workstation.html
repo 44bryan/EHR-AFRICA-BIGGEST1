@@ -95,52 +95,29 @@
 </div>
 {% endif %}
 
-{# ── Room Assignment + Filter Bar ── #}
+{# ── My Room (read-only — set by administrator via Consultation Rooms) ── #}
 {% if dept_rooms %}
 <div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-2 px-3">
-    <div class="d-flex align-items-center gap-2 flex-wrap">
-      <span class="fw-semibold small text-muted me-1">
-        <i class="bi bi-door-open me-1"></i>My Room:
+  <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
+    <span class="fw-semibold small text-muted flex-shrink-0">
+      <i class="bi bi-door-open me-1"></i>My Room:
+    </span>
+    {% if my_assigned_room %}
+      <span class="badge bg-primary px-3 py-2" style="font-size:.82rem;letter-spacing:.02em;">
+        <i class="bi bi-door-open me-1"></i>Room {{ my_assigned_room.room_number }}
+        <span class="ms-2 opacity-75" style="font-size:.72rem;">{{ my_assigned_room.get_room_tier_display }}</span>
       </span>
-
-      {# "All dept" clears room assignment #}
-      <form method="post" action="{% url 'consultations:my_room_assign' %}" class="d-inline">
-        {% csrf_token %}
-        <input type="hidden" name="room_id" value="">
-        <button type="submit"
-                class="btn btn-sm {% if not selected_room %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-          <i class="bi bi-people me-1"></i>All {{ dept.name }}
-        </button>
-      </form>
-
-      {% for room in dept_rooms %}
-      <form method="post" action="{% url 'consultations:my_room_assign' %}" class="d-inline">
-        {% csrf_token %}
-        <input type="hidden" name="room_id" value="{{ room.id }}">
-        <button type="submit"
-                class="btn btn-sm {% if selected_room and selected_room.id == room.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-          <i class="bi bi-door-open me-1"></i>Room {{ room.room_number }}
-          {% if room.assigned_doctor and room.assigned_doctor.pk == request.user.pk %}
-            <span class="badge bg-success ms-1" style="font-size:.6rem;">Mine</span>
-          {% elif room.assigned_doctor %}
-            <span class="ms-1" style="font-size:.72rem;opacity:.7;">Dr. {{ room.assigned_doctor.last_name }}</span>
-          {% endif %}
-        </button>
-      </form>
-      {% endfor %}
-    </div>
-
-    <div class="mt-1 small text-muted">
-      {% if selected_room %}
+      <span class="text-muted small">
         <i class="bi bi-check-circle-fill text-success me-1"></i>
-        You are in <strong>Room {{ selected_room.room_number }}</strong> — queue filtered to your room.
-        Triage nurse will see your name when dispatching.
-      {% else %}
-        <i class="bi bi-info-circle me-1"></i>
-        Tap a room to assign yourself and filter the queue. Triage nurse will see <em>Room X — Dr. {{ request.user.last_name }}</em> when dispatching patients.
-      {% endif %}
-    </div>
+        Queue is filtered to your room. Triage nurse sees
+        <strong>Room {{ my_assigned_room.room_number }} — Dr. {{ request.user.last_name }}</strong> when dispatching.
+      </span>
+    {% else %}
+      <span class="text-warning small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        No room assigned — contact your administrator to be assigned to a room.
+      </span>
+    {% endif %}
   </div>
 </div>
 {% endif %}
