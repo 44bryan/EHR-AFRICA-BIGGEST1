@@ -668,9 +668,20 @@ def patient_detail_view(request, patient_id):
             # All visits completed — use the most recent one anyway
             counseling_visit = visits[0] if len(visits) > 0 else None
 
+    # Most recent active visit (or latest visit if all completed) for tier badge
+    _active_visit = (
+        patient.visits.filter(is_deleted=False)
+        .exclude(status='COMPLETED').exclude(status='DISCHARGED')
+        .order_by('-visit_date').first()
+        or patient.visits.filter(is_deleted=False).order_by('-visit_date').first()
+    )
+    _patient_tier = _active_visit.service_tier if _active_visit else 'STANDARD'
+
     return render(request, 'patients/detail.html', {
         'patient': patient,
         'visits': visits,
+        'active_visit': _active_visit,
+        'patient_tier': _patient_tier,
         'counseling_visit': counseling_visit,
         'medical_history': medical_history,
         'next_of_kin': patient.next_of_kin.all(),
