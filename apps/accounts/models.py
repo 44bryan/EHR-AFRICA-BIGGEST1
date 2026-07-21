@@ -96,10 +96,11 @@ class ConsultationUnit(models.TextChoices):
     and INSURANCE_OPHTHALMOLOGIST roles. One role (OPHTHALMOLOGIST), multiple
     possible desks. QMS queue is filtered by this unit.
     """
-    GENERAL   = 'GENERAL',      _('General Consultation')
+    GENERAL   = 'GENERAL',       _('General Consultation')
     EXPRESS   = 'EXP_CONSULT',  _('Express / Fast Track')
     VIP       = 'VIP_CONSULT',  _('VIP Consultation')
     INSURANCE = 'INSUR_CONSULT', _('Insurance Consultation')
+    ALL       = 'ALL',           _('All Tiers')
 
 
 class User(AbstractUser):

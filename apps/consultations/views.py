@@ -1012,10 +1012,11 @@ def workstation_view(request):
                 else:
                     _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
                     _unit_svc_map = {
-                        'GENERAL':  ['GENERAL'],
-                        'EXPRESS':  ['EXP_CONSULT'],
-                        'VIP':      ['VIP_CONSULT'],
-                        'INSURED':  ['INSUR_CONSULT'],
+                        'GENERAL':       ['GENERAL'],
+                        'EXP_CONSULT':   ['EXP_CONSULT'],
+                        'VIP_CONSULT':   ['VIP_CONSULT'],
+                        'INSUR_CONSULT': ['INSUR_CONSULT'],
+                        'ALL':           ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
                     }
                     service_types = _unit_svc_map.get(_cu, ['GENERAL'])
             if service_types:
@@ -1578,7 +1579,7 @@ def clinic_nurse_view(request):
             # GEN_OPH nurses serve only their tier's consultation queue
             if dept_code == 'GEN_OPH':
                 _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
-                svc_type = {'GENERAL': 'GENERAL', 'EXPRESS': 'EXP_CONSULT', 'VIP': 'VIP_CONSULT', 'INSURED': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
+                svc_type = {'GENERAL': 'GENERAL', 'EXP_CONSULT': 'EXP_CONSULT', 'VIP_CONSULT': 'VIP_CONSULT', 'INSUR_CONSULT': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
             if svc_type:
                 waiting_tokens = list(
                     QueueToken.objects.filter(
@@ -1727,7 +1728,7 @@ def clinic_call_patient_view(request, visit_pk):
             # GEN_OPH: resolve to the correct tier's service type
             if dept_code == 'GEN_OPH':
                 _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
-                svc_type = {'GENERAL': 'GENERAL', 'EXPRESS': 'EXP_CONSULT', 'VIP': 'VIP_CONSULT', 'INSURED': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
+                svc_type = {'GENERAL': 'GENERAL', 'EXP_CONSULT': 'EXP_CONSULT', 'VIP_CONSULT': 'VIP_CONSULT', 'INSUR_CONSULT': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
             if svc_type:
                 token = QueueToken.objects.filter(
                     patient=visit.patient,
@@ -1893,7 +1894,7 @@ def nurse_route_patient_view(request, visit_pk):
             # GEN_OPH: resolve to the correct tier's service type
             if dept_code == 'GEN_OPH':
                 _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
-                svc_type = {'GENERAL': 'GENERAL', 'EXPRESS': 'EXP_CONSULT', 'VIP': 'VIP_CONSULT', 'INSURED': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
+                svc_type = {'GENERAL': 'GENERAL', 'EXP_CONSULT': 'EXP_CONSULT', 'VIP_CONSULT': 'VIP_CONSULT', 'INSUR_CONSULT': 'INSUR_CONSULT'}.get(_cu, 'GENERAL')
             today = timezone.localdate()
 
             with _tx.atomic():
