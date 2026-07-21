@@ -1204,6 +1204,16 @@ def triage_view(request, visit_number):
                 _assigned_doctor = _DocUser.objects.filter(pk=_assigned_doctor_id, is_active=True).first()
             # service_type starts as direct_service; room block may refine for ALL-tier rooms
             service_type = direct_service or None
+            # Tier-override: if dispatching a VIP/Express patient to a consultation
+            # queue that is marked as GENERAL, promote the service_type so the token
+            # lands in the correct tier queue instead of the general doctor queue.
+            _TIER_SVC_OVERRIDE = {
+                'VIP':        'VIP_CONSULT',
+                'EXPRESS':    'EXP_CONSULT',
+                'FAST_TRACK': 'EXP_CONSULT',
+            }
+            if service_type == 'GENERAL' and visit.service_tier in _TIER_SVC_OVERRIDE:
+                service_type = _TIER_SVC_OVERRIDE[visit.service_tier]
 
             # Resolve and save consultation room (triage nurse selected room via JS picker)
             if _room_num and dept:

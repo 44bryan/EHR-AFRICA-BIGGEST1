@@ -1014,8 +1014,11 @@ def workstation_view(request):
                     _unit_svc_map = {
                         'GENERAL':       ['GENERAL'],
                         'EXP_CONSULT':   ['EXP_CONSULT'],
+                        'EXPRESS':       ['EXP_CONSULT'],   # legacy alias
                         'VIP_CONSULT':   ['VIP_CONSULT'],
+                        'VIP':           ['VIP_CONSULT'],   # legacy alias
                         'INSUR_CONSULT': ['INSUR_CONSULT'],
+                        'INSURANCE':     ['INSUR_CONSULT'],  # legacy alias
                         'ALL':           ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
                     }
                     service_types = _unit_svc_map.get(_cu, ['GENERAL'])
