@@ -504,6 +504,14 @@ def consultation_detail_view(request, pk):
         .order_by('severity', 'allergen')
     )
 
+    try:
+        from apps.patients.models import ChronicMedication
+        patient_medications = list(
+            ChronicMedication.objects.filter(patient=consultation.patient, is_active=True)
+        )
+    except Exception:
+        patient_medications = []
+
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
         'note_form': note_form,
@@ -511,6 +519,9 @@ def consultation_detail_view(request, pk):
         'service_types': ServiceType.choices,
         'other_consultations': other_consultations,
         'patient_allergies': patient_allergies,
+        'patient_medications': patient_medications,
+        'visit': consultation.visit,
+        'patient': consultation.patient,
     })
 
 
