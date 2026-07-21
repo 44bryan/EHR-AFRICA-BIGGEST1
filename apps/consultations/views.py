@@ -1354,8 +1354,10 @@ def triage_workstation_view(request):
         show_mode = tier_filter  # 'STANDARD', 'EXPRESS', 'VIP', or 'ALL'
     elif assigned_counter:
         tiers = assigned_counter.get_serves_tiers()
-        if 'VIP' in tiers or 'EXPRESS' in tiers or 'FAST_TRACK' in tiers:
-            show_mode = 'VIP'   # shows the PARAMS_VIP queue
+        if 'VIP' in tiers:
+            show_mode = 'VIP'        # VIP counter → VIP patients only
+        elif 'EXPRESS' in tiers or 'FAST_TRACK' in tiers:
+            show_mode = 'EXPRESS'    # Express/Fast Track counter → Express+FT patients only
         else:
             show_mode = 'STANDARD'
     elif _nurse_pt == 'VIP':
