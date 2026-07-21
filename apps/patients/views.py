@@ -1211,6 +1211,15 @@ def triage_view(request, visit_number):
                         or request.user.is_ceo or getattr(request.user, 'role', '') == 'nurse_director'
                         or getattr(request.user, 'patient_tier', 'ALL') == 'ALL'
                     )
+                    # ALL-tier rooms accept any patient tier — skip enforcement for them
+                    _allowed = _TIER_ALLOWED_ROOMS.get(visit.service_tier, ['STANDARD'])
+                    if not _nurse_is_supervisor and room_obj.room_tier not in _allowed and room_obj.room_tier != 'ALL':
+                        messages.error(
+                            request,
+                            f'Cannot dispatch {visit.get_service_tier_display()} patient to a '
+                            f'{room_obj.room_tier} room. Choose a matching room or an All-Tiers room.'
+                        )
+                        return redirect('patients:triage', visit_number=visit.visit_number)
                     visit.consultation_room = room_obj
                     # Auto-assign doctor from room if none was explicitly picked
                     if not _assigned_doctor and room_obj.assigned_doctor:
