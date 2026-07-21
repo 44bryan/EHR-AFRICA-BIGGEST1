@@ -170,6 +170,81 @@ def room_manage(request, dept_id):
 
 
 @login_required
+def room_list_all(request):
+    """
+    Unified view — all consultation rooms across every department on one page.
+    Allows admin/medical director to see, assign, and tier-set all rooms without
+    navigating department-by-department.
+    """
+    if not _can_manage_departments(request.user):
+        return HttpResponseForbidden()
+
+    departments = Department.objects.prefetch_related(
+        'rooms', 'rooms__assigned_doctor'
+    ).order_by('name')
+    doctors = _doctor_choices()
+    from .models import RoomTier
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        dept_id = request.POST.get('dept_id', '')
+
+        if action == 'assign':
+            room_id = request.POST.get('room_id')
+            doctor_id = request.POST.get('doctor_id', '')
+            new_tier = request.POST.get('room_tier', '').strip()
+            room = get_object_or_404(ConsultationRoom, pk=room_id)
+            if not _can_manage_departments(request.user):
+                return HttpResponseForbidden()
+            room.assigned_doctor = User.objects.get(pk=doctor_id) if doctor_id else None
+            if new_tier in dict(RoomTier.choices):
+                room.room_tier = new_tier
+            room.save(update_fields=['assigned_doctor', 'room_tier'])
+            messages.success(request, f'{room.display_label} updated.')
+
+        elif action == 'toggle':
+            room_id = request.POST.get('room_id')
+            room = get_object_or_404(ConsultationRoom, pk=room_id)
+            room.is_active = not room.is_active
+            room.save(update_fields=['is_active'])
+            messages.success(request, f'Room {room.room_number} {"activated" if room.is_active else "deactivated"}.')
+
+        elif action == 'delete':
+            room_id = request.POST.get('room_id')
+            room = get_object_or_404(ConsultationRoom, pk=room_id)
+            label = room.room_number
+            room.delete()
+            messages.success(request, f'Room {label} removed.')
+
+        elif action == 'bulk_add':
+            dept = get_object_or_404(Department, pk=dept_id)
+            raw = request.POST.get('room_numbers', '')
+            numbers = [n.strip() for n in raw.replace(';', ',').split(',') if n.strip()]
+            if not numbers:
+                messages.error(request, 'Enter at least one room number.')
+            else:
+                added, existed = [], []
+                for rn in numbers:
+                    _, created = ConsultationRoom.objects.get_or_create(
+                        department=dept, room_number=rn,
+                        defaults={'label': f'Room {rn}'},
+                    )
+                    (added if created else existed).append(rn)
+                if added:
+                    messages.success(request, f'Added {len(added)} room(s) to {dept.name}: {", ".join(added)}.')
+                if existed:
+                    messages.info(request, f'{len(existed)} already existed: {", ".join(existed)}.')
+
+        return redirect('departments:room_list_all')
+
+    return render(request, 'departments/room_list_all.html', {
+        'departments': departments,
+        'doctors': doctors,
+        'room_tiers': RoomTier.choices,
+    })
+
+
+@login_required
 def room_ajax(request, dept_id):
     """
     AJAX endpoint — returns active rooms for a department as JSON.

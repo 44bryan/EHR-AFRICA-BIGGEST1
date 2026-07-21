@@ -397,4 +397,63 @@
   };
 })();
 </script>
+
+<!-- Info-tip auto-collapse: static .alert-info boxes hidden until clicked -->
+<script>
+(function () {
+  'use strict';
+  function collapseInfoTips(root) {
+    var tips = (root || document).querySelectorAll(
+      '.alert.alert-info:not(.alert-dismissible):not([data-tip-init])'
+    );
+    tips.forEach(function (el) {
+      el.setAttribute('data-tip-init', '1');
+      var savedInner = el.innerHTML;
+      var savedClass = el.className;
+      var savedStyle = el.getAttribute('style') || '';
+
+      // Strip all visual styling — container becomes invisible wrapper
+      el.removeAttribute('class');
+      el.removeAttribute('style');
+
+      // Pill toggle button
+      var pill = document.createElement('button');
+      pill.type = 'button';
+      pill.style.cssText = [
+        'display:inline-flex;align-items:center;gap:5px;',
+        'background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;',
+        'font-size:.72rem;padding:3px 10px;border-radius:99px;cursor:pointer;outline:none;',
+        'font-family:inherit;'
+      ].join('');
+      pill.innerHTML = '<i class="bi bi-info-circle"></i><span>Info / Tip</span>'
+                     + '<i class="bi bi-chevron-down" style="font-size:.6rem;"></i>';
+
+      // Full content panel
+      var body = document.createElement('div');
+      body.className = savedClass;
+      if (savedStyle) body.setAttribute('style', savedStyle);
+      body.innerHTML = savedInner;
+      body.style.display = 'none';
+      body.style.marginTop = '6px';
+
+      el.appendChild(pill);
+      el.appendChild(body);
+
+      pill.addEventListener('click', function () {
+        var open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        var chev = pill.querySelector('.bi-chevron-down,.bi-chevron-up');
+        if (chev) {
+          chev.className = open
+            ? chev.className.replace('bi-chevron-up',   'bi-chevron-down')
+            : chev.className.replace('bi-chevron-down', 'bi-chevron-up');
+        }
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () { collapseInfoTips(document); });
+  document.addEventListener('htmx:afterSettle',  function () { collapseInfoTips(document); });
+})();
+</script>
 {% endblock %}

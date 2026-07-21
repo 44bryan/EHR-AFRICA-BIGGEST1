@@ -1,0 +1,221 @@
+{% extends "layouts/base_authenticated.html" %}
+
+{% block title %}Consultation Rooms{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-door-open text-primary fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">Consultation Rooms</h5>
+    <div class="text-muted small">Assign doctors and tiers to all consultation rooms</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if messages %}
+  {% for msg in messages %}
+  <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show py-2 mb-3" role="alert">
+    {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+{% endif %}
+
+<div class="alert alert-info py-2 small mb-3 d-flex align-items-start gap-2">
+  <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+  <div>
+    <strong>Daily workflow:</strong> Each morning, set the doctor assigned to each room and confirm its tier.
+    The triage nurse will see <em>"Room 2 — Dr. Mbarga [VIP]"</em> when dispatching patients.
+    Tier controls which QMS queue is created:
+    <span class="badge bg-secondary ms-1">Standard</span> → General queue &nbsp;
+    <span class="badge bg-warning text-dark">Express / Fast Track</span> → Express queue &nbsp;
+    <span class="badge text-white ms-1" style="background:#7c3aed;">VIP</span> → VIP Consult queue
+  </div>
+</div>
+
+{% for dept in departments %}
+{% with dept_rooms=dept.rooms.all %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+    <div class="d-flex align-items-center gap-2">
+      <span class="rounded-2 d-flex align-items-center justify-content-center"
+            style="width:30px;height:30px;background:{{ dept.color_code }}22;">
+        <i class="{{ dept.icon }}" style="color:{{ dept.color_code }};font-size:.9rem;"></i>
+      </span>
+      <span class="fw-semibold small">{{ dept.name }}</span>
+      <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:.65rem;">
+        {{ dept_rooms|length }} room{{ dept_rooms|length|pluralize }}
+      </span>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" style="font-size:.72rem;"
+            type="button" data-bs-toggle="collapse"
+            data-bs-target="#addRoom{{ dept.pk|slugify }}">
+      <i class="bi bi-plus-lg me-1"></i>Add Rooms
+    </button>
+  </div>
+
+  {# Collapse: add rooms to this dept #}
+  <div class="collapse" id="addRoom{{ dept.pk|slugify }}">
+    <div class="card-body border-bottom py-2 bg-light">
+      <form method="post" class="d-flex align-items-end gap-2 flex-wrap">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="bulk_add">
+        <input type="hidden" name="dept_id" value="{{ dept.pk }}">
+        <div>
+          <label class="form-label small mb-1 fw-semibold">Room numbers (comma-separated)</label>
+          <input type="text" name="room_numbers" class="form-control form-control-sm"
+                 placeholder="e.g. 1,2,3 or A1,B2" style="width:220px;" required>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success">
+          <i class="bi bi-plus-lg me-1"></i>Add
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {% if dept_rooms %}
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size:.82rem;">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3" style="width:80px;">Room</th>
+            <th style="width:220px;">Doctor Assignment</th>
+            <th style="width:145px;">Tier</th>
+            <th style="width:80px;">Status</th>
+            <th class="text-end pe-3" style="width:90px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for room in dept_rooms %}
+          <tr>
+            <td class="ps-3">
+              <span class="badge fs-6 px-3
+                {% if room.room_tier == 'VIP' %}text-white
+                {% elif room.room_tier == 'EXPRESS' or room.room_tier == 'FAST_TRACK' %}bg-warning text-dark
+                {% else %}bg-primary{% endif %}"
+                {% if room.room_tier == 'VIP' %}style="background:#7c3aed;"{% endif %}>
+                {{ room.room_number }}
+              </span>
+            </td>
+            <td>
+              <form method="post" class="d-flex align-items-center gap-2" id="form-room-{{ room.pk|slugify }}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="assign">
+                <input type="hidden" name="room_id" value="{{ room.pk }}">
+                <select name="doctor_id" class="form-select form-select-sm" style="max-width:195px;">
+                  <option value="">— Unassigned —</option>
+                  {% for doc in doctors %}
+                  <option value="{{ doc.pk }}" {% if room.assigned_doctor and room.assigned_doctor.pk == doc.pk %}selected{% endif %}>
+                    Dr. {{ doc.last_name }} {{ doc.first_name|slice:":1" }}. ({{ doc.get_role_display|truncatechars:14 }})
+                  </option>
+                  {% endfor %}
+                </select>
+              </form>
+            </td>
+            <td>
+              <form method="post" class="d-flex align-items-center gap-2" id="form-tier-{{ room.pk|slugify }}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="assign">
+                <input type="hidden" name="room_id" value="{{ room.pk }}">
+                {# carry doctor selection across both forms via JS — handled by combined submit button below #}
+                <select name="room_tier" class="form-select form-select-sm" style="max-width:130px;"
+                        data-room="{{ room.pk|slugify }}">
+                  <option value="STANDARD" {% if room.room_tier == 'STANDARD' %}selected{% endif %}>Standard</option>
+                  <option value="EXPRESS"  {% if room.room_tier == 'EXPRESS'  %}selected{% endif %}>Express</option>
+                  <option value="FAST_TRACK" {% if room.room_tier == 'FAST_TRACK' %}selected{% endif %}>Fast Track</option>
+                  <option value="VIP"      {% if room.room_tier == 'VIP'      %}selected{% endif %}>VIP</option>
+                </select>
+              </form>
+            </td>
+            <td>
+              {% if room.is_active %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle">Active</span>
+              {% else %}
+              <span class="badge bg-secondary-subtle text-secondary border">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end pe-3">
+              <div class="d-flex justify-content-end gap-1">
+                {# Save (doctor + tier combined) #}
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                        title="Save doctor & tier"
+                        onclick="saveRoom('{{ room.pk|slugify }}')">
+                  <i class="bi bi-check-lg"></i>
+                </button>
+                {# Toggle active #}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="toggle">
+                  <input type="hidden" name="room_id" value="{{ room.pk }}">
+                  <button type="submit" class="btn btn-sm {% if room.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+                          title="{% if room.is_active %}Deactivate{% else %}Activate{% endif %}">
+                    <i class="bi {% if room.is_active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+                  </button>
+                </form>
+                {# Delete #}
+                <form method="post" class="d-inline"
+                      onsubmit="return confirm('Remove Room {{ room.room_number }}?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="room_id" value="{{ room.pk }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove room">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card-body text-center text-muted py-3 small">
+    <i class="bi bi-door-closed me-2"></i>No rooms configured yet.
+    <button class="btn btn-sm btn-link p-0 ms-1" type="button"
+            data-bs-toggle="collapse" data-bs-target="#addRoom{{ dept.pk|slugify }}">
+      Add rooms
+    </button>
+  </div>
+  {% endif %}
+</div>
+{% endwith %}
+{% empty %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-building display-4 d-block mb-2 opacity-25"></i>
+  No departments found.
+</div>
+{% endfor %}
+
+<script>
+function saveRoom(slug) {
+  // Pick up doctor selection from the doctor form
+  const doctorForm  = document.getElementById('form-room-' + slug);
+  const tierForm    = document.getElementById('form-tier-' + slug);
+  const doctorId    = doctorForm.querySelector('select[name="doctor_id"]').value;
+  const roomTier    = tierForm.querySelector('select[name="room_tier"]').value;
+  const roomId      = doctorForm.querySelector('input[name="room_id"]').value;
+
+  // Build a combined POST form and submit it
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '';
+  const fields = {
+    csrfmiddlewaretoken: '{{ csrf_token }}',
+    action: 'assign',
+    room_id: roomId,
+    doctor_id: doctorId,
+    room_tier: roomTier,
+  };
+  for (const [k, v] of Object.entries(fields)) {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = k; inp.value = v;
+    form.appendChild(inp);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
+{% endblock %}
