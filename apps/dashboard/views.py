@@ -630,15 +630,19 @@ def home_view(request):
         waiting = _waiting_qs
 
         # Patients dispatched to doctor (post-triage, waiting for consultation)
-        dispatched_today = Visit.objects.select_related(
-            'patient', 'department'
-        ).filter(
+        _dispatched_qs = Visit.objects.filter(
             visit_date__date=today,
             status=VisitStatus.WAITING,
-        ).count()
+        )
+        if _nurse_tier != 'ALL':
+            _dispatched_qs = _dispatched_qs.filter(
+                service_tier__in=_NURSE_TIER_COMPAT.get(_nurse_tier, [])
+            )
+        dispatched_today = _dispatched_qs.count()
 
         # Full today's patient flow (all statuses) for the queue overview
         # Exclude phantom visits (REGISTERED, no triage nurse, empty vitals)
+        # Tier-filtered: each nurse only sees their own tier's full flow
         all_today = Visit.objects.select_related(
             'patient', 'department', 'attending_doctor'
         ).filter(
@@ -647,6 +651,10 @@ def home_view(request):
         ).exclude(
             status='REGISTERED', triage_nurse__isnull=True, vital_signs={}
         ).order_by('visit_date')
+        if _nurse_tier != 'ALL':
+            all_today = all_today.filter(
+                service_tier__in=_NURSE_TIER_COMPAT.get(_nurse_tier, [])
+            )
 
         completed_today = all_today.filter(status=VisitStatus.COMPLETED).count()
 
@@ -951,67 +959,46 @@ def home_view(request):
     if user.role == 'cashier':
         from apps.billing.models import Invoice, InvoiceStatus, Payment
 
-        # First-time login: redirect to desk selection if no station chosen yet
-        from apps.accounts.models import CashierStation
-        _station_val = getattr(user, 'cashier_station', None)
-        if not _station_val:
-            return redirect('dashboard:cashier_select_desk')
+        # Fetch active desk session FIRST — its tier drives the queue filter
+        from apps.billing.models import CashierShift, CashierSession, SessionStatus
+        my_shift = CashierShift.objects.filter(
+            cashier=user, shift_date=today, is_deleted=False
+        ).first()
+        my_session = CashierSession.objects.filter(
+            cashier=user, status=SessionStatus.OPEN,
+            opened_at__date=today, is_deleted=False,
+        ).select_related('cash_desk').first()
 
+        # Determine the tier to filter by (only when session is at a TIER desk with a tier set)
+        _desk_tier = None
+        if my_session and my_session.cash_desk.desk_type == 'TIER' and my_session.cash_desk.tier:
+            _desk_tier = my_session.cash_desk.tier
+
+        # Build cashier queue — filtered by desk tier when session is open
         if _qms_active():
-            from apps.qms.models import ServiceCounter, QueueToken, TokenStatus
-            counter = ServiceCounter.objects.filter(
-                staff_assigned=user, is_active=True
-            ).first()
-
-        # No counter assigned or QMS disabled — show cashier workstation filtered by station
-        try:
-            if _qms_active():
-                from apps.qms.models import QueueToken, TokenStatus
-                from apps.accounts.models import CashierStation
-                station = getattr(user, 'cashier_station', CashierStation.ALL)
-                _tier_map = {
-                    CashierStation.STANDARD:   ['STANDARD'],
-                    CashierStation.FAST_TRACK: ['EXPRESS', 'FAST_TRACK'],
-                    CashierStation.VIP:        ['VIP'],
-                }
-                qs = QueueToken.objects.select_related('patient').filter(
-                    service_type='CASHIER',
-                    status=TokenStatus.WAITING,
-                    token_date=today,
-                    is_deleted=False,
-                )
-                if station in _tier_map:
-                    qs = qs.filter(service_tier__in=_tier_map[station])
-                elif station == CashierStation.INSURED:
-                    qs = qs.filter(is_insured=True)
-                cashier_queue = list(qs.order_by('-priority', 'issued_at')[:20])
-            else:
-                cashier_queue = []
-        except Exception:
+            from apps.qms.models import QueueToken, TokenStatus
+            _cq = QueueToken.objects.select_related('patient').filter(
+                service_type='CASHIER',
+                status=TokenStatus.WAITING,
+                token_date=today,
+                is_deleted=False,
+            )
+            if _desk_tier:
+                _cq = _cq.filter(service_tier=_desk_tier)
+            cashier_queue = list(_cq.order_by('-priority', 'issued_at')[:20])
+        else:
             cashier_queue = []
 
-        # Without QMS: show visits with AT_CASHIER status filtered by cashier's station/tier
+        # Without QMS: visits with AT_CASHIER status, filtered by desk tier when session is open
         from apps.patients.models import Visit
-        from apps.accounts.models import CashierStation as _CS
         pending_payment_visits = []
         if not _qms_active():
-            _pv_qs = Visit.objects.filter(
-                visit_date__date=today,
-                status='AT_CASHIER',
-                is_deleted=False,
+            _pv = Visit.objects.filter(
+                visit_date__date=today, status='AT_CASHIER', is_deleted=False,
             ).select_related('patient').order_by('visit_date')
-            _station = getattr(user, 'cashier_station', _CS.ALL)
-            _tier_map_visits = {
-                _CS.STANDARD:   ['STANDARD'],
-                _CS.FAST_TRACK: ['EXPRESS', 'FAST_TRACK'],
-                _CS.VIP:        ['VIP'],
-            }
-            if _station in _tier_map_visits:
-                _pv_qs = _pv_qs.filter(service_tier__in=_tier_map_visits[_station])
-            elif _station == _CS.INSURED:
-                _pv_qs = _pv_qs.filter(billing_type__in=['HMO', 'INSURANCE'])
-            # _CS.ALL → no filter, show everything
-            pending_payment_visits = list(_pv_qs)
+            if _desk_tier:
+                _pv = _pv.filter(service_tier=_desk_tier)
+            pending_payment_visits = list(_pv)
 
         # Only this cashier's own collections today — 0 if no shift open yet
         revenue_today = Payment.objects.filter(
@@ -1037,18 +1024,6 @@ def home_view(request):
         invoices_today = _invoices_today_qs.count()
         invoices_today_list = list(_invoices_today_qs)
 
-        # My shift today — shows cashier their own running balance
-        from apps.billing.models import CashierShift, CashierSession, SessionStatus
-        my_shift = CashierShift.objects.filter(
-            cashier=user, shift_date=today, is_deleted=False
-        ).first()
-
-        # My active desk session today
-        my_session = CashierSession.objects.filter(
-            cashier=user, status=SessionStatus.OPEN,
-            opened_at__date=today, is_deleted=False,
-        ).select_related('cash_desk').first()
-
         ctx.update({
             'cashier_queue': cashier_queue,
             'pending_payment_visits': pending_payment_visits,
@@ -1059,7 +1034,7 @@ def home_view(request):
             'unpaid_count': unpaid_count,
             'invoices_today': invoices_today,
             'invoices_today_list': invoices_today_list,
-            'cashier_station_label': user.get_cashier_station_display() if hasattr(user, 'get_cashier_station_display') else 'All',
+            'cashier_station_label': my_session.cash_desk.name if my_session else 'All Counters',
         })
         return render(request, 'dashboard/cashier.html', ctx)
 
