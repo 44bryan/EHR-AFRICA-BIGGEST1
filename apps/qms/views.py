@@ -1826,16 +1826,8 @@ def counter_assign_view(request):
         'staff_assigned'
     ).order_by('service_type', 'name')
 
-    # Staff roles that get assigned to counters
-    _ASSIGNABLE_ROLES = [
-        'receptionist', 'cashier', 'billing_officer', 'chief_cashier',
-        'nurse', 'consultation_nurse', 'theatre_nurse', 'ward_nurse',
-        'nurse_director', 'pharmacist', 'optical_dispenser',
-        'investigation_technician', 'lab_technician',
-    ]
-    staff_users = User.objects.filter(
-        is_active=True, role__in=_ASSIGNABLE_ROLES
-    ).order_by('role', 'last_name')
+    # All active staff can be assigned to counters (doctors, nurses, refractionists, etc.)
+    staff_users = User.objects.filter(is_active=True).order_by('role', 'last_name')
 
     return render(request, 'qms/counter_assign.html', {
         'counters': counters,
