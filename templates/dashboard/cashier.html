@@ -10,11 +10,13 @@
   </div>
   <div class="d-flex align-items-center gap-2">
     <span class="badge bg-primary bg-opacity-10 text-primary fw-semibold border border-primary">
-      <i class="bi bi-cash-coin me-1"></i>Desk: {{ cashier_station_label|default:"All" }}
+      <i class="bi bi-cash-coin me-1"></i>{{ cashier_station_label|default:"All Counters" }}
     </span>
-    <a href="{% url 'dashboard:cashier_select_desk' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-arrow-left-right me-1"></i>Change Desk
+    {% if not my_session %}
+    <a href="{% url 'billing:session_open' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-play-circle me-1"></i>Open Session
     </a>
+    {% endif %}
   </div>
 </div>
 
@@ -43,18 +45,36 @@
     <a href="{% url 'billing:session_detail' session_id=my_session.pk %}" class="btn btn-sm btn-outline-success">
       <i class="bi bi-receipt-cutoff me-1"></i>Z-Report
     </a>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#closeSessionModal">
+      <i class="bi bi-door-open me-1"></i>Switch Desk
+    </button>
   </div>
 </div>
-{% else %}
-<div class="alert border-0 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3"
-     style="background:#fff7ed;border-left:4px solid #f97316 !important;border-radius:8px;">
-  <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-exclamation-circle-fill text-warning"></i>
-    <span class="text-muted small">No desk session open today. Open a session to enable desk-scoped billing and Z-reports.</span>
+
+{# ── Switch Desk modal (close current session then open new one) ── #}
+<div class="modal fade" id="closeSessionModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title fw-bold">Switch to Another Desk?</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-2">
+        <p class="small text-muted mb-1">
+          This will <strong>close your current session</strong> at
+          <strong>{{ my_session.cash_desk.name }}</strong>
+          and let you open a new one at a different counter (e.g. VIP desk).
+        </p>
+        <p class="small text-muted mb-0">You will be taken to the Z-report first — count your cash and confirm closing.</p>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <a href="{% url 'billing:session_detail' session_id=my_session.pk %}" class="btn btn-sm btn-primary">
+          <i class="bi bi-receipt-cutoff me-1"></i>Go to Z-Report & Close
+        </a>
+      </div>
+    </div>
   </div>
-  <a href="{% url 'billing:session_open' %}" class="btn btn-sm btn-warning fw-semibold">
-    <i class="bi bi-play-circle me-1"></i>Open Session
-  </a>
 </div>
 {% endif %}
 
@@ -231,12 +251,13 @@
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Invoice No.</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
+        <tr><th>Invoice No.</th><th>Time</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
       </thead>
       <tbody>
         {% for inv in invoices_today_list %}
         <tr>
           <td><code>{{ inv.invoice_number }}</code></td>
+          <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">{{ inv.created_at|date:"H:i" }}</td>
           <td class="fw-semibold">{{ inv.patient.full_name }}</td>
           <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
           <td class="{% if inv.balance_due > 0 %}text-primary fw-semibold{% else %}text-success{% endif %}">
@@ -254,7 +275,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center text-muted py-4">No invoices issued yet today.</td></tr>
+        <tr><td colspan="7" class="text-center text-muted py-4">No invoices issued yet today.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -270,12 +291,13 @@
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Invoice No.</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
+        <tr><th>Invoice No.</th><th>Time</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
       </thead>
       <tbody>
         {% for inv in unpaid_invoices %}
         <tr>
           <td><code>{{ inv.invoice_number }}</code></td>
+          <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">{{ inv.created_at|date:"H:i" }}</td>
           <td class="fw-semibold">{{ inv.patient.full_name }}</td>
           <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
           <td class="text-primary fw-semibold">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
@@ -291,7 +313,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center text-muted py-4">No unpaid invoices.</td></tr>
+        <tr><td colspan="7" class="text-center text-muted py-4">No unpaid invoices.</td></tr>
         {% endfor %}
       </tbody>
     </table>
