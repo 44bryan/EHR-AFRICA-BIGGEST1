@@ -1203,6 +1203,9 @@ def pos_finalize(request, token_id):
                 notes='Auto-routed after POS payment confirmation',
             )
 
+    # Open 15-day consultation window if invoice has a CONSULT or REG item
+    _try_open_consultation_window(invoice)
+
     from django.urls import reverse
     redirect_url = reverse('billing:receipt', kwargs={'invoice_id': str(invoice.id)})
     return JsonResponse({'success': True, 'redirect_url': redirect_url})
@@ -1237,6 +1240,23 @@ def patient_pos(request, patient_id):
             created_at__date=timezone.localdate(),
         ).order_by('created_at')
     )
+    today = timezone.localdate()
+    shift_totals = Payment.objects.filter(
+        received_by=request.user,
+        payment_date__date=today,
+        is_deleted=False,
+    ).aggregate(
+        total=Sum('amount'),
+        cash=Sum('amount', filter=Q(payment_method=PaymentMethod.CASH)),
+        mobile=Sum('amount', filter=Q(payment_method=PaymentMethod.MOBILE_MONEY)),
+    )
+    # Tier from today's visit or most recent visit
+    from apps.patients.models import Visit as _Visit
+    _today_visit = (
+        _Visit.objects.filter(patient=patient, is_deleted=False)
+        .order_by('-visit_date').first()
+    )
+    patient_tier = _today_visit.service_tier if _today_visit else 'STANDARD'
     return render(request, 'billing/cashier_pos.html', {
         'token': None,
         'patient': patient,
@@ -1246,12 +1266,16 @@ def patient_pos(request, patient_id):
         'categories': ServiceCategory.choices,
         'payment_methods': PaymentMethod.choices,
         'service_catalog': _get_service_catalog(cashier_station=getattr(request.user, 'cashier_station', 'ALL')),
-        'today': timezone.localdate(),
+        'today': today,
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
         'active_insurance': active_insurance,
         'doctor_orders': doctor_orders,
         'receipt_url': f"/billing/receipt/{invoice.id}/" if invoice else '',
+        'shift_total': shift_totals['total'] or 0,
+        'shift_cash': shift_totals['cash'] or 0,
+        'shift_mobile': shift_totals['mobile'] or 0,
+        'patient_tier': patient_tier,
     })
 
 
@@ -1278,6 +1302,7 @@ def patient_finalize(request, patient_id):
             'error': f'Balance of {int(invoice.balance_due)} FCFA still outstanding.'
         }, status=400)
 
+    _try_open_consultation_window(invoice)
     _route_patient_after_payment(invoice, request)
 
     redirect_url = reverse('billing:receipt', kwargs={'invoice_id': str(invoice.id)})

@@ -164,9 +164,18 @@ class Invoice(AuditModel):
 
     def save(self, *args, **kwargs):
         if not self.invoice_number:
+            from django.db import IntegrityError, transaction as _tx
             year = timezone.now().year
-            count = Invoice.objects.filter(created_at__year=year).count() + 1
-            self.invoice_number = f"INV-{year}-{count:05d}"
+            for _retry in range(20):
+                count = Invoice.objects.filter(created_at__year=year).count() + 1 + _retry
+                self.invoice_number = f"INV-{year}-{count:05d}"
+                try:
+                    with _tx.atomic():
+                        super().save(*args, **kwargs)
+                    return
+                except IntegrityError:
+                    self.invoice_number = ''
+            raise RuntimeError('Unable to generate unique invoice number after 20 retries')
         super().save(*args, **kwargs)
 
     @property
@@ -256,10 +265,21 @@ class Payment(AuditModel):
 
     def save(self, *args, **kwargs):
         if not self.receipt_number:
+            from django.db import IntegrityError, transaction as _tx
             year = timezone.now().year
-            count = Payment.objects.filter(created_at__year=year).count() + 1
-            self.receipt_number = f"RCT-{year}-{count:05d}"
-        super().save(*args, **kwargs)
+            for _retry in range(20):
+                count = Payment.objects.filter(created_at__year=year).count() + 1 + _retry
+                self.receipt_number = f"RCT-{year}-{count:05d}"
+                try:
+                    with _tx.atomic():
+                        super().save(*args, **kwargs)
+                    break
+                except IntegrityError:
+                    self.receipt_number = ''
+            else:
+                raise RuntimeError('Unable to generate unique receipt number after 20 retries')
+        else:
+            super().save(*args, **kwargs)
         self.invoice.update_status()
         # Auto-create department work orders when invoice is fully paid
         try:
