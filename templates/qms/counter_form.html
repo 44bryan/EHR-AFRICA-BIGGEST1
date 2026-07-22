@@ -1,0 +1,138 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+
+{% block title %}{{ form_title }} — GLUDD EHR{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-7 col-xl-6">
+
+      <!-- Header -->
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+          <h2 class="fw-bold mb-0">
+            <i class="bi bi-grid-3x3-gap me-2 text-primary"></i>{{ form_title }}
+          </h2>
+        </div>
+        <a href="{% url 'qms:counter_manage' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back to Counters
+        </a>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+      {% endif %}
+
+      <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+          <form method="post">
+            {% csrf_token %}
+
+            <!-- Counter Name -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Counter Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control"
+                     placeholder="e.g. Room 1 — Standard Consultation"
+                     value="{{ counter.name|default:'' }}" required>
+              <div class="form-text">Include the room number in the name for easy identification.</div>
+            </div>
+
+            <!-- Code -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Counter Code <span class="text-danger">*</span></label>
+              <input type="text" name="code" class="form-control text-uppercase"
+                     placeholder="e.g. GEN-R1, VIP-C1, CASH-01"
+                     value="{{ counter.code|default:'' }}"
+                     maxlength="20" required
+                     oninput="this.value=this.value.toUpperCase()">
+              <div class="form-text">Unique short code (max 20 chars). Automatically uppercased.</div>
+            </div>
+
+            <!-- Service Type -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Service Type <span class="text-danger">*</span></label>
+              <select name="service_type" class="form-select" required>
+                <option value="">— Select service type —</option>
+                {% for val, label in service_type_choices %}
+                <option value="{{ val }}"
+                  {% if counter and counter.service_type == val %}selected{% endif %}>
+                  {{ label }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">The department or station this counter belongs to.</div>
+            </div>
+
+            <!-- Tiers Served -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Tiers Served</label>
+              <div class="d-flex gap-3 flex-wrap pt-1">
+                {% for val, label in tier_choices %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox"
+                         name="serves_tiers" value="{{ val }}"
+                         id="tier_{{ val }}"
+                         {% if selected_tiers and val in selected_tiers %}checked{% endif %}>
+                  <label class="form-check-label" for="tier_{{ val }}">
+                    {% if val == 'VIP' %}
+                      <span class="badge fw-bold" style="background:#7c3aed;">VIP</span>
+                    {% elif val == 'EXPRESS' %}
+                      <span class="badge bg-info text-dark">Express</span>
+                    {% elif val == 'FAST_TRACK' %}
+                      <span class="badge bg-warning text-dark">Fast Track</span>
+                    {% else %}
+                      <span class="badge bg-secondary">Standard</span>
+                    {% endif %}
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+              <div class="form-text">Leave all unchecked to serve <strong>all tiers</strong>.</div>
+            </div>
+
+            <!-- Assign Staff -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Assign Staff</label>
+              <select name="staff_id" class="form-select">
+                <option value="">— No assignment —</option>
+                {% for staff in staff_users %}
+                <option value="{{ staff.id }}"
+                  {% if counter and counter.staff_assigned and counter.staff_assigned.id == staff.id %}selected{% endif %}>
+                  {{ staff.get_full_name|default:staff.username }}
+                  ({{ staff.get_role_display|default:staff.role }})
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Staff will land on this counter automatically via <em>My Counter</em>.</div>
+            </div>
+
+            <!-- Active toggle -->
+            <div class="mb-4">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_active" value="1"
+                       id="isActive"
+                       {% if not counter or counter.is_active %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="isActive">Counter is Active</label>
+              </div>
+              <div class="form-text">Inactive counters are hidden from the queue system.</div>
+            </div>
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-1"></i>
+                {% if counter %}Save Changes{% else %}Create Counter{% endif %}
+              </button>
+              <a href="{% url 'qms:counter_manage' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -37,6 +37,13 @@ urlpatterns = [
     # Counter assignment (admin only)
     path('counter-assign/', views.counter_assign_view, name='counter_assign'),
 
+    # Counter management CRUD (admin only)
+    path('counters/', views.counter_manage_view, name='counter_manage'),
+    path('counters/new/', views.counter_create_view, name='counter_create'),
+    path('counters/<uuid:counter_id>/edit/', views.counter_edit_view, name='counter_edit'),
+    path('counters/<uuid:counter_id>/toggle/', views.counter_toggle_view, name='counter_toggle'),
+    path('counters/<uuid:counter_id>/delete/', views.counter_delete_view, name='counter_delete'),
+
     # Counter staff
     path('counter/<uuid:counter_id>/', views.counter_view, name='counter'),
     path('counter/<uuid:counter_id>/call-next/', views.call_next, name='call_next'),

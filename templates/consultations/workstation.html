@@ -27,7 +27,7 @@
       &bull; {{ today|date:"d M Y" }}
     </div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
+  <div class="d-flex gap-2 flex-wrap align-items-center">
     <a href="{% url 'consultations:list' %}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-list-ul me-1"></i>Consultations
     </a>
@@ -55,6 +55,43 @@
     </div>
   </div>
 </div>
+
+{# ── Refraction counter / room info ── #}
+{% if is_refrac %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
+    <span class="fw-semibold small text-muted flex-shrink-0">
+      <i class="bi bi-grid-3x3-gap me-1"></i>My Counter:
+    </span>
+    {% if refrac_counter %}
+      <span class="badge bg-primary px-3 py-2" style="font-size:.82rem;letter-spacing:.02em;">
+        <i class="bi bi-door-open me-1"></i>{{ refrac_counter.name }}
+      </span>
+      {% if refrac_counter.serves_tiers %}
+      <span class="ms-1">
+        {% for tier in refrac_counter.get_serves_tiers %}
+          {% if tier == 'VIP' %}<span class="badge fw-bold" style="background:#7c3aed;">VIP</span>
+          {% elif tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
+          {% elif tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
+          {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+        {% endfor %}
+      </span>
+      {% else %}
+      <span class="badge bg-light text-dark border" style="font-size:.75rem;">All Tiers</span>
+      {% endif %}
+      <span class="text-muted small">
+        <i class="bi bi-check-circle-fill text-success me-1"></i>
+        Queue is filtered to your counter's tier.
+      </span>
+    {% else %}
+      <span class="text-warning small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        No counter assigned — contact administrator. Showing all refraction patients.
+      </span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 {# ── My Room (read-only — set by administrator via Consultation Rooms) ── #}
 {% if dept_rooms %}
@@ -177,11 +214,11 @@
                 <td>
                   {% if tok.patient %}
                     {% if tok.ws_visit %}
-                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success">
+                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success" hx-boost="false">
                         <i class="bi bi-person-lines-fill me-1"></i>Open Visit
                       </a>
                     {% else %}
-                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success">
+                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success" hx-boost="false">
                         <i class="bi bi-person-plus me-1"></i>See Patient
                       </a>
                     {% endif %}
@@ -231,7 +268,7 @@
                   {% else %}<span class="badge bg-warning text-dark">Waiting</span>{% endif %}
                 </td>
                 <td>
-                  <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success">
+                  <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success" hx-boost="false">
                     <i class="bi bi-journal-plus me-1"></i>Consult
                   </a>
                 </td>
@@ -298,15 +335,15 @@
             </div>
             <div class="d-flex flex-column gap-1 flex-shrink-0">
               {% if c.results_ready or c.invest_completed %}
-              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-success py-0 px-2" style="font-size:.72rem;">
+              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-success py-0 px-2" style="font-size:.72rem;" hx-boost="false">
                 <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit
               </a>
               {% else %}
-              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-warning py-0 px-2" style="font-size:.72rem;">
+              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-warning py-0 px-2" style="font-size:.72rem;" hx-boost="false">
                 <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit
               </a>
               {% endif %}
-              <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
+              <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;" hx-boost="false">
                 <i class="bi bi-eye me-1"></i>View / Order More
               </a>
             </div>
@@ -329,7 +366,7 @@
       <div class="list-group list-group-flush">
         {% for c in my_consultations %}
         <a href="{% url 'consultations:detail' pk=c.pk %}"
-           class="list-group-item list-group-item-action py-2 px-3">
+           class="list-group-item list-group-item-action py-2 px-3" hx-boost="false">
           <div class="d-flex justify-content-between align-items-start">
             <div>
               <div class="fw-semibold small">{{ c.patient.full_name }}</div>

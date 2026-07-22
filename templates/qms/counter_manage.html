@@ -1,0 +1,170 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+
+{% block title %}Counter Management — GLUDD EHR{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h2 class="fw-bold mb-0">
+        <i class="bi bi-grid-3x3-gap me-2 text-primary"></i>Counter Management
+      </h2>
+      <p class="text-muted mb-0">Create, edit, and organise service counters by room and tier</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'qms:counter_assign' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-person-badge me-1"></i>Assign Staff
+      </a>
+      <a href="{% url 'qms:counter_create' %}" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>New Counter
+      </a>
+      <a href="{% url 'qms:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Back to QMS
+      </a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- Stats row -->
+  <div class="row g-3 mb-4">
+    <div class="col-auto">
+      <div class="card border-0 shadow-sm text-center px-4 py-3">
+        <div class="fs-4 fw-bold text-primary">{{ counters|length }}</div>
+        <div class="small text-muted">Total Counters</div>
+      </div>
+    </div>
+    <div class="col-auto">
+      <div class="card border-0 shadow-sm text-center px-4 py-3">
+        <div class="fs-4 fw-bold text-success">
+          {% with active_count=0 %}
+          {% for c in counters %}{% if c.is_active %}{% with active_count=active_count|add:1 %}{% endwith %}{% endif %}{% endfor %}
+          {% for c in counters %}{% if c.is_active %}{{ forloop.counter }}{% if forloop.last %}{% endif %}{% endif %}{% endfor %}
+          {% endwith %}
+        </div>
+        <div class="small text-muted">Active</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Group counters by service type -->
+  {% regroup counters by get_service_type_display as counters_by_type %}
+
+  {% for type_group in counters_by_type %}
+  <div class="card mb-3 shadow-sm">
+    <div class="card-header bg-white border-bottom d-flex align-items-center py-2">
+      <i class="bi bi-grid-3x3-gap me-2 text-muted"></i>
+      <strong>{{ type_group.grouper }}</strong>
+      <span class="badge bg-secondary ms-2">{{ type_group.list|length }}</span>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:22%">Name / Room</th>
+            <th style="width:10%">Code</th>
+            <th style="width:18%">Tiers Served</th>
+            <th style="width:20%">Assigned Staff</th>
+            <th style="width:10%">Status</th>
+            <th style="width:20%" class="text-end pe-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for counter in type_group.list %}
+          <tr class="{% if not counter.is_active %}table-secondary opacity-60{% endif %}">
+            <td>
+              <div class="fw-semibold">{{ counter.name }}</div>
+            </td>
+            <td>
+              <code class="text-primary">{{ counter.code }}</code>
+            </td>
+            <td>
+              {% if counter.serves_tiers %}
+                {% for tier in counter.get_serves_tiers %}
+                  {% if tier == 'VIP' %}
+                    <span class="badge fw-bold" style="background:#7c3aed;font-size:.75rem;">VIP</span>
+                  {% elif tier == 'EXPRESS' %}
+                    <span class="badge bg-info text-dark" style="font-size:.75rem;">Express</span>
+                  {% elif tier == 'FAST_TRACK' %}
+                    <span class="badge bg-warning text-dark" style="font-size:.75rem;">Fast Track</span>
+                  {% else %}
+                    <span class="badge bg-secondary" style="font-size:.75rem;">Standard</span>
+                  {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="badge bg-light text-dark border" style="font-size:.75rem;">All Tiers</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if counter.staff_assigned %}
+                <div class="fw-semibold small">{{ counter.staff_assigned.get_full_name|default:counter.staff_assigned.username }}</div>
+                <div class="text-muted" style="font-size:.72rem;">{{ counter.staff_assigned.get_role_display|default:counter.staff_assigned.role }}</div>
+              {% else %}
+                <span class="text-muted small fst-italic">Unassigned</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if counter.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end pe-2">
+              <a href="{% url 'qms:counter_edit' counter.id %}" class="btn btn-outline-primary btn-sm me-1">
+                <i class="bi bi-pencil"></i>
+              </a>
+              <form method="post" action="{% url 'qms:counter_toggle' counter.id %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm {% if counter.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %} me-1"
+                        title="{% if counter.is_active %}Deactivate{% else %}Activate{% endif %}">
+                  <i class="bi bi-{% if counter.is_active %}pause{% else %}play{% endif %}-fill"></i>
+                </button>
+              </form>
+              {% if not counter.current_serving %}
+              <form method="post" action="{% url 'qms:counter_delete' counter.id %}" class="d-inline"
+                    onsubmit="return confirm('Delete counter &quot;{{ counter.name }}&quot;? This cannot be undone.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% empty %}
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>No counters found. Click <strong>New Counter</strong> to create the first one, or run <code>python manage.py setup_ehr</code> to seed defaults.
+  </div>
+  {% endfor %}
+
+  <!-- Guide -->
+  <div class="card border-info mt-2">
+    <div class="card-body py-3">
+      <h6 class="text-info mb-2"><i class="bi bi-lightbulb me-1"></i>Tips for organising counters</h6>
+      <ul class="mb-0 small text-muted">
+        <li>Name counters after their <strong>room number</strong> (e.g. "Room 1 — Standard Consultation", "Room 3 — VIP Consultation").</li>
+        <li>Set <strong>Tiers Served</strong> so that only patients of that tier are routed to the counter. Leave blank to serve all tiers.</li>
+        <li>Use <strong>Assign Staff</strong> (or the edit button) to link a staff member to their counter — they will land on it automatically when they click <em>My Counter</em>.</li>
+        <li>Deactivate counters that are temporarily closed instead of deleting them, to preserve history.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

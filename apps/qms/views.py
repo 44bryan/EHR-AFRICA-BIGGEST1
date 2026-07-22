@@ -1834,3 +1834,151 @@ def counter_assign_view(request):
         'staff_users': staff_users,
         'service_type_choices': ServiceType.choices,
     })
+
+
+# ── Counter Management (CRUD) ─────────────────────────────────────────────────
+_COUNTER_MANAGE_ROLES = {'super_admin', 'medical_director', 'admin', 'admin_director', 'ceo'}
+
+
+def _counter_manage_guard(request):
+    if request.user.role not in _COUNTER_MANAGE_ROLES:
+        from django.contrib import messages as _msg
+        _msg.error(request, 'You do not have permission to manage counters.')
+        return redirect('qms:dashboard')
+    return None
+
+
+def counter_manage_view(request):
+    """List all service counters (active + inactive) with create/edit/toggle links."""
+    guard = _counter_manage_guard(request)
+    if guard:
+        return guard
+    counters = ServiceCounter.objects.select_related('staff_assigned').order_by('service_type', 'name')
+    return render(request, 'qms/counter_manage.html', {
+        'counters': counters,
+        'service_types': ServiceType.choices,
+    })
+
+
+def counter_create_view(request):
+    """Create a new ServiceCounter."""
+    from apps.accounts.models import User as _User
+    guard = _counter_manage_guard(request)
+    if guard:
+        return guard
+
+    error = None
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        code = request.POST.get('code', '').strip().upper()
+        service_type = request.POST.get('service_type', '')
+        serves_tiers = ','.join(request.POST.getlist('serves_tiers'))
+        is_active = request.POST.get('is_active') == '1'
+        staff_id = request.POST.get('staff_id') or None
+
+        if not name or not code or not service_type:
+            error = 'Name, Code, and Service Type are required.'
+        elif ServiceCounter.objects.filter(code=code).exists():
+            error = f'A counter with code "{code}" already exists.'
+        else:
+            staff = None
+            if staff_id:
+                staff = get_object_or_404(_User, id=staff_id)
+            ServiceCounter.objects.create(
+                name=name, code=code, service_type=service_type,
+                serves_tiers=serves_tiers, is_active=is_active,
+                staff_assigned=staff,
+            )
+            messages.success(request, f'Counter "{name}" created.')
+            return redirect('qms:counter_manage')
+
+    staff_users = _User.objects.filter(is_active=True).order_by('role', 'last_name')
+    return render(request, 'qms/counter_form.html', {
+        'form_title': 'Create Counter',
+        'service_type_choices': ServiceType.choices,
+        'tier_choices': ServiceTier.choices,
+        'staff_users': staff_users,
+        'counter': None,
+        'error': error,
+    })
+
+
+def counter_edit_view(request, counter_id):
+    """Edit an existing ServiceCounter."""
+    from apps.accounts.models import User as _User
+    guard = _counter_manage_guard(request)
+    if guard:
+        return guard
+
+    counter = get_object_or_404(ServiceCounter, id=counter_id)
+    error = None
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        code = request.POST.get('code', '').strip().upper()
+        service_type = request.POST.get('service_type', '')
+        serves_tiers = ','.join(request.POST.getlist('serves_tiers'))
+        is_active = request.POST.get('is_active') == '1'
+        staff_id = request.POST.get('staff_id') or None
+
+        if not name or not code or not service_type:
+            error = 'Name, Code, and Service Type are required.'
+        elif ServiceCounter.objects.filter(code=code).exclude(id=counter.id).exists():
+            error = f'A counter with code "{code}" already exists.'
+        else:
+            staff = None
+            if staff_id:
+                staff = get_object_or_404(_User, id=staff_id)
+            counter.name = name
+            counter.code = code
+            counter.service_type = service_type
+            counter.serves_tiers = serves_tiers
+            counter.is_active = is_active
+            counter.staff_assigned = staff
+            counter.save(update_fields=['name', 'code', 'service_type', 'serves_tiers',
+                                        'is_active', 'staff_assigned', 'updated_at'])
+            messages.success(request, f'Counter "{name}" updated.')
+            return redirect('qms:counter_manage')
+
+    staff_users = _User.objects.filter(is_active=True).order_by('role', 'last_name')
+    return render(request, 'qms/counter_form.html', {
+        'form_title': f'Edit Counter — {counter.name}',
+        'service_type_choices': ServiceType.choices,
+        'tier_choices': ServiceTier.choices,
+        'staff_users': staff_users,
+        'counter': counter,
+        'selected_tiers': counter.get_serves_tiers() if counter.serves_tiers else [],
+        'error': error,
+    })
+
+
+def counter_toggle_view(request, counter_id):
+    """Toggle is_active on a ServiceCounter (POST only)."""
+    guard = _counter_manage_guard(request)
+    if guard:
+        return guard
+    if request.method != 'POST':
+        return redirect('qms:counter_manage')
+    counter = get_object_or_404(ServiceCounter, id=counter_id)
+    counter.is_active = not counter.is_active
+    counter.save(update_fields=['is_active', 'updated_at'])
+    state = 'activated' if counter.is_active else 'deactivated'
+    messages.success(request, f'Counter "{counter.name}" {state}.')
+    return redirect('qms:counter_manage')
+
+
+def counter_delete_view(request, counter_id):
+    """Delete a ServiceCounter (POST only). Blocked if currently serving a token."""
+    guard = _counter_manage_guard(request)
+    if guard:
+        return guard
+    if request.method != 'POST':
+        return redirect('qms:counter_manage')
+    counter = get_object_or_404(ServiceCounter, id=counter_id)
+    if counter.current_serving_id:
+        messages.error(request, f'Cannot delete "{counter.name}" — it is currently serving a patient.')
+        return redirect('qms:counter_manage')
+    name = counter.name
+    counter.delete()
+    messages.success(request, f'Counter "{name}" deleted.')
+    return redirect('qms:counter_manage')

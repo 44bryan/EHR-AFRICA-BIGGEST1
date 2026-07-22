@@ -1005,7 +1005,8 @@ def workstation_view(request):
     # ── QMS waiting queue for this doctor's speciality ─────────────────────
     waiting_tokens = []
     waiting_visits = []  # used when QMS is OFF
-    queue_filter = request.GET.get('queue', '').upper()  # VIP|GENERAL|ALL|'' (GEN_OPH only)
+    queue_filter = request.GET.get('queue', '').upper()  # VIP|GENERAL|ALL|''
+    _refrac_counter = None  # populated below for REFRAC/PEDS_REFRAC dept
 
     if _qms_active() and dept_code:
         try:
@@ -1046,8 +1047,44 @@ def workstation_view(request):
                     status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                     is_deleted=False,
                 )
-                # Non-doctor staff (refractionist, optometrist, etc.) respect patient_tier
-                if dept_code != 'GEN_OPH':
+                # ── Tier filter per department ────────────────────────────
+                if dept_code == 'GEN_OPH':
+                    pass  # already narrowed above via service_types
+                elif dept_code in ('REFRAC', 'PEDS_REFRAC'):
+                    # Optometrist/Refractionist: auto-filter by assigned counter's tier.
+                    # Priority: (1) assigned ServiceCounter's serves_tiers
+                    #           (2) patient_tier on account
+                    #           (3) show all
+                    _refrac_counter = None
+                    try:
+                        from apps.qms.models import ServiceCounter as _SC
+                        _refrac_counter = _SC.objects.filter(
+                            staff_assigned=user, is_active=True
+                        ).first()
+                    except Exception:
+                        pass
+                    if _refrac_counter and _refrac_counter.serves_tiers:
+                        _ctiers = _refrac_counter.get_serves_tiers()
+                        if len(_ctiers) == 1 and _ctiers[0] == 'VIP':
+                            _token_qs = _token_qs.filter(service_tier='VIP')
+                        elif len(_ctiers) == 1 and _ctiers[0] == 'STANDARD':
+                            _token_qs = _token_qs.filter(service_tier='STANDARD')
+                        elif len(_ctiers) == 1 and _ctiers[0] in ('EXPRESS', 'FAST_TRACK'):
+                            _token_qs = _token_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                        elif 'VIP' not in _ctiers:
+                            _token_qs = _token_qs.exclude(service_tier='VIP')
+                        elif 'STANDARD' not in _ctiers:
+                            _token_qs = _token_qs.exclude(service_tier='STANDARD')
+                    else:
+                        _pt = getattr(user, 'patient_tier', 'ALL')
+                        if _pt == 'VIP':
+                            _token_qs = _token_qs.filter(service_tier='VIP')
+                        elif _pt == 'STANDARD':
+                            _token_qs = _token_qs.filter(service_tier='STANDARD')
+                        elif _pt in ('EXPRESS', 'FAST_TRACK'):
+                            _token_qs = _token_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                else:
+                    # All other departments: respect patient_tier on account
                     _pt = getattr(user, 'patient_tier', 'ALL')
                     if _pt == 'VIP':
                         _token_qs = _token_qs.filter(service_tier='VIP')
@@ -1246,6 +1283,8 @@ def workstation_view(request):
         'my_assigned_room': my_assigned_room,
         'selected_room': selected_room,
         'queue_filter': queue_filter if dept_code == 'GEN_OPH' else '',
+        'is_refrac': dept_code in ('REFRAC', 'PEDS_REFRAC'),
+        'refrac_counter': _refrac_counter if dept_code in ('REFRAC', 'PEDS_REFRAC') else None,
     })
 
 
