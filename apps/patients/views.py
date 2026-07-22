@@ -242,6 +242,7 @@ def patient_register_view(request):
                             QueueToken, DailyTokenSequence,
                             ServiceType, IssuancePoint, TIER_PRIORITY,
                         )
+                        _reg_tier = initial_visit.service_tier if initial_visit else 'STANDARD'
                         with transaction.atomic():
                             cashier_number = DailyTokenSequence.next_dept_token(ServiceType.CASHIER)
                             cashier_tok = QueueToken.objects.create(
@@ -250,9 +251,9 @@ def patient_register_view(request):
                                 patient=patient,
                                 patient_name=patient.full_name,
                                 service_type=ServiceType.CASHIER,
-                                service_tier='STANDARD',
+                                service_tier=_reg_tier,
                                 issuance_point=IssuancePoint.SYSTEM,
-                                priority=TIER_PRIORITY.get('STANDARD', 0),
+                                priority=TIER_PRIORITY.get(_reg_tier, 0),
                                 issued_by=request.user,
                                 notes='Auto-created after direct registration',
                             )
