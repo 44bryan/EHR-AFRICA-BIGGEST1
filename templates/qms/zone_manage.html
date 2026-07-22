@@ -47,7 +47,6 @@
     <div class="card-body">
       <div class="row g-3">
         {% for tier_val, tier_label in tier_choices %}
-        {% with mapping=tier_mappings|default_if_none:""|dictsort:"tier" %}
         <div class="col-md-3">
           <div class="card border-0 bg-light h-100">
             <div class="card-body py-3">
@@ -62,12 +61,17 @@
                   <span class="badge bg-secondary px-3 py-2" style="font-size:.85rem;">Standard</span>
                 {% endif %}
               </div>
-              {% with m=tier_mappings|default_if_none:"" %}
               <div class="text-muted small mb-2">
-                Currently: <strong>{{ tier_mappings|default_if_none:"" }}</strong>
-                {% for tz_tier, tz_m in tier_mappings.items %}{% if tz_tier == tier_val %}
-                  <strong class="text-{{ tz_m.zone.color }}">{{ tz_m.zone.name }}</strong>
-                {% endif %}{% endfor %}
+                Currently:
+                {% if tier_mappings %}
+                  {% for tz_tier, tz_m in tier_mappings.items %}
+                    {% if tz_tier == tier_val %}
+                      <strong class="text-{{ tz_m.zone.color }}">{{ tz_m.zone.name }}</strong>
+                    {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <em>Not mapped</em>
+                {% endif %}
               </div>
               <form method="post" action="{% url 'qms:tier_remap' %}">
                 {% csrf_token %}
@@ -84,11 +88,9 @@
                   <i class="bi bi-check-lg me-1"></i>Apply
                 </button>
               </form>
-              {% endwith %}
             </div>
           </div>
         </div>
-        {% endwith %}
         {% endfor %}
       </div>
     </div>
