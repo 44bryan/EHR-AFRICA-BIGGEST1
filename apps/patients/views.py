@@ -2569,7 +2569,13 @@ def consent_create_view(request, patient_id):
         signed_at = None
         if signed_at_str:
             from django.utils.dateparse import parse_datetime
-            signed_at = parse_datetime(signed_at_str) or timezone.now()
+            _dt = parse_datetime(signed_at_str)
+            if _dt is not None:
+                if timezone.is_naive(_dt):
+                    _dt = timezone.make_aware(_dt)
+                signed_at = _dt
+        if signed_at is None:
+            signed_at = timezone.now()
 
         consent = PatientConsent.objects.create(
             patient=patient,
