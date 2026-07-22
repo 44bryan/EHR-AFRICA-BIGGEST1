@@ -1,7 +1,9 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Cashier — {{ patient.full_name|default:"No Patient" }}{% endblock %}
 
-{% block extra_css %}
+{% block extra_css %}{% endblock %}
+{% block content %}
+{% load humanize %}
 <style>
 /* ═══════════════════════════════════════════════════════
    CASHIER POS — Clean White + Blue Theme
@@ -302,10 +304,6 @@
 .ai-tab { background: linear-gradient(135deg,#4c1d95,#6d28d9) !important; border-color: #6d28d9 !important; color: #fff !important; }
 .ai-tab:hover { background: linear-gradient(135deg,#5b21b6,#7c3aed) !important; }
 </style>
-{% endblock %}
-
-{% block content %}
-{% load humanize %}
 <form id="csrf-holder">{% csrf_token %}</form>
 <div class="pos-root">
 
@@ -345,18 +343,18 @@
 </div>
 
 {# ── Patient Banner ───────────────────────────────────────────────────────── #}
-{% with _tier=token.service_tier|default:patient_tier %}
-<div class="pat-banner" style="border-left-color:{% if _tier == 'VIP' %}#7c3aed{% elif _tier == 'FAST_TRACK' or _tier == 'EXPRESS' %}#d97706{% else %}#0d6efd{% endif %};">
+{% with pat_tier=token.service_tier|default:patient_tier %}
+<div class="pat-banner" style="border-left-color:{% if pat_tier == 'VIP' %}#7c3aed{% elif pat_tier == 'FAST_TRACK' or pat_tier == 'EXPRESS' %}#d97706{% else %}#0d6efd{% endif %};">
   <div class="d-flex align-items-center gap-3">
-    <div class="pat-avatar" style="background:{% if _tier == 'VIP' %}#7c3aed{% elif _tier == 'FAST_TRACK' or _tier == 'EXPRESS' %}#d97706{% else %}#0d6efd{% endif %};">{{ patient.first_name|first|upper|default:"?" }}</div>
+    <div class="pat-avatar" style="background:{% if pat_tier == 'VIP' %}#7c3aed{% elif pat_tier == 'FAST_TRACK' or pat_tier == 'EXPRESS' %}#d97706{% else %}#0d6efd{% endif %};">{{ patient.first_name|first|upper|default:"?" }}</div>
     <div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <div class="pat-name">{{ patient.full_name|default:"No Patient" }}</div>
-        {% if _tier == 'VIP' %}
+        {% if pat_tier == 'VIP' %}
           <span class="badge fw-bold" style="background:#7c3aed;font-size:.72rem;"><i class="bi bi-stars me-1"></i>VIP</span>
-        {% elif _tier == 'EXPRESS' %}
+        {% elif pat_tier == 'EXPRESS' %}
           <span class="badge fw-bold" style="background:#0891b2;font-size:.72rem;"><i class="bi bi-lightning-charge-fill me-1"></i>Express</span>
-        {% elif _tier == 'FAST_TRACK' %}
+        {% elif pat_tier == 'FAST_TRACK' %}
           <span class="badge fw-bold" style="background:#d97706;font-size:.72rem;"><i class="bi bi-clock-fill me-1"></i>Fast Track</span>
         {% endif %}
       </div>
@@ -796,26 +794,32 @@
 </div>{# /pos-root #}
 
 <script>
-// ── Constants ─────────────────────────────────────────────────────────────────
-const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
-{% if invoice %}const INV_ID = '{{ invoice.id }}';{% else %}const INV_ID = null;{% endif %}
+// ── Constants (var so HTMX re-swaps don't throw SyntaxError on re-declaration) ─
+var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+{% if invoice %}var INV_ID = '{{ invoice.id }}';{% else %}var INV_ID = null;{% endif %}
 {% if token %}
-const TOKEN_ID = '{{ token.id }}';
-const FINALIZE_URL = "{% url 'billing:pos_finalize' token.id %}";
+var TOKEN_ID = '{{ token.id }}';
+var FINALIZE_URL = "{% url 'billing:pos_finalize' token.id %}";
 {% else %}
-const TOKEN_ID = null;
-const FINALIZE_URL = "{% url 'billing:patient_finalize' patient.patient_id %}";
+var TOKEN_ID = null;
+var FINALIZE_URL = "{% url 'billing:patient_finalize' patient.patient_id %}";
 {% endif %}
-{% if invoice %}const RECEIPT_URL = "{% url 'billing:receipt' invoice.id %}";{% else %}const RECEIPT_URL = null;{% endif %}
+{% if invoice %}var RECEIPT_URL = "{% url 'billing:receipt' invoice.id %}";{% else %}var RECEIPT_URL = null;{% endif %}
 
-let activeMethod = 'CASH';
-let rowCount   = {{ items|length }};
-let splitMode  = false;
+var activeMethod = 'CASH';
+var rowCount   = {{ items|length }};
+var splitMode  = false;
+
+// Catalog price lookup — used to auto-price doctor work orders (avoid modal for every click)
+var CATALOG_PRICE_MAP = {
+{% for svc in service_catalog %}"{{ svc.name|escapejs }}": {{ svc.price|floatformat:0 }}{% if not forloop.last %},{% endif %}
+{% endfor %}
+};
 
 // Shift totals JS state (updated when payments come in)
-let _shiftCash  = {{ shift_cash|default:0|floatformat:0 }};
-let _shiftMomo  = {{ shift_mobile|default:0|floatformat:0 }};
-let _shiftTotal = {{ shift_total|default:0|floatformat:0 }};
+var _shiftCash  = {{ shift_cash|default:0|floatformat:0 }};
+var _shiftMomo  = {{ shift_mobile|default:0|floatformat:0 }};
+var _shiftTotal = {{ shift_total|default:0|floatformat:0 }};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(n) {
@@ -884,7 +888,14 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Add item from catalog ─────────────────────────────────────────────────────
 function addItem(name, cat, price) {
   if (!INV_ID) { toast('No invoice. Please refresh.', 'danger'); return; }
-  if (price === 0) {
+  // Auto-resolve price from catalog if not supplied (e.g. doctor work orders all pass 0)
+  var resolvedPrice = price;
+  if (resolvedPrice === 0 && CATALOG_PRICE_MAP[name] !== undefined) {
+    resolvedPrice = CATALOG_PRICE_MAP[name];
+  }
+  // Show "enter price" modal only for items that legitimately need variable pricing
+  var needsModal = (resolvedPrice === 0) && (cat === 'OPTICAL' || cat === 'PHARMACY');
+  if (needsModal) {
     document.getElementById('pendName').value = name;
     document.getElementById('pendCat').value  = cat;
     document.getElementById('pendPrice').value = '';
@@ -892,7 +903,7 @@ function addItem(name, cat, price) {
     new bootstrap.Modal(document.getElementById('priceModal')).show();
     return;
   }
-  _doAdd(name, cat, 1, price);
+  _doAdd(name, cat, 1, resolvedPrice);
 }
 
 function confirmPrice() {
@@ -950,7 +961,7 @@ function _doAdd(desc, cat, qty, unitPrice) {
 }
 
 // ── Remove item — double-tap to confirm ──────────────────────────────────────
-let _pendRm = null;
+var _pendRm = null;
 function removeItem(itemId, btn) {
   if (_pendRm === itemId) {
     _pendRm = null;
