@@ -380,6 +380,14 @@ def invoice_create(request):
             if p:
                 return redirect('billing:patient_pos', patient_id=p.patient_id)
 
+    # Resolve active desk session → drives default tier for this invoice
+    _inv_session = _get_active_cashier_session(request.user)
+    _session_tier = (
+        _inv_session.cash_desk.tier
+        if _inv_session and _inv_session.cash_desk.desk_type == 'TIER' and _inv_session.cash_desk.tier
+        else ''
+    )
+
     if request.method == 'POST':
         patient_id = request.POST.get('patient_id')
         patient = get_object_or_404(Patient, patient_id=patient_id)
@@ -390,6 +398,8 @@ def invoice_create(request):
             discount_reason=request.POST.get('discount_reason', ''),
             notes=request.POST.get('notes', ''),
             status=InvoiceStatus.DRAFT,
+            service_tier=request.POST.get('service_tier', _session_tier),
+            cash_desk=_inv_session.cash_desk if _inv_session else None,
             created_by=request.user,
         )
         descriptions = request.POST.getlist('description')
@@ -412,9 +422,9 @@ def invoice_create(request):
         return redirect('billing:invoice_detail', invoice_id=invoice.id)
     return render(request, 'billing/invoice_form.html', {
         'categories': ServiceCategory.choices,
-        # Direct billing shows ALL services regardless of cashier tier.
-        # Tier filtering only applies to the QMS-driven POS (cashier_pos / patient_pos).
         'service_catalog': _get_service_catalog(cashier_station='ALL'),
+        'session_tier': _session_tier,
+        'active_session': _inv_session,
     })
 
 
@@ -465,6 +475,7 @@ def add_payment(request, invoice_id):
             notes=request.POST.get('notes', ''),
             received_by=request.user,
             created_by=request.user,
+            cashier_session=_get_active_cashier_session(request.user),
         )
         from apps.accounts.models import UserAuditLog
         _log_financial(request, UserAuditLog.Action.CREATE_RECORD, invoice,
@@ -826,21 +837,29 @@ def cashier_pos(request, token_id):
     from apps.accounts.models import CashierStation as _CS
     token = get_object_or_404(QueueToken, id=token_id, is_deleted=False)
 
-    # ── Tier guard: cashier can only bill their own tier's patients ──────────
-    _station = getattr(request.user, 'cashier_station', _CS.ALL)
-    _STATION_TIERS = {
-        _CS.STANDARD:   ['STANDARD'],
-        _CS.FAST_TRACK: ['EXPRESS', 'FAST_TRACK'],
-        _CS.VIP:        ['VIP'],
-    }
-    if _station in _STATION_TIERS and token.service_tier not in _STATION_TIERS[_station]:
-        messages.error(
-            request,
-            f'You are assigned to the {_station} counter and cannot bill a '
-            f'{token.get_service_tier_display()} patient. '
-            f'Please route this patient to the correct cashier counter.'
-        )
-        return redirect('billing:cashier_queue')
+    # ── Tier guard: use active desk session tier (new system) or fall back to cashier_station ──
+    from apps.billing.models import CashierSession, SessionStatus as _SS
+    _active_session = CashierSession.objects.filter(
+        cashier=request.user, status=_SS.OPEN,
+        opened_at__date=timezone.localdate(), is_deleted=False,
+    ).select_related('cash_desk').first()
+
+    if _active_session and _active_session.cash_desk.desk_type == 'TIER' and _active_session.cash_desk.tier:
+        # New system: tier comes from desk session
+        _desk_tier = _active_session.cash_desk.tier
+        _DESK_TIER_MAP = {
+            'STANDARD':   ['STANDARD'],
+            'FAST_TRACK': ['EXPRESS', 'FAST_TRACK'],
+            'VIP':        ['VIP'],
+        }
+        _allowed = _DESK_TIER_MAP.get(_desk_tier, [])
+        if _allowed and token.service_tier not in _allowed:
+            messages.error(
+                request,
+                f'Your desk ({_active_session.cash_desk.name}) handles {_desk_tier} patients only. '
+                f'This is a {token.get_service_tier_display()} patient — route to the correct counter.'
+            )
+            return redirect('billing:cashier_queue')
     # ────────────────────────────────────────────────────────────────────────
 
     patient = token.patient
@@ -904,6 +923,12 @@ def cashier_pos(request, token_id):
         mobile=Sum('amount', filter=Q(payment_method=PaymentMethod.MOBILE_MONEY)),
     )
 
+    _pos_session = _get_active_cashier_session(request.user)
+    _pos_tier = (
+        _pos_session.cash_desk.tier
+        if _pos_session and _pos_session.cash_desk.desk_type == 'TIER' and _pos_session.cash_desk.tier
+        else (token.service_tier if token else 'STANDARD')
+    )
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -912,7 +937,7 @@ def cashier_pos(request, token_id):
         'payments': payments,
         'categories': ServiceCategory.choices,
         'payment_methods': PaymentMethod.choices,
-        'service_catalog': _get_service_catalog(cashier_station=getattr(request.user, 'cashier_station', 'ALL')),
+        'service_catalog': _get_service_catalog(cashier_station='ALL'),
         'today': today,
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
@@ -922,6 +947,7 @@ def cashier_pos(request, token_id):
         'shift_total': shift_totals['total'] or 0,
         'shift_cash': shift_totals['cash'] or 0,
         'shift_mobile': shift_totals['mobile'] or 0,
+        'patient_tier': _pos_tier,
     })
 
 
@@ -1087,6 +1113,7 @@ def pos_record_payment(request, invoice_id):
         reference=reference,
         received_by=request.user,
         created_by=request.user,
+        cashier_session=_get_active_cashier_session(request.user),
     )
     from apps.accounts.models import UserAuditLog
     _log_financial(request, UserAuditLog.Action.CREATE_RECORD, invoice,
@@ -1256,7 +1283,12 @@ def patient_pos(request, patient_id):
         _Visit.objects.filter(patient=patient, is_deleted=False)
         .order_by('-visit_date').first()
     )
-    patient_tier = _today_visit.service_tier if _today_visit else 'STANDARD'
+    _ppos_session = _get_active_cashier_session(request.user)
+    _ppos_tier = (
+        _ppos_session.cash_desk.tier
+        if _ppos_session and _ppos_session.cash_desk.desk_type == 'TIER' and _ppos_session.cash_desk.tier
+        else (_today_visit.service_tier if _today_visit else 'STANDARD')
+    )
     return render(request, 'billing/cashier_pos.html', {
         'token': None,
         'patient': patient,
@@ -1265,7 +1297,7 @@ def patient_pos(request, patient_id):
         'payments': payments,
         'categories': ServiceCategory.choices,
         'payment_methods': PaymentMethod.choices,
-        'service_catalog': _get_service_catalog(cashier_station=getattr(request.user, 'cashier_station', 'ALL')),
+        'service_catalog': _get_service_catalog(cashier_station='ALL'),
         'today': today,
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
@@ -1275,7 +1307,7 @@ def patient_pos(request, patient_id):
         'shift_total': shift_totals['total'] or 0,
         'shift_cash': shift_totals['cash'] or 0,
         'shift_mobile': shift_totals['mobile'] or 0,
-        'patient_tier': patient_tier,
+        'patient_tier': _ppos_tier,
     })
 
 
@@ -5149,6 +5181,16 @@ from .models import (
 )
 
 
+def _get_active_cashier_session(user):
+    """Return the cashier's currently open desk session today, or None."""
+    return CashierSession.objects.filter(
+        cashier=user,
+        status=SessionStatus.OPEN,
+        opened_at__date=timezone.localdate(),
+        is_deleted=False,
+    ).first()
+
+
 def _can_manage_desks(user):
     """Create / edit cash desks — Finance Director, Senior Accountant, Super Admin."""
     return user.role in (
@@ -5458,9 +5500,8 @@ def desk_cashier_queue(request, desk_id):
             messages.warning(request, f'Open a session at desk "{desk.name}" first.')
             return redirect('billing:session_open')
 
-    from django.http import HttpResponseForbidden
     from apps.core.context_processors import qms_active as _qms_active
-    if not _qms_active(request):
+    if not _qms_active():
         messages.error(request, 'QMS is not active.')
         return redirect('billing:cashier_queue')
 
