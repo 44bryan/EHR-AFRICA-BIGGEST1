@@ -1038,16 +1038,23 @@ def home_view(request):
         invoices_today_list = list(_invoices_today_qs)
 
         # My shift today — shows cashier their own running balance
-        from apps.billing.models import CashierShift
+        from apps.billing.models import CashierShift, CashierSession, SessionStatus
         my_shift = CashierShift.objects.filter(
             cashier=user, shift_date=today, is_deleted=False
         ).first()
+
+        # My active desk session today
+        my_session = CashierSession.objects.filter(
+            cashier=user, status=SessionStatus.OPEN,
+            opened_at__date=today, is_deleted=False,
+        ).select_related('cash_desk').first()
 
         ctx.update({
             'cashier_queue': cashier_queue,
             'pending_payment_visits': pending_payment_visits,
             'revenue_today': my_shift.total_collected if my_shift else revenue_today,
             'my_shift': my_shift,
+            'my_session': my_session,
             'unpaid_invoices': unpaid,
             'unpaid_count': unpaid_count,
             'invoices_today': invoices_today,
