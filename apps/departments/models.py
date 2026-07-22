@@ -26,7 +26,10 @@ class DepartmentCode(models.TextChoices):
 class Department(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
-    code = models.CharField(max_length=15, unique=True, choices=DepartmentCode.choices)
+    code = models.CharField(
+        max_length=20, unique=True,
+        help_text='Short unique code e.g. GEN_OPH, GEN_MED, CARDIO (no spaces)',
+    )
     description = models.TextField(blank=True)
     head_of_department = models.ForeignKey(
         'accounts.User',
@@ -61,6 +64,7 @@ class RoomTier(models.TextChoices):
     EXPRESS    = 'EXPRESS',    _('Express')
     FAST_TRACK = 'FAST_TRACK', _('Fast Track')
     VIP        = 'VIP',        _('VIP')
+    ALL        = 'ALL',        _('All Tiers')  # doctor sees every patient tier
 
 
 class ConsultationRoom(models.Model):
@@ -103,9 +107,16 @@ class ConsultationRoom(models.Model):
             return f'{base} — Dr. {self.assigned_doctor.last_name}'
         return base
 
-    @property
-    def tier_service_type(self):
-        """Maps room_tier to the QMS service_type to use when dispatching here."""
+    def tier_service_type(self, patient_tier=None):
+        """Maps room_tier to the QMS service_type.
+        For ALL-tier rooms the service type follows the patient's own tier."""
+        if self.room_tier == 'ALL':
+            return {
+                'VIP':        'VIP_CONSULT',
+                'EXPRESS':    'EXP_CONSULT',
+                'FAST_TRACK': 'EXP_CONSULT',
+                'STANDARD':   'GENERAL',
+            }.get(patient_tier or 'STANDARD', 'GENERAL')
         return {
             'VIP':        'VIP_CONSULT',
             'EXPRESS':    'EXP_CONSULT',

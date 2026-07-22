@@ -5,6 +5,7 @@ app_name = 'departments'
 
 urlpatterns = [
     path('', views.dept_list, name='dept_list'),
+    path('create/', views.dept_create, name='dept_create'),
     path('rooms/', views.room_list_all, name='room_list_all'),
     path('<uuid:dept_id>/edit/', views.dept_edit, name='dept_edit'),
     path('<uuid:dept_id>/rooms/', views.room_manage, name='room_manage'),
