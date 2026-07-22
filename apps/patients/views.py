@@ -515,6 +515,15 @@ def patient_detail_view(request, patient_id):
     except Exception:
         documents = []
 
+    # Consent records
+    try:
+        from .models import PatientConsent
+        patient_consents = list(PatientConsent.objects.filter(
+            patient=patient
+        ).select_related('obtained_by').order_by('-signed_at'))
+    except Exception:
+        patient_consents = []
+
     # ── Billing history (for finance roles) ──────────────────────────────
     u = request.user
     billing_invoices = []
@@ -639,6 +648,8 @@ def patient_detail_view(request, patient_id):
         'tab_billing':          is_finance_role,
         # Documents tab: clinical, admin, medical records, super admin
         'tab_documents':        is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or u.is_medical_director or is_clinical_nurse or is_admin_staff,
+        # Consents: receptionist (obtains consent), doctors, medical records, admin
+        'tab_consents':         u.is_receptionist or is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or u.is_medical_director,
         # Quick prescribe panel in patient record
         'show_quick_prescribe': u.can_create_consultation,
         # Inline nursing/ward actions
@@ -709,6 +720,7 @@ def patient_detail_view(request, patient_id):
         'billing_total_outstanding': billing_total_outstanding,
         'latest_invoice_status': latest_invoice_status,
         'documents': documents,
+        'patient_consents': patient_consents,
     })
 
 

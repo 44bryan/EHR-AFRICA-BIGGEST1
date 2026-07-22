@@ -459,6 +459,14 @@
         </a>
       </li>
       {% endif %}
+      {% if pr.tab_consents %}
+      <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#tab-consents">
+          <i class="bi bi-file-earmark-check me-1"></i>Consents
+          {% if patient_consents %}<span class="badge bg-secondary ms-1" style="font-size:.6rem;">{{ patient_consents|length }}</span>{% endif %}
+        </a>
+      </li>
+      {% endif %}
       {% if pr.tab_billing %}
       <li class="nav-item">
         <a class="nav-link" data-bs-toggle="tab" href="#tab-billing">
@@ -1839,6 +1847,63 @@
         </div>
         {% endif %}
       </div>{# /tab-documents #}
+      {% endif %}
+
+      {% if pr.tab_consents %}
+      <div class="tab-pane fade" id="tab-consents">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-semibold mb-0"><i class="bi bi-file-earmark-check me-1 text-primary"></i>Consent Records</h6>
+          <a href="{% url 'patients:consent_create' patient.patient_id %}" class="btn btn-sm btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>New Consent
+          </a>
+        </div>
+        {% if patient_consents %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle small mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Type</th>
+                <th>Procedure</th>
+                <th>Date Signed</th>
+                <th>Obtained By</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in patient_consents %}
+              <tr>
+                <td class="fw-semibold">{{ c.get_consent_type_display }}</td>
+                <td>{{ c.procedure_name|truncatechars:50 }}</td>
+                <td class="text-muted">{{ c.signed_at|date:"d M Y H:i"|default:"—" }}</td>
+                <td>{{ c.obtained_by.full_name|default:"—" }}</td>
+                <td>
+                  {% if c.is_valid %}
+                    <span class="badge bg-success">Valid</span>
+                  {% else %}
+                    <span class="badge bg-danger">Revoked</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{% url 'patients:consent_detail' patient.patient_id c.pk %}" class="btn btn-outline-secondary btn-sm py-0">View</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+          <i class="bi bi-file-earmark-x fs-2 d-block mb-2"></i>
+          No consent records yet.
+          <div class="mt-2">
+            <a href="{% url 'patients:consent_create' patient.patient_id %}" class="btn btn-primary btn-sm">
+              <i class="bi bi-plus-circle me-1"></i>Add Consent
+            </a>
+          </div>
+        </div>
+        {% endif %}
+      </div>{# /tab-consents #}
       {% endif %}
 
     </div>{# /tab-content #}
