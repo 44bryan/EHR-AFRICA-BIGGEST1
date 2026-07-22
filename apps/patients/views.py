@@ -980,8 +980,9 @@ def change_visit_tier_view(request, visit_number):
 def triage_view(request, visit_number):
     """OPD Nurses and Medical Director record vitals and dispatch patients."""
     if not request.user.can_do_triage() and not request.user.is_super_admin:
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden("Only nursing staff can record patient vitals.")
+        from django.contrib import messages as _msg
+        _msg.error(request, 'Only nursing staff can record patient vitals. Check your account role.')
+        return redirect('dashboard:home')
 
     visit = get_object_or_404(Visit, visit_number=visit_number)
 

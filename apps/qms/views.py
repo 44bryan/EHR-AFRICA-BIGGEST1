@@ -1828,8 +1828,10 @@ def counter_assign_view(request):
 
     # Staff roles that get assigned to counters
     _ASSIGNABLE_ROLES = [
-        'receptionist', 'cashier', 'billing_officer',
-        'nurse', 'pharmacist', 'optical_dispenser',
+        'receptionist', 'cashier', 'billing_officer', 'chief_cashier',
+        'nurse', 'consultation_nurse', 'theatre_nurse', 'ward_nurse',
+        'nurse_director', 'pharmacist', 'optical_dispenser',
+        'investigation_technician', 'lab_technician',
     ]
     staff_users = User.objects.filter(
         is_active=True, role__in=_ASSIGNABLE_ROLES
