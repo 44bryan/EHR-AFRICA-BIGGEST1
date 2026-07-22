@@ -1371,11 +1371,9 @@ def triage_workstation_view(request):
 
     # Determine default view based on counter assignment or patient_tier field
     _nurse_pt = getattr(request.user, 'patient_tier', 'ALL')  # ALL/STANDARD/EXPRESS/VIP
-    # Non-supervisor nurses with patient_tier='ALL' default to STANDARD (safe default)
-    _effective_tier = _nurse_pt if (_is_supervisor or _nurse_pt != 'ALL') else 'STANDARD'
 
     if tier_filter and _is_supervisor:
-        show_mode = tier_filter  # 'STANDARD', 'EXPRESS', 'VIP', or 'ALL'
+        show_mode = tier_filter  # supervisors only can freely switch via URL
     elif assigned_counter:
         tiers = assigned_counter.get_serves_tiers()
         if 'VIP' in tiers:
@@ -1384,14 +1382,14 @@ def triage_workstation_view(request):
             show_mode = 'EXPRESS'    # Express/Fast Track counter → Express+FT patients only
         else:
             show_mode = 'STANDARD'
-    elif _effective_tier == 'VIP':
+    elif _nurse_pt == 'VIP':
         show_mode = 'VIP'       # VIP triage sector — PARAMS_VIP filtered to VIP only
-    elif _effective_tier == 'EXPRESS':
+    elif _nurse_pt == 'EXPRESS':
         show_mode = 'EXPRESS'   # Express/FastTrack sector — PARAMS_VIP filtered to EXPRESS+FT
-    elif _effective_tier == 'STANDARD':
+    elif _nurse_pt == 'STANDARD':
         show_mode = 'STANDARD'  # Standard triage sector — PARAMETERS queue only
-    elif _is_supervisor:
-        show_mode = 'ALL'       # Supervisors see all tiers
+    elif _is_supervisor or _nurse_pt == 'ALL':
+        show_mode = 'ALL'       # Supervisors and ALL-tier nurses see every tier
     else:
         show_mode = 'STANDARD'  # Unassigned nurses default to standard queue only
 
