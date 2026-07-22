@@ -1589,8 +1589,41 @@ def patient_search_api(request):
     except Exception:
         prereg_phones = {}
 
+    # ── VIP isolation: exclude VIP patients from non-VIP staff search ────────
+    # Staff whose counter is in the VIP zone (or supervisors) can see VIP patients.
+    # Everyone else must not see patients with an active VIP visit today.
+    _SEARCH_UNRESTRICTED_ROLES = {'super_admin', 'medical_director', 'ceo', 'admin_director', 'admin'}
+    _hide_vip = False
+    if request.user.role not in _SEARCH_UNRESTRICTED_ROLES:
+        try:
+            from apps.qms.models import ServiceCounter as _SC
+            _counter = _SC.objects.filter(
+                staff_assigned=request.user, is_active=True
+            ).select_related('zone').first()
+            _in_vip_zone = _counter and _counter.zone and _counter.zone.code == 'VIP'
+            _hide_vip = not _in_vip_zone
+        except Exception:
+            pass
+
+    _vip_patient_ids = set()
+    if _hide_vip:
+        try:
+            from apps.patients.models import Visit as _Visit
+            _vip_visits = _Visit.objects.filter(
+                service_tier='VIP',
+                visit_date=today,
+                status__in=['WAITING', 'IN_CONSULTATION', 'PARAMETERS', 'CASHIER'],
+                is_deleted=False,
+            ).values_list('patient_id', flat=True)
+            _vip_patient_ids = set(_vip_visits)
+        except Exception:
+            pass
+
     results = []
     for p in patients:
+        # Skip VIP patients if staff is not in VIP zone
+        if _hide_vip and p.id in _vip_patient_ids:
+            continue
         # Use prefetch cache — avoids per-patient DB queries
         cached_visits = getattr(p, '_prefetched_visits', None)
         if cached_visits is None:

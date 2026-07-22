@@ -117,6 +117,81 @@ class TokenStatus(models.TextChoices):
 
 
 # ── Physical / virtual service counters ─────────────────────────────────────
+# ── Station types (what kind of service point a counter is) ─────────────────
+class StationType(models.TextChoices):
+    RECEPTION    = 'RECEPTION',    'Reception Desk'
+    TRIAGE       = 'TRIAGE',       'Triage / Parameters'
+    CASHIER      = 'CASHIER',      'Cashier Counter'
+    CONSULTATION = 'CONSULTATION', 'Consultation Room'
+    SPECIALIST   = 'SPECIALIST',   'Specialist Room'
+    REFRACTION   = 'REFRACTION',   'Refraction / Optometry Room'
+    LAB          = 'LAB',          'Laboratory'
+    INVESTIGATION = 'INVESTIGATION', 'Investigation Room'
+    PHARMACY     = 'PHARMACY',     'Pharmacy Counter'
+    OPTICAL      = 'OPTICAL',      'Optical Counter'
+    COUNSELING   = 'COUNSELING',   'Counseling Room'
+    ADMISSION    = 'ADMISSION',    'Admission Desk'
+    NURSING      = 'NURSING',      'Nursing Station'
+
+
+# ── Hospital zones (physical/organisational sections) ────────────────────────
+class Zone(TimeStampedModel):
+    """
+    A zone is a physical or organisational section of the hospital.
+
+    Seed zones:
+      STANDARD     → Standard waiting area  (Standard tier only)
+      FT_EXPRESS   → Side-entrance section  (Fast Track + Express)
+      VIP          → Back-entrance section  (VIP only — fully isolated)
+      SHARED       → Shared services        (Lab, Pharmacy, OCT, Optical — all tiers, priority-ordered)
+    """
+    code        = models.CharField(max_length=30, unique=True)
+    name        = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    color       = models.CharField(
+        max_length=20, default='secondary',
+        help_text='Bootstrap colour name: primary | success | warning | danger | info | secondary | dark'
+    )
+    is_active   = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def tier_list(self):
+        """Return list of tier codes mapped to this zone."""
+        return list(self.tier_mappings.values_list('tier', flat=True))
+
+    @property
+    def station_count(self):
+        return self.counters.filter(is_active=True).count()
+
+
+# ── Configurable tier → zone mapping ─────────────────────────────────────────
+class TierZoneMapping(models.Model):
+    """
+    Maps each ServiceTier to a Zone.  Admin-configurable without code changes.
+    e.g. Standard → STANDARD zone, Express → FT_EXPRESS zone, VIP → VIP zone.
+    """
+    tier       = models.CharField(max_length=20, choices=ServiceTier.choices, unique=True)
+    zone       = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='tier_mappings')
+    updated_by = models.ForeignKey(
+        'accounts.User', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='tier_zone_changes'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['tier']
+
+    def __str__(self):
+        return f"{self.get_tier_display()} → {self.zone.name}"
+
+
+# ── Physical / virtual service counters ──────────────────────────────────────
 class ServiceCounter(TimeStampedModel):
     name         = models.CharField(max_length=100)
     code         = models.CharField(max_length=20, unique=True)
@@ -134,6 +209,22 @@ class ServiceCounter(TimeStampedModel):
     staff_assigned = models.ForeignKey(
         'accounts.User', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='qms_counters'
+    )
+    # Zone this counter / room belongs to
+    zone = models.ForeignKey(
+        Zone, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='counters',
+        help_text='Physical zone this station belongs to. Leave blank if unconfigured.'
+    )
+    # What kind of station this is
+    station_type = models.CharField(
+        max_length=20, choices=StationType.choices, blank=True,
+        help_text='Type of service point (consultation room, cashier, triage, lab…)'
+    )
+    # Anti-starvation threshold for shared-service stations
+    anti_starvation_minutes = models.PositiveSmallIntegerField(
+        default=45,
+        help_text='Shared services only: after this many minutes, a lower-tier patient\'s effective priority is boosted one level.'
     )
 
     class Meta:
@@ -220,6 +311,19 @@ class QueueToken(TimeStampedModel):
         on_delete=models.SET_NULL, related_name='assigned_consultation_tokens',
         help_text='VIP/Express only: specific doctor this patient is assigned to see.'
     )
+    # Zone this token currently belongs to (changes to SHARED when dispatched to Lab/Pharmacy/etc.)
+    zone = models.ForeignKey(
+        Zone, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='tokens',
+        help_text='Current zone for this token. Shared-service tokens use SHARED zone.'
+    )
+    # Original zone (never changes) — used for return-routing + tier-based reports on shared services
+    origin_zone = models.ForeignKey(
+        Zone, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='origin_tokens',
+        help_text='Zone where the patient\'s visit originated (tier zone). Never changes. '
+                  'Used to route patient back after shared services and for per-tier revenue/volume reports.'
+    )
 
     class Meta:
         ordering = ['-priority', 'issued_at']
@@ -287,6 +391,19 @@ class QueueToken(TimeStampedModel):
         if self.visit and self.visit.status not in ('COMPLETED', 'DISCHARGED', 'CANCELLED'):
             return self.visit
         return None
+
+    def effective_priority(self, anti_starvation_minutes: int = 45) -> int:
+        """
+        Compute anti-starvation boosted priority for shared-service queues.
+        Every `anti_starvation_minutes` of waiting boosts priority by one tier level (10 pts).
+        Capped at VIP priority (30) and max 2 boosts so Standard can reach Express level, not VIP.
+        """
+        if self.status != TokenStatus.WAITING or not self.issued_at:
+            return self.priority
+        from django.utils import timezone as _tz
+        wait_minutes = (_tz.now() - self.issued_at).total_seconds() / 60
+        boosts = min(int(wait_minutes / max(anti_starvation_minutes, 1)), 2)
+        return min(self.priority + boosts * 10, 30)
 
     @property
     def display_token_number(self):

@@ -26,13 +26,143 @@ from django.db.models import Q
 from .models import (
     QueueToken, ServiceCounter, DailyTokenSequence,
     ServiceType, ServiceTier, TokenStatus, IssuancePoint,
-    TIER_PRIORITY,
+    TIER_PRIORITY, Zone, TierZoneMapping, StationType,
 )
 from apps.patients.models import Patient, Visit, VisitStatus, VisitType, VISIT_STATUS_TO_SERVICE_TYPE
 from apps.core.context_processors import qms_active as _qms_active
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Zone helpers ──────────────────────────────────────────────────────────────
+
+# Service types that always route to the SHARED zone regardless of patient tier
+_SHARED_SERVICE_TYPES = frozenset({
+    'LAB', 'PHARMACY', 'INVEST', 'OPTICAL',
+    'COUNSEL', 'BILLING', 'PRE_OP', 'ADMISSION',
+})
+
+_zone_cache = {}   # simple in-process cache; cleared by seed_zones / zone edits
+
+
+def _resolve_zone(tier: str):
+    """
+    Return the Zone for a given ServiceTier code, or None if not configured.
+    Uses a lightweight per-process cache — safe for tests and single-worker setups.
+    """
+    if tier in _zone_cache:
+        return _zone_cache[tier]
+    try:
+        mapping = TierZoneMapping.objects.select_related('zone').get(tier=tier)
+        zone = mapping.zone if mapping.zone.is_active else None
+    except Exception:
+        zone = None
+    _zone_cache[tier] = zone
+    return zone
+
+
+def _get_zone(code: str):
+    """Return a Zone by code, or None."""
+    try:
+        return Zone.objects.get(code=code, is_active=True)
+    except Zone.DoesNotExist:
+        return None
+
+
+def _zone_for_service(tier: str, service_type: str):
+    """
+    Determine the current zone for a token:
+    - Shared services (Lab, Pharmacy…) → SHARED zone
+    - Everything else → tier's zone via TierZoneMapping
+    """
+    if service_type in _SHARED_SERVICE_TYPES:
+        return _get_zone('SHARED')
+    return _resolve_zone(tier)
+
+
+def _clear_zone_cache():
+    """Call after any TierZoneMapping update to flush the in-process cache."""
+    _zone_cache.clear()
+
+
+def _check_zone_scope(request, token):
+    """
+    Server-side zone-scope enforcement.
+
+    Returns None if the staff member is allowed to act on this token.
+    Returns an HttpResponse (403) if the zone does not match.
+
+    Rules:
+    - Supervisors (super_admin, medical_director, ceo, admin_director) see all zones.
+    - Staff whose assigned counter has a zone can only act on tokens in that zone,
+      OR in the SHARED zone (Lab/Pharmacy/etc. serve all tiers).
+    - Staff without an assigned counter are not restricted (fallback).
+    - A VIP token can NEVER be acted on by a non-VIP counter staff member.
+    """
+    from django.http import HttpResponseForbidden
+    _UNRESTRICTED_ROLES = {'super_admin', 'medical_director', 'ceo', 'admin_director', 'admin'}
+    if request.user.role in _UNRESTRICTED_ROLES or request.user.is_superuser:
+        return None
+
+    # Hard rule: VIP token must only be touched by VIP zone staff
+    if token.service_tier == ServiceTier.VIP:
+        counter = ServiceCounter.objects.filter(
+            staff_assigned=request.user, is_active=True
+        ).select_related('zone').first()
+        if counter and counter.zone and counter.zone.code != 'VIP':
+            return HttpResponseForbidden(
+                'Zone access denied: VIP patients can only be managed by VIP zone staff.'
+            )
+
+    # General zone check: staff counter zone must match token zone
+    # (SHARED zone is accessible to all staff — it is a shared service point)
+    if token.zone and token.zone.code != 'SHARED':
+        counter = ServiceCounter.objects.filter(
+            staff_assigned=request.user, is_active=True
+        ).select_related('zone').first()
+        if counter and counter.zone and counter.zone.id != token.zone_id:
+            return HttpResponseForbidden(
+                f'Zone access denied: this token belongs to {token.zone.name} '
+                f'but your counter is in {counter.zone.name}.'
+            )
+
+    return None
+
+
+def _shared_priority_queue(service_type: str, today=None):
+    """
+    Return the waiting queue for a shared-service station ordered by
+    effective anti-starvation priority (VIP first, but long-waiting Standard
+    patients get boosted so they are never stuck forever).
+
+    The ordering is: effective_priority DESC, issued_at ASC.
+    Because effective_priority requires Python-level calculation per token,
+    we fetch waiting tokens and sort in Python (shared queues are typically < 60 patients).
+    """
+    from django.utils import timezone as _tz
+    today = today or _tz.localdate()
+    tokens = list(
+        QueueToken.objects.filter(
+            service_type=service_type,
+            status=TokenStatus.WAITING,
+            token_date=today,
+            is_deleted=False,
+        ).select_related('patient', 'zone').order_by('-priority', 'issued_at')
+    )
+    # Get anti_starvation_minutes from the first active counter for this service type
+    _anti_min = 45
+    try:
+        ctr = ServiceCounter.objects.filter(
+            service_type=service_type, is_active=True
+        ).values('anti_starvation_minutes').first()
+        if ctr:
+            _anti_min = ctr['anti_starvation_minutes']
+    except Exception:
+        pass
+    # Sort by effective (anti-starvation boosted) priority
+    tokens.sort(key=lambda t: (-t.effective_priority(_anti_min), t.issued_at))
+    return tokens
+
+
+# ── General helpers ────────────────────────────────────────────────────────────
 
 def _slip_layout(user):
     """Return the correct base layout for ticket slips based on issuer role."""
@@ -239,6 +369,8 @@ def gate_issue(request):
                 insurance_company=insurance_company,
                 issued_by=request.user,
                 notes=base_notes,
+                zone=_zone_for_service(tier, first_service),
+                origin_zone=_resolve_zone(tier),
             )
             # Auto-check-in any appointment booked for today
             # so the receptionist dashboard shows accurate checked-in counts
@@ -450,6 +582,8 @@ def vip_reception_issue(request):
                 insurance_company=insurance_company,
                 issued_by=request.user,
                 notes=ins_note,
+                zone=_resolve_zone(ServiceTier.VIP),
+                origin_zone=_resolve_zone(ServiceTier.VIP),
             )
 
         messages.success(request, f'VIP ticket {token_number} issued. Directing to VIP Cashier.')
@@ -544,6 +678,8 @@ def express_desk_issue(request):
                 insurance_company=insurance_company,
                 notes=notes,
                 issued_by=request.user,
+                zone=_zone_for_service(tier, first_service),
+                origin_zone=_resolve_zone(tier),
             )
 
         tier_label = 'Fast Track' if tier == ServiceTier.FAST_TRACK else 'Express'
@@ -633,6 +769,8 @@ def cashier_issue(request):
                 insurance_company=insurance_company,
                 notes=ins_note,
                 issued_by=request.user,
+                zone=_resolve_zone(tier),
+                origin_zone=_resolve_zone(tier),
             )
 
         messages.success(request, f'Entry ticket {token_number} issued at cashier.')
@@ -904,6 +1042,10 @@ def route_to_dept(request):
             entry_token=entry_token,
             notes=token_notes,
             issued_by=request.user,
+            zone=_zone_for_service(tier, service_type),
+            # origin_zone: inherit from entry_token if available, otherwise resolve from tier
+            origin_zone=(entry_token.origin_zone if entry_token and entry_token.origin_zone_id
+                         else _resolve_zone(tier)),
         )
         if issued_at_override:
             create_kwargs['issued_at'] = issued_at_override
@@ -1101,6 +1243,9 @@ def call_next(request, counter_id):
 def complete_token(request, token_id):
     """Mark a token as completed and free the counter."""
     token = get_object_or_404(QueueToken, id=token_id)
+    scope_err = _check_zone_scope(request, token)
+    if scope_err:
+        return scope_err
     token.complete()
     if token.counter:
         token.counter.current_serving = None
@@ -1127,6 +1272,9 @@ def clear_counter(request, counter_id):
 def skip_token(request, token_id):
     """Skip/re-queue a token (moves to back of queue)."""
     token = get_object_or_404(QueueToken, id=token_id)
+    scope_err = _check_zone_scope(request, token)
+    if scope_err:
+        return scope_err
     token.status = TokenStatus.SKIPPED
     # Re-issue with same priority but new issued_at so it goes to back
     token.issued_at = timezone.now()
@@ -1140,6 +1288,9 @@ def skip_token(request, token_id):
 def no_show(request, token_id):
     """Mark a token as no-show."""
     token = get_object_or_404(QueueToken, id=token_id)
+    scope_err = _check_zone_scope(request, token)
+    if scope_err:
+        return scope_err
     token.status = TokenStatus.NO_SHOW
     token.save(update_fields=['status'])
     return JsonResponse({'success': True})
@@ -1251,6 +1402,7 @@ def doctor_queue(request):
 def cashier_complete(request, token_id):
     """
     Cashier confirms payment has been received.
+    Zone-scope enforced: a Standard cashier cannot complete a VIP patient's token.
 
     1. Completes / frees the CASHIER token.
     2. Gets or creates today's Visit for the patient (so triage has a visit to work with).
@@ -1262,6 +1414,9 @@ def cashier_complete(request, token_id):
     the start of today's clinical encounter (payment confirmed = encounter open).
     """
     token = get_object_or_404(QueueToken, id=token_id, is_deleted=False)
+    scope_err = _check_zone_scope(request, token)
+    if scope_err:
+        return scope_err
     counter_id = token.counter_id
 
     if not token.patient:
@@ -1322,6 +1477,8 @@ def cashier_complete(request, token_id):
             entry_token=token.entry_token or token,
             issued_by=request.user,
             notes='Auto-routed after payment confirmation at cashier',
+            zone=_resolve_zone(token.service_tier),
+            origin_zone=token.origin_zone or _resolve_zone(token.service_tier),
         )
 
     messages.success(
@@ -1853,7 +2010,7 @@ def counter_manage_view(request):
     guard = _counter_manage_guard(request)
     if guard:
         return guard
-    counters = ServiceCounter.objects.select_related('staff_assigned').order_by('service_type', 'name')
+    counters = ServiceCounter.objects.select_related('staff_assigned', 'zone').order_by('service_type', 'name')
     return render(request, 'qms/counter_manage.html', {
         'counters': counters,
         'service_types': ServiceType.choices,
@@ -1875,6 +2032,9 @@ def counter_create_view(request):
         serves_tiers = ','.join(request.POST.getlist('serves_tiers'))
         is_active = request.POST.get('is_active') == '1'
         staff_id = request.POST.get('staff_id') or None
+        zone_id = request.POST.get('zone_id') or None
+        station_type = request.POST.get('station_type', '').strip()
+        anti_min = int(request.POST.get('anti_starvation_minutes', 45) or 45)
 
         if not name or not code or not service_type:
             error = 'Name, Code, and Service Type are required.'
@@ -1884,20 +2044,26 @@ def counter_create_view(request):
             staff = None
             if staff_id:
                 staff = get_object_or_404(_User, id=staff_id)
+            zone = Zone.objects.filter(id=zone_id).first() if zone_id else None
             ServiceCounter.objects.create(
                 name=name, code=code, service_type=service_type,
                 serves_tiers=serves_tiers, is_active=is_active,
-                staff_assigned=staff,
+                staff_assigned=staff, zone=zone,
+                station_type=station_type,
+                anti_starvation_minutes=anti_min,
             )
             messages.success(request, f'Counter "{name}" created.')
             return redirect('qms:counter_manage')
 
     staff_users = _User.objects.filter(is_active=True).order_by('role', 'last_name')
+    zones = Zone.objects.filter(is_active=True).order_by('name')
     return render(request, 'qms/counter_form.html', {
         'form_title': 'Create Counter',
         'service_type_choices': ServiceType.choices,
         'tier_choices': ServiceTier.choices,
+        'station_type_choices': StationType.choices,
         'staff_users': staff_users,
+        'zones': zones,
         'counter': None,
         'error': error,
     })
@@ -1920,6 +2086,9 @@ def counter_edit_view(request, counter_id):
         serves_tiers = ','.join(request.POST.getlist('serves_tiers'))
         is_active = request.POST.get('is_active') == '1'
         staff_id = request.POST.get('staff_id') or None
+        zone_id = request.POST.get('zone_id') or None
+        station_type = request.POST.get('station_type', '').strip()
+        anti_min = int(request.POST.get('anti_starvation_minutes', 45) or 45)
 
         if not name or not code or not service_type:
             error = 'Name, Code, and Service Type are required.'
@@ -1929,23 +2098,31 @@ def counter_edit_view(request, counter_id):
             staff = None
             if staff_id:
                 staff = get_object_or_404(_User, id=staff_id)
+            zone = Zone.objects.filter(id=zone_id).first() if zone_id else None
             counter.name = name
             counter.code = code
             counter.service_type = service_type
             counter.serves_tiers = serves_tiers
             counter.is_active = is_active
             counter.staff_assigned = staff
+            counter.zone = zone
+            counter.station_type = station_type
+            counter.anti_starvation_minutes = anti_min
             counter.save(update_fields=['name', 'code', 'service_type', 'serves_tiers',
-                                        'is_active', 'staff_assigned', 'updated_at'])
+                                        'is_active', 'staff_assigned', 'zone',
+                                        'station_type', 'anti_starvation_minutes', 'updated_at'])
             messages.success(request, f'Counter "{name}" updated.')
             return redirect('qms:counter_manage')
 
     staff_users = _User.objects.filter(is_active=True).order_by('role', 'last_name')
+    zones = Zone.objects.filter(is_active=True).order_by('name')
     return render(request, 'qms/counter_form.html', {
         'form_title': f'Edit Counter — {counter.name}',
         'service_type_choices': ServiceType.choices,
         'tier_choices': ServiceTier.choices,
+        'station_type_choices': StationType.choices,
         'staff_users': staff_users,
+        'zones': zones,
         'counter': counter,
         'selected_tiers': counter.get_serves_tiers() if counter.serves_tiers else [],
         'error': error,
@@ -1982,3 +2159,147 @@ def counter_delete_view(request, counter_id):
     counter.delete()
     messages.success(request, f'Counter "{name}" deleted.')
     return redirect('qms:counter_manage')
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ZONE MANAGEMENT — System Admin / Medical Director / CEO / Admin Director
+# ════════════════════════════════════════════════════════════════════════════════
+
+_ZONE_MANAGE_ROLES = {'super_admin', 'medical_director', 'admin_director', 'ceo'}
+
+_ZONE_COLOR_CHOICES = [
+    ('secondary', 'Grey — Standard'),
+    ('info',      'Cyan — Fast Track / Express'),
+    ('warning',   'Yellow — VIP'),
+    ('primary',   'Blue — Shared Services'),
+    ('success',   'Green'),
+    ('danger',    'Red'),
+    ('dark',      'Dark'),
+]
+
+
+def _zone_guard(request):
+    if request.user.role not in _ZONE_MANAGE_ROLES and not request.user.is_superuser:
+        messages.error(request, 'You do not have permission to manage zones.')
+        return redirect('qms:dashboard')
+    return None
+
+
+@login_required
+def zone_manage_view(request):
+    """
+    Zone management dashboard.
+    Shows all zones, their tier mappings, station counts and lets admin
+    reassign tiers to different zones with a single form submit.
+    """
+    guard = _zone_guard(request)
+    if guard:
+        return guard
+
+    zones = Zone.objects.prefetch_related('tier_mappings', 'counters').order_by('name')
+    tier_mappings = {m.tier: m for m in TierZoneMapping.objects.select_related('zone')}
+
+    return render(request, 'qms/zone_manage.html', {
+        'zones': zones,
+        'tier_mappings': tier_mappings,
+        'tier_choices': ServiceTier.choices,
+    })
+
+
+@login_required
+@require_POST
+def tier_remap_view(request):
+    """POST: reassign one tier to a different zone."""
+    guard = _zone_guard(request)
+    if guard:
+        return guard
+
+    tier = request.POST.get('tier', '').strip()
+    zone_id = request.POST.get('zone_id', '').strip()
+    valid_tiers = dict(ServiceTier.choices)
+
+    if tier not in valid_tiers:
+        messages.error(request, 'Invalid tier.')
+        return redirect('qms:zone_manage')
+
+    zone = get_object_or_404(Zone, id=zone_id)
+    mapping, _ = TierZoneMapping.objects.get_or_create(tier=tier)
+    old_zone = mapping.zone.name if mapping.zone_id else '—'
+    mapping.zone = zone
+    mapping.updated_by = request.user
+    mapping.save()
+    _clear_zone_cache()
+
+    messages.success(
+        request,
+        f'{valid_tiers[tier]} tier moved from {old_zone} → {zone.name}. '
+        'All future tokens for this tier will be placed in the new zone.'
+    )
+    return redirect('qms:zone_manage')
+
+
+@login_required
+def zone_create_view(request):
+    """Create a new hospital zone."""
+    guard = _zone_guard(request)
+    if guard:
+        return guard
+
+    error = None
+    if request.method == 'POST':
+        code = request.POST.get('code', '').strip().upper()
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        color = request.POST.get('color', 'secondary').strip()
+
+        if not code or not name:
+            error = 'Zone code and name are required.'
+        elif Zone.objects.filter(code=code).exists():
+            error = f'A zone with code "{code}" already exists.'
+        else:
+            Zone.objects.create(code=code, name=name, description=description, color=color)
+            messages.success(request, f'Zone "{name}" created.')
+            return redirect('qms:zone_manage')
+
+    return render(request, 'qms/zone_form.html', {
+        'form_title': 'New Zone',
+        'zone': None,
+        'color_choices': _ZONE_COLOR_CHOICES,
+        'error': error,
+    })
+
+
+@login_required
+def zone_edit_view(request, zone_id):
+    """Edit an existing zone (name, description, colour, active status)."""
+    guard = _zone_guard(request)
+    if guard:
+        return guard
+
+    zone = get_object_or_404(Zone, id=zone_id)
+    error = None
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        color = request.POST.get('color', zone.color).strip()
+        is_active = request.POST.get('is_active') == '1'
+
+        if not name:
+            error = 'Zone name is required.'
+        else:
+            zone.name = name
+            zone.description = description
+            zone.color = color
+            zone.is_active = is_active
+            zone.save()
+            _clear_zone_cache()
+            messages.success(request, f'Zone "{name}" updated.')
+            return redirect('qms:zone_manage')
+
+    return render(request, 'qms/zone_form.html', {
+        'form_title': f'Edit Zone — {zone.name}',
+        'zone': zone,
+        'color_choices': _ZONE_COLOR_CHOICES,
+        'error': error,
+    })

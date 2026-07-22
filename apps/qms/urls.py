@@ -44,6 +44,12 @@ urlpatterns = [
     path('counters/<uuid:counter_id>/toggle/', views.counter_toggle_view, name='counter_toggle'),
     path('counters/<uuid:counter_id>/delete/', views.counter_delete_view, name='counter_delete'),
 
+    # Zone management CRUD (admin only)
+    path('zones/', views.zone_manage_view, name='zone_manage'),
+    path('zones/new/', views.zone_create_view, name='zone_create'),
+    path('zones/<uuid:zone_id>/edit/', views.zone_edit_view, name='zone_edit'),
+    path('zones/remap-tier/', views.tier_remap_view, name='tier_remap'),
+
     # Counter staff
     path('counter/<uuid:counter_id>/', views.counter_view, name='counter'),
     path('counter/<uuid:counter_id>/call-next/', views.call_next, name='call_next'),

@@ -1,0 +1,98 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+
+{% block title %}{{ form_title }} — GLUDD EHR{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-6 col-xl-5">
+
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <h2 class="fw-bold mb-0">
+          <i class="bi bi-map me-2 text-primary"></i>{{ form_title }}
+        </h2>
+        <a href="{% url 'qms:zone_manage' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back to Zones
+        </a>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+      {% endif %}
+
+      <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+          <form method="post">
+            {% csrf_token %}
+
+            {% if not zone %}
+            <!-- Zone Code — only on create -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Zone Code <span class="text-danger">*</span></label>
+              <input type="text" name="code" class="form-control text-uppercase"
+                     placeholder="e.g. VIP, STANDARD, FT_EXPRESS, SHARED"
+                     maxlength="30" required
+                     oninput="this.value=this.value.toUpperCase()">
+              <div class="form-text">Unique uppercase code (max 30 chars). Cannot be changed after creation.</div>
+            </div>
+            {% endif %}
+
+            <!-- Zone Name -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Zone Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control"
+                     placeholder="e.g. VIP Zone, Standard Zone"
+                     value="{{ zone.name|default:'' }}" required>
+            </div>
+
+            <!-- Description -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Description</label>
+              <textarea name="description" class="form-control" rows="3"
+                        placeholder="What this zone covers, which entrance, which departments…">{{ zone.description|default:'' }}</textarea>
+            </div>
+
+            <!-- Colour -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Badge Colour</label>
+              <select name="color" class="form-select">
+                {% for val, label in color_choices %}
+                <option value="{{ val }}" {% if zone and zone.color == val %}selected{% elif not zone and val == 'secondary' %}selected{% endif %}>
+                  {{ label }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Used for colour-coded badges on dashboards and reports.</div>
+            </div>
+
+            {% if zone %}
+            <!-- Active toggle — only on edit -->
+            <div class="mb-4">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_active" value="1"
+                       id="isActive" {% if zone.is_active %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="isActive">Zone is Active</label>
+              </div>
+              <div class="form-text">Inactive zones are hidden from routing and staff dashboards.</div>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-1"></i>
+                {% if zone %}Save Changes{% else %}Create Zone{% endif %}
+              </button>
+              <a href="{% url 'qms:zone_manage' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
