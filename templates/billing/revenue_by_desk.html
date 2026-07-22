@@ -1,0 +1,113 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Revenue by Desk{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-graph-up-arrow text-success fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Revenue by Desk &amp; Tier</h5>
+      <div class="text-muted small">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Date filter -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label small mb-1">From</label>
+        <input type="date" name="from" class="form-control form-control-sm" value="{{ date_from|date:'Y-m-d' }}">
+      </div>
+      <div>
+        <label class="form-label small mb-1">To</label>
+        <input type="date" name="to" class="form-control form-control-sm" value="{{ date_to|date:'Y-m-d' }}">
+      </div>
+      <button type="submit" class="btn btn-sm btn-outline-primary">Apply</button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Revenue by Desk -->
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom">
+        <h6 class="mb-0"><i class="bi bi-building me-2 text-primary"></i>Revenue by Cash Desk</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Desk</th>
+              <th>Type</th>
+              <th>Tier</th>
+              <th class="text-end">Total (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td class="fw-semibold small">{{ row.invoice__cash_desk__name|default:"Unassigned" }}</td>
+              <td class="small text-muted">{{ row.invoice__cash_desk__desk_type|default:"—" }}</td>
+              <td class="small text-muted">{{ row.invoice__service_tier|default:"—" }}</td>
+              <td class="text-end fw-semibold small">{{ row.total|floatformat:0 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-4">No desk-assigned payments in this period.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revenue by Tier -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom">
+        <h6 class="mb-0"><i class="bi bi-gem me-2" style="color:#7c3aed;"></i>Revenue by Patient Tier</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Tier</th>
+              <th class="text-end">Total (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in tier_rows %}
+            <tr>
+              <td>
+                {% if row.invoice__service_tier == 'VIP' %}
+                  <span class="badge fw-bold" style="background:#7c3aed;"><i class="bi bi-gem me-1"></i>VIP</span>
+                {% elif row.invoice__service_tier == 'FAST_TRACK' %}
+                  <span class="badge bg-warning text-dark"><i class="bi bi-lightning me-1"></i>Fast Track</span>
+                {% elif row.invoice__service_tier == 'STANDARD' %}
+                  <span class="badge bg-secondary">Standard</span>
+                {% else %}
+                  <span class="small text-muted">{{ row.invoice__service_tier|default:"Not Set" }}</span>
+                {% endif %}
+              </td>
+              <td class="text-end fw-semibold small">{{ row.total|floatformat:0 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="2" class="text-center text-muted py-4">No data.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

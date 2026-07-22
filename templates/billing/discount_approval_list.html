@@ -1,0 +1,130 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Discount Approvals{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-patch-check text-warning fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Discount Approval Queue</h5>
+      <div class="text-muted small">Pending cashier discount requests requiring supervisor sign-off</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Time</th>
+            <th>Invoice</th>
+            <th>Patient</th>
+            <th>Requested By</th>
+            <th class="text-end">Amount (XAF)</th>
+            <th>Reason</th>
+            <th style="width:240px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ap in approvals %}
+          <tr>
+            <td class="small text-muted">{{ ap.created_at|date:"d M H:i" }}</td>
+            <td>
+              <a href="{% url 'billing:invoice_detail' invoice_id=ap.invoice.pk %}" class="fw-semibold small">
+                {{ ap.invoice.invoice_number }}
+              </a>
+            </td>
+            <td class="small">{{ ap.invoice.patient.full_name }}</td>
+            <td class="small">{{ ap.requested_by.get_full_name|default:ap.requested_by.username }}</td>
+            <td class="text-end fw-bold">{{ ap.requested_amount|floatformat:0 }}</td>
+            <td class="small text-muted fst-italic">{{ ap.reason|truncatechars:50 }}</td>
+            <td class="text-end">
+              <!-- Approve / Reject via small inline forms -->
+              <div class="d-flex gap-1 justify-content-end">
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal"
+                        data-bs-target="#approveModal{{ ap.pk|slugify }}">
+                  <i class="bi bi-check-lg"></i> Approve
+                </button>
+                <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal"
+                        data-bs-target="#rejectModal{{ ap.pk|slugify }}">
+                  <i class="bi bi-x-lg"></i> Reject
+                </button>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Approve Modal -->
+          <div class="modal fade" id="approveModal{{ ap.pk|slugify }}" tabindex="-1">
+            <div class="modal-dialog modal-sm">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h6 class="modal-title">Approve Discount</h6>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="{% url 'billing:discount_decide' approval_id=ap.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="decision" value="APPROVE">
+                  <div class="modal-body">
+                    <div class="mb-2">
+                      <label class="form-label small fw-semibold">Approved Amount (XAF)</label>
+                      <input type="number" name="approved_amount" class="form-control form-control-sm"
+                             value="{{ ap.requested_amount }}" min="1" step="1">
+                    </div>
+                    <div>
+                      <label class="form-label small fw-semibold">Notes</label>
+                      <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional">
+                    </div>
+                  </div>
+                  <div class="modal-footer py-2">
+                    <button type="submit" class="btn btn-success btn-sm w-100">
+                      <i class="bi bi-check2 me-1"></i>Confirm Approval
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reject Modal -->
+          <div class="modal fade" id="rejectModal{{ ap.pk|slugify }}" tabindex="-1">
+            <div class="modal-dialog modal-sm">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h6 class="modal-title">Reject Discount</h6>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="{% url 'billing:discount_decide' approval_id=ap.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="decision" value="REJECT">
+                  <div class="modal-body">
+                    <label class="form-label small fw-semibold">Reason for Rejection</label>
+                    <textarea name="notes" class="form-control form-control-sm" rows="2" required></textarea>
+                  </div>
+                  <div class="modal-footer py-2">
+                    <button type="submit" class="btn btn-danger btn-sm w-100">
+                      <i class="bi bi-x-circle me-1"></i>Confirm Rejection
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-check-circle-fill fs-1 text-success opacity-50 d-block mb-2"></i>
+              No pending discount requests.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -156,6 +156,32 @@ urlpatterns = [
     path('ap/bills/<uuid:bill_id>/', views.ap_bill_detail, name='ap_bill_detail'),
     path('ap/bills/<uuid:bill_id>/pay/', views.ap_bill_pay, name='ap_bill_pay'),
 
+    # ── Advanced Tier-Scoped Cashier Desk Module ──────────────────────────────
+    path('desks/', views.desk_list, name='desk_list'),
+    path('desks/create/', views.desk_create, name='desk_create'),
+    path('desks/<uuid:desk_id>/edit/', views.desk_edit, name='desk_edit'),
+    path('desks/<uuid:desk_id>/toggle/', views.desk_toggle, name='desk_toggle'),
+    path('desks/<uuid:desk_id>/queue/', views.desk_cashier_queue, name='desk_queue'),
+
+    # Cashier Sessions
+    path('sessions/', views.session_list, name='session_list'),
+    path('sessions/open/', views.session_open, name='session_open'),
+    path('sessions/mine/', views.my_session, name='my_session'),
+    path('sessions/<uuid:session_id>/', views.session_detail, name='session_detail'),
+    path('sessions/<uuid:session_id>/close/', views.session_close, name='session_close'),
+    path('sessions/<uuid:session_id>/verify/', views.session_verify, name='session_verify'),
+
+    # Discount Approvals
+    path('invoice/<uuid:invoice_id>/discount-request/', views.discount_request, name='discount_request'),
+    path('discounts/', views.discount_approval_list, name='discount_approval_list'),
+    path('discounts/<uuid:approval_id>/decide/', views.discount_decide, name='discount_decide'),
+
+    # Invoice Tier Rerouting
+    path('invoice/<uuid:invoice_id>/reroute-tier/', views.invoice_reroute_tier, name='invoice_reroute_tier'),
+
+    # Revenue by Desk Report
+    path('reports/revenue-by-desk/', views.revenue_by_desk, name='revenue_by_desk'),
+
     # ── CSV Exports ───────────────────────────────────────────────────────────
     path('export/invoices/', views.export_invoice_list, name='export_invoice_list'),
     path('export/ar-aging/', views.export_ar_aging, name='export_ar_aging'),

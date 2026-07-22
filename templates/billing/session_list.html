@@ -1,0 +1,115 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Cashier Sessions{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-collection text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Cashier Sessions</h5>
+      <div class="text-muted small">All desk sessions — Z-reports and verification</div>
+    </div>
+  </div>
+  <a href="{% url 'billing:session_open' %}" class="btn btn-sm btn-success">
+    <i class="bi bi-play-circle me-1"></i>Open Session
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label small mb-1">Date</label>
+        <input type="date" name="date" class="form-control form-control-sm" value="{{ filter_date }}">
+      </div>
+      <div>
+        <label class="form-label small mb-1">Desk</label>
+        <select name="desk" class="form-select form-select-sm" style="min-width:150px;">
+          <option value="">All Desks</option>
+          {% for d in desks %}
+          <option value="{{ d.pk }}" {% if filter_desk == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label small mb-1">Status</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All</option>
+          {% for val, label in statuses %}
+          <option value="{{ val }}" {% if filter_status == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-sm btn-outline-primary">Filter</button>
+      <a href="{% url 'billing:session_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Cashier</th>
+            <th>Desk</th>
+            <th>Opened</th>
+            <th>Closed</th>
+            <th class="text-end">Total (XAF)</th>
+            <th>Status</th>
+            <th>Variance</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sessions %}
+          <tr {% if s.variance_flag %}class="table-warning"{% endif %}>
+            <td class="small">{{ s.opened_at|date:"d M Y" }}</td>
+            <td class="fw-semibold small">{{ s.cashier.get_full_name|default:s.cashier.username }}</td>
+            <td class="small">{{ s.cash_desk.name }}</td>
+            <td class="small text-muted">{{ s.opened_at|time:"H:i" }}</td>
+            <td class="small text-muted">{{ s.closed_at|time:"H:i"|default:"—" }}</td>
+            <td class="text-end fw-semibold small">{{ s.total_collected|floatformat:0 }}</td>
+            <td>
+              {% if s.status == 'OPEN' %}
+                <span class="badge bg-success">Open</span>
+              {% elif s.status == 'CLOSED' %}
+                <span class="badge bg-warning text-dark">Closed</span>
+              {% else %}
+                <span class="badge bg-primary">Verified</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.variance_flag %}
+                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Flagged</span>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a href="{% url 'billing:session_detail' session_id=s.pk %}" class="btn btn-outline-primary btn-sm">
+                Z-Report
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-5">
+              <i class="bi bi-inbox fs-1 opacity-25 d-block mb-2"></i>
+              No sessions found for the selected filters.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

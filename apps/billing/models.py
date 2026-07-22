@@ -50,6 +50,32 @@ class ServiceTierFilter(models.TextChoices):
     INSURED    = 'INSURED',   'Insured / HMO Desk Only'
 
 
+class DeskType(models.TextChoices):
+    TIER      = 'TIER',      'Tier Desk (Standard / Fast Track / VIP)'
+    PHARMACY  = 'PHARMACY',  'Pharmacy Desk'
+    OPTICAL   = 'OPTICAL',   'Optical Desk'
+    INSURANCE = 'INSURANCE', 'Insurance / HMO Desk'
+
+
+class InvoiceRoutingType(models.TextChoices):
+    TIER      = 'TIER',      'Tier (Main Cashier)'
+    PHARMACY  = 'PHARMACY',  'Pharmacy'
+    OPTICAL   = 'OPTICAL',   'Optical'
+    INSURANCE = 'INSURANCE', 'Insurance / HMO'
+
+
+class SessionStatus(models.TextChoices):
+    OPEN     = 'OPEN',     'Open'
+    CLOSED   = 'CLOSED',   'Closed'
+    VERIFIED = 'VERIFIED', 'Verified'
+
+
+class DiscountApprovalStatus(models.TextChoices):
+    PENDING  = 'PENDING',  'Pending Supervisor Review'
+    APPROVED = 'APPROVED', 'Approved'
+    REJECTED = 'REJECTED', 'Rejected'
+
+
 class ServicePrice(AuditModel):
     """
     Charge Description Master (CDM) — DB-driven price list.
@@ -155,6 +181,21 @@ class Invoice(AuditModel):
         null=True, blank=True, related_name='voided_invoices',
         help_text='Required when cancelling or reversing an invoice'
     )
+    # ── Tier-scoped billing fields ────────────────────────────────────────────
+    service_tier = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='Patient service tier at time of billing (STANDARD/FAST_TRACK/VIP)'
+    )
+    routing_type = models.CharField(
+        max_length=20, choices=InvoiceRoutingType.choices,
+        blank=True, default='',
+        help_text='Which desk type handles this invoice (TIER/PHARMACY/OPTICAL/INSURANCE)'
+    )
+    cash_desk = models.ForeignKey(
+        'billing.CashDesk', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoices',
+        help_text='The cash desk that processed this invoice'
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -256,6 +297,11 @@ class Payment(AuditModel):
         'accounts.User', on_delete=models.PROTECT, related_name='payments_received'
     )
     payment_date = models.DateTimeField(default=timezone.now)
+    cashier_session = models.ForeignKey(
+        'billing.CashierSession', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='payments',
+        help_text='The cashier desk session during which this payment was collected'
+    )
 
     class Meta:
         ordering = ['-payment_date']
@@ -1327,3 +1373,271 @@ class APPayment(AuditModel):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         self.bill.update_status()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADVANCED TIER-SCOPED CASHIER DESK MODULE
+# CashDesk → CashierSession → per-desk receipt sequences
+# Supervisor discount approvals, invoice tier-change audit log
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CashDesk(AuditModel):
+    """
+    A physical or logical cashier desk.
+    desk_type=TIER  → bound to a specific patient service tier (STANDARD/FAST_TRACK/VIP).
+    desk_type=PHARMACY/OPTICAL/INSURANCE → shared service desks independent of patient tier.
+    """
+    name           = models.CharField(max_length=100)
+    desk_type      = models.CharField(
+        max_length=20, choices=DeskType.choices, default=DeskType.TIER
+    )
+    tier           = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='Required when desk_type=TIER. Values: STANDARD, FAST_TRACK, VIP'
+    )
+    location       = models.CharField(max_length=200, blank=True,
+                      help_text='Physical location / room number')
+    receipt_prefix = models.CharField(
+        max_length=10, default='RCT',
+        help_text='Receipt number prefix e.g. VIP, STD, PHM, OPT'
+    )
+    is_active      = models.BooleanField(default=True)
+
+    class Meta:
+        ordering  = ['desk_type', 'name']
+        verbose_name        = 'Cash Desk'
+        verbose_name_plural = 'Cash Desks'
+
+    def __str__(self):
+        if self.desk_type == DeskType.TIER and self.tier:
+            return f"{self.name} [{self.tier}]"
+        return f"{self.name} [{self.get_desk_type_display()}]"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.desk_type == DeskType.TIER and not self.tier:
+            raise ValidationError({'tier': 'Tier desk requires a tier value (STANDARD/FAST_TRACK/VIP).'})
+
+    @property
+    def active_session(self):
+        """Return the currently open session for this desk, or None."""
+        return self.sessions.filter(status=SessionStatus.OPEN, is_deleted=False).first()
+
+
+class DeskReceiptSequence(models.Model):
+    """
+    Per-desk, per-day receipt counter.
+    Generates desk-scoped receipt numbers like VIP-2026-000123.
+    Uses SELECT FOR UPDATE to prevent duplicate numbers under concurrent load.
+    """
+    desk          = models.ForeignKey(
+        CashDesk, on_delete=models.CASCADE, related_name='receipt_sequences'
+    )
+    sequence_date = models.DateField(default=timezone.localdate)
+    last_number   = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = [('desk', 'sequence_date')]
+        verbose_name = 'Desk Receipt Sequence'
+
+    def __str__(self):
+        return f"{self.desk.receipt_prefix} — {self.sequence_date} — #{self.last_number}"
+
+    @classmethod
+    def next_number(cls, desk):
+        """
+        Atomically increment and return the next receipt number for a desk.
+        Returns a full receipt string like  VIP-2026-000042.
+        """
+        from django.db import transaction as _tx
+        today = timezone.localdate()
+        with _tx.atomic():
+            seq, _ = cls.objects.select_for_update().get_or_create(
+                desk=desk, sequence_date=today,
+                defaults={'last_number': 0},
+            )
+            seq.last_number += 1
+            seq.save(update_fields=['last_number'])
+            return f"{desk.receipt_prefix}-{today.year}-{seq.last_number:06d}"
+
+
+class CashierSession(AuditModel):
+    """
+    One open session per cashier per desk per day.
+    Replaces the blunt daily CashierShift when desks are enabled.
+    Lifecycle: OPEN → CLOSED → VERIFIED
+    Z-report is computed from payments linked to this session.
+    """
+    cashier   = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='cashier_sessions'
+    )
+    cash_desk = models.ForeignKey(
+        CashDesk, on_delete=models.PROTECT, related_name='sessions'
+    )
+    opened_at = models.DateTimeField(default=timezone.now)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    opening_float = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text='Cash float handed to cashier at session start (XAF)'
+    )
+    closing_declared_cash = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text='Physical cash counted by cashier at close'
+    )
+    status       = models.CharField(
+        max_length=20, choices=SessionStatus.choices, default=SessionStatus.OPEN
+    )
+    variance_flag  = models.BooleanField(default=False)
+    variance_notes = models.CharField(max_length=300, blank=True)
+    verified_by    = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='verified_cashier_sessions'
+    )
+    verified_at    = models.DateTimeField(null=True, blank=True)
+    notes          = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-opened_at']
+        verbose_name        = 'Cashier Session'
+        verbose_name_plural = 'Cashier Sessions'
+
+    def __str__(self):
+        name = self.cashier.get_full_name() or self.cashier.username
+        return f"Session — {name} @ {self.cash_desk.name} ({self.opened_at.date()})"
+
+    # ── Z-report aggregates ────────────────────────────────────────────────────
+
+    @property
+    def cash_collected(self):
+        from django.db.models import Sum as _S
+        return (
+            self.payments.filter(payment_method=PaymentMethod.CASH, is_deleted=False)
+            .aggregate(t=_S('amount'))['t'] or 0
+        )
+
+    @property
+    def mobile_collected(self):
+        from django.db.models import Sum as _S
+        return (
+            self.payments.filter(payment_method=PaymentMethod.MOBILE_MONEY, is_deleted=False)
+            .aggregate(t=_S('amount'))['t'] or 0
+        )
+
+    @property
+    def card_collected(self):
+        from django.db.models import Sum as _S
+        return (
+            self.payments.filter(payment_method=PaymentMethod.CARD, is_deleted=False)
+            .aggregate(t=_S('amount'))['t'] or 0
+        )
+
+    @property
+    def total_collected(self):
+        from django.db.models import Sum as _S
+        return (
+            self.payments.filter(is_deleted=False)
+            .aggregate(t=_S('amount'))['t'] or 0
+        )
+
+    @property
+    def expected_cash_in_hand(self):
+        """Opening float + all cash payments during session."""
+        return self.opening_float + self.cash_collected
+
+    @property
+    def cash_variance(self):
+        """Positive = overage (cashier has more). Negative = shortage."""
+        if self.closing_declared_cash is None:
+            return None
+        return self.closing_declared_cash - self.expected_cash_in_hand
+
+    @property
+    def transaction_count(self):
+        return self.payments.filter(is_deleted=False).count()
+
+    @property
+    def collections_by_method(self):
+        from django.db.models import Sum as _S
+        return (
+            self.payments.filter(is_deleted=False)
+            .values('payment_method')
+            .annotate(total=_S('amount'))
+            .order_by('payment_method')
+        )
+
+
+class DiscountApproval(AuditModel):
+    """
+    Supervisor sign-off required when a cashier requests a discount above threshold.
+    Cashier submits request → Chief Cashier / Finance approves / rejects.
+    Invoice discount is only applied after approval.
+    """
+    invoice          = models.ForeignKey(
+        Invoice, on_delete=models.PROTECT, related_name='discount_approvals'
+    )
+    requested_by     = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='discount_requests'
+    )
+    approved_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='approved_discounts'
+    )
+    requested_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    approved_amount  = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='May differ from requested if supervisor partially approves'
+    )
+    reason           = models.CharField(max_length=300)
+    status           = models.CharField(
+        max_length=20, choices=DiscountApprovalStatus.choices,
+        default=DiscountApprovalStatus.PENDING
+    )
+    decision_at      = models.DateTimeField(null=True, blank=True)
+    decision_notes   = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name        = 'Discount Approval'
+        verbose_name_plural = 'Discount Approvals'
+
+    def __str__(self):
+        return (
+            f"Discount {self.requested_amount:,.0f} XAF on "
+            f"{self.invoice.invoice_number} [{self.status}]"
+        )
+
+
+class InvoiceTierChange(AuditModel):
+    """
+    Audit log entry created whenever an invoice is re-routed to a different
+    tier desk mid-visit (e.g. patient upgrades from Standard → VIP after registration).
+    Immutable record — never deleted or edited.
+    """
+    invoice    = models.ForeignKey(
+        Invoice, on_delete=models.PROTECT, related_name='tier_changes'
+    )
+    old_tier   = models.CharField(max_length=20)
+    new_tier   = models.CharField(max_length=20)
+    old_desk   = models.ForeignKey(
+        CashDesk, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='outgoing_tier_changes'
+    )
+    new_desk   = models.ForeignKey(
+        CashDesk, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='incoming_tier_changes'
+    )
+    changed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='invoice_tier_changes'
+    )
+    reason     = models.CharField(max_length=300)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name        = 'Invoice Tier Change'
+        verbose_name_plural = 'Invoice Tier Changes'
+
+    def __str__(self):
+        return (
+            f"{self.invoice.invoice_number}: "
+            f"{self.old_tier} → {self.new_tier} by {self.changed_by.username}"
+        )

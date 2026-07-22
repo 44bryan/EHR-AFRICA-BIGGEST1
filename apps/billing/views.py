@@ -5133,3 +5133,556 @@ def ap_bill_pay(request, bill_id):
         )
         messages.success(request, f'{amount:,.0f} XAF paid to {bill.vendor.name}.')
     return redirect('billing:ap_bill_detail', bill_id=bill_id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADVANCED TIER-SCOPED CASHIER DESK MODULE
+# CashDesk management · CashierSession open/close/verify · Z-report
+# Discount approvals · Invoice tier-change rerouting · Revenue by desk
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from .models import (
+    CashDesk, DeskType, DeskReceiptSequence,
+    CashierSession, SessionStatus,
+    DiscountApproval, DiscountApprovalStatus,
+    InvoiceTierChange, InvoiceRoutingType,
+)
+
+
+def _can_manage_desks(user):
+    """Create / edit cash desks — Finance Director, Senior Accountant, Super Admin."""
+    return user.role in (
+        UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR,
+        UserRole.ADMIN_DIRECTOR,
+        UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_verify_session(user):
+    """Verify a closed cashier session — Chief Cashier and above."""
+    return user.role in (
+        UserRole.CHIEF_CASHIER,
+        UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR,
+        UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_approve_discount(user):
+    """Approve discount requests from cashiers — Chief Cashier and above."""
+    return user.role in (
+        UserRole.CHIEF_CASHIER,
+        UserRole.ACCOUNTANT,
+        UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR,
+        UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+# ── Cash Desk Management ──────────────────────────────────────────────────────
+
+@login_required
+def desk_list(request):
+    if not _can_manage_desks(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    desks = CashDesk.objects.filter(is_deleted=False).order_by('desk_type', 'name')
+    return render(request, 'billing/desk_list.html', {'desks': desks})
+
+
+@login_required
+def desk_create(request):
+    if not _can_manage_desks(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    if request.method == 'POST':
+        name           = request.POST.get('name', '').strip()
+        desk_type      = request.POST.get('desk_type', DeskType.TIER)
+        tier           = request.POST.get('tier', '').strip()
+        location       = request.POST.get('location', '').strip()
+        receipt_prefix = request.POST.get('receipt_prefix', 'RCT').strip().upper()
+        if not name:
+            messages.error(request, 'Desk name is required.')
+        elif desk_type == DeskType.TIER and not tier:
+            messages.error(request, 'Tier value is required for a tier desk.')
+        else:
+            desk = CashDesk.objects.create(
+                name=name, desk_type=desk_type, tier=tier,
+                location=location, receipt_prefix=receipt_prefix or 'RCT',
+                is_active=True, created_by=request.user,
+            )
+            messages.success(request, f'Cash desk "{desk.name}" created.')
+            return redirect('billing:desk_list')
+    context = {'desk_types': DeskType.choices, 'tier_choices': [
+        ('STANDARD', 'Standard'), ('FAST_TRACK', 'Fast Track'), ('VIP', 'VIP'),
+    ]}
+    return render(request, 'billing/desk_form.html', context)
+
+
+@login_required
+def desk_edit(request, desk_id):
+    if not _can_manage_desks(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from django.http import Http404
+    desk = get_object_or_404(CashDesk, pk=desk_id, is_deleted=False)
+    if request.method == 'POST':
+        desk.name           = request.POST.get('name', desk.name).strip()
+        desk.desk_type      = request.POST.get('desk_type', desk.desk_type)
+        desk.tier           = request.POST.get('tier', desk.tier).strip()
+        desk.location       = request.POST.get('location', desk.location).strip()
+        desk.receipt_prefix = request.POST.get('receipt_prefix', desk.receipt_prefix).strip().upper()
+        desk.is_active      = request.POST.get('is_active') == '1'
+        if not desk.name:
+            messages.error(request, 'Desk name is required.')
+        elif desk.desk_type == DeskType.TIER and not desk.tier:
+            messages.error(request, 'Tier value is required for a tier desk.')
+        else:
+            desk.save()
+            messages.success(request, f'Cash desk "{desk.name}" updated.')
+            return redirect('billing:desk_list')
+    context = {
+        'desk': desk,
+        'desk_types': DeskType.choices,
+        'tier_choices': [
+            ('STANDARD', 'Standard'), ('FAST_TRACK', 'Fast Track'), ('VIP', 'VIP'),
+        ],
+    }
+    return render(request, 'billing/desk_form.html', context)
+
+
+@login_required
+@require_POST
+def desk_toggle(request, desk_id):
+    if not _can_manage_desks(request.user):
+        return JsonResponse({'error': 'Access denied'}, status=403)
+    desk = get_object_or_404(CashDesk, pk=desk_id, is_deleted=False)
+    desk.is_active = not desk.is_active
+    desk.save(update_fields=['is_active', 'updated_at'])
+    return JsonResponse({'active': desk.is_active, 'name': desk.name})
+
+
+# ── CashierSession management ──────────────────────────────────────────────────
+
+@login_required
+def session_list(request):
+    """Supervisor view — all sessions (filterable by date / desk / cashier)."""
+    if not (_can_verify_session(request.user) or _can_view_financial_reports(request.user)):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    qs = CashierSession.objects.filter(is_deleted=False).select_related('cashier', 'cash_desk', 'verified_by')
+    date_str = request.GET.get('date', '')
+    desk_id  = request.GET.get('desk', '')
+    status   = request.GET.get('status', '')
+    if date_str:
+        try:
+            from datetime import date as _dt
+            d = _dt.fromisoformat(date_str)
+            qs = qs.filter(opened_at__date=d)
+        except ValueError:
+            pass
+    if desk_id:
+        qs = qs.filter(cash_desk_id=desk_id)
+    if status:
+        qs = qs.filter(status=status)
+    desks = CashDesk.objects.filter(is_deleted=False, is_active=True)
+    context = {
+        'sessions': qs[:200],
+        'desks': desks,
+        'statuses': SessionStatus.choices,
+        'filter_date': date_str,
+        'filter_desk': desk_id,
+        'filter_status': status,
+    }
+    return render(request, 'billing/session_list.html', context)
+
+
+@login_required
+def session_open(request):
+    """Cashier opens a session on a desk."""
+    if request.user.role not in (
+        UserRole.CASHIER, UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER,
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) and not request.user.is_superuser:
+        messages.error(request, 'Only cashiers can open a session.')
+        return redirect('dashboard:home')
+
+    # Check for already-open session today
+    today = timezone.localdate()
+    existing = CashierSession.objects.filter(
+        cashier=request.user, status=SessionStatus.OPEN, is_deleted=False,
+        opened_at__date=today,
+    ).first()
+    if existing:
+        messages.info(request, 'You already have an open session today.')
+        return redirect('billing:session_detail', session_id=existing.pk)
+
+    desks = CashDesk.objects.filter(is_deleted=False, is_active=True).order_by('desk_type', 'name')
+    if request.method == 'POST':
+        desk_id       = request.POST.get('desk_id')
+        opening_float = request.POST.get('opening_float', '0').strip() or '0'
+        try:
+            opening_float = Decimal(opening_float)
+        except Exception:
+            opening_float = Decimal('0')
+        try:
+            desk = CashDesk.objects.get(pk=desk_id, is_deleted=False, is_active=True)
+        except CashDesk.DoesNotExist:
+            messages.error(request, 'Invalid desk selected.')
+            return render(request, 'billing/session_open.html', {'desks': desks})
+
+        # Only one open session per desk at a time
+        if CashierSession.objects.filter(
+            cash_desk=desk, status=SessionStatus.OPEN, is_deleted=False
+        ).exists():
+            messages.error(request, f'Desk "{desk.name}" already has an open session.')
+            return render(request, 'billing/session_open.html', {'desks': desks})
+
+        session = CashierSession.objects.create(
+            cashier=request.user,
+            cash_desk=desk,
+            opening_float=opening_float,
+            status=SessionStatus.OPEN,
+            created_by=request.user,
+        )
+        messages.success(request, f'Session opened at {desk.name}.')
+        return redirect('billing:session_detail', session_id=session.pk)
+
+    return render(request, 'billing/session_open.html', {'desks': desks})
+
+
+@login_required
+def session_detail(request, session_id):
+    """Session detail / Z-report view."""
+    session = get_object_or_404(CashierSession, pk=session_id, is_deleted=False)
+    # Cashier can see own; supervisor can see all
+    is_own = (session.cashier == request.user)
+    if not (is_own or _can_verify_session(request.user) or _can_view_financial_reports(request.user)):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    context = {
+        'session': session,
+        'collections': session.collections_by_method,
+        'can_close': is_own and session.status == SessionStatus.OPEN,
+        'can_verify': _can_verify_session(request.user) and session.status == SessionStatus.CLOSED,
+    }
+    return render(request, 'billing/session_detail.html', context)
+
+
+@login_required
+@require_POST
+def session_close(request, session_id):
+    """Cashier closes their session — declares cash in drawer."""
+    session = get_object_or_404(CashierSession, pk=session_id, is_deleted=False)
+    if session.cashier != request.user:
+        return JsonResponse({'error': 'Not your session.'}, status=403)
+    if session.status != SessionStatus.OPEN:
+        return JsonResponse({'error': 'Session is not open.'}, status=400)
+
+    declared = request.POST.get('closing_declared_cash', '').strip()
+    try:
+        declared = Decimal(declared)
+    except Exception:
+        declared = Decimal('0')
+
+    session.closing_declared_cash = declared
+    session.closed_at = timezone.now()
+    session.status    = SessionStatus.CLOSED
+    session.notes     = request.POST.get('notes', '').strip()
+
+    # Flag if variance > tolerance (e.g. 500 XAF)
+    variance = declared - session.expected_cash_in_hand
+    if abs(variance) > 500:
+        session.variance_flag  = True
+        session.variance_notes = f'Auto-flagged: variance = {variance:+,.0f} XAF'
+
+    session.save()
+    messages.success(request, 'Session closed. Awaiting verification.')
+    return redirect('billing:session_detail', session_id=session.pk)
+
+
+@login_required
+@require_POST
+def session_verify(request, session_id):
+    """Chief Cashier / Finance verifies a closed session."""
+    if not _can_verify_session(request.user):
+        return JsonResponse({'error': 'Access denied.'}, status=403)
+    session = get_object_or_404(CashierSession, pk=session_id, is_deleted=False)
+    if session.status != SessionStatus.CLOSED:
+        messages.error(request, 'Only CLOSED sessions can be verified.')
+        return redirect('billing:session_detail', session_id=session.pk)
+    session.status      = SessionStatus.VERIFIED
+    session.verified_by = request.user
+    session.verified_at = timezone.now()
+    session.variance_notes = request.POST.get('variance_notes', session.variance_notes)
+    session.save()
+    messages.success(request, 'Session verified.')
+    return redirect('billing:session_detail', session_id=session.pk)
+
+
+@login_required
+def my_session(request):
+    """Redirect cashier to their active session, or prompt to open one."""
+    today   = timezone.localdate()
+    session = CashierSession.objects.filter(
+        cashier=request.user, status=SessionStatus.OPEN,
+        opened_at__date=today, is_deleted=False,
+    ).first()
+    if session:
+        return redirect('billing:session_detail', session_id=session.pk)
+    return redirect('billing:session_open')
+
+
+# ── Tier-scoped cashier queue (desk-aware) ────────────────────────────────────
+
+@login_required
+def desk_cashier_queue(request, desk_id):
+    """
+    Cashier queue filtered by cash desk.
+    TIER desks: show only tokens whose service_tier matches desk.tier.
+    Service desks (PHARMACY/OPTICAL): show tokens with matching routing items.
+    VIP desks: patient names are masked for non-VIP staff.
+    """
+    desk = get_object_or_404(CashDesk, pk=desk_id, is_deleted=False, is_active=True)
+
+    # Tier enforcement — cashier must have an open session at this desk
+    if request.user.role == UserRole.CASHIER:
+        today = timezone.localdate()
+        has_session = CashierSession.objects.filter(
+            cashier=request.user, cash_desk=desk,
+            status=SessionStatus.OPEN, opened_at__date=today,
+            is_deleted=False,
+        ).exists()
+        if not has_session:
+            messages.warning(request, f'Open a session at desk "{desk.name}" first.')
+            return redirect('billing:session_open')
+
+    from django.http import HttpResponseForbidden
+    from apps.core.context_processors import qms_active as _qms_active
+    if not _qms_active(request):
+        messages.error(request, 'QMS is not active.')
+        return redirect('billing:cashier_queue')
+
+    from apps.qms.models import QueueToken, TokenStatus
+    qs = QueueToken.objects.filter(
+        status=TokenStatus.WAITING_CASHIER, is_deleted=False
+    ).select_related('patient').order_by('-service_tier', 'issued_at')
+
+    # Filter by tier/type
+    if desk.desk_type == DeskType.TIER and desk.tier:
+        qs = qs.filter(service_tier=desk.tier)
+        # VIP privacy — mask names if user is not a VIP-desk cashier
+        is_vip_desk = desk.tier == 'VIP'
+    else:
+        is_vip_desk = False
+
+    # Exclude VIP patients from non-VIP queues at tier desks
+    if desk.desk_type == DeskType.TIER and desk.tier not in ('VIP', ''):
+        qs = qs.exclude(service_tier='VIP')
+
+    context = {
+        'desk': desk,
+        'waiting': qs,
+        'is_vip_desk': is_vip_desk,
+        'today': timezone.localdate(),
+    }
+    return render(request, 'billing/desk_queue.html', context)
+
+
+# ── Invoice tier rerouting ────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def invoice_reroute_tier(request, invoice_id):
+    """
+    Reroute an invoice to a different tier desk.
+    Creates an InvoiceTierChange audit record.
+    Only allowed on DRAFT/ISSUED invoices.
+    """
+    if not (_can_verify_session(request.user) or _can_cancel_invoice(request.user)):
+        return JsonResponse({'error': 'Access denied.'}, status=403)
+
+    invoice = get_object_or_404(Invoice, pk=invoice_id, is_deleted=False)
+    if invoice.status not in (InvoiceStatus.DRAFT, InvoiceStatus.ISSUED):
+        return JsonResponse({'error': 'Can only reroute DRAFT or ISSUED invoices.'}, status=400)
+
+    new_tier    = request.POST.get('new_tier', '').strip()
+    new_desk_id = request.POST.get('new_desk_id', '').strip()
+    reason      = request.POST.get('reason', '').strip()
+    if not reason:
+        return JsonResponse({'error': 'Reason is required.'}, status=400)
+
+    old_tier = invoice.service_tier
+    old_desk = invoice.cash_desk
+    new_desk = None
+    if new_desk_id:
+        try:
+            new_desk = CashDesk.objects.get(pk=new_desk_id, is_deleted=False)
+        except CashDesk.DoesNotExist:
+            pass
+
+    InvoiceTierChange.objects.create(
+        invoice=invoice,
+        old_tier=old_tier,
+        new_tier=new_tier,
+        old_desk=old_desk,
+        new_desk=new_desk,
+        changed_by=request.user,
+        reason=reason,
+        created_by=request.user,
+    )
+    invoice.service_tier = new_tier
+    if new_desk:
+        invoice.cash_desk = new_desk
+    invoice.save(update_fields=['service_tier', 'cash_desk', 'updated_at'])
+
+    return JsonResponse({'success': True, 'new_tier': new_tier})
+
+
+# ── Discount Approval workflow ────────────────────────────────────────────────
+
+@login_required
+def discount_request(request, invoice_id):
+    """
+    Cashier submits a discount request requiring supervisor approval.
+    """
+    invoice = get_object_or_404(Invoice, pk=invoice_id, is_deleted=False)
+    if request.method == 'POST':
+        try:
+            amount = Decimal(request.POST.get('amount', '0') or '0')
+        except Exception:
+            amount = Decimal('0')
+        reason = request.POST.get('reason', '').strip()
+        if amount <= 0:
+            messages.error(request, 'Discount amount must be greater than zero.')
+        elif not reason:
+            messages.error(request, 'Reason is required.')
+        elif amount > invoice.subtotal:
+            messages.error(request, 'Discount cannot exceed invoice subtotal.')
+        else:
+            DiscountApproval.objects.create(
+                invoice=invoice,
+                requested_by=request.user,
+                requested_amount=amount,
+                reason=reason,
+                status=DiscountApprovalStatus.PENDING,
+                created_by=request.user,
+            )
+            messages.success(request, f'Discount request of {amount:,.0f} XAF submitted for approval.')
+            return redirect('billing:invoice_detail', invoice_id=invoice_id)
+    return render(request, 'billing/discount_request.html', {'invoice': invoice})
+
+
+@login_required
+def discount_approval_list(request):
+    """Supervisor view — pending discount approval requests."""
+    if not _can_approve_discount(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    qs = DiscountApproval.objects.filter(
+        status=DiscountApprovalStatus.PENDING, is_deleted=False
+    ).select_related('invoice', 'invoice__patient', 'requested_by').order_by('-created_at')
+    return render(request, 'billing/discount_approval_list.html', {'approvals': qs})
+
+
+@login_required
+@require_POST
+def discount_decide(request, approval_id):
+    """Supervisor approves or rejects a discount request."""
+    if not _can_approve_discount(request.user):
+        return JsonResponse({'error': 'Access denied.'}, status=403)
+    approval = get_object_or_404(DiscountApproval, pk=approval_id, is_deleted=False)
+    if approval.status != DiscountApprovalStatus.PENDING:
+        messages.error(request, 'This request has already been decided.')
+        return redirect('billing:discount_approval_list')
+
+    decision = request.POST.get('decision', '')
+    notes    = request.POST.get('notes', '').strip()
+    try:
+        approved_amount = Decimal(request.POST.get('approved_amount') or str(approval.requested_amount))
+    except Exception:
+        approved_amount = approval.requested_amount
+
+    if decision == 'APPROVE':
+        approval.status          = DiscountApprovalStatus.APPROVED
+        approval.approved_by     = request.user
+        approval.approved_amount = approved_amount
+        approval.decision_at     = timezone.now()
+        approval.decision_notes  = notes
+        approval.save()
+        # Apply discount to invoice
+        approval.invoice.discount_amount = approved_amount
+        approval.invoice.discount_reason = f'Approved by {request.user.get_full_name() or request.user.username}: {notes}'
+        approval.invoice.save(update_fields=['discount_amount', 'discount_reason', 'updated_at'])
+        messages.success(request, f'Discount of {approved_amount:,.0f} XAF approved and applied.')
+    elif decision == 'REJECT':
+        approval.status         = DiscountApprovalStatus.REJECTED
+        approval.approved_by    = request.user
+        approval.decision_at    = timezone.now()
+        approval.decision_notes = notes
+        approval.save()
+        messages.info(request, 'Discount request rejected.')
+    else:
+        messages.error(request, 'Invalid decision.')
+
+    return redirect('billing:discount_approval_list')
+
+
+# ── Revenue by desk / tier reports ───────────────────────────────────────────
+
+@login_required
+def revenue_by_desk(request):
+    """Revenue breakdown by cash desk for a date range."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+
+    from datetime import date as _date, timedelta
+    today  = _date.today()
+    date_from = request.GET.get('from', str(today - timedelta(days=30)))
+    date_to   = request.GET.get('to',   str(today))
+
+    try:
+        df = _date.fromisoformat(date_from)
+        dt = _date.fromisoformat(date_to)
+    except ValueError:
+        df, dt = today - timedelta(days=30), today
+
+    rows = (
+        Payment.objects
+        .filter(
+            payment_date__date__gte=df,
+            payment_date__date__lte=dt,
+            is_deleted=False,
+        )
+        .exclude(invoice__cash_desk__isnull=True)
+        .values(
+            'invoice__cash_desk__name',
+            'invoice__cash_desk__desk_type',
+            'invoice__service_tier',
+        )
+        .annotate(total=Sum('amount'))
+        .order_by('invoice__cash_desk__name')
+    )
+
+    # Tier summary
+    tier_rows = (
+        Payment.objects
+        .filter(
+            payment_date__date__gte=df,
+            payment_date__date__lte=dt,
+            is_deleted=False,
+        )
+        .values('invoice__service_tier')
+        .annotate(total=Sum('amount'))
+        .order_by('invoice__service_tier')
+    )
+
+    context = {
+        'rows': rows,
+        'tier_rows': tier_rows,
+        'date_from': df,
+        'date_to': dt,
+    }
+    return render(request, 'billing/revenue_by_desk.html', context)

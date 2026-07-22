@@ -1,0 +1,65 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Open Cashier Session{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-door-open text-success fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">Open Cashier Session</h5>
+    <div class="text-muted small">Select your desk and enter your opening float</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        {% if messages %}
+        {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible">
+          {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Cash Desk <span class="text-danger">*</span></label>
+            {% if desks %}
+            <select name="desk_id" class="form-select" required>
+              <option value="">— Select desk —</option>
+              {% for desk in desks %}
+              <option value="{{ desk.pk }}">
+                {{ desk.name }}
+                {% if desk.desk_type == 'TIER' and desk.tier %} [{{ desk.tier }}]{% endif %}
+                {% if desk.active_session %} — ⚠ Already open by {{ desk.active_session.cashier.get_full_name|default:desk.active_session.cashier.username }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <div class="alert alert-warning">No active cash desks available. Ask your supervisor to configure desks first.</div>
+            {% endif %}
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Opening Float (XAF)</label>
+            <input type="number" name="opening_float" class="form-control" min="0" step="1"
+                   value="0" placeholder="0">
+            <div class="form-text">Cash handed to you at the start of the session.</div>
+          </div>
+
+          {% if desks %}
+          <button type="submit" class="btn btn-success w-100 fw-semibold">
+            <i class="bi bi-play-circle-fill me-2"></i>Open Session
+          </button>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{% if desk %}Edit Desk{% else %}New Cash Desk{% endif %}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-building-check text-primary fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">{% if desk %}Edit: {{ desk.name }}{% else %}New Cash Desk{% endif %}</h5>
+    <div class="text-muted small">Configure desk type, tier, and receipt prefix</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="post" id="deskForm">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Desk Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control"
+                   value="{{ desk.name|default:'' }}" placeholder="e.g. VIP Cashier, Main Cashier, Pharmacy">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Desk Type <span class="text-danger">*</span></label>
+            <select name="desk_type" class="form-select" id="deskTypeSelect">
+              {% for val, label in desk_types %}
+              <option value="{{ val }}" {% if desk.desk_type == val or not desk and val == 'TIER' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3" id="tierRow">
+            <label class="form-label fw-semibold">Service Tier <span class="text-danger">*</span></label>
+            <select name="tier" class="form-select">
+              <option value="">— Select tier —</option>
+              {% for val, label in tier_choices %}
+              <option value="{{ val }}" {% if desk.tier == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Required when desk type is "Tier Desk".</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Receipt Prefix <span class="text-danger">*</span></label>
+            <input type="text" name="receipt_prefix" class="form-control" maxlength="10"
+                   value="{{ desk.receipt_prefix|default:'RCT' }}" placeholder="e.g. VIP, STD, PHM, OPT"
+                   style="text-transform:uppercase;">
+            <div class="form-text">Receipt numbers will be: <code>PREFIX-YYYY-000001</code></div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Location</label>
+            <input type="text" name="location" class="form-control"
+                   value="{{ desk.location|default:'' }}" placeholder="Room or area (optional)">
+          </div>
+
+          {% if desk %}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Status</label>
+            <div class="d-flex gap-3 mt-1">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="is_active" value="1"
+                       id="active1" {% if desk.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="active1">Active</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="is_active" value="0"
+                       id="active0" {% if not desk.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="active0">Inactive</label>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>{% if desk %}Save Changes{% else %}Create Desk{% endif %}
+            </button>
+            <a href="{% url 'billing:desk_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var typeSelect = document.getElementById('deskTypeSelect');
+  var tierRow    = document.getElementById('tierRow');
+  function toggle() {
+    tierRow.style.display = typeSelect.value === 'TIER' ? '' : 'none';
+  }
+  typeSelect.addEventListener('change', toggle);
+  toggle();
+})();
+</script>
+{% endblock %}
