@@ -611,6 +611,12 @@ def home_view(request):
     if user.is_opd_nurse:
         # Patients at the parameters/triage station (waiting to have vitals recorded)
         _nurse_tier = getattr(user, 'patient_tier', 'ALL')
+        # Non-supervisor nurses with default patient_tier='ALL' are locked to STANDARD
+        _nurse_is_supervisor = (
+            user.is_nurse_director or user.is_medical_director or user.is_super_admin
+        )
+        if _nurse_tier == 'ALL' and not _nurse_is_supervisor:
+            _nurse_tier = 'STANDARD'
         _NURSE_TIER_COMPAT = {
             'VIP':        ['VIP'],
             'EXPRESS':    ['EXPRESS', 'FAST_TRACK'],

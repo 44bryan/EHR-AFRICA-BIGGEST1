@@ -1361,12 +1361,20 @@ def triage_workstation_view(request):
         except Exception:
             pass
 
-    # Manual override via URL param
+    # Manual override via URL param — only supervisors can freely switch tiers
     tier_filter = request.GET.get('tier', '').upper()
+    _is_supervisor = (
+        request.user.is_nurse_director
+        or request.user.is_medical_director
+        or request.user.is_super_admin
+    )
 
     # Determine default view based on counter assignment or patient_tier field
     _nurse_pt = getattr(request.user, 'patient_tier', 'ALL')  # ALL/STANDARD/EXPRESS/VIP
-    if tier_filter:
+    # Non-supervisor nurses with patient_tier='ALL' default to STANDARD (safe default)
+    _effective_tier = _nurse_pt if (_is_supervisor or _nurse_pt != 'ALL') else 'STANDARD'
+
+    if tier_filter and _is_supervisor:
         show_mode = tier_filter  # 'STANDARD', 'EXPRESS', 'VIP', or 'ALL'
     elif assigned_counter:
         tiers = assigned_counter.get_serves_tiers()
@@ -1376,13 +1384,13 @@ def triage_workstation_view(request):
             show_mode = 'EXPRESS'    # Express/Fast Track counter → Express+FT patients only
         else:
             show_mode = 'STANDARD'
-    elif _nurse_pt == 'VIP':
+    elif _effective_tier == 'VIP':
         show_mode = 'VIP'       # VIP triage sector — PARAMS_VIP filtered to VIP only
-    elif _nurse_pt == 'EXPRESS':
+    elif _effective_tier == 'EXPRESS':
         show_mode = 'EXPRESS'   # Express/FastTrack sector — PARAMS_VIP filtered to EXPRESS+FT
-    elif _nurse_pt == 'STANDARD':
+    elif _effective_tier == 'STANDARD':
         show_mode = 'STANDARD'  # Standard triage sector — PARAMETERS queue only
-    elif user.is_super_admin or user.is_medical_director or user.role == 'nurse_director' or user.is_ceo:
+    elif _is_supervisor:
         show_mode = 'ALL'       # Supervisors see all tiers
     else:
         show_mode = 'STANDARD'  # Unassigned nurses default to standard queue only
@@ -1490,12 +1498,8 @@ def triage_workstation_view(request):
         total_vip_only = 0
 
     # Head of triage (Nurse Director / Medical Director / Super Admin) can see
-    # all patient statuses + locations.  Regular triage nurses see only the queue.
-    is_head_of_triage = (
-        request.user.is_nurse_director
-        or request.user.is_medical_director
-        or request.user.is_super_admin
-    )
+    # all patient statuses + locations, switch tiers freely.
+    is_head_of_triage = _is_supervisor
 
     return render(request, 'consultations/triage_workstation.html', {
         'parameters_queue': parameters_queue,
