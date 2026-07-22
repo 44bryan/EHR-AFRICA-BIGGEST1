@@ -441,13 +441,25 @@ canvas.addEventListener('touchstart', startDraw, { passive: false });
 canvas.addEventListener('touchmove', draw, { passive: false });
 canvas.addEventListener('touchend', endDraw);
 
-// Init — wait for layout to complete so getBoundingClientRect gives correct width
+// Init — use rAF so browser finishes layout before measuring canvas dimensions
 window.addEventListener('resize', initCanvas);
-if (document.readyState === 'complete') {
-  initCanvas();
-} else {
-  window.addEventListener('load', initCanvas);
+function _scheduleInit() {
+  requestAnimationFrame(function() {
+    initCanvas();
+    // If canvas still reports zero width (hidden/collapsed parent), retry once more
+    if (canvas.getBoundingClientRect().width === 0) {
+      setTimeout(initCanvas, 100);
+    }
+  });
 }
+// Runs whether DOM is still loading or already complete
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _scheduleInit);
+} else {
+  _scheduleInit();
+}
+// Also re-init after all resources load (catches slow CSS/font renders)
+window.addEventListener('load', initCanvas);
 
 // Prefill on page load
 prefillConsentText(document.getElementById('consent_type').value);
