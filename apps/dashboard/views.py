@@ -1007,22 +1007,31 @@ def home_view(request):
             is_deleted=False,
         ).aggregate(total=Sum('amount'))['total'] or 0
 
-        # Only invoices THIS cashier issued — own tracking + audit trail
-        _unpaid_qs = Invoice.objects.select_related('patient').filter(
-            created_by=user,
-            status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
-            is_deleted=False
-        ).order_by('-created_at')
-        unpaid_count = _unpaid_qs.count()
-        unpaid = list(_unpaid_qs[:20])
+        # Prefetch related data to avoid N+1 on total/balance_due properties
+        from apps.billing.models import InvoiceItem, Refund
+        from django.db.models import Prefetch as _Prefetch
+        _inv_prefetch = [
+            _Prefetch('items', queryset=InvoiceItem.objects.filter(is_deleted=False), to_attr='_items_cache'),
+            _Prefetch('payments', queryset=Payment.objects.filter(is_deleted=False), to_attr='_payments_cache'),
+            _Prefetch('refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
+        ]
 
-        _invoices_today_qs = Invoice.objects.filter(
-            created_by=user,
-            issue_date=today,
-            is_deleted=False,
-        ).select_related('patient').order_by('-created_at')
-        invoices_today = _invoices_today_qs.count()
-        invoices_today_list = list(_invoices_today_qs)
+        # Only invoices THIS cashier issued — own tracking + audit trail
+        unpaid = list(
+            Invoice.objects.select_related('patient')
+            .prefetch_related(*_inv_prefetch)
+            .filter(created_by=user, status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID], is_deleted=False)
+            .order_by('-created_at')[:20]
+        )
+        unpaid_count = len(unpaid)
+
+        invoices_today_list = list(
+            Invoice.objects.select_related('patient')
+            .prefetch_related(*_inv_prefetch)
+            .filter(created_by=user, issue_date=today, is_deleted=False)
+            .order_by('-created_at')
+        )
+        invoices_today = len(invoices_today_list)
 
         ctx.update({
             'cashier_queue': cashier_queue,

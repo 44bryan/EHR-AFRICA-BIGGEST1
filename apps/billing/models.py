@@ -221,6 +221,9 @@ class Invoice(AuditModel):
 
     @property
     def subtotal(self):
+        # Use prefetched cache when available (avoids N+1 on list pages)
+        if hasattr(self, '_items_cache'):
+            return sum(item.line_total for item in self._items_cache)
         return sum(item.line_total for item in self.items.filter(is_deleted=False))
 
     @property
@@ -234,10 +237,14 @@ class Invoice(AuditModel):
 
     @property
     def amount_paid(self):
+        if hasattr(self, '_payments_cache'):
+            return sum(p.amount for p in self._payments_cache)
         return sum(p.amount for p in self.payments.filter(is_deleted=False))
 
     @property
     def refund_total(self):
+        if hasattr(self, '_refunds_cache'):
+            return sum(r.amount for r in self._refunds_cache)
         return sum(r.amount for r in self.refunds.filter(is_deleted=False))
 
     @property
