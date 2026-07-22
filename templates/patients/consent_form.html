@@ -354,31 +354,32 @@ const ctx = canvas.getContext('2d');
 const placeholder = document.getElementById('sig-placeholder');
 let drawing = false;
 let hasSig = false;
+let lastX = 0, lastY = 0;
 
-function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  // Save existing drawing
-  const imgData = hasSig ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
+function applyCtxStyle() {
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  if (imgData) ctx.putImageData(imgData, 0, 0);
+}
+
+function initCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  applyCtxStyle();
+  hasSig = false;
 }
 
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
-  if (e.touches) {
-    return {
-      x: e.touches[0].clientX - rect.left,
-      y: e.touches[0].clientY - rect.top
-    };
-  }
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: src.clientX - rect.left,
+    y: src.clientY - rect.top
+  };
 }
 
 function startDraw(e) {
@@ -386,20 +387,24 @@ function startDraw(e) {
   drawing = true;
   placeholder.style.display = 'none';
   const pos = getPos(e);
-  ctx.beginPath();
-  ctx.moveTo(pos.x, pos.y);
+  lastX = pos.x;
+  lastY = pos.y;
 }
 
 function draw(e) {
   if (!drawing) return;
   e.preventDefault();
   const pos = getPos(e);
+  ctx.beginPath();
+  ctx.moveTo(lastX, lastY);
   ctx.lineTo(pos.x, pos.y);
   ctx.stroke();
+  lastX = pos.x;
+  lastY = pos.y;
   hasSig = true;
 }
 
-function endDraw(e) {
+function endDraw() {
   if (!drawing) return;
   drawing = false;
   if (hasSig) {
@@ -410,9 +415,9 @@ function endDraw(e) {
 }
 
 function clearSig() {
-  const rect = canvas.getBoundingClientRect();
-  ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   hasSig = false;
+  drawing = false;
   document.getElementById('sig-data').value = '';
   document.getElementById('sig-saved-badge').classList.add('d-none');
   document.getElementById('sig-timestamp').textContent = '';
@@ -420,11 +425,9 @@ function clearSig() {
 }
 
 function captureSig(e) {
-  if (!hasSig) {
-    // Signature is optional — allow submit without it
-    return true;
+  if (hasSig) {
+    document.getElementById('sig-data').value = canvas.toDataURL('image/png');
   }
-  document.getElementById('sig-data').value = canvas.toDataURL('image/png');
 }
 
 // Mouse events
@@ -438,13 +441,13 @@ canvas.addEventListener('touchstart', startDraw, { passive: false });
 canvas.addEventListener('touchmove', draw, { passive: false });
 canvas.addEventListener('touchend', endDraw);
 
-// Init
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-ctx.strokeStyle = '#1e293b';
-ctx.lineWidth = 2.5;
-ctx.lineCap = 'round';
-ctx.lineJoin = 'round';
+// Init — wait for layout to complete so getBoundingClientRect gives correct width
+window.addEventListener('resize', initCanvas);
+if (document.readyState === 'complete') {
+  initCanvas();
+} else {
+  window.addEventListener('load', initCanvas);
+}
 
 // Prefill on page load
 prefillConsentText(document.getElementById('consent_type').value);
