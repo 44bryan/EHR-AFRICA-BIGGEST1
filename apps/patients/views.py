@@ -266,17 +266,19 @@ def patient_register_view(request):
                 else:
                     messages.success(request, f'Patient {patient.full_name} registered. ID: {patient.patient_id}')
 
-            if counter_redirect:
-                return redirect('qms:counter', counter_id=counter_redirect)
-            if qms_token_id:
-                # Return to receptionist queue so staff can handle the next patient
-                return redirect('qms:receptionist')
-            # Redirect new patient to General Consent form before continuing to their record
+            # Always redirect to General Consent form first — for all patients
+            # regardless of tier or QMS path. After consent, resume the appropriate flow.
             from urllib.parse import quote
-            next_path = f'/patients/{patient.patient_id}/'
+            from django.urls import reverse
+            if counter_redirect:
+                after_consent = reverse('qms:counter', kwargs={'counter_id': counter_redirect})
+            elif qms_token_id:
+                after_consent = reverse('qms:receptionist')
+            else:
+                after_consent = f'/patients/{patient.patient_id}/'
             return redirect(
                 f'/patients/{patient.patient_id}/consents/new/'
-                f'?type=GENERAL&next={quote(next_path, safe="")}'
+                f'?type=GENERAL&next={quote(after_consent, safe="")}'
             )
     else:
         g = request.GET
