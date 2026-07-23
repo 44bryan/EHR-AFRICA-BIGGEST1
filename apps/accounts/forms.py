@@ -75,7 +75,7 @@ class UserCreateForm(forms.ModelForm):
         return val if val else 'ALL'
 
     def clean_email(self):
-        val = self.cleaned_data.get('email', '').strip()
+        val = (self.cleaned_data.get('email') or '').strip()
         return val if val else None
 
     def clean_employee_id(self):
@@ -130,7 +130,7 @@ class UserEditForm(forms.ModelForm):
         }
 
     def clean_email(self):
-        val = self.cleaned_data.get('email', '').strip()
+        val = (self.cleaned_data.get('email') or '').strip()
         return val if val else None
 
     def clean_cashier_station(self):
