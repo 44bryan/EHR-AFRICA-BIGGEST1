@@ -71,8 +71,11 @@ def lab_dashboard(request):
     _lab_qs = Visit.objects.filter(visit_date__date=today, status='LABORATORY', is_deleted=False)
     if _pt == 'VIP':
         _lab_qs = _lab_qs.filter(service_tier='VIP')
+    elif _pt == 'EXPRESS':
+        _lab_qs = _lab_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
     elif _pt == 'STANDARD':
-        _lab_qs = _lab_qs.exclude(service_tier='VIP')
+        _lab_qs = _lab_qs.filter(service_tier='STANDARD')
+    # _pt == 'ALL' → no filter
     waiting_visits = list(_lab_qs.select_related('patient', 'attending_doctor')
                           .annotate(_tier_order=_tier_order).order_by('-_tier_order', 'visit_date'))
 

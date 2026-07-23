@@ -20,12 +20,21 @@ def dashboard(request):
 
     today = timezone.localdate()
     from apps.patients.models import Visit
+    from django.db.models import Case, When, IntegerField, Value as _V
+    _tier_order = Case(When(service_tier='VIP', then=_V(3)), When(service_tier='FAST_TRACK', then=_V(2)),
+                       When(service_tier='EXPRESS', then=_V(1)), default=_V(0), output_field=IntegerField())
+    _pt = getattr(request.user, 'patient_tier', 'ALL')
+    _opt_qs = Visit.objects.filter(visit_date__date=today, status='OPTICAL', is_deleted=False)
+    if _pt == 'VIP':
+        _opt_qs = _opt_qs.filter(service_tier='VIP')
+    elif _pt == 'EXPRESS':
+        _opt_qs = _opt_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+    elif _pt == 'STANDARD':
+        _opt_qs = _opt_qs.filter(service_tier='STANDARD')
+    # _pt == 'ALL' → no filter
     waiting_visits = list(
-        Visit.objects.filter(
-            visit_date__date=today,
-            status='OPTICAL',
-            is_deleted=False,
-        ).select_related('patient', 'attending_doctor').order_by('visit_date')
+        _opt_qs.select_related('patient', 'attending_doctor')
+        .annotate(_tier_order=_tier_order).order_by('-_tier_order', 'visit_date')
     )
 
     context = {

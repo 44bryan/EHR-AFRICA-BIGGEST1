@@ -685,6 +685,9 @@ def consultation_complete_view(request, pk):
     consultation = get_object_or_404(Consultation, pk=pk)
     if consultation.consulting_doctor != request.user and not request.user.is_medical_director:
         return HttpResponseForbidden()
+    # Idempotency guard — already completed/referred, just redirect
+    if consultation.status in (ConsultationStatus.COMPLETED, ConsultationStatus.REFERRED):
+        return redirect('consultations:detail', pk=consultation.pk)
     consultation.status = ConsultationStatus.COMPLETED
     consultation.updated_by = request.user
     consultation.save(update_fields=['status', 'updated_by', 'updated_at'])

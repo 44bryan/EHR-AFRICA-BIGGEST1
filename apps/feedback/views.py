@@ -83,7 +83,7 @@ def feedback_dashboard(request):
     from apps.accounts.models import User
     manager_users = User.objects.filter(
         is_active=True,
-        role__in=['medical_director', 'admin_staff', 'department_head'],
+        role__in=['medical_director', 'admin_director', 'quality_officer'],
     ).order_by('first_name')
 
     context = {
@@ -123,7 +123,7 @@ def feedback_detail(request, feedback_id):
     from apps.accounts.models import User
     manager_users = User.objects.filter(
         is_active=True,
-        role__in=['medical_director', 'admin_staff', 'department_head'],
+        role__in=['medical_director', 'admin_director', 'quality_officer'],
     ).order_by('first_name')
     return render(request, 'feedback/detail.html', {
         'feedback': feedback,
@@ -279,7 +279,7 @@ def service_recovery(request):
     from apps.accounts.models import User
     manager_users = User.objects.filter(
         is_active=True,
-        role__in=['medical_director', 'admin_staff', 'department_head'],
+        role__in=['medical_director', 'admin_director', 'quality_officer'],
     ).order_by('first_name')
 
     context = {

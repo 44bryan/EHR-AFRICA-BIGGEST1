@@ -35,8 +35,11 @@ def investigation_workstation_view(request):
             _pt = getattr(request.user, 'patient_tier', 'ALL')
             if _pt == 'VIP':
                 _invest_qs = _invest_qs.filter(service_tier='VIP')
+            elif _pt == 'EXPRESS':
+                _invest_qs = _invest_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
             elif _pt == 'STANDARD':
-                _invest_qs = _invest_qs.exclude(service_tier='VIP')
+                _invest_qs = _invest_qs.filter(service_tier='STANDARD')
+            # _pt == 'ALL' → no filter
             queued_tokens = list(
                 _invest_qs.select_related('visit__patient', 'visit__attending_doctor')
                 .order_by('-priority', 'issued_at')

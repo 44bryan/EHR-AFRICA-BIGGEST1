@@ -468,9 +468,16 @@ def add_payment(request, invoice_id):
                 )
                 return redirect('billing:invoice_detail', invoice_id=invoice.id)
 
-        amount = request.POST.get('amount')
+        amount = request.POST.get('amount', '').strip()
         if not amount:
             messages.error(request, 'Amount is required.')
+            return redirect('billing:invoice_detail', invoice_id=invoice.id)
+        try:
+            amount = Decimal(amount)
+            if amount <= 0:
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            messages.error(request, 'Enter a valid positive amount.')
             return redirect('billing:invoice_detail', invoice_id=invoice.id)
         Payment.objects.create(
             invoice=invoice,

@@ -107,7 +107,8 @@ def _check_zone_scope(request, token):
         counter = ServiceCounter.objects.filter(
             staff_assigned=request.user, is_active=True
         ).select_related('zone').first()
-        if counter and counter.zone and counter.zone.code != 'VIP':
+        # No counter assigned OR counter has no zone OR counter zone is not VIP → block
+        if not counter or not counter.zone or counter.zone.code != 'VIP':
             return HttpResponseForbidden(
                 'Zone access denied: VIP patients can only be managed by VIP zone staff.'
             )

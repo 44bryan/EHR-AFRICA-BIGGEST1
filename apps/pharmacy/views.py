@@ -92,8 +92,11 @@ def pharmacy_dashboard(request):
     _pharm_qs = Visit.objects.filter(visit_date__date=today, status='PHARMACY', is_deleted=False)
     if _pt == 'VIP':
         _pharm_qs = _pharm_qs.filter(service_tier='VIP')
+    elif _pt == 'EXPRESS':
+        _pharm_qs = _pharm_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
     elif _pt == 'STANDARD':
-        _pharm_qs = _pharm_qs.exclude(service_tier='VIP')
+        _pharm_qs = _pharm_qs.filter(service_tier='STANDARD')
+    # _pt == 'ALL' → no filter (supervisor sees everyone)
     waiting_visits = list(
         _pharm_qs.exclude(patient_id__in=work_order_patient_ids)
         .select_related('patient', 'attending_doctor')
