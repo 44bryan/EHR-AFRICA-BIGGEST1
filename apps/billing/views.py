@@ -770,32 +770,16 @@ def pos_landing(request):
             # No active patient at counter — show cashier queue so they can pick next patient
             return redirect('billing:cashier_queue')
 
-        # 2 — No counter assigned but QMS active: find a cashier token being served/called
-        #     Filter by this cashier's tier so a VIP cashier only picks up VIP tokens
-        from apps.qms.models import ServiceTier
-        from apps.accounts.models import CashierStation
-        _STATION_TO_TIER = {
-            CashierStation.STANDARD:   ServiceTier.STANDARD,
-            CashierStation.FAST_TRACK: ServiceTier.FAST_TRACK,
-            CashierStation.VIP:        ServiceTier.VIP,
-        }
-        station = getattr(request.user, 'cashier_station', CashierStation.ALL)
-        token_qs = QueueToken.objects.filter(
-            service_type=ServiceType.CASHIER,
-            status__in=[TokenStatus.CALLED, TokenStatus.SERVING],
-            token_date=today,
-            is_deleted=False,
-            patient__isnull=False,
-        )
-        if station and station != CashierStation.ALL:
-            tier_code = _STATION_TO_TIER.get(station)
-            if tier_code:
-                token_qs = token_qs.filter(service_tier=tier_code)
-        active_token = token_qs.order_by('-priority', 'issued_at').first()
-        if active_token:
-            return redirect('billing:cashier_pos', token_id=active_token.id)
+        # 2 — No counter assigned but QMS active: check active desk session first
+        #     If cashier has a TIER desk session, go straight to that desk's queue.
+        _active_session = CashierSession.objects.filter(
+            cashier=request.user, status=SessionStatus.OPEN, is_deleted=False,
+        ).order_by('-opened_at').select_related('cash_desk').first()
 
-        # 3 — No counter assigned: show cashier queue page listing all waiting patients
+        if _active_session and _active_session.cash_desk.desk_type == DeskType.TIER and _active_session.cash_desk.tier:
+            return redirect('billing:desk_queue', desk_id=_active_session.cash_desk.pk)
+
+        # 3 — No desk session / non-tier desk: fall back to cashier_queue
         return redirect('billing:cashier_queue')
 
     # QMS inactive — open the patient search / direct billing page
