@@ -5621,9 +5621,12 @@ def desk_cashier_queue(request, desk_id):
         messages.error(request, 'QMS is not active.')
         return redirect('billing:cashier_queue')
 
-    from apps.qms.models import QueueToken, TokenStatus
+    from apps.qms.models import QueueToken, TokenStatus, ServiceType as QServiceType
+    today = timezone.localdate()
     qs = QueueToken.objects.filter(
+        service_type=QServiceType.CASHIER,
         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+        token_date=today,
         is_deleted=False,
     ).select_related('patient').order_by('-service_tier', 'issued_at')
 
