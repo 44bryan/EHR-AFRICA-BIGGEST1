@@ -5428,7 +5428,7 @@ def session_open(request):
         except CashDesk.DoesNotExist:
             messages.error(request, 'Invalid desk selected.')
             return render(request, 'billing/session_open.html', {
-                'desks': desks, 'open_sessions': open_sessions,
+                'desks': desks, 'open_sessions': open_sessions, 'is_supervisor': is_supervisor,
             })
 
         # Only one open session per desk at a time
@@ -5443,11 +5443,12 @@ def session_open(request):
                 f'Desk "{desk.name}" is already open by {holder} (since {since}). '
                 f'Ask them to close their session first, or contact a supervisor.'
             )
-            open_sessions = CashierSession.objects.filter(
-                status=SessionStatus.OPEN, is_deleted=False
-            ).select_related('cashier', 'cash_desk').order_by('cash_desk__name')
+            if is_supervisor:
+                open_sessions = CashierSession.objects.filter(
+                    status=SessionStatus.OPEN, is_deleted=False
+                ).select_related('cashier', 'cash_desk').order_by('cash_desk__name')
             return render(request, 'billing/session_open.html', {
-                'desks': desks, 'open_sessions': open_sessions,
+                'desks': desks, 'open_sessions': open_sessions, 'is_supervisor': is_supervisor,
             })
 
         session = CashierSession.objects.create(
@@ -5461,7 +5462,7 @@ def session_open(request):
         return redirect('billing:session_detail', session_id=session.pk)
 
     return render(request, 'billing/session_open.html', {
-        'desks': desks, 'open_sessions': open_sessions,
+        'desks': desks, 'open_sessions': open_sessions, 'is_supervisor': is_supervisor,
     })
 
 
