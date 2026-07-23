@@ -1181,7 +1181,11 @@ function updateDobComputed() {
       if (last)  params.set('last_name', last);
       if (dob)   params.set('dob', dob);
 
-      fetch(`{% url 'patients:duplicate_check' %}?${params}`)
+      // Include session slot so the fetch hits the correct Django session
+      var _slot = '';
+      try { _slot = sessionStorage.getItem('ehr_slot') || ''; } catch(e) {}
+      var _dupUrl = `{% url 'patients:duplicate_check' %}?${params}` + (_slot && _slot !== '1' ? '&s=' + _slot : '');
+      fetch(_dupUrl)
         .then(r => r.json())
         .then(data => {
           if (!data.duplicates || data.duplicates.length === 0) {

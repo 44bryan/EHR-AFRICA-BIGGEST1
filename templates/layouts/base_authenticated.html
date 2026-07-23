@@ -218,7 +218,20 @@
   // responseError fires on non-2xx responses not handled by htmx
   document.addEventListener('htmx:responseError', function(evt) {
     var status = evt && evt.detail && evt.detail.xhr ? evt.detail.xhr.status : 0;
-    if (status >= 500) _fallbackReload(evt);
+    if (status >= 500) { _fallbackReload(evt); return; }
+    // 403 on a POST (CSRF error): show a toast so the user knows something went wrong
+    // rather than the form silently appearing frozen
+    if (status === 403) {
+      var existing = document.getElementById('_ehr_csrf_toast');
+      if (!existing) {
+        var t = document.createElement('div');
+        t.id = '_ehr_csrf_toast';
+        t.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:99999;background:#dc2626;color:#fff;padding:12px 20px;border-radius:10px;font-size:.875rem;box-shadow:0 4px 20px rgba(0,0,0,.25);max-width:340px;';
+        t.innerHTML = '<strong>Session error</strong> — Please <a href="javascript:location.reload()" style="color:#fde68a;text-decoration:underline;">reload the page</a> and try again.';
+        document.body.appendChild(t);
+        setTimeout(function() { if(t.parentNode) t.parentNode.removeChild(t); }, 8000);
+      }
+    }
   });
 })();
 </script>
@@ -398,13 +411,21 @@
   // HTMX events: add slot + CSRF header to every HTMX request
   document.addEventListener('htmx:configRequest', function (evt) {
     evt.detail.headers['X-Session-Slot'] = slot;
-    // Also ensure CSRF token is in the header (HTMX doesn't do this automatically)
+    // Middleware isolates CSRF per slot: read csrftoken_N for slot N > 1.
+    // Falls back to shared csrftoken on first visit (before slot-N cookie is set).
+    var csrfName = 'csrftoken_' + slot;
     var token = '';
     try {
       var cookies = document.cookie.split(';');
       for (var i = 0; i < cookies.length; i++) {
         var c = cookies[i].trim();
-        if (c.indexOf('csrftoken=') === 0) { token = c.substring(10); break; }
+        if (c.indexOf(csrfName + '=') === 0) { token = c.substring(csrfName.length + 1); break; }
+      }
+      if (!token) {
+        for (var j = 0; j < cookies.length; j++) {
+          var d = cookies[j].trim();
+          if (d.indexOf('csrftoken=') === 0) { token = d.substring(10); break; }
+        }
       }
     } catch (e) {}
     if (token) evt.detail.headers['X-CSRFToken'] = token;
