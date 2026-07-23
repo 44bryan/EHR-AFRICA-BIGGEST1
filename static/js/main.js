@@ -39,27 +39,33 @@ function ehrInitOnce() {
   // with outerHTML on every navigation, destroying any directly-bound listeners.
   document.addEventListener('click', function (e) {
     if (!e.target.closest('#sidebarToggle')) return;
-    if (!sidebar) return;
+    // Re-query sidebar on every click (belt-and-suspenders: in case DOM was rebuilt)
+    const sb = document.getElementById('sidebar');
+    const bd = document.getElementById('sidebar-backdrop');
+    if (!sb) return;
     if (isPhone()) {
-      const isOpen = sidebar.classList.toggle('mobile-open');
-      if (backdrop) backdrop.classList.toggle('show', isOpen);
+      const isOpen = sb.classList.toggle('mobile-open');
+      if (bd) bd.classList.toggle('show', isOpen);
     } else if (isTablet()) {
-      const isExpanded = sidebar.classList.toggle('tablet-expanded');
+      const isExpanded = sb.classList.toggle('tablet-expanded');
       localStorage.setItem(TABLET_EXPANDED_KEY, isExpanded ? '1' : '0');
       syncTooltips(!isExpanded);
     } else {
-      const isCollapsed = sidebar.classList.toggle('collapsed');
+      const isCollapsed = sb.classList.toggle('collapsed');
       localStorage.setItem(COLLAPSED_KEY, isCollapsed ? '1' : '0');
       syncTooltips(isCollapsed);
     }
   });
 
-  if (backdrop) {
-    backdrop.addEventListener('click', function () {
-      sidebar && sidebar.classList.remove('mobile-open');
-      backdrop.classList.remove('show');
-    });
-  }
+  // Backdrop click — close mobile drawer. Uses event delegation on document
+  // so it works even if sidebar-backdrop is re-rendered by HTMX.
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#sidebar-backdrop')) return;
+    const sb = document.getElementById('sidebar');
+    const bd = document.getElementById('sidebar-backdrop');
+    if (sb) sb.classList.remove('mobile-open');
+    if (bd) { bd.classList.remove('show'); document.body.style.overflow = ''; }
+  });
 
   // Global patient search — event delegation so it survives HTMX page swaps.
   // #globalPatientSearch is in the topbar (inside #page-content-wrapper) and gets

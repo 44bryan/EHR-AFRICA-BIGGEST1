@@ -390,17 +390,15 @@
         }
       }
     }
-    ['hx-get','hx-post','hx-put','hx-delete','hx-patch'].forEach(function (a) {
-      var v = el.getAttribute(a);
-      if (v) el.setAttribute(a, addSlot(v));
-    });
+    // Note: hx-get/post/etc. are NOT patched here because htmx:configRequest
+    // already adds X-Session-Slot header and XHR.open is already patched.
+    // Patching hx-* attrs via setAttribute triggers HTMX's own MutationObserver
+    // on every element, causing a DOM-processing cascade on complex pages.
   }
 
   function patchAll(root) {
     if (!root || !root.querySelectorAll) return;
-    root.querySelectorAll(
-      'a[href],form,[hx-get],[hx-post],[hx-put],[hx-delete],[hx-patch]'
-    ).forEach(patchEl);
+    root.querySelectorAll('a[href],form').forEach(patchEl);
   }
 
   function init() { patchAll(document.body); }
@@ -436,11 +434,21 @@
     patchAll(e.detail ? e.detail.target : document.body);
   });
 
-  // Watch for dynamic content (modals, dropdowns injected by JS)
+  // Watch for dynamic content (modals, dropdowns injected by JS).
+  // Debounced: batch all mutations into one pass per animation frame so a large
+  // HTMX swap (which fires many childList mutations) never stalls the main thread.
   try {
+    var _moNodes = [];
+    var _moTimer = null;
     new MutationObserver(function (muts) {
       muts.forEach(function (m) {
-        m.addedNodes.forEach(function (n) { patchEl(n); patchAll(n); });
+        m.addedNodes.forEach(function (n) { if (n.nodeType === 1) _moNodes.push(n); });
+      });
+      if (_moTimer) return;
+      _moTimer = requestAnimationFrame(function () {
+        _moTimer = null;
+        var nodes = _moNodes.splice(0);
+        nodes.forEach(function (n) { patchEl(n); patchAll(n); });
       });
     }).observe(document.documentElement, { childList: true, subtree: true });
   } catch (e) {}
