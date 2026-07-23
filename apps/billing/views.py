@@ -5623,7 +5623,8 @@ def desk_cashier_queue(request, desk_id):
 
     from apps.qms.models import QueueToken, TokenStatus
     qs = QueueToken.objects.filter(
-        status=TokenStatus.WAITING_CASHIER, is_deleted=False
+        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+        is_deleted=False,
     ).select_related('patient').order_by('-service_tier', 'issued_at')
 
     # Filter by tier/type
