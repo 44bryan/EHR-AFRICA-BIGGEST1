@@ -1,5 +1,5 @@
 {% extends 'layouts/base_authenticated.html' %}
-{% load widget_tweaks %}
+{% load widget_tweaks static %}
 
 {% block title %}Register Patient — {{ HOSPITAL_NAME }}{% endblock %}
 
@@ -860,12 +860,11 @@
 
 {% block extra_js %}
 <script>
-// Load signature_pad only once per page session (survives HTMX swaps via window guard)
-if (!window.SignaturePad && !window._ehrSigPadLoading) {
-  window._ehrSigPadLoading = true;
+// Load signature_pad from LOCAL static (no CDN dependency — works on hospital LAN with no internet)
+if (!window.SignaturePad && !window._ehrSigPadLoaded) {
   var _sp = document.createElement('script');
-  _sp.src = 'https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js';
-  _sp.onload = function() { window._ehrSigPadLoading = false; _initSignaturePad(); };
+  _sp.src = '{% static "js/vendor/signature_pad.umd.min.js" %}';
+  _sp.onload = function() { window._ehrSigPadLoaded = true; _initSignaturePad(); };
   document.head.appendChild(_sp);
 }
 </script>
@@ -898,17 +897,21 @@ document.querySelector('input[type=file][name="photo"]')?.addEventListener('chan
   }
 });
 
-// Age auto-calculation
+// Age auto-calculation — fires on both 'change' (blur) and 'input' (while typing)
 function calcAge() {
-  const dob = new Date(document.getElementById('id_dob')?.value);
-  if (isNaN(dob)) return;
+  const dobEl = document.getElementById('id_dob');
+  if (!dobEl) return;
+  const dob = new Date(dobEl.value);
+  if (isNaN(dob) || !dobEl.value) return;
   const today = new Date();
   let age = today.getFullYear() - dob.getFullYear();
   const m = today.getMonth() - dob.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-  document.getElementById('age_display').value = age >= 0 ? age + ' year' + (age !== 1 ? 's' : '') : '';
+  const el = document.getElementById('age_display');
+  if (el) el.value = age >= 0 ? age + ' year' + (age !== 1 ? 's' : '') : '';
 }
 document.getElementById('id_dob')?.addEventListener('change', calcAge);
+document.getElementById('id_dob')?.addEventListener('input', calcAge);
 calcAge();
 
 // Referral cascade
@@ -1003,31 +1006,34 @@ function setYesNo(btn, chkId, isYes) {
 }
 
 // ── Signature Pad ─────────────────────────────────────────────────────────────
-// NOTE: uses immediate init (not window.load) so it works after HTMX page swaps.
 let _sigPad = null;
 function _initSignaturePad() {
   const canvas = document.getElementById('signaturePad');
   if (!canvas) return;
   if (typeof SignaturePad === 'undefined') {
-    // Script not yet loaded — retry once after 300ms
-    setTimeout(_initSignaturePad, 300);
+    // Library not yet loaded (first visit) — will be called from script onload
     return;
   }
   if (_sigPad) { try { _sigPad.off(); } catch(e) {} _sigPad = null; }
-  canvas.width  = canvas.offsetWidth  || 300;
-  canvas.height = canvas.offsetHeight || 160;
-  _sigPad = new SignaturePad(canvas, {
-    backgroundColor: 'rgb(255,255,255)',
-    penColor: 'rgb(0,0,128)',
-    minWidth: 1.5, maxWidth: 3,
-  });
-  _sigPad.addEventListener('beginStroke', function() {
-    const hint = document.getElementById('sig_hint');
-    if (hint) hint.style.display = 'none';
+  // Use requestAnimationFrame so canvas has correct dimensions after HTMX swap
+  requestAnimationFrame(function() {
+    const c = document.getElementById('signaturePad');
+    if (!c) return;
+    c.width  = c.offsetWidth  || 300;
+    c.height = c.offsetHeight || 160;
+    _sigPad = new SignaturePad(c, {
+      backgroundColor: 'rgb(255,255,255)',
+      penColor: 'rgb(0,0,128)',
+      minWidth: 1.5, maxWidth: 3,
+    });
+    _sigPad.addEventListener('beginStroke', function() {
+      const hint = document.getElementById('sig_hint');
+      if (hint) hint.style.display = 'none';
+    });
   });
 }
-// Run immediately (HTMX has already swapped in the DOM when this script executes)
-_initSignaturePad();
+// Run after browser has painted (avoids wrong canvas dimensions on HTMX swap)
+requestAnimationFrame(_initSignaturePad);
 
 // Resize handler — only one listener needed, uses current _sigPad reference
 if (!window._ehrSigResizeAttached) {
