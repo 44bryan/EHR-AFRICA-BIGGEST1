@@ -977,8 +977,8 @@ def home_view(request):
         ).first()
         my_session = CashierSession.objects.filter(
             cashier=user, status=SessionStatus.OPEN,
-            opened_at__date=today, is_deleted=False,
-        ).select_related('cash_desk').first()
+            is_deleted=False,
+        ).select_related('cash_desk').order_by('-opened_at').first()
 
         # Determine the tier to filter by (only when session is at a TIER desk with a tier set)
         _desk_tier = None

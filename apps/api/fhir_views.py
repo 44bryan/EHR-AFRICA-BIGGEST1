@@ -125,7 +125,7 @@ def fhir_patient_read(request, patient_id):
     """GET /api/fhir/Patient/{patient_id}/ — read a single patient."""
     from apps.patients.models import Patient
     try:
-        patient = Patient.objects.get(patient_id=patient_id)
+        patient = Patient.objects.get(patient_id=patient_id, is_deleted=False)
     except Patient.DoesNotExist:
         return _fhir_error(404, 'not-found', f'Patient {patient_id} not found')
     return _fhir_response(_patient_to_fhir(patient))

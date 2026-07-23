@@ -48,14 +48,14 @@ def new_conversation_view(request):
     if consultation_id:
         from apps.consultations.models import Consultation
         try:
-            consultation = Consultation.objects.get(pk=consultation_id)
+            consultation = Consultation.objects.get(pk=consultation_id, is_deleted=False)
             patient = consultation.patient
         except Consultation.DoesNotExist:
             pass
     elif patient_id:
         from apps.patients.models import Patient
         try:
-            patient = Patient.objects.get(patient_id=patient_id)
+            patient = Patient.objects.get(patient_id=patient_id, is_deleted=False)
         except Patient.DoesNotExist:
             pass
 
@@ -506,7 +506,7 @@ def suggest_diagnosis_view(request):
     if consultation_pk:
         from apps.consultations.models import Consultation
         try:
-            consultation = Consultation.objects.get(pk=consultation_pk)
+            consultation = Consultation.objects.get(pk=consultation_pk, is_deleted=False)
             if not hpc and consultation.history_of_presenting_complaint:
                 hpc = consultation.history_of_presenting_complaint
             if not age:

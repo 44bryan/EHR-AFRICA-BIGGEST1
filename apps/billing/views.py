@@ -805,16 +805,27 @@ def pos_landing(request):
 @login_required
 def cashier_queue(request):
     """
-    Simple cashier queue list — shown when the cashier has no assigned counter.
-    Lists all CASHIER-type tokens waiting today so they can open POS for each one.
+    Cashier queue — filters tokens by the cashier's active desk session tier.
+    Falls back to cashier_station field if no desk session is open.
+    If cashier has an active TIER desk session, redirects to desk_cashier_queue.
     """
     if not _qms_active():
         return redirect('billing:invoice_list')
 
     from apps.qms.models import QueueToken, TokenStatus, ServiceType, ServiceTier
     from apps.accounts.models import CashierStation
-    today = timezone.localdate()
 
+    # ── New system: use active desk session tier ──────────────────────────────
+    active_session = CashierSession.objects.filter(
+        cashier=request.user, status=SessionStatus.OPEN, is_deleted=False,
+    ).order_by('-opened_at').select_related('cash_desk').first()
+
+    if active_session and active_session.cash_desk.desk_type == DeskType.TIER and active_session.cash_desk.tier:
+        # Redirect cashier to their desk-specific queue (proper tier isolation)
+        return redirect('billing:desk_cashier_queue', desk_id=active_session.cash_desk.pk)
+
+    # ── Fallback: no desk session open — use cashier_station field ────────────
+    today = timezone.localdate()
     waiting = QueueToken.objects.filter(
         service_type=ServiceType.CASHIER,
         status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
@@ -822,13 +833,11 @@ def cashier_queue(request):
         is_deleted=False,
     ).select_related('patient').order_by('-priority', 'issued_at')
 
-    # Tier isolation: cashier only sees their assigned tier's tokens
-    # Map CashierStation → ServiceTier so tokens are filtered correctly
     _STATION_TO_TIER = {
         CashierStation.STANDARD:   ServiceTier.STANDARD,
         CashierStation.FAST_TRACK: ServiceTier.FAST_TRACK,
         CashierStation.VIP:        ServiceTier.VIP,
-        CashierStation.INSURED:    ServiceTier.STANDARD,  # insured uses standard QMS tier
+        CashierStation.INSURED:    ServiceTier.STANDARD,
     }
     station = getattr(request.user, 'cashier_station', CashierStation.ALL)
     if station and station != CashierStation.ALL:
@@ -5598,10 +5607,9 @@ def desk_cashier_queue(request, desk_id):
 
     # Tier enforcement — cashier must have an open session at this desk
     if request.user.role == UserRole.CASHIER:
-        today = timezone.localdate()
         has_session = CashierSession.objects.filter(
             cashier=request.user, cash_desk=desk,
-            status=SessionStatus.OPEN, opened_at__date=today,
+            status=SessionStatus.OPEN,
             is_deleted=False,
         ).exists()
         if not has_session:
