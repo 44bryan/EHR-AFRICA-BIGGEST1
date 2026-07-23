@@ -144,14 +144,9 @@ function ehrInitOnce() {
 }
 
 function syncTooltips(collapsed) {
-  document.querySelectorAll('#sidebar [data-bs-toggle="tooltip"]').forEach(el => {
-    const tip = bootstrap.Tooltip.getInstance(el);
-    if (collapsed) {
-      if (!tip) new bootstrap.Tooltip(el, { trigger: 'hover' });
-    } else {
-      if (tip) tip.dispose();
-    }
-  });
+  // Sidebar tooltips are handled by the native browser 'title' attribute when collapsed.
+  // Creating/disposing 300+ Bootstrap Tooltip instances (each with Popper.js) was
+  // causing the browser to freeze for ~2s on every hamburger click. No-op now.
 }
 
 // ── Bootstrap / page initializer ─────────────────────────────────────────────
@@ -624,7 +619,11 @@ document.addEventListener('htmx:beforeSwap', function() {
   }
 
   function _poll() {
-    fetch('/notifications/poll/', { credentials: 'same-origin' })
+    // Include session slot so the poll hits the correct Django session (slot > 1)
+    var _slot = '';
+    try { _slot = sessionStorage.getItem('ehr_slot') || ''; } catch(e) {}
+    var _pollUrl = '/notifications/poll/' + (_slot && _slot !== '1' ? '?s=' + _slot : '');
+    fetch(_pollUrl, { credentials: 'same-origin' })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null)
       .then(data => {
