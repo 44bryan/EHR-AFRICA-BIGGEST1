@@ -852,9 +852,8 @@ def cashier_pos(request, token_id):
     # ── Tier guard: use active desk session tier (new system) or fall back to cashier_station ──
     from apps.billing.models import CashierSession, SessionStatus as _SS
     _active_session = CashierSession.objects.filter(
-        cashier=request.user, status=_SS.OPEN,
-        opened_at__date=timezone.localdate(), is_deleted=False,
-    ).select_related('cash_desk').first()
+        cashier=request.user, status=_SS.OPEN, is_deleted=False,
+    ).order_by('-opened_at').select_related('cash_desk').first()
 
     if _active_session and _active_session.cash_desk.desk_type == 'TIER' and _active_session.cash_desk.tier:
         # New system: tier comes from desk session
@@ -5225,13 +5224,12 @@ from .models import (
 
 
 def _get_active_cashier_session(user):
-    """Return the cashier's currently open desk session today, or None."""
+    """Return the cashier's currently open desk session (any date), or None."""
     return CashierSession.objects.filter(
         cashier=user,
         status=SessionStatus.OPEN,
-        opened_at__date=timezone.localdate(),
         is_deleted=False,
-    ).first()
+    ).order_by('-opened_at').first()
 
 
 def _can_manage_desks(user):
@@ -5393,14 +5391,17 @@ def session_open(request):
         messages.error(request, 'Only cashiers can open a session.')
         return redirect('dashboard:home')
 
-    # Check for already-open session today
-    today = timezone.localdate()
+    # Check for any unclosed session (no date filter — a session from yesterday
+    # that was never closed must still be found so the cashier can close it).
     existing = CashierSession.objects.filter(
         cashier=request.user, status=SessionStatus.OPEN, is_deleted=False,
-        opened_at__date=today,
-    ).first()
+    ).order_by('-opened_at').first()
     if existing:
-        messages.info(request, 'You already have an open session today.')
+        messages.warning(
+            request,
+            f'You still have an open session from {existing.opened_at.strftime("%d %b %Y %H:%M")}. '
+            f'Please close it before opening a new one.'
+        )
         return redirect('billing:session_detail', session_id=existing.pk)
 
     desks = CashDesk.objects.filter(is_deleted=False, is_active=True).order_by('desk_type', 'name')
@@ -5527,12 +5528,10 @@ def session_verify(request, session_id):
 
 @login_required
 def my_session(request):
-    """Redirect cashier to their active session, or prompt to open one."""
-    today   = timezone.localdate()
+    """Redirect cashier to their active session (any date), or prompt to open one."""
     session = CashierSession.objects.filter(
-        cashier=request.user, status=SessionStatus.OPEN,
-        opened_at__date=today, is_deleted=False,
-    ).first()
+        cashier=request.user, status=SessionStatus.OPEN, is_deleted=False,
+    ).order_by('-opened_at').first()
     if session:
         return redirect('billing:session_detail', session_id=session.pk)
     return redirect('billing:session_open')
