@@ -130,7 +130,7 @@ def _ceo_dashboard(request, user, today, ctx):
             out = sum(
                 inv.balance_due for inv in
                 Invoice.objects.filter(status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID], is_deleted=False)
-                .prefetch_related('items', 'payments')
+                .prefetch_related('items', 'payments', 'refunds')
             )
             spark = []
             for i in range(6, -1, -1):
@@ -276,10 +276,15 @@ def _admin_director_dashboard(request, user, today, ctx):
         open_complaints = PatientFeedback.objects.filter(
             status__in=['NEW', 'ACKNOWLEDGED', 'INVESTIGATING'], is_deleted=False
         ).count()
-        nps_data = PatientFeedback.objects.filter(nps_score__isnull=False, is_deleted=False)
-        total_fb = nps_data.count()
-        promo    = nps_data.filter(nps_score__gte=9).count()
-        detr     = nps_data.filter(nps_score__lte=6).count()
+        from django.db.models import Count, Case, When, IntegerField
+        fb_agg = PatientFeedback.objects.filter(nps_score__isnull=False, is_deleted=False).aggregate(
+            total_fb=Count('id'),
+            promo=Count(Case(When(nps_score__gte=9, then=1), output_field=IntegerField())),
+            detr=Count(Case(When(nps_score__lte=6, then=1), output_field=IntegerField())),
+        )
+        total_fb = fb_agg['total_fb']
+        promo    = fb_agg['promo']
+        detr     = fb_agg['detr']
         nps      = round(((promo - detr) / total_fb) * 100) if total_fb else 0
     except Exception:
         open_complaints = nps = 0
@@ -468,13 +473,19 @@ def home_view(request):
         # ── FEEDBACK / NPS ────────────────────────────────────────────────
         try:
             from apps.feedback.models import PatientFeedback
-            total_nps    = PatientFeedback.objects.filter(
+            from django.db.models import Count, Case, When, IntegerField as _IntF
+            _fb_agg = PatientFeedback.objects.filter(
                 nps_score__isnull=False, is_deleted=False
-            ).count()
-            promoters    = PatientFeedback.objects.filter(nps_score__gte=9, is_deleted=False).count()
-            detractors   = PatientFeedback.objects.filter(nps_score__lte=6, is_deleted=False).count()
-            passives     = total_nps - promoters - detractors
-            nps          = round(((promoters - detractors) / total_nps) * 100) if total_nps else 0
+            ).aggregate(
+                total=Count('id'),
+                promo=Count(Case(When(nps_score__gte=9, then=1), output_field=_IntF())),
+                detr=Count(Case(When(nps_score__lte=6, then=1), output_field=_IntF())),
+            )
+            total_nps  = _fb_agg['total']
+            promoters  = _fb_agg['promo']
+            detractors = _fb_agg['detr']
+            passives   = total_nps - promoters - detractors
+            nps        = round(((promoters - detractors) / total_nps) * 100) if total_nps else 0
             avg_satisfaction = PatientFeedback.objects.filter(
                 overall_rating__isnull=False, is_deleted=False
             ).aggregate(avg=Avg('overall_rating'))['avg'] or 0

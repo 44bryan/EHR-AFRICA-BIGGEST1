@@ -58,7 +58,7 @@ def consultation_list_view(request):
         return HttpResponseForbidden()
 
     consultations = Consultation.objects.select_related(
-        'patient', 'department', 'consulting_doctor'
+        'patient', 'department', 'consulting_doctor', 'visit'
     ).filter(is_deleted=False)
 
     # Medical director and read-only roles see all; doctors see their own only

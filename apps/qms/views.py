@@ -238,20 +238,29 @@ def queue_dashboard(request):
         'current_serving', 'staff_assigned'
     )
 
-    # Per-department waiting counts
-    dept_counts = {}
-    for code, label in ServiceType.choices:
-        dept_counts[code] = {
-            'label': label,
-            'waiting': tokens.filter(service_type=code, status=TokenStatus.WAITING).count(),
-        }
+    # Single aggregate for all status+service_type counts — avoids N+1 count() calls
+    from django.db.models import Count as _Cnt, Case as _Case, When as _When, IntegerField as _IF
+    status_agg = tokens.aggregate(
+        waiting_count=_Cnt(_Case(_When(status=TokenStatus.WAITING, then=1), output_field=_IF())),
+        serving_count=_Cnt(_Case(_When(status=TokenStatus.SERVING, then=1), output_field=_IF())),
+    )
+    dept_raw = (
+        tokens.filter(status=TokenStatus.WAITING)
+        .values('service_type').annotate(waiting=_Cnt('id'))
+    )
+    dept_waiting_map = {row['service_type']: row['waiting'] for row in dept_raw}
+
+    dept_counts = {
+        code: {'label': label, 'waiting': dept_waiting_map.get(code, 0)}
+        for code, label in ServiceType.choices
+    }
 
     all_today = _active_tokens_today()
     context = {
         'tokens': tokens,
         'counters': counters,
-        'waiting_count': tokens.filter(status=TokenStatus.WAITING).count(),
-        'serving_count': tokens.filter(status=TokenStatus.SERVING).count(),
+        'waiting_count': status_agg['waiting_count'],
+        'serving_count': status_agg['serving_count'],
         'dept_counts': dept_counts,
         'service_types': ServiceType.choices,
         'service_tiers': ServiceTier.choices,

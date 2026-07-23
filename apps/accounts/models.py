@@ -108,7 +108,7 @@ class User(AbstractUser):
     Extended user model — email is the primary identifier.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(_('email address'), unique=True)
+    email = models.EmailField(_('email address'), unique=True, null=True, blank=True)
     role = models.CharField(
         max_length=30,
         choices=UserRole.choices,

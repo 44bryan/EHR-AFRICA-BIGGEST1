@@ -74,6 +74,10 @@ class UserCreateForm(forms.ModelForm):
         val = self.cleaned_data.get('patient_tier')
         return val if val else 'ALL'
 
+    def clean_email(self):
+        val = self.cleaned_data.get('email', '').strip()
+        return val if val else None
+
     def clean_employee_id(self):
         val = self.cleaned_data.get('employee_id', '').strip()
         if not val:
@@ -124,6 +128,10 @@ class UserEditForm(forms.ModelForm):
             'consultation_unit': forms.Select(attrs={'class': 'form-select', 'id': 'id_consultation_unit'}),
             'patient_tier': forms.Select(attrs={'class': 'form-select', 'id': 'id_patient_tier'}),
         }
+
+    def clean_email(self):
+        val = self.cleaned_data.get('email', '').strip()
+        return val if val else None
 
     def clean_cashier_station(self):
         val = self.cleaned_data.get('cashier_station')

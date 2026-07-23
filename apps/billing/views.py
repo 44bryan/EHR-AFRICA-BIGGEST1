@@ -203,9 +203,14 @@ def billing_dashboard(request):
     ).count()
 
     # Recent invoices
+    from django.db.models import Prefetch as _Pf
     recent_invoices = Invoice.objects.filter(
         is_deleted=False
-    ).select_related('patient').order_by('-created_at')[:15]
+    ).select_related('patient').prefetch_related(
+        _Pf('items', queryset=InvoiceItem.objects.filter(is_deleted=False), to_attr='_items_cache'),
+        _Pf('payments', queryset=Payment.objects.filter(is_deleted=False), to_attr='_payments_cache'),
+        _Pf('refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
+    ).order_by('-created_at')[:15]
 
     # Revenue last 7 days for sparkline
     from datetime import timedelta
@@ -879,6 +884,7 @@ def cashier_pos(request, token_id):
         active_consultation = patient.active_consultation_visit
 
         # Outstanding balance alert: unpaid invoices from previous visits (not today)
+        from django.db.models import Prefetch as _Pf2
         prior_unpaid_invoices = Invoice.objects.filter(
             patient=patient,
             is_deleted=False,
@@ -886,6 +892,10 @@ def cashier_pos(request, token_id):
             status__in=[InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.WAIVED]
         ).exclude(
             id=invoice.id
+        ).prefetch_related(
+            _Pf2('items', queryset=InvoiceItem.objects.filter(is_deleted=False), to_attr='_items_cache'),
+            _Pf2('payments', queryset=Payment.objects.filter(is_deleted=False), to_attr='_payments_cache'),
+            _Pf2('refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
         ).order_by('-created_at')[:5]
 
     # Active insurance for co-pay display
@@ -3314,11 +3324,16 @@ def ar_aging_report(request):
 
     today = timezone.localdate()
 
-    # All outstanding invoices
+    # All outstanding invoices — prefetch to avoid N+1 on balance_due/total/amount_paid
+    from django.db.models import Prefetch as _Pf3
     outstanding = Invoice.objects.filter(
         status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
         is_deleted=False,
-    ).select_related('patient', 'corporate_account').order_by('issue_date')
+    ).select_related('patient', 'corporate_account').prefetch_related(
+        _Pf3('items', queryset=InvoiceItem.objects.filter(is_deleted=False), to_attr='_items_cache'),
+        _Pf3('payments', queryset=Payment.objects.filter(is_deleted=False), to_attr='_payments_cache'),
+        _Pf3('refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
+    ).order_by('issue_date')
 
     buckets = {
         'current':  {'label': 'Current (0–30 days)',   'rows': [], 'total': 0},
@@ -3355,22 +3370,23 @@ def ar_aging_report(request):
             buckets['days90']['rows'].append(row)
             buckets['days90']['total'] += balance
 
-    # Corporate AR summary
+    # Corporate AR summary — single query via annotation instead of per-account loops
     from .models import CorporateAccount
-    corporate_ar = []
-    for corp in CorporateAccount.objects.filter(is_active=True, is_deleted=False):
-        corp_balance = sum(
-            float(inv.balance_due)
-            for inv in Invoice.objects.filter(
-                corporate_account=corp,
-                status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
-                is_deleted=False,
-            )
-        )
-        if corp_balance > 0:
-            corporate_ar.append({'account': corp, 'balance': corp_balance})
-
-    corporate_ar.sort(key=lambda x: x['balance'], reverse=True)
+    from django.db.models import OuterRef, Subquery, DecimalField as _DFld, Value as _Val
+    from django.db.models.functions import Coalesce as _Coalesce
+    # Aggregate paid + refunds per invoice via Python (invoices already prefetched above)
+    corp_balances: dict = {}
+    for inv in outstanding:
+        if inv.corporate_account_id:
+            b = float(inv.balance_due)
+            if b > 0:
+                corp_balances[inv.corporate_account_id] = corp_balances.get(inv.corporate_account_id, 0) + b
+    corp_ids = list(corp_balances.keys())
+    corp_map = {c.id: c for c in CorporateAccount.objects.filter(id__in=corp_ids, is_active=True, is_deleted=False)}
+    corporate_ar = sorted(
+        [{'account': corp_map[cid], 'balance': bal} for cid, bal in corp_balances.items() if cid in corp_map],
+        key=lambda x: x['balance'], reverse=True,
+    )
 
     ctx = {
         'today': today,
@@ -3442,21 +3458,28 @@ def cashdesks_overview(request):
         .annotate(total=_S('amount'))
     )
 
-    # Build desk rows
+    # Pre-aggregate all today's payments by cashier+method in one query (avoids N+1)
     _method_map = dict(PaymentMethod.choices)
+    cashier_ids = [s.cashier_id for s in shifts]
+    all_payments = (
+        Payment.objects.filter(
+            received_by_id__in=cashier_ids,
+            payment_date__date=today,
+            is_deleted=False,
+        ).values('received_by_id', 'payment_method').annotate(t=_S('amount'))
+    )
+    # Build {cashier_id: {method_label: amount}}
+    by_cashier: dict = {}
+    for row in all_payments:
+        cid = row['received_by_id']
+        label = _method_map.get(row['payment_method'], row['payment_method'])
+        by_cashier.setdefault(cid, {})[label] = float(row['t'])
+
     desk_rows = []
     grand_total = 0
     grand_cash = 0
     for shift in shifts:
-        raw_by_method = dict(
-            Payment.objects.filter(
-                received_by=shift.cashier,
-                payment_date__date=today,
-                is_deleted=False,
-            ).values('payment_method').annotate(t=_S('amount')).values_list('payment_method', 't')
-        )
-        # Resolve raw keys to human-readable labels for the template
-        by_method = {_method_map.get(k, k): float(v) for k, v in raw_by_method.items()}
+        by_method = by_cashier.get(shift.cashier_id, {})
         row = {
             'shift': shift,
             'cashier': shift.cashier,
@@ -3514,12 +3537,17 @@ def sales_journal(request):
     except (ValueError, TypeError):
         date_from = date_to = today
 
-    # Base payment queryset
+    # Base payment queryset — prefetch invoice sub-relations to avoid N+1 on total/subtotal
+    from django.db.models import Prefetch as _Pf4
     pay_qs = Payment.objects.filter(
         payment_date__date__gte=date_from,
         payment_date__date__lte=date_to,
         is_deleted=False,
-    ).select_related('invoice__patient', 'received_by')
+    ).select_related('invoice__patient', 'received_by').prefetch_related(
+        _Pf4('invoice__items', queryset=InvoiceItem.objects.filter(is_deleted=False), to_attr='_items_cache'),
+        _Pf4('invoice__payments', queryset=Payment.objects.filter(is_deleted=False), to_attr='_payments_cache'),
+        _Pf4('invoice__refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
+    )
 
     if cashier_id:
         pay_qs = pay_qs.filter(received_by_id=cashier_id)
@@ -4904,13 +4932,21 @@ def balance_sheet(request):
         return HttpResponseForbidden()
     date_to = request.GET.get('date_to', str(timezone.localdate()))
 
-    def get_balance(acct):
-        lines = JournalLine.objects.filter(
-            account=acct, entry__is_posted=True,
-            entry__is_deleted=False, entry__entry_date__lte=date_to,
+    # Single bulk aggregate across all GL accounts — avoids 2 queries per account
+    bulk_agg = (
+        JournalLine.objects.filter(
+            entry__is_posted=True, entry__is_deleted=False, entry__entry_date__lte=date_to,
+        ).values('account_id').annotate(
+            total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
         )
-        dr = lines.aggregate(t=Sum('debit_amount'))['t'] or Decimal('0')
-        cr = lines.aggregate(t=Sum('credit_amount'))['t'] or Decimal('0')
+    )
+    bal_map = {
+        row['account_id']: (row['total_dr'] or Decimal('0'), row['total_cr'] or Decimal('0'))
+        for row in bulk_agg
+    }
+
+    def get_balance(acct):
+        dr, cr = bal_map.get(acct.id, (Decimal('0'), Decimal('0')))
         if acct.account_type in ('ASSET', 'EXPENSE'):
             return dr - cr
         return cr - dr
