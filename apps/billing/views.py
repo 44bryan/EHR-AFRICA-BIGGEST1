@@ -5404,6 +5404,9 @@ def session_open(request):
         return redirect('billing:session_detail', session_id=existing.pk)
 
     desks = CashDesk.objects.filter(is_deleted=False, is_active=True).order_by('desk_type', 'name')
+    open_sessions = CashierSession.objects.filter(
+        status=SessionStatus.OPEN, is_deleted=False
+    ).select_related('cashier', 'cash_desk').order_by('cash_desk__name')
     if request.method == 'POST':
         desk_id       = request.POST.get('desk_id')
         opening_float = request.POST.get('opening_float', '0').strip() or '0'
@@ -5415,14 +5418,28 @@ def session_open(request):
             desk = CashDesk.objects.get(pk=desk_id, is_deleted=False, is_active=True)
         except CashDesk.DoesNotExist:
             messages.error(request, 'Invalid desk selected.')
-            return render(request, 'billing/session_open.html', {'desks': desks})
+            return render(request, 'billing/session_open.html', {
+                'desks': desks, 'open_sessions': open_sessions,
+            })
 
         # Only one open session per desk at a time
-        if CashierSession.objects.filter(
+        blocking = CashierSession.objects.filter(
             cash_desk=desk, status=SessionStatus.OPEN, is_deleted=False
-        ).exists():
-            messages.error(request, f'Desk "{desk.name}" already has an open session.')
-            return render(request, 'billing/session_open.html', {'desks': desks})
+        ).select_related('cashier').first()
+        if blocking:
+            holder = blocking.cashier.get_full_name() or blocking.cashier.username
+            since  = blocking.opened_at.strftime('%H:%M')
+            messages.error(
+                request,
+                f'Desk "{desk.name}" is already open by {holder} (since {since}). '
+                f'Ask them to close their session first, or contact a supervisor.'
+            )
+            open_sessions = CashierSession.objects.filter(
+                status=SessionStatus.OPEN, is_deleted=False
+            ).select_related('cashier', 'cash_desk').order_by('cash_desk__name')
+            return render(request, 'billing/session_open.html', {
+                'desks': desks, 'open_sessions': open_sessions,
+            })
 
         session = CashierSession.objects.create(
             cashier=request.user,
@@ -5434,7 +5451,9 @@ def session_open(request):
         messages.success(request, f'Session opened at {desk.name}.')
         return redirect('billing:session_detail', session_id=session.pk)
 
-    return render(request, 'billing/session_open.html', {'desks': desks})
+    return render(request, 'billing/session_open.html', {
+        'desks': desks, 'open_sessions': open_sessions,
+    })
 
 
 @login_required

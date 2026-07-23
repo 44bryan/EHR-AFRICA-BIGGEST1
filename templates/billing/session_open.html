@@ -12,7 +12,9 @@
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
+<div class="row justify-content-center g-4">
+
+  <!-- Open Session Form -->
   <div class="col-lg-5">
     <div class="card border-0 shadow-sm">
       <div class="card-body p-4">
@@ -33,13 +35,14 @@
             <select name="desk_id" class="form-select" required>
               <option value="">— Select desk —</option>
               {% for desk in desks %}
-              <option value="{{ desk.pk }}">
+              <option value="{{ desk.pk }}" {% if desk.active_session %}disabled{% endif %}>
                 {{ desk.name }}
                 {% if desk.desk_type == 'TIER' and desk.tier %} [{{ desk.tier }}]{% endif %}
-                {% if desk.active_session %} — ⚠ Already open by {{ desk.active_session.cashier.get_full_name|default:desk.active_session.cashier.username }}{% endif %}
+                {% if desk.active_session %} — 🔒 {{ desk.active_session.cashier.get_full_name|default:desk.active_session.cashier.username }}{% endif %}
               </option>
               {% endfor %}
             </select>
+            <div class="form-text">Desks marked 🔒 are already open by another cashier.</div>
             {% else %}
             <div class="alert alert-warning">No active cash desks available. Ask your supervisor to configure desks first.</div>
             {% endif %}
@@ -61,5 +64,61 @@
       </div>
     </div>
   </div>
+
+  <!-- Currently Open Sessions panel -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="fw-semibold" style="font-size:.95rem;">
+          <i class="bi bi-broadcast-pin text-success me-2"></i>Currently Open Sessions
+          {% if open_sessions %}
+          <span class="badge bg-success ms-2" style="font-size:.7rem;">{{ open_sessions|length }} active</span>
+          {% endif %}
+        </div>
+        <div class="text-muted small mt-1">Live view — who has each desk open right now</div>
+      </div>
+      <div class="card-body p-0">
+        {% if open_sessions %}
+        <table class="table table-sm mb-0" style="font-size:.85rem;">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3 py-2">Desk</th>
+              <th class="py-2">Cashier</th>
+              <th class="py-2">Since</th>
+              <th class="py-2">Float</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in open_sessions %}
+            <tr>
+              <td class="ps-3 py-2 fw-semibold">
+                {{ s.cash_desk.name }}
+                {% if s.cash_desk.tier %}
+                <span class="badge rounded-pill ms-1"
+                      style="font-size:.65rem;background:{% if s.cash_desk.tier == 'VIP' %}#7c3aed{% elif s.cash_desk.tier == 'FAST_TRACK' %}#0891b2{% else %}#64748b{% endif %};">
+                  {{ s.cash_desk.tier }}
+                </span>
+                {% endif %}
+              </td>
+              <td class="py-2">
+                <div class="fw-medium">{{ s.cashier.get_full_name|default:s.cashier.username }}</div>
+                <div class="text-muted" style="font-size:.75rem;">{{ s.cashier.get_role_display }}</div>
+              </td>
+              <td class="py-2 text-muted">{{ s.opened_at|date:"H:i" }}</td>
+              <td class="py-2">{{ s.opening_float|floatformat:0 }} XAF</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="text-center text-muted py-4" style="font-size:.875rem;">
+          <i class="bi bi-moon-stars fs-3 d-block mb-2 text-secondary"></i>
+          No sessions are currently open
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
