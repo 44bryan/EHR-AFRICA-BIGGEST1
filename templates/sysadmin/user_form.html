@@ -104,6 +104,17 @@
               <div class="form-text">EXPRESS or INSURANCE queue routing for ophthalmologists.</div>
             </div>
 
+            {# Patient tier served — cashiers, nurses, pharmacists, lab techs, refractionists #}
+            {# NOT receptionists (register any tier) or doctors (use consultation_unit) #}
+            <div class="col-sm-6" id="patient-tier-row" style="display:none;">
+              <label class="form-label fw-semibold">Patient Tier Served</label>
+              {{ form.patient_tier }}
+              <div class="form-text">
+                <strong>All Tiers</strong> = sees every patient (default).
+                <strong>VIP Only</strong> / <strong>Standard Only</strong> = staff restricted to that tier's queue only.
+              </div>
+            </div>
+
             {% if form.is_active %}
             <div class="col-sm-6">
               <label class="form-label fw-semibold">Account Status</label>
@@ -157,8 +168,9 @@
         <div class="mb-2"><span class="badge bg-primary me-1">Ophthalmologist</span>Clinical consultation & workstation</div>
         <div class="mb-2"><span class="badge bg-info text-dark me-1">Nurse</span>Triage, IPD, Theatre</div>
         <div class="mb-2"><span class="badge bg-success me-1">Cashier / Finance</span>POS, billing, accounts</div>
-        <div class="mb-2"><span class="badge bg-secondary me-1">Reception / Records</span>Front desk, patient records</div>
+        <div class="mb-2"><span class="badge bg-secondary me-1">Reception / Records</span>Front desk — registers <strong>any</strong> tier</div>
         <hr class="my-2">
+        <div class="mb-2 text-muted"><i class="bi bi-layers me-1"></i><strong>Patient Tier Served</strong> — for cashiers, nurses, pharmacy, lab, refractionists only. Leave as <em>All Tiers</em> unless the staff member works in a dedicated VIP or Standard unit.</div>
         <div class="text-muted">Password must be at least 12 characters. User will be forced to change it on first login.</div>
       </div>
     </div>
@@ -190,13 +202,26 @@ const CASHIER_ROLES = ['cashier','chief_cashier','billing_officer'];
 const OPH_ROLES = ['ophthalmologist','retina_specialist','glaucoma_specialist','pediatric_ophthalmologist',
                    'cataract_surgeon','cornea_specialist','oculoplastics_surgeon','neuro_ophthalmologist',
                    'uveitis_specialist','optometrist','pediatric_refractionist','low_vision_specialist'];
+// Roles that work within a specific tier (can be restricted to VIP-only or Standard-only).
+// Receptionists are excluded — they must register any patient regardless of tier.
+// Doctors are excluded — they use Consultation Unit, not tier restriction.
+const TIER_ROLES = [
+  'cashier', 'chief_cashier', 'billing_officer',
+  'nurse', 'triage_nurse', 'nurse_director', 'consultation_nurse',
+  'pharmacist', 'lab_technician',
+  'refractionist', 'pediatric_refractionist',
+  'orthoptist', 'low_vision_specialist',
+  'cssd_technician',
+];
 const roleSelect = document.getElementById('id_role');
 function updateFieldVisibility() {
   const role = roleSelect ? roleSelect.value : '';
   const cashierRow = document.getElementById('cashier-station-row');
   const consultRow = document.getElementById('consult-unit-row');
+  const tierRow    = document.getElementById('patient-tier-row');
   if (cashierRow) cashierRow.style.display = CASHIER_ROLES.includes(role) ? '' : 'none';
   if (consultRow) consultRow.style.display = OPH_ROLES.includes(role) ? '' : 'none';
+  if (tierRow)    tierRow.style.display    = TIER_ROLES.includes(role)  ? '' : 'none';
 }
 if (roleSelect) { roleSelect.addEventListener('change', updateFieldVisibility); updateFieldVisibility(); }
 </script>
