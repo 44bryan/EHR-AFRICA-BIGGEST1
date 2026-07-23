@@ -1729,9 +1729,7 @@ def shift_day_open(request):
     if request.method == 'POST':
         # ── Auto-close any OPEN shifts from previous days ────────────────────
         stale = CashierShift.objects.filter(
-            shift_date__lt=today,
-            status=ShiftStatus.OPEN,
-            is_deleted=False,
+            shift_date__lt=today, status=ShiftStatus.OPEN, is_deleted=False,
         )
         stale_count = stale.count()
         if stale_count:
@@ -1741,6 +1739,19 @@ def shift_day_open(request):
                 notes='Auto-closed when new day was opened by Chief Cashier.',
             )
             messages.warning(request, f'{stale_count} shift(s) from previous day(s) were automatically closed.')
+
+        # ── Also auto-close any OPEN desk sessions from previous days ─────────
+        stale_sessions = CashierSession.objects.filter(
+            status=SessionStatus.OPEN, is_deleted=False,
+        ).exclude(opened_at__date=today)
+        stale_sess_count = stale_sessions.count()
+        if stale_sess_count:
+            stale_sessions.update(
+                status=SessionStatus.CLOSED,
+                closed_at=timezone.now(),
+                notes='Auto-closed when Chief Cashier opened the new working day.',
+            )
+            messages.warning(request, f'{stale_sess_count} desk session(s) from previous day(s) were automatically closed.')
 
         default_float = request.POST.get('default_float', '0').strip() or '0'
         try:
@@ -5451,6 +5462,20 @@ def session_open(request):
                 'desks': desks, 'open_sessions': open_sessions, 'is_supervisor': is_supervisor,
             })
 
+        # Auto-close any stale OPEN sessions from previous days for this cashier
+        today = timezone.localdate()
+        stale = CashierSession.objects.filter(
+            cashier=request.user, status=SessionStatus.OPEN, is_deleted=False,
+        ).exclude(opened_at__date=today)
+        stale_count = stale.count()
+        if stale_count:
+            stale.update(
+                status=SessionStatus.CLOSED,
+                closed_at=timezone.now(),
+                notes='Auto-closed: cashier opened a new session on a new day.',
+            )
+            messages.warning(request, f'{stale_count} previous unclosed session(s) were automatically closed.')
+
         session = CashierSession.objects.create(
             cashier=request.user,
             cash_desk=desk,
@@ -5475,10 +5500,12 @@ def session_detail(request, session_id):
     if not (is_own or _can_verify_session(request.user) or _can_view_financial_reports(request.user)):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
+    can_force_close = _can_verify_session(request.user) and not is_own
     context = {
         'session': session,
         'collections': session.collections_by_method,
         'can_close': is_own and session.status == SessionStatus.OPEN,
+        'can_force_close': can_force_close and session.status == SessionStatus.OPEN,
         'can_verify': _can_verify_session(request.user) and session.status == SessionStatus.CLOSED,
     }
     return render(request, 'billing/session_detail.html', context)
@@ -5487,9 +5514,11 @@ def session_detail(request, session_id):
 @login_required
 @require_POST
 def session_close(request, session_id):
-    """Cashier closes their session — declares cash in drawer."""
+    """Cashier closes their own session, or supervisor force-closes any session."""
     session = get_object_or_404(CashierSession, pk=session_id, is_deleted=False)
-    if session.cashier != request.user:
+    is_own = (session.cashier == request.user)
+    can_force = _can_verify_session(request.user)   # Chief Cashier and above
+    if not is_own and not can_force:
         return JsonResponse({'error': 'Not your session.'}, status=403)
     if session.status != SessionStatus.OPEN:
         return JsonResponse({'error': 'Session is not open.'}, status=400)
@@ -5503,7 +5532,12 @@ def session_close(request, session_id):
     session.closing_declared_cash = declared
     session.closed_at = timezone.now()
     session.status    = SessionStatus.CLOSED
-    session.notes     = request.POST.get('notes', '').strip()
+    base_notes = request.POST.get('notes', '').strip()
+    if not is_own:
+        supervisor_name = request.user.get_full_name() or request.user.username
+        session.notes = f'Force-closed by {supervisor_name} ({request.user.get_role_display()}). {base_notes}'.strip()
+    else:
+        session.notes = base_notes
 
     # Flag if variance > tolerance (e.g. 500 XAF)
     variance = declared - session.expected_cash_in_hand
@@ -5512,7 +5546,11 @@ def session_close(request, session_id):
         session.variance_notes = f'Auto-flagged: variance = {variance:+,.0f} XAF'
 
     session.save()
-    messages.success(request, 'Session closed. Awaiting verification.')
+    if is_own:
+        messages.success(request, 'Session closed. Awaiting verification.')
+    else:
+        cashier_name = session.cashier.get_full_name() or session.cashier.username
+        messages.warning(request, f'Session force-closed for {cashier_name}. Desk is now available.')
     return redirect('billing:session_detail', session_id=session.pk)
 
 
