@@ -5405,9 +5405,17 @@ def session_open(request):
         return redirect('billing:session_detail', session_id=existing.pk)
 
     desks = CashDesk.objects.filter(is_deleted=False, is_active=True).order_by('desk_type', 'name')
-    open_sessions = CashierSession.objects.filter(
-        status=SessionStatus.OPEN, is_deleted=False
-    ).select_related('cashier', 'cash_desk').order_by('cash_desk__name')
+    _supervisor_roles = {
+        UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
+        UserRole.SUPER_ADMIN,
+    }
+    is_supervisor = request.user.role in _supervisor_roles or request.user.is_superuser
+    open_sessions = (
+        CashierSession.objects.filter(status=SessionStatus.OPEN, is_deleted=False)
+        .select_related('cashier', 'cash_desk').order_by('cash_desk__name')
+        if is_supervisor else []
+    )
     if request.method == 'POST':
         desk_id       = request.POST.get('desk_id')
         opening_float = request.POST.get('opening_float', '0').strip() or '0'
