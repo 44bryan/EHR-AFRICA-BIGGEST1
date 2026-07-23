@@ -822,7 +822,7 @@ def cashier_queue(request):
 
     if active_session and active_session.cash_desk.desk_type == DeskType.TIER and active_session.cash_desk.tier:
         # Redirect cashier to their desk-specific queue (proper tier isolation)
-        return redirect('billing:desk_cashier_queue', desk_id=active_session.cash_desk.pk)
+        return redirect('billing:desk_queue', desk_id=active_session.cash_desk.pk)
 
     # ── Fallback: no desk session open — use cashier_station field ────────────
     today = timezone.localdate()
