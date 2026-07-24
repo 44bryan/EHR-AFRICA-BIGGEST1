@@ -796,6 +796,18 @@
 <script>
 // ── Constants (var so HTMX re-swaps don't throw SyntaxError on re-declaration) ─
 var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+var SESSION_SLOT = (new URLSearchParams(location.search).get('s')) || '1';
+// Ensure all POST fetch calls on this page include the session slot so the
+// MultiSessionMiddleware resolves the correct CSRF cookie (slot-N vs slot-1).
+(function(){
+  var _orig = window.fetch;
+  window.fetch = function(url, opts){
+    if (opts && opts.method === 'POST' && opts.body instanceof FormData){
+      opts.body.append('s', SESSION_SLOT);
+    }
+    return _orig.call(this, url, opts);
+  };
+})();
 {% if invoice %}var INV_ID = '{{ invoice.id }}';{% else %}var INV_ID = null;{% endif %}
 {% if token %}
 var TOKEN_ID = '{{ token.id }}';
