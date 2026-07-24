@@ -738,7 +738,7 @@
 
     {# Reprint if paid #}
     {% if invoice.status == 'PAID' %}
-    <button class="btn-reprint" onclick="window.open('{{ receipt_url }}','_blank')">
+    <button class="btn-reprint" onclick="document.getElementById('receiptFrame').src='{{ receipt_url }}?popup=1';new bootstrap.Modal(document.getElementById('receiptModal')).show();">
       <i class="bi bi-printer me-2"></i>Reprint Receipt
     </button>
     {% endif %}
@@ -762,6 +762,30 @@
 
   </div>{# /bill-col #}
 </div>{# /pos-grid #}
+
+{# Receipt modal — shown after payment instead of opening a new tab #}
+<div class="modal fade" id="receiptModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content border-0" style="background:#0f172a;">
+      <div class="modal-header border-0 pb-0" style="background:#0f172a;">
+        <h6 class="modal-title text-success fw-bold">
+          <i class="bi bi-check-circle-fill me-2"></i>Payment Complete
+        </h6>
+      </div>
+      <div class="modal-body p-1" style="height:75vh;">
+        <iframe id="receiptFrame" src="" style="width:100%;height:100%;border:none;border-radius:8px;background:#fff;"></iframe>
+      </div>
+      <div class="modal-footer border-0" style="background:#0f172a;gap:.5rem;">
+        <button class="btn btn-outline-light btn-sm" onclick="document.getElementById('receiptFrame').contentWindow.print()">
+          <i class="bi bi-printer me-1"></i>Print Receipt
+        </button>
+        <button class="btn btn-success btn-sm fw-semibold" onclick="window.location.href=QUEUE_URL">
+          <i class="bi bi-arrow-right-circle me-1"></i>Next Patient
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 {# Floating cart — mobile #}
 <div id="floatCart">
@@ -1154,12 +1178,20 @@ function _recordPayment(method, amount, ref, finalize) {
           .then(r => r.json())
           .then(fdata => {
             const url = fdata.redirect_url || RECEIPT_URL;
-            if (url) window.open(url + '?popup=1', '_blank');
-            window.location.href = QUEUE_URL;
+            if (url) {
+              document.getElementById('receiptFrame').src = url + '?popup=1';
+              new bootstrap.Modal(document.getElementById('receiptModal')).show();
+            } else {
+              window.location.href = QUEUE_URL;
+            }
           })
           .catch(() => {
-            if (RECEIPT_URL) window.open(RECEIPT_URL + '?popup=1', '_blank');
-            window.location.href = QUEUE_URL;
+            if (RECEIPT_URL) {
+              document.getElementById('receiptFrame').src = RECEIPT_URL + '?popup=1';
+              new bootstrap.Modal(document.getElementById('receiptModal')).show();
+            } else {
+              window.location.href = QUEUE_URL;
+            }
           });
       } else if (finalize && !data.is_paid) {
         btn.disabled = false;
