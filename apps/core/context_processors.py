@@ -97,7 +97,8 @@ def doctor_assigned_room(request):
             UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
             UserRole.NEURO_OPHTHALMOLOGIST, UserRole.UVEITIS_SPECIALIST,
             UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST,
-            UserRole.ORTHOPTIST, UserRole.REFRACTIONIST,
+            UserRole.ORTHOPTIST, UserRole.PEDIATRIC_REFRACTIONIST,
+            UserRole.INTERN, UserRole.GENERAL_PHYSICIAN,
         ]
         if request.user.role not in clinical_roles:
             return {'my_room': None}

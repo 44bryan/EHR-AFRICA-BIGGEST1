@@ -1183,11 +1183,32 @@ def workstation_view(request):
         # Default: doctor's assigned room (if any), otherwise all
         selected_room = my_assigned_room
 
+    # ── QMS counter-based room filter (new system) ─────────────────────────
+    # When QMS is active, filter by token.counter (ServiceCounter) if the doctor
+    # is checked into a room today. Tokens with no counter are visible to all.
+    _ws_checked_in_counter = None
+    if _qms_active():
+        try:
+            from apps.qms.models import ServiceCounter as _SC
+            _ws_checked_in_counter = _SC.objects.filter(
+                staff_assigned=user, checked_in_date=today, is_active=True
+            ).first()
+        except Exception:
+            pass
+
     # Apply room filter to queue.
-    # Rule: only EXCLUDE patients assigned to a DIFFERENT room.
-    #       Patients with NO room (e.g. intra-session routing, direct referrals)
-    #       appear in ALL room views so they are never silently dropped.
-    if selected_room:
+    # Priority: (1) QMS counter filter (new system) if doctor is checked in today
+    #           (2) ConsultationRoom filter (old system) as fallback
+    # Rule: tokens with no counter/room always appear in all views (never silently dropped).
+    if _qms_active() and _ws_checked_in_counter:
+        waiting_tokens = [
+            t for t in waiting_tokens
+            if (
+                getattr(t, 'counter_id', None) is None
+                or getattr(t, 'counter_id', None) == _ws_checked_in_counter.id
+            )
+        ]
+    elif selected_room:
         if _qms_active():
             waiting_tokens = [
                 t for t in waiting_tokens
@@ -1204,13 +1225,14 @@ def workstation_view(request):
                     or getattr(v, 'consultation_room_id', None) == selected_room.id
                 )
             ]
-        # Recompute stats after filter
-        if _qms_active():
-            waiting_count = sum(1 for t in waiting_tokens if t.status == 'WAITING')
-            in_progress_count = sum(1 for t in waiting_tokens if t.status in ('CALLED', 'SERVING'))
-        else:
-            waiting_count = sum(1 for v in waiting_visits if v.status not in ('IN_CONSULTATION',))
-            in_progress_count = sum(1 for v in waiting_visits if v.status == 'IN_CONSULTATION')
+
+    # Recompute stats after any room/counter filter
+    if _qms_active():
+        waiting_count = sum(1 for t in waiting_tokens if t.status == 'WAITING')
+        in_progress_count = sum(1 for t in waiting_tokens if t.status in ('CALLED', 'SERVING'))
+    else:
+        waiting_count = sum(1 for v in waiting_visits if v.status not in ('IN_CONSULTATION',))
+        in_progress_count = sum(1 for v in waiting_visits if v.status == 'IN_CONSULTATION')
 
     service_type_choices = []
     if _qms_active():
@@ -1288,6 +1310,7 @@ def workstation_view(request):
         'queue_filter': queue_filter if dept_code == 'GEN_OPH' else '',
         'is_refrac': dept_code in ('REFRAC', 'PEDS_REFRAC'),
         'refrac_counter': _refrac_counter if dept_code in ('REFRAC', 'PEDS_REFRAC') else None,
+        'checked_in_counter': _ws_checked_in_counter,
     })
 
 
