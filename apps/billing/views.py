@@ -729,8 +729,11 @@ def _get_service_catalog(cashier_station=None):
     try:
         qs = ServicePrice.objects.filter(is_active=True, is_deleted=False)
         if cashier_station and cashier_station != 'ALL':
-            # Show services with no tier restriction OR matching this cashier's tier
-            qs = qs.filter(Q(tier='') | Q(tier=cashier_station))
+            # FAST_TRACK desk also handles EXPRESS patients (same physical desk)
+            _STATION_TIERS = {'FAST_TRACK': ['FAST_TRACK', 'EXPRESS']}
+            _tiers = _STATION_TIERS.get(cashier_station, [cashier_station])
+            # Show services with no tier restriction OR matching this cashier's tier(s)
+            qs = qs.filter(Q(tier='') | Q(tier__in=_tiers))
         return list(
             qs.order_by('category', 'name')
             .values('id', 'name', 'category', 'tier', 'price', 'nhis_price',
@@ -5629,8 +5632,11 @@ def desk_cashier_queue(request, desk_id):
     ).select_related('patient').order_by('-service_tier', 'issued_at')
 
     # Filter by tier/type
+    # FAST_TRACK desk also handles EXPRESS patients (same physical desk & rooms)
+    _DESK_TIER_INCLUDES = {'FAST_TRACK': ['FAST_TRACK', 'EXPRESS']}
     if desk.desk_type == DeskType.TIER and desk.tier:
-        qs = qs.filter(service_tier=desk.tier)
+        _tiers = _DESK_TIER_INCLUDES.get(desk.tier, [desk.tier])
+        qs = qs.filter(service_tier__in=_tiers)
         # VIP privacy — mask names if user is not a VIP-desk cashier
         is_vip_desk = desk.tier == 'VIP'
     else:
