@@ -938,6 +938,12 @@ def cashier_pos(request, token_id):
         if _pos_session and _pos_session.cash_desk.desk_type == 'TIER' and _pos_session.cash_desk.tier
         else (token.service_tier if token else 'STANDARD')
     )
+    from django.urls import reverse as _rev
+    _queue_url = (
+        _rev('billing:desk_queue', kwargs={'desk_id': str(_pos_session.cash_desk.pk)})
+        if _pos_session and _pos_session.cash_desk.desk_type == 'TIER' and _pos_session.cash_desk.tier
+        else _rev('billing:cashier_queue')
+    )
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -957,6 +963,7 @@ def cashier_pos(request, token_id):
         'shift_cash': shift_totals['cash'] or 0,
         'shift_mobile': shift_totals['mobile'] or 0,
         'patient_tier': _pos_tier,
+        'queue_url': _queue_url,
     })
 
 
@@ -1298,6 +1305,12 @@ def patient_pos(request, patient_id):
         if _ppos_session and _ppos_session.cash_desk.desk_type == 'TIER' and _ppos_session.cash_desk.tier
         else (_today_visit.service_tier if _today_visit else 'STANDARD')
     )
+    from django.urls import reverse as _rev
+    _pqueue_url = (
+        _rev('billing:desk_queue', kwargs={'desk_id': str(_ppos_session.cash_desk.pk)})
+        if _ppos_session and _ppos_session.cash_desk.desk_type == 'TIER' and _ppos_session.cash_desk.tier
+        else _rev('billing:cashier_queue')
+    )
     return render(request, 'billing/cashier_pos.html', {
         'token': None,
         'patient': patient,
@@ -1317,6 +1330,7 @@ def patient_pos(request, patient_id):
         'shift_cash': shift_totals['cash'] or 0,
         'shift_mobile': shift_totals['mobile'] or 0,
         'patient_tier': _ppos_tier,
+        'queue_url': _pqueue_url,
     })
 
 
