@@ -61,6 +61,12 @@ urlpatterns = [
     path('token/<uuid:token_id>/skip/', views.skip_token, name='skip_token'),
     path('token/<uuid:token_id>/no-show/', views.no_show, name='no_show'),
 
+    # Room check-in (doctors / refractionists)
+    path('room-checkin/', views.room_checkin_view, name='room_checkin'),
+
+    # Room board AJAX (triage dispatch panel + room check-in page)
+    path('room-board/', views.room_board_ajax, name='room_board'),
+
     # JSON endpoints
     path('stats/', views.queue_stats, name='stats'),
     path('patient/<str:patient_id>/status/', views.patient_queue_status, name='patient_status'),

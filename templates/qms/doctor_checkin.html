@@ -1,0 +1,135 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Room Check-In{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:860px;">
+
+  {# Messages #}
+  {% for msg in messages %}
+  <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show" role="alert">
+    {{ msg }} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="fw-bold mb-0"><i class="bi bi-door-open me-2 text-primary"></i>Room Check-In</h4>
+      <p class="text-muted small mb-0">Select your room for today. Your patient queue will update automatically.</p>
+    </div>
+    <span class="badge bg-light text-muted border">{{ today }}</span>
+  </div>
+
+  {# Current status banner #}
+  {% if current %}
+  <div class="alert alert-success d-flex align-items-center gap-3 mb-4" style="border-radius:12px;">
+    <i class="bi bi-check-circle-fill fs-3"></i>
+    <div>
+      <div class="fw-semibold">You are checked in to <strong>{{ current.name }}</strong>
+        {% if current.zone %}&mdash; {{ current.zone.name }}{% endif %}
+      </div>
+      <div class="small text-muted">Your queue is live. Patients dispatched here appear in your workstation.</div>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      <a href="{% url 'qms:counter' counter_id=current.id %}" class="btn btn-success btn-sm">
+        <i class="bi bi-layout-text-sidebar me-1"></i>Go to Queue
+      </a>
+      <form method="post" class="d-inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="checkout">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-box-arrow-right me-1"></i>Check Out
+        </button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning d-flex align-items-center gap-2 mb-4" style="border-radius:12px;">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <span>You are <strong>not checked in</strong> to any room today. Select a room below.</span>
+  </div>
+  {% endif %}
+
+  {# Room list grouped by zone #}
+  {% if available %}
+    {% regroup available by zone as zone_list %}
+    {% for zone_group in zone_list %}
+    <div class="mb-4">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        {% if zone_group.grouper %}
+          <span class="badge bg-{{ zone_group.grouper.color|default:'secondary' }} px-3 py-2" style="font-size:.8rem;">
+            {{ zone_group.grouper.name }}
+          </span>
+        {% else %}
+          <span class="badge bg-secondary px-3 py-2" style="font-size:.8rem;">Unassigned</span>
+        {% endif %}
+      </div>
+      <div class="row g-3">
+        {% for counter in zone_group.list %}
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm"
+               style="border-radius:12px;border:2px solid
+               {% if counter.is_mine %}#15803d
+               {% elif counter.is_busy %}#dc2626
+               {% else %}#e2e8f0{% endif %};">
+            <div class="card-body p-3">
+              <div class="d-flex align-items-start justify-content-between mb-2">
+                <div>
+                  <div class="fw-bold" style="font-size:.95rem;">{{ counter.name }}</div>
+                  <div class="text-muted" style="font-size:.75rem;">{{ counter.get_service_type_display|default:counter.service_type }}</div>
+                </div>
+                {% if counter.is_mine %}
+                  <span class="badge bg-success">Your Room</span>
+                {% elif counter.is_busy %}
+                  <span class="badge bg-danger">Occupied</span>
+                {% else %}
+                  <span class="badge bg-light text-muted border">Available</span>
+                {% endif %}
+              </div>
+
+              {# Doctor / status #}
+              {% if counter.is_checked_in_today and counter.staff_assigned %}
+              <div class="small mb-2">
+                <i class="bi bi-person-fill me-1 text-primary"></i>
+                <span>Dr. {{ counter.staff_assigned.get_full_name }}</span>
+              </div>
+              {% endif %}
+
+              {# Queue count #}
+              <div class="small text-muted mb-3">
+                <i class="bi bi-people me-1"></i>
+                {{ counter.waiting_count }} waiting
+              </div>
+
+              {# Action button #}
+              {% if counter.is_mine %}
+              <a href="{% url 'qms:counter' counter_id=counter.id %}" class="btn btn-success btn-sm w-100">
+                <i class="bi bi-layout-text-sidebar me-1"></i>Go to Queue
+              </a>
+              {% elif counter.is_busy %}
+              <button class="btn btn-outline-secondary btn-sm w-100" disabled>Occupied</button>
+              {% else %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="counter_id" value="{{ counter.id }}">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                  <i class="bi bi-door-open me-1"></i>Check In Here
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="text-center py-5 text-muted">
+    <i class="bi bi-building fs-1 d-block mb-2"></i>
+    <div class="fw-semibold">No rooms configured yet.</div>
+    <div class="small">Ask your system administrator to set up QMS counters.</div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

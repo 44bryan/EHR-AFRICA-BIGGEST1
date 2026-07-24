@@ -1231,44 +1231,29 @@ def triage_view(request, visit_number):
             if service_type == 'GENERAL' and visit.service_tier in _TIER_SVC_OVERRIDE:
                 service_type = _TIER_SVC_OVERRIDE[visit.service_tier]
 
-            # Resolve and save consultation room (triage nurse selected room via JS picker)
-            if _room_num and dept:
-                from apps.departments.models import ConsultationRoom
-                room_obj = ConsultationRoom.objects.filter(
-                    department=dept, room_number=_room_num, is_active=True
-                ).select_related('assigned_doctor').first()
-                if room_obj:
-                    # Tier enforcement: reject mismatched room unless supervisor
-                    _TIER_ALLOWED_ROOMS = {
-                        'VIP':        ['VIP'],
-                        'EXPRESS':    ['EXPRESS', 'FAST_TRACK'],
-                        'FAST_TRACK': ['EXPRESS', 'FAST_TRACK'],
-                        'STANDARD':   ['STANDARD'],
-                    }
-                    _nurse_is_supervisor = (
-                        request.user.is_super_admin or request.user.is_medical_director
-                        or request.user.is_ceo or getattr(request.user, 'role', '') == 'nurse_director'
-                        or getattr(request.user, 'patient_tier', 'ALL') == 'ALL'
-                    )
-                    # ALL-tier rooms accept any patient tier — skip enforcement for them
-                    _allowed = _TIER_ALLOWED_ROOMS.get(visit.service_tier, ['STANDARD'])
-                    if not _nurse_is_supervisor and room_obj.room_tier not in _allowed and room_obj.room_tier != 'ALL':
-                        messages.error(
-                            request,
-                            f'Cannot dispatch {visit.get_service_tier_display()} patient to a '
-                            f'{room_obj.room_tier} room. Choose a matching room or an All-Tiers room.'
-                        )
-                        return redirect('patients:triage', visit_number=visit.visit_number)
-                    visit.consultation_room = room_obj
-                    # Auto-assign doctor from room if none was explicitly picked
-                    if not _assigned_doctor and room_obj.assigned_doctor:
-                        _assigned_doctor = room_obj.assigned_doctor
-                    # Derive service_type from room tier; for ALL rooms, follow patient's tier
-                    if service_type in ('GENERAL', 'VIP_CONSULT', 'EXP_CONSULT'):
-                        service_type = room_obj.tier_service_type(patient_tier=visit.service_tier)
+            # Resolve QMS counter/room (nurse selected via live room board — UUID)
+            _dispatched_counter = None
+            if _room_num:
+                try:
+                    import uuid as _uuid_mod
+                    _uuid_mod.UUID(_room_num)  # validates it's a UUID, not an old room number
+                    from apps.qms.models import ServiceCounter as _SC
+                    _dispatched_counter = _SC.objects.filter(
+                        id=_room_num, is_active=True
+                    ).select_related('staff_assigned').first()
+                except (ValueError, AttributeError):
+                    pass
+                if _dispatched_counter:
+                    # Auto-assign the checked-in doctor from the counter
+                    if not _assigned_doctor and _dispatched_counter.is_checked_in_today:
+                        _assigned_doctor = _dispatched_counter.staff_assigned
+                    # Use the counter's canonical service type for the token
+                    _skip_svc = {'CASHIER', 'PARAMETERS', 'PARAMS_VIP', 'RECEPTIONIST'}
+                    if _dispatched_counter.service_type not in _skip_svc:
+                        service_type = _dispatched_counter.service_type
 
             _save_fields = ['vital_signs', 'status', 'triage_nurse', 'department',
-                            'nursing_notes', 'pre_auth_status', 'consultation_room', 'updated_at']
+                            'nursing_notes', 'pre_auth_status', 'updated_at']
             if _ct_change_tier:
                 _save_fields.append('service_tier')
             visit.save(update_fields=_save_fields)
@@ -1350,6 +1335,7 @@ def triage_view(request, visit_number):
 
                     token_number = DailyTokenSequence.next_dept_token(service_type)
                     _doctor_note = f' → Dr. {_assigned_doctor.get_full_name()}' if _assigned_doctor else ''
+                    _room_note = f' → {_dispatched_counter.name}' if _dispatched_counter else ('')
                     QueueToken.objects.create(
                         token_number=token_number,
                         patient=visit.patient,
@@ -1361,7 +1347,8 @@ def triage_view(request, visit_number):
                         priority=base_priority,
                         entry_token=entry_token,
                         assigned_doctor=_assigned_doctor,
-                        notes=f'Dispatched to {dest_label}{_doctor_note}{(" → Room " + _room_num) if _room_num else ""} by {request.user.get_full_name()}. Priority: {priority}',
+                        counter=_dispatched_counter,
+                        notes=f'Dispatched to {dest_label}{_doctor_note}{_room_note} by {request.user.get_full_name()}. Priority: {priority}',
                         issued_by=request.user,
                     )
 

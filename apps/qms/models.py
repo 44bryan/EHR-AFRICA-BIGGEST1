@@ -221,6 +221,12 @@ class ServiceCounter(TimeStampedModel):
         max_length=20, choices=StationType.choices, blank=True,
         help_text='Type of service point (consultation room, cashier, triage, lab…)'
     )
+    # Daily check-in tracking — set when a doctor checks into this room each morning
+    checked_in_date = models.DateField(
+        null=True, blank=True,
+        help_text='Date the currently assigned staff checked in. Cleared on check-out or next-day.'
+    )
+
     # Anti-starvation threshold for shared-service stations
     anti_starvation_minutes = models.PositiveSmallIntegerField(
         default=45,
@@ -238,6 +244,12 @@ class ServiceCounter(TimeStampedModel):
         if self.serves_tiers:
             return [t.strip() for t in self.serves_tiers.split(',')]
         return [t for t, _ in ServiceTier.choices]
+
+    @property
+    def is_checked_in_today(self):
+        """True if a staff member has checked in to this counter today."""
+        from django.utils import timezone as _tz
+        return bool(self.staff_assigned_id and self.checked_in_date == _tz.localdate())
 
     def get_tier_label(self):
         """Human-readable tier label for this counter."""

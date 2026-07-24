@@ -638,7 +638,7 @@
                 <div id="roomPickPanel" class="d-none mb-3 rounded p-2" style="background:#f1f5f9;border:1px solid #e2e8f0;">
                   <div class="d-flex align-items-center justify-content-between mb-2">
                     <span class="small fw-semibold text-muted">
-                      <i class="bi bi-door-open me-1"></i><span id="roomPickDeptName">Department</span> — Rooms
+                      <i class="bi bi-door-open me-1"></i><span id="roomPickDeptName">Live Room Board</span>
                     </span>
                     <button type="button" class="btn btn-xs btn-link text-secondary p-0 small" onclick="clearRoom()">
                       <i class="bi bi-x"></i> Clear
@@ -648,7 +648,7 @@
                     <option value="">— Select a room —</option>
                   </select>
                   <div class="mt-1 text-muted fst-italic" id="roomPickHint" style="font-size:.68rem;">
-                    Select a room — doctor pre-filled from daily assignment.
+                    Rooms grouped by zone. Doctor shown when checked in today.
                   </div>
                 </div>
 
@@ -987,86 +987,86 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
   document.getElementById('routeValidationAlert').classList.add('d-none');
 }
 
-// Map room tier → QMS service type
-const ROOM_TIER_TO_SERVICE = { VIP: 'VIP_CONSULT', EXPRESS: 'EXP_CONSULT', FAST_TRACK: 'EXP_CONSULT', STANDARD: 'GENERAL', ALL: 'GENERAL' };
-const ROOM_TIER_LABELS = { VIP: 'VIP', EXPRESS: 'Express', FAST_TRACK: 'Fast Track', STANDARD: 'Standard', ALL: 'All Tiers' };
-
 function fetchRooms(deptId, deptLabel) {
+  // Fetch live room board from QMS counters (replaces old dept-based ConsultationRoom picker)
   const roomPanel  = document.getElementById('roomPickPanel');
   const deptNameEl = document.getElementById('roomPickDeptName');
   const roomSel    = document.getElementById('roomBtnGroup');
   if (!roomPanel || !roomSel) return;
 
   roomPanel.classList.remove('d-none');
-  if (deptNameEl) deptNameEl.textContent = deptLabel;
+  if (deptNameEl) deptNameEl.textContent = 'Live Room Board';
   roomSel.innerHTML = '<option value="">Loading rooms…</option>';
   roomSel.disabled = true;
 
-  fetch(`/departments/${deptId}/rooms-ajax/`)
+  fetch('/qms/room-board/')
     .then(r => r.json())
     .then(function(data) {
       roomSel.innerHTML = '<option value="">— Select a room —</option>';
       roomSel.disabled = false;
-      if (!data.rooms || data.rooms.length === 0) {
-        roomSel.innerHTML = '<option value="">No rooms configured for this department yet.</option>';
+      window._roomsData = {};
+      var totalRooms = 0;
+      if (!data.zones || data.zones.length === 0) {
+        roomSel.innerHTML = '<option value="">No rooms available — ensure QMS counters are configured.</option>';
         roomSel.disabled = true;
         return;
       }
-      window._roomsData = {};
-      // Sort: patient-tier-matching rooms first, then ALL-tier, then others, then by room number
-      var patientTier = '{{ visit.service_tier }}';
-      var tierRank = function(r) {
-        if (r.room_tier === patientTier) return 0;
-        if (r.room_tier === 'ALL') return 1;
-        return 2;
-      };
-      data.rooms.slice()
-        .sort(function(a, b) {
-          var tr = tierRank(a) - tierRank(b);
-          if (tr !== 0) return tr;
-          return String(a.room_number).localeCompare(String(b.room_number), undefined, {numeric: true});
-        })
-        .forEach(function(room) {
-          window._roomsData[room.room_number] = room;
+      data.zones.forEach(function(zone) {
+        if (!zone.rooms || zone.rooms.length === 0) return;
+        var grp = document.createElement('optgroup');
+        grp.label = zone.name;
+        zone.rooms.forEach(function(room) {
+          window._roomsData[room.id] = room;
+          totalRooms++;
           var opt = document.createElement('option');
-          opt.value = room.room_number;
-          var tier = room.room_tier || 'STANDARD';
-          var prefix = (tierRank(room) === 0) ? '★ ' : '';
-          var label = prefix + 'Room ' + room.room_number + '  [' + (ROOM_TIER_LABELS[tier] || tier) + ']';
-          if (room.doctor) label += '  —  Dr. ' + room.doctor.split(' ').pop();
+          opt.value = room.id;  // ServiceCounter UUID
+          var label = room.name;
+          if (room.available && room.doctor) {
+            label += '  —  Dr. ' + room.doctor.split(' ').pop() + ' (' + room.waiting + ' waiting)';
+          } else {
+            label += '  [No doctor checked in]';
+            opt.style.color = '#9ca3af';
+          }
           opt.textContent = label;
-          roomSel.appendChild(opt);
+          grp.appendChild(opt);
         });
+        roomSel.appendChild(grp);
+      });
+      if (totalRooms === 0) {
+        roomSel.innerHTML = '<option value="">No rooms available.</option>';
+        roomSel.disabled = true;
+      }
     })
     .catch(function() {
-      roomSel.innerHTML = '<option value="">Could not load rooms — check department rooms.</option>';
+      roomSel.innerHTML = '<option value="">Could not load rooms — check QMS configuration.</option>';
       roomSel.disabled = true;
     });
 }
 
-function pickRoom(roomNum, roomTier, serviceType, doctorId, doctorName) {
-  // Set dispatch_direct = SERVICE_TYPE|ROOM:N  (e.g. VIP_CONSULT|ROOM:5)
-  const svc   = serviceType || ROOM_TIER_TO_SERVICE[roomTier] || 'GENERAL';
+function pickRoom(counterId, serviceType, doctorId, doctorName) {
+  // Set dispatch_direct = SERVICE_TYPE|ROOM:counter_uuid
+  const svc   = serviceType || 'GENERAL';
   const diInp = document.getElementById('dispatch_direct');
-  diInp.value = svc + '|ROOM:' + roomNum;
+  diInp.value = svc + '|ROOM:' + counterId;
   diInp.dataset.baseValue = svc;
 
-  // Show room label in confirm banner
+  // Show room name in confirm banner
+  const room = window._roomsData && window._roomsData[counterId];
   const roomLbl = document.getElementById('routeRoomLabel');
-  if (roomLbl) roomLbl.textContent = '— Room ' + roomNum;
+  if (roomLbl) roomLbl.textContent = room ? '— ' + room.name : '— Room selected';
 
-  // Auto-populate doctor if room has one assigned
+  // Auto-populate doctor badge if room has a checked-in doctor
   const docPanel = document.getElementById('doctorPickPanel');
   const docInput = document.getElementById('assigned_doctor_id');
-  if (doctorId && (roomTier === 'VIP' || roomTier === 'EXPRESS' || roomTier === 'FAST_TRACK' || roomTier === 'ALL')) {
+  if (doctorId || doctorName) {
     if (docPanel) docPanel.classList.remove('d-none');
-    if (docInput) docInput.value = doctorId;
+    if (docInput && doctorId) docInput.value = doctorId;
     const badge = document.getElementById('doctorPickBadge');
     const name  = document.getElementById('doctorPickName');
     if (badge) badge.classList.remove('d-none');
-    if (name)  name.textContent = 'Dr. ' + (doctorName || '');
+    if (name && doctorName) name.textContent = 'Dr. ' + doctorName.split(' ').pop();
     const sel = document.getElementById('doctorPickSelect');
-    if (sel) sel.value = doctorId;
+    if (sel && doctorId) sel.value = doctorId;
   } else if (docPanel) {
     docPanel.classList.add('d-none');
     if (docInput) docInput.value = '';
@@ -1091,10 +1091,10 @@ function clearRoom() {
 // Room select — pick room on change
 document.addEventListener('change', function(e) {
   if (e.target && e.target.id === 'roomBtnGroup') {
-    var roomNum = e.target.value;
-    if (!roomNum) { clearRoomBtns(); return; }
-    var room = window._roomsData && window._roomsData[roomNum];
-    if (room) pickRoom(room.room_number, room.room_tier || 'STANDARD', room.service_type, room.doctor_id, room.doctor);
+    var counterId = e.target.value;
+    if (!counterId) { clearRoomBtns(); return; }
+    var room = window._roomsData && window._roomsData[counterId];
+    if (room) pickRoom(room.id, room.service_type, room.doctor_id, room.doctor);
   }
 });
 
