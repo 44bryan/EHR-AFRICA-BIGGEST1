@@ -14,6 +14,14 @@ from apps.patients.models import Patient
 from apps.accounts.models import UserRole
 from apps.core.context_processors import qms_active as _qms_active
 
+# ── Desk tier groupings ───────────────────────────────────────────────────────
+# Maps a desk's primary tier to ALL tiers it handles (some desks share patients).
+# Update this dict when physical desk assignments change — no migration needed.
+DESK_TIER_GROUPS = {
+    'FAST_TRACK': ['FAST_TRACK', 'EXPRESS'],
+}
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 # ── Finance role helpers ──────────────────────────────────────────────────────
 # Segregation of duties — international hospital finance standard:
@@ -729,9 +737,7 @@ def _get_service_catalog(cashier_station=None):
     try:
         qs = ServicePrice.objects.filter(is_active=True, is_deleted=False)
         if cashier_station and cashier_station != 'ALL':
-            # FAST_TRACK desk also handles EXPRESS patients (same physical desk)
-            _STATION_TIERS = {'FAST_TRACK': ['FAST_TRACK', 'EXPRESS']}
-            _tiers = _STATION_TIERS.get(cashier_station, [cashier_station])
+            _tiers = DESK_TIER_GROUPS.get(cashier_station, [cashier_station])
             # Show services with no tier restriction OR matching this cashier's tier(s)
             qs = qs.filter(Q(tier='') | Q(tier__in=_tiers))
         return list(
@@ -854,12 +860,7 @@ def cashier_pos(request, token_id):
     if _active_session and _active_session.cash_desk.desk_type == 'TIER' and _active_session.cash_desk.tier:
         # New system: tier comes from desk session
         _desk_tier = _active_session.cash_desk.tier
-        _DESK_TIER_MAP = {
-            'STANDARD':   ['STANDARD'],
-            'FAST_TRACK': ['EXPRESS', 'FAST_TRACK'],
-            'VIP':        ['VIP'],
-        }
-        _allowed = _DESK_TIER_MAP.get(_desk_tier, [])
+        _allowed = DESK_TIER_GROUPS.get(_desk_tier, [_desk_tier])
         if _allowed and token.service_tier not in _allowed:
             messages.error(
                 request,
@@ -5631,11 +5632,9 @@ def desk_cashier_queue(request, desk_id):
         is_deleted=False,
     ).select_related('patient').order_by('-service_tier', 'issued_at')
 
-    # Filter by tier/type
-    # FAST_TRACK desk also handles EXPRESS patients (same physical desk & rooms)
-    _DESK_TIER_INCLUDES = {'FAST_TRACK': ['FAST_TRACK', 'EXPRESS']}
+    # Filter by tier/type — use DESK_TIER_GROUPS so shared desks see all their patients
     if desk.desk_type == DeskType.TIER and desk.tier:
-        _tiers = _DESK_TIER_INCLUDES.get(desk.tier, [desk.tier])
+        _tiers = DESK_TIER_GROUPS.get(desk.tier, [desk.tier])
         qs = qs.filter(service_tier__in=_tiers)
         # VIP privacy — mask names if user is not a VIP-desk cashier
         is_vip_desk = desk.tier == 'VIP'
