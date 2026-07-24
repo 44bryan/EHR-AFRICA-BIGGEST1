@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('qms', '0002_workflow_tiers_and_statuses'),
+        ('qms', '0014_queuetoken_origin_zone'),
     ]
 
     operations = [
