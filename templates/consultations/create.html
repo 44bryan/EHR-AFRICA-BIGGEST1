@@ -762,13 +762,20 @@ function saveDraft(evt, section) {
   fetch(_autosaveUrl, { method: 'POST', body: data,
     headers: { 'X-Requested-With': 'XMLHttpRequest' }
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok && r.status === 403) {
+      throw new Error('Session expired — please refresh the page and log in again.');
+    }
+    return r.json().catch(function() {
+      throw new Error('Server error (HTTP ' + r.status + '). Draft not saved.');
+    });
+  })
   .then(function(json) {
     if (json.ok) {
       draftPkEl.value = json.pk;
       var savedTime = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
       if (btn) { btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Saved at ' + savedTime; btn.classList.add('btn-success'); btn.classList.remove('btn-outline-success'); btn.disabled = false; }
-      showDraftToast('History draft saved at ' + savedTime + ' ✔');
+      showDraftToast((section === 'history' ? 'History' : 'Clinical') + ' draft saved at ' + savedTime + ' ✔');
       setTimeout(function() {
         if (btn) { btn.innerHTML = origHtml; btn.disabled = false; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-success'); }
       }, 8000);
@@ -777,9 +784,9 @@ function saveDraft(evt, section) {
       showDraftToast('Save failed: ' + (json.error || 'unknown error'), true);
     }
   })
-  .catch(function() {
+  .catch(function(err) {
     if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
-    showDraftToast('Network error — draft not saved.', true);
+    showDraftToast((err && err.message) ? err.message : 'Network error — draft not saved.', true);
   });
 }
 

@@ -855,72 +855,97 @@ def consultation_autosave_view(request):
         draft_pk    — existing draft UUID (if returning to update)
         _section    — 'history' | 'clinical' (determines which fields to save)
     Returns: {ok: true, pk: "<uuid>"}
+    Always returns JSON — never HTML 404/500.
     """
-    patient_id = request.POST.get('patient_id', '').strip()
-    visit_id   = request.POST.get('visit_id', '').strip()
-    draft_pk   = request.POST.get('draft_pk', '').strip()
-    section    = request.POST.get('_section', 'history')
+    try:
+        patient_id = request.POST.get('patient_id', '').strip()
+        visit_id   = request.POST.get('visit_id', '').strip()
+        draft_pk   = request.POST.get('draft_pk', '').strip()
+        section    = request.POST.get('_section', 'history')
 
-    if draft_pk:
-        consultation = get_object_or_404(
-            Consultation, pk=draft_pk, consulting_doctor=request.user,
-            status=ConsultationStatus.IN_PROGRESS, is_deleted=False
-        )
-    else:
-        if not patient_id:
-            return JsonResponse({'ok': False, 'error': 'patient_id required'}, status=400)
-        patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
-        visit   = get_object_or_404(Visit, pk=visit_id, is_deleted=False) if visit_id else None
-        _dept = request.user.department
-        if _dept is None:
-            from apps.departments.models import Department as _Dept
-            _role_code = request.user.role_department_code
-            if _role_code:
-                _dept = _Dept.objects.filter(code=_role_code).first()
-        consultation = Consultation.objects.create(
-            patient=patient,
-            visit=visit,
-            department=_dept,
-            consulting_doctor=request.user,
-            presenting_complaint=', '.join(filter(None, request.POST.getlist('presenting_complaint'))),
-            status=ConsultationStatus.IN_PROGRESS,
-            created_by=request.user,
-        )
-        if visit and visit.status not in ('IN_CONSULTATION', 'COMPLETED', 'DISCHARGED'):
-            visit.status = 'IN_CONSULTATION'
-            visit.attending_doctor = request.user
-            visit.save(update_fields=['status', 'attending_doctor', 'updated_at'])
+        if draft_pk:
+            consultation = Consultation.objects.filter(
+                pk=draft_pk, consulting_doctor=request.user,
+                status=ConsultationStatus.IN_PROGRESS, is_deleted=False
+            ).first()
+            if consultation is None:
+                return JsonResponse({'ok': False, 'error': 'Draft not found or already completed.'}, status=404)
+        else:
+            if not patient_id:
+                return JsonResponse({'ok': False, 'error': 'patient_id required'}, status=400)
+            patient = Patient.objects.filter(patient_id=patient_id, is_deleted=False).first()
+            if patient is None:
+                return JsonResponse({'ok': False, 'error': 'Patient not found.'}, status=404)
+            visit = None
+            if visit_id:
+                visit = Visit.objects.filter(pk=visit_id, is_deleted=False).first()
+                if visit is None:
+                    return JsonResponse({'ok': False, 'error': 'Visit not found.'}, status=404)
 
-    # Save history fields
-    if section == 'history':
-        history_fields = [
-            'presenting_complaint', 'history_of_presenting_complaint',
-            'ocular_history', 'systemic_history', 'drug_history',
-            'family_history', 'social_history',
-        ]
-        changed = ['updated_by', 'updated_at']
-        for f in history_fields:
-            val = ', '.join(filter(None, request.POST.getlist(f)))
-            if val:
-                setattr(consultation, f, val)
-                changed.append(f)
-        consultation.updated_by = request.user
-        consultation.save(update_fields=changed)
+            _dept = request.user.department
+            if _dept is None:
+                from apps.departments.models import Department as _Dept
+                _role_code = request.user.role_department_code
+                if _role_code:
+                    _dept = _Dept.objects.filter(code=_role_code).first()
 
-    # Save clinical dept_ fields
-    elif section == 'clinical':
-        dept_data = {
-            k[5:]: v.strip()
-            for k, v in request.POST.items()
-            if k.startswith('dept_') and v.strip()
-        }
-        existing = consultation.department_specific_data or {}
-        existing.update(dept_data)
-        consultation.department_specific_data = existing
-        consultation.updated_by = request.user
-        consultation.save(update_fields=['department_specific_data', 'updated_by', 'updated_at'])
+            # Reuse existing IN_PROGRESS draft for this patient+visit+doctor rather than creating duplicates
+            consultation = Consultation.objects.filter(
+                patient=patient, visit=visit,
+                consulting_doctor=request.user,
+                status=ConsultationStatus.IN_PROGRESS,
+                is_deleted=False,
+            ).first()
+            if consultation is None:
+                consultation = Consultation.objects.create(
+                    patient=patient,
+                    visit=visit,
+                    department=_dept,
+                    consulting_doctor=request.user,
+                    presenting_complaint=', '.join(filter(None, request.POST.getlist('presenting_complaint'))),
+                    status=ConsultationStatus.IN_PROGRESS,
+                    created_by=request.user,
+                )
+            if visit and visit.status not in ('IN_CONSULTATION', 'COMPLETED', 'DISCHARGED'):
+                visit.status = 'IN_CONSULTATION'
+                visit.attending_doctor = request.user
+                visit.save(update_fields=['status', 'attending_doctor', 'updated_at'])
 
-    return JsonResponse({'ok': True, 'pk': str(consultation.pk)})
+        # Save history fields
+        if section == 'history':
+            history_fields = [
+                'presenting_complaint', 'history_of_presenting_complaint',
+                'ocular_history', 'systemic_history', 'drug_history',
+                'family_history', 'social_history',
+            ]
+            changed = ['updated_by', 'updated_at']
+            for f in history_fields:
+                val = ', '.join(filter(None, request.POST.getlist(f)))
+                if val:
+                    setattr(consultation, f, val)
+                    changed.append(f)
+            consultation.updated_by = request.user
+            consultation.save(update_fields=changed)
+
+        # Save clinical dept_ fields
+        elif section == 'clinical':
+            dept_data = {
+                k[5:]: v.strip()
+                for k, v in request.POST.items()
+                if k.startswith('dept_') and v.strip()
+            }
+            existing = consultation.department_specific_data or {}
+            existing.update(dept_data)
+            consultation.department_specific_data = existing
+            consultation.updated_by = request.user
+            consultation.save(update_fields=['department_specific_data', 'updated_by', 'updated_at'])
+
+        return JsonResponse({'ok': True, 'pk': str(consultation.pk)})
+
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception('consultation_autosave_view error')
+        return JsonResponse({'ok': False, 'error': str(exc) or 'Server error during autosave.'}, status=500)
 
 
 @login_required

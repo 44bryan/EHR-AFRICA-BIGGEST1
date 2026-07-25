@@ -36,6 +36,11 @@ class ConsultationForm(forms.ModelForm):
             'referral_reason': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # department is nullable in the model — allow form submission without it
+        self.fields['department'].required = False
+
 
 class ConsultationNoteForm(forms.ModelForm):
     class Meta:
