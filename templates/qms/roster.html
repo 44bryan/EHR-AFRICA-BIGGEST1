@@ -12,9 +12,17 @@
       <h4 class="mb-0 fw-bold"><i class="bi bi-calendar2-check text-primary me-2"></i>Today's Doctor Roster</h4>
       <small class="text-muted">{{ today|date:"l, d F Y" }} — Assign doctors to consultation rooms</small>
     </div>
-    <a href="{% url 'qms:dashboard' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>QMS Dashboard
-    </a>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{% url 'qms:counter_create' %}" class="btn btn-sm btn-success">
+        <i class="bi bi-plus-lg me-1"></i>Add Room
+      </a>
+      <a href="{% url 'qms:counter_manage' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-sliders me-1"></i>Manage Rooms
+      </a>
+      <a href="{% url 'qms:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>QMS Dashboard
+      </a>
+    </div>
   </div>
 
   {% if messages %}
@@ -115,7 +123,7 @@
 
           <!-- Assign form -->
           {% if not counter.is_assigned_today %}
-          <form method="post" class="d-flex gap-2">
+          <form method="post" class="d-flex gap-2 mb-2">
             {% csrf_token %}
             <input type="hidden" name="action" value="assign">
             <input type="hidden" name="counter_id" value="{{ counter.id }}">
@@ -129,6 +137,13 @@
               <i class="bi bi-check-lg"></i>
             </button>
           </form>
+          <div class="text-end">
+            <a href="{% url 'qms:counter_toggle' counter_id=counter.id %}"
+               class="text-muted small"
+               onclick="return confirm('Remove {{ counter.name }} from the roster permanently? You can restore it later.')">
+              <i class="bi bi-dash-circle me-1"></i>Remove from roster
+            </a>
+          </div>
           {% else %}
           <div class="d-flex gap-2">
             <a href="{% url 'qms:counter' counter_id=counter.id %}"
@@ -159,6 +174,38 @@
     </div>
     {% endfor %}
   </div>
+
+  <!-- Inactive rooms — can be restored to roster -->
+  {% if inactive_counters %}
+  <div class="mt-4">
+    <button class="btn btn-sm btn-link text-muted px-0" type="button"
+            data-bs-toggle="collapse" data-bs-target="#inactiveRooms">
+      <i class="bi bi-chevron-down me-1"></i>
+      {{ inactive_counters|length }} room{{ inactive_counters|length|pluralize }} hidden from roster — click to restore
+    </button>
+    <div class="collapse" id="inactiveRooms">
+      <div class="row g-2 mt-1">
+        {% for ic in inactive_counters %}
+        <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+          <div class="card border-0 shadow-sm" style="opacity:.7;border-left:4px solid #e2e8f0 !important;">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between gap-2">
+              <div>
+                <div class="fw-semibold small text-muted">{{ ic.name }}</div>
+                <div style="font-size:.7rem;color:#94a3b8;">{{ ic.service_type }}{% if ic.zone %} · {{ ic.zone.name }}{% endif %}</div>
+              </div>
+              <a href="{% url 'qms:counter_toggle' counter_id=ic.id %}"
+                 class="btn btn-sm btn-outline-success flex-shrink-0"
+                 title="Restore to roster">
+                <i class="bi bi-plus-lg"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
 </div>
 {% endblock %}

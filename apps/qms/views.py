@@ -2298,12 +2298,21 @@ def roster_view(request):
     assigned_count   = sum(1 for c in counters if c.is_assigned_today)
     unassigned_count = len(counters) - assigned_count
 
+    # Inactive clinical rooms — shown collapsed so admin can restore them to the roster
+    inactive_counters = (
+        ServiceCounter.objects
+        .filter(is_active=False, is_deleted=False, service_type__in=_clinical_types)
+        .select_related('zone')
+        .order_by('zone__name', 'name')
+    )
+
     return render(request, 'qms/roster.html', {
-        'counters':         counters,
-        'doctors':          doctors,
-        'today':            today,
-        'assigned_count':   assigned_count,
-        'unassigned_count': unassigned_count,
+        'counters':          counters,
+        'doctors':           doctors,
+        'today':             today,
+        'assigned_count':    assigned_count,
+        'unassigned_count':  unassigned_count,
+        'inactive_counters': inactive_counters,
     })
 
 
