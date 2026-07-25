@@ -2247,6 +2247,18 @@ def roster_view(request):
         action     = request.POST.get('action', '')
         counter_id = request.POST.get('counter_id', '').strip()
 
+        # activate/deactivate don't need an active counter — handle before the guard
+        if action in ('activate', 'deactivate'):
+            counter_obj = ServiceCounter.objects.filter(id=counter_id, is_deleted=False).first()
+            if counter_obj:
+                counter_obj.is_active = (action == 'activate')
+                counter_obj.save(update_fields=['is_active', 'updated_at'])
+                label = 'restored to' if counter_obj.is_active else 'hidden from'
+                messages.success(request, f'{counter_obj.name} {label} roster.')
+            else:
+                messages.error(request, 'Counter not found.')
+            return redirect('qms:roster')
+
         try:
             counter = ServiceCounter.objects.get(id=counter_id, is_active=True)
         except (ServiceCounter.DoesNotExist, ValueError):

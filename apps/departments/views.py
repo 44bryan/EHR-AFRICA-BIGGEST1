@@ -243,7 +243,10 @@ def room_list_all(request):
             room = get_object_or_404(ConsultationRoom, pk=room_id)
             if not _can_manage_departments(request.user):
                 return HttpResponseForbidden()
-            room.assigned_doctor = User.objects.get(pk=doctor_id) if doctor_id else None
+            try:
+                room.assigned_doctor = User.objects.get(pk=doctor_id) if doctor_id else None
+            except User.DoesNotExist:
+                room.assigned_doctor = None
             if new_tier in dict(RoomTier.choices):
                 room.room_tier = new_tier
             room.save(update_fields=['assigned_doctor', 'room_tier'])
