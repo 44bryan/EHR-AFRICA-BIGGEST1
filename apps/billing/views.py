@@ -18,9 +18,9 @@ from apps.core.context_processors import qms_active as _qms_active
 # Maps a desk's primary tier to ALL tiers it handles (some desks share patients).
 # Update this dict when physical desk assignments change — no migration needed.
 DESK_TIER_GROUPS = {
-    # Each desk sees only its own tier by default.
-    # Add an entry here if two desks genuinely share one combined queue.
-    # e.g. 'FAST_TRACK': ['FAST_TRACK', 'EXPRESS']
+    # The Express/FT desk handles both EXPRESS and FAST_TRACK patients —
+    # there is no separate "EXPRESS" desk tier (CashDesk.tier only has STANDARD/FAST_TRACK/VIP).
+    'FAST_TRACK': ['FAST_TRACK', 'EXPRESS'],
 }
 # ─────────────────────────────────────────────────────────────────────────────
 
