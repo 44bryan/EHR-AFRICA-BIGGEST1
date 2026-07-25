@@ -2222,12 +2222,15 @@ def roster_view(request):
 
     today = timezone.localdate()
 
-    # Clinical counters only (exclude cashier/params/reception)
-    _skip_types = {'CASHIER', 'PARAMETERS', 'PARAMS_VIP', 'RECEPTIONIST'}
+    # Build the allowlist of clinical service types from the role map —
+    # only rooms where a doctor can actually be assigned appear on the roster.
+    _clinical_types = set()
+    for _types in _ROLE_SERVICE_TYPES.values():
+        _clinical_types.update(_types)
+
     counters = (
         ServiceCounter.objects
-        .filter(is_active=True, is_deleted=False)
-        .exclude(service_type__in=_skip_types)
+        .filter(is_active=True, is_deleted=False, service_type__in=_clinical_types)
         .select_related('staff_assigned', 'zone')
         .order_by('zone__name', 'name')
     )
