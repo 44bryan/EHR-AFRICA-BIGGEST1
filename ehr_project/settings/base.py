@@ -280,7 +280,7 @@ CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localho
 # Security headers (applied by SecurityMiddleware)
 SECURE_BROWSER_XSS_FILTER = True        # X-XSS-Protection: 1; mode=block
 SECURE_CONTENT_TYPE_NOSNIFF = True      # X-Content-Type-Options: nosniff
-X_FRAME_OPTIONS = 'DENY'                # Clickjacking protection
+X_FRAME_OPTIONS = 'SAMEORIGIN'          # Allow same-origin iframes (receipt modal)
 
 # HSTS — only activate in production (not dev, breaks HTTP)
 SECURE_HSTS_SECONDS = 0 if DEBUG else 31536000   # 1 year in prod
@@ -299,7 +299,7 @@ CSP_IMG_SRC     = ("'self'", "data:", "blob:")
 CSP_FONT_SRC    = ("'self'", "cdn.jsdelivr.net", "cdnjs.cloudflare.com")
 CSP_CONNECT_SRC = ("'self'",)
 CSP_MEDIA_SRC   = ("'self'", "blob:")
-CSP_FRAME_SRC   = ("'none'",)
+CSP_FRAME_SRC   = ("'self'",)           # Allow same-origin iframes (receipt modal)
 CSP_OBJECT_SRC  = ("'none'",)
 
 # Twilio (SMS / WhatsApp)
