@@ -1998,42 +1998,8 @@ def daily_census(request):
 
 @login_required
 def counter_assign_view(request):
-    """
-    Admin UI to assign staff members to service counters.
-    Only super_admin, medical_director, admin, admin_director, ceo can access.
-    """
-    from apps.accounts.models import User
-    _allowed = {'super_admin', 'medical_director', 'admin', 'admin_director', 'ceo'}
-    if request.user.role not in _allowed:
-        from django.contrib import messages as _msg
-        _msg.error(request, 'You do not have permission to assign counters.')
-        return redirect('qms:dashboard')
-
-    if request.method == 'POST':
-        counter_id = request.POST.get('counter_id')
-        user_id = request.POST.get('user_id') or None
-        counter = get_object_or_404(ServiceCounter, id=counter_id)
-        if user_id:
-            staff = get_object_or_404(User, id=user_id)
-            counter.staff_assigned = staff
-        else:
-            counter.staff_assigned = None
-        counter.save(update_fields=['staff_assigned', 'updated_at'])
-        messages.success(request, f'"{counter.name}" assigned to {counter.staff_assigned or "nobody"}.')
-        return redirect('qms:counter_assign')
-
-    counters = ServiceCounter.objects.filter(is_active=True).select_related(
-        'staff_assigned'
-    ).order_by('service_type', 'name')
-
-    # All active staff can be assigned to counters (doctors, nurses, refractionists, etc.)
-    staff_users = User.objects.filter(is_active=True).order_by('role', 'last_name')
-
-    return render(request, 'qms/counter_assign.html', {
-        'counters': counters,
-        'staff_users': staff_users,
-        'service_type_choices': ServiceType.choices,
-    })
+    """Replaced by roster_view — redirect for backwards compatibility."""
+    return redirect('qms:roster')
 
 
 # ── Counter Management (CRUD) ─────────────────────────────────────────────────
