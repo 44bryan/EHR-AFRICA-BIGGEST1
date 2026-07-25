@@ -48,8 +48,8 @@ def item_detail(request, item_id):
 def stock_adjustment(request, item_id):
     item = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
     if request.method == 'POST':
-        qty = int(request.POST['quantity'])
-        move_type = request.POST['movement_type']
+        qty = int(request.POST.get('quantity', 0) or 0)
+        move_type = request.POST.get('movement_type', 'IN')
         notes = request.POST.get('notes', '')
         if move_type == 'OUT':
             qty = -qty
@@ -86,9 +86,9 @@ def vendor_list(request):
 def item_create(request):
     if request.method == 'POST':
         item = InventoryItem.objects.create(
-            name=request.POST['name'].strip(),
-            item_code=request.POST['item_code'].strip(),
-            category=request.POST['category'],
+            name=request.POST.get('name', '').strip(),
+            item_code=request.POST.get('item_code', '').strip(),
+            category=request.POST.get('category', ''),
             unit=request.POST.get('unit', 'unit').strip(),
             unit_cost=request.POST.get('unit_cost') or 0,
             reorder_level=int(request.POST.get('reorder_level', 5) or 5),
@@ -119,8 +119,8 @@ def item_create(request):
 def item_edit(request, item_id):
     item = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
     if request.method == 'POST':
-        item.name = request.POST['name'].strip()
-        item.category = request.POST['category']
+        item.name = request.POST.get('name', item.name).strip()
+        item.category = request.POST.get('category', item.category)
         item.unit = request.POST.get('unit', 'unit').strip()
         item.unit_cost = request.POST.get('unit_cost') or 0
         item.reorder_level = int(request.POST.get('reorder_level', 5) or 5)
@@ -142,7 +142,7 @@ def item_edit(request, item_id):
 def vendor_create(request):
     if request.method == 'POST':
         vendor = Vendor.objects.create(
-            name=request.POST['name'].strip(),
+            name=request.POST.get('name', '').strip(),
             contact_person=request.POST.get('contact_person', '').strip(),
             phone=request.POST.get('phone', '').strip(),
             email=request.POST.get('email', '').strip(),
@@ -158,7 +158,7 @@ def vendor_create(request):
 def vendor_edit(request, vendor_id):
     vendor = get_object_or_404(Vendor, id=vendor_id, is_deleted=False)
     if request.method == 'POST':
-        vendor.name = request.POST['name'].strip()
+        vendor.name = request.POST.get('name', vendor.name).strip()
         vendor.contact_person = request.POST.get('contact_person', '').strip()
         vendor.phone = request.POST.get('phone', '').strip()
         vendor.email = request.POST.get('email', '').strip()
@@ -177,7 +177,7 @@ def po_create(request):
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
 
     if request.method == 'POST':
-        vendor = get_object_or_404(Vendor, id=request.POST['vendor_id'], is_deleted=False)
+        vendor = get_object_or_404(Vendor, id=request.POST.get('vendor_id', ''), is_deleted=False)
         expected_date = request.POST.get('expected_date') or None
         notes = request.POST.get('notes', '').strip()
 

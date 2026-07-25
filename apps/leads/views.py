@@ -60,8 +60,8 @@ def add_activity(request, lead_id):
     if request.method == 'POST':
         LeadActivity.objects.create(
             lead=lead,
-            activity_type=request.POST['activity_type'],
-            summary=request.POST['summary'],
+            activity_type=request.POST.get('activity_type', ''),
+            summary=request.POST.get('summary', ''),
             outcome=request.POST.get('outcome', ''),
             next_action=request.POST.get('next_action', ''),
             performed_by=request.user,
@@ -87,13 +87,13 @@ def lead_create(request):
     staff = User.objects.filter(is_active=True).order_by('first_name')
     if request.method == 'POST':
         lead = Lead.objects.create(
-            first_name=request.POST['first_name'],
-            last_name=request.POST['last_name'],
-            phone=request.POST['phone'],
+            first_name=request.POST.get('first_name', ''),
+            last_name=request.POST.get('last_name', ''),
+            phone=request.POST.get('phone', ''),
             email=request.POST.get('email', ''),
             age=request.POST.get('age') or None,
-            source=request.POST['source'],
-            inquiry=request.POST['inquiry'],
+            source=request.POST.get('source', ''),
+            inquiry=request.POST.get('inquiry', ''),
             priority=request.POST.get('priority', 0),
             next_follow_up=request.POST.get('next_follow_up') or None,
             assigned_to_id=request.POST.get('assigned_to') or None,
@@ -113,13 +113,13 @@ def lead_edit(request, lead_id):
     lead = get_object_or_404(Lead, id=lead_id, is_deleted=False)
     staff = User.objects.filter(is_active=True).order_by('first_name')
     if request.method == 'POST':
-        lead.first_name = request.POST['first_name']
-        lead.last_name = request.POST['last_name']
-        lead.phone = request.POST['phone']
+        lead.first_name = request.POST.get('first_name', lead.first_name)
+        lead.last_name = request.POST.get('last_name', lead.last_name)
+        lead.phone = request.POST.get('phone', lead.phone)
         lead.email = request.POST.get('email', '')
         lead.age = request.POST.get('age') or None
-        lead.source = request.POST['source']
-        lead.inquiry = request.POST['inquiry']
+        lead.source = request.POST.get('source', lead.source)
+        lead.inquiry = request.POST.get('inquiry', lead.inquiry)
         lead.priority = request.POST.get('priority', 0)
         lead.next_follow_up = request.POST.get('next_follow_up') or None
         lead.assigned_to_id = request.POST.get('assigned_to') or None

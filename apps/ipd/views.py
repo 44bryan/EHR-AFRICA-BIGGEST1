@@ -67,7 +67,7 @@ def add_nursing_note(request, admission_id):
         NursingNote.objects.create(
             admission=admission,
             note_type=request.POST.get('note_type', 'OBSERVATION'),
-            content=request.POST['content'],
+            content=request.POST.get('content', ''),
             vital_signs={
                 'bp': request.POST.get('bp', ''),
                 'pulse': request.POST.get('pulse', ''),

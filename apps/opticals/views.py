@@ -410,7 +410,7 @@ def update_order_status(request, order_id):
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
     if request.method == 'POST':
         old_status = order.status
-        order.status = request.POST['status']
+        order.status = request.POST.get('status', order.status)
         if order.status == OpticalOrderStatus.DELIVERED:
             order.delivered_date = timezone.localdate()
             order.delivered_to = request.user

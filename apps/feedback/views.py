@@ -149,7 +149,7 @@ def submit_feedback(request):
             staff_courtesy_rating=request.POST.get('staff_courtesy_rating') or None,
             doctor_rating=request.POST.get('doctor_rating') or None,
             nps_score=request.POST.get('nps_score') or None,
-            message=request.POST['message'],
+            message=request.POST.get('message', ''),
         )
         return render(request, 'feedback/thank_you.html')
     return render(request, 'feedback/submit.html', {'feedback_types': FeedbackType.choices})
@@ -170,7 +170,7 @@ def resolve_feedback(request, feedback_id):
     feedback = get_object_or_404(PatientFeedback, id=feedback_id, is_deleted=False)
     if request.method == 'POST':
         feedback.status = FeedbackStatus.RESOLVED
-        feedback.resolution = request.POST['resolution']
+        feedback.resolution = request.POST.get('resolution', '')
         feedback.resolved_by = request.user
         feedback.resolved_date = timezone.localdate()
         feedback.save()

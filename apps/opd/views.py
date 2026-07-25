@@ -125,7 +125,7 @@ def register_visit(request):
     if request.method == 'POST':
         from apps.patients.models import Patient, Visit
         from apps.departments.models import Department
-        patient = get_object_or_404(Patient, id=request.POST['patient_id'])
+        patient = get_object_or_404(Patient, id=request.POST.get('patient_id', ''))
         department = None
         dept_id = request.POST.get('department_id')
         if dept_id:
