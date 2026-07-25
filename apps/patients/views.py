@@ -132,11 +132,11 @@ def patient_register_view(request):
             if request.POST.get('intake_nkda'):
                 _allergy_parts.append('NKDA (No Known Drug Allergies)')
             if request.POST.get('intake_drug_allergy', '').strip():
-                _allergy_parts.append('Drug: ' + request.POST['intake_drug_allergy'].strip())
+                _allergy_parts.append('Drug: ' + request.POST.get('intake_drug_allergy', '').strip())
             if request.POST.get('intake_food_allergy', '').strip():
-                _allergy_parts.append('Food: ' + request.POST['intake_food_allergy'].strip())
+                _allergy_parts.append('Food: ' + request.POST.get('intake_food_allergy', '').strip())
             if request.POST.get('intake_env_allergy', '').strip():
-                _allergy_parts.append('Environmental: ' + request.POST['intake_env_allergy'].strip())
+                _allergy_parts.append('Environmental: ' + request.POST.get('intake_env_allergy', '').strip())
             _allergy_text = '; '.join(_allergy_parts)
             _med_flags = request.POST.getlist('intake_medical_flags')
             _cond_text = ', '.join(_med_flags)

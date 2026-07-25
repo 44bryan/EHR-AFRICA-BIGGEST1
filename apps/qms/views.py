@@ -30,6 +30,7 @@ from .models import (
 )
 from apps.patients.models import Patient, Visit, VisitStatus, VisitType, VISIT_STATUS_TO_SERVICE_TYPE
 from apps.core.context_processors import qms_active as _qms_active
+from apps.core.decorators import json_error_handler
 
 
 # ── Zone helpers ──────────────────────────────────────────────────────────────
@@ -855,6 +856,7 @@ def receptionist_queue(request):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def receptionist_complete_registration(request, token_id):
@@ -937,6 +939,7 @@ def receptionist_complete_registration(request, token_id):
 
 # ── Department routing (doctor/nurse action) ──────────────────────────────────
 
+@json_error_handler
 @login_required
 @require_POST
 def route_to_dept(request):
@@ -1216,6 +1219,7 @@ def counter_view(request, counter_id):
     return render(request, 'qms/counter.html', context)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def call_next(request, counter_id):
@@ -1270,6 +1274,7 @@ def call_next(request, counter_id):
     return JsonResponse({'success': False, 'message': 'No waiting patients'})
 
 
+@json_error_handler
 @login_required
 @require_POST
 def complete_token(request, token_id):
@@ -1285,6 +1290,7 @@ def complete_token(request, token_id):
     return JsonResponse({'success': True})
 
 
+@json_error_handler
 @login_required
 @require_POST
 def clear_counter(request, counter_id):
@@ -1299,6 +1305,7 @@ def clear_counter(request, counter_id):
     return JsonResponse({'success': True})
 
 
+@json_error_handler
 @login_required
 @require_POST
 def skip_token(request, token_id):
@@ -1315,6 +1322,7 @@ def skip_token(request, token_id):
     return JsonResponse({'success': True})
 
 
+@json_error_handler
 @login_required
 @require_POST
 def no_show(request, token_id):
@@ -2007,6 +2015,9 @@ _COUNTER_MANAGE_ROLES = {'super_admin', 'medical_director', 'admin', 'admin_dire
 
 
 def _counter_manage_guard(request):
+    if not request.user.is_authenticated:
+        from django.contrib.auth.views import redirect_to_login
+        return redirect_to_login(request.get_full_path())
     if request.user.role not in _COUNTER_MANAGE_ROLES:
         from django.contrib import messages as _msg
         _msg.error(request, 'You do not have permission to manage counters.')

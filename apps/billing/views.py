@@ -13,6 +13,7 @@ from .utils import get_or_create_today_invoice
 from apps.patients.models import Patient
 from apps.accounts.models import UserRole
 from apps.core.context_processors import qms_active as _qms_active
+from apps.core.decorators import json_error_handler
 
 # ── Desk tier groupings ───────────────────────────────────────────────────────
 # Maps a desk's primary tier to ALL tiers it handles (some desks share patients).
@@ -491,7 +492,7 @@ def add_payment(request, invoice_id):
             return redirect('billing:invoice_detail', invoice_id=invoice.id)
         Payment.objects.create(
             invoice=invoice,
-            payment_method=request.POST['payment_method'],
+            payment_method=request.POST.get('payment_method', ''),
             amount=amount,
             reference=request.POST.get('reference', ''),
             notes=request.POST.get('notes', ''),
@@ -973,6 +974,7 @@ def cashier_pos(request, token_id):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def pos_add_item(request, invoice_id):
@@ -1018,6 +1020,7 @@ def pos_add_item(request, invoice_id):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def pos_remove_item(request, item_id):
@@ -1045,6 +1048,7 @@ def pos_remove_item(request, item_id):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def pos_apply_discount(request, invoice_id):
@@ -1158,6 +1162,7 @@ def pos_record_payment(request, invoice_id):
     return JsonResponse(resp)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def pos_finalize(request, token_id):
@@ -1340,6 +1345,7 @@ def patient_pos(request, patient_id):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def patient_finalize(request, patient_id):
@@ -1948,6 +1954,7 @@ def shift_close(request, shift_id):
     return redirect('billing:shift_detail', shift_id=shift.id)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def shift_force_close(request, shift_id):
@@ -2333,6 +2340,7 @@ def service_price_edit(request, price_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def service_price_toggle(request, price_id):
@@ -4635,13 +4643,13 @@ def asset_create(request):
             messages.error(request, 'Invalid cost value.')
             return redirect('billing:asset_create')
         asset = AssetRegister.objects.create(
-            name              = request.POST['name'],
-            category          = request.POST['category'],
+            name              = request.POST.get('name', '').strip(),
+            category          = request.POST.get('category', ''),
             description       = request.POST.get('description', ''),
             serial_number     = request.POST.get('serial_number', ''),
             make_model        = request.POST.get('make_model', ''),
             location          = request.POST.get('location', ''),
-            purchase_date     = request.POST['purchase_date'],
+            purchase_date     = request.POST.get('purchase_date', ''),
             purchase_cost     = cost,
             supplier          = request.POST.get('supplier', ''),
             useful_life_years = int(request.POST.get('useful_life_years', 5) or 5),
@@ -4673,13 +4681,13 @@ def asset_edit(request, asset_id):
         except InvalidOperation:
             messages.error(request, 'Invalid cost value.')
             return redirect('billing:asset_edit', asset_id=asset_id)
-        asset.name              = request.POST['name']
-        asset.category          = request.POST['category']
+        asset.name              = request.POST.get('name', asset.name).strip()
+        asset.category          = request.POST.get('category', asset.category)
         asset.description       = request.POST.get('description', '')
         asset.serial_number     = request.POST.get('serial_number', '')
         asset.make_model        = request.POST.get('make_model', '')
         asset.location          = request.POST.get('location', '')
-        asset.purchase_date     = request.POST['purchase_date']
+        asset.purchase_date     = request.POST.get('purchase_date', asset.purchase_date)
         asset.purchase_cost     = cost
         asset.supplier          = request.POST.get('supplier', '')
         asset.useful_life_years = int(request.POST.get('useful_life_years', 5) or 5)
@@ -5068,7 +5076,7 @@ def ap_vendor_list(request):
         return HttpResponseForbidden()
     vendors = APVendor.objects.filter(is_deleted=False).order_by('name')
     if request.GET.get('q'):
-        vendors = vendors.filter(Q(name__icontains=request.GET['q']) | Q(vendor_code__icontains=request.GET['q']))
+        vendors = vendors.filter(Q(name__icontains=request.GET.get('q', '')) | Q(vendor_code__icontains=request.GET.get('q', '')))
     return render(request, 'billing/ap_vendor_list.html', {
         'vendors': vendors,
         'total_vendors': vendors.count(),
@@ -5359,6 +5367,7 @@ def desk_edit(request, desk_id):
     return render(request, 'billing/desk_form.html', context)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def desk_toggle(request, desk_id):
@@ -5524,6 +5533,7 @@ def session_detail(request, session_id):
     return render(request, 'billing/session_detail.html', context)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def session_close(request, session_id):
@@ -5567,6 +5577,7 @@ def session_close(request, session_id):
     return redirect('billing:session_detail', session_id=session.pk)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def session_verify(request, session_id):
@@ -5658,6 +5669,7 @@ def desk_cashier_queue(request, desk_id):
 
 # ── Invoice tier rerouting ────────────────────────────────────────────────────
 
+@json_error_handler
 @login_required
 @require_POST
 def invoice_reroute_tier(request, invoice_id):
@@ -5752,6 +5764,7 @@ def discount_approval_list(request):
     return render(request, 'billing/discount_approval_list.html', {'approvals': qs})
 
 
+@json_error_handler
 @login_required
 @require_POST
 def discount_decide(request, approval_id):

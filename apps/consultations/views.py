@@ -10,7 +10,7 @@ from .models import Consultation, ConsultationDiagnosis, ConsultationNote, Diagn
 from apps.patients.models import Patient, Visit, VisitStatus
 from apps.departments.models import Department
 from .forms import ConsultationForm, ConsultationNoteForm, DiagnosisForm
-from apps.core.decorators import clinical_staff_required, doctor_required
+from apps.core.decorators import clinical_staff_required, doctor_required, json_error_handler
 from apps.core.context_processors import qms_active as _qms_active
 
 # Maps department code → QMS service types handled by that dept
@@ -789,6 +789,7 @@ def consultation_delete_view(request, pk):
     return redirect('patients:detail', patient_id=patient_id)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def save_dept_clinical_view(request, pk):
@@ -1820,6 +1821,7 @@ def clinic_nurse_view(request):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def clinic_call_patient_view(request, visit_pk):
@@ -1908,6 +1910,7 @@ _NURSE_ROUTE_MAP = {
 }
 
 
+@json_error_handler
 @login_required
 @require_POST
 def nurse_route_patient_view(request, visit_pk):
@@ -2225,6 +2228,7 @@ def unit_nurse_queue_view(request):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def unit_prescreen_save_view(request, visit_pk):
@@ -2364,6 +2368,7 @@ def my_room_assign_view(request):
 
 # ── Diagnosis management (AJAX-friendly POST views) ──────────────────────────
 
+@json_error_handler
 @login_required
 @require_POST
 def diagnosis_add_view(request, pk):
@@ -2402,6 +2407,7 @@ def diagnosis_add_view(request, pk):
     return redirect('consultations:detail', pk=pk)
 
 
+@json_error_handler
 @login_required
 @require_POST
 def diagnosis_remove_view(request, pk, cd_pk):

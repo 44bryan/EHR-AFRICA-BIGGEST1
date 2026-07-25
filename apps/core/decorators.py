@@ -251,3 +251,30 @@ def billing_required(view_func):
 
 def qms_required(view_func):
     return role_required(CAN_MANAGE_QMS)(view_func)
+
+
+def json_error_handler(view_func):
+    """
+    Decorator for AJAX/JSON views.
+    Catches Http404 and any unhandled exception and returns a JSON error
+    response instead of Django's HTML 404/500 pages, which would break
+    JavaScript callers that expect JSON.
+    """
+    import logging as _logging
+    from django.http import Http404, JsonResponse as _JsonResponse
+
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        try:
+            return view_func(request, *args, **kwargs)
+        except Http404:
+            return _JsonResponse({'success': False, 'error': 'Resource not found.'}, status=404)
+        except Exception as exc:
+            _logging.getLogger('ehr.ajax').exception(
+                'Unhandled error in AJAX view %s', view_func.__name__
+            )
+            return _JsonResponse(
+                {'success': False, 'error': str(exc) or 'Server error.'},
+                status=500,
+            )
+    return _wrapped
