@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% load ehr_tags %}
+
+{% block title %}Today's Roster — {{ today|date:"D d M Y" }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4 py-3">
+
+  <!-- Header -->
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+      <h4 class="mb-0 fw-bold"><i class="bi bi-calendar2-check text-primary me-2"></i>Today's Doctor Roster</h4>
+      <small class="text-muted">{{ today|date:"l, d F Y" }} — Assign doctors to consultation rooms</small>
+    </div>
+    <a href="{% url 'qms:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>QMS Dashboard
+    </a>
+  </div>
+
+  {% if messages %}
+    {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- Summary bar — counts computed in view, passed via context -->
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm text-center py-2">
+        <div class="fw-bold fs-4 text-primary">{{ counters|length }}</div>
+        <div class="text-muted small">Total Rooms</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm text-center py-2">
+        <div class="fw-bold fs-4 text-success">{{ assigned_count }}</div>
+        <div class="text-muted small">Assigned</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm text-center py-2">
+        <div class="fw-bold fs-4 text-warning">{{ doctors|length }}</div>
+        <div class="text-muted small">Available Doctors</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm text-center py-2 bg-light">
+        <div class="fw-bold fs-5 text-secondary">{{ unassigned_count }}</div>
+        <div class="text-muted small">Unassigned Rooms</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Counter cards -->
+  <div class="row g-3">
+    {% for counter in counters %}
+    <div class="col-12 col-sm-6 col-xl-4">
+      <div class="card border-0 shadow-sm h-100"
+           style="border-left: 4px solid {% if counter.is_assigned_today %}#16a34a{% else %}#cbd5e1{% endif %} !important; border-left-style: solid !important;">
+        <div class="card-body p-3">
+
+          <!-- Room header -->
+          <div class="d-flex align-items-start justify-content-between mb-2">
+            <div>
+              <div class="fw-bold">{{ counter.name }}</div>
+              <div class="d-flex flex-wrap gap-1 mt-1">
+                {% if counter.zone %}
+                <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:.7rem;">
+                  <i class="bi bi-map-fill me-1"></i>{{ counter.zone.name }}
+                </span>
+                {% endif %}
+                <span class="badge bg-secondary bg-opacity-10 text-secondary" style="font-size:.7rem;">
+                  {{ counter.service_type }}
+                </span>
+              </div>
+            </div>
+            <div class="text-end">
+              {% if counter.today_count > 0 %}
+              <span class="badge {% if counter.today_count >= 5 %}bg-danger{% elif counter.today_count >= 3 %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                {{ counter.today_count }} waiting
+              </span>
+              {% else %}
+              <span class="badge bg-light text-muted">0 waiting</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Current assignment -->
+          {% if counter.is_assigned_today %}
+          <div class="d-flex align-items-center gap-2 mb-3 p-2 rounded" style="background:#f0fdf4;">
+            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                 style="width:36px;height:36px;background:#bbf7d0;">
+              <i class="bi bi-person-check-fill text-success"></i>
+            </div>
+            <div class="flex-grow-1 min-w-0">
+              <div class="fw-semibold text-success text-truncate" style="font-size:.85rem;">
+                {{ counter.staff_assigned.get_full_name }}
+              </div>
+              <div class="text-muted" style="font-size:.72rem;">
+                {{ counter.staff_assigned.get_role_display }}
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <div class="d-flex align-items-center gap-2 mb-3 p-2 rounded" style="background:#f8fafc;">
+            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                 style="width:36px;height:36px;background:#e2e8f0;">
+              <i class="bi bi-person-dash text-muted"></i>
+            </div>
+            <div class="text-muted" style="font-size:.82rem;">No doctor assigned</div>
+          </div>
+          {% endif %}
+
+          <!-- Assign form -->
+          {% if not counter.is_assigned_today %}
+          <form method="post" class="d-flex gap-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="assign">
+            <input type="hidden" name="counter_id" value="{{ counter.id }}">
+            <select name="doctor_id" class="form-select form-select-sm flex-grow-1" required>
+              <option value="">— Select doctor —</option>
+              {% for doc in doctors %}
+              <option value="{{ doc.id }}">{{ doc.get_full_name }} ({{ doc.get_role_display }})</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-success btn-sm px-3" title="Assign">
+              <i class="bi bi-check-lg"></i>
+            </button>
+          </form>
+          {% else %}
+          <div class="d-flex gap-2">
+            <a href="{% url 'qms:counter' counter_id=counter.id %}"
+               class="btn btn-outline-primary btn-sm flex-grow-1">
+              <i class="bi bi-clipboard2-pulse me-1"></i>View Queue
+            </a>
+            <form method="post" class="d-inline"
+                  onsubmit="return confirm('Remove {{ counter.staff_assigned.get_full_name }} from {{ counter.name }}?')">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="remove">
+              <input type="hidden" name="counter_id" value="{{ counter.id }}">
+              <button type="submit" class="btn btn-outline-danger btn-sm" title="Remove assignment">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </form>
+          </div>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+      <div class="alert alert-warning">
+        No active clinical counters found.
+        <a href="{% url 'qms:counter_create' %}" class="alert-link">Create a counter</a> first.
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

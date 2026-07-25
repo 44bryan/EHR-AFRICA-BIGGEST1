@@ -1019,12 +1019,23 @@ function fetchRooms(deptId, deptLabel) {
           window._roomsData[room.id] = room;
           totalRooms++;
           var opt = document.createElement('option');
-          opt.value = room.id;  // ServiceCounter UUID
+          opt.value = room.id;
           var label = room.name;
           if (room.available && room.doctor) {
-            label += '  —  Dr. ' + room.doctor.split(' ').pop() + ' (' + room.waiting + ' waiting)';
+            label += '  —  ' + room.doctor;
+            if (room.waiting > 0) {
+              label += '  (' + room.waiting + ' waiting';
+              if (room.estimated_wait > 0) {
+                label += ',  ~' + room.estimated_wait + ' min';
+              }
+              label += ')';
+              if (room.waiting >= 5) label += '  \u26a0 BUSY';
+            } else {
+              label += '  (Available now)';
+            }
           } else {
-            label += '  [No doctor checked in]';
+            label += '  — No doctor assigned';
+            opt.disabled = true;
             opt.style.color = '#9ca3af';
           }
           opt.textContent = label;
@@ -1050,10 +1061,14 @@ function pickRoom(counterId, serviceType, doctorId, doctorName) {
   diInp.value = svc + '|ROOM:' + counterId;
   diInp.dataset.baseValue = svc;
 
-  // Show room name in confirm banner
+  // Show room name + wait estimate in confirm banner
   const room = window._roomsData && window._roomsData[counterId];
   const roomLbl = document.getElementById('routeRoomLabel');
-  if (roomLbl) roomLbl.textContent = room ? '— ' + room.name : '— Room selected';
+  if (roomLbl) {
+    var lbl = room ? '— ' + room.name : '— Room selected';
+    if (room && room.estimated_wait > 0) lbl += '  (~' + room.estimated_wait + ' min wait)';
+    roomLbl.textContent = lbl;
+  }
 
   // Auto-populate doctor badge if room has a checked-in doctor
   const docPanel = document.getElementById('doctorPickPanel');

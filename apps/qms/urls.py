@@ -61,7 +61,10 @@ urlpatterns = [
     path('token/<uuid:token_id>/skip/', views.skip_token, name='skip_token'),
     path('token/<uuid:token_id>/no-show/', views.no_show, name='no_show'),
 
-    # Room check-in (doctors / refractionists)
+    # Today's Roster — admin assigns doctors to rooms
+    path('roster/', views.roster_view, name='roster'),
+
+    # My Room Today — doctor sees their assigned room (read-only)
     path('room-checkin/', views.room_checkin_view, name='room_checkin'),
 
     # Room board AJAX (triage dispatch panel + room check-in page)

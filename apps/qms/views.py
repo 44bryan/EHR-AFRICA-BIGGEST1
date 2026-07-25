@@ -2205,12 +2205,11 @@ def counter_delete_view(request, counter_id):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# DOCTOR ROOM CHECK-IN / CHECK-OUT
-# Each morning a doctor (or refractionist) checks into their room for the day.
-# The room's queue then shows ONLY their patients.
+# TODAY'S ROSTER  —  Admin assigns doctors to rooms each morning.
+# Doctor-centric routing: patient token follows the DOCTOR, room is just a label.
 # ════════════════════════════════════════════════════════════════════════════════
 
-# Roles that use the check-in system
+# Roles that can be assigned to counters (doctors / clinical staff)
 _CLINICAL_CHECKIN_ROLES = {
     'ophthalmologist', 'retina_specialist', 'glaucoma_specialist',
     'pediatric_ophthalmologist', 'cataract_surgeon', 'cornea_specialist',
@@ -2243,11 +2242,107 @@ _ROLE_SERVICE_TYPES = {
 
 
 @login_required
+def roster_view(request):
+    """
+    Admin page: assign doctors to counters for today (doctor-centric routing).
+    GET  → show all active clinical counters with current assignments.
+    POST → assign or remove a doctor from a counter.
+    """
+    if not _qms_active():
+        return redirect('dashboard:home')
+    if request.user.role not in _COUNTER_MANAGE_ROLES:
+        messages.error(request, 'You do not have permission to manage the daily roster.')
+        return redirect('qms:dashboard')
+
+    today = timezone.localdate()
+
+    # Clinical counters only (exclude cashier/params/reception)
+    _skip_types = {'CASHIER', 'PARAMETERS', 'PARAMS_VIP', 'RECEPTIONIST'}
+    counters = (
+        ServiceCounter.objects
+        .filter(is_active=True, is_deleted=False)
+        .exclude(service_type__in=_skip_types)
+        .select_related('staff_assigned', 'zone')
+        .order_by('zone__name', 'name')
+    )
+
+    # Clinical doctors available for assignment
+    from apps.accounts.models import User as _User
+    doctors = (
+        _User.objects
+        .filter(role__in=_CLINICAL_CHECKIN_ROLES, is_active=True, is_deleted=False)
+        .order_by('last_name', 'first_name')
+    )
+
+    if request.method == 'POST':
+        action     = request.POST.get('action', '')
+        counter_id = request.POST.get('counter_id', '').strip()
+
+        try:
+            counter = ServiceCounter.objects.get(id=counter_id, is_active=True)
+        except (ServiceCounter.DoesNotExist, ValueError):
+            messages.error(request, 'Counter not found.')
+            return redirect('qms:roster')
+
+        if action == 'assign':
+            doctor_id = request.POST.get('doctor_id', '').strip()
+            try:
+                doctor = _User.objects.get(id=doctor_id, is_active=True)
+            except (_User.DoesNotExist, ValueError):
+                messages.error(request, 'Doctor not found.')
+                return redirect('qms:roster')
+            # If doctor is already in another counter today → move them
+            prev = ServiceCounter.objects.filter(
+                staff_assigned=doctor, checked_in_date=today, is_active=True
+            ).exclude(id=counter.id).first()
+            if prev:
+                prev.staff_assigned = None
+                prev.checked_in_date = None
+                prev.save(update_fields=['staff_assigned', 'checked_in_date', 'updated_at'])
+            counter.staff_assigned = doctor
+            counter.checked_in_date = today
+            counter.save(update_fields=['staff_assigned', 'checked_in_date', 'updated_at'])
+            messages.success(request, f'{doctor.get_full_name()} assigned to {counter.name}.')
+
+        elif action == 'remove':
+            removed_name = counter.staff_assigned.get_full_name() if counter.staff_assigned else counter.name
+            counter.staff_assigned = None
+            counter.checked_in_date = None
+            counter.save(update_fields=['staff_assigned', 'checked_in_date', 'updated_at'])
+            messages.success(request, f'{removed_name} removed from {counter.name}.')
+
+        return redirect('qms:roster')
+
+    # Annotate counters: waiting count + assignment status
+    from django.db.models import Count as _Count
+    count_map = dict(
+        QueueToken.objects.filter(
+            counter__in=counters, token_date=today, is_deleted=False,
+            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING]
+        ).values('counter_id').annotate(n=_Count('id')).values_list('counter_id', 'n')
+    )
+    counters = list(counters)
+    for c in counters:
+        c.today_count = count_map.get(c.id, 0)
+        c.is_assigned_today = (c.checked_in_date == today and c.staff_assigned_id is not None)
+
+    assigned_count   = sum(1 for c in counters if c.is_assigned_today)
+    unassigned_count = len(counters) - assigned_count
+
+    return render(request, 'qms/roster.html', {
+        'counters':         counters,
+        'doctors':          doctors,
+        'today':            today,
+        'assigned_count':   assigned_count,
+        'unassigned_count': unassigned_count,
+    })
+
+
+@login_required
 def room_checkin_view(request):
     """
-    Doctor / refractionist checks in to their room for the day.
-    GET  → show available rooms matching their service type(s).
-    POST → assign them to the selected counter (room).
+    Doctor's 'My Room Today' — shows their admin-assigned room (read-only).
+    Admin/manager roles are redirected to the full roster page.
     """
     if not _qms_active():
         return redirect('dashboard:home')
@@ -2255,93 +2350,37 @@ def room_checkin_view(request):
     user = request.user
     today = timezone.localdate()
 
-    # Find roles that can check in
-    if user.role not in _CLINICAL_CHECKIN_ROLES and user.role not in _COUNTER_MANAGE_ROLES:
-        messages.error(request, 'Check-in is not available for your role.')
+    if user.role in _COUNTER_MANAGE_ROLES:
+        return redirect('qms:roster')
+
+    if user.role not in _CLINICAL_CHECKIN_ROLES:
+        messages.error(request, 'This page is not available for your role.')
         return redirect('dashboard:home')
 
-    eligible_types = _ROLE_SERVICE_TYPES.get(user.role, [])
-
-    # Already checked in today?
     current = ServiceCounter.objects.filter(
         staff_assigned=user, checked_in_date=today, is_active=True
     ).select_related('zone').first()
 
-    if request.method == 'POST':
-        action = request.POST.get('action', '')
+    waiting_count = 0
+    if current:
+        waiting_count = QueueToken.objects.filter(
+            counter=current, token_date=today,
+            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+            is_deleted=False
+        ).count()
 
-        if action == 'checkout':
-            if current:
-                current.staff_assigned = None
-                current.checked_in_date = None
-                current.save(update_fields=['staff_assigned', 'checked_in_date', 'updated_at'])
-                messages.success(request, f'You have checked out of {current.name}.')
-            return redirect('qms:room_checkin')
-
-        counter_id = request.POST.get('counter_id', '').strip()
-        if not counter_id:
-            messages.error(request, 'Please select a room.')
-            return redirect('qms:room_checkin')
-
-        counter = get_object_or_404(ServiceCounter, id=counter_id, is_active=True)
-
-        # Block if someone else is already checked in today
-        if counter.checked_in_date == today and counter.staff_assigned and counter.staff_assigned != user:
-            messages.error(
-                request,
-                f'{counter.name} is already occupied by {counter.staff_assigned.get_full_name()}.'
-            )
-            return redirect('qms:room_checkin')
-
-        # Check out of previous room if any
-        if current and current != counter:
-            current.staff_assigned = None
-            current.checked_in_date = None
-            current.save(update_fields=['staff_assigned', 'checked_in_date', 'updated_at'])
-
-        counter.staff_assigned = user
-        counter.checked_in_date = today
-        counter.save(update_fields=['staff_assigned', 'checked_in_date', 'updated_at'])
-        messages.success(request, f'Checked in to {counter.name}. Your patient queue is ready.')
-        return redirect('qms:counter', counter_id=counter.id)
-
-    # GET — list available rooms
-    if eligible_types:
-        available = ServiceCounter.objects.filter(
-            service_type__in=eligible_types, is_active=True
-        ).select_related('staff_assigned', 'zone').order_by('zone__name', 'name')
-    else:
-        available = ServiceCounter.objects.filter(is_active=True).select_related('staff_assigned', 'zone').order_by('name')
-
-    # Annotate each counter with today's queue count and mine/busy flags
-    available = list(available)
-    if available:
-        from django.db.models import Count as _Count
-        _count_map = dict(
-            QueueToken.objects.filter(
-                counter__in=available, status=TokenStatus.WAITING,
-                token_date=today, is_deleted=False
-            ).values('counter_id').annotate(n=_Count('id')).values_list('counter_id', 'n')
-        )
-        for c in available:
-            c.waiting_count = _count_map.get(c.id, 0)
-            c.is_mine = (current is not None and c.id == current.id)
-            c.is_busy = (c.is_checked_in_today and not c.is_mine)
-
-    return render(request, 'qms/doctor_checkin.html', {
-        'available': available,
+    return render(request, 'qms/my_room_today.html', {
         'current': current,
+        'waiting_count': waiting_count,
         'today': today,
-        'eligible_types': eligible_types,
     })
 
 
 @login_required
 def room_board_ajax(request):
     """
-    AJAX — return live room board data for the triage dispatch panel.
-    Grouped by zone. Each room shows: name, doctor, queue count, is_available.
-    Optionally filter by service_types param (comma-separated).
+    AJAX — live room board for triage dispatch.
+    Returns zones → rooms with doctor name, waiting count, estimated wait time.
     """
     if not _qms_active():
         return JsonResponse({'zones': []})
@@ -2354,7 +2393,7 @@ def room_board_ajax(request):
     if svc_types:
         qs = qs.filter(service_type__in=svc_types)
 
-    # Queue counts per counter
+    # Waiting counts per counter
     from django.db.models import Count as _Count
     counts = dict(
         QueueToken.objects.filter(
@@ -2363,20 +2402,39 @@ def room_board_ajax(request):
         ).values('counter_id').annotate(n=_Count('id')).values_list('counter_id', 'n')
     )
 
+    # Avg consultation duration per counter (from today's completed tokens)
+    completed = QueueToken.objects.filter(
+        counter__in=qs, token_date=today,
+        status=TokenStatus.DONE,
+        served_at__isnull=False, completed_at__isnull=False,
+        is_deleted=False
+    ).values('counter_id', 'served_at', 'completed_at')
+
+    _durations = {}
+    for t in completed:
+        if t['served_at'] and t['completed_at']:
+            mins = (t['completed_at'] - t['served_at']).total_seconds() / 60
+            if 1 <= mins <= 120:
+                _durations.setdefault(t['counter_id'], []).append(mins)
+    avg_consult = {cid: sum(d) / len(d) for cid, d in _durations.items()}
+
     zones_map = {}
     for c in qs.order_by('zone__name', 'name'):
-        zone_name = c.zone.name if c.zone else 'Unassigned'
+        zone_name  = c.zone.name  if c.zone else 'Unassigned'
         zone_color = c.zone.color if c.zone else 'secondary'
         if zone_name not in zones_map:
             zones_map[zone_name] = {'name': zone_name, 'color': zone_color, 'rooms': []}
+        waiting = counts.get(c.id, 0)
+        avg_mins = avg_consult.get(c.id, 15)
         zones_map[zone_name]['rooms'].append({
-            'id': str(c.id),
-            'name': c.name,
-            'service_type': c.service_type,
-            'doctor': c.staff_assigned.get_full_name() if c.is_checked_in_today else None,
-            'doctor_id': str(c.staff_assigned.pk) if c.is_checked_in_today else None,
-            'waiting': counts.get(c.id, 0),
-            'available': c.is_checked_in_today,
+            'id':              str(c.id),
+            'name':            c.name,
+            'service_type':    c.service_type,
+            'doctor':          c.staff_assigned.get_full_name() if c.is_checked_in_today else None,
+            'doctor_id':       str(c.staff_assigned.pk) if c.is_checked_in_today else None,
+            'waiting':         waiting,
+            'available':       c.is_checked_in_today,
+            'estimated_wait':  round(avg_mins * waiting) if waiting else 0,
         })
 
     return JsonResponse({'zones': list(zones_map.values())})
