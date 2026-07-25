@@ -2236,7 +2236,7 @@ def roster_view(request):
     from apps.accounts.models import User as _User
     doctors = (
         _User.objects
-        .filter(role__in=_CLINICAL_CHECKIN_ROLES, is_active=True, is_deleted=False)
+        .filter(role__in=_CLINICAL_CHECKIN_ROLES, is_active=True)
         .order_by('last_name', 'first_name')
     )
 
@@ -2371,7 +2371,7 @@ def room_board_ajax(request):
     # Avg consultation duration per counter (from today's completed tokens)
     completed = QueueToken.objects.filter(
         counter__in=qs, token_date=today,
-        status=TokenStatus.DONE,
+        status=TokenStatus.COMPLETED,
         served_at__isnull=False, completed_at__isnull=False,
         is_deleted=False
     ).values('counter_id', 'served_at', 'completed_at')
