@@ -462,7 +462,7 @@
 })();
 </script>
 
-<!-- Info-tip collapse: .alert-info:not(.alert-dismissible) → hidden pill until clicked -->
+<!-- Info-tip: guidance alert-info banners → collapsed pill, hover/click to expand -->
 <script>
 (function () {
   'use strict';
@@ -470,18 +470,35 @@
     (root || document).querySelectorAll(
       '.alert.alert-info:not(.alert-dismissible):not([data-tip-init])'
     ).forEach(function (el) {
+      // Only collapse guidance banners (ones with an info icon).
+      // Leave pure data-display alerts (wallet balance, depreciation summary, etc.) untouched.
+      if (!el.querySelector('i.bi-info-circle, i.bi-info-circle-fill')) return;
+
       el.setAttribute('data-tip-init', '1');
       var inner = el.innerHTML;
       var cls   = el.className;
       var sty   = el.getAttribute('style') || '';
-      el.removeAttribute('class');
-      el.removeAttribute('style');
 
+      // Clear the element and strip its alert styling
+      el.className = '';
+      el.removeAttribute('style');
+      el.innerHTML = '';   // ← critical: remove original visible content
+
+      // ── Pill trigger ────────────────────────────────────────────────────
       var pill = document.createElement('button');
       pill.type = 'button';
-      pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:.72rem;padding:3px 10px;border-radius:99px;cursor:pointer;outline:none;font-family:inherit;';
-      pill.innerHTML = '<i class="bi bi-info-circle"></i><span>Info / Tip</span><i class="bi bi-chevron-down" style="font-size:.6rem;"></i>';
+      pill.style.cssText = [
+        'display:inline-flex;align-items:center;gap:5px;',
+        'background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;',
+        'font-size:.72rem;padding:3px 10px;border-radius:99px;',
+        'cursor:pointer;outline:none;font-family:inherit;',
+        'transition:background .15s,box-shadow .15s;',
+      ].join('');
+      pill.innerHTML = '<i class="bi bi-info-circle"></i>'
+                     + '<span>Guidance</span>'
+                     + '<i class="bi bi-chevron-down" style="font-size:.6rem;"></i>';
 
+      // ── Hidden body (original alert content) ────────────────────────────
       var body = document.createElement('div');
       body.className = cls;
       body.setAttribute('data-tip-init', '1');
@@ -493,19 +510,43 @@
       el.appendChild(pill);
       el.appendChild(body);
 
-      pill.addEventListener('click', function () {
-        var open = body.style.display !== 'none';
-        body.style.display = open ? 'none' : '';
-        var chev = pill.querySelector('.bi-chevron-down,.bi-chevron-up');
-        if (chev) chev.className = chev.className.replace(
-          open ? 'bi-chevron-up' : 'bi-chevron-down',
-          open ? 'bi-chevron-down' : 'bi-chevron-up'
-        );
-      });
+      // ── Hover + click behaviour ──────────────────────────────────────────
+      var open = false;
+      var hideTimer = null;
+
+      function _show() {
+        clearTimeout(hideTimer);
+        if (open) return;
+        open = true;
+        body.style.display = '';
+        pill.style.boxShadow = '0 0 0 3px rgba(3,105,161,.15)';
+        var chev = pill.querySelector('[class*="bi-chevron"]');
+        if (chev) chev.className = chev.className.replace('bi-chevron-down', 'bi-chevron-up');
+      }
+
+      function _hide(delay) {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(function () {
+          if (!open) return;
+          open = false;
+          body.style.display = 'none';
+          pill.style.boxShadow = '';
+          var chev = pill.querySelector('[class*="bi-chevron"]');
+          if (chev) chev.className = chev.className.replace('bi-chevron-up', 'bi-chevron-down');
+        }, delay || 0);
+      }
+
+      // Hover: show on mouse-enter, hide after brief delay on mouse-leave
+      pill.addEventListener('mouseenter', _show);
+      pill.addEventListener('mouseleave', function () { _hide(350); });
+      // Keep open while mouse is over the body
+      body.addEventListener('mouseenter', function () { clearTimeout(hideTimer); });
+      body.addEventListener('mouseleave', function () { _hide(250); });
+      // Click: toggle (for touch devices / keyboard users)
+      pill.addEventListener('click', function () { open ? _hide(0) : _show(); });
     });
   }
 
-  // DOMContentLoaded = initial load; htmx:afterSettle fires once per HTMX swap after animations
   document.addEventListener('DOMContentLoaded', function () { initInfoTips(document); });
   document.addEventListener('htmx:afterSettle', function ()  { initInfoTips(document); });
 })();
