@@ -1105,19 +1105,21 @@ def workstation_view(request):
                         elif 'STANDARD' not in _ctiers:
                             _token_qs = _token_qs.exclude(service_tier='STANDARD')
                     else:
-                        _pt = getattr(user, 'patient_tier', 'ALL')
+                        _pt = getattr(user, 'patient_tier', '') or ''
                         if _pt == 'VIP':
                             _token_qs = _token_qs.filter(service_tier='VIP')
-                        elif _pt == 'STANDARD':
-                            _token_qs = _token_qs.filter(service_tier='STANDARD')
                         elif _pt in ('EXPRESS', 'FAST_TRACK'):
                             _token_qs = _token_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                        else:
+                            # Default (STANDARD or unset): never show VIP patients
+                            _token_qs = _token_qs.filter(service_tier='STANDARD')
                 else:
                     # All other departments: respect patient_tier on account
-                    _pt = getattr(user, 'patient_tier', 'ALL')
+                    _pt = getattr(user, 'patient_tier', '') or ''
                     if _pt == 'VIP':
                         _token_qs = _token_qs.filter(service_tier='VIP')
-                    elif _pt == 'STANDARD':
+                    else:
+                        # Default (STANDARD or unset): never show VIP patients
                         _token_qs = _token_qs.exclude(service_tier='VIP')
                 waiting_tokens = list(
                     _token_qs.select_related('patient', 'counter', 'assigned_doctor')
