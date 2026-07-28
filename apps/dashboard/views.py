@@ -582,6 +582,7 @@ def home_view(request):
             'EXPRESS':       ['EXPRESS', 'FAST_TRACK'],
             'INSUR_CONSULT': ['STANDARD'],   # insured patients typically STANDARD tier
             'INSURANCE':     ['STANDARD'],
+            'GENERAL':       ['STANDARD'],   # standard GEN_OPH doctors see only standard tier
         }
         if _cu in _CU_TIER_MAP:
             queue_qs = queue_qs.filter(service_tier__in=_CU_TIER_MAP[_cu])
