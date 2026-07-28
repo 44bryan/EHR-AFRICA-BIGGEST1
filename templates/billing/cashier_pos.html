@@ -375,6 +375,13 @@
         {{ invoice.get_status_display }}
       </span>
     {% endif %}
+    {% if visit %}
+    <button type="button" class="pat-badge border-0" style="cursor:pointer;background:#fef9c3;color:#92400e;"
+            data-bs-toggle="modal" data-bs-target="#tierChangeModal"
+            title="Change patient service tier">
+      <i class="bi bi-arrow-left-right me-1"></i>Change Tier
+    </button>
+    {% endif %}
     {% if not token %}
     <a href="{% url 'billing:invoice_create' %}" class="pat-badge" style="text-decoration:none;cursor:pointer;color:#94a3b8;"
        onclick="return confirm('Switch patient? Changes on this invoice are saved.');">
@@ -384,6 +391,86 @@
   </div>
 </div>
 {% endwith %}
+
+{# ── Tier Change Modal ─────────────────────────────────────────────────────── #}
+{% if visit %}
+<div class="modal fade" id="tierChangeModal" tabindex="-1" aria-labelledby="tierChangeModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border:1px solid #dee2e6;">
+      <div class="modal-header" style="background:#f8f9fa;border-bottom:1px solid #dee2e6;">
+        <h6 class="modal-title fw-bold" id="tierChangeModalLabel">
+          <i class="bi bi-arrow-left-right me-2 text-warning"></i>Change Patient Service Tier
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{% url 'patients:change_visit_tier' visit.visit_number %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <div class="modal-body">
+          {# Current tier indicator #}
+          <div class="mb-3 p-2 rounded" style="background:#f1f5f9;font-size:.82rem;">
+            <span class="text-muted">Current tier:</span>
+            <strong class="ms-1
+              {% if visit.service_tier == 'VIP' %}text-purple{% elif visit.service_tier in 'EXPRESS,FAST_TRACK' %}text-warning{% else %}text-primary{% endif %}">
+              {% if visit.service_tier == 'VIP' %}<i class="bi bi-stars me-1"></i>{% endif %}
+              {{ visit.get_service_tier_display }}
+            </strong>
+            <span class="ms-2 text-muted">· Visit {{ visit.visit_number }}</span>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.82rem;">New Tier <span class="text-danger">*</span></label>
+            <select name="service_tier" class="form-select form-select-sm" required>
+              <option value="">— Select tier —</option>
+              {% for val, label in tier_choices %}
+              <option value="{{ val }}" {% if val == visit.service_tier %}disabled{% endif %}>
+                {{ label }}{% if val == visit.service_tier %} (current){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:.82rem;">Reason / Patient Request <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control form-control-sm" rows="2"
+                      placeholder="e.g. Patient requested downgrade to standard — budget constraints"
+                      required style="font-size:.82rem;"></textarea>
+          </div>
+
+          {# Tier change history #}
+          {% if tier_changes %}
+          <div class="mt-3">
+            <div class="fw-semibold mb-1" style="font-size:.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">
+              <i class="bi bi-clock-history me-1"></i>Change History
+            </div>
+            <div style="max-height:110px;overflow-y:auto;">
+              {% for tc in tier_changes %}
+              <div class="d-flex align-items-start gap-2 mb-1 p-1 rounded" style="background:#f8f9fa;font-size:.75rem;">
+                <i class="bi bi-arrow-right-short text-muted mt-1 flex-shrink-0"></i>
+                <div>
+                  <span class="text-muted">{{ tc.old_tier }}</span>
+                  <i class="bi bi-arrow-right mx-1" style="font-size:.65rem;"></i>
+                  <strong>{{ tc.new_tier }}</strong>
+                  <span class="text-muted ms-1">· {{ tc.created_at|date:"d M H:i" }} by {{ tc.changed_by.get_full_name|default:tc.changed_by.username }}</span>
+                  {% if tc.reason %}<div class="text-muted fst-italic">{{ tc.reason|truncatechars:60 }}</div>{% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        <div class="modal-footer" style="border-top:1px solid #dee2e6;gap:.5rem;">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-warning fw-bold">
+            <i class="bi bi-arrow-left-right me-1"></i>Confirm Tier Change
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {# ── Consultation Window Warning ──────────────────────────────────────────── #}
 {% if active_consultation %}

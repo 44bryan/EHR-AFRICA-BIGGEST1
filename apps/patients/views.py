@@ -894,11 +894,13 @@ def tier_change_log_view(request, visit_number):
 @login_required
 @require_POST
 def change_visit_tier_view(request, visit_number):
-    """Allow Chief Cashier or Medical Director to change the service tier of an open visit."""
+    """Allow cashiers, Chief Cashier or Medical Director to change the service tier of an open visit."""
     u = request.user
-    if not (u.is_chief_cashier or u.is_medical_director or u.is_super_admin):
-        messages.error(request, "Only Chief Cashier or Medical Director can change a patient's service tier.")
-        return redirect('patients:visit_detail', visit_number=visit_number)
+    _next = request.POST.get('next', '').strip()
+    if not (u.is_cashier or u.is_chief_cashier or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo or u.is_finance_director):
+        messages.error(request, "You do not have permission to change a patient's service tier.")
+        return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
 
     visit = get_object_or_404(Visit, visit_number=visit_number)
 
@@ -973,7 +975,8 @@ def change_visit_tier_view(request, visit_number):
         request,
         f"Service tier changed from {old_tier} to {new_tier} for visit {visit.visit_number}."
     )
-    return redirect('patients:visit_detail', visit_number=visit_number)
+    _next = request.POST.get('next', '').strip()
+    return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
 
 
 @login_required

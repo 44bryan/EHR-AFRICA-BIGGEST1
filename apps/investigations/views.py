@@ -519,3 +519,133 @@ def cancel_investigation_order(request, pk):
     if order.consultation:
         return redirect('consultations:detail', pk=order.consultation.pk)
     return redirect('investigations:list')
+
+
+@login_required
+def investigation_stats_view(request):
+    """Monthly statistics for Eye Investigations."""
+    from django.db.models import Count, Q
+    from django.core.cache import cache
+    import json, calendar
+    from datetime import date as _date
+
+    u = request.user
+    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = _date(year, month, 1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = month_start.year, month_start.month
+
+    last_day   = calendar.monthrange(year, month)[1]
+    month_end  = _date(year, month, last_day)
+
+    # prev/next month nav
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+
+    _cache_key = f'inv_stats_{year}_{month}'
+    _cached = cache.get(_cache_key)
+    if _cached:
+        return render(request, 'investigations/stats.html', _cached)
+    _cache_ttl = 300 if (year == today.year and month == today.month) else 86400
+
+    base = InvestigationOrder.objects.filter(
+        is_deleted=False,
+        created_at__date__gte=month_start,
+        created_at__date__lte=month_end,
+    )
+
+    # ── KPIs ───────────────────────────────────────────────────────────────────
+    total_orders    = base.count()
+    pending_count   = base.filter(status__in=['ORDERED', 'IN_PROGRESS']).count()
+    completed_count = base.filter(status='COMPLETED').count()
+    cancelled_count = base.filter(status='CANCELLED').count()
+    urgent_count    = base.filter(urgency__in=['URGENT', 'EMERGENCY']).count()
+    completion_rate = round(completed_count / total_orders * 100, 1) if total_orders else 0
+
+    # ── By category ────────────────────────────────────────────────────────────
+    cat_raw = (
+        base.values('investigation_type__category')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    category_data = [
+        {'label': r['investigation_type__category'].replace('_', ' ').title(),
+         'count': r['count']}
+        for r in cat_raw if r['investigation_type__category']
+    ]
+    category_json = json.dumps(category_data)
+
+    # ── By urgency ─────────────────────────────────────────────────────────────
+    routine_count   = base.filter(urgency='ROUTINE').count()
+    emergency_count = base.filter(urgency='EMERGENCY').count()
+    urgency_json = json.dumps([
+        {'label': 'Routine',   'count': routine_count},
+        {'label': 'Urgent',    'count': urgent_count - emergency_count},
+        {'label': 'Emergency', 'count': emergency_count},
+    ])
+
+    # ── Top tests ──────────────────────────────────────────────────────────────
+    top_tests = list(
+        base.values('investigation_type__name', 'investigation_type__category')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:10]
+    )
+
+    # ── By status ──────────────────────────────────────────────────────────────
+    status_json = json.dumps([
+        {'label': 'Ordered',     'count': base.filter(status='ORDERED').count()},
+        {'label': 'In Progress', 'count': base.filter(status='IN_PROGRESS').count()},
+        {'label': 'Completed',   'count': completed_count},
+        {'label': 'Cancelled',   'count': cancelled_count},
+    ])
+
+    # ── Daily trend ────────────────────────────────────────────────────────────
+    daily_raw = (
+        base.extra(select={'day': 'DATE(created_at)'})
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+    daily_json = json.dumps([
+        {'day': str(r['day']), 'count': r['count']}
+        for r in daily_raw
+    ])
+
+    # ── Gender breakdown ───────────────────────────────────────────────────────
+    gender_raw = base.values('patient__gender').annotate(count=Count('id'))
+    gender_map = {r['patient__gender']: r['count'] for r in gender_raw}
+    gender_json = json.dumps([
+        {'label': 'Male',   'count': gender_map.get('M', 0)},
+        {'label': 'Female', 'count': gender_map.get('F', 0)},
+    ])
+
+    ctx = {
+        'month_start': month_start, 'month_end': month_end,
+        'year': year, 'month': month,
+        'prev_year': prev_year, 'prev_month': prev_month,
+        'next_year': next_year, 'next_month': next_month,
+        'total_orders': total_orders, 'pending_count': pending_count,
+        'completed_count': completed_count, 'cancelled_count': cancelled_count,
+        'urgent_count': urgent_count, 'completion_rate': completion_rate,
+        'top_tests': top_tests,
+        'category_json': category_json, 'urgency_json': urgency_json,
+        'status_json': status_json, 'daily_json': daily_json,
+        'gender_json': gender_json,
+    }
+    cache.set(_cache_key, ctx, _cache_ttl)
+    return render(request, 'investigations/stats.html', ctx)

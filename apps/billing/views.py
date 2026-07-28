@@ -951,6 +951,18 @@ def cashier_pos(request, token_id):
         if _pos_session and _pos_session.cash_desk.desk_type == 'TIER' and _pos_session.cash_desk.tier
         else _rev('billing:cashier_queue')
     )
+    # ── Tier change history for this visit ────────────────────────────────────
+    _visit = token.visit if token else None
+    _tier_changes = []
+    if _visit:
+        from apps.patients.models import VisitTierChange
+        _tier_changes = list(
+            VisitTierChange.objects.filter(visit=_visit)
+            .select_related('changed_by')
+            .order_by('-created_at')[:10]
+        )
+
+    from apps.patients.models import ServiceTier as _ST
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -971,6 +983,9 @@ def cashier_pos(request, token_id):
         'shift_mobile': shift_totals['mobile'] or 0,
         'patient_tier': _pos_tier,
         'queue_url': _queue_url,
+        'visit': _visit,
+        'tier_changes': _tier_changes,
+        'tier_choices': _ST.choices,
     })
 
 
