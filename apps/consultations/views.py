@@ -1137,6 +1137,12 @@ def workstation_view(request):
         ).select_related('patient', 'department', 'attending_doctor').order_by('visit_date')
         if dept:
             qs = qs.filter(department=dept)
+        elif dept_code:
+            # Department FK not set on account — fall back to role-based code
+            qs = qs.filter(department__code=dept_code)
+        else:
+            # No department information at all — show nothing to avoid leaking all patients
+            qs = qs.none()
         waiting_visits = list(qs)
 
     # ── Today's consultations for this doctor ──────────────────────────────
