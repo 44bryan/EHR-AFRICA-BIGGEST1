@@ -477,12 +477,15 @@
     (root || document).querySelectorAll(
       '.alert.alert-info:not(.alert-dismissible):not([data-tip-init])'
     ).forEach(function (el) {
-      // Only convert guidance banners that carry a bi-info-circle icon.
-      // All other alert-info banners (patient data bars, status messages, vitals, etc.)
-      // are marked data-tip-init so they are skipped on future HTMX swaps.
+      // Skip banners that carry a domain/status icon (bi-person-*, bi-heart-*,
+      // bi-lightning-*, bi-calendar-*, bi-send-*, bi-translate-*, etc.) but NOT
+      // a bi-info-circle icon — those are data/status displays, not guidance.
+      // Pure text banners (no icon) AND bi-info-circle banners are both guidance.
       var hasInfoIcon = el.querySelector('i.bi-info-circle, i.bi-info-circle-fill');
-      if (!hasInfoIcon) {
-        el.setAttribute('data-tip-init', '1');
+      var allIcons = el.querySelectorAll('i[class*="bi-"]');
+      var hasDomainIconOnly = allIcons.length > 0 && !hasInfoIcon;
+      if (hasDomainIconOnly) {
+        el.setAttribute('data-tip-init', '1'); // mark so future scans skip
         return;
       }
 

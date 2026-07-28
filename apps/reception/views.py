@@ -118,6 +118,13 @@ def walk_in(request):
                 }
                 last_dept_is_specialist = last_dept.code in _SPECIALIST_CODES
 
+        # Tier locking: if this receptionist is assigned to a specific zone,
+        # lock the tier to their zone so they cannot register for another tier.
+        locked_tier = None
+        user_tier = getattr(request.user, 'patient_tier', 'ALL')
+        if user_tier and user_tier != 'ALL':
+            locked_tier = user_tier  # e.g. 'STANDARD', 'VIP', 'EXPRESS'
+
         return render(request, 'reception/walk_in.html', {
             'q': q,
             'patients': patients,
@@ -129,6 +136,7 @@ def walk_in(request):
             'active_consult_visit': active_consult_visit,
             'last_dept': last_dept,
             'last_dept_is_specialist': last_dept_is_specialist,
+            'locked_tier': locked_tier,
         })
 
     # ── Step 2: process walk-in ────────────────────────────────────────────
@@ -139,7 +147,12 @@ def walk_in(request):
         patient = get_object_or_404(Patient, patient_id=patient_id)
 
         dept_id = request.POST.get('department')
-        tier = request.POST.get('service_tier', 'STANDARD')
+        # If user is zone-locked, enforce their tier regardless of form value
+        _user_tier = getattr(request.user, 'patient_tier', 'ALL')
+        if _user_tier and _user_tier != 'ALL':
+            tier = _user_tier
+        else:
+            tier = request.POST.get('service_tier', 'STANDARD')
         chief_complaint = request.POST.get('chief_complaint', 'Walk-in consultation')
         appt_type = request.POST.get('appointment_type', 'NEW')
 
