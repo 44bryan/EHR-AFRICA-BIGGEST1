@@ -631,10 +631,12 @@
         <i class="bi bi-robot me-1"></i>AI Assistant
       </a>
       {% endif %}
-      <button type="submit" name="save_mode" value="draft" class="btn btn-sm btn-outline-secondary ms-auto">
+      <button type="button" class="btn btn-sm btn-outline-secondary ms-auto"
+              onclick="ehrSubmitConsult('draft', this)">
         <i class="bi bi-search-heart me-1"></i>Order Tests First
       </button>
-      <button type="submit" class="btn btn-sm btn-primary">
+      <button type="button" class="btn btn-sm btn-primary"
+              onclick="ehrSubmitConsult('', this)">
         <i class="bi bi-floppy me-1"></i>Save Consultation
       </button>
     </div>
@@ -858,27 +860,32 @@ function showDraftToast(msg, isError) {
   {% endif %}
 })();
 
-// ── Submit: block HTMX event delegation + show loading state ─────────────────
-// #wrapper has hx-boost="true" which intercepts ALL submit events that bubble
-// up to it via event delegation — even when the form has hx-boost="false"/hx-disable.
-// A capture-phase listener with stopPropagation() cuts the event off before it
-// reaches #wrapper, so the native browser form submission proceeds normally.
-(function() {
+// ── ehrSubmitConsult: bypasses HTMX entirely by using form.submit() ──────────
+// form.submit() does NOT fire a submit event, so HTMX can never intercept it.
+// Called directly from the button's onclick — no submit event needed.
+function ehrSubmitConsult(mode, btn) {
   var frm = document.getElementById('consultationForm');
   if (!frm) return;
-  // Capture phase — fires before any bubble-phase listeners (including HTMX on #wrapper)
-  frm.addEventListener('submit', function(e) {
-    e.stopPropagation();
-  }, true);
-  // Bubble phase — show loading state after submit is confirmed
-  frm.addEventListener('submit', function(e) {
-    setTimeout(function() {
-      document.querySelectorAll('#consultationForm button[type="submit"]').forEach(function(btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
-      });
-    }, 50);
+
+  // Show loading state immediately
+  document.querySelectorAll('#consultationForm button[type="button"]').forEach(function(b) {
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
   });
-}());
+
+  // Set or clear the save_mode hidden input
+  var modeInp = frm.querySelector('input[name="save_mode"][data-ehr-mode]');
+  if (!modeInp) {
+    modeInp = document.createElement('input');
+    modeInp.type = 'hidden';
+    modeInp.name = 'save_mode';
+    modeInp.setAttribute('data-ehr-mode', '1');
+    frm.appendChild(modeInp);
+  }
+  modeInp.value = mode;
+
+  // form.submit() bypasses the submit event entirely — HTMX cannot intercept
+  frm.submit();
+}
 </script>
 {% endblock %}
