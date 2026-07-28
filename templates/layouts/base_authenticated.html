@@ -462,89 +462,73 @@
 })();
 </script>
 
-<!-- Info-tip: guidance alert-info banners → collapsed pill, hover/click to expand -->
+<!-- Info-tip: guidance alert-info banners → tiny ⓘ icon with Bootstrap popover on hover -->
 <script>
 (function () {
   'use strict';
+
+  function stripHtml(html) {
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+  }
+
   function initInfoTips(root) {
     (root || document).querySelectorAll(
       '.alert.alert-info:not(.alert-dismissible):not([data-tip-init])'
     ).forEach(function (el) {
-      // Only collapse guidance banners (ones with an info icon).
-      // Leave pure data-display alerts (wallet balance, depreciation summary, etc.) untouched.
+      // Only convert guidance banners that have an info icon.
       if (!el.querySelector('i.bi-info-circle, i.bi-info-circle-fill')) return;
 
       el.setAttribute('data-tip-init', '1');
-      var inner = el.innerHTML;
-      var cls   = el.className;
-      var sty   = el.getAttribute('style') || '';
 
-      // Clear the element and strip its alert styling
-      el.className = '';
-      el.removeAttribute('style');
-      el.innerHTML = '';   // ← critical: remove original visible content
+      // Extract the text content (strip HTML tags for plain tooltip, keep HTML for popover)
+      var htmlContent = el.innerHTML;
 
-      // ── Pill trigger ────────────────────────────────────────────────────
-      var pill = document.createElement('button');
-      pill.type = 'button';
-      pill.style.cssText = [
-        'display:inline-flex;align-items:center;gap:5px;',
-        'background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;',
-        'font-size:.72rem;padding:3px 10px;border-radius:99px;',
-        'cursor:pointer;outline:none;font-family:inherit;',
-        'transition:background .15s,box-shadow .15s;',
+      // Replace the whole alert with a tiny inline ⓘ icon button
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-bs-toggle', 'popover');
+      btn.setAttribute('data-bs-trigger', 'hover focus');
+      btn.setAttribute('data-bs-placement', 'bottom');
+      btn.setAttribute('data-bs-html', 'true');
+      btn.setAttribute('data-bs-content', htmlContent);
+      btn.setAttribute('data-bs-custom-class', 'info-tip-popover');
+      btn.setAttribute('aria-label', 'Page guidance');
+      btn.style.cssText = [
+        'display:inline-flex;align-items:center;gap:4px;',
+        'background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;',
+        'font-size:.72rem;padding:2px 8px 2px 6px;border-radius:99px;',
+        'cursor:help;outline:none;font-family:inherit;vertical-align:middle;',
+        'transition:background .15s;',
       ].join('');
-      pill.innerHTML = '<i class="bi bi-info-circle"></i>'
-                     + '<span>Guidance</span>'
-                     + '<i class="bi bi-chevron-down" style="font-size:.6rem;"></i>';
+      btn.innerHTML = '<i class="bi bi-info-circle-fill" style="font-size:.8rem;"></i>'
+                    + '<span style="font-weight:600;letter-spacing:.01em;">Info</span>';
 
-      // ── Hidden body (original alert content) ────────────────────────────
-      var body = document.createElement('div');
-      body.className = cls;
-      body.setAttribute('data-tip-init', '1');
-      if (sty) body.setAttribute('style', sty);
-      body.innerHTML = inner;
-      body.style.display = 'none';
-      body.style.marginTop = '6px';
+      // Replace the alert element with the button
+      el.replaceWith(btn);
 
-      el.appendChild(pill);
-      el.appendChild(body);
-
-      // ── Hover + click behaviour ──────────────────────────────────────────
-      var open = false;
-      var hideTimer = null;
-
-      function _show() {
-        clearTimeout(hideTimer);
-        if (open) return;
-        open = true;
-        body.style.display = '';
-        pill.style.boxShadow = '0 0 0 3px rgba(3,105,161,.15)';
-        var chev = pill.querySelector('[class*="bi-chevron"]');
-        if (chev) chev.className = chev.className.replace('bi-chevron-down', 'bi-chevron-up');
+      // Initialise Bootstrap popover
+      if (window.bootstrap && bootstrap.Popover) {
+        new bootstrap.Popover(btn, { sanitize: false });
       }
-
-      function _hide(delay) {
-        clearTimeout(hideTimer);
-        hideTimer = setTimeout(function () {
-          if (!open) return;
-          open = false;
-          body.style.display = 'none';
-          pill.style.boxShadow = '';
-          var chev = pill.querySelector('[class*="bi-chevron"]');
-          if (chev) chev.className = chev.className.replace('bi-chevron-up', 'bi-chevron-down');
-        }, delay || 0);
-      }
-
-      // Hover: show on mouse-enter, hide after brief delay on mouse-leave
-      pill.addEventListener('mouseenter', _show);
-      pill.addEventListener('mouseleave', function () { _hide(350); });
-      // Keep open while mouse is over the body
-      body.addEventListener('mouseenter', function () { clearTimeout(hideTimer); });
-      body.addEventListener('mouseleave', function () { _hide(250); });
-      // Click: toggle (for touch devices / keyboard users)
-      pill.addEventListener('click', function () { open ? _hide(0) : _show(); });
     });
+  }
+
+  // Add global popover styles once
+  if (!document.getElementById('info-tip-style')) {
+    var s = document.createElement('style');
+    s.id = 'info-tip-style';
+    s.textContent = [
+      '.info-tip-popover .popover-body {',
+      '  font-size:.82rem;max-width:340px;line-height:1.55;color:#1e293b;',
+      '}',
+      '.info-tip-popover .popover-body i.bi-info-circle,',
+      '.info-tip-popover .popover-body i.bi-info-circle-fill {',
+      '  display:none;',  /* hide the icon inside the popover body */
+      '}',
+    ].join('');
+    document.head.appendChild(s);
   }
 
   document.addEventListener('DOMContentLoaded', function () { initInfoTips(document); });
