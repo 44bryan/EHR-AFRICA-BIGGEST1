@@ -170,6 +170,8 @@ urlpatterns = [
     path('sessions/<uuid:session_id>/', views.session_detail, name='session_detail'),
     path('sessions/<uuid:session_id>/close/', views.session_close, name='session_close'),
     path('sessions/<uuid:session_id>/verify/', views.session_verify, name='session_verify'),
+    path('sessions/<uuid:session_id>/edit-float/', views.session_edit_float, name='session_edit_float'),
+    path('sessions/<uuid:session_id>/void/', views.session_void, name='session_void'),
 
     # Discount Approvals
     path('invoice/<uuid:invoice_id>/discount-request/', views.discount_request, name='discount_request'),

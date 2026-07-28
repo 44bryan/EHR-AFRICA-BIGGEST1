@@ -5523,12 +5523,17 @@ def session_detail(request, session_id):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
     can_force_close = _can_verify_session(request.user) and not is_own
+    _is_open = session.status == SessionStatus.OPEN
+    _can_sup = _can_verify_session(request.user)
+    _has_payments = session.payments.filter(is_deleted=False).exists()
     context = {
         'session': session,
         'collections': session.collections_by_method,
-        'can_close': is_own and session.status == SessionStatus.OPEN,
-        'can_force_close': can_force_close and session.status == SessionStatus.OPEN,
-        'can_verify': _can_verify_session(request.user) and session.status == SessionStatus.CLOSED,
+        'can_close': is_own and _is_open,
+        'can_force_close': can_force_close and _is_open,
+        'can_verify': _can_sup and session.status == SessionStatus.CLOSED,
+        'can_edit_float': _can_sup and _is_open,
+        'can_void': _can_sup and _is_open and not _has_payments,
     }
     return render(request, 'billing/session_detail.html', context)
 
@@ -5595,6 +5600,63 @@ def session_verify(request, session_id):
     session.save()
     messages.success(request, 'Session verified.')
     return redirect('billing:session_detail', session_id=session.pk)
+
+
+@json_error_handler
+@login_required
+@require_POST
+def session_edit_float(request, session_id):
+    """Chief Cashier / Supervisor corrects the opening float on an OPEN session."""
+    if not _can_verify_session(request.user):
+        messages.error(request, 'Access denied — Chief Cashier or above required.')
+        return redirect('billing:session_detail', session_id=session_id)
+    session = get_object_or_404(CashierSession, pk=session_id, is_deleted=False)
+    if session.status != SessionStatus.OPEN:
+        messages.error(request, 'Opening float can only be adjusted on an OPEN session.')
+        return redirect('billing:session_detail', session_id=session_id)
+    try:
+        new_float = Decimal(request.POST.get('opening_float', '').strip() or '0')
+    except Exception:
+        messages.error(request, 'Invalid amount entered.')
+        return redirect('billing:session_detail', session_id=session_id)
+    old_float = session.opening_float
+    supervisor = request.user.get_full_name() or request.user.username
+    session.opening_float = new_float
+    session.notes = (
+        (session.notes + '\n' if session.notes else '') +
+        f'Float adjusted from {old_float:,.0f} to {new_float:,.0f} XAF by {supervisor} on '
+        f'{timezone.now().strftime("%d/%m/%Y %H:%M")}.'
+    )
+    session.save(update_fields=['opening_float', 'notes', 'updated_at'])
+    messages.success(request, f'Opening float updated to {new_float:,.0f} XAF.')
+    return redirect('billing:session_detail', session_id=session.pk)
+
+
+@json_error_handler
+@login_required
+@require_POST
+def session_void(request, session_id):
+    """Chief Cashier / Supervisor voids an OPEN session that has no payments yet."""
+    if not _can_verify_session(request.user):
+        messages.error(request, 'Access denied — Chief Cashier or above required.')
+        return redirect('billing:session_detail', session_id=session_id)
+    session = get_object_or_404(CashierSession, pk=session_id, is_deleted=False)
+    if session.status != SessionStatus.OPEN:
+        messages.error(request, 'Only OPEN sessions can be voided.')
+        return redirect('billing:session_detail', session_id=session_id)
+    if session.payments.filter(is_deleted=False).exists():
+        messages.error(request, 'Cannot void a session that already has payments recorded.')
+        return redirect('billing:session_detail', session_id=session_id)
+    supervisor = request.user.get_full_name() or request.user.username
+    reason = request.POST.get('reason', '').strip() or 'No reason provided.'
+    session.status = SessionStatus.CLOSED
+    session.closed_at = timezone.now()
+    session.closing_declared_cash = Decimal('0')
+    session.notes = f'VOIDED by {supervisor} on {timezone.now().strftime("%d/%m/%Y %H:%M")}. Reason: {reason}'
+    session.is_deleted = True
+    session.save()
+    messages.success(request, 'Session voided — desk is now available.')
+    return redirect('billing:session_list')
 
 
 @login_required
