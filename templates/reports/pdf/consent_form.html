@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  .consent-title {
+    background: #0d6efd;
+    color: white;
+    padding: 8px 14px;
+    font-size: 12pt;
+    font-weight: 700;
+    margin-bottom: 14px;
+    border-radius: 3px;
+    text-align: center;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .checklist-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 5px;
+    font-size: 9.5pt;
+  }
+  .check-box {
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid #333;
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10pt;
+    font-weight: 700;
+  }
+  .check-box.checked { border-color: #198754; color: #198754; }
+  .info-grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin-bottom: 12px;
+  }
+  .info-grid td {
+    padding: 5px 8px;
+    border: 1px solid #dee2e6;
+    vertical-align: top;
+  }
+  .info-grid td:first-child {
+    font-weight: 600;
+    color: #444;
+    width: 38%;
+    background: #f8f9fa;
+  }
+  .sig-row {
+    display: flex;
+    gap: 20px;
+    margin-top: 30px;
+  }
+  .sig-col { flex: 1; }
+  .sig-label { font-size: 8pt; color: #555; margin-bottom: 4px; }
+  .sig-img-box {
+    border: 1.5px solid #999;
+    border-radius: 4px;
+    height: 70px;
+    background: #fafafa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .sig-img-box img { max-height: 65px; max-width: 100%; }
+  .sig-name-line {
+    border-top: 1.5px solid #1a1a1a;
+    margin-top: 6px;
+    padding-top: 4px;
+    font-size: 8.5pt;
+  }
+  .consent-declaration {
+    background: #f0f7ff;
+    border: 1px solid #b8d4f0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 9.5pt;
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .revoked-banner {
+    background: #fee2e2;
+    border: 1.5px solid #f87171;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 9pt;
+    color: #991b1b;
+    font-weight: 700;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' %}
+
+<div class="accred-bar">
+  <span>Informed Consent Record — Confidential</span>
+  <span>{{ issue_date|date:"d F Y" }}</span>
+</div>
+
+<div class="consent-title">{{ consent.get_consent_type_display }}</div>
+
+{% if not consent.is_valid %}
+<div class="revoked-banner">
+  &#9888; THIS CONSENT WAS REVOKED ON {{ consent.revoked_at|date:"d M Y H:i"|upper }}
+  {% if consent.revocation_reason %} — {{ consent.revocation_reason }}{% endif %}
+</div>
+{% endif %}
+
+<!-- Patient Details -->
+<div class="section-title">Patient Details</div>
+<table class="info-grid" style="margin-bottom:14px;">
+  <tr>
+    <td>Full Name</td>
+    <td><strong>{{ patient.full_name }}</strong></td>
+  </tr>
+  <tr>
+    <td>Patient ID</td>
+    <td>{{ patient.patient_id }}</td>
+  </tr>
+  <tr>
+    <td>Date of Birth</td>
+    <td>{{ patient.date_of_birth|date:"d M Y"|default:"—" }}</td>
+  </tr>
+  <tr>
+    <td>Gender</td>
+    <td>{{ patient.get_gender_display }}</td>
+  </tr>
+  <tr>
+    <td>Phone</td>
+    <td>{{ patient.phone_number|default:"—" }}</td>
+  </tr>
+</table>
+
+<!-- Consent Details -->
+<div class="section-title">Consent Details</div>
+<table class="info-grid" style="margin-bottom:14px;">
+  <tr>
+    <td>Procedure / Treatment</td>
+    <td><strong>{{ consent.procedure_name }}</strong></td>
+  </tr>
+  <tr>
+    <td>Consent Type</td>
+    <td>{{ consent.get_consent_type_display }}</td>
+  </tr>
+  <tr>
+    <td>Date &amp; Time Signed</td>
+    <td>{{ consent.signed_at|date:"d M Y H:i"|default:"Pending" }}</td>
+  </tr>
+  <tr>
+    <td>Consent Obtained By</td>
+    <td>Dr. {{ consent.obtained_by.full_name|default:"—" }}{% if consent.obtained_by.specialization %} — {{ consent.obtained_by.specialization }}{% endif %}</td>
+  </tr>
+  {% if consent.consultation %}
+  <tr>
+    <td>Related Consultation</td>
+    <td>{{ consent.consultation.consultation_date|date:"d M Y" }} — {{ consent.consultation.department|default:"" }}</td>
+  </tr>
+  {% endif %}
+</table>
+
+<!-- Patient Capacity -->
+<div class="section-title">Patient Capacity &amp; Representation</div>
+<div style="margin-bottom:12px; font-size:9.5pt;">
+  <div class="checklist-row">
+    <div class="check-box {% if consent.patient_has_capacity %}checked{% endif %}">{% if consent.patient_has_capacity %}&#10003;{% endif %}</div>
+    <div>Patient has mental capacity to consent to this procedure.</div>
+  </div>
+  {% if not consent.patient_has_capacity %}
+  <div style="margin-top:6px; padding:6px 10px; background:#fff3cd; border:1px solid #ffc107; border-radius:4px; font-size:9pt;">
+    <strong>Representative:</strong> {{ consent.patient_representative|default:"—" }}
+    {% if consent.relationship_to_patient %} &nbsp;|&nbsp; <strong>Relationship:</strong> {{ consent.relationship_to_patient }}{% endif %}
+  </div>
+  {% endif %}
+  {% if consent.interpreter_used %}
+  <div style="margin-top:6px; padding:6px 10px; background:#e0f2fe; border:1px solid #7dd3fc; border-radius:4px; font-size:9pt;">
+    <strong>Interpreter used:</strong> {{ consent.interpreter_name|default:"Name not recorded" }}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Information Explained -->
+<div class="section-title">Information Discussed with Patient</div>
+<div style="margin-bottom:12px;">
+  <div class="checklist-row">
+    <div class="check-box checked">&#10003;</div>
+    <div><strong>Risks Explained:</strong></div>
+  </div>
+  <div style="margin-left:22px; font-size:9.5pt; white-space:pre-wrap; line-height:1.6;">{{ consent.risks_explained }}</div>
+
+  {% if consent.benefits_explained %}
+  <div class="checklist-row" style="margin-top:8px;">
+    <div class="check-box checked">&#10003;</div>
+    <div><strong>Benefits Explained:</strong></div>
+  </div>
+  <div style="margin-left:22px; font-size:9.5pt; white-space:pre-wrap; line-height:1.6;">{{ consent.benefits_explained }}</div>
+  {% endif %}
+
+  {% if consent.alternatives_explained %}
+  <div class="checklist-row" style="margin-top:8px;">
+    <div class="check-box checked">&#10003;</div>
+    <div><strong>Alternatives Discussed:</strong></div>
+  </div>
+  <div style="margin-left:22px; font-size:9.5pt; white-space:pre-wrap; line-height:1.6;">{{ consent.alternatives_explained }}</div>
+  {% endif %}
+
+  <div class="checklist-row" style="margin-top:8px;">
+    <div class="check-box {% if consent.questions_answered %}checked{% endif %}">{% if consent.questions_answered %}&#10003;{% endif %}</div>
+    <div>Patient's questions were answered satisfactorily.</div>
+  </div>
+</div>
+
+{% if consent.notes %}
+<div class="section-title">Additional Notes</div>
+<div style="font-size:9.5pt; white-space:pre-wrap; line-height:1.6; margin-bottom:12px;">{{ consent.notes }}</div>
+{% endif %}
+
+<!-- Declaration -->
+<div class="consent-declaration">
+  I, the undersigned, confirm that the nature, risks, benefits, and alternatives of the above procedure have been
+  explained to me in a language I understand. I have had the opportunity to ask questions and these have been
+  answered to my satisfaction. I voluntarily consent to proceed with the stated procedure / treatment.
+</div>
+
+<!-- Signature Blocks -->
+<div class="section-title">Signatures</div>
+<div class="sig-row">
+  <!-- Patient / Representative -->
+  <div class="sig-col">
+    <div class="sig-label">Patient / Representative Signature</div>
+    <div class="sig-img-box">
+      {% if consent.patient_signature %}
+        <img src="{{ consent.patient_signature }}" alt="Patient Signature">
+      {% endif %}
+    </div>
+    <div class="sig-name-line">
+      {% if consent.patient_has_capacity %}
+        {{ patient.full_name }}
+      {% else %}
+        {{ consent.patient_representative|default:"Representative" }}
+        {% if consent.relationship_to_patient %}<br>({{ consent.relationship_to_patient }}){% endif %}
+      {% endif %}
+      <br>Date: {{ consent.signed_at|date:"d M Y"|default:"____________" }}
+    </div>
+  </div>
+
+  <!-- Clinician -->
+  <div class="sig-col">
+    <div class="sig-label">Clinician / Doctor Signature</div>
+    <div class="sig-img-box"></div>
+    <div class="sig-name-line">
+      Dr. {{ consent.obtained_by.full_name|default:"____________" }}
+      {% if consent.obtained_by.specialization %}<br>{{ consent.obtained_by.specialization }}{% endif %}
+      <br>Date: {{ consent.signed_at|date:"d M Y"|default:"____________" }}
+    </div>
+  </div>
+
+  <!-- Witness -->
+  <div class="sig-col">
+    <div class="sig-label">Witness Signature</div>
+    <div class="sig-img-box"></div>
+    <div class="sig-name-line">
+      {{ consent.witness_name|default:"____________" }}<br>
+      Date: ____________
+    </div>
+  </div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} · {{ hospital_address }}</span>
+  <span>Printed {{ issue_date|date:"d M Y" }} · Confidential Medical Record · Patient ID: {{ patient.patient_id }}</span>
+</div>
+
+</body>
+</html>

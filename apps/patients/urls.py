@@ -53,6 +53,7 @@ urlpatterns = [
     path('<str:patient_id>/consents/', views.consent_list_view, name='consent_list'),
     path('<str:patient_id>/consents/new/', views.consent_create_view, name='consent_create'),
     path('<str:patient_id>/consents/<uuid:consent_id>/', views.consent_detail_view, name='consent_detail'),
+    path('<str:patient_id>/consents/<uuid:consent_id>/print/', views.consent_print_view, name='consent_print'),
 
     # ── Documents / Scanned Records ─────────────────────────────────────────
     path('<str:patient_id>/documents/upload/', views.document_upload_view, name='document_upload'),

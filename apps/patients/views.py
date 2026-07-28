@@ -2668,6 +2668,23 @@ def consent_detail_view(request, patient_id, consent_id):
     })
 
 
+@clinical_staff_required
+def consent_print_view(request, patient_id, consent_id):
+    """Render a professional consent form PDF with letterhead and signature blocks."""
+    from apps.reports.views import render_pdf
+    from django.utils import timezone as tz
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
+    from .models import PatientConsent
+    consent = get_object_or_404(PatientConsent, pk=consent_id, patient=patient)
+    context = {
+        'patient': patient,
+        'consent': consent,
+        'issue_date': tz.localdate(),
+        'pdf_filename': f'consent_{patient.patient_id}_{consent.pk.hex[:8]}.pdf',
+    }
+    return render_pdf('reports/pdf/consent_form.html', context)
+
+
 # ── Patient Documents / Scanned Records ───────────────────────────────────────
 
 @login_required
