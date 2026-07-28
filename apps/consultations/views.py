@@ -301,7 +301,7 @@ def consultation_create_view(request, patient_id):
             ef['pupils'] = dept_data.get('pupils', '')
             ef['ocular_motility'] = dept_data.get('ocular_motility', '')
             consultation.examination_findings = ef
-            consultation.status = ConsultationStatus.IN_PROGRESS
+            consultation.status = ConsultationStatus.COMPLETED
             consultation.save()
             visit.status = 'IN_CONSULTATION'
             visit.attending_doctor = request.user
@@ -426,7 +426,7 @@ def consultation_create_view(request, patient_id):
                 except Exception:
                     pass  # Never block the doctor
 
-            messages.success(request, 'Consultation saved. Click "Complete" on the detail page when you are done.')
+            messages.success(request, 'Consultation completed successfully.')
             return redirect('consultations:detail', pk=consultation.pk)
     else:
         dept = request.user.department

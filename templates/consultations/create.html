@@ -724,16 +724,40 @@ function toggleCard(bodyId, header) {
 
 // ── Section draft autosave ────────────────────────────────────────────────────
 const _autosaveUrl = '{% url "consultations:autosave" %}';
-const _csrfToken   = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+// Read slot-aware CSRF token from cookie (mirrors htmx:configRequest in base template)
+function _getDraftCsrf() {
+  try {
+    var s = '';
+    try { s = new URLSearchParams(window.location.search).get('s') || ''; } catch(e){}
+    if (!s || !/^[1-9]$/.test(s)) { try { s = sessionStorage.getItem('ehr_slot') || ''; } catch(e){} }
+    if (!s || !/^[1-9]$/.test(s)) s = '1';
+    var csrfName = s === '1' ? 'csrftoken' : 'csrftoken_' + s;
+    var cookies = document.cookie.split(';');
+    for (var i = 0; i < cookies.length; i++) {
+      var c = cookies[i].trim();
+      if (c.indexOf(csrfName + '=') === 0) return { csrf: c.substring(csrfName.length + 1), slot: s };
+    }
+    // fallback: slot-1 csrftoken cookie
+    for (var j = 0; j < cookies.length; j++) {
+      var d = cookies[j].trim();
+      if (d.indexOf('csrftoken=') === 0) return { csrf: d.substring(10), slot: s };
+    }
+  } catch(e) {}
+  // Last resort: read from form hidden input
+  var el = document.querySelector('[name=csrfmiddlewaretoken]');
+  return { csrf: el ? el.value : '', slot: '1' };
+}
 
 function saveDraft(evt, section) {
   const form      = document.getElementById('consultationForm');
   const draftPkEl = document.getElementById('draftPk');
   const patientId = document.getElementById('patientIdHidden').value;
   const visitId   = document.getElementById('visitIdHidden').value;
+  const csrfInfo  = _getDraftCsrf();
 
   const data = new FormData();
-  data.append('csrfmiddlewaretoken', _csrfToken);
+  data.append('csrfmiddlewaretoken', csrfInfo.csrf);
   data.append('_section', section);
   data.append('draft_pk', draftPkEl.value);
   data.append('patient_id', patientId);
@@ -760,7 +784,7 @@ function saveDraft(evt, section) {
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…'; }
 
   fetch(_autosaveUrl, { method: 'POST', body: data,
-    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Session-Slot': csrfInfo.slot }
   })
   .then(function(r) {
     if (!r.ok && r.status === 403) {
