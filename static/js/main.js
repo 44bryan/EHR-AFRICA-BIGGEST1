@@ -215,6 +215,17 @@ function ehrInit() {
     btn.addEventListener('click', () => window.print());
   });
 
+
+  /* ── Consultation form: block HTMX event delegation on submit ── */
+  // #wrapper has hx-boost="true" which intercepts ALL submit events via delegation,
+  // even when the form has hx-boost="false"/hx-disable. A capture-phase listener
+  // with stopPropagation() cuts the event off before it bubbles to #wrapper.
+  var _cfrm = document.getElementById('consultationForm');
+  if (_cfrm && !_cfrm._ehrSubmitPatched) {
+    _cfrm._ehrSubmitPatched = true;
+    _cfrm.addEventListener('submit', function(e) { e.stopPropagation(); }, true);
+  }
+
 } // end ehrInit
 
 
