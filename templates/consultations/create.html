@@ -858,16 +858,27 @@ function showDraftToast(msg, isError) {
   {% endif %}
 })();
 
-// ── Submit: show loading state ────────────────────────────────────────────────
-document.getElementById('consultationForm').addEventListener('submit', function(e) {
-
-  // Show loading state on whichever submit button was clicked
-  setTimeout(function() {
-    document.querySelectorAll('#consultationForm button[type="submit"]').forEach(function(btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
-    });
-  }, 50);
-});
+// ── Submit: block HTMX event delegation + show loading state ─────────────────
+// #wrapper has hx-boost="true" which intercepts ALL submit events that bubble
+// up to it via event delegation — even when the form has hx-boost="false"/hx-disable.
+// A capture-phase listener with stopPropagation() cuts the event off before it
+// reaches #wrapper, so the native browser form submission proceeds normally.
+(function() {
+  var frm = document.getElementById('consultationForm');
+  if (!frm) return;
+  // Capture phase — fires before any bubble-phase listeners (including HTMX on #wrapper)
+  frm.addEventListener('submit', function(e) {
+    e.stopPropagation();
+  }, true);
+  // Bubble phase — show loading state after submit is confirmed
+  frm.addEventListener('submit', function(e) {
+    setTimeout(function() {
+      document.querySelectorAll('#consultationForm button[type="submit"]').forEach(function(btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+      });
+    }, 50);
+  });
+}());
 </script>
 {% endblock %}
