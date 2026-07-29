@@ -45,6 +45,181 @@
 <!-- Confirm Modal -->
 {% include 'components/modal_confirm.html' %}
 
+<!-- Unified Route Modal (EhrRoute system) -->
+{% include 'consultations/partials/_route_modal.html' %}
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// EhrRoute — Unified patient routing singleton
+// Usage: EhrRoute.open(visitPk, {completePk, tier, patientName})
+// All routing in the system calls this object.
+// ══════════════════════════════════════════════════════════════════════
+(function() {
+  'use strict';
+
+  function _getCsrf() {
+    var el = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (el) return el.value;
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+  }
+
+  function _showToast(msg, isError) {
+    var toast = document.getElementById('ehrRouteToast');
+    var msgEl = document.getElementById('ehrRouteToastMsg');
+    if (!toast || !msgEl) return;
+    msgEl.textContent = msg;
+    toast.classList.remove('bg-success', 'bg-danger', 'text-white');
+    toast.classList.add(isError ? 'bg-danger' : 'bg-success', 'text-white');
+    bootstrap.Toast.getOrCreateInstance(toast, {delay: 4500}).show();
+  }
+
+  function _roomCard(r) {
+    var badge = r.waiting_count > 0
+      ? '<span class="badge bg-warning text-dark ms-auto">' + r.waiting_count + ' waiting</span>'
+      : '<span class="badge bg-success ms-auto">Free</span>';
+    return '<div class="col-12 col-md-6">' +
+      '<div class="ehr-room-card d-flex align-items-center gap-2 p-2 rounded border bg-white"' +
+      ' data-room-id="' + r.id + '"' +
+      ' style="cursor:pointer;transition:background .12s;"' +
+      ' onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
+      '<div class="rounded d-flex align-items-center justify-content-center flex-shrink-0"' +
+      ' style="width:38px;height:38px;background:#1e293b;">' +
+      '<span class="text-white fw-bold small">' + r.room_number + '</span>' +
+      '</div>' +
+      '<div class="flex-grow-1 overflow-hidden">' +
+      '<div class="fw-semibold small text-truncate">' + r.doctor_name + '</div>' +
+      '<div class="text-muted text-truncate" style="font-size:.72rem;">' + r.label + ' &bull; ' + r.dept_name + '</div>' +
+      '</div>' + badge + '</div></div>';
+  }
+
+  function _renderRooms(data) {
+    var board = document.getElementById('ehrRouteRoomBoard');
+    if (!board) return;
+    var html = '';
+    if (data.same_tier && data.same_tier.length) {
+      html += '<div class="fw-semibold small text-muted mb-2" style="font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;">Recommended — same tier</div>';
+      html += '<div class="row g-2 mb-3">';
+      data.same_tier.forEach(function(r) { html += _roomCard(r); });
+      html += '</div>';
+    }
+    if (data.other && data.other.length) {
+      html += '<details><summary class="small text-muted mb-2" style="cursor:pointer;font-size:.78rem;">Other rooms (' + data.other.length + ')</summary>';
+      html += '<div class="row g-2 mt-1" style="opacity:.65;">';
+      data.other.forEach(function(r) { html += _roomCard(r); });
+      html += '</div></details>';
+    }
+    if (!html) {
+      html = '<p class="text-muted small text-center py-3">No rooms with assigned doctors found.<br><span style="font-size:.8rem;">Ask admin to assign doctors to rooms.</span></p>';
+    }
+    board.innerHTML = html;
+    board.querySelectorAll('.ehr-room-card').forEach(function(card) {
+      card.addEventListener('click', function() { EhrRoute.execute('GENERAL', this.dataset.roomId); });
+    });
+  }
+
+  window.EhrRoute = {
+    _visitPk:    null,
+    _completePk: null,
+    _tier:       'STANDARD',
+    _bsModal:    null,
+    _busy:       false,
+
+    open: function(visitPk, opts) {
+      opts = opts || {};
+      this._visitPk    = visitPk;
+      this._completePk = opts.completePk || '';
+      this._tier       = (opts.tier || 'STANDARD').toUpperCase();
+      this._busy       = false;
+
+      var badge = document.getElementById('ehrRoutePatientBadge');
+      if (badge) badge.textContent = opts.patientName || '';
+      var tierBadge = document.getElementById('ehrRouteTierBadge');
+      if (tierBadge) tierBadge.textContent = this._tier;
+
+      var modalEl = document.getElementById('ehrRouteModal');
+      if (!modalEl) return;
+      if (!this._bsModal) this._bsModal = new bootstrap.Modal(modalEl);
+      this._bsModal.show();
+
+      // Reset button states
+      modalEl.querySelectorAll('button[data-dest], .ehr-room-card, #ehrRouteAnyCard').forEach(function(b){
+        b.style.pointerEvents = ''; b.style.opacity = '';
+      });
+
+      var board = document.getElementById('ehrRouteRoomBoard');
+      if (board) board.innerHTML = '<div class="text-center py-4 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Loading rooms\u2026</div>';
+
+      fetch('/consultations/route/rooms/?tier=' + this._tier, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+        .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function(data) { _renderRooms(data); })
+        .catch(function() {
+          var b = document.getElementById('ehrRouteRoomBoard');
+          if (b) b.innerHTML = '<p class="text-muted small text-center py-3">Could not load rooms.</p>';
+        });
+    },
+
+    execute: function(destination, roomId) {
+      if (this._busy) return;
+      this._busy = true;
+
+      var payload = new FormData();
+      payload.append('visit_pk', this._visitPk);
+      payload.append('destination', destination);
+      if (roomId) payload.append('room_id', roomId);
+      if (this._completePk) payload.append('complete_pk', this._completePk);
+
+      var self = this;
+      var modalEl = document.getElementById('ehrRouteModal');
+      if (modalEl) modalEl.querySelectorAll('button[data-dest], .ehr-room-card, #ehrRouteAnyCard').forEach(function(b){
+        b.style.pointerEvents = 'none'; b.style.opacity = '0.5';
+      });
+
+      fetch('/consultations/route/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': _getCsrf(), 'X-Requested-With': 'XMLHttpRequest'},
+        body: payload,
+      })
+      .then(function(r) { return r.ok ? r.json() : r.json().then(function(e){ return Promise.reject(e); }); })
+      .then(function(data) {
+        self._busy = false;
+        if (data.success) {
+          if (self._bsModal) self._bsModal.hide();
+          _showToast(data.message || ('Sent to ' + data.label), false);
+          window.dispatchEvent(new CustomEvent('ehrRouteSuccess', {detail: data}));
+          if (self._completePk && data.redirect_url) {
+            setTimeout(function() { window.location.href = data.redirect_url; }, 900);
+          }
+        } else {
+          self._busy = false;
+          if (modalEl) modalEl.querySelectorAll('button[data-dest], .ehr-room-card, #ehrRouteAnyCard').forEach(function(b){
+            b.style.pointerEvents = ''; b.style.opacity = '';
+          });
+          _showToast(data.error || 'Routing failed. Try again.', true);
+        }
+      })
+      .catch(function(e) {
+        self._busy = false;
+        if (modalEl) modalEl.querySelectorAll('button[data-dest], .ehr-room-card, #ehrRouteAnyCard').forEach(function(b){
+          b.style.pointerEvents = ''; b.style.opacity = '';
+        });
+        _showToast((e && e.error) ? e.error : 'Server error. Please try again.', true);
+      });
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var modalEl = document.getElementById('ehrRouteModal');
+    if (!modalEl) return;
+    modalEl.querySelectorAll('.ehr-route-dest').forEach(function(btn) {
+      btn.addEventListener('click', function() { EhrRoute.execute(this.dataset.dest, ''); });
+    });
+    var anyCard = document.getElementById('ehrRouteAnyCard');
+    if (anyCard) anyCard.addEventListener('click', function() { EhrRoute.execute('GENERAL', ''); });
+  });
+})();
+</script>
+
 <!-- Dashboard auto-refresh: smooth HTMX queue update every 30s on dashboard pages -->
 <script>
 (function () {

@@ -1,0 +1,179 @@
+{# ══════════════════════════════════════════════════════════════════════════════
+   Unified Route Patient Modal  — included ONCE in base_authenticated.html
+   Triggered globally via:  EhrRoute.open(visitPk, {completePk, tier, patientName})
+   ══════════════════════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="ehrRouteModal" tabindex="-1" aria-modal="true" aria-labelledby="ehrRouteModalLabel">
+  <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width:900px;">
+    <div class="modal-content border-0 shadow-lg" style="border-radius:12px;overflow:hidden;">
+
+      {# ── Header ── #}
+      <div class="modal-header border-0 py-3 px-4" style="background:#1e293b;">
+        <div>
+          <h5 class="modal-title text-white mb-0 fw-semibold" id="ehrRouteModalLabel">
+            <i class="bi bi-signpost-split me-2 opacity-75"></i>Route Patient
+          </h5>
+          <div class="text-white-50 small mt-1" id="ehrRoutePatientBadge"></div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body p-0">
+
+        {# ── Left panel: Doctor / Room Board ── #}
+        <div class="row g-0">
+          <div class="col-lg-7 border-end" style="max-height:560px;overflow-y:auto;">
+            <div class="p-3 border-bottom bg-light">
+              <span class="fw-semibold small text-dark">
+                <i class="bi bi-grid-3x3-gap me-1"></i>Send to Doctor — pick a room
+              </span>
+              <span class="badge bg-secondary ms-2 small" id="ehrRouteTierBadge"></span>
+            </div>
+
+            {# "Any available" card — system picks first free doctor in tier #}
+            <div id="ehrRouteAnyCard"
+                 class="d-flex align-items-center gap-3 p-3 border-bottom"
+                 style="cursor:pointer;transition:background .12s;"
+                 onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">
+              <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                   style="width:44px;height:44px;background:#e2e8f0;">
+                <i class="bi bi-people fs-5 text-dark"></i>
+              </div>
+              <div class="flex-grow-1">
+                <div class="fw-semibold small">Any Available Doctor</div>
+                <div class="text-muted" style="font-size:.75rem;">System will place patient in the next available queue</div>
+              </div>
+              <i class="bi bi-chevron-right text-muted"></i>
+            </div>
+
+            {# AJAX room board #}
+            <div id="ehrRouteRoomBoard" class="p-3">
+              <div class="text-center py-4 text-muted">
+                <span class="spinner-border spinner-border-sm me-2"></span>Loading rooms…
+              </div>
+            </div>
+          </div>
+
+          {# ── Right panel: Quick destinations ── #}
+          <div class="col-lg-5" style="max-height:560px;overflow-y:auto;">
+
+            {# Shared services #}
+            <div class="p-3 border-bottom bg-light">
+              <span class="fw-semibold small text-dark">
+                <i class="bi bi-lightning me-1"></i>Quick Destinations
+              </span>
+            </div>
+            <div class="p-3 border-bottom">
+              <div class="row g-2">
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="LAB">
+                    <i class="bi bi-eyedropper me-2 text-danger"></i>Laboratory
+                  </button>
+                </div>
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="IMAGING">
+                    <i class="bi bi-camera me-2 text-info"></i>Investigations
+                  </button>
+                </div>
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="PHARMACY">
+                    <i class="bi bi-capsule me-2 text-success"></i>Pharmacy
+                  </button>
+                </div>
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="CASHIER">
+                    <i class="bi bi-cash-stack me-2"></i>Cashier
+                  </button>
+                </div>
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="REFRACTION">
+                    <i class="bi bi-eyeglasses me-2 text-primary"></i>Refraction
+                  </button>
+                </div>
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="OPTICAL">
+                    <i class="bi bi-eye me-2 text-primary"></i>Optical Shop
+                  </button>
+                </div>
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="COUNSELING">
+                    <i class="bi bi-chat-heart me-2 text-warning"></i>Counseling
+                  </button>
+                </div>
+                <div class="col-6">
+                  <button class="btn btn-outline-secondary btn-sm w-100 text-start ehr-route-dest py-2"
+                          data-dest="GEN_PHYS">
+                    <i class="bi bi-heart-pulse me-2 text-danger"></i>Gen. Physician
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {# Specialist clinics #}
+            <div class="p-3 border-bottom">
+              <details>
+                <summary class="fw-semibold small text-dark" style="cursor:pointer;list-style:none;">
+                  <i class="bi bi-plus-circle me-1"></i>Specialist Clinics
+                </summary>
+                <div class="row g-1 mt-2">
+                  {% for dest, label in ehr_specialist_dests %}
+                  <div class="col-6">
+                    <button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1"
+                            data-dest="{{ dest }}" style="font-size:.78rem;">{{ label }}</button>
+                  </div>
+                  {% empty %}
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="RETINA" style="font-size:.78rem;">Retina</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="GLAUCOMA" style="font-size:.78rem;">Glaucoma</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="CATARACT" style="font-size:.78rem;">Cataract</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="CORNEA" style="font-size:.78rem;">Cornea</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="OCULOPLASTY" style="font-size:.78rem;">Oculoplastics</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="PEDIATRIC" style="font-size:.78rem;">Paediatric Oph.</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="NEURO" style="font-size:.78rem;">Neuro-Oph.</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="UVEITIS" style="font-size:.78rem;">Uveitis</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="LOW_VISION" style="font-size:.78rem;">Low Vision</button></div>
+                  <div class="col-6"><button class="btn btn-outline-primary btn-sm w-100 text-start ehr-route-dest py-1" data-dest="INSUR_CONSULT" style="font-size:.78rem;">Insurance Consult</button></div>
+                  {% endfor %}
+                </div>
+              </details>
+            </div>
+
+            {# Discharge #}
+            <div class="p-3">
+              <button class="btn btn-sm btn-outline-danger w-100 ehr-route-dest"
+                      data-dest="DISCHARGE">
+                <i class="bi bi-door-open me-2"></i>Discharge / Done
+              </button>
+            </div>
+
+          </div>{# /col right #}
+        </div>{# /row #}
+
+      </div>{# /modal-body #}
+
+      <div class="modal-footer border-0 bg-light py-2">
+        <small class="text-muted me-auto">
+          <i class="bi bi-info-circle me-1"></i>
+          Same-tier rooms are shown first (recommended).
+        </small>
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{# ── Toast for route feedback ── #}
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
+  <div id="ehrRouteToast" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body fw-semibold small" id="ehrRouteToastMsg"></div>
+      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>

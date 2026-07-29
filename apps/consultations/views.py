@@ -2291,6 +2291,119 @@ def nurse_route_patient_view(request, visit_pk):
     })
 
 
+# ── Unified Smart Route system ────────────────────────────────────────────────
+
+@login_required
+def route_rooms_view(request):
+    """
+    GET /consultations/route/rooms/?tier=VIP
+    Returns active consultation rooms grouped: same-tier first, then others.
+    Used by the unified EhrRoute JS modal to build the room board dynamically.
+    """
+    user = request.user
+    if not (user.can_dispatch_patient() or user.is_doctor or
+            user.is_medical_director or user.is_super_admin):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    patient_tier = request.GET.get('tier', 'STANDARD').upper()
+
+    from apps.departments.models import ConsultationRoom as _CR
+    from django.db.models import Count as _Cnt, Q as _DQ
+
+    rooms_qs = (
+        _CR.objects.filter(is_active=True, assigned_doctor__isnull=False)
+        .select_related('assigned_doctor', 'department')
+        .annotate(
+            waiting_count=_Cnt(
+                'assigned_doctor__attended_visits',
+                filter=_DQ(assigned_doctor__attended_visits__status='WAITING'),
+            )
+        )
+        .order_by('department__name', 'room_number')
+    )
+
+    same_tier = []
+    other_tier = []
+    for room in rooms_qs:
+        entry = {
+            'id': str(room.id),
+            'room_number': room.room_number,
+            'label': room.label or f'Room {room.room_number}',
+            'dept_name': room.department.name,
+            'dept_code': room.department.code,
+            'tier': room.room_tier,
+            'tier_label': room.get_room_tier_display(),
+            'doctor_name': f'Dr. {room.assigned_doctor.last_name}',
+            'doctor_full': room.assigned_doctor.get_full_name(),
+            'waiting_count': room.waiting_count or 0,
+        }
+        if room.room_tier == patient_tier or room.room_tier == 'ALL':
+            same_tier.append(entry)
+        else:
+            other_tier.append(entry)
+
+    return JsonResponse({
+        'patient_tier': patient_tier,
+        'same_tier': same_tier,
+        'other': other_tier,
+    })
+
+
+@json_error_handler
+@login_required
+@require_POST
+def smart_route_view(request):
+    """
+    POST /consultations/route/
+    Unified routing endpoint used by EhrRoute JS singleton.
+    Accepts: visit_pk, destination, room_id (opt), complete_pk (opt)
+    If complete_pk is provided, marks that consultation COMPLETED before routing.
+    """
+    user = request.user
+    if not (user.can_dispatch_patient() or user.is_medical_director or
+            user.is_super_admin or user.is_doctor):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    visit_pk = request.POST.get('visit_pk', '').strip()
+    destination = request.POST.get('destination', '').upper().strip()
+    room_id = request.POST.get('room_id', '').strip() or None
+    complete_pk = request.POST.get('complete_pk', '').strip() or None
+
+    if not visit_pk or not destination:
+        return JsonResponse({'error': 'Missing visit_pk or destination'}, status=400)
+
+    visit = get_object_or_404(Visit, pk=visit_pk, is_deleted=False)
+
+    # Optionally complete a consultation before routing
+    redirect_url = None
+    if complete_pk:
+        try:
+            consult = Consultation.objects.get(pk=complete_pk, is_deleted=False)
+            if consult.status != ConsultationStatus.COMPLETED:
+                consult.status = ConsultationStatus.COMPLETED
+                if hasattr(consult, 'completed_at'):
+                    consult.completed_at = timezone.now()
+                    consult.save(update_fields=['status', 'completed_at', 'updated_at'])
+                else:
+                    consult.save(update_fields=['status', 'updated_at'])
+            redirect_url = '/consultations/'
+        except Consultation.DoesNotExist:
+            pass
+
+    routed, label = _inline_route_visit(visit, destination, user, room_id=room_id)
+    if not routed:
+        return JsonResponse({'error': f'Unknown destination: {destination}'}, status=400)
+
+    return JsonResponse({
+        'success': True,
+        'patient': visit.patient.full_name,
+        'destination': destination,
+        'label': label,
+        'message': f'{visit.patient.full_name} sent to {label}.',
+        'redirect_url': redirect_url,
+    })
+
+
 # ── Specialist Unit Nurse Queue ───────────────────────────────────────────────
 # This is the "Rooming" workflow used in Epic Ophthalmology and similar systems.
 # A CONSULTATION_NURSE assigned to a specialist unit (Glaucoma, Retina, etc.)

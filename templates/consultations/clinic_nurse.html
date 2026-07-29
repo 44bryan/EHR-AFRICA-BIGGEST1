@@ -253,9 +253,9 @@
           </div>
         </div>
         <div class="d-flex flex-wrap gap-1" id="route-btns-{{ v.pk }}">
-          {# ── Doctor / Room — opens Room Board modal ── #}
-          <button type="button" class="btn btn-sm btn-dark open-room-board"
-                  data-visit="{{ v.pk }}" data-tier="{{ tier }}">
+          {# ── Doctor / Room — opens unified EhrRoute modal ── #}
+          <button type="button" class="btn btn-sm btn-dark"
+                  onclick="EhrRoute.open('{{ v.pk }}', {tier:'{{ tier }}', patientName:'{{ v.patient.full_name|escapejs }}'})">
             <i class="bi bi-person-badge me-1"></i>Doctor
             <i class="bi bi-layout-three-columns ms-1 opacity-60"></i>
           </button>
@@ -304,93 +304,14 @@
 </div>
 {% endif %}
 
-{# ══ ROOM BOARD MODAL ══ #}
-<div class="modal fade" id="nurseRoomBoardModal" tabindex="-1" aria-modal="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width:860px;">
-    <div class="modal-content border-0 shadow-lg" style="border-radius:12px;overflow:hidden;">
+{# Room Board modal is now global — EhrRoute in base_authenticated.html #}
 
-      <div class="modal-header py-3 border-bottom" style="background:#1e293b;color:#fff;">
-        <div>
-          <h5 class="modal-title mb-0 fw-semibold">
-            <i class="bi bi-layout-three-columns me-2"></i>Room Board — Send Patient
-          </h5>
-          <div class="small mt-1" style="opacity:.65;" id="nrbPatientLabel">Select a room or the shared queue</div>
-        </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body p-3" style="background:#f8fafc;">
-
-        {# ── Any-doctor shared queue ── #}
-        <div id="nrbAnyCard"
-             class="d-flex align-items-center gap-3 p-3 rounded border bg-white mb-3"
-             style="cursor:pointer;transition:background .12s;">
-          <i class="bi bi-people fs-3 text-dark flex-shrink-0"></i>
-          <div class="flex-grow-1">
-            <div class="fw-semibold">Any Available Doctor</div>
-            <div class="small text-muted">Shared queue — first available doctor calls next</div>
-          </div>
-          <i class="bi bi-chevron-right text-muted"></i>
-        </div>
-
-        {# ── Room cards ── #}
-        {% if active_rooms %}
-        <div class="small text-muted fw-semibold text-uppercase mb-2" style="letter-spacing:.05em;">
-          <i class="bi bi-door-closed me-1"></i>{{ active_rooms|length }} Room{{ active_rooms|length|pluralize }} Active
-        </div>
-        <div class="row g-2">
-          {% for room in active_rooms %}
-          <div class="col-6 col-sm-4 col-md-3">
-            <div class="nrb-room-card border rounded text-center bg-white h-100 position-relative"
-                 data-room-id="{{ room.id }}"
-                 style="cursor:pointer;transition:all .15s;padding:8px 6px 10px;">
-              <div class="position-absolute top-0 start-0 end-0 py-1 rounded-top"
-                   style="font-size:.6rem;font-weight:600;text-transform:uppercase;background:#f1f5f9;color:#475569;">
-                {{ room.get_room_tier_display }}
-              </div>
-              <div style="margin-top:20px;">
-                <div style="font-size:2rem;font-weight:800;line-height:1;color:#1e293b;">{{ room.room_number }}</div>
-                <div style="font-size:.6rem;color:#94a3b8;text-transform:uppercase;">Room</div>
-              </div>
-              <div class="fw-semibold text-truncate small mt-1">Dr. {{ room.assigned_doctor.last_name }}</div>
-              <div class="text-muted text-truncate" style="font-size:.7rem;">{{ room.department.name }}</div>
-              <div class="mt-2">
-                {% if room.waiting_count > 0 %}
-                <span class="badge bg-warning text-dark" style="font-size:.62rem;">{{ room.waiting_count }} waiting</span>
-                {% else %}
-                <span class="badge bg-success" style="font-size:.62rem;">Free</span>
-                {% endif %}
-              </div>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="text-center py-4 text-muted rounded border bg-white">
-          <i class="bi bi-door-closed fs-2 d-block mb-2"></i>
-          <div class="fw-semibold">No doctors in rooms today</div>
-          <small>Use "Any Available Doctor" above.</small>
-        </div>
-        {% endif %}
-
-      </div>
-    </div>
-  </div>
-</div>
-{# ══ end Room Board Modal ══ #}
-
-{# ── Toasts ── #}
+{# ── Call toast only (route toast is handled by EhrRoute globally) ── #}
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:1100;">
   <div id="callToast" class="toast align-items-center text-bg-success border-0 mb-2" role="alert" aria-live="polite">
     <div class="d-flex">
       <div class="toast-body fw-semibold" id="callToastMsg">Patient called.</div>
       <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-    </div>
-  </div>
-  <div id="routeToast" class="toast align-items-center border-0" role="alert" aria-live="polite">
-    <div class="d-flex">
-      <div class="toast-body fw-semibold" id="routeToastMsg">Patient routed.</div>
-      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
     </div>
   </div>
 </div>
@@ -451,91 +372,61 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  // ── Shared route executor ─────────────────────────────────────────────
+  // ── Direct-destination buttons (Pharmacy, Lab, Cashier, Discharge, etc.) ──
+  // Doctor button now uses EhrRoute.open() directly via onclick attribute.
+  // On ehrRouteSuccess, update the row UI.
   const routeUrlTemplate = '{% url "consultations:nurse_route" visit_pk="00000000-0000-0000-0000-000000000000" %}';
 
-  function executeNurseRoute(visitPk, dest, roomId) {
-    const row = document.getElementById('route-row-' + visitPk);
-    const fd = new FormData();
+  function executeNurseRoute(visitPk, dest, rowEl) {
+    var fd = new FormData();
     fd.append('destination', dest);
-    if (roomId) fd.append('room_id', roomId);
     fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
     fetch(routeUrlTemplate.replace('00000000-0000-0000-0000-000000000000', visitPk), {
       method: 'POST', body: fd,
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      headers: {'X-Requested-With': 'XMLHttpRequest'},
     })
-    .then(function(r) {
-      if (!r.ok) throw new Error('Server error ' + r.status);
-      return r.json();
-    })
+    .then(function(r) { return r.ok ? r.json() : r.json().then(function(e){ return Promise.reject(e); }); })
     .then(function(data) {
       if (data.success) {
-        showRouteToast('\u2713 ' + data.patient + ' \u2192 ' + data.destination, false);
-        if (row) {
-          row.style.opacity = '0.45';
-          var btnContainer = document.getElementById('route-btns-' + visitPk);
-          if (btnContainer) {
-            btnContainer.innerHTML =
-              '<span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
-          }
+        if (rowEl) {
+          rowEl.style.opacity = '0.45';
+          var btns = document.getElementById('route-btns-' + visitPk);
+          if (btns) btns.innerHTML = '<span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
         }
       } else {
-        showRouteToast(data.error || 'Routing failed. Please try again.', true);
-        if (row) row.querySelectorAll('.route-btn, .open-room-board').forEach(function(b){ b.disabled = false; });
+        if (rowEl) rowEl.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = false; });
+        alert(data.error || 'Routing failed.');
       }
     })
-    .catch(function(){
-      showRouteToast('Network error. Please refresh the page.', true);
-      if (row) row.querySelectorAll('.route-btn, .open-room-board').forEach(function(b){ b.disabled = false; });
+    .catch(function(e) {
+      if (rowEl) rowEl.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = false; });
+      alert((e && e.error) ? e.error : 'Network error. Please try again.');
     });
   }
 
-  // ── Room Board modal ──────────────────────────────────────────────────
-  var _nrbVisitPk = '';
-  var _nrbModal   = null;
-  var _nrbEl = document.getElementById('nurseRoomBoardModal');
-  if (_nrbEl) { _nrbModal = new bootstrap.Modal(_nrbEl); }
-
-  document.querySelectorAll('.open-room-board').forEach(function(btn) {
+  document.querySelectorAll('.route-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      _nrbVisitPk = this.dataset.visit;
-      var patientName = this.closest('[id^="route-row-"]')
-                          ?.querySelector('.fw-semibold')?.textContent?.trim() || 'Patient';
-      var lbl = document.getElementById('nrbPatientLabel');
-      if (lbl) lbl.textContent = 'Routing: ' + patientName;
-      if (_nrbModal) _nrbModal.show();
+      var visitPk = this.dataset.visit;
+      var row = document.getElementById('route-row-' + visitPk);
+      if (row) row.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = true; });
+      this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+      executeNurseRoute(visitPk, this.dataset.dest, row);
     });
   });
 
-  // "Any available" card
-  var nrbAny = document.getElementById('nrbAnyCard');
-  if (nrbAny) {
-    nrbAny.addEventListener('click', function() {
-      if (_nrbModal) _nrbModal.hide();
-      if (_nrbVisitPk) executeNurseRoute(_nrbVisitPk, 'GENERAL', '');
-    });
-  }
-
-  // Individual room cards
-  if (_nrbEl) {
-    _nrbEl.querySelectorAll('.nrb-room-card[data-room-id]').forEach(function(card) {
-      card.addEventListener('click', function() {
-        var roomId = this.dataset.roomId;
-        if (_nrbModal) _nrbModal.hide();
-        if (_nrbVisitPk) executeNurseRoute(_nrbVisitPk, 'GENERAL', roomId);
-      });
-    });
-  }
-
-  // ── Other destination buttons (Pharmacy, Lab, Cashier…) ──────────────
-  document.querySelectorAll('.route-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      const visitPk = btn.dataset.visit;
-      const dest = btn.dataset.dest;
-      const row = document.getElementById('route-row-' + visitPk);
-      row.querySelectorAll('.route-btn, .open-room-board').forEach(function(b){ b.disabled = true; });
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-      executeNurseRoute(visitPk, dest, '');
+  // ── EhrRoute success: update row when doctor routing completes ───────
+  window.addEventListener('ehrRouteSuccess', function(e) {
+    var data = e.detail || {};
+    // Find the row by iterating all rows (visitPk stored in EhrRoute._visitPk is already consumed)
+    // We mark all rows whose buttons are in loading state
+    document.querySelectorAll('[id^="route-btns-"]').forEach(function(btns) {
+      var visitPk = btns.id.replace('route-btns-', '');
+      var row = document.getElementById('route-row-' + visitPk);
+      // Only update if EhrRoute was called for this visit
+      if (EhrRoute._visitPk === visitPk && row) {
+        row.style.opacity = '0.45';
+        btns.innerHTML = '<span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + (data.label || data.destination) + '</span>';
+      }
     });
   });
 });
