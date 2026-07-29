@@ -24,6 +24,12 @@ def appointment_list_view(request):
     if user.is_doctor and user.role not in _oversight:
         appointments = appointments.filter(doctor=user)
 
+    # Tier isolation for non-supervisors: nurses/cashiers only see their tier's appointments
+    _is_appt_supervisor = user.role in _oversight or user.is_nurse_director
+    _appt_tier = (getattr(user, 'patient_tier', '') or '').strip()
+    if not _is_appt_supervisor and not user.is_doctor and _appt_tier and _appt_tier not in ('ALL', ''):
+        appointments = appointments.filter(service_tier=_appt_tier)
+
     date_filter = request.GET.get('date', str(today))
     dept_filter = request.GET.get('department', '')
     status_filter = request.GET.get('status', '')

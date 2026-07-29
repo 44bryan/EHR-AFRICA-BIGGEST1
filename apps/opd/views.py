@@ -62,6 +62,11 @@ def opd_dashboard(request):
     status_counts = {s['status']: s['count'] for s in by_status}
     opd_total = sum(status_counts.values())
 
+    _TIER_LABELS = {
+        'VIP': 'VIP', 'EXPRESS': 'Express', 'FAST_TRACK': 'Fast Track', 'STANDARD': 'Standard',
+    }
+    _tier_label = _TIER_LABELS.get(_user_tier, 'OPD') if (_user_tier and _user_tier not in ('ALL', '')) else 'OPD'
+
     context = {
         'today': today,
         'total_today': total_today,
@@ -75,6 +80,8 @@ def opd_dashboard(request):
         'opd_registered': status_counts.get(OPDVisitStatus.REGISTERED, 0),
         'opd_with_doctor': status_counts.get(OPDVisitStatus.WITH_DOCTOR, 0),
         'opd_completed': status_counts.get(OPDVisitStatus.COMPLETED, 0),
+        'nurse_tier': _user_tier,
+        'tier_label': _tier_label,
     }
     return render(request, 'opd/dashboard.html', context)
 
