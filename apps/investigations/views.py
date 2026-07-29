@@ -646,6 +646,7 @@ def investigation_stats_view(request):
         'category_json': category_json, 'urgency_json': urgency_json,
         'status_json': status_json, 'daily_json': daily_json,
         'gender_json': gender_json,
+        'is_current_month': (year == today.year and month == today.month),
     }
     cache.set(_cache_key, ctx, _cache_ttl)
     return render(request, 'investigations/stats.html', ctx)
