@@ -1612,6 +1612,29 @@ def triage_workstation_view(request):
     # all patient statuses + locations, switch tiers freely.
     is_head_of_triage = _is_supervisor
 
+    # ── Acuity counts: Emergency pathway + AI urgency breakdown ───────────────
+    _base_vs = Visit.objects.filter(visit_date__date=today, is_deleted=False)
+    if show_mode == 'VIP':
+        _base_vs = _base_vs.filter(service_tier='VIP')
+    elif show_mode == 'EXPRESS':
+        _base_vs = _base_vs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+    elif show_mode == 'STANDARD':
+        _base_vs = _base_vs.filter(service_tier='STANDARD')
+    emergency_pathway_today = _base_vs.filter(visit_type='EMERGENCY').count()
+
+    # AI urgency on this nurse's own triaged patients (bounded set, no extra DB hit)
+    try:
+        from apps.dashboard.views import _compute_ai_triage as _cai
+        _ai_emerg = _ai_urgent = 0
+        for _v in triaged_visits:
+            _pri, _ = _cai(_v)
+            if _pri == 'EMERGENCY':
+                _ai_emerg += 1
+            elif _pri == 'URGENT':
+                _ai_urgent += 1
+    except Exception:
+        _ai_emerg = _ai_urgent = 0
+
     return render(request, 'consultations/triage_workstation.html', {
         'parameters_queue': parameters_queue,
         'vip_params_queue': vip_params_queue,
@@ -1629,6 +1652,9 @@ def triage_workstation_view(request):
         'total_vip_express': total_vip_express,
         'total_waiting': len(parameters_queue) + len(vip_params_queue),
         'qms_on': _qms_active(),
+        'emergency_pathway_today': emergency_pathway_today,
+        'ai_emergency_count': _ai_emerg,
+        'ai_urgent_count': _ai_urgent,
     })
 
 
