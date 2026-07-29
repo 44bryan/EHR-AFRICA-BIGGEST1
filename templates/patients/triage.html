@@ -600,14 +600,14 @@
               </div>
               <div class="card-body pt-3 pb-2">
 
-                {# Step 1 — Where is the patient going? #}
+                {# ── Step 1: Department / Clinic ── #}
                 <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.05em;font-size:.68rem;">
                   <i class="bi bi-1-circle-fill me-1" style="color:#6366f1;"></i>Send Patient To
                 </div>
 
-                {# Department dropdown #}
+                {# Department dropdown — full width, easy to tap #}
                 <div class="mb-3">
-                  <select name="dispatch_department" id="dispatch_department" class="form-select form-select-sm"
+                  <select name="dispatch_department" id="dispatch_department" class="form-select"
                           onchange="onDeptChange(this.value, this.options[this.selectedIndex].text)">
                     <option value="">— Select Department / Clinic —</option>
                     {% for dept in departments %}
@@ -616,25 +616,31 @@
                   </select>
                 </div>
 
-                {# Mode selector (Dept queue vs. specific room) #}
-                <div class="d-flex gap-2 mb-3" id="dispatchModeGroup">
-                  <label id="lbl_dept_queue" onclick="setDispatchMode('DEPT')"
-                         style="cursor:pointer;flex:1;border:2px solid #0d6efd;border-radius:8px;padding:7px 12px;
-                                background:#eff6ff;font-size:.8rem;font-weight:600;color:#1d4ed8;user-select:none;">
-                    <input type="radio" name="_dispatch_mode" value="DEPT" class="d-none" id="mode_dept" checked>
-                    <i class="bi bi-people-fill me-1"></i>Department Queue
-                    <div style="font-weight:400;font-size:.68rem;color:#6b7280;margin-top:1px;">Any available doctor</div>
-                  </label>
-                  <label id="lbl_room_queue" onclick="setDispatchMode('ROOM')"
-                         style="cursor:pointer;flex:1;border:2px solid #d1d5db;border-radius:8px;padding:7px 12px;
-                                background:#fff;font-size:.8rem;font-weight:600;color:#374151;user-select:none;">
-                    <input type="radio" name="_dispatch_mode" value="ROOM" class="d-none" id="mode_room">
-                    <i class="bi bi-door-open me-1"></i>Specific Room
-                    <div style="font-weight:400;font-size:.68rem;color:#6b7280;margin-top:1px;">Route to one doctor</div>
-                  </label>
+                {# Mode selector: equal-width Bootstrap columns, touch-friendly height #}
+                <div class="row g-2 mb-3" id="dispatchModeGroup">
+                  <div class="col-6">
+                    <label id="lbl_dept_queue" onclick="setDispatchMode('DEPT')"
+                           style="cursor:pointer;display:block;width:100%;border:2px solid #0d6efd;border-radius:8px;
+                                  padding:10px 14px;background:#eff6ff;font-size:.85rem;font-weight:600;
+                                  color:#1d4ed8;user-select:none;min-height:62px;">
+                      <input type="radio" name="_dispatch_mode" value="DEPT" class="d-none" id="mode_dept" checked>
+                      <i class="bi bi-people-fill me-2"></i>Dept Queue
+                      <div style="font-weight:400;font-size:.72rem;color:#6b7280;margin-top:3px;">Any available doctor</div>
+                    </label>
+                  </div>
+                  <div class="col-6">
+                    <label id="lbl_room_queue" onclick="setDispatchMode('ROOM')"
+                           style="cursor:pointer;display:block;width:100%;border:2px solid #d1d5db;border-radius:8px;
+                                  padding:10px 14px;background:#fff;font-size:.85rem;font-weight:600;
+                                  color:#374151;user-select:none;min-height:62px;">
+                      <input type="radio" name="_dispatch_mode" value="ROOM" class="d-none" id="mode_room">
+                      <i class="bi bi-door-open me-2"></i>Specific Room
+                      <div style="font-weight:400;font-size:.72rem;color:#6b7280;margin-top:3px;">Route to one doctor</div>
+                    </label>
+                  </div>
                 </div>
 
-                {# Room picker — shown in ROOM mode #}
+                {# Room picker — shown in ROOM mode only #}
                 <div id="roomPickPanel" class="d-none mb-3 rounded p-2" style="background:#f1f5f9;border:1px solid #e2e8f0;">
                   <div class="d-flex align-items-center justify-content-between mb-2">
                     <span class="small fw-semibold text-muted">
@@ -652,44 +658,48 @@
                   </div>
                 </div>
 
-                {# Quick-route destination tiles (Lab, Pharmacy, Cashier, Refraction, Investigations, VIP, Express) #}
-                <div class="d-flex flex-wrap gap-2 mb-3" id="quickRouteGrid">
+                {# Quick-route tiles — uniform grid, 2 per row on phone, 3–4 on tablet/desktop #}
+                <div class="text-muted mb-2" style="font-size:.72rem;">
+                  <i class="bi bi-arrow-right-circle me-1"></i>Or route directly to a service:
+                </div>
+                <div class="row g-2 mb-3" id="quickRouteGrid">
                   {% for route in direct_routes %}
-                  <button type="button"
-                          id="qr_btn_{{ route.code }}"
-                          class="quick-route-btn"
-                          onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)"
-                          style="display:inline-flex;align-items:center;gap:6px;
-                                 border:1.5px solid #d1d5db;border-radius:8px;
-                                 background:#fff;color:#374151;
-                                 font-size:.78rem;font-weight:500;
-                                 padding:6px 12px;cursor:pointer;
-                                 {% if route.code == 'VIP_CONSULT' and visit.service_tier == 'VIP' %}
-                                   border-color:#7c3aed;background:#f5f3ff;color:#5b21b6;
-                                 {% elif route.code == 'EXP_CONSULT' and visit.service_tier in 'EXPRESS,FAST_TRACK' %}
-                                   border-color:#d97706;background:#fffbeb;color:#92400e;
-                                 {% endif %}">
-                    <i class="bi
-                      {% if route.code == 'LAB' %}bi-eyedropper
-                      {% elif route.code == 'PHARMACY' %}bi-capsule-pill
-                      {% elif route.code == 'CASHIER' %}bi-cash-coin
-                      {% elif route.code == 'REFRACTION' %}bi-eyeglasses
-                      {% elif route.code == 'INVEST' %}bi-activity
-                      {% elif route.code == 'VIP_CONSULT' %}bi-gem
-                      {% elif route.code == 'EXP_CONSULT' %}bi-lightning-charge
-                      {% else %}bi-arrow-right-circle{% endif %}
-                      " style="font-size:.9rem;
-                      {% if route.code == 'LAB' %}color:#0891b2;
-                      {% elif route.code == 'PHARMACY' %}color:#16a34a;
-                      {% elif route.code == 'CASHIER' %}color:#d97706;
-                      {% elif route.code == 'REFRACTION' %}color:#7c3aed;
-                      {% elif route.code == 'INVEST' %}color:#dc2626;
-                      {% elif route.code == 'VIP_CONSULT' %}color:#7c3aed;
-                      {% elif route.code == 'EXP_CONSULT' %}color:#d97706;
-                      {% endif %}"></i>
-                    {{ route.label }}
-                    <i class="bi bi-check-circle-fill qr-check d-none" style="font-size:.7rem;color:#15803d;"></i>
-                  </button>
+                  <div class="col-6 col-sm-4 col-md-3">
+                    <button type="button"
+                            id="qr_btn_{{ route.code }}"
+                            class="quick-route-btn w-100 d-flex align-items-center gap-2"
+                            onclick="selectRoute('direct','','{{ route.code }}','{{ route.label }}',this)"
+                            style="border:1.5px solid #d1d5db;border-radius:8px;
+                                   background:#fff;color:#374151;
+                                   font-size:.82rem;font-weight:500;
+                                   padding:10px 12px;cursor:pointer;min-height:46px;
+                                   {% if route.code == 'VIP_CONSULT' and visit.service_tier == 'VIP' %}
+                                     border-color:#7c3aed;background:#f5f3ff;color:#5b21b6;
+                                   {% elif route.code == 'EXP_CONSULT' and visit.service_tier in 'EXPRESS,FAST_TRACK' %}
+                                     border-color:#d97706;background:#fffbeb;color:#92400e;
+                                   {% endif %}">
+                      <i class="bi
+                        {% if route.code == 'LAB' %}bi-eyedropper
+                        {% elif route.code == 'PHARMACY' %}bi-capsule-pill
+                        {% elif route.code == 'CASHIER' %}bi-cash-coin
+                        {% elif route.code == 'REFRACTION' %}bi-eyeglasses
+                        {% elif route.code == 'INVEST' %}bi-activity
+                        {% elif route.code == 'VIP_CONSULT' %}bi-gem
+                        {% elif route.code == 'EXP_CONSULT' %}bi-lightning-charge
+                        {% else %}bi-arrow-right-circle{% endif %}
+                        " style="font-size:1rem;flex-shrink:0;
+                        {% if route.code == 'LAB' %}color:#0891b2;
+                        {% elif route.code == 'PHARMACY' %}color:#16a34a;
+                        {% elif route.code == 'CASHIER' %}color:#d97706;
+                        {% elif route.code == 'REFRACTION' %}color:#7c3aed;
+                        {% elif route.code == 'INVEST' %}color:#dc2626;
+                        {% elif route.code == 'VIP_CONSULT' %}color:#7c3aed;
+                        {% elif route.code == 'EXP_CONSULT' %}color:#d97706;
+                        {% endif %}"></i>
+                      <span>{{ route.label }}</span>
+                      <i class="bi bi-check-circle-fill qr-check d-none ms-auto" style="font-size:.8rem;color:#15803d;"></i>
+                    </button>
+                  </div>
                   {% endfor %}
                 </div>
 
@@ -715,40 +725,51 @@
                   </div>
                 </div>
 
-                <div id="routeConfirm" class="d-none"></div>{# kept for JS compat — visual confirm moved to header badge #}
+                <div id="routeConfirm" class="d-none"></div>
 
-                <hr class="my-2" style="border-color:#e2e8f0;">
+                <hr class="my-3" style="border-color:#e2e8f0;">
 
-                {# Step 2 — Priority #}
+                {# ── Step 2: Urgency / Priority ── #}
                 <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.05em;font-size:.68rem;">
                   <i class="bi bi-2-circle-fill me-1" style="color:#6366f1;"></i>Urgency / Priority
                 </div>
-                <div class="d-flex gap-2 mb-2" id="priorityButtons">
-                  <label id="lbl_normal"
-                         style="cursor:pointer;flex:1;text-align:center;border:2px solid #9ca3af;border-radius:8px;
-                                padding:6px 4px;font-size:.8rem;font-weight:600;color:#374151;background:#f9fafb;user-select:none;">
-                    <input type="radio" name="priority" value="NORMAL" class="d-none" id="pri_normal" checked>
-                    <i class="bi bi-circle me-1"></i>Normal
-                  </label>
-                  <label id="lbl_urgent"
-                         style="cursor:pointer;flex:1;text-align:center;border:2px solid #d1d5db;border-radius:8px;
-                                padding:6px 4px;font-size:.8rem;font-weight:600;color:#6b7280;background:#fff;user-select:none;">
-                    <input type="radio" name="priority" value="URGENT" class="d-none" id="pri_urgent">
-                    <i class="bi bi-exclamation-circle me-1"></i>Urgent
-                  </label>
-                  <label id="lbl_emergency"
-                         style="cursor:pointer;flex:1;text-align:center;border:2px solid #d1d5db;border-radius:8px;
-                                padding:6px 4px;font-size:.8rem;font-weight:600;color:#6b7280;background:#fff;user-select:none;">
-                    <input type="radio" name="priority" value="EMERGENCY" class="d-none" id="pri_emergency">
-                    <i class="bi bi-exclamation-triangle me-1"></i>Emergency
-                  </label>
+                <div class="row g-2 mb-2" id="priorityButtons">
+                  <div class="col-4">
+                    <label id="lbl_normal"
+                           style="cursor:pointer;display:block;text-align:center;border:2px solid #9ca3af;border-radius:8px;
+                                  padding:12px 4px;font-size:.85rem;font-weight:600;color:#374151;background:#f9fafb;
+                                  user-select:none;min-height:72px;">
+                      <input type="radio" name="priority" value="NORMAL" class="d-none" id="pri_normal" checked>
+                      <i class="bi bi-circle d-block mb-1" style="font-size:1.3rem;"></i>Normal
+                    </label>
+                  </div>
+                  <div class="col-4">
+                    <label id="lbl_urgent"
+                           style="cursor:pointer;display:block;text-align:center;border:2px solid #d1d5db;border-radius:8px;
+                                  padding:12px 4px;font-size:.85rem;font-weight:600;color:#6b7280;background:#fff;
+                                  user-select:none;min-height:72px;">
+                      <input type="radio" name="priority" value="URGENT" class="d-none" id="pri_urgent">
+                      <i class="bi bi-exclamation-circle d-block mb-1" style="font-size:1.3rem;"></i>Urgent
+                    </label>
+                  </div>
+                  <div class="col-4">
+                    <label id="lbl_emergency"
+                           style="cursor:pointer;display:block;text-align:center;border:2px solid #d1d5db;border-radius:8px;
+                                  padding:12px 4px;font-size:.85rem;font-weight:600;color:#6b7280;background:#fff;
+                                  user-select:none;min-height:72px;">
+                      <input type="radio" name="priority" value="EMERGENCY" class="d-none" id="pri_emergency">
+                      <i class="bi bi-exclamation-triangle d-block mb-1" style="font-size:1.3rem;"></i>Emergency
+                    </label>
+                  </div>
                 </div>
                 <div id="prioritySuggestion" class="small text-muted mb-2 d-none">
                   <i class="bi bi-robot me-1"></i><span id="prioritySuggestionText"></span>
                 </div>
 
-                {# Step 3 — Triage Notes #}
-                <div class="fw-semibold small text-uppercase text-muted mb-1 mt-2" style="letter-spacing:.05em;font-size:.68rem;">
+                <hr class="my-2" style="border-color:#e2e8f0;">
+
+                {# ── Step 3: Triage Notes ── #}
+                <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em;font-size:.68rem;">
                   <i class="bi bi-3-circle-fill me-1" style="color:#6366f1;"></i>Triage Notes <span class="fw-normal text-muted" style="text-transform:none;">(optional)</span>
                 </div>
                 <textarea name="triage_notes" class="form-control form-control-sm" rows="2"
