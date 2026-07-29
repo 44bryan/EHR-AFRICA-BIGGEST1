@@ -1490,15 +1490,15 @@ def triage_workstation_view(request):
         else:
             show_mode = 'STANDARD'
     elif _nurse_pt == 'VIP':
-        show_mode = 'VIP'       # VIP triage sector — PARAMS_VIP filtered to VIP only
-    elif _nurse_pt == 'EXPRESS':
-        show_mode = 'EXPRESS'   # Express/FastTrack sector — PARAMS_VIP filtered to EXPRESS+FT
+        show_mode = 'VIP'           # VIP triage sector — PARAMS_VIP filtered to VIP only
+    elif _nurse_pt in ('EXPRESS', 'FAST_TRACK'):
+        show_mode = 'EXPRESS'       # Express/FastTrack sector — PARAMS_VIP filtered to EXPRESS+FT
     elif _nurse_pt == 'STANDARD':
-        show_mode = 'STANDARD'  # Standard triage sector — PARAMETERS queue only
+        show_mode = 'STANDARD'      # Standard triage sector — PARAMETERS queue only
     elif _is_supervisor or _nurse_pt == 'ALL':
-        show_mode = 'ALL'       # Supervisors and ALL-tier nurses see every tier
+        show_mode = 'ALL'           # Supervisors and ALL-tier nurses see every tier
     else:
-        show_mode = 'STANDARD'  # Unassigned nurses default to standard queue only
+        show_mode = 'STANDARD'      # Unassigned nurses default to standard queue only
 
     active_statuses = ['WAITING', 'CALLED', 'SERVING']
 
@@ -1542,14 +1542,20 @@ def triage_workstation_view(request):
         except Exception:
             pass
     else:
-        # No QMS — show visits with PARAMETERS status (patients waiting for triage)
-        triage_visits = list(
-            Visit.objects.filter(
-                visit_date__date=today,
-                status='PARAMETERS',
-                is_deleted=False,
-            ).select_related('patient').order_by('visit_date')
+        # No QMS — show visits with PARAMETERS status, tier-isolated
+        _tv_qs = Visit.objects.filter(
+            visit_date__date=today,
+            status='PARAMETERS',
+            is_deleted=False,
         )
+        if show_mode == 'VIP':
+            _tv_qs = _tv_qs.filter(service_tier='VIP')
+        elif show_mode == 'EXPRESS':
+            _tv_qs = _tv_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+        elif show_mode == 'STANDARD':
+            _tv_qs = _tv_qs.filter(service_tier='STANDARD')
+        # show_mode == 'ALL' → no additional filter (supervisors see all)
+        triage_visits = list(_tv_qs.select_related('patient').order_by('visit_date'))
 
     # ── Enrich tokens with today's active visit ───────────────────────────────
     all_tokens = parameters_queue + vip_params_queue

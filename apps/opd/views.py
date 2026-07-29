@@ -18,10 +18,20 @@ def opd_dashboard(request):
 
     from apps.patients.models import VisitStatus
 
-    # Single query: fetch all today's visits once, compute all counts in Python
+    user = request.user
+    _is_supervisor = (
+        user.is_super_admin or user.is_medical_director
+        or user.is_nurse_director or user.is_admin_director or user.is_ceo
+    )
+    _user_tier = (getattr(user, 'patient_tier', '') or '').strip()
+
+    # Single query: fetch today's visits — tier-isolated for non-supervisors
+    _visits_qs = Visit.objects.filter(visit_date__date=today, is_deleted=False)
+    if not _is_supervisor and _user_tier and _user_tier not in ('ALL', ''):
+        _visits_qs = _visits_qs.filter(service_tier=_user_tier)
+
     visits_today = list(
-        Visit.objects.filter(visit_date__date=today, is_deleted=False)
-        .select_related('patient', 'department', 'attending_doctor', 'triage_nurse')
+        _visits_qs.select_related('patient', 'department', 'attending_doctor', 'triage_nurse')
     )
 
     _WAITING_ST  = {VisitStatus.REGISTERED, VisitStatus.AT_RECEPTIONIST, VisitStatus.AT_CASHIER}
