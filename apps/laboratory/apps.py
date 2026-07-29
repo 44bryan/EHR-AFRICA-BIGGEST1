@@ -5,3 +5,6 @@ class LaboratoryConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.laboratory'
     verbose_name = 'Laboratory'
+
+    def ready(self):
+        import apps.laboratory.signals  # noqa: F401
