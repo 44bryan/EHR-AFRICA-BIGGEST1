@@ -4,6 +4,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseForbidden, JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.db.models import Q
 from .models import Consultation, ConsultationDiagnosis, ConsultationNote, Diagnosis, ConsultationStatus
@@ -2293,6 +2294,7 @@ def nurse_route_patient_view(request, visit_pk):
 
 # ── Unified Smart Route system ────────────────────────────────────────────────
 
+@csrf_exempt
 @login_required
 def route_rooms_view(request):
     """
@@ -2349,6 +2351,7 @@ def route_rooms_view(request):
     })
 
 
+@csrf_exempt
 @json_error_handler
 @login_required
 @require_POST
