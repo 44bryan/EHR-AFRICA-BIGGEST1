@@ -512,6 +512,24 @@ def consultation_detail_view(request, pk):
     except Exception:
         patient_medications = []
 
+    # Active rooms for Room Board modal — all rooms with a doctor checked in today
+    from apps.departments.models import ConsultationRoom as _DetailRoom
+    from django.db.models import Count, Q as _DQ
+    try:
+        active_rooms = list(
+            _DetailRoom.objects.filter(is_active=True, assigned_doctor__isnull=False)
+            .select_related('assigned_doctor', 'department')
+            .annotate(
+                waiting_count=Count(
+                    'assigned_doctor__attended_visits',
+                    filter=_DQ(assigned_doctor__attended_visits__status='WAITING'),
+                )
+            )
+            .order_by('department__name', 'room_number')
+        )
+    except Exception:
+        active_rooms = []
+
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
         'note_form': note_form,
@@ -522,6 +540,7 @@ def consultation_detail_view(request, pk):
         'patient_medications': patient_medications,
         'visit': consultation.visit,
         'patient': consultation.patient,
+        'active_rooms': active_rooms,
     })
 
 
@@ -730,7 +749,17 @@ def consultation_complete_view(request, pk):
         except Exception:
             pass
 
-    messages.success(request, 'Consultation marked as completed.')
+    # Route patient to next destination if selected by the doctor
+    next_dest = request.POST.get('next_destination', '').strip().upper()
+    _route_room_id = request.POST.get('room_id', '').strip() or None
+    if next_dest and visit:
+        routed, label = _inline_route_visit(visit, next_dest, request.user, room_id=_route_room_id)
+        if routed:
+            messages.success(request, f'Consultation complete — patient sent to {label}.')
+        else:
+            messages.success(request, 'Consultation marked as completed.')
+    else:
+        messages.success(request, 'Consultation marked as completed.')
     return redirect('consultations:detail', pk=pk)
 
 
@@ -1323,6 +1352,23 @@ def workstation_view(request):
         ).order_by('-created_at')
     ) if my_consultation_ids else []
 
+    # Consultations this doctor completed today where visit is still IN_CONSULTATION
+    # (patient needs to be routed to next destination)
+    _completed_ids = [c.id for c in my_consultations if c.status == ConsultationStatus.COMPLETED]
+    if _completed_ids:
+        _c_visit_ids = list(
+            Consultation.objects.filter(id__in=_completed_ids).values_list('visit_id', flat=True)
+        )
+        ready_to_route_doctor = list(
+            Visit.objects.filter(
+                id__in=_c_visit_ids,
+                status='IN_CONSULTATION',
+                is_deleted=False,
+            ).select_related('patient', 'attending_doctor')
+        )
+    else:
+        ready_to_route_doctor = []
+
     return render(request, 'consultations/workstation.html', {
         'waiting_tokens': waiting_tokens,
         'waiting_visits': waiting_visits,
@@ -1345,6 +1391,7 @@ def workstation_view(request):
         'is_refrac': dept_code in ('REFRAC', 'PEDS_REFRAC'),
         'refrac_counter': _refrac_counter if dept_code in ('REFRAC', 'PEDS_REFRAC') else None,
         'checked_in_counter': _ws_checked_in_counter,
+        'ready_to_route_doctor': ready_to_route_doctor,
     })
 
 
@@ -1852,6 +1899,14 @@ def clinic_nurse_view(request):
                 _rtr_qs.select_related('patient', 'attending_doctor').order_by('visit_date')
             )
 
+    # Active rooms (all depts) — for the room picker on route buttons
+    from apps.departments.models import ConsultationRoom as _NurseRoom
+    active_rooms = list(
+        _NurseRoom.objects.filter(is_active=True, assigned_doctor__isnull=False)
+        .select_related('assigned_doctor', 'department')
+        .order_by('department__name', 'room_number')
+    )
+
     return render(request, 'consultations/clinic_nurse.html', {
         'qms_on': qms_on,
         'dept': dept,
@@ -1866,6 +1921,7 @@ def clinic_nurse_view(request):
         'completed_today': completed_today,
         'nurse_tier': _nurse_tier,
         'today': today,
+        'active_rooms': active_rooms,
     })
 
 
@@ -1925,6 +1981,105 @@ def clinic_call_patient_view(request, visit_pk):
     })
 
 
+# ── Shared routing helper — used by complete_consultation_view AND nurse_route_patient_view ──
+def _inline_route_visit(visit, destination, routed_by, room_id=None):
+    """
+    Route a visit to its next destination.
+    Returns (success: bool, label: str).
+    Never raises — errors are swallowed so they never block a consultation save.
+    """
+    try:
+        route = _NURSE_ROUTE_MAP.get(destination.upper())
+        if not route:
+            return False, ''
+        new_status, qms_service, label = route
+
+        # Tier-aware doctor queue
+        if new_status == 'WAITING' and qms_service == 'GENERAL':
+            _tier = getattr(visit, 'service_tier', 'STANDARD') or 'STANDARD'
+            if _tier == 'VIP':
+                qms_service = 'VIP_CONSULT'
+            elif _tier in ('EXPRESS', 'FAST_TRACK'):
+                qms_service = 'EXP_CONSULT'
+
+        # Update visit status
+        visit.status = new_status
+        _save_fields = ['status', 'updated_at']
+
+        # Update department if routing to a clinical dept
+        if qms_service and qms_service not in ('PHARMACY', 'CASHIER', 'COUNSEL'):
+            _svc_to_dept = {
+                'GEN_PHYS': 'GEN_PHYS', 'GENERAL': 'GEN_OPH', 'EXP_CONSULT': 'GEN_OPH',
+                'VIP_CONSULT': 'GEN_OPH', 'RETINA': 'RETINA', 'GLAUCOMA': 'GLAUC',
+                'PEDIATRIC': 'PEDS_OPH', 'REFRACTION': 'REFRAC', 'CORNEA': 'CORNEA',
+                'UVEITIS': 'UVEITIS', 'NEURO': 'NEURO_OPH', 'OCULOPLASTY': 'OCULOPLASTY',
+                'LOW_VISION': 'LOW_VIS', 'INSUR_CONSULT': 'GEN_OPH',
+            }
+            try:
+                from apps.departments.models import Department as _RouteDept2
+                _dept_code = _svc_to_dept.get(qms_service, qms_service)
+                _dest_dept = _RouteDept2.objects.filter(code=_dept_code).first()
+                if _dest_dept:
+                    visit.department = _dest_dept
+                    _save_fields.append('department')
+            except Exception:
+                pass
+        visit.save(update_fields=_save_fields)
+
+        # Room/doctor assignment
+        _room_note = ''
+        if room_id:
+            try:
+                from apps.departments.models import ConsultationRoom as _CR2
+                _room = _CR2.objects.select_related('assigned_doctor').get(id=room_id, is_active=True)
+                if _room.assigned_doctor:
+                    visit.attending_doctor = _room.assigned_doctor
+                    visit.save(update_fields=['attending_doctor', 'updated_at'])
+                    _room_note = f' → Room {_room.room_number} (Dr. {_room.assigned_doctor.last_name})'
+            except Exception:
+                pass
+
+        # QMS token handling
+        if _qms_active():
+            try:
+                from apps.qms.models import (
+                    QueueToken, TokenStatus, IssuancePoint, TIER_PRIORITY, DailyTokenSequence,
+                )
+                from django.db import transaction as _tx2
+                today = timezone.localdate()
+                with _tx2.atomic():
+                    # Issue new token for destination
+                    if qms_service and visit.patient:
+                        already_waiting = QueueToken.objects.filter(
+                            patient=visit.patient,
+                            service_type=qms_service,
+                            token_date=today,
+                            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                            is_deleted=False,
+                        ).exists()
+                        if not already_waiting:
+                            tier = visit.service_tier
+                            token_number = DailyTokenSequence.next_dept_token(qms_service)
+                            QueueToken.objects.create(
+                                token_number=token_number,
+                                patient=visit.patient,
+                                visit=visit,
+                                patient_name=visit.patient.full_name,
+                                service_type=qms_service,
+                                service_tier=tier,
+                                issuance_point=IssuancePoint.SYSTEM,
+                                priority=TIER_PRIORITY.get(tier, 0),
+                                notes=f'Routed by {routed_by.get_full_name()} to {label}{_room_note}',
+                                issued_by=routed_by,
+                            )
+            except Exception:
+                pass
+
+        return True, label
+    except Exception:
+        return False, ''
+
+
 # ── Nurse: route patient after consultation ────────────────────────────────────
 
 # Maps destination key → (VisitStatus, QMS service_type, label)
@@ -1967,11 +2122,24 @@ def nurse_route_patient_view(request, visit_pk):
     Works with QMS ON (creates QMS token for destination) and QMS OFF (visit status only).
     """
     user = request.user
-    if not (user.can_dispatch_patient() or user.is_medical_director or user.is_super_admin):
+    if not (user.can_dispatch_patient() or user.is_medical_director or user.is_super_admin or user.is_doctor):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     visit = get_object_or_404(Visit, pk=visit_pk, is_deleted=False)
     destination = request.POST.get('destination', '').upper()
+
+    # Optional: route to a specific room (pre-assign attending_doctor)
+    room_id = request.POST.get('room_id', '').strip()
+    _target_room = None
+    _room_note = ''
+    if room_id:
+        try:
+            from apps.departments.models import ConsultationRoom as _CR
+            _target_room = _CR.objects.select_related('assigned_doctor').get(id=room_id, is_active=True)
+            if _target_room.assigned_doctor:
+                _room_note = f' → Room {_target_room.room_number} (Dr. {_target_room.assigned_doctor.last_name})'
+        except Exception:
+            pass
 
     route = _NURSE_ROUTE_MAP.get(destination)
     if not route:
@@ -2059,6 +2227,11 @@ def nurse_route_patient_view(request, visit_pk):
             pass
     visit.save(update_fields=_save_fields)
 
+    # Assign to specific doctor/room if requested
+    if _target_room and _target_room.assigned_doctor:
+        visit.attending_doctor = _target_room.assigned_doctor
+        visit.save(update_fields=['attending_doctor', 'updated_at'])
+
     # Complete the current QMS token for this dept (QMS ON only)
     if _qms_active():
         try:
@@ -2104,7 +2277,7 @@ def nurse_route_patient_view(request, visit_pk):
                             service_tier=tier,
                             issuance_point=IssuancePoint.SYSTEM,
                             priority=TIER_PRIORITY.get(tier, 0),
-                            notes=f'Routed by {user.get_full_name()} to {label}',
+                            notes=f'Routed by {user.get_full_name()} to {label}{_room_note}',
                             issued_by=user,
                         )
         except Exception:

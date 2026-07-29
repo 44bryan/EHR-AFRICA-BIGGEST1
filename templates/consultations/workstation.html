@@ -373,6 +373,106 @@
     </div>
     {% endif %}
 
+    {# ── Route Patient — doctor can send patient to next destination ── #}
+    {% if ready_to_route_doctor %}
+    <div class="card border-0 shadow-sm mb-3" style="border-left:3px solid #16a34a !important;">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <h6 class="mb-0 fw-bold text-success">
+          <i class="bi bi-arrow-right-circle me-2"></i>Route Patient — Where to next?
+        </h6>
+        <span class="badge bg-success">{{ ready_to_route_doctor|length }}</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="px-3 pt-2 pb-1">
+          <small class="text-muted">Consultation done. Select next destination for the patient.</small>
+        </div>
+        {% for v in ready_to_route_doctor %}
+        {% with tier=v.service_tier|default:'STANDARD' %}
+        <div class="px-3 py-3 border-bottom" id="ws-route-row-{{ v.pk }}">
+          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <span class="fw-semibold">{{ v.patient.full_name }}</span>
+            {% if tier == 'VIP' %}
+              <span class="badge" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);font-size:.7rem;"><i class="bi bi-stars me-1"></i>VIP</span>
+            {% elif tier == 'EXPRESS' %}
+              <span class="badge" style="background:linear-gradient(135deg,#0891b2,#0284c7);font-size:.7rem;"><i class="bi bi-lightning-charge-fill me-1"></i>Express</span>
+            {% elif tier == 'FAST_TRACK' %}
+              <span class="badge" style="background:linear-gradient(135deg,#d97706,#ea580c);font-size:.7rem;"><i class="bi bi-clock-fill me-1"></i>Fast Track</span>
+            {% else %}
+              <span class="badge bg-secondary" style="font-size:.7rem;">Standard</span>
+            {% endif %}
+            <span class="text-muted small">{{ v.patient.patient_id }}</span>
+          </div>
+          <div class="d-flex flex-wrap gap-1" id="ws-route-btns-{{ v.pk }}">
+            {# Primary doctor destinations — tier-coloured #}
+            {% if tier == 'VIP' %}
+            <button class="btn btn-sm fw-semibold ws-route-btn" data-visit="{{ v.pk }}" data-dest="GENERAL"
+                    style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;border:none;">
+              <i class="bi bi-stars me-1"></i>VIP Doctor
+            </button>
+            {% elif tier == 'EXPRESS' or tier == 'FAST_TRACK' %}
+            <button class="btn btn-sm fw-semibold ws-route-btn" data-visit="{{ v.pk }}" data-dest="GENERAL"
+                    style="background:linear-gradient(135deg,#0891b2,#0284c7);color:#fff;border:none;">
+              <i class="bi bi-lightning-charge-fill me-1"></i>{% if tier == 'EXPRESS' %}Express{% else %}FT{% endif %} Doctor
+            </button>
+            {% else %}
+            <button class="btn btn-sm btn-primary ws-route-btn" data-visit="{{ v.pk }}" data-dest="GENERAL">
+              <i class="bi bi-person-badge me-1"></i>General Doctor
+            </button>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-danger ws-route-btn" data-visit="{{ v.pk }}" data-dest="PHARMACY">
+              <i class="bi bi-capsule me-1"></i>Pharmacy
+            </button>
+            <button class="btn btn-sm btn-outline-success ws-route-btn" data-visit="{{ v.pk }}" data-dest="CASHIER">
+              <i class="bi bi-cash me-1"></i>Cashier
+            </button>
+            <button class="btn btn-sm btn-outline-warning ws-route-btn" data-visit="{{ v.pk }}" data-dest="LAB">
+              <i class="bi bi-eyedropper me-1"></i>Lab
+            </button>
+            <button class="btn btn-sm btn-outline-info ws-route-btn" data-visit="{{ v.pk }}" data-dest="OPTICAL">
+              <i class="bi bi-eyeglasses me-1"></i>Optical
+            </button>
+            <button class="btn btn-sm btn-outline-dark ws-route-btn" data-visit="{{ v.pk }}" data-dest="GLAUCOMA">
+              <i class="bi bi-eye me-1"></i>Glaucoma
+            </button>
+            <button class="btn btn-sm btn-outline-dark ws-route-btn" data-visit="{{ v.pk }}" data-dest="RETINA">
+              <i class="bi bi-eye-fill me-1"></i>Retina
+            </button>
+            <button class="btn btn-sm btn-outline-primary ws-route-btn" data-visit="{{ v.pk }}" data-dest="REFRACTION">
+              <i class="bi bi-eyeglasses me-1"></i>Refraction
+            </button>
+            <button class="btn btn-sm btn-outline-primary ws-route-btn" data-visit="{{ v.pk }}" data-dest="IMAGING">
+              <i class="bi bi-activity me-1"></i>Investigations
+            </button>
+            <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="COUNSELING">
+              <i class="bi bi-chat-square-heart me-1"></i>Counseling
+            </button>
+            <button class="btn btn-sm btn-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="DISCHARGE">
+              <i class="bi bi-door-open me-1"></i>Done
+            </button>
+          </div>
+          {# Room picker — optional, only if dept has multiple rooms with assigned doctors #}
+          {% if dept_rooms %}
+          <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+            <span class="text-muted small">Specific room:</span>
+            <button class="btn btn-xs btn-outline-secondary ws-room-any py-0 px-2 active" data-visit="{{ v.pk }}" style="font-size:.75rem;">
+              Any
+            </button>
+            {% for room in dept_rooms %}
+            {% if room.assigned_doctor %}
+            <button class="btn btn-xs btn-outline-secondary ws-room-pick py-0 px-2" data-visit="{{ v.pk }}" data-room="{{ room.id }}" style="font-size:.75rem;">
+              Room {{ room.room_number }} — Dr. {{ room.assigned_doctor.last_name }}
+            </button>
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endwith %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
         <h6 class="mb-0 fw-semibold">
@@ -638,5 +738,75 @@ setInterval(() => {
   _refreshEl.textContent = `(refresh in ${_refreshTimer}s)`;
   if (_refreshTimer <= 0) { _refreshTimer = 30; (window.doRefresh || function(){ location.reload(); })(); }
 }, 1000);
+
+// ── Doctor self-routing ─────────────────────────────────────────────────────
+(function () {
+  const _wsRouteUrl = '{% url "consultations:nurse_route" visit_pk="00000000-0000-0000-0000-000000000000" %}';
+  // Track selected room per visit
+  const _selectedRoom = {};
+
+  // Room picker buttons
+  document.querySelectorAll('.ws-room-pick').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const vPk = btn.dataset.visit;
+      _selectedRoom[vPk] = btn.dataset.room;
+      // Highlight selection
+      document.querySelectorAll(`.ws-room-pick[data-visit="${vPk}"], .ws-room-any[data-visit="${vPk}"]`).forEach(function(b){
+        b.classList.remove('btn-secondary', 'active');
+        b.classList.add('btn-outline-secondary');
+      });
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-secondary', 'active');
+    });
+  });
+  document.querySelectorAll('.ws-room-any').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const vPk = btn.dataset.visit;
+      _selectedRoom[vPk] = '';
+      document.querySelectorAll(`.ws-room-pick[data-visit="${vPk}"], .ws-room-any[data-visit="${vPk}"]`).forEach(function(b){
+        b.classList.remove('btn-secondary', 'active');
+        b.classList.add('btn-outline-secondary');
+      });
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-secondary', 'active');
+    });
+  });
+
+  // Route buttons
+  document.querySelectorAll('.ws-route-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const vPk = btn.dataset.visit;
+      const dest = btn.dataset.dest;
+      const roomId = _selectedRoom[vPk] || '';
+      const row = document.getElementById('ws-route-row-' + vPk);
+      row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = true; });
+      const origHtml = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+      const fd = new FormData();
+      fd.append('destination', dest);
+      if (roomId) fd.append('room_id', roomId);
+      fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+      fetch(_wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', vPk), {
+        method: 'POST', body: fd,
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          const btns = document.getElementById('ws-route-btns-' + vPk);
+          if (btns) btns.innerHTML = '<span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
+          row.style.opacity = '0.5';
+        } else {
+          btn.innerHTML = origHtml;
+          row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = false; });
+          alert(data.error || 'Routing failed. Please try again.');
+        }
+      })
+      .catch(function(){
+        btn.innerHTML = origHtml;
+        row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = false; });
+      });
+    });
+  });
+})();
 </script>
 {% endblock %}

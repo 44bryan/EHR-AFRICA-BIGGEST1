@@ -40,6 +40,15 @@
 }
 /* Patient header in meta strip */
 .consult-meta .fw-semibold { font-size: .88rem; }
+
+/* ── Room Board modal cards ── */
+.room-bd-card {
+  background: #fff;
+  user-select: none;
+}
+.room-bd-card:active {
+  transform: scale(.97) !important;
+}
 </style>
 {% endblock %}
 
@@ -129,9 +138,9 @@
         {% if consultation.status == 'IN_PROGRESS' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
         <form method="post" action="{% url 'consultations:complete' pk=consultation.pk %}" class="d-inline">
           {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-success"
-                  onclick="return confirm('Mark this consultation as completed?')">
-            <i class="bi bi-check-circle me-1"></i>Complete
+          <button type="submit" class="btn btn-sm btn-outline-success"
+                  onclick="return confirm('Mark complete without routing?')">
+            <i class="bi bi-check-circle me-1"></i>Complete only
           </button>
         </form>
         {% endif %}
@@ -202,9 +211,9 @@
         </button>
         {% endif %}
         <div class="dropdown" id="routeDropdownWrap">
-          <button class="btn btn-sm btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown"
+          <button class="btn btn-sm {% if consultation.status == 'IN_PROGRESS' %}btn-success{% else %}btn-dark{% endif %} dropdown-toggle" type="button" data-bs-toggle="dropdown"
                   data-bs-auto-close="outside" id="routeDropdownBtn">
-            <i class="bi bi-signpost-split me-1"></i>Route Patient
+            <i class="bi bi-signpost-split me-1"></i>{% if consultation.status == 'IN_PROGRESS' %}Complete &amp; Route{% else %}Route Patient{% endif %}
           </button>
           <div class="dropdown-menu p-3" style="min-width:360px;">
             <div class="fw-semibold small mb-2 text-dark">
@@ -316,17 +325,20 @@
 
 {% block content %}
 
-{# ── In-Progress notice bar ── #}
+{# ── In-Progress notice (simplified — routing is in the green Complete & Route button above) ── #}
 {% if consultation.status == 'IN_PROGRESS' %}
-<div class="d-flex align-items-center gap-3 px-3 py-2 mb-3 rounded" style="background:#fffbf0;border:1px solid #fd7e14;border-left:4px solid #fd7e14;">
-  <i class="bi bi-hourglass-split text-warning fs-5 flex-shrink-0"></i>
-  <div class="text-warning-emphasis fw-semibold small flex-grow-1">Draft — saved {{ consultation.consultation_date|time:"H:i" }}</div>
+<div class="d-flex align-items-center gap-3 px-3 py-2 mb-3 rounded" style="background:#f0fdf4;border:1px solid #16a34a;border-left:4px solid #16a34a;">
+  <i class="bi bi-info-circle-fill text-success flex-shrink-0"></i>
+  <div class="text-success-emphasis small flex-grow-1">
+    Draft in progress — saved {{ consultation.consultation_date|time:"H:i" }}.
+    Use the <strong>Complete &amp; Route</strong> button above to finish and send the patient to the next destination.
+  </div>
   <div class="d-flex gap-2 flex-shrink-0">
-    <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-success btn-sm">
-      <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit Clinical Notes
+    <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-outline-success btn-sm">
+      <i class="bi bi-pencil-fill me-1"></i>Edit Notes
     </a>
     {% if request.user.can_use_ai_assistant %}
-    <a href="{% url 'ai_assistant:new_conversation' %}?consultation={{ consultation.pk }}" class="btn btn-outline-primary btn-sm">
+    <a href="{% url 'ai_assistant:new_conversation' %}?consultation={{ consultation.pk }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-robot me-1"></i>AI
     </a>
     {% endif %}
@@ -1225,6 +1237,90 @@
   {% endif %}
 
 </div>
+
+{# ══ ROOM BOARD MODAL — triage-style doctor/room picker ══ #}
+<div class="modal fade" id="roomBoardModal" tabindex="-1" aria-modal="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg" style="border-radius:12px;overflow:hidden;">
+
+      <div class="modal-header py-3" style="background:linear-gradient(135deg,#0d6efd,#0a58ca);color:#fff;">
+        <div>
+          <h5 class="modal-title mb-0 fw-bold">
+            <i class="bi bi-door-closed-fill me-2"></i>Select Doctor / Room
+          </h5>
+          <div class="small mt-1 opacity-75" id="roomBoardDestLabel">Routing to consultation queue</div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body p-3">
+        <p class="text-muted small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Pick a specific room to route directly to that doctor, or use the shared pool.
+        </p>
+
+        {# ── Any-doctor shared queue card ── #}
+        <div id="roomBoardAny"
+             class="d-flex align-items-center gap-3 p-3 rounded border mb-3"
+             style="cursor:pointer;background:#f0f7ff;border-color:#0d6efd !important;transition:background .15s;">
+          <i class="bi bi-people-fill fs-3 text-primary flex-shrink-0"></i>
+          <div class="flex-grow-1">
+            <div class="fw-semibold">Any Available Doctor</div>
+            <div class="small text-muted">Shared pool — first available doctor calls next</div>
+          </div>
+          <i class="bi bi-arrow-right-circle-fill fs-4 text-primary"></i>
+        </div>
+
+        {# ── Room cards grid ── #}
+        {% if active_rooms %}
+        <div class="small fw-semibold text-uppercase text-muted mb-2" style="letter-spacing:.06em;">
+          <i class="bi bi-door-closed me-1"></i>Active Rooms Today ({{ active_rooms|length }})
+        </div>
+        <div class="row g-2" id="roomBoardGrid">
+          {% for room in active_rooms %}
+          <div class="col-6 col-sm-4 col-md-3">
+            <div class="room-bd-card h-100 border rounded p-2 text-center position-relative"
+                 data-room-id="{{ room.id }}"
+                 style="cursor:pointer;transition:all .15s;">
+              {# Tier ribbon #}
+              <div class="position-absolute top-0 start-0 end-0 py-1 rounded-top
+                {% if room.room_tier == 'VIP' %}bg-warning
+                {% elif room.room_tier == 'EXPRESS' or room.room_tier == 'FAST_TRACK' %}bg-info
+                {% else %}bg-light{% endif %}"
+                style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+                {% if room.room_tier == 'VIP' %}color:#78350f;{% elif room.room_tier == 'EXPRESS' or room.room_tier == 'FAST_TRACK' %}color:#0c4a6e;{% else %}color:#6b7280;{% endif %}">
+                {{ room.get_room_tier_display }}
+              </div>
+              <div class="mt-4 mb-1">
+                <div class="fw-black text-primary" style="font-size:1.8rem;line-height:1;font-weight:900;">{{ room.room_number }}</div>
+                <div class="text-muted" style="font-size:.65rem;letter-spacing:.05em;">ROOM</div>
+              </div>
+              <div class="fw-semibold small text-truncate">Dr. {{ room.assigned_doctor.last_name }}</div>
+              <div class="text-muted text-truncate" style="font-size:.7rem;">{{ room.department.name }}</div>
+              <div class="mt-2">
+                {% if room.waiting_count > 0 %}
+                <span class="badge bg-warning text-dark" style="font-size:.65rem;">{{ room.waiting_count }} waiting</span>
+                {% else %}
+                <span class="badge bg-success" style="font-size:.65rem;">Free</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="bi bi-door-closed fs-2 d-block mb-2"></i>
+          No doctors checked into rooms today.<br>
+          <small>The patient will go to the shared queue.</small>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{# ══ end Room Board Modal ══ #}
+
 {% endblock %}
 
 {% block extra_js %}
@@ -1407,30 +1503,51 @@ function dischargePatient(visitPk) {
   });
 }
 
-// ── Quick-route buttons (doctor routing) ─────────────────────────────────────
+// ── Quick-route buttons (doctor routing) + Room Board modal ──────────────────
 (function() {
-  document.querySelectorAll('.quick-route-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var dest  = this.dataset.dest;
-      var label = this.textContent.trim();
-      if (!dest) return;
-      _doRoute(dest, label, this);
-    });
-  });
+  // ── Destinations that open the Room Board picker ──
+  var _DOCTOR_DESTS = {
+    'GENERAL':1,'REFRACTION':1,'RETINA':1,'GLAUCOMA':1,'CATARACT':1,
+    'CORNEA':1,'OCULOPLASTY':1,'PEDIATRIC':1,'NEURO':1,'UVEITIS':1,
+    'LOW_VISION':1,'INSUR_CONSULT':1,'GEN_PHYS':1,'CYCLO':1
+  };
 
-  function _doRoute(destination, label, triggerEl) {
-    var notes  = (document.getElementById('routeNotes') || {}).value || '';
-    var csrf   = '{{ csrf_token }}';
-    var visitPk = '{{ consultation.visit.pk }}';
+  var _consultStatus = '{{ consultation.status }}';
+  var _completeUrl   = '{% url "consultations:complete" pk=consultation.pk %}';
+  var _nurseRouteUrl = '{% url "consultations:nurse_route" visit_pk=consultation.visit.pk %}';
 
-    if (triggerEl) { triggerEl.disabled = true; }
+  // State for the Room Board modal
+  var _pendingDest    = '';
+  var _pendingTrigger = null;
+  var _roomModal      = null;
 
+  // ── Actual routing execution (after room chosen) ──────────────────────────
+  function _executeRoute(destination, roomId) {
+    var notes = (document.getElementById('routeNotes') || {}).value || '';
+    var csrf  = '{{ csrf_token }}';
+
+    // IN_PROGRESS → complete + route in one form POST
+    if (_consultStatus === 'IN_PROGRESS') {
+      var frm = document.createElement('form');
+      frm.method = 'POST';
+      frm.action = _completeUrl;
+      var h = '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrf + '">'
+            + '<input type="hidden" name="next_destination" value="' + destination + '">';
+      if (roomId) h += '<input type="hidden" name="room_id" value="' + roomId + '">';
+      frm.innerHTML = h;
+      document.body.appendChild(frm);
+      frm.submit();
+      return;
+    }
+
+    // COMPLETED → AJAX nurse route
     var fd = new FormData();
     fd.append('csrfmiddlewaretoken', csrf);
     fd.append('destination', destination);
     fd.append('notes', notes);
+    if (roomId) fd.append('room_id', roomId);
 
-    fetch('{% url "consultations:nurse_route" visit_pk=consultation.visit.pk %}', {
+    fetch(_nurseRouteUrl, {
       method: 'POST', body: fd,
       headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
@@ -1438,28 +1555,94 @@ function dischargePatient(visitPk) {
     .then(function(data) {
       if (data.success) {
         var dropEl = document.getElementById('routeDropdownBtn');
-        if (dropEl) bootstrap.Dropdown.getInstance(dropEl)?.hide();
+        if (dropEl) { try { bootstrap.Dropdown.getInstance(dropEl)?.hide(); } catch(e){} }
         var wrap = document.getElementById('routeBannerWrap');
         if (wrap) {
-          wrap.innerHTML = '<div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 mb-2">' +
-            '<i class="bi bi-check-circle-fill fs-5"></i>' +
-            '<div><strong>' + data.patient + ' → ' + data.destination + '</strong>. ' +
-            data.message + '</div></div>';
+          wrap.innerHTML = '<div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 mb-2">'
+            + '<i class="bi bi-check-circle-fill fs-5"></i>'
+            + '<div><strong>' + data.patient + ' → ' + data.destination + '</strong>. '
+            + data.message + '</div></div>';
         }
         var dropWrap = document.getElementById('routeDropdownWrap');
         if (dropWrap) dropWrap.style.display = 'none';
       } else {
-        if (triggerEl) { triggerEl.disabled = false; }
+        if (_pendingTrigger) _pendingTrigger.disabled = false;
         alert('Routing failed: ' + (data.error || 'Unknown error'));
       }
     })
     .catch(function() {
-      if (triggerEl) { triggerEl.disabled = false; }
+      if (_pendingTrigger) _pendingTrigger.disabled = false;
       alert('Network error. Please try again.');
     });
   }
 
-  // Expose for the legacy "other" dropdown button
+  // ── Main _doRoute — opens Room Board for doctor dests, routes directly otherwise ──
+  function _doRoute(destination, label, triggerEl) {
+    _pendingTrigger = triggerEl || null;
+
+    if (_DOCTOR_DESTS[destination]) {
+      // Open Room Board modal — user picks a specific room or shared pool
+      _pendingDest = destination;
+      var lbl = document.getElementById('roomBoardDestLabel');
+      if (lbl) lbl.textContent = '→ ' + label;
+      if (!_roomModal) {
+        _roomModal = new bootstrap.Modal(document.getElementById('roomBoardModal'));
+      }
+      _roomModal.show();
+      return;
+    }
+
+    // Non-doctor destination (Pharmacy, Lab, Cashier…) — route directly
+    if (triggerEl) triggerEl.disabled = true;
+    _executeRoute(destination, '');
+  }
+
+  // ── Wire quick-route buttons ──
+  document.querySelectorAll('.quick-route-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      _doRoute(this.dataset.dest, this.textContent.trim(), this);
+    });
+  });
+
+  // ── Room Board modal interactions ──
+  document.addEventListener('DOMContentLoaded', function() {
+    var modalEl = document.getElementById('roomBoardModal');
+    if (!modalEl) return;
+
+    // "Any doctor" card
+    var anyCard = document.getElementById('roomBoardAny');
+    if (anyCard) {
+      anyCard.addEventListener('click', function() {
+        if (_roomModal) _roomModal.hide();
+        _executeRoute(_pendingDest, '');
+      });
+      anyCard.addEventListener('mouseenter', function() { this.style.background = '#dbeafe'; });
+      anyCard.addEventListener('mouseleave', function() { this.style.background = '#f0f7ff'; });
+    }
+
+    // Room cards
+    modalEl.querySelectorAll('.room-bd-card[data-room-id]').forEach(function(card) {
+      card.addEventListener('click', function() {
+        var roomId = this.dataset.roomId;
+        if (_roomModal) _roomModal.hide();
+        _executeRoute(_pendingDest, roomId);
+      });
+      card.addEventListener('mouseenter', function() {
+        this.style.background = '#e8f4ff';
+        this.style.borderColor = '#0d6efd';
+        this.style.transform = 'translateY(-3px)';
+        this.style.boxShadow = '0 6px 16px rgba(13,110,253,.18)';
+      });
+      card.addEventListener('mouseleave', function() {
+        this.style.background = '';
+        this.style.borderColor = '';
+        this.style.transform = '';
+        this.style.boxShadow = '';
+      });
+    });
+  });
+
+  // Expose for legacy "Other" dropdown
   window._doRoute = _doRoute;
 })();
 

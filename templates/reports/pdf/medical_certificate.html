@@ -4,76 +4,91 @@
 <meta charset="UTF-8">
 {% include 'reports/pdf/_base_styles.html' %}
 <style>
-  body { font-family: "Georgia", "Times New Roman", serif; }
-  .outer-border { border: 3px double #0d6efd; padding: 18px; min-height: 84vh; }
-  .cert-title { font-size: 14pt; font-weight: 700; text-align: center; text-transform: uppercase;
-                letter-spacing: 2px; margin: 16px 0; color: #0d6efd;
-                border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; padding: 8px 0; }
-  .cert-number { font-size: 7.5pt; color: #888; text-align: right; margin-bottom: 14px; }
-  .body-text { font-size: 11pt; line-height: 1.9; }
-  .underline-field { display: inline-block; border-bottom: 1.5px solid #333; min-width: 180px; font-weight: 700; padding: 0 4px; }
   .stamp-area { margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end; }
   .stamp-circle { width: 90px; height: 90px; border: 2px dashed #aaa; border-radius: 50%;
                   display: flex; align-items: center; justify-content: center;
                   font-size: 7pt; color: #aaa; text-align: center; }
-  .conf-banner { font-size: 6.5pt; letter-spacing: 3px; text-align: center; color: #bbb; text-transform: uppercase; margin-bottom: 6px; }
 </style>
 </head>
 <body>
-<div class="outer-border">
-
-<div class="conf-banner">Confidential Medical Document</div>
 
 {% include 'reports/pdf/_letterhead.html' %}
 
-<div class="cert-title">
-  {% if cert_type == 'SICK_NOTE' %}Medical Certificate / Sick Note
-  {% elif cert_type == 'FITNESS' %}Certificate of Fitness
-  {% elif cert_type == 'SCHOOL' %}School Absence Certificate
-  {% else %}Medical Certificate{% endif %}
+<div class="accred-bar">
+  <span>
+    {% if cert_type == 'SICK_NOTE' %}Medical Certificate / Sick Note
+    {% elif cert_type == 'FITNESS' %}Certificate of Fitness
+    {% elif cert_type == 'SCHOOL' %}School Absence Certificate
+    {% else %}Medical Certificate{% endif %}
+  </span>
+  <span>Ref: CERT/{{ issue_date|date:"Ymd" }}/{{ patient.patient_id }} &nbsp;|&nbsp; {{ issue_date|date:"d F Y" }}</span>
 </div>
 
-<div class="cert-number">Ref: CERT/{{ issue_date|date:"Ymd" }}/{{ patient.patient_id }}</div>
+<div class="section-title">Patient Details</div>
+<table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:14px;">
+  <tr>
+    <td style="width:50%;padding:4px 0;"><strong>Full Name:</strong> {{ patient.full_name }}</td>
+    <td style="padding:4px 0;"><strong>Patient ID:</strong> {{ patient.patient_id }}</td>
+  </tr>
+  <tr>
+    <td style="padding:4px 0;"><strong>Date of Birth:</strong> {{ patient.date_of_birth|date:"d M Y"|default:"—" }}</td>
+    <td style="padding:4px 0;"><strong>Gender:</strong> {{ patient.get_gender_display }}</td>
+  </tr>
+</table>
 
-<div class="body-text">
-  <p>This is to certify that:</p><br>
-  <p><strong>Name:</strong> <span class="underline-field">{{ patient.full_name }}</span>
-  &nbsp;&nbsp;<strong>Date of Birth:</strong> <span class="underline-field">{{ patient.date_of_birth|date:"d M Y"|default:"—" }}</span></p><br>
-  <p><strong>Patient ID:</strong> <span class="underline-field">{{ patient.patient_id }}</span>
-  &nbsp;&nbsp;<strong>Gender:</strong> <span class="underline-field">{{ patient.get_gender_display }}</span></p><br>
+<div class="section-title">Certification</div>
 
-  {% if cert_type == 'FITNESS' %}
-  <p>Was examined at this facility on <span class="underline-field">{{ consult.consultation_date|date:"d M Y" }}</span> and is hereby certified as:</p><br>
-  <p style="font-size:12pt;font-weight:700;text-align:center;padding:10px;border:1.5px solid #0d6efd;border-radius:4px;">{{ fitness_note|default:"Fit to resume normal duties" }}</p>
-  {% else %}
-  <p>Was examined at this facility on <span class="underline-field">{{ consult.consultation_date|date:"d M Y" }}</span>
-  and was found to be unfit for {% if cert_type == 'SCHOOL' %}school attendance{% else %}normal duties{% endif %} due to illness.</p><br>
-  {% if diagnosis_text %}<p><strong>Diagnosis:</strong> <span class="underline-field">{{ diagnosis_text }}</span></p><br>{% endif %}
-  <p>It is recommended that {% if cert_type == 'SCHOOL' %}the student{% else %}the patient{% endif %} be granted
-  {% if days_off %}<span class="underline-field">{{ days_off }} day(s)</span>{% else %}a period{% endif %} of medical leave
-  {% if date_from and date_to %}from <span class="underline-field">{{ date_from }}</span> to <span class="underline-field">{{ date_to }}</span> (inclusive).{% else %}as clinically indicated.{% endif %}</p>
-  {% endif %}
-
-  <br><p>This certificate is issued in good faith based on the clinical assessment performed on the above date.</p>
-  <br><p><strong>Date of Issue:</strong> <span class="underline-field">{{ issue_date|date:"d M Y" }}</span></p>
+{% if cert_type == 'FITNESS' %}
+<p style="font-size:10.5pt;line-height:1.8;margin-bottom:10px;">
+  This is to certify that the above-named patient was examined at this facility on
+  <strong>{{ consult.consultation_date|date:"d M Y" }}</strong> and is hereby certified as:
+</p>
+<div class="info-box" style="font-size:11pt;font-weight:700;text-align:center;margin-bottom:12px;">
+  {{ fitness_note|default:"Fit to resume normal duties" }}
 </div>
+
+{% else %}
+<p style="font-size:10.5pt;line-height:1.8;margin-bottom:10px;">
+  This is to certify that the above-named patient was examined at this facility on
+  <strong>{{ consult.consultation_date|date:"d M Y" }}</strong> and was found to be
+  unfit for {% if cert_type == 'SCHOOL' %}school attendance{% else %}normal duties{% endif %} due to illness.
+</p>
+
+{% if diagnosis_text %}
+<div class="section-title" style="margin-top:12px;">Diagnosis</div>
+<p style="font-size:10.5pt;line-height:1.8;margin-bottom:10px;">{{ diagnosis_text }}</p>
+{% endif %}
+
+<div class="section-title" style="margin-top:12px;">Medical Leave Recommendation</div>
+<p style="font-size:10.5pt;line-height:1.8;margin-bottom:10px;">
+  It is recommended that {% if cert_type == 'SCHOOL' %}the student{% else %}the patient{% endif %}
+  be granted <strong>{% if days_off %}{{ days_off }} day(s){% else %}a period{% endif %}</strong> of medical leave
+  {% if date_from and date_to %}from <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong> (inclusive).
+  {% else %}as clinically indicated.{% endif %}
+</p>
+{% endif %}
+
+<p style="font-size:9.5pt;line-height:1.7;color:#555;margin-top:14px;">
+  This certificate is issued in good faith based on the clinical assessment performed on the date stated above.
+  It is a confidential medical document intended solely for the named recipient.
+</p>
 
 <div class="stamp-area">
-  <div class="signature-block" style="text-align:center;">
+  <div class="signature-block">
     <div class="signature-line">
       Dr. {{ doctor.full_name|default:"Attending Doctor" }}<br>
       {% if doctor.specialization %}{{ doctor.specialization }}<br>{% endif %}
-      {{ hospital_name }}
+      {{ hospital_name }}<br>
+      {{ hospital_phone }}
     </div>
   </div>
   <div class="stamp-circle">Official<br>Stamp</div>
 </div>
 
-<div class="pdf-footer" style="text-align:center;display:block;margin-top:20px;">
-  This document was generated by {{ hospital_name }} on {{ issue_date|date:"d M Y" }}.
-  It is a confidential medical document intended solely for the named recipient.
+<div class="pdf-footer">
+  <span>{{ hospital_name }} · {{ hospital_address }}</span>
+  <span>Generated {{ issue_date|date:"d M Y" }} · Confidential</span>
 </div>
 
-</div>
 </body>
 </html>
