@@ -220,30 +220,15 @@
               <i class="bi bi-signpost-2 me-1"></i>Route Patient — Where to next?
             </div>
 
-            {# ── PRIMARY: Send to Doctor (tier-aware, opens Room Board) ── #}
-            {% with tier=visit.service_tier|default:'STANDARD' %}
-            {% if tier == 'VIP' %}
-            <button class="btn btn-sm w-100 fw-bold quick-route-btn mb-1 py-2"
-                    data-dest="GENERAL" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;border:none;">
-              <i class="bi bi-stars me-2"></i>Send to VIP Doctor
-              <i class="bi bi-grid-3x3 ms-1 opacity-75"></i>
-            </button>
-            {% elif tier == 'EXPRESS' or tier == 'FAST_TRACK' %}
-            <button class="btn btn-sm w-100 fw-bold quick-route-btn mb-1 py-2"
-                    data-dest="GENERAL" style="background:linear-gradient(135deg,#0891b2,#0284c7);color:#fff;border:none;">
-              <i class="bi bi-lightning-charge-fill me-2"></i>Send to {% if tier == 'EXPRESS' %}Express{% else %}Fast Track{% endif %} Doctor
-              <i class="bi bi-grid-3x3 ms-1 opacity-75"></i>
-            </button>
-            {% else %}
-            <button class="btn btn-sm w-100 fw-bold btn-primary quick-route-btn mb-1 py-2"
-                    data-dest="GENERAL">
+            {# ── PRIMARY: Send to Doctor — opens Room Board ── #}
+            <button class="btn btn-sm w-100 fw-semibold quick-route-btn mb-1 py-2"
+                    data-dest="GENERAL"
+                    style="background:#1e293b;color:#fff;border:none;">
               <i class="bi bi-person-badge me-2"></i>Send to Doctor
-              <i class="bi bi-grid-3x3 ms-1 opacity-75"></i>
+              <i class="bi bi-layout-three-columns ms-2 opacity-60"></i>
             </button>
-            {% endif %}
-            {% endwith %}
-            <div class="text-muted" style="font-size:.7rem;margin-bottom:8px;padding-left:2px;">
-              <i class="bi bi-info-circle me-1"></i>Opens Room Board — pick a specific room or shared queue
+            <div class="text-muted mb-2" style="font-size:.7rem;padding-left:2px;">
+              <i class="bi bi-info-circle me-1"></i>Pick a specific room or shared queue
             </div>
             <hr class="my-2">
 
@@ -1265,85 +1250,66 @@
 
 </div>
 
-{# ══ ROOM BOARD MODAL — triage-style doctor/room picker ══ #}
+{# ══ ROOM BOARD MODAL ══ #}
 <div class="modal fade" id="roomBoardModal" tabindex="-1" aria-modal="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
-    <div class="modal-content border-0 shadow-lg" style="border-radius:12px;overflow:hidden;">
+    <div class="modal-content border-0 shadow">
 
-      {% with ptier=visit.service_tier|default:'STANDARD' %}
-      <div class="modal-header py-3
-        {% if ptier == 'VIP' %}" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;">
-        {% elif ptier == 'EXPRESS' or ptier == 'FAST_TRACK' %}" style="background:linear-gradient(135deg,#0891b2,#0284c7);color:#fff;">
-        {% else %}" style="background:linear-gradient(135deg,#0d6efd,#0a58ca);color:#fff;">
-        {% endif %}
+      <div class="modal-header border-bottom py-3" style="background:#1e293b;color:#fff;">
         <div>
-          <h5 class="modal-title mb-0 fw-bold">
-            {% if ptier == 'VIP' %}<i class="bi bi-stars me-2"></i>VIP Room Board
-            {% elif ptier == 'EXPRESS' %}<i class="bi bi-lightning-charge-fill me-2"></i>Express Room Board
-            {% elif ptier == 'FAST_TRACK' %}<i class="bi bi-lightning-charge-fill me-2"></i>Fast Track Room Board
-            {% else %}<i class="bi bi-door-closed-fill me-2"></i>Room Board
-            {% endif %}
+          <h5 class="modal-title mb-0 fw-semibold">
+            <i class="bi bi-layout-three-columns me-2"></i>Room Board — Select Doctor
           </h5>
-          <div class="small mt-1 opacity-75">Pick a room — same-tier rooms shown first</div>
+          <div class="small mt-1" style="opacity:.65;">
+            Tier: <strong>{{ visit.service_tier|default:'Standard' }}</strong> &nbsp;·&nbsp; Same-tier rooms listed first
+          </div>
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
       <div class="modal-body p-3" style="background:#f8fafc;">
 
-        {# ── Any-doctor shared queue card ── #}
-        <div id="roomBoardAny"
-             class="d-flex align-items-center gap-3 p-3 rounded border mb-3 bg-white"
-             style="cursor:pointer;border-color:#6c757d;transition:background .12s;">
-          <i class="bi bi-people-fill fs-2 text-secondary flex-shrink-0"></i>
+        {# ── Shared pool option ── #}
+        <div id="roomBoardAny" class="d-flex align-items-center gap-3 p-3 rounded border bg-white mb-3"
+             style="cursor:pointer;transition:background .12s;">
+          <i class="bi bi-people fs-3 text-dark flex-shrink-0"></i>
           <div class="flex-grow-1">
-            <div class="fw-semibold">Any Available Doctor <span class="badge bg-secondary ms-1" style="font-size:.65rem;">SHARED POOL</span></div>
-            <div class="small text-muted">First available — tier routing applied automatically</div>
+            <div class="fw-semibold">Any Available Doctor</div>
+            <div class="small text-muted">Shared queue — first available doctor in your tier gets the patient</div>
           </div>
-          <i class="bi bi-arrow-right-circle fs-3 text-secondary"></i>
+          <i class="bi bi-chevron-right text-muted"></i>
         </div>
 
-        {# ── Same-tier rooms first ── #}
         {% if active_rooms %}
-        {% with same_rooms=active_rooms|dictsort:"room_tier" %}
+        {% with ptier=visit.service_tier|default:'STANDARD' %}
 
-        {# Tier-matched #}
+        {# Same-tier rooms #}
         {% for room in active_rooms %}{% if room.room_tier == ptier or room.room_tier == 'ALL' %}
         {% if forloop.first %}
-        <div class="small fw-semibold text-uppercase mb-2" style="letter-spacing:.06em;
-          {% if ptier == 'VIP' %}color:#7c3aed;
-          {% elif ptier == 'EXPRESS' or ptier == 'FAST_TRACK' %}color:#0891b2;
-          {% else %}color:#0d6efd;{% endif %}">
-          <i class="bi bi-check-circle-fill me-1"></i>Same Tier — Recommended
+        <div class="small text-muted fw-semibold text-uppercase mb-2" style="letter-spacing:.05em;">
+          <i class="bi bi-check2 me-1"></i>Same Tier
         </div>
         <div class="row g-2 mb-3">
         {% endif %}
           <div class="col-6 col-sm-4 col-md-3">
-            <div class="room-bd-card h-100 border-2 rounded p-2 text-center position-relative bg-white"
-                 data-room-id="{{ room.id }}"
-                 style="cursor:pointer;transition:all .15s;
-                 {% if ptier == 'VIP' %}border-color:#7c3aed !important;
-                 {% elif ptier == 'EXPRESS' or ptier == 'FAST_TRACK' %}border-color:#0891b2 !important;
-                 {% else %}border-color:#0d6efd !important;{% endif %}">
-              <div class="position-absolute top-0 start-0 end-0 py-1 rounded-top fw-bold"
-                   style="font-size:.6rem;text-transform:uppercase;
-                   {% if room.room_tier == 'VIP' %}background:#f5f3ff;color:#7c3aed;
-                   {% elif room.room_tier == 'EXPRESS' or room.room_tier == 'FAST_TRACK' %}background:#e0f2fe;color:#0891b2;
-                   {% elif room.room_tier == 'ALL' %}background:#fef9c3;color:#92400e;
-                   {% else %}background:#eff6ff;color:#2563eb;{% endif %}">
+            <div class="room-bd-card h-100 border rounded p-2 text-center bg-white position-relative"
+                 data-room-id="{{ room.id }}" style="cursor:pointer;transition:all .15s;">
+              <div class="position-absolute top-0 start-0 end-0 py-1 rounded-top"
+                   style="font-size:.6rem;font-weight:600;text-transform:uppercase;background:#f1f5f9;color:#475569;">
                 {{ room.get_room_tier_display }}
               </div>
-              <div style="margin-top:22px;">
-                <div class="fw-black" style="font-size:2rem;line-height:1;font-weight:900;
-                  {% if ptier == 'VIP' %}color:#7c3aed;{% elif ptier == 'EXPRESS' or ptier == 'FAST_TRACK' %}color:#0891b2;{% else %}color:#2563eb;{% endif %}">
-                  {{ room.room_number }}</div>
-                <div class="text-muted" style="font-size:.6rem;text-transform:uppercase;">ROOM</div>
+              <div style="margin-top:20px;">
+                <div style="font-size:2rem;font-weight:800;line-height:1;color:#1e293b;">{{ room.room_number }}</div>
+                <div style="font-size:.6rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">Room</div>
               </div>
-              <div class="fw-semibold text-truncate small mt-1">Dr. {{ room.assigned_doctor.last_name }}</div>
+              <div class="fw-semibold small text-truncate mt-1">Dr. {{ room.assigned_doctor.last_name }}</div>
               <div class="text-muted text-truncate" style="font-size:.7rem;">{{ room.department.name }}</div>
               <div class="mt-2">
-                {% if room.waiting_count > 0 %}<span class="badge bg-warning text-dark" style="font-size:.62rem;">{{ room.waiting_count }} waiting</span>
-                {% else %}<span class="badge bg-success" style="font-size:.62rem;">Free</span>{% endif %}
+                {% if room.waiting_count > 0 %}
+                <span class="badge bg-warning text-dark" style="font-size:.62rem;">{{ room.waiting_count }} waiting</span>
+                {% else %}
+                <span class="badge bg-success" style="font-size:.62rem;">Free</span>
+                {% endif %}
               </div>
             </div>
           </div>
@@ -1353,28 +1319,30 @@
         {# Other-tier rooms #}
         {% for room in active_rooms %}{% if room.room_tier != ptier and room.room_tier != 'ALL' %}
         {% if forloop.first %}
-        <div class="small fw-semibold text-uppercase text-muted mb-2" style="letter-spacing:.06em;">
-          <i class="bi bi-door-closed me-1"></i>Other Rooms (different tier)
+        <div class="small text-muted fw-semibold text-uppercase mb-2" style="letter-spacing:.05em;">
+          <i class="bi bi-door-closed me-1"></i>Other Rooms
         </div>
         <div class="row g-2">
         {% endif %}
           <div class="col-6 col-sm-4 col-md-3">
-            <div class="room-bd-card h-100 border rounded p-2 text-center position-relative bg-white"
-                 data-room-id="{{ room.id }}"
-                 style="cursor:pointer;transition:all .15s;opacity:.65;">
-              <div class="position-absolute top-0 start-0 end-0 py-1 rounded-top fw-bold"
-                   style="font-size:.6rem;text-transform:uppercase;background:#f1f5f9;color:#64748b;">
+            <div class="room-bd-card h-100 border rounded p-2 text-center bg-white position-relative"
+                 data-room-id="{{ room.id }}" style="cursor:pointer;transition:all .15s;opacity:.6;">
+              <div class="position-absolute top-0 start-0 end-0 py-1 rounded-top"
+                   style="font-size:.6rem;font-weight:600;text-transform:uppercase;background:#f1f5f9;color:#94a3b8;">
                 {{ room.get_room_tier_display }}
               </div>
-              <div style="margin-top:22px;">
-                <div class="fw-black text-muted" style="font-size:2rem;line-height:1;font-weight:900;">{{ room.room_number }}</div>
-                <div class="text-muted" style="font-size:.6rem;text-transform:uppercase;">ROOM</div>
+              <div style="margin-top:20px;">
+                <div style="font-size:2rem;font-weight:800;line-height:1;color:#64748b;">{{ room.room_number }}</div>
+                <div style="font-size:.6rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">Room</div>
               </div>
-              <div class="fw-semibold text-truncate small mt-1 text-muted">Dr. {{ room.assigned_doctor.last_name }}</div>
+              <div class="fw-semibold small text-truncate mt-1 text-muted">Dr. {{ room.assigned_doctor.last_name }}</div>
               <div class="text-muted text-truncate" style="font-size:.7rem;">{{ room.department.name }}</div>
               <div class="mt-2">
-                {% if room.waiting_count > 0 %}<span class="badge bg-warning text-dark" style="font-size:.62rem;">{{ room.waiting_count }} waiting</span>
-                {% else %}<span class="badge bg-success" style="font-size:.62rem;">Free</span>{% endif %}
+                {% if room.waiting_count > 0 %}
+                <span class="badge bg-warning text-dark" style="font-size:.62rem;">{{ room.waiting_count }} waiting</span>
+                {% else %}
+                <span class="badge bg-success" style="font-size:.62rem;">Free</span>
+                {% endif %}
               </div>
             </div>
           </div>
@@ -1383,14 +1351,14 @@
 
         {% endwith %}
         {% else %}
-        <div class="text-center py-4 text-muted rounded border bg-white">
+        <div class="text-center py-4 text-muted border rounded bg-white">
           <i class="bi bi-door-closed fs-2 d-block mb-2"></i>
-          <div class="fw-semibold">No doctors in rooms today</div>
-          <small>Use "Any Available Doctor" — tier routing still applied.</small>
+          <div class="fw-semibold">No doctors checked into rooms today</div>
+          <small>Use "Any Available Doctor" above.</small>
         </div>
         {% endif %}
+
       </div>
-      {% endwith %}
     </div>
   </div>
 </div>
@@ -1626,7 +1594,10 @@ function dischargePatient(visitPk) {
       method: 'POST', body: fd,
       headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (!r.ok) throw new Error('Server returned ' + r.status);
+      return r.json();
+    })
     .then(function(data) {
       if (data.success) {
         var dropEl = document.getElementById('routeDropdownBtn');
@@ -1636,7 +1607,7 @@ function dischargePatient(visitPk) {
           wrap.innerHTML = '<div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 mb-2">'
             + '<i class="bi bi-check-circle-fill fs-5"></i>'
             + '<div><strong>' + data.patient + ' → ' + data.destination + '</strong>. '
-            + data.message + '</div></div>';
+            + (data.message || '') + '</div></div>';
         }
         var dropWrap = document.getElementById('routeDropdownWrap');
         if (dropWrap) dropWrap.style.display = 'none';
@@ -1645,9 +1616,9 @@ function dischargePatient(visitPk) {
         alert('Routing failed: ' + (data.error || 'Unknown error'));
       }
     })
-    .catch(function() {
+    .catch(function(err) {
       if (_pendingTrigger) _pendingTrigger.disabled = false;
-      alert('Network error. Please try again.');
+      alert('Routing error: ' + (err.message || 'Please refresh and try again.'));
     });
   }
 
