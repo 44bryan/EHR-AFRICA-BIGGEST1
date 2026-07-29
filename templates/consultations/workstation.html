@@ -19,10 +19,12 @@
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 ws-header-row">
   <div>
     <h5 class="fw-bold mb-0">
-      <i class="bi bi-hospital me-2 text-primary"></i>Clinical Workstation
+      <i class="bi bi-hospital me-2 text-primary"></i>
+      {% if is_refrac %}Refraction Workstation{% else %}Clinical Workstation{% endif %}
     </h5>
     <div class="text-muted small">
-      Dr. {{ request.user.full_name }} &bull; {{ request.user.get_role_display }}
+      {% if is_refrac %}{{ request.user.full_name }}{% else %}Dr. {{ request.user.full_name }}{% endif %}
+      &bull; {{ request.user.get_role_display }}
       {% if dept %}&bull; {{ dept.name }}{% endif %}
       &bull; {{ today|date:"d M Y" }}
     </div>
@@ -406,6 +408,13 @@
               </span>
               {# Quick order buttons — visible on today's open consultations #}
               {% if c.status != 'COMPLETED' %}
+              {% if is_refrac %}
+              <a href="{% url 'prescriptions:optical_new' consultation_pk=c.pk %}"
+                 class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.68rem;"
+                 title="Write Optical Prescription" onclick="event.stopPropagation();">
+                <i class="bi bi-eyeglasses"></i>
+              </a>
+              {% else %}
               <a href="{% url 'investigations:order' consultation_pk=c.pk %}"
                  class="btn btn-sm btn-outline-info py-0 px-1" style="font-size:0.68rem;"
                  title="Order Eye Investigation" onclick="event.stopPropagation();">
@@ -416,6 +425,7 @@
                  title="Order Lab Test" onclick="event.stopPropagation();">
                 <i class="bi bi-droplet"></i>
               </a>
+              {% endif %}
               {% endif %}
             </div>
           </div>
@@ -430,7 +440,8 @@
       {% endif %}
     </div>
 
-    {# ── Lab Orders & Results ── #}
+    {# ── Lab Orders & Results — hidden for refractionist (they don't order blood tests) ── #}
+    {% if not is_refrac %}
     <div class="card border-0 shadow-sm mt-3">
       <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
         <span class="fw-semibold small"><i class="bi bi-droplet-fill me-2 text-danger"></i>Lab Orders — Today</span>
@@ -498,6 +509,7 @@
       </div>
       {% endif %}
     </div>
+    {% endif %}{# end not is_refrac #}
 
     {# ── Investigation Orders — Today ── #}
     <div class="card border-0 shadow-sm mt-3">
