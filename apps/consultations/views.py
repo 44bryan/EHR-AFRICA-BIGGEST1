@@ -181,10 +181,10 @@ def consultation_create_view(request, patient_id):
     # Store most recent result for "recorded by" display
     investigation_consult = recent_results.first() if recent_results else None
 
-    # Most recent refractionist consultation — used by Gen Oph form to show
+    # Refractionist consultation for THIS visit — used by Gen Oph form to show
     # VA and refraction data as read-only (refractionist's work, not the doctor's)
     refraction_consult = Consultation.objects.filter(
-        patient=patient,
+        visit=visit,
         is_deleted=False,
         department__code__in=['REFRAC', 'PEDS_REFRAC'],
     ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
