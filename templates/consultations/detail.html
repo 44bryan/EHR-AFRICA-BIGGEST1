@@ -136,7 +136,7 @@
         </a>
         {% endif %}
         {% if consultation.status == 'IN_PROGRESS' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
-        <form method="post" action="{% url 'consultations:complete' pk=consultation.pk %}" class="d-inline">
+        <form method="post" action="{% url 'consultations:complete' pk=consultation.pk %}" class="d-inline" hx-boost="false">
           {% csrf_token %}
           <button type="submit" class="btn btn-sm btn-outline-success"
                   onclick="return confirm('Mark complete without routing?')">
@@ -145,7 +145,7 @@
         </form>
         {% endif %}
         {% if consultation.status == 'COMPLETED' and consultation.consulting_doctor == request.user or request.user.is_medical_director or request.user.is_super_admin %}
-        <form method="post" action="{% url 'consultations:delete' pk=consultation.pk %}" class="d-inline">
+        <form method="post" action="{% url 'consultations:delete' pk=consultation.pk %}" class="d-inline" hx-boost="false">
           {% csrf_token %}
           <button type="submit" class="btn btn-sm btn-outline-danger"
                   onclick="return confirm('Delete this consultation and start fresh? This cannot be undone.')">
@@ -1334,6 +1334,9 @@ function dischargePatient(visitPk) {
 // ── Route Success: update banner when EhrRoute completes routing from this page ──
 window.addEventListener('ehrRouteSuccess', function(e) {
   var data = e.detail || {};
+  // If a redirect is coming (consultation was completed), skip the banner —
+  // the toast is enough, and the redirect will arrive in 900ms anyway.
+  if (data.redirect_url) return;
   var wrap = document.getElementById('routeBannerWrap');
   if (wrap) {
     wrap.innerHTML = '<div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 mb-2">'
