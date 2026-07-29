@@ -173,22 +173,43 @@
 
           <div class="d-flex gap-2 justify-content-end">
             <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" id="prescBtn" class="btn btn-primary">
+            <button type="button" id="prescBtn" class="btn btn-primary">
               <i class="bi bi-save me-1"></i>Save Prescription
             </button>
           </div>
         </form>
         <script>
         (function(){
+          var btn = document.getElementById('prescBtn');
           var frm = document.getElementById('prescriptionForm');
-          if (!frm || frm._ehrPatched) return;
-          frm._ehrPatched = true;
-          // Capture-phase: stops HTMX event delegation seeing this submit
-          frm.addEventListener('submit', function(e) {
-            e.stopPropagation();
-            var btn = document.getElementById('prescBtn');
-            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving\u2026'; }
-          }, true);
+          if (!btn || !frm) return;
+          btn.addEventListener('click', function() {
+            // Check at least one drug name is filled
+            var hasDrug = false;
+            frm.querySelectorAll('input[name$="-drug_name"]').forEach(function(el) {
+              if (el.value.trim()) hasDrug = true;
+            });
+            if (!hasDrug) {
+              alert('Please select or enter at least one drug name before saving.');
+              return;
+            }
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving\u2026';
+            fetch(frm.action, {
+              method: 'POST',
+              body: new FormData(frm),
+              credentials: 'same-origin',
+              redirect: 'follow'
+            })
+            .then(function(r) {
+              if (r.redirected) { window.location.href = r.url; }
+              else { window.location.reload(); }
+            })
+            .catch(function() {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="bi bi-save me-1"></i>Save Prescription';
+            });
+          });
         })();
         </script>
 
