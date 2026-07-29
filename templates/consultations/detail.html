@@ -44,39 +44,7 @@
 {% endblock %}
 
 {% block page_header %}
-{% include 'components/patient_card.html' with patient=consultation.patient hide_tier=True hide_allergy=True %}
-
-<!-- ── Tier / Insurance strip ── -->
-{% if visit %}
-{% if visit.service_tier == 'VIP' %}
-<div class="d-flex align-items-center gap-2 px-3 py-2 mb-3 rounded-2" style="background:linear-gradient(90deg,#4c1d95,#7c3aed);color:#fff;font-size:.82rem;">
-  <i class="bi bi-gem" style="color:#c4b5fd;font-size:1rem;flex-shrink:0;"></i>
-  <span class="fw-bold" style="letter-spacing:.06em;flex-shrink:0;">VIP</span>
-  <span style="opacity:.85;">{{ patient.full_name }} &bull; {{ visit.visit_number }}{% if visit.consultation_room %} &bull; {{ visit.consultation_room.display_label }}{% endif %}</span>
-  {% if visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' or visit.service_type == 'INSUR_CONSULT' %}<span class="ms-auto flex-shrink-0" style="opacity:.9;font-size:.78rem;"><i class="bi bi-shield-check me-1"></i>{% if visit.insurance_company %}{{ visit.insurance_company }}{% else %}Insured{% endif %}</span>{% endif %}
-</div>
-{% elif visit.service_tier == 'EXPRESS' %}
-<div class="d-flex align-items-center gap-2 px-3 py-2 mb-3 rounded-2" style="background:linear-gradient(90deg,#b45309,#d97706);color:#fff;font-size:.82rem;">
-  <i class="bi bi-lightning-charge-fill" style="color:#fde68a;font-size:1rem;flex-shrink:0;"></i>
-  <span class="fw-bold" style="letter-spacing:.06em;flex-shrink:0;">EXPRESS</span>
-  <span style="opacity:.85;">{{ patient.full_name }} &bull; {{ visit.visit_number }}{% if visit.consultation_room %} &bull; {{ visit.consultation_room.display_label }}{% endif %}</span>
-  {% if visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' or visit.service_type == 'INSUR_CONSULT' %}<span class="ms-auto flex-shrink-0" style="opacity:.9;font-size:.78rem;"><i class="bi bi-shield-check me-1"></i>{% if visit.insurance_company %}{{ visit.insurance_company }}{% else %}Insured{% endif %}</span>{% endif %}
-</div>
-{% elif visit.service_tier == 'FAST_TRACK' %}
-<div class="d-flex align-items-center gap-2 px-3 py-2 mb-3 rounded-2" style="background:linear-gradient(90deg,#0e7490,#0891b2);color:#fff;font-size:.82rem;">
-  <i class="bi bi-skip-forward-fill" style="color:#a5f3fc;font-size:1rem;flex-shrink:0;"></i>
-  <span class="fw-bold" style="letter-spacing:.06em;flex-shrink:0;">FAST TRACK</span>
-  <span style="opacity:.85;">{{ patient.full_name }} &bull; {{ visit.visit_number }}{% if visit.consultation_room %} &bull; {{ visit.consultation_room.display_label }}{% endif %}</span>
-  {% if visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' or visit.service_type == 'INSUR_CONSULT' %}<span class="ms-auto flex-shrink-0" style="opacity:.9;font-size:.78rem;"><i class="bi bi-shield-check me-1"></i>{% if visit.insurance_company %}{{ visit.insurance_company }}{% else %}Insured{% endif %}</span>{% endif %}
-</div>
-{% elif visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' or visit.service_type == 'INSUR_CONSULT' %}
-<div class="d-flex align-items-center gap-2 px-3 py-2 mb-3 rounded-2" style="background:linear-gradient(90deg,#065f46,#059669);color:#fff;font-size:.82rem;">
-  <i class="bi bi-shield-check" style="color:#6ee7b7;font-size:1rem;flex-shrink:0;"></i>
-  <span class="fw-bold" style="letter-spacing:.06em;flex-shrink:0;">INSURED</span>
-  <span style="opacity:.85;">{{ patient.full_name }} &bull; {{ visit.visit_number }}{% if visit.insurance_company %} &bull; {{ visit.insurance_company }}{% endif %}{% if visit.insurance_policy_ref %} &bull; {{ visit.insurance_policy_ref }}{% endif %}</span>
-</div>
-{% endif %}
-{% endif %}
+{% include 'components/patient_card.html' with patient=consultation.patient visit=visit hide_allergy=True %}
 
 {% if patient_allergies %}
 <div class="alert alert-danger py-2 px-3 mb-3" data-tip-init="1">
@@ -366,40 +334,9 @@
 </div>
 {% endif %}
 
-{# ── Tier / Insurance banner ── #}
 {% with v=consultation.visit %}
-{% if v.service_tier == 'EXPRESS' %}
-<div class="alert alert-info d-flex align-items-center gap-3 py-2 px-3 mb-3">
-  <i class="bi bi-lightning-charge-fill text-info fs-5"></i>
-  <span class="fw-bold text-info">EXPRESS</span>
-  <span class="text-muted small">Priority patient — inserted 3 positions back when referred to specialist.</span>
-  <span class="badge bg-info ms-auto">E</span>
-</div>
-{% elif v.service_tier == 'FAST_TRACK' %}
-<div class="alert alert-warning d-flex align-items-center gap-3 py-2 px-3 mb-3">
-  <i class="bi bi-skip-forward-fill text-warning fs-5"></i>
-  <span class="fw-bold text-warning">FAST TRACK</span>
-  <span class="text-muted small">Highest priority patient.</span>
-  <span class="badge bg-warning text-dark ms-auto">FT</span>
-</div>
-{% elif v.service_tier == 'VIP' %}
-<div class="alert alert-danger d-flex align-items-center gap-3 py-2 px-3 mb-3">
-  <i class="bi bi-star-fill text-danger fs-5"></i>
-  <span class="fw-bold text-danger">VIP PATIENT</span>
-  <span class="text-muted small">VIP priority — dedicated consultation room.</span>
-  <span class="badge bg-danger ms-auto">V</span>
-</div>
-{% endif %}
 {% if v.billing_type == 'INSURANCE' or v.billing_type == 'HMO' %}
-<div class="alert alert-primary d-flex align-items-center gap-3 py-2 px-3 mb-3">
-  <i class="bi bi-shield-check text-primary fs-5"></i>
-  <div>
-    <span class="fw-bold text-primary">INSURED</span>
-    {% if v.insurance_company %}<span class="ms-2">{{ v.insurance_company }}</span>{% endif %}
-    {% if v.insurance_policy_ref %}<span class="badge bg-primary-subtle text-primary ms-2">Policy: {{ v.insurance_policy_ref }}</span>{% endif %}
-    <div class="text-muted small mt-1"><i class="bi bi-info-circle me-1"></i>Verify ICD-10 code is complete for insurance claim.</div>
-  </div>
-</div>
+<div class="text-muted small mb-3 px-1"><i class="bi bi-info-circle me-1 text-warning"></i>Insured patient — verify ICD-10 code is complete for insurance claim.</div>
 {% endif %}
 {% endwith %}
 
