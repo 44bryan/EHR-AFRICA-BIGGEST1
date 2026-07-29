@@ -722,7 +722,7 @@
       </div>
       <div class="collapse" id="quickRxForm">
         <div class="card-body pb-2">
-          <form method="post" action="{% url 'prescriptions:drug_inline' consultation_pk=consultation.pk %}" hx-boost="false">
+          <form method="post" id="inlineRxForm" action="{% url 'prescriptions:drug_inline' consultation_pk=consultation.pk %}">
             {% csrf_token %}
             <div class="row g-2 align-items-end">
               <div class="col-md-3 position-relative">
@@ -778,7 +778,7 @@
                 <input type="text" name="duration" class="form-control form-control-sm" placeholder="2 wks">
               </div>
               <div class="col-md-1 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary btn-sm w-100" title="Add prescription">
+                <button type="submit" id="quickRxBtn" class="btn btn-primary btn-sm w-100" title="Add prescription">
                   <i class="bi bi-plus-circle-fill"></i>
                 </button>
               </div>
@@ -1153,6 +1153,18 @@
 
 {% block extra_js %}
 <script>
+// ── Inline Rx form: block HTMX event delegation (capture-phase stopPropagation) ──
+(function(){
+  var frm = document.getElementById('inlineRxForm');
+  if (!frm || frm._ehrPatched) return;
+  frm._ehrPatched = true;
+  frm.addEventListener('submit', function(e) {
+    e.stopPropagation();
+    var btn = document.getElementById('quickRxBtn');
+    if (btn) { btn.disabled = true; }
+  }, true);
+})();
+
 // ── Collapsible section chevron rotation ──────────────────────────────────────
 document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(trigger => {
   const targetId = trigger.getAttribute('data-bs-target');
