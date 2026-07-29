@@ -801,26 +801,15 @@ def pos_landing(request):
 @login_required
 def cashier_queue(request):
     """
-    Cashier queue — filters tokens by the cashier's active desk session tier.
-    Falls back to cashier_station field if no desk session is open.
-    If cashier has an active TIER desk session, redirects to desk_cashier_queue.
+    Cashier queue — filters tokens by the cashier's patient_tier (same logic as receptionist).
+    patient_tier='VIP' → VIP only, 'STANDARD' → standard only, 'EXPRESS'/'FAST_TRACK' → both,
+    'ALL' or blank → show all tiers (chief cashier / head cashier).
     """
     if not _qms_active():
         return redirect('billing:invoice_list')
 
-    from apps.qms.models import QueueToken, TokenStatus, ServiceType, ServiceTier
-    from apps.accounts.models import CashierStation
+    from apps.qms.models import QueueToken, TokenStatus, ServiceType
 
-    # ── New system: use active desk session tier ──────────────────────────────
-    active_session = CashierSession.objects.filter(
-        cashier=request.user, status=SessionStatus.OPEN, is_deleted=False,
-    ).order_by('-opened_at').select_related('cash_desk').first()
-
-    if active_session and active_session.cash_desk.desk_type == DeskType.TIER and active_session.cash_desk.tier:
-        # Redirect cashier to their desk-specific queue (proper tier isolation)
-        return redirect('billing:desk_queue', desk_id=active_session.cash_desk.pk)
-
-    # ── Fallback: no desk session open — use cashier_station field ────────────
     today = timezone.localdate()
     waiting = QueueToken.objects.filter(
         service_type=ServiceType.CASHIER,
@@ -829,17 +818,15 @@ def cashier_queue(request):
         is_deleted=False,
     ).select_related('patient').order_by('-priority', 'issued_at')
 
-    _STATION_TO_TIER = {
-        CashierStation.STANDARD:   ServiceTier.STANDARD,
-        CashierStation.FAST_TRACK: ServiceTier.FAST_TRACK,
-        CashierStation.VIP:        ServiceTier.VIP,
-        CashierStation.INSURED:    ServiceTier.STANDARD,
-    }
-    station = getattr(request.user, 'cashier_station', CashierStation.ALL)
-    if station and station != CashierStation.ALL:
-        tier_code = _STATION_TO_TIER.get(station)
-        if tier_code:
-            waiting = waiting.filter(service_tier=tier_code)
+    # ── Tier isolation: same logic as receptionist ────────────────────────────
+    _pt = (getattr(request.user, 'patient_tier', '') or '').strip()
+    if _pt == 'VIP':
+        waiting = waiting.filter(service_tier='VIP')
+    elif _pt in ('EXPRESS', 'FAST_TRACK'):
+        waiting = waiting.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+    elif _pt == 'STANDARD':
+        waiting = waiting.filter(service_tier='STANDARD')
+    # else 'ALL' or blank → no filter (chief cashier sees everything)
 
     return render(request, 'billing/cashier_queue.html', {
         'waiting': waiting,

@@ -166,7 +166,8 @@ def patient_register_view(request):
             _u2 = request.user
             _u2_tier = (getattr(_u2, 'patient_tier', '') or '').strip()
             _all_tiers2 = ['STANDARD', 'FAST_TRACK', 'EXPRESS', 'VIP']
-            if _u2.is_receptionist and _u2_tier and _u2_tier != 'ALL':
+            _unrestricted2 = _u2.is_super_admin or _u2.is_medical_director or _u2.is_admin_director or _u2.is_ceo
+            if not _unrestricted2 and _u2_tier and _u2_tier not in ('ALL', ''):
                 _allowed2 = ['EXPRESS', 'FAST_TRACK'] if _u2_tier in ('EXPRESS', 'FAST_TRACK') else [_u2_tier]
             else:
                 _allowed2 = _all_tiers2
@@ -325,17 +326,18 @@ def patient_register_view(request):
             'phone_number':  g.get('nok_phone', ''),
         })
 
-    # ── Tier access: receptionist is locked to their own patient_tier ─────────
+    # ── Tier access: any staff locked to their assigned patient_tier ──────────
     _u = request.user
     _user_tier = (getattr(_u, 'patient_tier', '') or '').strip()
     _all_tiers = ['STANDARD', 'FAST_TRACK', 'EXPRESS', 'VIP']
-    if _u.is_receptionist and _user_tier and _user_tier != 'ALL':
+    _is_unrestricted = _u.is_super_admin or _u.is_medical_director or _u.is_admin_director or _u.is_ceo
+    if not _is_unrestricted and _user_tier and _user_tier not in ('ALL', ''):
         if _user_tier in ('EXPRESS', 'FAST_TRACK'):
             _allowed_tiers = ['EXPRESS', 'FAST_TRACK']
         else:
             _allowed_tiers = [_user_tier]
     else:
-        _allowed_tiers = _all_tiers  # admin / super_admin / medical_director → all
+        _allowed_tiers = _all_tiers  # admins / staff with ALL tier → see all
 
     # For re-rendering after a POST error, preserve submitted values; for GET, use query params
     src = request.POST if request.method == 'POST' else request.GET
