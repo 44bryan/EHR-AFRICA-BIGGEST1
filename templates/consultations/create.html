@@ -824,20 +824,18 @@ function showDraftToast(msg, isError) {
   {% endif %}
 })();
 
-// ── ehrSubmitConsult: bypasses HTMX entirely by using form.submit() ──────────
-// form.submit() does NOT fire a submit event, so HTMX can never intercept it.
-// Called directly from the button's onclick — no submit event needed.
+// ── ehrSubmitConsult: temp form outside #wrapper — 100% HTMX immune ──────────
 function ehrSubmitConsult(mode, btn) {
   var frm = document.getElementById('consultationForm');
-  if (!frm) return;
+  if (!frm) { alert('Form not found \u2014 please reload the page.'); return; }
 
   // Show loading state immediately
   document.querySelectorAll('#consultationForm button[type="button"]').forEach(function(b) {
     b.disabled = true;
-    b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+    b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving\u2026';
   });
 
-  // Set or clear the save_mode hidden input
+  // Set save_mode hidden input
   var modeInp = frm.querySelector('input[name="save_mode"][data-ehr-mode]');
   if (!modeInp) {
     modeInp = document.createElement('input');
@@ -848,8 +846,20 @@ function ehrSubmitConsult(mode, btn) {
   }
   modeInp.value = mode;
 
-  // form.submit() bypasses the submit event entirely — HTMX cannot intercept
-  frm.submit();
+  // Create temp form OUTSIDE #wrapper — HTMX cannot touch anything outside #wrapper
+  var tmp = document.createElement('form');
+  tmp.method = 'POST';
+  tmp.action = frm.action || window.location.href;
+  tmp.style.display = 'none';
+  document.body.appendChild(tmp);
+  new FormData(frm).forEach(function(val, key) {
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = key;
+    inp.value = val;
+    tmp.appendChild(inp);
+  });
+  tmp.submit();
 }
 </script>
 {% endblock %}

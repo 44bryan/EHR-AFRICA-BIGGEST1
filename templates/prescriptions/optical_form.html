@@ -137,20 +137,20 @@
           btn.addEventListener('click', function() {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving\u2026';
-            fetch(frm.action, {
-              method: 'POST',
-              body: new FormData(frm),
-              credentials: 'same-origin',
-              redirect: 'follow'
-            })
-            .then(function(r) {
-              if (r.redirected) { window.location.href = r.url; }
-              else { window.location.reload(); }
-            })
-            .catch(function() {
-              btn.disabled = false;
-              btn.innerHTML = '<i class="bi bi-save me-1"></i>Save Prescription';
+            // Temp form outside #wrapper — 100% HTMX immune
+            var tmp = document.createElement('form');
+            tmp.method = 'POST';
+            tmp.action = frm.action;
+            tmp.style.display = 'none';
+            document.body.appendChild(tmp);
+            new FormData(frm).forEach(function(val, key) {
+              var inp = document.createElement('input');
+              inp.type = 'hidden';
+              inp.name = key;
+              inp.value = val;
+              tmp.appendChild(inp);
             });
+            tmp.submit();
           });
         })();
         </script>
