@@ -166,6 +166,7 @@
       this._busy = true;
 
       var payload = new FormData();
+      payload.append('csrfmiddlewaretoken', _getCsrf());
       payload.append('visit_pk', this._visitPk);
       payload.append('destination', destination);
       if (roomId) payload.append('room_id', roomId);
@@ -182,7 +183,15 @@
         headers: {'X-CSRFToken': _getCsrf(), 'X-Requested-With': 'XMLHttpRequest'},
         body: payload,
       })
-      .then(function(r) { return r.ok ? r.json() : r.json().then(function(e){ return Promise.reject(e); }); })
+      .then(function(r) {
+        var status = r.status;
+        return r.text().then(function(txt) {
+          var data;
+          try { data = JSON.parse(txt); } catch(e) { data = {error: 'HTTP ' + status + ' error. Check server logs.'}; }
+          if (!r.ok) return Promise.reject(data);
+          return data;
+        });
+      })
       .then(function(data) {
         self._busy = false;
         if (data.success) {

@@ -2387,7 +2387,7 @@ def smart_route_view(request):
                 else:
                     consult.save(update_fields=['status', 'updated_at'])
             redirect_url = '/consultations/'
-        except Consultation.DoesNotExist:
+        except Exception:
             pass
 
     routed, label = _inline_route_visit(visit, destination, user, room_id=room_id)
