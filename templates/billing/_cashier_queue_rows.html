@@ -1,0 +1,46 @@
+{% load humanize %}
+{% if waiting %}
+{% for token in waiting %}
+<tr>
+  <td class="text-center text-muted small fw-bold">{{ forloop.counter }}</td>
+  <td>
+    <span class="badge bg-success fs-6 px-3">{{ token.display_token_number }}</span>
+    <div class="small text-muted mt-1">{{ token.get_status_display }}</div>
+  </td>
+  <td>
+    <div class="fw-semibold">{{ token.display_name }}</div>
+    {% if token.patient %}<small class="text-muted">{{ token.patient.patient_id }}</small>{% endif %}
+  </td>
+  <td>
+    {% if token.service_tier == 'VIP' %}
+    <span class="badge fw-bold" style="background:#7c3aed;font-size:.8rem;"><i class="bi bi-gem me-1"></i>VIP</span>
+    {% elif token.service_tier == 'EXPRESS' %}
+    <span class="badge bg-info text-dark"><i class="bi bi-lightning me-1"></i>Express</span>
+    {% elif token.service_tier == 'FAST_TRACK' %}
+    <span class="badge bg-warning text-dark"><i class="bi bi-lightning-charge me-1"></i>Fast Track</span>
+    {% else %}
+    <span class="badge bg-secondary">Standard</span>
+    {% endif %}
+    {% if token.is_insured %}<span class="badge bg-info ms-1"><i class="bi bi-shield-check"></i></span>{% endif %}
+  </td>
+  <td><span class="small">{{ token.issued_at|time:"H:i" }}</span></td>
+  <td><span class="small text-muted fst-italic">{{ token.notes|default:"—"|truncatechars:40 }}</span></td>
+  <td class="text-end">
+    {% if token.patient %}
+    <a href="{% url 'billing:cashier_pos' token.id %}" class="btn btn-success btn-sm fw-semibold">
+      <i class="bi bi-receipt me-1"></i>Open POS
+    </a>
+    {% else %}
+    <span class="text-muted small">No patient linked</span>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}
+{% else %}
+<tr id="emptyRow">
+  <td colspan="7" class="text-center py-5 text-muted">
+    <i class="bi bi-check-circle-fill fs-1 text-success d-block mb-2 opacity-50"></i>
+    Queue is empty — no patients waiting
+  </td>
+</tr>
+{% endif %}

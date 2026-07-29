@@ -1421,6 +1421,14 @@ def vip_dashboard_view(request):
     in_triage = sum(1 for v in active_vip if v.status in ('PARAMETERS', 'TRIAGE'))
     waiting = sum(1 for v in active_vip if v.status == 'WAITING')
 
+    if request.GET.get('partial') == '1':
+        from django.template.loader import render_to_string
+        from django.http import HttpResponse
+        html = render_to_string('consultations/_vip_rows.html', {
+            'active_vip': active_vip, 'status_label': _STATUS_LABEL,
+        }, request=request)
+        return HttpResponse(html)
+
     return render(request, 'consultations/vip_dashboard.html', {
         'active_vip': active_vip,
         'discharged_today': discharged_today,

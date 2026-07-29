@@ -798,12 +798,26 @@ def pos_landing(request):
     return redirect('billing:invoice_create')
 
 
+def _get_cashier_tier(user):
+    """
+    Determine the active tier for a cashier:
+    1. Active desk session tier (if cashier opened a TIER desk session)
+    2. User's patient_tier field (fallback)
+    3. 'ALL' (if neither set — chief cashier / unrestricted)
+    """
+    session = _get_active_cashier_session(user)
+    if session and getattr(session, 'cash_desk', None):
+        desk = session.cash_desk
+        if getattr(desk, 'desk_type', None) == 'TIER' and desk.tier:
+            return desk.tier
+    return (getattr(user, 'patient_tier', '') or '').strip() or 'ALL'
+
+
 @login_required
 def cashier_queue(request):
     """
-    Cashier queue — filters tokens by the cashier's patient_tier (same logic as receptionist).
-    patient_tier='VIP' → VIP only, 'STANDARD' → standard only, 'EXPRESS'/'FAST_TRACK' → both,
-    'ALL' or blank → show all tiers (chief cashier / head cashier).
+    Cashier queue — tier isolation via active desk session first, then patient_tier.
+    Supports ?partial=1 for HTMX live updates (returns only tbody rows, no full page).
     """
     if not _qms_active():
         return redirect('billing:invoice_list')
@@ -818,19 +832,27 @@ def cashier_queue(request):
         is_deleted=False,
     ).select_related('patient').order_by('-priority', 'issued_at')
 
-    # ── Tier isolation: same logic as receptionist ────────────────────────────
-    _pt = (getattr(request.user, 'patient_tier', '') or '').strip()
-    if _pt == 'VIP':
+    # ── Tier isolation: session desk tier → patient_tier → ALL ───────────────
+    _tier = _get_cashier_tier(request.user)
+    if _tier == 'VIP':
         waiting = waiting.filter(service_tier='VIP')
-    elif _pt in ('EXPRESS', 'FAST_TRACK'):
+    elif _tier in ('EXPRESS', 'FAST_TRACK'):
         waiting = waiting.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
-    elif _pt == 'STANDARD':
+    elif _tier == 'STANDARD':
         waiting = waiting.filter(service_tier='STANDARD')
-    # else 'ALL' or blank → no filter (chief cashier sees everything)
+    # else 'ALL' → no filter
+
+    # ── Partial response for HTMX live polling ───────────────────────────────
+    if request.GET.get('partial') == '1':
+        from django.template.loader import render_to_string
+        html = render_to_string('billing/_cashier_queue_rows.html', {'waiting': waiting}, request=request)
+        from django.http import HttpResponse
+        return HttpResponse(html)
 
     return render(request, 'billing/cashier_queue.html', {
         'waiting': waiting,
         'today': today,
+        'cashier_tier': _tier,
     })
 
 
@@ -5721,6 +5743,12 @@ def desk_cashier_queue(request, desk_id):
     # Exclude VIP patients from non-VIP queues at tier desks
     if desk.desk_type == DeskType.TIER and desk.tier not in ('VIP', ''):
         qs = qs.exclude(service_tier='VIP')
+
+    if request.GET.get('partial') == '1':
+        from django.template.loader import render_to_string
+        from django.http import HttpResponse
+        html = render_to_string('billing/_cashier_queue_rows.html', {'waiting': qs}, request=request)
+        return HttpResponse(html)
 
     context = {
         'desk': desk,
