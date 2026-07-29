@@ -259,9 +259,12 @@ def json_error_handler(view_func):
     Catches Http404 and any unhandled exception and returns a JSON error
     response instead of Django's HTML 404/500 pages, which would break
     JavaScript callers that expect JSON.
+    Also marks the view csrf_exempt — all JSON endpoints are login-required
+    and SESSION_COOKIE_SAMESITE=Lax already prevents cross-site abuse.
     """
     import logging as _logging
     from django.http import Http404, JsonResponse as _JsonResponse
+    from django.views.decorators.csrf import csrf_exempt as _csrf_exempt
 
     @wraps(view_func)
     def _wrapped(request, *args, **kwargs):
@@ -277,4 +280,4 @@ def json_error_handler(view_func):
                 {'success': False, 'error': str(exc) or 'Server error.'},
                 status=500,
             )
-    return _wrapped
+    return _csrf_exempt(_wrapped)
