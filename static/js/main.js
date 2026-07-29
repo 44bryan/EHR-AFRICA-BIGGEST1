@@ -216,15 +216,18 @@ function ehrInit() {
   });
 
 
-  /* ── Consultation form: block HTMX event delegation on submit ── */
-  // #wrapper has hx-boost="true" which intercepts ALL submit events via delegation,
-  // even when the form has hx-boost="false"/hx-disable. A capture-phase listener
-  // with stopPropagation() cuts the event off before it bubbles to #wrapper.
-  var _cfrm = document.getElementById('consultationForm');
-  if (_cfrm && !_cfrm._ehrSubmitPatched) {
-    _cfrm._ehrSubmitPatched = true;
-    _cfrm.addEventListener('submit', function(e) { e.stopPropagation(); }, true);
-  }
+  /* ── Global form patch: block HTMX delegation from intercepting ALL native form submits ── */
+  // #wrapper has hx-boost="true" which intercepts submit events via event delegation,
+  // even on forms with hx-boost="false"/hx-disable (HTMX 1.9 bug).
+  // A capture-phase stopPropagation() on every form cuts the event off before it
+  // bubbles to #wrapper — fixes cosign, complete, delete, exam update, diagnosis,
+  // clinical save, and every other form button across the doctor account and system.
+  document.querySelectorAll('form').forEach(function(frm) {
+    if (!frm._ehrSubmitPatched) {
+      frm._ehrSubmitPatched = true;
+      frm.addEventListener('submit', function(e) { e.stopPropagation(); }, true);
+    }
+  });
 
 } // end ehrInit
 
