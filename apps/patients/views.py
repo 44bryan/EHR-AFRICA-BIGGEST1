@@ -161,10 +161,22 @@ def patient_register_view(request):
                     return False
                 return None
 
+            # Validate posted tier is within what this receptionist is allowed to register
+            _posted_tier = request.POST.get('service_tier', 'STANDARD')
+            _u2 = request.user
+            _u2_tier = (getattr(_u2, 'patient_tier', '') or '').strip()
+            _all_tiers2 = ['STANDARD', 'FAST_TRACK', 'EXPRESS', 'VIP']
+            if _u2.is_receptionist and _u2_tier and _u2_tier != 'ALL':
+                _allowed2 = ['EXPRESS', 'FAST_TRACK'] if _u2_tier in ('EXPRESS', 'FAST_TRACK') else [_u2_tier]
+            else:
+                _allowed2 = _all_tiers2
+            if _posted_tier not in _allowed2:
+                _posted_tier = _allowed2[0]
+
             visit_kwargs = dict(
                 patient=patient,
                 chief_complaint=request.POST.get('chief_complaint', ''),
-                service_tier=request.POST.get('service_tier', 'STANDARD'),
+                service_tier=_posted_tier,
                 billing_type=request.POST.get('billing_type', 'SELF_PAY'),
                 insurance_company=request.POST.get('insurance_company', ''),
                 has_referral_letter=_parse_bool(request.POST.get('has_referral_letter')),
@@ -313,13 +325,29 @@ def patient_register_view(request):
             'phone_number':  g.get('nok_phone', ''),
         })
 
+    # ── Tier access: receptionist is locked to their own patient_tier ─────────
+    _u = request.user
+    _user_tier = (getattr(_u, 'patient_tier', '') or '').strip()
+    _all_tiers = ['STANDARD', 'FAST_TRACK', 'EXPRESS', 'VIP']
+    if _u.is_receptionist and _user_tier and _user_tier != 'ALL':
+        if _user_tier in ('EXPRESS', 'FAST_TRACK'):
+            _allowed_tiers = ['EXPRESS', 'FAST_TRACK']
+        else:
+            _allowed_tiers = [_user_tier]
+    else:
+        _allowed_tiers = _all_tiers  # admin / super_admin / medical_director → all
+
     # For re-rendering after a POST error, preserve submitted values; for GET, use query params
     src = request.POST if request.method == 'POST' else request.GET
+    _requested_tier = src.get('service_tier', 'STANDARD')
+    # If the requested tier is not in allowed, force to first allowed
+    _safe_tier = _requested_tier if _requested_tier in _allowed_tiers else _allowed_tiers[0]
     return render(request, 'patients/register.html', {
         'form': form,
         'nok_form': nok_form,
         'qms_token_id': qms_token_id,
-        'init_service_tier':       src.get('service_tier', 'STANDARD'),
+        'allowed_tiers': _allowed_tiers,
+        'init_service_tier':       _safe_tier,
         'init_billing_type':       src.get('billing_type', 'SELF_PAY'),
         'init_insurance_company':  src.get('insurance_company', ''),
         'init_chief_complaint':    src.get('chief_complaint', ''),
