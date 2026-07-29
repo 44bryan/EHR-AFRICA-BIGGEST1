@@ -1,5 +1,5 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}Triage / Parameters Workstation{% endblock %}
+{% block title %}{% if show_mode == 'VIP' %}VIP{% elif show_mode == 'EXPRESS' %}Express / Fast Track{% elif show_mode == 'STANDARD' %}Standard{% else %}All-Tier{% endif %} Triage Workstation{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -22,20 +22,17 @@
 
 {% block content %}
 
-{% include "components/qr_scan_bar.html" with scan_url_prefix="/patients/" scan_url_suffix="/triage-start/" placeholder="Scan patient card to open triage immediately…" %}
-
-<div class="d-flex justify-content-between align-items-start mb-3">
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
     <h4 class="fw-bold mb-0">
-      <i class="bi bi-heart-pulse me-2 text-danger"></i>Triage / Parameters Workstation
+      <i class="bi bi-heart-pulse me-2"></i>{% if show_mode == 'VIP' %}VIP Triage Workstation{% elif show_mode == 'EXPRESS' %}Express / Fast Track Triage Workstation{% elif show_mode == 'STANDARD' %}Standard Triage Workstation{% else %}All-Tier Triage Workstation{% endif %}
     </h4>
     <div class="text-muted small">
       {{ request.user.full_name }} &bull; {{ today|date:"l, d F Y" }}
       {% if assigned_counter %}
       &bull; <span class="badge bg-primary">{{ assigned_counter.name }}</span>
-      &bull; <span class="badge" style="background:#475569;">{{ assigned_counter.get_tier_label }}</span>
       {% else %}
-      &bull; <span class="badge bg-secondary">No counter assigned — showing all queues</span>
+      &bull; <span class="badge bg-secondary">No counter assigned</span>
       {% endif %}
     </div>
   </div>
@@ -68,6 +65,8 @@
     {% endif %}
   </div>
 </div>
+
+{% include "components/qr_scan_bar.html" with scan_url_prefix="/patients/" scan_url_suffix="/triage-start/" placeholder="Scan patient card to open triage immediately…" %}
 
 {# ══ Triage Patient Modal ══ #}
 <div class="modal fade" id="triagePatientModal" tabindex="-1" aria-labelledby="triagePatientModalLabel" aria-hidden="true">
@@ -127,32 +126,18 @@
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-warning mb-0">{{ parameters_queue|length }}</div>
-      <div class="text-muted small mt-1">Standard Waiting</div>
-      <div class="text-muted" style="font-size:.7rem;">{{ total_standard }} total today</div>
+      <div class="h2 fw-bold text-warning mb-0">{% if show_mode == 'STANDARD' or show_mode == 'ALL' %}{{ parameters_queue|length }}{% else %}{{ vip_params_queue|length }}{% endif %}</div>
+      <div class="text-muted small mt-1">{% if show_mode == 'VIP' %}VIP Waiting{% elif show_mode == 'EXPRESS' %}Express / FT Waiting{% else %}Standard Waiting{% endif %}</div>
+      <div class="text-muted" style="font-size:.7rem;">{% if show_mode == 'VIP' %}{{ total_vip_only }}{% elif show_mode == 'EXPRESS' %}{{ total_express }}{% else %}{{ total_standard }}{% endif %} total today</div>
     </div>
   </div>
-  {% if show_mode != 'STANDARD' %}
+  {% if show_mode == 'ALL' %}
   <div class="col-6 col-md-3">
-    {% if show_mode == 'VIP' %}
     <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold mb-0" style="color:#7c3aed">{{ vip_params_queue|length }}</div>
-      <div class="text-muted small mt-1">VIP Waiting</div>
-      <div class="text-muted" style="font-size:.7rem;">{{ total_vip_only }} total today</div>
-    </div>
-    {% elif show_mode == 'EXPRESS' %}
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold mb-0" style="color:#d97706">{{ vip_params_queue|length }}</div>
-      <div class="text-muted small mt-1">Express / FT Waiting</div>
-      <div class="text-muted" style="font-size:.7rem;">{{ total_express }} total today</div>
-    </div>
-    {% else %}
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold mb-0" style="color:#7c3aed">{{ vip_params_queue|length }}</div>
+      <div class="h2 fw-bold mb-0">{{ vip_params_queue|length }}</div>
       <div class="text-muted small mt-1">VIP / Express Waiting</div>
       <div class="text-muted" style="font-size:.7rem;">{{ total_vip_express }} total today</div>
     </div>
-    {% endif %}
   </div>
   {% endif %}
   <div class="col-6 col-md-3">
@@ -170,8 +155,8 @@
 </div>
 
 {# ══ Two-column layout: queues (left) + history (right) ══ #}
-<div class="row g-4">
-<div class="col-lg-8">
+<div class="row g-3">
+<div class="col-lg-8 col-12">
 
 {% if show_mode == 'VIP' and not assigned_counter and nurse_patient_tier != 'VIP' %}
 <div class="alert alert-warning py-2 small mb-3">
@@ -236,7 +221,7 @@
 {% endif %}
 
 {# ══ Standard Parameters Queue (QMS mode) ══ #}
-{% if show_mode != 'VIP' and qms_on %}
+{% if show_mode == 'STANDARD' or show_mode == 'ALL' and qms_on %}
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
     <h6 class="mb-0 fw-semibold">
@@ -465,7 +450,7 @@
 </div>{# /col-lg-8 left column #}
 
 {# ══ Right column: Today's triage history ══ #}
-<div class="col-lg-4">
+<div class="col-lg-4 col-12">
   <div class="card border-0 shadow-sm">
     <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
       <h6 class="mb-0 fw-semibold">
