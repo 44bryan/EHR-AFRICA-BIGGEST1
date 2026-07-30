@@ -30,6 +30,7 @@ urlpatterns = [
     path('clinic-nurse/route/<uuid:visit_pk>/', views.nurse_route_patient_view, name='nurse_route'),
     path('my-room/', views.my_room_assign_view, name='my_room_assign'),
     path('skip-queue/', views.skip_queue_reason_view, name='skip_queue_reason'),
+    path('workstation/quick-iop/', views.workstation_quick_iop_view, name='workstation_quick_iop'),
     # ── Specialist Unit Nurse Queue (Rooming / Pre-screening) ───────────────
     path('unit-queue/', views.unit_nurse_queue_view, name='unit_queue'),
     path('unit-queue/prescreen/<uuid:visit_pk>/', views.unit_prescreen_save_view, name='unit_prescreen'),

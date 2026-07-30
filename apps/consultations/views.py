@@ -2224,6 +2224,7 @@ def nurse_route_patient_view(request, visit_pk):
 
     visit = get_object_or_404(Visit, pk=visit_pk, is_deleted=False)
     destination = request.POST.get('destination', '').upper()
+    referral_reason = request.POST.get('referral_reason', '').strip()
 
     # Optional: route to a specific room (pre-assign attending_doctor)
     room_id = request.POST.get('room_id', '').strip()
@@ -2293,6 +2294,19 @@ def nurse_route_patient_view(request, visit_pk):
             'message': f'Specialist notified. {visit.patient.full_name} remains in VIP Room.',
             'vip_invite': True,
         })
+
+    # Save referral reason to the most recent consultation for this visit
+    if referral_reason:
+        try:
+            _ref_consult = Consultation.objects.filter(
+                visit=visit, is_deleted=False
+            ).order_by('-created_at').first()
+            if _ref_consult:
+                _ref_consult.referral_reason = referral_reason
+                _ref_consult.updated_by = user
+                _ref_consult.save(update_fields=['referral_reason', 'updated_by', 'updated_at'])
+        except Exception:
+            pass
 
     # Update visit status + department so the destination doctor's dashboard shows the patient
     visit.status = new_status
@@ -2374,7 +2388,7 @@ def nurse_route_patient_view(request, visit_pk):
                             service_tier=tier,
                             issuance_point=IssuancePoint.SYSTEM,
                             priority=TIER_PRIORITY.get(tier, 0),
-                            notes=f'Routed by {user.get_full_name()} to {label}{_room_note}',
+                            notes=f'Routed by {user.get_full_name()} to {label}{_room_note}' + (f' — {referral_reason[:120]}' if referral_reason else ''),
                             issued_by=user,
                         )
         except Exception:
@@ -2891,6 +2905,44 @@ def procedure_add_view(request, pk):
     )
     messages.success(request, 'Procedure recorded successfully.')
     return redirect('consultations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def workstation_quick_iop_view(request):
+    """Save IOP (OD/OS) from the workstation queue to the active consultation exam findings."""
+    visit_pk = request.POST.get('visit_pk', '').strip()
+    iop_re   = request.POST.get('iop_re', '').strip()
+    iop_le   = request.POST.get('iop_le', '').strip()
+
+    if not visit_pk or (not iop_re and not iop_le):
+        return JsonResponse({'error': 'Visit and at least one IOP value required.'}, status=400)
+
+    visit = get_object_or_404(Visit, pk=visit_pk, is_deleted=False)
+
+    consultation = Consultation.objects.filter(
+        visit=visit, is_deleted=False
+    ).order_by('-created_at').first()
+
+    if not consultation:
+        return JsonResponse({'error': 'No active consultation found for this patient.'}, status=404)
+
+    ef = consultation.examination_findings or consultation.get_default_examination_template()
+    if iop_re:
+        ef['intraocular_pressure']['right'] = iop_re
+    if iop_le:
+        ef['intraocular_pressure']['left'] = iop_le
+
+    consultation.examination_findings = ef
+    consultation.updated_by = request.user
+    consultation.save(update_fields=['examination_findings', 'updated_by', 'updated_at'])
+
+    od_display = f'OD {iop_re} mmHg' if iop_re else ''
+    os_display = f'OS {iop_le} mmHg' if iop_le else ''
+    return JsonResponse({
+        'success': True,
+        'message': f'IOP saved — {", ".join(filter(None, [od_display, os_display]))}',
+    })
 
 
 @login_required

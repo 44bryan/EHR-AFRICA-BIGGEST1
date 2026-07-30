@@ -36,6 +36,20 @@
   </div>
 </div>
 
+{# ── Quick patient search ── #}
+<div class="card border-0 shadow-sm mb-3 position-relative">
+  <div class="card-body py-2 px-3">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-search text-muted" style="font-size:.9rem;"></i>
+      <input type="text" id="wsPatientSearch" class="form-control form-control-sm border-0 shadow-none"
+             placeholder="Quick search — patient name or ID..." autocomplete="off" style="font-size:.85rem;">
+      <kbd class="text-muted" style="font-size:.7rem;background:none;">ESC to clear</kbd>
+    </div>
+    <div id="wsSearchResults" class="list-group shadow-sm position-absolute start-0 end-0 mt-1 mx-3"
+         style="display:none;z-index:1050;top:100%;"></div>
+  </div>
+</div>
+
 {# ── Stat cards ── #}
 <div class="row g-2 mb-3">
   <div class="col-4">
@@ -223,11 +237,18 @@
                   {% elif tok.status == 'SERVING' %}<span class="badge bg-primary">Serving</span>{% endif %}
                 </td>
                 <td>
+                  <div class="d-flex gap-1 flex-wrap align-items-center">
                   {% if tok.patient %}
                     {% if tok.ws_visit %}
                       <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success" hx-boost="false">
                         <i class="bi bi-person-lines-fill me-1"></i>Open Visit
                       </a>
+                      <button class="btn btn-sm btn-outline-info ws-iop-btn"
+                              data-visit="{{ tok.ws_visit.pk }}"
+                              data-patient="{{ tok.display_name }}"
+                              title="Quick IOP Entry" style="padding:.2rem .45rem;">
+                        <i class="bi bi-eye" style="font-size:.8rem;"></i>
+                      </button>
                     {% else %}
                       <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success" hx-boost="false">
                         <i class="bi bi-person-plus me-1"></i>See Patient
@@ -236,6 +257,7 @@
                   {% else %}
                     <span class="text-muted small">Walk-in</span>
                   {% endif %}
+                  </div>
                 </td>
               </tr>
               {% endif %}
@@ -287,9 +309,17 @@
                   {% else %}<span class="badge bg-warning text-dark">Waiting</span>{% endif %}
                 </td>
                 <td>
-                  <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success" hx-boost="false">
-                    <i class="bi bi-journal-plus me-1"></i>Consult
-                  </a>
+                  <div class="d-flex gap-1 align-items-center flex-wrap">
+                    <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success" hx-boost="false">
+                      <i class="bi bi-journal-plus me-1"></i>Consult
+                    </a>
+                    <button class="btn btn-sm btn-outline-info ws-iop-btn"
+                            data-visit="{{ v.pk }}"
+                            data-patient="{{ v.patient.full_name }}"
+                            title="Quick IOP Entry" style="padding:.2rem .45rem;">
+                      <i class="bi bi-eye" style="font-size:.8rem;"></i>
+                    </button>
+                  </div>
                 </td>
               </tr>
               {% endfor %}
@@ -399,9 +429,6 @@
             <span class="text-muted small">{{ v.patient.patient_id }}</span>
           </div>
           <div class="d-flex flex-wrap gap-1" id="ws-route-btns-{{ v.pk }}">
-            <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="GENERAL">
-              <i class="bi bi-person-badge me-1"></i>Doctor
-            </button>
             <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="PHARMACY">
               <i class="bi bi-capsule me-1"></i>Pharmacy
             </button>
@@ -414,19 +441,26 @@
             <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="OPTICAL">
               <i class="bi bi-eyeglasses me-1"></i>Optical
             </button>
-            <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="GLAUCOMA">
-              <i class="bi bi-eye me-1"></i>Glaucoma
-            </button>
-            <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="RETINA">
-              <i class="bi bi-eye-fill me-1"></i>Retina
-            </button>
             <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="REFRACTION">
               <i class="bi bi-eyeglasses me-1"></i>Refraction
             </button>
             <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="IMAGING">
               <i class="bi bi-activity me-1"></i>Investigations
             </button>
-            <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="COUNSELING">
+            {# ── Specialist referrals: open reason modal before routing ── #}
+            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="GLAUCOMA" data-label="Glaucoma" data-patient="{{ v.patient.full_name }}">
+              <i class="bi bi-eye me-1"></i>Glaucoma
+            </button>
+            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="RETINA" data-label="Retina" data-patient="{{ v.patient.full_name }}">
+              <i class="bi bi-eye-fill me-1"></i>Retina
+            </button>
+            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="CORNEA" data-label="Cornea" data-patient="{{ v.patient.full_name }}">
+              <i class="bi bi-circle me-1"></i>Cornea
+            </button>
+            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="NEURO" data-label="Neuro-Ophthalmology" data-patient="{{ v.patient.full_name }}">
+              <i class="bi bi-lightning me-1"></i>Neuro
+            </button>
+            <button class="btn btn-sm btn-outline-secondary ws-referral-btn" data-visit="{{ v.pk }}" data-dest="COUNSELING" data-label="Counseling" data-patient="{{ v.patient.full_name }}">
               <i class="bi bi-chat-square-heart me-1"></i>Counseling
             </button>
             <button class="btn btn-sm btn-outline-danger ws-route-btn" data-visit="{{ v.pk }}" data-dest="DISCHARGE">
@@ -728,6 +762,75 @@
 </div>
 {% endblock %}
 
+{# ── Referral Modal ── #}
+<div class="modal fade" id="wsReferralModal" tabindex="-1" aria-labelledby="wsReferralModalLabel">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold" id="wsReferralModalLabel">
+          <i class="bi bi-arrow-right-circle me-2 text-warning"></i>
+          Refer to <span id="refModalDestLabel" class="text-warning"></span>
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 small text-muted">
+          Patient: <strong id="refModalPatientName"></strong>
+        </div>
+        <label class="form-label small fw-semibold">Referral Reason <span class="text-danger">*</span></label>
+        <textarea id="refModalReason" class="form-control form-control-sm" rows="3"
+                  placeholder="Why are you referring this patient? Summarise clinical findings and reason for specialist review..."></textarea>
+        <div id="refModalError" class="text-danger small mt-1" style="display:none;">Please provide a referral reason.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning btn-sm text-dark fw-semibold" id="refModalSubmit">
+          <i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Quick IOP Modal ── #}
+<div class="modal fade" id="wsIopModal" tabindex="-1" aria-labelledby="wsIopModalLabel">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold" id="wsIopModalLabel">
+          <i class="bi bi-eye me-2 text-info"></i>Quick IOP Entry
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 small text-muted">Patient: <strong id="iopModalPatient"></strong></div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">OD (mmHg)</label>
+            <input type="number" id="iopModalOD" class="form-control form-control-sm text-center"
+                   step="0.5" min="0" max="80" placeholder="e.g. 16">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">OS (mmHg)</label>
+            <input type="number" id="iopModalOS" class="form-control form-control-sm text-center"
+                   step="0.5" min="0" max="80" placeholder="e.g. 14">
+          </div>
+        </div>
+        <div class="text-muted" style="font-size:.72rem;">
+          <i class="bi bi-info-circle me-1"></i>Saved to the patient's active consultation exam findings.
+        </div>
+        <div id="iopModalMsg" class="mt-2 small" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-info btn-sm text-white" id="iopModalSave">
+          <i class="bi bi-save me-1"></i>Save IOP
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% block extra_js %}
 <script>
 // qfPick — used by clinical form selects to append picked value to a text input
@@ -775,6 +878,158 @@ setInterval(() => {
   _refreshEl.textContent = `(refresh in ${_refreshTimer}s)`;
   if (_refreshTimer <= 0) { _refreshTimer = 30; (window.doRefresh || function(){ location.reload(); })(); }
 }, 1000);
+
+// ── Quick Patient Search ──────────────────────────────────────────────────────
+(function() {
+  const inp = document.getElementById('wsPatientSearch');
+  const results = document.getElementById('wsSearchResults');
+  if (!inp || !results) return;
+  let _debounce = null;
+  inp.addEventListener('input', function() {
+    clearTimeout(_debounce);
+    const q = inp.value.trim();
+    if (q.length < 2) { results.style.display = 'none'; results.innerHTML = ''; return; }
+    _debounce = setTimeout(function() {
+      fetch('/patients/search/?q=' + encodeURIComponent(q))
+        .then(function(r){ return r.json(); })
+        .then(function(data) {
+          const pts = data.results || data.patients || [];
+          if (!pts.length) { results.innerHTML = '<div class="list-group-item text-muted small py-2">No patients found</div>'; results.style.display = 'block'; return; }
+          results.innerHTML = pts.slice(0,8).map(function(p) {
+            const name = p.full_name || p.name || '';
+            const pid  = p.patient_id || p.id || '';
+            const url  = '/patients/' + pid + '/';
+            return '<a href="' + url + '" class="list-group-item list-group-item-action py-2 px-3 small">'
+              + '<span class="fw-semibold">' + name + '</span>'
+              + ' <span class="text-muted ms-2" style="font-size:.75rem;">' + pid + '</span>'
+              + '</a>';
+          }).join('');
+          results.style.display = 'block';
+        }).catch(function(){ results.style.display = 'none'; });
+    }, 280);
+  });
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { inp.value = ''; results.style.display = 'none'; inp.blur(); }
+  });
+  document.addEventListener('click', function(e) {
+    if (!inp.contains(e.target) && !results.contains(e.target)) results.style.display = 'none';
+  });
+})();
+
+// ── Referral Modal ────────────────────────────────────────────────────────────
+(function() {
+  const _wsRouteUrl = '{% url "consultations:nurse_route" visit_pk="00000000-0000-0000-0000-000000000000" %}';
+  const modal = document.getElementById('wsReferralModal');
+  if (!modal) return;
+  const bsModal = new bootstrap.Modal(modal);
+  let _pendingVisit = null, _pendingDest = null;
+
+  document.querySelectorAll('.ws-referral-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      _pendingVisit = btn.dataset.visit;
+      _pendingDest  = btn.dataset.dest;
+      document.getElementById('refModalDestLabel').textContent  = btn.dataset.label || btn.dataset.dest;
+      document.getElementById('refModalPatientName').textContent = btn.dataset.patient || '';
+      document.getElementById('refModalReason').value = '';
+      document.getElementById('refModalError').style.display = 'none';
+      bsModal.show();
+    });
+  });
+
+  document.getElementById('refModalSubmit').addEventListener('click', function() {
+    const reason = document.getElementById('refModalReason').value.trim();
+    if (!reason) { document.getElementById('refModalError').style.display = ''; return; }
+    const submitBtn = document.getElementById('refModalSubmit');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    const fd = new FormData();
+    fd.append('destination', _pendingDest);
+    fd.append('referral_reason', reason);
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    const url = _wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', _pendingVisit);
+    fetch(url, { method: 'POST', body: fd })
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        bsModal.hide();
+        if (data.success) {
+          const btns = document.getElementById('ws-route-btns-' + _pendingVisit);
+          if (btns) btns.innerHTML = '<span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Referred to ' + data.destination + '</span>';
+          _formDirty = false;
+          setTimeout(function(){ location.reload(); }, 2000);
+        } else {
+          alert(data.error || 'Referral failed.');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral';
+        }
+      }).catch(function(){
+        bsModal.hide();
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral';
+      });
+  });
+})();
+
+// ── Quick IOP Modal ───────────────────────────────────────────────────────────
+(function() {
+  const _iopUrl = '{% url "consultations:workstation_quick_iop" %}';
+  const modal = document.getElementById('wsIopModal');
+  if (!modal) return;
+  const bsModal = new bootstrap.Modal(modal);
+  let _pendingVisit = null;
+
+  document.querySelectorAll('.ws-iop-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      _pendingVisit = btn.dataset.visit;
+      document.getElementById('iopModalPatient').textContent = btn.dataset.patient || '';
+      document.getElementById('iopModalOD').value = '';
+      document.getElementById('iopModalOS').value = '';
+      document.getElementById('iopModalMsg').style.display = 'none';
+      bsModal.show();
+      setTimeout(function(){ document.getElementById('iopModalOD').focus(); }, 400);
+    });
+  });
+
+  document.getElementById('iopModalSave').addEventListener('click', function() {
+    const od = document.getElementById('iopModalOD').value.trim();
+    const os = document.getElementById('iopModalOS').value.trim();
+    if (!od && !os) {
+      const msg = document.getElementById('iopModalMsg');
+      msg.className = 'text-danger small mt-2';
+      msg.textContent = 'Enter at least one IOP value.';
+      msg.style.display = '';
+      return;
+    }
+    const saveBtn = document.getElementById('iopModalSave');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    const fd = new FormData();
+    fd.append('visit_pk', _pendingVisit);
+    fd.append('iop_re', od);
+    fd.append('iop_le', os);
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch(_iopUrl, { method: 'POST', body: fd })
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        const msg = document.getElementById('iopModalMsg');
+        msg.style.display = '';
+        if (data.success) {
+          msg.className = 'text-success small mt-2';
+          msg.textContent = '\u2713 ' + (data.message || 'IOP saved.');
+          saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Saved';
+          setTimeout(function(){ bsModal.hide(); }, 1500);
+        } else {
+          msg.className = 'text-danger small mt-2';
+          msg.textContent = data.error || 'Failed to save IOP.';
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save IOP';
+        }
+      }).catch(function(){
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save IOP';
+      });
+  });
+})();
 
 // ── Doctor self-routing ─────────────────────────────────────────────────────
 (function () {
