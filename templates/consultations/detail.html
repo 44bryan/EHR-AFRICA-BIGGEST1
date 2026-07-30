@@ -345,6 +345,12 @@
       {% endfor %}
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tabProcedures">
+      <i class="bi bi-activity me-1 text-danger"></i>Procedures
+      {% if procedures %}<span class="badge bg-danger ms-1" style="font-size:.6rem;">{{ procedures|length }}</span>{% endif %}
+    </a>
+  </li>
   {% if consultation.department.code != 'INVEST' and consultation.department.code != 'LAB' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tabClinical">
@@ -889,6 +895,204 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Procedures Tab -->
+  <div class="tab-pane fade" id="tabProcedures">
+    <div class="row g-3">
+
+      {# ── Add Procedure Form ── #}
+      {% if request.user.can_create_consultation %}
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom py-2">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-plus-circle me-1 text-danger"></i>Log New Procedure</h6>
+          </div>
+          <div class="card-body">
+            <form method="post" action="{% url 'consultations:procedure_add' pk=consultation.pk %}">
+              {% csrf_token %}
+              <div class="row g-2">
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Procedure Type <span class="text-danger">*</span></label>
+                  <select name="procedure_type" class="form-select form-select-sm" required>
+                    <option value="">— Select —</option>
+                    <optgroup label="Laser Procedures">
+                      <option value="SLT">Selective Laser Trabeculoplasty (SLT)</option>
+                      <option value="ALT">Argon Laser Trabeculoplasty (ALT)</option>
+                      <option value="YAG_PI">YAG Peripheral Iridotomy</option>
+                      <option value="YAG_CAP">YAG Posterior Capsulotomy</option>
+                      <option value="YAG_VIT">YAG Vitreolysis</option>
+                      <option value="PRP">Panretinal Photocoagulation (PRP)</option>
+                      <option value="FOCAL">Focal / Grid Laser (Retina)</option>
+                      <option value="PHOTOCOAG">Laser Photocoagulation</option>
+                      <option value="CYCLO">Cyclophotcoagulation (CPC)</option>
+                    </optgroup>
+                    <optgroup label="Injections">
+                      <option value="ANTI_VEGF">Intravitreal Anti-VEGF</option>
+                      <option value="IVT_STER">Intravitreal Steroid</option>
+                      <option value="SUBCONJ">Subconjunctival Injection</option>
+                      <option value="AC_PARA">Anterior Chamber Paracentesis</option>
+                    </optgroup>
+                    <optgroup label="Minor Procedures">
+                      <option value="FB_REM">Foreign Body Removal</option>
+                      <option value="EPIL">Epilation</option>
+                      <option value="CHALAZION">Chalazion I&amp;C</option>
+                      <option value="CONJ_BX">Conjunctival Biopsy</option>
+                      <option value="CORN_SC">Corneal Scraping / Swab</option>
+                      <option value="SUT_REM">Suture Removal</option>
+                      <option value="PTERYG">Pterygium Excision</option>
+                      <option value="OTHER">Other</option>
+                    </optgroup>
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label fw-semibold small">Eye</label>
+                  <select name="eye" class="form-select form-select-sm">
+                    <option value="RE">OD (Right)</option>
+                    <option value="LE">OS (Left)</option>
+                    <option value="BE">OU (Both)</option>
+                    <option value="NA">N/A</option>
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label fw-semibold small">Urgency</label>
+                  <select name="urgency" class="form-select form-select-sm">
+                    <option value="ROUTINE">Routine</option>
+                    <option value="URGENT">Urgent</option>
+                    <option value="EMERGENCY">Emergency</option>
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label fw-semibold small">Pre-IOP OD / OS</label>
+                  <div class="input-group input-group-sm">
+                    <input type="number" name="pre_iop_re" class="form-control" placeholder="OD" step="0.1" min="0" max="80">
+                    <input type="number" name="pre_iop_le" class="form-control" placeholder="OS" step="0.1" min="0" max="80">
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label fw-semibold small">Post-IOP OD / OS</label>
+                  <div class="input-group input-group-sm">
+                    <input type="number" name="post_iop_re" class="form-control" placeholder="OD" step="0.1" min="0" max="80">
+                    <input type="number" name="post_iop_le" class="form-control" placeholder="OS" step="0.1" min="0" max="80">
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Drug / Agent Used</label>
+                  <input type="text" name="drug_used" class="form-control form-control-sm" placeholder="e.g. Bevacizumab 1.25 mg / 0.05 mL">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Laser Parameters</label>
+                  <input type="text" name="laser_energy" class="form-control form-control-sm" placeholder="e.g. 800 mW × 100 ms, 50 spots">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Notes</label>
+                  <input type="text" name="notes" class="form-control form-control-sm" placeholder="Procedure notes">
+                </div>
+                <div class="col-md-8">
+                  <label class="form-label fw-semibold small">Complications <span class="text-muted fw-normal">(leave blank if none)</span></label>
+                  <input type="text" name="complications" class="form-control form-control-sm" placeholder="e.g. IOP spike post-injection — managed with Diamox 250 mg">
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                  <button type="submit" class="btn btn-danger btn-sm w-100">
+                    <i class="bi bi-plus-circle me-1"></i>Log Procedure
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Procedure List ── #}
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom py-2">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-list-check me-1 text-danger"></i>Procedure History — {{ consultation.patient.full_name }}</h6>
+          </div>
+          {% if procedures %}
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+              <thead class="table-light">
+                <tr>
+                  <th>Date</th>
+                  <th>Procedure</th>
+                  <th>Eye</th>
+                  <th>Pre-IOP</th>
+                  <th>Post-IOP</th>
+                  <th>Drug / Agent</th>
+                  <th>Performed By</th>
+                  <th>Notes / Complications</th>
+                  {% if request.user.can_create_consultation %}<th></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for proc in procedures %}
+                <tr>
+                  <td class="text-muted">{{ proc.procedure_date|date:"d M Y" }}</td>
+                  <td>
+                    <span class="fw-semibold">{{ proc.get_procedure_type_display }}</span>
+                    {% if proc.urgency != 'ROUTINE' %}
+                      <span class="badge {% if proc.urgency == 'EMERGENCY' %}bg-danger{% else %}bg-warning text-dark{% endif %} ms-1" style="font-size:.65rem;">{{ proc.get_urgency_display }}</span>
+                    {% endif %}
+                    {% if proc.laser_energy %}
+                      <div class="text-muted" style="font-size:.72rem;">{{ proc.laser_energy }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if proc.eye == 'RE' %}<span class="badge bg-primary">OD</span>
+                    {% elif proc.eye == 'LE' %}<span class="badge bg-success">OS</span>
+                    {% elif proc.eye == 'BE' %}<span class="badge bg-secondary">OU</span>
+                    {% else %}<span class="text-muted">—</span>{% endif %}
+                  </td>
+                  <td class="text-muted">
+                    {% if proc.pre_iop_re or proc.pre_iop_le %}
+                      {% if proc.pre_iop_re %}<span>{{ proc.pre_iop_re }}</span>{% endif %}
+                      {% if proc.pre_iop_re and proc.pre_iop_le %} / {% endif %}
+                      {% if proc.pre_iop_le %}<span>{{ proc.pre_iop_le }}</span>{% endif %}
+                    {% else %}—{% endif %}
+                  </td>
+                  <td>
+                    {% if proc.post_iop_re or proc.post_iop_le %}
+                      {% if proc.post_iop_re %}<span class="{% if proc.post_iop_re > 21 %}text-danger fw-bold{% else %}text-success{% endif %}">{{ proc.post_iop_re }}</span>{% endif %}
+                      {% if proc.post_iop_re and proc.post_iop_le %} / {% endif %}
+                      {% if proc.post_iop_le %}<span class="{% if proc.post_iop_le > 21 %}text-danger fw-bold{% else %}text-success{% endif %}">{{ proc.post_iop_le }}</span>{% endif %}
+                    {% else %}—{% endif %}
+                  </td>
+                  <td class="text-muted">{{ proc.drug_used|default:"—" }}</td>
+                  <td class="fw-semibold small">{% if proc.performed_by %}Dr. {{ proc.performed_by.last_name }}{% else %}—{% endif %}</td>
+                  <td>
+                    {% if proc.notes %}<div class="text-secondary" style="font-size:.72rem;">{{ proc.notes }}</div>{% endif %}
+                    {% if proc.complications %}<div class="text-danger" style="font-size:.72rem;"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ proc.complications }}</div>{% endif %}
+                    {% if not proc.notes and not proc.complications %}<span class="text-muted">—</span>{% endif %}
+                  </td>
+                  {% if request.user.can_create_consultation %}
+                  <td>
+                    {% if proc.performed_by == request.user or request.user.is_medical_director %}
+                    <form method="post" action="{% url 'consultations:procedure_delete' pk=consultation.pk proc_pk=proc.pk %}" onsubmit="return confirm('Remove this procedure record?')">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.7rem;">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                    {% endif %}
+                  </td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="card-body text-center text-muted py-4">
+            <i class="bi bi-activity fs-2 d-block mb-2 text-muted opacity-50"></i>
+            No procedures logged for this consultation.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
     </div>
   </div>
 

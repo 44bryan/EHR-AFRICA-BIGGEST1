@@ -404,6 +404,63 @@ def consultation_create_view(request, patient_id):
                 except Exception:
                     pass  # Never block the doctor
 
+            # ── Referral department set → route patient to that department ────
+            if consultation.referral_department and visit:
+                try:
+                    ref_dept = consultation.referral_department
+                    skip_ref = {'COMPLETED', 'DISCHARGED'}
+                    if visit.status not in skip_ref:
+                        # Map department code → QMS service type
+                        _REF_SVC = {
+                            'RETINA':    'RETINA',
+                            'GLAUCOMA':  'GLAUCOMA',
+                            'CORNEA':    'CORNEA',
+                            'ORBIT':     'ORBIT',
+                            'PEDIATRIC': 'GEN_OPH',
+                            'NEURO_OPH': 'GEN_OPH',
+                            'OCULOPLASTY': 'GEN_OPH',
+                            'LOW_VISION': 'GEN_OPH',
+                            'GEN_MED':   'GENERAL',
+                            'REFRAC':    'REFRAC',
+                            'OPTICAL':   'OPTICAL',
+                        }
+                        svc = _REF_SVC.get(ref_dept.code, 'GENERAL')
+                        visit.department = ref_dept
+                        visit.status = ref_dept.code if ref_dept.code in (
+                            'RETINA', 'GLAUCOMA', 'OPTICAL', 'REFRAC', 'CORNEA',
+                            'ORBIT', 'COUNSELING', 'PHARMACY', 'LAB',
+                        ) else 'WAITING'
+                        visit.save(update_fields=['department', 'status', 'updated_at'])
+                        if _qms_active():
+                            from apps.qms.models import (
+                                QueueToken, DailyTokenSequence, IssuancePoint,
+                                TokenStatus, TIER_PRIORITY,
+                            )
+                            tier = visit.service_tier or 'STANDARD'
+                            token_number = DailyTokenSequence.next_dept_token(svc)
+                            QueueToken.objects.create(
+                                token_number=token_number,
+                                service_type=svc,
+                                patient=patient,
+                                visit=visit,
+                                service_tier=tier,
+                                issuance_point=IssuancePoint.SYSTEM,
+                                priority=TIER_PRIORITY.get(tier, 0),
+                                status=TokenStatus.WAITING,
+                                notes=(
+                                    f'Referred by Dr. {request.user.get_full_name()} '
+                                    f'({consultation.department.name if consultation.department else ""})'
+                                    + (f': {consultation.referral_reason[:120]}' if consultation.referral_reason else '')
+                                ),
+                                created_by=request.user,
+                            )
+                        messages.info(
+                            request,
+                            f'Patient referred and routed to {ref_dept.name}.'
+                        )
+                except Exception:
+                    pass  # Never block the doctor
+
             # ── Auto-create follow-up appointment if follow_up_date set ───────
             if consultation.follow_up_date:
                 try:
@@ -531,6 +588,23 @@ def consultation_detail_view(request, pk):
     except Exception:
         active_rooms = []
 
+    # Procedure records for this consultation
+    from .models import ProcedureRecord
+    procedures = list(
+        ProcedureRecord.objects.filter(consultation=consultation, is_deleted=False)
+        .select_related('performed_by').order_by('-procedure_date', '-created_at')
+    )
+
+    # Previous consultations for the patient — shown in Patient Record tab
+    prev_consultations = list(
+        Consultation.objects.filter(
+            patient=consultation.patient,
+            is_deleted=False,
+            status=ConsultationStatus.COMPLETED,
+        ).exclude(pk=consultation.pk).select_related('department', 'consulting_doctor')
+        .order_by('-consultation_date')[:8]
+    )
+
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
         'note_form': note_form,
@@ -542,6 +616,9 @@ def consultation_detail_view(request, pk):
         'visit': consultation.visit,
         'patient': consultation.patient,
         'active_rooms': active_rooms,
+        'procedures': procedures,
+        'prev_consultations': prev_consultations,
+        'procedure_types': ProcedureRecord.ProcedureType.choices,
     })
 
 
@@ -1370,6 +1447,24 @@ def workstation_view(request):
     else:
         ready_to_route_doctor = []
 
+    # ── Incoming referrals to this doctor's department ───────────────────────
+    # Consultations from another doctor that set referral_department = this dept
+    incoming_referrals = []
+    if dept:
+        incoming_referrals = list(
+            Consultation.objects.filter(
+                referral_department=dept,
+                is_deleted=False,
+                visit__is_deleted=False,
+            ).exclude(
+                visit__status__in=['COMPLETED', 'DISCHARGED']
+            ).select_related(
+                'patient', 'consulting_doctor', 'department', 'visit'
+            ).prefetch_related(
+                'consultation_diagnoses__diagnosis'
+            ).order_by('-consultation_date')[:15]
+        )
+
     return render(request, 'consultations/workstation.html', {
         'waiting_tokens': waiting_tokens,
         'waiting_visits': waiting_visits,
@@ -1393,6 +1488,7 @@ def workstation_view(request):
         'refrac_counter': _refrac_counter if dept_code in ('REFRAC', 'PEDS_REFRAC') else None,
         'checked_in_counter': _ws_checked_in_counter,
         'ready_to_route_doctor': ready_to_route_doctor,
+        'incoming_referrals': incoming_referrals,
     })
 
 
@@ -2754,4 +2850,58 @@ def diagnosis_remove_view(request, pk, cd_pk):
         return JsonResponse({'error': 'Permission denied'}, status=403)
     ConsultationDiagnosis.objects.filter(pk=cd_pk, consultation=consultation).delete()
     messages.success(request, 'Diagnosis removed.')
+    return redirect('consultations:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROCEDURE RECORD — clinical procedures logged against a consultation
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def procedure_add_view(request, pk):
+    """Log a clinical procedure (laser, injection, minor surgery) against a consultation."""
+    if not request.user.can_create_consultation():
+        return HttpResponseForbidden()
+
+    from .models import ProcedureRecord
+    consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
+
+    proc_type = request.POST.get('procedure_type', '').strip()
+    if not proc_type:
+        messages.error(request, 'Procedure type is required.')
+        return redirect('consultations:detail', pk=pk)
+
+    ProcedureRecord.objects.create(
+        consultation=consultation,
+        patient=consultation.patient,
+        procedure_type=proc_type,
+        eye=request.POST.get('eye', 'NA'),
+        urgency=request.POST.get('urgency', 'ROUTINE'),
+        performed_by=request.user,
+        pre_iop_re=request.POST.get('pre_iop_re') or None,
+        pre_iop_le=request.POST.get('pre_iop_le') or None,
+        post_iop_re=request.POST.get('post_iop_re') or None,
+        post_iop_le=request.POST.get('post_iop_le') or None,
+        laser_energy=request.POST.get('laser_energy', '').strip(),
+        drug_used=request.POST.get('drug_used', '').strip(),
+        notes=request.POST.get('notes', '').strip(),
+        complications=request.POST.get('complications', '').strip(),
+        created_by=request.user,
+    )
+    messages.success(request, 'Procedure recorded successfully.')
+    return redirect('consultations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def procedure_delete_view(request, pk, proc_pk):
+    """Delete a procedure record (own records only, or medical director)."""
+    from .models import ProcedureRecord
+    proc = get_object_or_404(ProcedureRecord, pk=proc_pk, consultation__pk=pk, is_deleted=False)
+    if proc.performed_by != request.user and not request.user.is_medical_director:
+        return HttpResponseForbidden()
+    proc.is_deleted = True
+    proc.save(update_fields=['is_deleted'])
+    messages.success(request, 'Procedure removed.')
     return redirect('consultations:detail', pk=pk)

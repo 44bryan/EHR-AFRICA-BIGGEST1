@@ -456,6 +456,60 @@
     </div>
     {% endif %}
 
+    {# ── Incoming Referrals ── #}
+    {% if incoming_referrals %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <h6 class="mb-0 fw-semibold text-warning">
+          <i class="bi bi-arrow-down-circle-fill me-2 text-warning"></i>Referred to {{ dept.name }}
+        </h6>
+        <span class="badge bg-warning text-dark">{{ incoming_referrals|length }}</span>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for ref in incoming_referrals %}
+        <div class="list-group-item py-2 px-3 border-start border-4 border-warning">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-semibold small">{{ ref.patient.full_name }}</span>
+                <span class="text-muted small">{{ ref.patient.patient_id }}</span>
+                {% with tier=ref.visit.service_tier|default:'STANDARD' %}
+                  {% if tier == 'VIP' %}<span class="badge" style="background:#7c3aed;font-size:.65rem;">VIP</span>
+                  {% elif tier == 'EXPRESS' or tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">Express</span>{% endif %}
+                {% endwith %}
+              </div>
+              <div class="text-muted" style="font-size:.72rem;">
+                Referred by <strong>Dr. {{ ref.consulting_doctor.last_name|default:ref.consulting_doctor.full_name }}</strong>
+                ({{ ref.department.name }}) &bull; {{ ref.consultation_date|date:"d M Y H:i" }}
+              </div>
+              {% if ref.referral_reason %}
+              <div class="text-secondary mt-1" style="font-size:.72rem;">
+                <i class="bi bi-chat-right-text me-1"></i>{{ ref.referral_reason|truncatechars:100 }}
+              </div>
+              {% endif %}
+              {% with pd=ref.consultation_diagnoses.all %}
+              {% if pd %}
+              <div class="mt-1">
+                {% for cd in pd|slice:":2" %}
+                <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ cd.diagnosis.code }} — {{ cd.diagnosis.description|truncatechars:40 }}</span>
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% endwith %}
+            </div>
+            <div class="flex-shrink-0">
+              <a href="{% url 'consultations:create' patient_id=ref.patient.patient_id %}?visit_id={{ ref.visit.pk }}"
+                 class="btn btn-sm btn-warning" hx-boost="false">
+                <i class="bi bi-person-lines-fill me-1"></i>See Patient
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
         <h6 class="mb-0 fw-semibold">

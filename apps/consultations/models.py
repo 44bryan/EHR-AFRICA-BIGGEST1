@@ -230,3 +230,76 @@ class ConsultationNote(AuditModel):
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Consultation Note'
+
+
+class ProcedureRecord(AuditModel):
+    """
+    Clinical procedure / minor surgery performed during or after a consultation.
+    Covers laser procedures, intravitreal injections, and minor OPD operations.
+    """
+
+    class EyeChoice(models.TextChoices):
+        RIGHT = 'RE', _('Right Eye (OD)')
+        LEFT  = 'LE', _('Left Eye (OS)')
+        BOTH  = 'BE', _('Both Eyes (OU)')
+        NA    = 'NA', _('Not Eye-specific')
+
+    class ProcedureType(models.TextChoices):
+        # Laser
+        SLT          = 'SLT',       _('Selective Laser Trabeculoplasty (SLT)')
+        ALT          = 'ALT',       _('Argon Laser Trabeculoplasty (ALT)')
+        YAG_PI       = 'YAG_PI',    _('YAG Peripheral Iridotomy')
+        YAG_CAP      = 'YAG_CAP',   _('YAG Posterior Capsulotomy')
+        YAG_VIT      = 'YAG_VIT',   _('YAG Vitreolysis')
+        PRP          = 'PRP',       _('Panretinal Photocoagulation (PRP)')
+        FOCAL_LASER  = 'FOCAL',     _('Focal / Grid Laser (Retina)')
+        PHOTOCOAG    = 'PHOTOCOAG', _('Laser Photocoagulation')
+        CYCLO        = 'CYCLO',     _('Cyclophotcoagulation (CPC)')
+        # Injection
+        ANTI_VEGF    = 'ANTI_VEGF', _('Intravitreal Anti-VEGF')
+        IVT_STEROID  = 'IVT_STER',  _('Intravitreal Steroid')
+        SUBCONJ      = 'SUBCONJ',   _('Subconjunctival Injection')
+        AC_PARA      = 'AC_PARA',   _('Anterior Chamber Paracentesis')
+        # Minor OPD
+        FB_REMOVAL   = 'FB_REM',    _('Foreign Body Removal')
+        EPILATION    = 'EPIL',      _('Epilation')
+        CHALAZION    = 'CHALAZION', _('Chalazion I&C')
+        CONJ_BIOPSY  = 'CONJ_BX',  _('Conjunctival Biopsy')
+        CORN_SCRAPING= 'CORN_SC',   _('Corneal Scraping / Swab')
+        SUTURE_REM   = 'SUT_REM',   _('Suture Removal')
+        PTERYG       = 'PTERYG',    _('Pterygium Excision')
+        OTHER        = 'OTHER',     _('Other Procedure')
+
+    class UrgencyChoice(models.TextChoices):
+        ROUTINE   = 'ROUTINE',   _('Routine')
+        URGENT    = 'URGENT',    _('Urgent')
+        EMERGENCY = 'EMERGENCY', _('Emergency')
+
+    consultation  = models.ForeignKey(Consultation,       on_delete=models.CASCADE, related_name='procedures')
+    patient       = models.ForeignKey('patients.Patient', on_delete=models.CASCADE,  related_name='procedures')
+    procedure_date= models.DateField(auto_now_add=True)
+    procedure_type= models.CharField(max_length=15, choices=ProcedureType.choices)
+    eye           = models.CharField(max_length=2,  choices=EyeChoice.choices, default=EyeChoice.NA)
+    urgency       = models.CharField(max_length=10, choices=UrgencyChoice.choices, default=UrgencyChoice.ROUTINE)
+    performed_by  = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True,
+        related_name='procedures_performed',
+    )
+    # IOP before/after (relevant for laser/injection procedures)
+    pre_iop_re    = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Pre-procedure IOP OD mmHg')
+    pre_iop_le    = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Pre-procedure IOP OS mmHg')
+    post_iop_re   = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Post-procedure IOP OD mmHg')
+    post_iop_le   = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Post-procedure IOP OS mmHg')
+    # Laser parameters
+    laser_energy  = models.CharField(max_length=80, blank=True, help_text='e.g. 800 mW × 100 ms, 50 spots')
+    drug_used     = models.CharField(max_length=200, blank=True, help_text='Drug/agent used (e.g. Bevacizumab 1.25 mg)')
+    notes         = models.TextField(blank=True)
+    complications = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-procedure_date', '-created_at']
+        verbose_name = 'Procedure Record'
+        verbose_name_plural = 'Procedure Records'
+
+    def __str__(self):
+        return f"{self.get_procedure_type_display()} — {self.patient.full_name} [{self.procedure_date}]"
