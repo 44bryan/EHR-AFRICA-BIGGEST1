@@ -109,12 +109,19 @@ DrugItemFormSet = inlineformset_factory(
 
 
 class OpticalPrescriptionForm(forms.ModelForm):
+    # Explicit ChoiceField avoids Django auto-inserting a blank "---------" option
+    # which would cause validation failure when the user submits without changing it.
+    prescription_type = forms.ChoiceField(
+        choices=OpticalPrescription.PrescriptionType.choices,
+        initial=OpticalPrescription.PrescriptionType.SPECTACLE,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+
     class Meta:
         model = OpticalPrescription
         exclude = ['consultation', 'patient', 'prescribed_by', 'prescription_date', 'is_dispensed',
                    'created_at', 'updated_at', 'created_by', 'updated_by', 'is_deleted', 'deleted_at', 'id']
         widgets = {
-            'prescription_type': forms.Select(attrs={'class': 'form-select'}),
             're_sphere': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.25', 'placeholder': '+0.00'}),
             're_cylinder': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.25', 'placeholder': '-0.00'}),
             're_axis': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'max': 180, 'placeholder': '0–180'}),
