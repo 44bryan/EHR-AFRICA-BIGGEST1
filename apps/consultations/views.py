@@ -619,6 +619,8 @@ def consultation_detail_view(request, pk):
         'procedures': procedures,
         'prev_consultations': prev_consultations,
         'procedure_types': ProcedureRecord.ProcedureType.choices,
+        'surgical_requests': list(consultation.surgical_requests.filter(is_deleted=False).select_related('requested_by').order_by('-created_at')),
+        'surgery_types': __import__('apps.consultations.models', fromlist=['SurgicalRequest']).SurgicalRequest.SurgeryType.choices,
     })
 
 
@@ -2904,6 +2906,86 @@ def procedure_add_view(request, pk):
         created_by=request.user,
     )
     messages.success(request, 'Procedure recorded successfully.')
+    return redirect('consultations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def workstation_quick_va_view(request):
+    """Save Visual Acuity (OD/OS) from the workstation queue to the active consultation exam findings."""
+    visit_pk = request.POST.get('visit_pk', '').strip()
+    va_re    = request.POST.get('va_re', '').strip()
+    va_le    = request.POST.get('va_le', '').strip()
+
+    if not visit_pk or (not va_re and not va_le):
+        return JsonResponse({'error': 'Visit and at least one VA value required.'}, status=400)
+
+    visit = get_object_or_404(Visit, pk=visit_pk, is_deleted=False)
+    consultation = Consultation.objects.filter(
+        visit=visit, is_deleted=False
+    ).order_by('-created_at').first()
+
+    if not consultation:
+        return JsonResponse({'error': 'No active consultation found for this patient.'}, status=404)
+
+    ef = consultation.examination_findings or consultation.get_default_examination_template()
+    if va_re:
+        ef['visual_acuity']['right_unaided'] = va_re
+    if va_le:
+        ef['visual_acuity']['left_unaided'] = va_le
+
+    consultation.examination_findings = ef
+    consultation.updated_by = request.user
+    consultation.save(update_fields=['examination_findings', 'updated_by', 'updated_at'])
+
+    od_display = f'OD {va_re}' if va_re else ''
+    os_display = f'OS {va_le}' if va_le else ''
+    return JsonResponse({
+        'success': True,
+        'message': f'VA saved — {", ".join(filter(None, [od_display, os_display]))}',
+    })
+
+
+@login_required
+@require_POST
+def surgical_request_add_view(request, pk):
+    """Create a surgical theatre request from an OPD consultation."""
+    from .models import SurgicalRequest
+    if not request.user.can_create_consultation():
+        return HttpResponseForbidden()
+
+    consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
+    surgery_type = request.POST.get('surgery_type', '').strip()
+    if not surgery_type:
+        messages.error(request, 'Surgery type is required.')
+        return redirect('consultations:detail', pk=pk)
+
+    SurgicalRequest.objects.create(
+        consultation=consultation,
+        patient=consultation.patient,
+        surgery_type=surgery_type,
+        eye=request.POST.get('eye', 'NA'),
+        urgency=request.POST.get('urgency', 'ELECTIVE'),
+        requested_by=request.user,
+        pre_op_notes=request.POST.get('pre_op_notes', '').strip(),
+        theatre_notes=request.POST.get('theatre_notes', '').strip(),
+        created_by=request.user,
+    )
+    messages.success(request, 'Surgical request submitted to theatre coordinator.')
+    return redirect('consultations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def surgical_request_cancel_view(request, pk, sr_pk):
+    """Cancel a surgical request (own requests, or medical director)."""
+    from .models import SurgicalRequest
+    sr = get_object_or_404(SurgicalRequest, pk=sr_pk, consultation__pk=pk, is_deleted=False)
+    if sr.requested_by != request.user and not request.user.is_medical_director:
+        return HttpResponseForbidden()
+    sr.status = 'CANCELLED'
+    sr.save(update_fields=['status', 'updated_at'])
+    messages.success(request, 'Surgical request cancelled.')
     return redirect('consultations:detail', pk=pk)
 
 

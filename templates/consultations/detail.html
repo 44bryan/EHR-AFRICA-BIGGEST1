@@ -351,6 +351,12 @@
       {% if procedures %}<span class="badge bg-danger ms-1" style="font-size:.6rem;">{{ procedures|length }}</span>{% endif %}
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tabSurgical">
+      <i class="bi bi-scissors me-1 text-primary"></i>Theatre
+      {% if surgical_requests %}<span class="badge bg-primary ms-1" style="font-size:.6rem;">{{ surgical_requests|length }}</span>{% endif %}
+    </a>
+  </li>
   {% if consultation.department.code != 'INVEST' and consultation.department.code != 'LAB' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tabClinical">
@@ -1093,6 +1099,124 @@
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Surgical / Theatre Request Tab -->
+  <div class="tab-pane fade" id="tabSurgical">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-scissors me-2 text-primary"></i>Theatre / Surgical Requests</h6>
+      </div>
+      <div class="card-body pb-2">
+        {% if request.user.can_create_consultation %}
+        <form method="post" action="{% url 'consultations:surgical_add' pk=consultation.pk %}" class="mb-4">
+          {% csrf_token %}
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold mb-1">Surgery Type <span class="text-danger">*</span></label>
+              <select name="surgery_type" class="form-select form-select-sm" required>
+                <option value="">— Select —</option>
+                {% for val, label in surgery_types %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small fw-semibold mb-1">Eye</label>
+              <select name="eye" class="form-select form-select-sm">
+                <option value="RE">Right Eye (OD)</option>
+                <option value="LE">Left Eye (OS)</option>
+                <option value="BE">Both Eyes (OU)</option>
+                <option value="NA" selected>Not Specified</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small fw-semibold mb-1">Urgency</label>
+              <select name="urgency" class="form-select form-select-sm">
+                <option value="ELECTIVE" selected>Elective</option>
+                <option value="URGENT">Urgent (≤1 week)</option>
+                <option value="EMERGENCY">Emergency (same day)</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold mb-1">Pre-op Notes</label>
+              <input type="text" name="pre_op_notes" class="form-control form-control-sm"
+                     placeholder="Relevant findings, consent status...">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Theatre Notes (for surgical team)</label>
+            <textarea name="theatre_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Special instruments, positioning, anaesthesia preference..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-scissors me-1"></i>Submit Surgical Request
+          </button>
+        </form>
+        {% endif %}
+
+        {% if surgical_requests %}
+        <h6 class="section-label mb-2">Requests</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr>
+                <th>Surgery</th>
+                <th>Eye</th>
+                <th>Urgency</th>
+                <th>Status</th>
+                <th>Requested By</th>
+                <th>Date</th>
+                <th>Notes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sr in surgical_requests %}
+              <tr>
+                <td class="fw-semibold">{{ sr.get_surgery_type_display }}</td>
+                <td><span class="badge bg-secondary">{{ sr.eye }}</span></td>
+                <td>
+                  {% if sr.urgency == 'EMERGENCY' %}<span class="badge bg-danger">Emergency</span>
+                  {% elif sr.urgency == 'URGENT' %}<span class="badge bg-warning text-dark">Urgent</span>
+                  {% else %}<span class="badge bg-secondary">Elective</span>{% endif %}
+                </td>
+                <td>
+                  {% if sr.status == 'REQUESTED' %}<span class="badge bg-warning text-dark">Requested</span>
+                  {% elif sr.status == 'SCHEDULED' %}<span class="badge bg-info text-dark">Scheduled</span>
+                  {% elif sr.status == 'COMPLETED' %}<span class="badge bg-success">Completed</span>
+                  {% elif sr.status == 'CANCELLED' %}<span class="badge bg-secondary">Cancelled</span>{% endif %}
+                </td>
+                <td>Dr. {{ sr.requested_by.last_name|default:sr.requested_by.get_full_name }}</td>
+                <td class="text-muted">{{ sr.created_at|date:"d M Y" }}</td>
+                <td class="text-muted" style="max-width:180px;">
+                  {% if sr.pre_op_notes %}<div>{{ sr.pre_op_notes|truncatechars:60 }}</div>{% endif %}
+                  {% if sr.theatre_notes %}<div class="text-secondary fst-italic">{{ sr.theatre_notes|truncatechars:60 }}</div>{% endif %}
+                </td>
+                <td>
+                  {% if sr.status == 'REQUESTED' %}
+                  <form method="post" action="{% url 'consultations:surgical_cancel' pk=consultation.pk sr_pk=sr.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-xs btn-outline-danger py-0 px-2" style="font-size:.72rem;"
+                            onclick="return confirm('Cancel this surgical request?')">
+                      <i class="bi bi-x"></i> Cancel
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-scissors fs-2 d-block mb-2 opacity-50"></i>
+          No surgical requests for this consultation.
+        </div>
+        {% endif %}
+      </div>
     </div>
   </div>
 

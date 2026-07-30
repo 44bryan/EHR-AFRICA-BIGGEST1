@@ -303,3 +303,58 @@ class ProcedureRecord(AuditModel):
 
     def __str__(self):
         return f"{self.get_procedure_type_display()} — {self.patient.full_name} [{self.procedure_date}]"
+
+
+class SurgicalRequest(AuditModel):
+    """Theatre / surgical request created from an OPD consultation."""
+
+    class SurgeryType(models.TextChoices):
+        CATARACT    = 'CATARACT',    _('Cataract Extraction (PHACO/ECCE)')
+        TRABECULECT = 'TRAB',        _('Trabeculectomy')
+        PTERYGIUM   = 'PTERYGIUM',   _('Pterygium Excision')
+        SQUINT      = 'SQUINT',      _('Squint Correction (Strabismus)')
+        DCR         = 'DCR',         _('Dacryocystorhinostomy (DCR)')
+        VITRECTOMY  = 'VITRECTOMY',  _('Vitrectomy (PPV)')
+        CORNEAL_GRAFT = 'PKP',       _('Penetrating Keratoplasty (Corneal Graft)')
+        RRD         = 'RRD',         _('Retinal Detachment Repair')
+        ENUCLEATION = 'ENUCLEATION', _('Enucleation')
+        EVISCERATION= 'EVISC',       _('Evisceration')
+        OCULOPLASTY = 'OCULOPLASTY', _('Oculoplastic Procedure')
+        GLAUCOMA_DRAIN = 'GLAUC_DRN',_('Glaucoma Drainage Device')
+        OTHER       = 'OTHER',       _('Other Surgery')
+
+    class EyeChoice(models.TextChoices):
+        RIGHT = 'RE', _('Right Eye (OD)')
+        LEFT  = 'LE', _('Left Eye (OS)')
+        BOTH  = 'BE', _('Both Eyes (OU)')
+        NA    = 'NA', _('Not Eye-specific')
+
+    class UrgencyChoice(models.TextChoices):
+        ELECTIVE  = 'ELECTIVE',  _('Elective')
+        URGENT    = 'URGENT',    _('Urgent (within 1 week)')
+        EMERGENCY = 'EMERGENCY', _('Emergency (same day)')
+
+    class StatusChoice(models.TextChoices):
+        REQUESTED  = 'REQUESTED',  _('Requested')
+        SCHEDULED  = 'SCHEDULED',  _('Scheduled')
+        COMPLETED  = 'COMPLETED',  _('Completed')
+        CANCELLED  = 'CANCELLED',  _('Cancelled')
+
+    consultation   = models.ForeignKey(Consultation,       on_delete=models.CASCADE,  related_name='surgical_requests')
+    patient        = models.ForeignKey('patients.Patient', on_delete=models.CASCADE,  related_name='surgical_requests')
+    surgery_type   = models.CharField(max_length=20, choices=SurgeryType.choices)
+    eye            = models.CharField(max_length=2,  choices=EyeChoice.choices, default=EyeChoice.NA)
+    urgency        = models.CharField(max_length=10, choices=UrgencyChoice.choices, default=UrgencyChoice.ELECTIVE)
+    status         = models.CharField(max_length=12, choices=StatusChoice.choices, default=StatusChoice.REQUESTED)
+    requested_by   = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, related_name='surgical_requests_made')
+    pre_op_notes   = models.TextField(blank=True, help_text='Pre-op findings, special considerations, consent notes')
+    scheduled_date = models.DateField(null=True, blank=True)
+    theatre_notes  = models.TextField(blank=True, help_text='Notes for theatre team')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Surgical Request'
+        verbose_name_plural = 'Surgical Requests'
+
+    def __str__(self):
+        return f"{self.get_surgery_type_display()} — {self.patient.full_name} [{self.get_status_display()}]"

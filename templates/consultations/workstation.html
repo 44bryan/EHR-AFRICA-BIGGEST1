@@ -249,6 +249,12 @@
                               title="Quick IOP Entry" style="padding:.2rem .45rem;">
                         <i class="bi bi-eye" style="font-size:.8rem;"></i>
                       </button>
+                      <button class="btn btn-sm btn-outline-secondary ws-va-btn"
+                              data-visit="{{ tok.ws_visit.pk }}"
+                              data-patient="{{ tok.display_name }}"
+                              title="Quick VA Entry" style="padding:.2rem .45rem;font-size:.75rem;">
+                        VA
+                      </button>
                     {% else %}
                       <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success" hx-boost="false">
                         <i class="bi bi-person-plus me-1"></i>See Patient
@@ -318,6 +324,12 @@
                             data-patient="{{ v.patient.full_name }}"
                             title="Quick IOP Entry" style="padding:.2rem .45rem;">
                       <i class="bi bi-eye" style="font-size:.8rem;"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary ws-va-btn"
+                            data-visit="{{ v.pk }}"
+                            data-patient="{{ v.patient.full_name }}"
+                            title="Quick VA Entry" style="padding:.2rem .45rem;font-size:.75rem;">
+                      VA
                     </button>
                   </div>
                 </td>
@@ -445,7 +457,7 @@
               <i class="bi bi-eyeglasses me-1"></i>Refraction
             </button>
             <button class="btn btn-sm btn-outline-secondary ws-route-btn" data-visit="{{ v.pk }}" data-dest="IMAGING">
-              <i class="bi bi-activity me-1"></i>Investigations
+              <i class="bi bi-search-heart me-1"></i>Eye Tests
             </button>
             {# ── Specialist referrals: open reason modal before routing ── #}
             <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="GLAUCOMA" data-label="Glaucoma" data-patient="{{ v.patient.full_name }}">
@@ -611,151 +623,96 @@
       {% endif %}
     </div>
 
-    {# ── Lab Orders & Results — hidden for refractionist (they don't order blood tests) ── #}
+    {# ── Results Ready — compact alerts for abnormal/completed results ── #}
     {% if not is_refrac %}
+    {% with lab_ready=lab_orders_today inv_ready=investigation_orders_today %}
+    {% if lab_ready or inv_ready %}
     <div class="card border-0 shadow-sm mt-3">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <span class="fw-semibold small"><i class="bi bi-droplet-fill me-2 text-danger"></i>Lab Orders — Today</span>
-        <span class="badge bg-secondary">{{ lab_orders_today|length }}</span>
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small">
+          <i class="bi bi-bell-fill me-2 text-warning"></i>Orders &amp; Results — Today
+        </span>
+        <span class="badge bg-secondary">{{ lab_ready|length|add:inv_ready|length }}</span>
       </div>
-      {% if lab_orders_today %}
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 small">
-          <thead class="table-light">
-            <tr>
-              <th>Patient</th>
-              <th>Tests</th>
-              <th>Status</th>
-              <th>Results</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for order in lab_orders_today %}
-            <tr>
-              <td class="fw-semibold">
-                {{ order.patient.full_name }}
-                <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
-              </td>
-              <td>
-                {% for item in order.items.all %}
-                <span class="badge bg-light text-dark border me-1">{{ item.test_type.code }}</span>
-                {% endfor %}
-              </td>
-              <td>
-                {% if order.status == 'COMPLETED' %}
-                  <span class="badge bg-success">Completed</span>
-                {% elif order.status == 'PROCESSING' %}
-                  <span class="badge bg-primary">Processing</span>
-                {% elif order.status == 'SAMPLE_COLLECTED' %}
-                  <span class="badge bg-info text-dark">Sample Collected</span>
-                {% else %}
-                  <span class="badge bg-warning text-dark">Ordered</span>
-                {% endif %}
-              </td>
-              <td>
+      <div class="list-group list-group-flush">
+        {# Lab orders #}
+        {% for order in lab_ready %}
+        <div class="list-group-item py-2 px-3 {% if order.status == 'COMPLETED' %}list-group-item-success{% elif order.status == 'PROCESSING' or order.status == 'SAMPLE_COLLECTED' %}list-group-item-info{% endif %}">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div class="fw-semibold small">
+                <i class="bi bi-droplet-fill text-danger me-1"></i>{{ order.patient.full_name }}
+                <span class="text-muted fw-normal ms-1" style="font-size:.72rem;">{{ order.patient.patient_id }}</span>
+              </div>
+              <div class="mt-1 d-flex flex-wrap gap-1">
                 {% for item in order.items.all %}
                   {% if item.result %}
-                  <div class="small">
-                    <strong>{{ item.test_type.code }}:</strong>
-                    <span class="{% if item.result.is_abnormal %}text-danger fw-bold{% endif %}">
-                      {{ item.result.result_value }} {{ item.result.result_unit }}
+                    <span class="badge {% if item.result.is_abnormal %}bg-danger{% else %}bg-success{% endif %} px-2">
+                      {{ item.test_type.code }}: {{ item.result.result_value }} {{ item.result.result_unit }}
+                      {% if item.result.is_abnormal %}<i class="bi bi-exclamation-triangle-fill ms-1"></i>{% endif %}
                     </span>
-                    {% if item.result.is_abnormal %}<i class="bi bi-exclamation-triangle-fill text-danger ms-1"></i>{% endif %}
-                  </div>
+                  {% else %}
+                    <span class="badge bg-light text-dark border">{{ item.test_type.code }}</span>
                   {% endif %}
                 {% endfor %}
-                {% if order.status != 'COMPLETED' %}
-                <span class="text-muted" style="font-size:.7rem;">Awaiting results</span>
+              </div>
+            </div>
+            <div class="flex-shrink-0">
+              {% if order.status == 'COMPLETED' %}<span class="badge bg-success">Done</span>
+              {% elif order.status == 'PROCESSING' %}<span class="badge bg-primary">Processing</span>
+              {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info text-dark">Sample Taken</span>
+              {% else %}<span class="badge bg-warning text-dark">Ordered</span>{% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+        {# Eye investigation orders #}
+        {% for order in inv_ready %}
+        <div class="list-group-item py-2 px-3 {% if order.status == 'COMPLETED' %}list-group-item-success{% endif %}">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div class="fw-semibold small">
+                <i class="bi bi-search-heart text-info me-1"></i>{{ order.patient.full_name }}
+                <span class="text-muted fw-normal ms-1" style="font-size:.72rem;">{{ order.patient.patient_id }}</span>
+              </div>
+              <div class="text-muted mt-1" style="font-size:.75rem;">
+                {{ order.investigation_type.name }}
+                <span class="badge bg-secondary ms-1">{{ order.eye }}</span>
+                {% if order.result and order.result.interpretation %}
+                — {{ order.result.interpretation|truncatechars:60 }}
                 {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class="card-body py-3 text-center text-muted small">
-        <i class="bi bi-droplet fs-4 d-block mb-1 opacity-50"></i>
-        No lab orders today. Order from any open consultation.
-      </div>
-      {% endif %}
-    </div>
-    {% endif %}{# end not is_refrac #}
-
-    {# ── Investigation Orders — hidden for refractionist ── #}
-    {% if not is_refrac %}
-    <div class="card border-0 shadow-sm mt-3">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <span class="fw-semibold small"><i class="bi bi-search-heart me-2 text-info"></i>Investigation Orders — Today</span>
-        <span class="badge bg-secondary">{{ investigation_orders_today|length }}</span>
-      </div>
-      {% if investigation_orders_today %}
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 small">
-          <thead class="table-light">
-            <tr>
-              <th>Patient</th>
-              <th>Test</th>
-              <th>Eye</th>
-              <th>Status</th>
-              <th>Result / Files</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for order in investigation_orders_today %}
-            <tr>
-              <td class="fw-semibold">
-                {{ order.patient.full_name }}
-                <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
-              </td>
-              <td>{{ order.investigation_type.name }}</td>
-              <td><span class="badge bg-secondary">{{ order.eye }}</span></td>
-              <td>
-                {% if order.status == 'COMPLETED' %}
-                  <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Done</span>
-                {% elif order.status == 'IN_PROGRESS' %}
-                  <span class="badge bg-primary">In Progress</span>
-                {% else %}
-                  <span class="badge bg-warning text-dark">Ordered</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if order.result %}
-                  {% if order.result.interpretation %}
-                  <div class="text-muted" style="font-size:.72rem;max-width:160px;">{{ order.result.interpretation|truncatechars:50 }}</div>
-                  {% endif %}
-                  {% if order.result.files.exists %}
-                  {% for f in order.result.files.all %}
-                  <a href="{{ f.file.url }}" target="_blank" class="badge bg-info text-dark text-decoration-none mt-1"
-                     style="font-size:.65rem;">
-                    <i class="bi bi-file-earmark-pdf me-1"></i>View Report
-                  </a>
-                  {% endfor %}
-                  {% endif %}
-                {% else %}
-                  <span class="text-muted fst-italic" style="font-size:.72rem;">Awaiting result</span>
-                {% endif %}
-              </td>
-              <td>
-                <a href="{% url 'investigations:detail' pk=order.pk %}"
-                   class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.68rem;">
-                  <i class="bi bi-eye"></i>
+                {% if order.result and order.result.files.exists %}
+                {% for f in order.result.files.all %}
+                <a href="{{ f.file.url }}" target="_blank" class="badge bg-info text-dark text-decoration-none ms-1" style="font-size:.65rem;">
+                  <i class="bi bi-file-earmark-pdf me-1"></i>Report
                 </a>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+                {% endfor %}
+                {% endif %}
+              </div>
+            </div>
+            <div class="d-flex gap-1 flex-shrink-0 align-items-center">
+              {% if order.status == 'COMPLETED' %}<span class="badge bg-success">Done</span>
+              {% elif order.status == 'IN_PROGRESS' %}<span class="badge bg-primary">Running</span>
+              {% else %}<span class="badge bg-warning text-dark">Ordered</span>{% endif %}
+              <a href="{% url 'investigations:detail' pk=order.pk %}"
+                 class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.68rem;">
+                <i class="bi bi-eye"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
       </div>
-      {% else %}
-      <div class="card-body py-3 text-center text-muted small">
-        <i class="bi bi-search-heart fs-4 d-block mb-1 opacity-50"></i>
-        No investigation orders today. Order from any open consultation.
-      </div>
-      {% endif %}
     </div>
-    {% endif %}{# end not is_refrac — investigations #}
+    {% else %}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-body py-2 text-center text-muted small">
+        <i class="bi bi-check-circle me-1 text-success"></i>No orders pending today.
+      </div>
+    </div>
+    {% endif %}
+    {% endwith %}
+    {% endif %}{# end not is_refrac #}
 
   </div>
 
@@ -786,6 +743,45 @@
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-warning btn-sm text-dark fw-semibold" id="refModalSubmit">
           <i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Quick VA Modal ── #}
+<div class="modal fade" id="wsVaModal" tabindex="-1" aria-labelledby="wsVaModalLabel">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold" id="wsVaModalLabel">
+          <i class="bi bi-eye-fill me-2 text-secondary"></i>Quick VA Entry
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 small text-muted">Patient: <strong id="vaModalPatient"></strong></div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">VA OD (Unaided)</label>
+            <input type="text" id="vaModalOD" class="form-control form-control-sm text-center"
+                   placeholder="e.g. 6/6" autocomplete="off">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">VA OS (Unaided)</label>
+            <input type="text" id="vaModalOS" class="form-control form-control-sm text-center"
+                   placeholder="e.g. 6/18" autocomplete="off">
+          </div>
+        </div>
+        <div class="text-muted" style="font-size:.72rem;">
+          <i class="bi bi-info-circle me-1"></i>Saved to the patient's active consultation exam findings.
+        </div>
+        <div id="vaModalMsg" class="mt-2 small" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-dark btn-sm" id="vaModalSave">
+          <i class="bi bi-save me-1"></i>Save VA
         </button>
       </div>
     </div>
@@ -965,6 +961,68 @@ setInterval(() => {
         bsModal.hide();
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral';
+      });
+  });
+})();
+
+// ── Quick VA Modal ────────────────────────────────────────────────────────────
+(function() {
+  const _vaUrl = '{% url "consultations:workstation_quick_va" %}';
+  const modal = document.getElementById('wsVaModal');
+  if (!modal) return;
+  const bsModal = new bootstrap.Modal(modal);
+  let _pendingVisit = null;
+
+  document.querySelectorAll('.ws-va-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      _pendingVisit = btn.dataset.visit;
+      document.getElementById('vaModalPatient').textContent = btn.dataset.patient || '';
+      document.getElementById('vaModalOD').value = '';
+      document.getElementById('vaModalOS').value = '';
+      document.getElementById('vaModalMsg').style.display = 'none';
+      bsModal.show();
+      setTimeout(function(){ document.getElementById('vaModalOD').focus(); }, 400);
+    });
+  });
+
+  document.getElementById('vaModalSave').addEventListener('click', function() {
+    const od = document.getElementById('vaModalOD').value.trim();
+    const os = document.getElementById('vaModalOS').value.trim();
+    if (!od && !os) {
+      const msg = document.getElementById('vaModalMsg');
+      msg.className = 'text-danger small mt-2';
+      msg.textContent = 'Enter at least one VA value.';
+      msg.style.display = '';
+      return;
+    }
+    const saveBtn = document.getElementById('vaModalSave');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    const fd = new FormData();
+    fd.append('visit_pk', _pendingVisit);
+    fd.append('va_re', od);
+    fd.append('va_le', os);
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch(_vaUrl, { method: 'POST', body: fd })
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        const msg = document.getElementById('vaModalMsg');
+        msg.style.display = '';
+        if (data.success) {
+          msg.className = 'text-success small mt-2';
+          msg.textContent = '\u2713 ' + (data.message || 'VA saved.');
+          saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Saved';
+          setTimeout(function(){ bsModal.hide(); }, 1500);
+        } else {
+          msg.className = 'text-danger small mt-2';
+          msg.textContent = data.error || 'Failed to save VA.';
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save VA';
+        }
+      }).catch(function(){
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save VA';
       });
   });
 })();
