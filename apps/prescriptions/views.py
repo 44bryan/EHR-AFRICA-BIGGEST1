@@ -221,7 +221,13 @@ def optical_prescription_new(request, consultation_pk):
                     # Support both new field names (pg_*) and old fallback names
                     pd_od = d.get('pd_od') or d.get('pd_dist_od', '')
                     pd_os = d.get('pd_os') or d.get('pd_dist_os', '')
-                    ipd = f"{pd_od}/{pd_os}" if pd_od and pd_os else (pd_od or pd_os or '')
+                    # Use single numeric value only — combined "od/os" format fails DecimalField
+                    if pd_od and not pd_os:
+                        ipd = pd_od
+                    elif pd_os and not pd_od:
+                        ipd = pd_os
+                    else:
+                        ipd = ''  # Both monocular PDs present — leave blank for manual entry
                     initial = {
                         're_sphere':    (d.get('pg_sph_dist_od') or d.get('sub_sph_dist_od')
                                          or d.get('final_sph_od', '')),
@@ -265,9 +271,10 @@ def optical_prescription_new(request, consultation_pk):
                     # Also check near PD
                     pd_near_od = d.get('pd_near_od', '')
                     pd_near_os = d.get('pd_near_os', '')
-                    near_ipd = f"{pd_near_od}/{pd_near_os}" if pd_near_od and pd_near_os else ''
-                    if near_ipd:
-                        initial['near_ipd'] = near_ipd
+                    if pd_near_od and not pd_near_os:
+                        initial['near_ipd'] = pd_near_od
+                    elif pd_near_os and not pd_near_od:
+                        initial['near_ipd'] = pd_near_os
                     # Remove blank values so form doesn't override model defaults
                     initial = {k: v for k, v in initial.items() if v}
                     refraction_hint = ref_consult.consulting_doctor.full_name
