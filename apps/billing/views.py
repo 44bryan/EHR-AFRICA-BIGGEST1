@@ -381,6 +381,10 @@ def invoice_detail(request, invoice_id):
 
 @login_required
 def invoice_create(request):
+    # Accountants/senior accountants audit invoices — they must not create them (SoD)
+    if request.user.role in (UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
     # GET with ?patient=<UUID or patient_id> — direct link from dashboard "Bill" button
     if request.method == 'GET':
         patient_ref = request.GET.get('patient', '').strip()
