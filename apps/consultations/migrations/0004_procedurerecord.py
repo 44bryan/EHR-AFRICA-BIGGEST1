@@ -77,7 +77,7 @@ class Migration(migrations.Migration):
                 ('performed_by', models.ForeignKey(
                     null=True,
                     on_delete=django.db.models.deletion.SET_NULL,
-                    related_name='procedures_performed',
+                    related_name='opd_procedures_performed',
                     to=settings.AUTH_USER_MODEL,
                 )),
                 ('created_by', models.ForeignKey(

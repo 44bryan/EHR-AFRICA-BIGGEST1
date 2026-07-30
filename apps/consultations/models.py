@@ -283,7 +283,7 @@ class ProcedureRecord(AuditModel):
     urgency       = models.CharField(max_length=10, choices=UrgencyChoice.choices, default=UrgencyChoice.ROUTINE)
     performed_by  = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True,
-        related_name='procedures_performed',
+        related_name='opd_procedures_performed',
     )
     # IOP before/after (relevant for laser/injection procedures)
     pre_iop_re    = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Pre-procedure IOP OD mmHg')
