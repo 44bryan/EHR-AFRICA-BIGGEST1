@@ -537,7 +537,7 @@ def cancel_investigation_order(request, pk):
 
 @login_required
 def investigation_stats_view(request):
-    """Monthly statistics for Eye Investigations."""
+    """Monthly statistics for Eye Investigations — WHO-standard demographics included."""
     from django.db.models import Count, Q
     from django.core.cache import cache
     import json, calendar
@@ -558,10 +558,9 @@ def investigation_stats_view(request):
         month_start = today.replace(day=1)
         year, month = month_start.year, month_start.month
 
-    last_day   = calendar.monthrange(year, month)[1]
-    month_end  = _date(year, month, last_day)
+    last_day  = calendar.monthrange(year, month)[1]
+    month_end = _date(year, month, last_day)
 
-    # prev/next month nav
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
@@ -583,41 +582,48 @@ def investigation_stats_view(request):
         created_at__date__lte=month_end,
     )
 
-    # ── KPIs ───────────────────────────────────────────────────────────────────
+    # ── KPIs ──────────────────────────────────────────────────────────────────
     total_orders    = base.count()
     pending_count   = base.filter(status__in=['ORDERED', 'IN_PROGRESS']).count()
     completed_count = base.filter(status='COMPLETED').count()
     cancelled_count = base.filter(status='CANCELLED').count()
     urgent_count    = base.filter(urgency__in=['URGENT', 'EMERGENCY']).count()
+    abnormal_count  = base.filter(result__is_normal=False).count()
     completion_rate = round(completed_count / total_orders * 100, 1) if total_orders else 0
 
-    # ── By category ────────────────────────────────────────────────────────────
+    # ── By category ───────────────────────────────────────────────────────────
     cat_raw = (
         base.values('investigation_type__category')
         .annotate(count=Count('id'))
         .order_by('-count')
     )
     category_data = [
-        {'label': r['investigation_type__category'].replace('_', ' ').title(),
+        {'label': (r['investigation_type__category'] or '').replace('_', ' ').title(),
          'count': r['count']}
         for r in cat_raw if r['investigation_type__category']
     ]
     category_json = json.dumps(category_data)
 
-    # ── By urgency ─────────────────────────────────────────────────────────────
+    # ── By urgency ────────────────────────────────────────────────────────────
     routine_count   = base.filter(urgency='ROUTINE').count()
     emergency_count = base.filter(urgency='EMERGENCY').count()
-    urgency_json = json.dumps([
-        {'label': 'Routine',   'count': routine_count},
-        {'label': 'Urgent',    'count': urgent_count - emergency_count},
-        {'label': 'Emergency', 'count': emergency_count},
+    urgency_json = json.dumps({
+        'labels': ['Routine', 'Urgent', 'Emergency'],
+        'data':   [routine_count, max(0, urgent_count - emergency_count), emergency_count],
+    })
+
+    # ── By status ─────────────────────────────────────────────────────────────
+    status_json = json.dumps([
+        {'label': 'Ordered',     'count': base.filter(status='ORDERED').count()},
+        {'label': 'In Progress', 'count': base.filter(status='IN_PROGRESS').count()},
+        {'label': 'Completed',   'count': completed_count},
+        {'label': 'Cancelled',   'count': cancelled_count},
     ])
 
-    # ── Top tests ──────────────────────────────────────────────────────────────
+    # ── Top 10 tests ──────────────────────────────────────────────────────────
     top_tests = [
         {
             'name': r['investigation_type__name'],
-            'category': r['investigation_type__category'],
             'category_display': (r['investigation_type__category'] or '').replace('_', ' ').title(),
             'count': r['count'],
         }
@@ -626,46 +632,168 @@ def investigation_stats_view(request):
         .order_by('-count')[:10]
     ]
 
-    # ── By status ──────────────────────────────────────────────────────────────
-    status_json = json.dumps([
-        {'label': 'Ordered',     'count': base.filter(status='ORDERED').count()},
-        {'label': 'In Progress', 'count': base.filter(status='IN_PROGRESS').count()},
-        {'label': 'Completed',   'count': completed_count},
-        {'label': 'Cancelled',   'count': cancelled_count},
-    ])
+    # ── Abnormal rate by test ─────────────────────────────────────────────────
+    from .models import InvestigationResult as _Result
+    abnormal_by_test = []
+    for row in (base.filter(result__isnull=False)
+                    .values('investigation_type__name')
+                    .annotate(total=Count('id'),
+                              abnormal=Count('id', filter=Q(result__is_normal=False)))
+                    .order_by('-abnormal')[:10]):
+        total = row['total']
+        abn   = row['abnormal']
+        abnormal_by_test.append({
+            'name':     row['investigation_type__name'],
+            'total':    total,
+            'abnormal': abn,
+            'abn_rate': round(abn / total * 100, 1) if total else 0,
+        })
 
-    # ── Daily trend ────────────────────────────────────────────────────────────
+    # ── Daily trend ───────────────────────────────────────────────────────────
     daily_raw = (
         base.extra(select={'day': 'DATE(created_at)'})
-        .values('day')
-        .annotate(count=Count('id'))
-        .order_by('day')
+        .values('day').annotate(count=Count('id')).order_by('day')
     )
-    daily_json = json.dumps([
-        {'day': str(r['day']), 'count': r['count']}
-        for r in daily_raw
+    daily_json = json.dumps([{'day': str(r['day']), 'count': r['count']} for r in daily_raw])
+
+    # ── Gender breakdown + paediatric ─────────────────────────────────────────
+    male_count   = base.filter(patient__gender='M').values('patient').distinct().count()
+    female_count = base.filter(patient__gender='F').values('patient').distinct().count()
+    gender_json = json.dumps([
+        {'label': 'Male',   'count': male_count},
+        {'label': 'Female', 'count': female_count},
     ])
 
-    # ── Gender breakdown ───────────────────────────────────────────────────────
-    gender_raw = base.values('patient__gender').annotate(count=Count('id'))
-    gender_map = {r['patient__gender']: r['count'] for r in gender_raw}
-    gender_json = json.dumps([
-        {'label': 'Male',   'count': gender_map.get('M', 0)},
-        {'label': 'Female', 'count': gender_map.get('F', 0)},
-    ])
+    # ── WHO Age groups ────────────────────────────────────────────────────────
+    WHO_BANDS = [('0–4', 0, 4), ('5–14', 5, 14), ('15–24', 15, 24),
+                 ('25–34', 25, 34), ('35–44', 35, 44), ('45–54', 45, 54),
+                 ('55–64', 55, 64), ('65+', 65, 999)]
+    dobs = list(
+        base.filter(patient__date_of_birth__isnull=False)
+        .values_list('patient_id', 'patient__date_of_birth').distinct()
+    )
+    age_counts = {band[0]: 0 for band in WHO_BANDS}
+    for _, dob in dobs:
+        try:
+            age = (today - dob).days // 365
+            for label, lo, hi in WHO_BANDS:
+                if lo <= age <= hi:
+                    age_counts[label] += 1
+                    break
+        except Exception:
+            pass
+    paed_count  = age_counts.get('0–4', 0) + age_counts.get('5–14', 0)
+    adult_count = sum(v for k, v in age_counts.items() if k not in ('0–4', '5–14'))
+    age_json = json.dumps([{'label': k, 'count': v} for k, v in age_counts.items()])
+
+    # ── M/F split by investigation category ──────────────────────────────────
+    cat_gender_raw = (
+        base.values('investigation_type__category', 'patient__gender')
+        .annotate(count=Count('id'))
+    )
+    cat_gender = {}
+    for row in cat_gender_raw:
+        cat   = (row['investigation_type__category'] or '').replace('_', ' ').title()
+        gdr   = row['patient__gender'] or 'U'
+        count = row['count']
+        if cat not in cat_gender:
+            cat_gender[cat] = {'M': 0, 'F': 0}
+        if gdr in ('M', 'F'):
+            cat_gender[cat][gdr] += count
+
+    # ── Orders by requesting department ──────────────────────────────────────
+    dept_raw = list(
+        base.values('consultation__department__name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    total_dept = sum(r['count'] for r in dept_raw)
+    dept_table = [
+        {
+            'name':  r['consultation__department__name'] or 'Unknown',
+            'count': r['count'],
+            'pct':   round(r['count'] / total_dept * 100, 1) if total_dept else 0,
+        }
+        for r in dept_raw
+    ]
+    dept_json = json.dumps({
+        'labels': [r['name'] for r in dept_table],
+        'data':   [r['count'] for r in dept_table],
+    })
+
+    # ── Service tier breakdown ────────────────────────────────────────────────
+    TIER_ORDER   = ['VIP', 'EXPRESS', 'FAST_TRACK', 'STANDARD']
+    TIER_DISPLAY = {'VIP': 'VIP', 'EXPRESS': 'Express', 'FAST_TRACK': 'Fast Track', 'STANDARD': 'Standard'}
+    completed_base = base.filter(status='COMPLETED')
+    tier_rows = list(
+        completed_base.values(
+            'consultation__visit__service_tier',
+            'patient__date_of_birth',
+        )
+    )
+    tier_age = {}
+    for row in tier_rows:
+        tk  = row['consultation__visit__service_tier'] or 'STANDARD'
+        dob = row['patient__date_of_birth']
+        if tk not in tier_age:
+            tier_age[tk] = {'children': 0, 'adults': 0, 'elderly': 0, 'total': 0}
+        tier_age[tk]['total'] += 1
+        if dob:
+            try:
+                age = (today - dob).days // 365
+                if age <= 14:
+                    tier_age[tk]['children'] += 1
+                elif age <= 59:
+                    tier_age[tk]['adults'] += 1
+                else:
+                    tier_age[tk]['elderly'] += 1
+            except Exception:
+                pass
+    total_completed = sum(d['total'] for d in tier_age.values())
+    tier_table = []
+    for tk in TIER_ORDER:
+        d = tier_age.get(tk, {'children': 0, 'adults': 0, 'elderly': 0, 'total': 0})
+        if d['total'] > 0:
+            tier_table.append({
+                'tier': TIER_DISPLAY.get(tk, tk), 'key': tk,
+                'pct': round(d['total'] / total_completed * 100, 1) if total_completed else 0,
+                **d,
+            })
+    for tk, d in tier_age.items():
+        if tk not in TIER_ORDER and d['total'] > 0:
+            tier_table.append({
+                'tier': tk, 'key': tk,
+                'pct': round(d['total'] / total_completed * 100, 1) if total_completed else 0,
+                **d,
+            })
+    tier_json = json.dumps({
+        'labels': [r['tier'] for r in tier_table],
+        'data':   [r['total'] for r in tier_table],
+    })
 
     ctx = {
         'month_start': month_start, 'month_end': month_end,
         'year': year, 'month': month,
         'prev_year': prev_year, 'prev_month': prev_month,
         'next_year': next_year, 'next_month': next_month,
+        # KPIs
         'total_orders': total_orders, 'pending_count': pending_count,
         'completed_count': completed_count, 'cancelled_count': cancelled_count,
-        'urgent_count': urgent_count, 'completion_rate': completion_rate,
-        'top_tests': top_tests,
+        'urgent_count': urgent_count, 'abnormal_count': abnormal_count,
+        'completion_rate': completion_rate,
+        # Tables
+        'top_tests': top_tests, 'abnormal_by_test': abnormal_by_test,
+        'dept_table': dept_table, 'tier_table': tier_table,
+        'total_completed': total_completed,
+        # Demographics
+        'male_count': male_count, 'female_count': female_count,
+        'paed_count': paed_count, 'adult_count': adult_count,
+        'age_counts': age_counts, 'cat_gender': cat_gender,
+        # JSON
         'category_json': category_json, 'urgency_json': urgency_json,
         'status_json': status_json, 'daily_json': daily_json,
-        'gender_json': gender_json,
+        'gender_json': gender_json, 'age_json': age_json,
+        'dept_json': dept_json, 'tier_json': tier_json,
         'is_current_month': (year == today.year and month == today.month),
     }
     cache.set(_cache_key, ctx, _cache_ttl)
