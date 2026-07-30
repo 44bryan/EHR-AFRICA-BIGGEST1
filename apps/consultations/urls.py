@@ -34,6 +34,7 @@ urlpatterns = [
     path('workstation/quick-va/', views.workstation_quick_va_view, name='workstation_quick_va'),
     path('<uuid:pk>/surgical/add/', views.surgical_request_add_view, name='surgical_add'),
     path('<uuid:pk>/surgical/<uuid:sr_pk>/cancel/', views.surgical_request_cancel_view, name='surgical_cancel'),
+    path('<uuid:pk>/discharge-summary/', views.discharge_summary_view, name='discharge_summary'),
     # ── Specialist Unit Nurse Queue (Rooming / Pre-screening) ───────────────
     path('unit-queue/', views.unit_nurse_queue_view, name='unit_queue'),
     path('unit-queue/prescreen/<uuid:visit_pk>/', views.unit_prescreen_save_view, name='unit_prescreen'),

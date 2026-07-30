@@ -2990,6 +2990,38 @@ def surgical_request_cancel_view(request, pk, sr_pk):
 
 
 @login_required
+@clinical_staff_required
+def discharge_summary_view(request, pk):
+    """Printable one-page discharge summary for the patient to take home."""
+    consultation = get_object_or_404(
+        Consultation.objects.select_related(
+            'patient', 'department', 'consulting_doctor', 'visit'
+        ).prefetch_related(
+            'consultation_diagnoses__diagnosis',
+            'drug_prescriptions__items',
+            'optical_prescriptions',
+        ),
+        pk=pk,
+        is_deleted=False,
+    )
+    from apps.accounts.models import HospitalConfig
+    hospital = HospitalConfig.get()
+
+    diagnoses = list(consultation.consultation_diagnoses.select_related('diagnosis').all())
+    drug_rxs   = list(consultation.drug_prescriptions.filter(is_deleted=False).prefetch_related('items'))
+    optical_rxs = list(consultation.optical_prescriptions.filter(is_deleted=False))
+
+    return render(request, 'consultations/discharge_summary.html', {
+        'consultation': consultation,
+        'hospital': hospital,
+        'diagnoses': diagnoses,
+        'drug_rxs': drug_rxs,
+        'optical_rxs': optical_rxs,
+        'patient': consultation.patient,
+    })
+
+
+@login_required
 @require_POST
 def workstation_quick_iop_view(request):
     """Save IOP (OD/OS) from the workstation queue to the active consultation exam findings."""
