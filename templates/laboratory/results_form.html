@@ -809,11 +809,86 @@
                    {% if item.result and item.result.comment %}value="{{ item.result.comment }}"{% endif %}>
           </div>
 
+          {# ── AI Interpretation Assist ── #}
+          <div class="mt-2">
+            <button type="button"
+                    class="btn btn-xs btn-outline-primary ai-interpret-btn"
+                    style="font-size:.72rem;padding:2px 8px;"
+                    data-item="{{ item.pk }}"
+                    data-test="{{ tt.name }}"
+                    data-unit="{{ tt.unit|default:'' }}"
+                    data-ref="{{ tt.reference_range_text|default:'' }}"
+                    data-age="{{ order.patient.age|default:'' }}"
+                    data-gender="{{ order.patient.gender|default:'' }}">
+              <i class="bi bi-robot me-1"></i>AI Interpretation
+            </button>
+            <div class="ai-interpret-result mt-2 d-none" id="ai-result-{{ item.pk }}"
+                 style="background:#f0f6ff;border-left:3px solid #0d6efd;border-radius:4px;padding:8px 12px;font-size:.82rem;line-height:1.5;"></div>
+          </div>
+
         {% endif %}{# end verified lock #}
         </div>{# card-body #}
       </div>{# card #}
       {% endwith %}
       {% endfor %}
+
+      {% if prev_results %}
+      {# ── Previous results for this patient ─────────────────────────── #}
+      <div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #0d6efd !important;">
+        <div class="card-header py-2 d-flex align-items-center gap-2" style="background:#f8fafc;">
+          <i class="bi bi-clock-history text-primary"></i>
+          <h6 class="mb-0 fw-semibold small">Previous Lab Results — {{ order.patient.full_name }}</h6>
+          <span class="badge bg-primary-subtle text-primary ms-auto">{{ prev_results|length }} record{{ prev_results|length|pluralize }}</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 small align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Test</th>
+                <th>Date</th>
+                <th>Result</th>
+                <th>Flag</th>
+                <th>Verified by</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for pr in prev_results %}
+              <tr>
+                <td class="fw-semibold">{{ pr.order_item.test_type.name }}</td>
+                <td class="text-muted">{{ pr.created_at|date:"d M Y" }}</td>
+                <td>
+                  {% if pr.result_value|length > 40 %}
+                    <span title="{{ pr.result_value }}">{{ pr.result_value|truncatechars:40 }}</span>
+                  {% else %}
+                    {{ pr.result_value }}
+                  {% endif %}
+                  {% if pr.result_unit %}<span class="text-muted ms-1">{{ pr.result_unit }}</span>{% endif %}
+                </td>
+                <td>
+                  {% if pr.is_critical %}
+                    <span class="badge bg-danger">Critical</span>
+                  {% elif pr.is_abnormal %}
+                    <span class="badge bg-warning text-dark">Abnormal</span>
+                  {% else %}
+                    <span class="badge bg-success">Normal</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted">
+                  {% if pr.is_verified %}{{ pr.verified_by.get_full_name|default:"—" }}{% else %}<span class="text-warning">Unverified</span>{% endif %}
+                </td>
+                <td>
+                  <a href="{% url 'laboratory:detail' pr.order_item.order.pk %}" class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:2px 6px;" target="_blank">
+                    View
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="d-flex gap-2 justify-content-end mt-2 pb-4">
         <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-secondary">
@@ -987,6 +1062,72 @@ document.getElementById('resultsForm').addEventListener('submit', function(e) {
     alert(`Please enter results for all ${missing} test(s) highlighted in red.`);
     document.querySelector('.result-card[style*="border"]').scrollIntoView({behavior:'smooth'});
   }
+});
+
+/* ── AI Lab Interpretation ───────────────────────────────────────────── */
+document.querySelectorAll('.ai-interpret-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var itemPk   = this.dataset.item;
+    var testName = this.dataset.test;
+    var unit     = this.dataset.unit;
+    var ref      = this.dataset.ref;
+    var age      = this.dataset.age;
+    var gender   = this.dataset.gender;
+    var resultEl = document.getElementById('ai-result-' + itemPk);
+
+    // Collect result value from the form
+    var valueInput = document.querySelector('[name="result_value_' + itemPk + '"]');
+    var resultVal  = valueInput ? (valueInput.value || valueInput.type === 'radio' ? '' : valueInput.value) : '';
+    // For radio buttons
+    var radioChecked = document.querySelector('[name="result_value_' + itemPk + '"]:checked');
+    if (radioChecked) resultVal = radioChecked.value;
+
+    if (!resultVal) {
+      resultEl.textContent = 'Please enter a result value first.';
+      resultEl.classList.remove('d-none');
+      return;
+    }
+
+    var isAbnormal = !!(document.getElementById('abn_' + itemPk) && document.getElementById('abn_' + itemPk).checked);
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Analysing…';
+    resultEl.innerHTML = '<span class="text-muted">AI is generating interpretation…</span>';
+    resultEl.classList.remove('d-none');
+
+    fetch('/ai-assistant/lab-interpret/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}',
+      },
+      body: JSON.stringify({
+        test_name: testName,
+        result_value: resultVal,
+        result_unit: unit,
+        reference_range: ref,
+        is_abnormal: isAbnormal,
+        patient_age: age,
+        patient_gender: gender,
+      }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-robot me-1"></i>AI Interpretation';
+      if (data.success) {
+        resultEl.innerHTML = '<strong class="text-primary d-block mb-1"><i class="bi bi-robot me-1"></i>AI Clinical Note</strong>' +
+          '<span style="white-space:pre-wrap;">' + data.interpretation.replace(/</g,'&lt;') + '</span>';
+      } else {
+        resultEl.innerHTML = '<span class="text-danger">AI unavailable: ' + (data.error || 'unknown error') + '</span>';
+      }
+    })
+    .catch(function () {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-robot me-1"></i>AI Interpretation';
+      resultEl.innerHTML = '<span class="text-danger">Connection error — try again.</span>';
+    });
+  });
 });
 </script>
 {% endblock %}

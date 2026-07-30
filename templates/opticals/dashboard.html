@@ -11,7 +11,10 @@
       <div class="text-muted small">Frame & lens orders, prescription fulfilment</div>
     </div>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <span class="badge bg-secondary" id="optRefreshCountdown" title="Auto-refreshes to show new patients">
+      <i class="bi bi-arrow-clockwise me-1"></i><span id="optCountdownSec">30</span>s
+    </span>
     <a href="{% url 'opticals:create_order' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>New Order</a>
     <a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list-ul me-1"></i>All Orders</a>
     <a href="{% url 'opticals:frame_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-collection me-1"></i>Frames</a>
@@ -142,19 +145,38 @@
         </thead>
         <tbody>
           {% for order in recent_orders %}
-          <tr>
+          <tr id="opt-row-{{ order.pk }}">
             <td><code class="small">{{ order.order_number }}</code></td>
             <td class="fw-semibold">{{ order.patient.full_name }}</td>
             <td>{{ order.frame|default:"—" }}</td>
             <td>{{ order.lens|default:"—" }}</td>
             <td>
-              <span class="badge {% if order.status == 'DELIVERED' %}bg-success{% elif order.status == 'READY' %}bg-success bg-opacity-75{% elif order.status == 'LAB' %}bg-warning text-dark{% elif order.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %}">
+              <span class="badge {% if order.status == 'DELIVERED' %}bg-success{% elif order.status == 'READY' %}bg-success bg-opacity-75{% elif order.status == 'LAB' %}bg-warning text-dark{% elif order.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %} opt-status-badge" id="status-badge-{{ order.pk }}">
                 {{ order.get_status_display }}
               </span>
             </td>
             <td class="text-muted">{{ order.ordered_date|date:"d M Y" }}</td>
             <td>
-              <a href="{% url 'opticals:order_detail' order.pk %}" class="btn btn-sm btn-outline-info py-0">View</a>
+              <div class="d-flex gap-1">
+                {% if order.status == 'ORDERED' or order.status == 'LAB' %}
+                <button class="btn btn-xs btn-outline-success opt-quick-status" style="font-size:.7rem;padding:2px 6px;"
+                        data-order="{{ order.pk }}" data-status="READY"
+                        data-csrf="{{ csrf_token }}">
+                  <i class="bi bi-check-circle me-1"></i>Ready
+                </button>
+                {% endif %}
+                {% if order.status == 'READY' %}
+                <button class="btn btn-xs btn-success opt-quick-status" style="font-size:.7rem;padding:2px 6px;"
+                        data-order="{{ order.pk }}" data-status="DELIVERED"
+                        data-csrf="{{ csrf_token }}">
+                  <i class="bi bi-box-arrow-right me-1"></i>Delivered
+                </button>
+                {% endif %}
+                <a href="{% url 'opticals:order_detail' order.pk %}" class="btn btn-xs btn-outline-info" style="font-size:.7rem;padding:2px 6px;">View</a>
+                <a href="{% url 'opticals:order_quotation' order.pk %}" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 6px;" target="_blank">
+                  <i class="bi bi-file-earmark-text"></i>
+                </a>
+              </div>
             </td>
           </tr>
           {% empty %}
@@ -165,4 +187,61 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ── Auto-refresh countdown ─────────────────────────────────────────── */
+(function () {
+  var INTERVAL = 30, sec = INTERVAL;
+  var el = document.getElementById('optCountdownSec');
+  function tick() {
+    var active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) { sec = INTERVAL; if(el) el.textContent=sec; return; }
+    sec--;
+    if (el) el.textContent = sec;
+    if (sec <= 0) window.location.reload();
+  }
+  setInterval(tick, 1000);
+})();
+
+/* ── Quick status update (Mark Ready / Mark Delivered) ───────────────── */
+document.querySelectorAll('.opt-quick-status').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var orderId = this.dataset.order;
+    var newStatus = this.dataset.status;
+    var csrf = this.dataset.csrf;
+    var row = document.getElementById('opt-row-' + orderId);
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    fetch('/opticals/orders/' + orderId + '/quick-status/', {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': csrf,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'status=' + encodeURIComponent(newStatus),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.success) {
+        // Update badge
+        var badge = document.getElementById('status-badge-' + orderId);
+        if (badge) {
+          badge.className = 'badge opt-status-badge ' + (newStatus === 'DELIVERED' ? 'bg-success' : 'bg-success bg-opacity-75');
+          badge.textContent = data.status;
+        }
+        // Remove action buttons from row
+        var btns = row.querySelectorAll('.opt-quick-status');
+        btns.forEach(function (b) { b.remove(); });
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Error';
+      }
+    })
+    .catch(function () { btn.disabled = false; btn.textContent = 'Error'; });
+  });
+});
+</script>
 {% endblock %}

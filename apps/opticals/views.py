@@ -393,7 +393,6 @@ def order_list_unpaid(request):
 @login_required
 def order_detail(request, order_id):
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
-    # Payment history: all payments tagged with this order number
     from apps.billing.models import Payment
     payments = list(
         Payment.objects.filter(
@@ -402,11 +401,27 @@ def order_detail(request, order_id):
             is_deleted=False,
         ).select_related('received_by').order_by('payment_date')
     )
-    return render(request, 'opticals/order_detail.html', {'order': order, 'payments': payments})
+    # Only cashier/chief_cashier/medical_director/super_admin can collect optical payment.
+    # Optical dispenser sees the order details but NOT the payment collection form.
+    user = request.user
+    can_collect_payment = (
+        user.is_cashier or user.is_chief_cashier or
+        user.is_medical_director or user.is_super_admin
+    )
+    return render(request, 'opticals/order_detail.html', {
+        'order': order,
+        'payments': payments,
+        'can_collect_payment': can_collect_payment,
+    })
 
 
 @login_required
 def update_order_status(request, order_id):
+    user = request.user
+    if not (user.is_optical_dispenser or user.is_cashier or user.is_chief_cashier
+            or user.is_medical_director or user.is_super_admin):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
     if request.method == 'POST':
         old_status = order.status
@@ -461,12 +476,18 @@ def update_order_status(request, order_id):
 @require_POST
 def collect_payment(request, order_id):
     """
-    Optical shop collects payment directly — no need to send patient to central cashier.
-    Creates invoice items for the order and records payment at the optical counter.
+    Optical cashier collects payment — only cashier/chief_cashier/super_admin/medical_director allowed.
+    Dispenser creates orders and prints quotes; cashier handles money.
     """
     from decimal import Decimal, InvalidOperation
     from apps.billing.models import Payment, PaymentMethod, InvoiceStatus, ServiceCategory
     from apps.billing.utils import get_or_create_today_invoice, add_billing_item
+    from django.http import HttpResponseForbidden
+
+    user = request.user
+    if not (user.is_cashier or user.is_chief_cashier or user.is_medical_director or user.is_super_admin):
+        messages.error(request, 'Only the optical cashier can collect payments.')
+        return redirect('opticals:order_detail', order_id=order_id)
 
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
 
@@ -565,6 +586,136 @@ def order_receipt(request, order_id):
     """Printable optical order receipt for patient."""
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
     return render(request, 'opticals/order_receipt.html', {'order': order})
+
+
+@login_required
+def order_quotation(request, order_id):
+    """Printable price quotation slip — given to patient to take to the cashier."""
+    order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
+    from apps.accounts.models import HospitalConfig
+    hospital = HospitalConfig.get()
+    return render(request, 'opticals/order_quotation.html', {'order': order, 'hospital': hospital})
+
+
+@login_required
+@require_POST
+def quick_update_status(request, order_id):
+    """AJAX quick status update from dashboard (Mark Ready / Mark Delivered)."""
+    from django.http import JsonResponse
+    if not (request.user.is_optical_dispenser or request.user.is_super_admin or request.user.is_medical_director):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
+    new_status = request.POST.get('status', '').strip()
+    allowed = ['LAB', 'READY', 'DELIVERED']
+    if new_status not in allowed:
+        return JsonResponse({'error': 'Invalid status'}, status=400)
+    order.status = new_status
+    if new_status == OpticalOrderStatus.DELIVERED:
+        order.delivered_date = timezone.localdate()
+        order.delivered_to = request.user
+    order.save(update_fields=['status', 'updated_at'] + (['delivered_date', 'delivered_to'] if new_status == OpticalOrderStatus.DELIVERED else []))
+    return JsonResponse({'success': True, 'status': order.get_status_display()})
+
+
+@login_required
+def optical_stats_view(request):
+    """Monthly statistics for optical shop."""
+    if not (request.user.is_optical_dispenser or request.user.is_medical_director
+            or request.user.is_super_admin or request.user.is_ceo
+            or request.user.is_admin_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    import json, calendar
+    from datetime import date as _date, timedelta
+    from django.db.models import Count, Sum, Q as _Q
+
+    today = timezone.localdate()
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = _date(year, month, 1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = month_start.year, month_start.month
+    last_day  = calendar.monthrange(year, month)[1]
+    month_end = _date(year, month, last_day)
+
+    base = OpticalOrder.objects.filter(
+        is_deleted=False,
+        ordered_date__gte=month_start,
+        ordered_date__lte=month_end,
+    )
+
+    total_orders    = base.count()
+    delivered_count = base.filter(status=OpticalOrderStatus.DELIVERED).count()
+    ready_count     = base.filter(status=OpticalOrderStatus.READY).count()
+    lab_count       = base.filter(status=OpticalOrderStatus.LAB_PROCESSING).count()
+    cancelled_count = base.filter(status=OpticalOrderStatus.CANCELLED).count()
+    delivery_rate   = round(delivered_count / total_orders * 100, 1) if total_orders else 0
+
+    revenue = base.filter(status=OpticalOrderStatus.DELIVERED).aggregate(
+        total=Sum('total_amount')
+    )['total'] or 0
+
+    # Daily volume (last 14 days)
+    daily_volume = []
+    for i in range(13, -1, -1):
+        d = today - timedelta(days=i)
+        cnt = OpticalOrder.objects.filter(is_deleted=False, ordered_date=d).count()
+        daily_volume.append({'date': d.strftime('%d %b'), 'count': cnt})
+    daily_json = json.dumps({'labels': [d['date'] for d in daily_volume], 'data': [d['count'] for d in daily_volume]})
+
+    # Status breakdown
+    status_json = json.dumps({
+        'labels': ['Delivered', 'Ready', 'At Lab', 'Ordered', 'Cancelled'],
+        'data':   [delivered_count, ready_count, lab_count,
+                   total_orders - delivered_count - ready_count - lab_count - cancelled_count,
+                   cancelled_count],
+    })
+
+    # Gender
+    gender_raw = base.values('patient__gender').annotate(count=Count('id'))
+    gender_map = {g['patient__gender']: g['count'] for g in gender_raw}
+    male_count, female_count = gender_map.get('M', 0), gender_map.get('F', 0)
+    gender_json = json.dumps([
+        {'label': 'Male',   'count': male_count},
+        {'label': 'Female', 'count': female_count},
+    ])
+
+    # Top frames
+    top_frames = list(
+        base.filter(frame__isnull=False)
+        .values('frame__name', 'frame__brand')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:10]
+    )
+
+    # Month nav
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_year, next_month = (year + 1, 1)  if month == 12 else (year, month + 1)
+
+    context = {
+        'year': year, 'month': month,
+        'month_name': _date(year, month, 1).strftime('%B %Y'),
+        'prev_year': prev_year, 'prev_month': prev_month,
+        'next_year': next_year, 'next_month': next_month,
+        'total_orders': total_orders,
+        'delivered_count': delivered_count,
+        'ready_count': ready_count,
+        'lab_count': lab_count,
+        'cancelled_count': cancelled_count,
+        'delivery_rate': delivery_rate,
+        'revenue': revenue,
+        'daily_json': daily_json,
+        'status_json': status_json,
+        'gender_json': gender_json,
+        'male_count': male_count,
+        'female_count': female_count,
+        'top_frames': top_frames,
+        'today': today,
+    }
+    return render(request, 'opticals/stats.html', context)
 
 
 @login_required

@@ -255,6 +255,8 @@ def record_add(request, pk):
 @login_required
 def stats_view(request):
     """Annual and monthly outreach statistics for management reports."""
+    if not _can_manage(request.user):
+        return HttpResponseForbidden()
     today = timezone.localdate()
     year = int(request.GET.get('year', today.year))
 

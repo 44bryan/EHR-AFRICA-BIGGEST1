@@ -213,8 +213,27 @@
 
 <!-- ══ Interpretation + File (all types) ══ -->
 <div class="card border-0 shadow-sm mb-3">
-  <div class="card-header bg-white border-bottom py-2"><h6 class="mb-0 fw-semibold small">Interpretation &amp; Report</h6></div>
+  <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between">
+    <h6 class="mb-0 fw-semibold small">Interpretation &amp; Report</h6>
+    <button type="button" class="btn btn-sm btn-outline-primary d-flex align-items-center gap-1" id="aiGenBtn" title="Generate AI findings template">
+      <i class="bi bi-robot"></i><span class="d-none d-sm-inline">AI Generate Template</span>
+    </button>
+  </div>
   <div class="card-body">
+    <div id="ai-inv-panel" class="d-none mb-3 p-3 rounded" style="background:#f0f7ff;border:1px solid #b6d4fe;">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <i class="bi bi-robot text-primary"></i>
+        <span class="fw-semibold small text-primary">AI Findings Template</span>
+        <span id="ai-inv-spinner" class="d-none"><span class="spinner-border spinner-border-sm text-primary"></span></span>
+      </div>
+      <div id="ai-inv-text" class="small" style="white-space:pre-wrap;"></div>
+      <div class="d-flex gap-2 mt-2" id="ai-inv-actions" style="display:none!important;">
+        <button type="button" class="btn btn-sm btn-primary" id="aiUseBtn">
+          <i class="bi bi-check2 me-1"></i>Insert into Interpretation
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="aiDismissBtn">Dismiss</button>
+      </div>
+    </div>
     <div class="row g-3">
       <div class="col-12">
         <label class="form-label small fw-semibold">Overall Interpretation <span class="text-danger">*</span></label>
@@ -294,4 +313,105 @@
 </div>
 
 </form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var INV_TYPE    = "{{ order.investigation_type.name|escapejs }}";
+  var EYE         = "{{ order.eye|escapejs }}";
+  var INDICATION  = "{{ order.clinical_indication|default:''|escapejs }}";
+  var CSRF        = "{{ csrf_token }}";
+
+  var panel       = document.getElementById('ai-inv-panel');
+  var spinner     = document.getElementById('ai-inv-spinner');
+  var textEl      = document.getElementById('ai-inv-text');
+  var actions     = document.getElementById('ai-inv-actions');
+  var genBtn      = document.getElementById('aiGenBtn');
+  var useBtn      = document.getElementById('aiUseBtn');
+  var dismissBtn  = document.getElementById('aiDismissBtn');
+  var interpField = document.getElementById('id_interpretation');
+
+  function collectObservations() {
+    /* gather all filled textarea/input values from the findings cards, excluding interpretation */
+    var obs = [];
+    document.querySelectorAll('form textarea, form input[type="text"], form input[type="number"]').forEach(function (el) {
+      if (el.id === 'id_interpretation') return;
+      var label = '';
+      var labelEl = document.querySelector('label[for="' + el.id + '"]');
+      if (!labelEl && el.name) {
+        labelEl = document.querySelector('label[for="id_' + el.name + '"]');
+      }
+      if (labelEl) label = labelEl.textContent.trim().replace('*', '').trim();
+      if (el.value && el.value.trim()) {
+        obs.push((label ? label + ': ' : '') + el.value.trim());
+      }
+    });
+    /* also grab select values */
+    document.querySelectorAll('form select').forEach(function (sel) {
+      if (!sel.value) return;
+      var labelEl = document.querySelector('label[for="' + sel.id + '"]');
+      if (!labelEl && sel.name) labelEl = document.querySelector('label[for="id_' + sel.name + '"]');
+      var lbl = labelEl ? labelEl.textContent.trim().replace('*','').trim() : sel.name;
+      obs.push(lbl + ': ' + sel.options[sel.selectedIndex].text);
+    });
+    return obs.join(' | ');
+  }
+
+  if (genBtn) {
+    genBtn.addEventListener('click', function () {
+      var observations = collectObservations();
+      panel.classList.remove('d-none');
+      spinner.classList.remove('d-none');
+      textEl.textContent = '';
+      actions.style.display = 'none';
+      genBtn.disabled = true;
+
+      fetch('/ai-assistant/investigation-template/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({
+          investigation_type: INV_TYPE,
+          eye: EYE,
+          clinical_indication: INDICATION,
+          key_observations: observations
+        })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        spinner.classList.add('d-none');
+        genBtn.disabled = false;
+        if (data.success) {
+          textEl.textContent = data.template_text;
+          actions.style.removeProperty('display');
+        } else {
+          textEl.textContent = 'AI error: ' + (data.error || 'Unknown error');
+        }
+      })
+      .catch(function (err) {
+        spinner.classList.add('d-none');
+        genBtn.disabled = false;
+        textEl.textContent = 'Request failed. Check network connection.';
+        console.error(err);
+      });
+    });
+  }
+
+  if (useBtn) {
+    useBtn.addEventListener('click', function () {
+      if (interpField) {
+        interpField.value = textEl.textContent;
+        interpField.focus();
+      }
+      panel.classList.add('d-none');
+    });
+  }
+
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', function () {
+      panel.classList.add('d-none');
+    });
+  }
+})();
+</script>
 {% endblock %}

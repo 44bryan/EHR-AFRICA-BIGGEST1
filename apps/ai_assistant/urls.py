@@ -32,4 +32,8 @@ urlpatterns = [
     path('imaging-analysis/<int:result_id>/', views.ai_imaging_analysis_view, name='imaging_analysis'),
     # AI SOAP Note Generator
     path('soap-note/', views.ai_soap_note_view, name='soap_note'),
+    # AI Lab Result Interpretation
+    path('lab-interpret/', views.ai_lab_interpret_view, name='lab_interpret'),
+    # AI Investigation Findings Template Generator
+    path('investigation-template/', views.ai_investigation_template_view, name='investigation_template'),
 ]

@@ -19,5 +19,8 @@ urlpatterns = [
     path('orders/<uuid:order_id>/status/', views.update_order_status, name='update_status'),
     path('orders/<uuid:order_id>/pay/', views.collect_payment, name='collect_payment'),
     path('orders/<uuid:order_id>/receipt/', views.order_receipt, name='order_receipt'),
+    path('orders/<uuid:order_id>/quotation/', views.order_quotation, name='order_quotation'),
+    path('orders/<uuid:order_id>/quick-status/', views.quick_update_status, name='quick_status'),
+    path('stats/', views.optical_stats_view, name='stats'),
     path('search/', views.patient_search, name='patient_search'),
 ]

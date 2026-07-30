@@ -877,7 +877,9 @@ def ipd_nursing_stats(request):
     month_start = today.replace(day=1)
 
     if not (request.user.is_super_admin or request.user.is_medical_director
-            or request.user.is_admin_staff or request.user.role in ['ipd_nurse', 'admission_officer']):
+            or request.user.is_admin_staff or request.user.is_ceo
+            or request.user.is_admin_director
+            or request.user.role in ['ipd_nurse', 'admission_officer']):
         return HttpResponseForbidden()
 
     # ── Date range + status filters ─────────────────────────────────────────

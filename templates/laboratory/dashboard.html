@@ -10,7 +10,10 @@
       <div class="text-muted small">{{ today|date:"l, d F Y" }} — Lab technician dashboard</div>
     </div>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 align-items-center">
+    <span class="badge bg-secondary" id="refreshCountdown" title="Page auto-refreshes to show new orders">
+      <i class="bi bi-arrow-clockwise me-1"></i><span id="countdownSec">30</span>s
+    </span>
     <a href="{% url 'laboratory:stats' %}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-graph-up me-1"></i>Stats
     </a>
@@ -24,6 +27,18 @@
 {% block content %}
 
 {% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up patient record…" %}
+
+{# ── Patient search bar ────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 px-3">
+    <div class="position-relative">
+      <input type="text" id="labPatientSearch" class="form-control form-control-sm ps-4"
+             placeholder="Search patient by name or ID…" autocomplete="off">
+      <i class="bi bi-search position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"></i>
+      <div id="labSearchResults" class="dropdown-menu w-100 shadow-sm" style="display:none;max-height:220px;overflow-y:auto;position:absolute;z-index:1000;"></div>
+    </div>
+  </div>
+</div>
 
 <!-- KPI Row -->
 <div class="row g-3 mb-4">
@@ -89,7 +104,7 @@
           <td class="text-muted">{{ v.attending_doctor.get_full_name|default:"—" }}</td>
           <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
           <td>
-            <a href="{% url 'laboratory:list' %}?status=ORDERED" class="btn btn-sm btn-primary">
+            <a href="{% url 'laboratory:list' %}?patient_id={{ v.patient.patient_id }}" class="btn btn-sm btn-primary">
               <i class="bi bi-flask me-1"></i>View Orders
             </a>
           </td>
@@ -228,7 +243,7 @@
         <ul class="list-group list-group-flush small">
           {% for c in category_stats %}
           <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
-            <span>{{ c.test_type__category }}</span>
+            <span>{{ c.test_type__category|title }}</span>
             <span class="badge bg-primary rounded-pill">{{ c.count }}</span>
           </li>
           {% endfor %}
@@ -265,4 +280,67 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ── Auto-refresh countdown ─────────────────────────────────────────── */
+(function () {
+  var INTERVAL = 30;
+  var sec = INTERVAL;
+  var el = document.getElementById('countdownSec');
+
+  function tick() {
+    var active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) {
+      sec = INTERVAL;
+      if (el) el.textContent = sec;
+      return;
+    }
+    sec--;
+    if (el) el.textContent = sec;
+    if (sec <= 0) { window.location.reload(); }
+  }
+  setInterval(tick, 1000);
+})();
+
+/* ── Patient search (debounced AJAX) ─────────────────────────────────── */
+(function () {
+  var input = document.getElementById('labPatientSearch');
+  var results = document.getElementById('labSearchResults');
+  if (!input || !results) return;
+
+  var timer;
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if (!q) { results.style.display = 'none'; results.innerHTML = ''; return; }
+    timer = setTimeout(function () {
+      fetch('/patients/search/?q=' + encodeURIComponent(q), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.length) { results.style.display = 'none'; results.innerHTML = ''; return; }
+        results.innerHTML = data.map(function (p) {
+          return '<a class="dropdown-item small py-2" href="/laboratory/?patient_id=' + encodeURIComponent(p.patient_id) + '">' +
+            '<strong>' + p.name + '</strong> <span class="text-muted ms-2">' + p.patient_id + '</span></a>';
+        }).join('');
+        results.style.display = 'block';
+      })
+      .catch(function () { results.style.display = 'none'; });
+    }, 280);
+  });
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { results.style.display = 'none'; input.value = ''; }
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!input.contains(e.target) && !results.contains(e.target)) {
+      results.style.display = 'none';
+    }
+  });
+})();
+</script>
 {% endblock %}

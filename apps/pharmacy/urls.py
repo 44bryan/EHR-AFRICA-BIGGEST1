@@ -5,6 +5,7 @@ app_name = 'pharmacy'
 
 urlpatterns = [
     path('', views.pharmacy_dashboard, name='dashboard'),
+    path('stats/', views.pharmacy_stats_view, name='stats'),
     path('drugs/', views.drug_list, name='drug_list'),
     path('drugs/new/', views.drug_create, name='drug_create'),
     path('drugs/<uuid:drug_id>/', views.drug_detail, name='drug_detail'),
@@ -20,6 +21,7 @@ urlpatterns = [
     path('dispensing/<uuid:dispensing_id>/', views.dispensing_detail, name='dispensing_detail'),
     path('dispensing/<uuid:dispensing_id>/add-item/', views.add_dispensing_item, name='add_dispensing_item'),
     path('dispensing/<uuid:dispensing_id>/complete/', views.complete_dispensing, name='complete_dispensing'),
+    path('dispensing/<uuid:dispensing_id>/cancel/', views.cancel_dispensing, name='cancel_dispensing'),
     path('pilferage/', views.pilferage_dashboard, name='pilferage'),
     path('dispensing/<uuid:dispensing_id>/receipt/', views.dispensing_receipt, name='dispensing_receipt'),
     path('search/', views.patient_search, name='patient_search'),

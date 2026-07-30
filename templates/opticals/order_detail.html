@@ -17,9 +17,14 @@
     {% else %}
     <span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-check-circle me-1"></i>Fully Paid</span>
     {% endif %}
+    <a href="{% url 'opticals:order_quotation' order.id %}" class="btn btn-outline-primary btn-sm" target="_blank">
+      <i class="bi bi-file-earmark-text me-1"></i>Print Quote
+    </a>
+    {% if order.balance_due <= 0 %}
     <a href="{% url 'opticals:order_receipt' order.id %}" class="btn btn-outline-dark btn-sm" target="_blank">
       <i class="bi bi-printer me-1"></i>Print Receipt
     </a>
+    {% endif %}
     <a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
   </div>
 </div>
@@ -131,7 +136,7 @@
     </div>
     {% endif %}
 
-    {# ── Balance / payment CTA ── #}
+    {# ── Balance / payment CTA — cashier only collects, dispenser sees read-only notice ── #}
     {% if order.balance_due > 0 %}
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body">
@@ -148,7 +153,8 @@
             </div>
           </div>
         </div>
-        {# Inline payment form — no need to go to central cashier #}
+        {% if can_collect_payment %}
+        {# Inline payment form — cashier role only #}
         <form method="post" action="{% url 'opticals:collect_payment' order.id %}"
               onsubmit="return confirm('Confirm payment of ' + document.getElementById('pay-amount').value + ' FCFA?')">
           {% csrf_token %}
@@ -180,6 +186,12 @@
             </div>
           </div>
         </form>
+        {% else %}
+        <div class="alert alert-warning py-2 mb-0 small">
+          <i class="bi bi-info-circle me-1"></i>
+          Payment collection is handled by the <strong>cashier</strong>. Direct the patient to the cashier desk to settle the balance of <strong>{{ order.balance_due|floatformat:0|intcomma }} FCFA</strong>.
+        </div>
+        {% endif %}
       </div>
     </div>
     {% else %}

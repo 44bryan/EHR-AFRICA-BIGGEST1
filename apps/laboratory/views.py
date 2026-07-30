@@ -20,11 +20,13 @@ def lab_dashboard(request):
     today = timezone.localdate()
     month_start = today.replace(day=1)
 
-    # Today's pending work
+    # Pending work — last 7 days only (avoids pulling historical backlog)
+    week_ago = today - timedelta(days=7)
     pending_orders = LabOrder.objects.filter(
         is_deleted=False,
         status__in=['ORDERED', 'SAMPLE_COLLECTED', 'PROCESSING'],
-    ).select_related('patient', 'ordered_by').order_by('-created_at')
+        created_at__date__gte=week_ago,
+    ).select_related('patient', 'ordered_by').order_by('-created_at')[:200]
 
     # Today's completed
     completed_today = LabOrder.objects.filter(
@@ -126,7 +128,10 @@ def lab_dashboard(request):
 
 @login_required
 def lab_list_view(request):
-    orders = LabOrder.objects.select_related('patient', 'ordered_by').filter(is_deleted=False)
+    orders = (LabOrder.objects
+              .select_related('patient', 'ordered_by')
+              .prefetch_related('items__test_type')
+              .filter(is_deleted=False))
 
     if not (request.user.is_medical_director or request.user.is_admin_staff or request.user.is_lab_tech):
         orders = orders.filter(ordered_by=request.user)
@@ -139,6 +144,10 @@ def lab_list_view(request):
     if urgency_filter:
         orders = orders.filter(urgency=urgency_filter)
 
+    patient_id_filter = request.GET.get('patient_id', '').strip()
+    if patient_id_filter:
+        orders = orders.filter(patient__patient_id__iexact=patient_id_filter)
+
     orders = orders.order_by('-created_at')
 
     return render(request, 'laboratory/list.html', {
@@ -147,13 +156,16 @@ def lab_list_view(request):
         'urgency_choices': [('ROUTINE','Routine'),('URGENT','Urgent'),('EMERGENCY','Emergency')],
         'status_filter': status_filter,
         'urgency_filter': urgency_filter,
+        'patient_id_filter': patient_id_filter,
     })
 
 
 @login_required
 def lab_stats_view(request):
     """Monthly statistics for lab — WHO-standard demographics included."""
-    if not (request.user.is_medical_director or request.user.is_admin_staff or request.user.is_lab_tech):
+    if not (request.user.is_lab_tech or request.user.is_medical_director
+            or request.user.is_admin_staff or request.user.is_super_admin
+            or request.user.is_ceo or request.user.is_admin_director):
         return HttpResponseForbidden()
 
     import json
@@ -669,9 +681,25 @@ def enter_results_view(request, pk):
         messages.success(request, 'Results saved successfully.')
         return redirect('laboratory:detail', pk=pk)
 
+    # Previous results for the same test types on this patient — last 5 per test type
+    from django.db.models import Prefetch as _Prefetch
+    test_type_ids = [item.test_type_id for item in items]
+    prev_results = list(
+        LabResult.objects.filter(
+            is_deleted=False,
+            order_item__test_type_id__in=test_type_ids,
+            order_item__order__patient=order.patient,
+            order_item__order__status='COMPLETED',
+        )
+        .exclude(order_item__order=order)
+        .select_related('order_item__test_type', 'order_item__order', 'performed_by', 'verified_by')
+        .order_by('-created_at')[:10]
+    )
+
     return render(request, 'laboratory/results_form.html', {
         'order': order,
         'items': items,
+        'prev_results': prev_results,
     })
 
 

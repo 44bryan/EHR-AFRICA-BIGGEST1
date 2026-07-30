@@ -2,7 +2,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, F, Value, IntegerField
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.http import JsonResponse
 from .models import Drug, DrugStock, Dispensing, DispensingItem, DispensingStatus, StockAdjustment, AdjustmentReason
@@ -13,37 +14,41 @@ from apps.prescriptions.models import DrugPrescription
 
 @login_required
 def pharmacy_dashboard(request):
+    from django.core.cache import cache
     today = timezone.localdate()
-    all_drugs = list(Drug.objects.filter(is_active=True, is_deleted=False))
-    low_stock_drugs = [d for d in all_drugs if d.needs_reorder]
-
-    # Expiry buckets
-    _base_expiry_qs = DrugStock.objects.filter(
-        is_deleted=False,
-        expiry_date__gte=today,
-        quantity_remaining__gt=0,
-    ).select_related('drug').order_by('expiry_date')
-    expiring_critical = list(_base_expiry_qs.filter(
-        expiry_date__lte=today + timezone.timedelta(days=30)
-    ))
-    expiring_warning = list(_base_expiry_qs.filter(
-        expiry_date__gt=today + timezone.timedelta(days=30),
-        expiry_date__lte=today + timezone.timedelta(days=60),
-    ))
-    expiring_notice = list(_base_expiry_qs.filter(
-        expiry_date__gt=today + timezone.timedelta(days=60),
-        expiry_date__lte=today + timezone.timedelta(days=90),
-    ))
-    expiring_soon = expiring_critical + expiring_warning + expiring_notice
-
-    # Already expired batches still in stock
-    expired_in_stock = list(
-        DrugStock.objects.filter(
-            is_deleted=False,
-            expiry_date__lt=today,
-            quantity_remaining__gt=0,
+    # ── Stock & expiry data — cached 90s (changes infrequently, auto-refresh is 30s) ──
+    _cache_key = f'pharm_stock_data_{today}'
+    _cached_stock = cache.get(_cache_key)
+    if _cached_stock is None:
+        _stock_q = Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=today)
+        low_stock_drugs = list(
+            Drug.objects.filter(is_active=True, is_deleted=False)
+            .annotate(stock_total=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField())))
+            .filter(stock_total__lte=F('reorder_level'))
+            .order_by('name')
+        )
+        _base_expiry_qs = DrugStock.objects.filter(
+            is_deleted=False, expiry_date__gte=today, quantity_remaining__gt=0,
         ).select_related('drug').order_by('expiry_date')
-    )
+        expiring_critical = list(_base_expiry_qs.filter(expiry_date__lte=today + timezone.timedelta(days=30)))
+        expiring_warning  = list(_base_expiry_qs.filter(expiry_date__gt=today + timezone.timedelta(days=30), expiry_date__lte=today + timezone.timedelta(days=60)))
+        expiring_notice   = list(_base_expiry_qs.filter(expiry_date__gt=today + timezone.timedelta(days=60), expiry_date__lte=today + timezone.timedelta(days=90)))
+        expired_in_stock  = list(DrugStock.objects.filter(is_deleted=False, expiry_date__lt=today, quantity_remaining__gt=0).select_related('drug').order_by('expiry_date'))
+        _cached_stock = {
+            'low_stock_drugs': low_stock_drugs,
+            'expiring_critical': expiring_critical,
+            'expiring_warning': expiring_warning,
+            'expiring_notice': expiring_notice,
+            'expired_in_stock': expired_in_stock,
+        }
+        cache.set(_cache_key, _cached_stock, 90)
+    else:
+        low_stock_drugs  = _cached_stock['low_stock_drugs']
+        expiring_critical = _cached_stock['expiring_critical']
+        expiring_warning  = _cached_stock['expiring_warning']
+        expiring_notice   = _cached_stock['expiring_notice']
+        expired_in_stock  = _cached_stock['expired_in_stock']
+    expiring_soon = expiring_critical + expiring_warning + expiring_notice
 
     today_dispensings = Dispensing.objects.filter(
         dispensed_at__date=today, is_deleted=False
@@ -129,6 +134,15 @@ def pharmacy_dashboard(request):
         except Exception:
             pass
 
+    # Declined prescriptions today
+    from apps.prescriptions.models import DeclinedPrescription
+    try:
+        declined_today = DeclinedPrescription.objects.filter(
+            created_at__date=today, is_deleted=False,
+        ).count()
+    except Exception:
+        declined_today = 0
+
     context = {
         'low_stock_count': len(low_stock_drugs),
         'low_stock_drugs': low_stock_drugs[:15],
@@ -144,12 +158,126 @@ def pharmacy_dashboard(request):
             created_at__date=today,
             is_deleted=False,
         ).count(),
-        'total_drugs': len(all_drugs),
+        'total_drugs': Drug.objects.filter(is_active=True, is_deleted=False).count(),
         'pharmacy_work_orders': pharmacy_work_orders,
         'waiting_visits': waiting_visits,
         'my_shift': my_shift,
+        'declined_today': declined_today,
     }
     return render(request, 'pharmacy/dashboard.html', context)
+
+
+@login_required
+def pharmacy_stats_view(request):
+    """Monthly pharmacy statistics — dispensings, top drugs, revenue, gender breakdown."""
+    if not (request.user.is_pharmacist or request.user.is_medical_director
+            or request.user.is_admin_staff or request.user.is_super_admin
+            or request.user.is_ceo or request.user.is_admin_director
+            or request.user.is_finance_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    import json, calendar
+    from datetime import date as _date
+    from django.db.models import Count, Sum, Q as _Q
+
+    today = timezone.localdate()
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = _date(year, month, 1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = month_start.year, month_start.month
+
+    last_day   = calendar.monthrange(year, month)[1]
+    month_end  = _date(year, month, last_day)
+
+    base = Dispensing.objects.filter(
+        is_deleted=False,
+        dispensed_at__date__gte=month_start,
+        dispensed_at__date__lte=month_end,
+    )
+    base_items = DispensingItem.objects.filter(
+        dispensing__is_deleted=False,
+        dispensing__dispensed_at__date__gte=month_start,
+        dispensing__dispensed_at__date__lte=month_end,
+    )
+
+    total_dispensings  = base.count()
+    total_items        = base_items.count()
+    dispensed_count    = base.filter(status=DispensingStatus.DISPENSED).count()
+    partial_count      = base.filter(status=DispensingStatus.PARTIAL).count()
+    cancelled_count    = base.filter(status=DispensingStatus.CANCELLED).count()
+    completion_rate    = round(dispensed_count / total_dispensings * 100, 1) if total_dispensings else 0
+
+    # Revenue (total_amount on dispensed records)
+    revenue = base.filter(status=DispensingStatus.DISPENSED).aggregate(
+        total=Sum('total_amount')
+    )['total'] or 0
+
+    # Top 15 drugs dispensed
+    top_drugs = list(
+        base_items.values('drug_name')
+        .annotate(count=Count('id'), qty=Sum('quantity'))
+        .order_by('-qty')[:15]
+    )
+
+    # Daily volume (last 14 days)
+    from datetime import timedelta
+    daily_volume = []
+    for i in range(13, -1, -1):
+        d = today - timedelta(days=i)
+        cnt = Dispensing.objects.filter(is_deleted=False, dispensed_at__date=d).count()
+        daily_volume.append({'date': d.strftime('%d %b'), 'count': cnt})
+    daily_json = json.dumps({'labels': [d['date'] for d in daily_volume], 'data': [d['count'] for d in daily_volume]})
+
+    # Gender breakdown (from patient)
+    gender_raw = base.values('patient__gender').annotate(count=Count('id'))
+    gender_map = {g['patient__gender']: g['count'] for g in gender_raw}
+    male_count   = gender_map.get('M', 0)
+    female_count = gender_map.get('F', 0)
+    gender_json  = json.dumps([
+        {'label': 'Male',   'count': male_count},
+        {'label': 'Female', 'count': female_count},
+    ])
+
+    # Status doughnut
+    status_json = json.dumps({
+        'labels': ['Dispensed', 'Partial', 'Cancelled', 'Pending'],
+        'data':   [dispensed_count, partial_count, cancelled_count,
+                   total_dispensings - dispensed_count - partial_count - cancelled_count],
+    })
+
+    # Low stock snapshot
+    low_stock_drugs = [d for d in Drug.objects.filter(is_active=True, is_deleted=False) if d.needs_reorder]
+
+    # Month nav
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_year, next_month = (year + 1, 1)  if month == 12 else (year, month + 1)
+
+    context = {
+        'year': year, 'month': month,
+        'month_name': _date(year, month, 1).strftime('%B %Y'),
+        'prev_year': prev_year, 'prev_month': prev_month,
+        'next_year': next_year, 'next_month': next_month,
+        'total_dispensings': total_dispensings,
+        'total_items': total_items,
+        'dispensed_count': dispensed_count,
+        'partial_count': partial_count,
+        'cancelled_count': cancelled_count,
+        'completion_rate': completion_rate,
+        'revenue': revenue,
+        'top_drugs': top_drugs,
+        'daily_json': daily_json,
+        'gender_json': gender_json,
+        'status_json': status_json,
+        'male_count': male_count,
+        'female_count': female_count,
+        'low_stock_count': len(low_stock_drugs),
+        'today': today,
+    }
+    return render(request, 'pharmacy/stats.html', context)
 
 
 @login_required
@@ -582,6 +710,16 @@ def complete_dispensing(request, dispensing_id):
         messages.error(request, 'Payment amount must be greater than zero.')
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
+    # Guard: pharmacy counter always collects full payment — no partial dispensing allowed
+    if amount < dispensing.total_amount:
+        messages.error(
+            request,
+            f'Amount entered ({int(amount):,} FCFA) is less than the total '
+            f'({int(dispensing.total_amount):,} FCFA). '
+            'Full payment is required before drugs can be dispensed.'
+        )
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
     # Step 1: Bill — add dispensing items to patient invoice
     try:
         invoice = get_or_create_today_invoice(dispensing.patient, created_by=request.user)
@@ -612,7 +750,9 @@ def complete_dispensing(request, dispensing_id):
         dispensing.prescription.dispensed_at = timezone.now()
         dispensing.prescription.save(update_fields=['is_dispensed', 'dispensed_by', 'dispensed_at'])
 
-    # Step 4: Close the patient visit if still in PHARMACY status
+    # Step 4: Move patient visit from PHARMACY → WAITING_DISCHARGE so they
+    # can be routed back to reception/exit. Do NOT mark COMPLETED — the visit
+    # may still have other pending stops (cashier, etc.)
     try:
         from apps.patients.models import Visit
         visit = Visit.objects.filter(
@@ -621,7 +761,10 @@ def complete_dispensing(request, dispensing_id):
             is_deleted=False,
         ).order_by('-visit_date').first()
         if visit:
-            visit.status = 'COMPLETED'
+            # Move to BILLING so reception/cashier can confirm any remaining
+            # outstanding items before final discharge. Do NOT mark COMPLETED
+            # here — the central cashier decides when the visit is fully done.
+            visit.status = 'BILLING'
             visit.save(update_fields=['status', 'updated_at'])
     except Exception:
         pass
@@ -632,6 +775,33 @@ def complete_dispensing(request, dispensing_id):
         f'Drugs dispensed — {dispensing.dispensing_number} complete.'
     )
     # Return to pharmacy dashboard so pharmacist can handle the next patient
+    return redirect('pharmacy:dashboard')
+
+
+@login_required
+@require_POST
+def cancel_dispensing(request, dispensing_id):
+    """
+    Cancel a PENDING or PARTIAL dispensing (e.g. patient changed mind before payment).
+    Restores any reserved stock, marks the dispensing CANCELLED.
+    Only pharmacists and admins can cancel.
+    """
+    if not request.user.can_dispense_pharmacy():
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+
+    if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
+        messages.error(request, 'Only pending or partial dispensings can be cancelled.')
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+    reason = request.POST.get('reason', '').strip() or 'Cancelled by pharmacist'
+    dispensing.status = DispensingStatus.CANCELLED
+    dispensing.notes = f'[CANCELLED] {reason}\n{dispensing.notes or ""}'.strip()
+    dispensing.save(update_fields=['status', 'notes'])
+
+    messages.warning(request, f'Dispensing {dispensing.dispensing_number} has been cancelled.')
     return redirect('pharmacy:dashboard')
 
 

@@ -11,18 +11,45 @@
 {% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
     <h4 class="fw-bold mb-0"><i class="bi bi-capsule-pill me-2 text-primary"></i>Pharmacy</h4>
     <div class="text-muted small">Stock management &amp; dispensing overview</div>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <span class="badge bg-secondary" id="pharmRefreshCountdown" title="Auto-refreshes to show new patients">
+      <i class="bi bi-arrow-clockwise me-1"></i><span id="pharmCountdownSec">30</span>s
+    </span>
     <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm">
       <i class="bi bi-capsule me-1"></i>New Dispensing
     </a>
     <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-list-ul me-1"></i>Drug Formulary
     </a>
+  </div>
+</div>
+
+{# ── Drug quick-search bar ───────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 px-3">
+    <div class="row g-2 align-items-center">
+      <div class="col-md-6">
+        <div class="position-relative">
+          <input type="text" id="pharmDrugSearch" class="form-control form-control-sm ps-4"
+                 placeholder="Quick drug stock check — type name…" autocomplete="off">
+          <i class="bi bi-search position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"></i>
+          <div id="pharmDrugResults" class="dropdown-menu w-100 shadow-sm" style="display:none;max-height:220px;overflow-y:auto;position:absolute;z-index:1000;"></div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="position-relative">
+          <input type="text" id="pharmPatientSearch" class="form-control form-control-sm ps-4"
+                 placeholder="Search patient to dispense…" autocomplete="off">
+          <i class="bi bi-person-search position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"></i>
+          <div id="pharmPatientResults" class="dropdown-menu w-100 shadow-sm" style="display:none;max-height:220px;overflow-y:auto;position:absolute;z-index:1000;"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -207,6 +234,14 @@
       </div>
     </div>
   </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="h2 fw-bold {% if declined_today %}text-danger{% else %}text-secondary{% endif %}">{{ declined_today }}</div>
+        <div class="small text-muted">Rx Declined Today</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 {# ── Expiry Summary Badges ── #}
@@ -346,6 +381,82 @@
 
 {% block extra_js %}
 <script>
+/* ── Auto-refresh countdown ─────────────────────────────────────────── */
+(function () {
+  var INTERVAL = 30, sec = INTERVAL;
+  var el = document.getElementById('pharmCountdownSec');
+  function tick() {
+    var active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) { sec = INTERVAL; if(el) el.textContent=sec; return; }
+    sec--;
+    if (el) el.textContent = sec;
+    if (sec <= 0) window.location.reload();
+  }
+  setInterval(tick, 1000);
+})();
+
+/* ── Drug quick-search ──────────────────────────────────────────────── */
+(function () {
+  var input = document.getElementById('pharmDrugSearch');
+  var results = document.getElementById('pharmDrugResults');
+  if (!input || !results) return;
+  var timer;
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if (!q) { results.style.display='none'; results.innerHTML=''; return; }
+    timer = setTimeout(function () {
+      fetch('/pharmacy/drugs/search/?q=' + encodeURIComponent(q), { headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(r => r.json())
+        .then(function (resp) {
+          var data = resp.drugs || resp;
+          if (!data.length) { results.style.display='none'; results.innerHTML=''; return; }
+          results.innerHTML = data.map(function (d) {
+            var stock = d.stock !== undefined ? d.stock : '—';
+            var stockCls = stock === 0 ? 'text-danger fw-bold' : (stock < 10 ? 'text-warning fw-bold' : 'text-success fw-bold');
+            return '<a class="dropdown-item small py-2" href="/pharmacy/drugs/' + d.id + '/">' +
+              '<strong>' + d.name + '</strong>' +
+              (d.form ? ' <span class="text-muted">(' + d.form + ')</span>' : '') +
+              ' — Stock: <span class="' + stockCls + '">' + stock + '</span></a>';
+          }).join('');
+          results.style.display = 'block';
+        })
+        .catch(() => { results.style.display='none'; });
+    }, 280);
+  });
+  input.addEventListener('keydown', e => { if(e.key==='Escape'){results.style.display='none';input.value='';} });
+  document.addEventListener('click', e => { if(!input.contains(e.target)&&!results.contains(e.target)) results.style.display='none'; });
+})();
+
+/* ── Patient search → dispense ──────────────────────────────────────── */
+(function () {
+  var input = document.getElementById('pharmPatientSearch');
+  var results = document.getElementById('pharmPatientResults');
+  if (!input || !results) return;
+  var timer;
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if (!q) { results.style.display='none'; results.innerHTML=''; return; }
+    timer = setTimeout(function () {
+      fetch('/patients/search/?q=' + encodeURIComponent(q), { headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(r => r.json())
+        .then(function (data) {
+          if (!data.length) { results.style.display='none'; results.innerHTML=''; return; }
+          results.innerHTML = data.map(function (p) {
+            return '<a class="dropdown-item small py-2" href="/pharmacy/dispense/?patient=' + encodeURIComponent(p.id) + '">' +
+              '<strong>' + p.name + '</strong> <span class="text-muted ms-2">' + p.patient_id + '</span>' +
+              ' <span class="badge bg-primary ms-2" style="font-size:.65rem;">Dispense</span></a>';
+          }).join('');
+          results.style.display = 'block';
+        })
+        .catch(() => { results.style.display='none'; });
+    }, 280);
+  });
+  input.addEventListener('keydown', e => { if(e.key==='Escape'){results.style.display='none';input.value='';} });
+  document.addEventListener('click', e => { if(!input.contains(e.target)&&!results.contains(e.target)) results.style.display='none'; });
+})();
+
 document.querySelectorAll('.wo-done-btn').forEach(btn => {
   btn.addEventListener('click', function() {
     const woId = this.dataset.wo;

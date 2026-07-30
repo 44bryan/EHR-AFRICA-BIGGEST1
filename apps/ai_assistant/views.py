@@ -839,3 +839,122 @@ def ai_soap_note_view(request):
     if result['success']:
         return JsonResponse({'success': True, 'soap': result['data']})
     return JsonResponse({'success': False, 'error': result.get('error', 'AI unavailable')}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI LAB RESULT INTERPRETATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@login_required
+@require_POST
+def ai_lab_interpret_view(request):
+    """
+    AI clinical interpretation for a single lab test result.
+    POST JSON: { test_name, result_value, result_unit, reference_range, is_abnormal, patient_age, patient_gender }
+    Returns: { success, interpretation }
+    """
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    test_name  = data.get('test_name', '').strip()
+    result_val = data.get('result_value', '').strip()
+    if not test_name or not result_val:
+        return JsonResponse({'error': 'test_name and result_value are required'}, status=400)
+
+    ref_range   = data.get('reference_range', '') or ''
+    result_unit = data.get('result_unit', '') or ''
+    is_abnormal = data.get('is_abnormal', False)
+    age         = data.get('patient_age', '') or ''
+    gender      = data.get('patient_gender', '') or ''
+
+    prompt = (
+        f"Laboratory result for clinical interpretation:\n"
+        f"Test: {test_name}\n"
+        f"Result: {result_val} {result_unit}\n"
+        f"Reference range: {ref_range or 'not specified'}\n"
+        f"Flagged as: {'ABNORMAL' if is_abnormal else 'Normal'}\n"
+        f"Patient: {gender or 'unknown gender'}, age {age or 'unknown'}\n\n"
+        "Provide a brief clinical interpretation (3-5 sentences) covering:\n"
+        "1. Whether this result is clinically significant\n"
+        "2. Common causes if abnormal\n"
+        "3. Recommended follow-up tests or clinical action\n"
+        "Be concise, evidence-based, and suitable for display to a lab technician as a reference aid."
+    )
+
+    try:
+        from apps.ai_assistant.claude_client import _get_chat_fn, OPHTHALMOLOGY_SYSTEM_PROMPT
+        chat_fn = _get_chat_fn()
+        messages = [{'role': 'user', 'content': prompt}]
+        response = chat_fn(
+            system=OPHTHALMOLOGY_SYSTEM_PROMPT,
+            messages=messages,
+            max_tokens=400,
+        )
+        text = response.get('content', '') if isinstance(response, dict) else str(response)
+        return JsonResponse({'success': True, 'interpretation': text.strip()})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI INVESTIGATION FINDINGS TEMPLATE GENERATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@login_required
+@require_POST
+def ai_investigation_template_view(request):
+    """
+    AI template/findings starter for investigation technicians (OCT, fundus, B-scan, etc).
+    POST JSON: { investigation_type, eye, clinical_indication, key_observations }
+    Returns: { success, template_text }
+    """
+    if not (request.user.can_record_investigation_results() or request.user.is_medical_director or request.user.is_super_admin):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    inv_type   = data.get('investigation_type', '').strip()
+    eye        = data.get('eye', '').strip()
+    indication = data.get('clinical_indication', '').strip()
+    key_obs    = data.get('key_observations', '').strip()
+
+    if not inv_type:
+        return JsonResponse({'error': 'investigation_type is required'}, status=400)
+
+    prompt = (
+        f"Generate a structured clinical report template for the following ophthalmic investigation:\n"
+        f"Investigation: {inv_type}\n"
+        f"Eye: {eye or 'not specified'}\n"
+        f"Clinical indication: {indication or 'not specified'}\n"
+        f"Key observations noted by technician: {key_obs or 'none provided'}\n\n"
+        "Write a concise, professional findings report (5-8 sentences) that:\n"
+        "1. Describes the key findings systematically (use standard ophthalmic terminology)\n"
+        "2. Notes any relevant normal/abnormal features\n"
+        "3. Provides a one-line clinical summary\n"
+        "Format as a ready-to-use report text that the technician can paste directly into the result field and edit as needed. "
+        "Do NOT include placeholder brackets — write actual clinical language based on the observations provided."
+    )
+
+    try:
+        from apps.ai_assistant.claude_client import _get_chat_fn, OPHTHALMOLOGY_SYSTEM_PROMPT
+        chat_fn = _get_chat_fn()
+        messages = [{'role': 'user', 'content': prompt}]
+        response = chat_fn(
+            system=OPHTHALMOLOGY_SYSTEM_PROMPT,
+            messages=messages,
+            max_tokens=500,
+        )
+        text = response.get('content', '') if isinstance(response, dict) else str(response)
+        return JsonResponse({'success': True, 'template_text': text.strip()})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
