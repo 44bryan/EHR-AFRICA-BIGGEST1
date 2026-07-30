@@ -2,6 +2,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseForbidden
+from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.db.models import Q
 from .models import InvestigationOrder, InvestigationResult, InvestigationType, InvestigationFile
@@ -492,6 +493,19 @@ def patient_imaging_list(request, patient_id):
         'patient': patient,
         'studies': studies,
     })
+
+
+@login_required
+@require_POST
+def start_investigation_view(request, pk):
+    """Mark an investigation order as IN_PROGRESS — called when tech starts the test on the machine."""
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    if order.status == InvestigationOrder.Status.ORDERED:
+        order.status = InvestigationOrder.Status.IN_PROGRESS
+        order.save(update_fields=['status', 'updated_at'])
+    return redirect('investigations:workstation')
 
 
 @login_required

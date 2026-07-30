@@ -13,9 +13,15 @@
       {{ request.user.full_name }} &bull; {{ today|date:"l, d F Y" }}
     </div>
   </div>
-  <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-list-ul me-1"></i>All Orders
-  </a>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-light border text-muted small d-flex align-items-center gap-1"
+          title="Queue auto-refreshes every 30 seconds">
+      <i class="bi bi-arrow-clockwise"></i> <span id="wsRefreshCountdown">30s</span>
+    </span>
+    <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list-ul me-1"></i>All Orders
+    </a>
+  </div>
 </div>
 
 {# ── Patient Quick Search ── #}
@@ -178,9 +184,17 @@
               <span class="badge bg-warning text-dark">Ordered</span>
             {% endif %}
           </td>
-          <td>
+          <td class="d-flex gap-1 flex-wrap">
+            {% if order.status == 'ORDERED' %}
+            <form method="post" action="{% url 'investigations:start' pk=order.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-warning" title="Mark this test as In Progress">
+                <i class="bi bi-play-circle me-1"></i>Start
+              </button>
+            </form>
+            {% endif %}
             {# Urgent/Emergency — allow even if unpaid (emergencies bypass payment) #}
-            <a href="{% url 'investigations:detail' pk=order.pk %}" class="btn btn-sm btn-danger">
+            <a href="{% url 'investigations:add_result' pk=order.pk %}" class="btn btn-sm btn-danger">
               <i class="bi bi-pencil-square me-1"></i>Enter Result
             </a>
           </td>
@@ -239,9 +253,19 @@
               <i class="bi bi-cash-coin me-1"></i>Awaiting Payment
             </span>
             {% else %}
-            <a href="{% url 'investigations:detail' pk=order.pk %}" class="btn btn-sm btn-primary">
-              <i class="bi bi-pencil-square me-1"></i>Enter Result
-            </a>
+            <div class="d-flex gap-1">
+              {% if order.status == 'ORDERED' %}
+              <form method="post" action="{% url 'investigations:start' pk=order.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Mark as In Progress — patient on machine">
+                  <i class="bi bi-play-circle me-1"></i>Start
+                </button>
+              </form>
+              {% endif %}
+              <a href="{% url 'investigations:add_result' pk=order.pk %}" class="btn btn-sm btn-primary">
+                <i class="bi bi-pencil-square me-1"></i>Enter Result
+              </a>
+            </div>
             {% endif %}
           </td>
         </tr>
@@ -333,6 +357,26 @@
 
 {% block extra_js %}
 <script>
+// ── Auto-refresh every 30 s (skips if a form is open or being filled) ──────
+(function(){
+  var INTERVAL = 30000;
+  var countdown = INTERVAL / 1000;
+  var el = document.getElementById('wsRefreshCountdown');
+  function hasActiveInput() {
+    var active = document.activeElement;
+    return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+  }
+  var timer = setInterval(function(){
+    countdown--;
+    if (el) el.textContent = countdown + 's';
+    if (countdown <= 0){
+      if (!hasActiveInput()) { clearInterval(timer); location.reload(); }
+      else { countdown = INTERVAL / 1000; } // reset if user is typing
+    }
+  }, 1000);
+}());
+
+// ── Patient search ───────────────────────────────────────────────────────────
 (function() {
   var input    = document.getElementById('invPatientSearch');
   var results  = document.getElementById('invSearchResults');

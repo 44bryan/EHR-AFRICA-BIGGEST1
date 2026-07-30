@@ -11,6 +11,7 @@ urlpatterns = [
     path('<uuid:pk>/result/', views.add_result_view, name='add_result'),
     path('<uuid:pk>/verify/', views.verify_result_view, name='verify'),
     path('<uuid:pk>/cancel/', views.cancel_investigation_order, name='cancel'),
+    path('<uuid:pk>/start/', views.start_investigation_view, name='start'),
 
     # ── DICOM Imaging Studies ─────────────────────────────────────────────────
     path('imaging/', views.imaging_study_list, name='imaging_list'),
