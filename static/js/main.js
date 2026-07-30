@@ -505,6 +505,79 @@ function quickAppend(sel) {
   ta.focus();
 }
 
+// ── Prescription & Consultation save buttons — document-level delegation ──────
+// Registered ONCE at module load. Works regardless of HTMX swap timing,
+// script re-execution order, or inline-script failures.
+// The temp form is appended to document.body (outside #wrapper) so HTMX
+// cannot intercept the submit under any configuration.
+(function () {
+  function _tmpSubmit(frm) {
+    var tmp = document.createElement('form');
+    tmp.method = 'POST';
+    tmp.action = frm.action || window.location.href;
+    tmp.style.display = 'none';
+    document.body.appendChild(tmp);
+    new FormData(frm).forEach(function (val, key) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = key; inp.value = val;
+      tmp.appendChild(inp);
+    });
+    tmp.submit();
+  }
+
+  document.addEventListener('click', function (e) {
+    // ── Drug Prescription save ────────────────────────────────────────
+    if (e.target.closest('#prescBtn')) {
+      var btn = document.getElementById('prescBtn');
+      var frm = document.getElementById('prescriptionForm');
+      if (!frm || btn.disabled) return;
+      var hasDrug = false;
+      frm.querySelectorAll('input[name$="-drug_name"]').forEach(function (el) {
+        if (el.value.trim()) hasDrug = true;
+      });
+      if (!hasDrug) { alert('Please select or enter at least one drug name before saving.'); return; }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving\u2026';
+      _tmpSubmit(frm);
+      return;
+    }
+
+    // ── Optical Prescription save ─────────────────────────────────────
+    if (e.target.closest('#opticalPrescBtn')) {
+      var btn2 = document.getElementById('opticalPrescBtn');
+      var frm2 = document.getElementById('opticalPrescForm');
+      if (!frm2 || btn2.disabled) return;
+      btn2.disabled = true;
+      btn2.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving\u2026';
+      _tmpSubmit(frm2);
+      return;
+    }
+  });
+
+  // ── ehrSubmitConsult: also defined at module level as a reliable fallback ──
+  // The inline definition in create.html's extra_js takes priority when loaded;
+  // this is the safety net if HTMX script execution fails.
+  if (typeof window.ehrSubmitConsult !== 'function') {
+    window.ehrSubmitConsult = function (mode, btn) {
+      var frm = document.getElementById('consultationForm');
+      if (!frm) { alert('Form not found \u2014 please reload the page.'); return; }
+      document.querySelectorAll('#consultationForm button[type="button"]').forEach(function (b) {
+        b.disabled = true;
+        b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving\u2026';
+      });
+      var modeInp = frm.querySelector('input[name="save_mode"][data-ehr-mode]');
+      if (!modeInp) {
+        modeInp = document.createElement('input');
+        modeInp.type = 'hidden'; modeInp.name = 'save_mode';
+        modeInp.setAttribute('data-ehr-mode', '1');
+        frm.appendChild(modeInp);
+      }
+      modeInp.value = mode;
+      _tmpSubmit(frm);
+    };
+  }
+})();
+
 // Run on normal page load
 document.addEventListener('DOMContentLoaded', function() {
   ehrInitOnce(); // sidebar, search, persistent listeners — once only
