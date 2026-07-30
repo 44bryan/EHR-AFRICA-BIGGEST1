@@ -399,6 +399,11 @@ function buildBreadcrumbs() {
     'triage':             'Triage',
     'list':               'All Records',
     'create':             'New',
+    'new':                'New',
+    'edit':               'Edit',
+    'detail':             'View Details',
+    'optical':            'Optical Prescription',
+    'drug':               'Drug Prescription',
     'invoice':            'Invoices',
     'pos':                'Point of Sale',
     'reconciliation':     'Reconciliation',
@@ -415,6 +420,9 @@ function buildBreadcrumbs() {
     'analytics':          'Analytics',
     'finance-dashboard':  'Finance Overview',
   };
+
+  // UUID pattern — segments like 19809a10-a54d-4d5e-a7d9-23dec7b258fd must not appear in breadcrumbs
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   const section = parts[0];
   const sectionLabel = SECTIONS[section];
@@ -439,11 +447,15 @@ function buildBreadcrumbs() {
     if (activeLabel && activeLabel !== sectionLabel) {
       pageLabel = activeLabel;
     } else {
-      const lastPart = parts[parts.length - 1];
-      pageLabel = SUB_LABELS[lastPart]
-        || (isNaN(lastPart)
-            ? lastPart.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-            : 'Detail');
+      // Find the last meaningful part — skip UUIDs and bare numbers
+      let resolvedPart = null;
+      for (let i = parts.length - 1; i >= 1; i--) {
+        const p = parts[i];
+        if (!UUID_RE.test(p) && isNaN(p)) { resolvedPart = p; break; }
+      }
+      resolvedPart = resolvedPart || parts[parts.length - 1];
+      pageLabel = SUB_LABELS[resolvedPart]
+        || resolvedPart.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
     crumbs.push({ label: pageLabel });
   }
