@@ -4,7 +4,7 @@
 {% block content %}
 {% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up patient record…" %}
 
-<div class="d-flex justify-content-between align-items-start mb-4">
+<div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h4 class="fw-bold mb-0">
       <i class="bi bi-search-heart me-2 text-primary"></i>Investigation Workstation
@@ -16,6 +16,24 @@
   <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-list-ul me-1"></i>All Orders
   </a>
+</div>
+
+{# ── Patient Quick Search ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2 px-3">
+    <div class="input-group input-group-sm">
+      <span class="input-group-text bg-white border-end-0">
+        <i class="bi bi-search text-muted"></i>
+      </span>
+      <input type="text" id="invPatientSearch" class="form-control border-start-0"
+             placeholder="Search patient by name or ID to view their investigation orders…"
+             autocomplete="off">
+      <button class="btn btn-outline-secondary" type="button" id="invSearchClear" title="Clear">
+        <i class="bi bi-x"></i>
+      </button>
+    </div>
+    <div id="invSearchResults" class="list-group mt-2" style="display:none;"></div>
+  </div>
 </div>
 
 {# ── Stat cards ── #}
@@ -311,4 +329,57 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var input    = document.getElementById('invPatientSearch');
+  var results  = document.getElementById('invSearchResults');
+  var clearBtn = document.getElementById('invSearchClear');
+  var _timer   = null;
+  var _searchUrl = '{% url "patients:search" %}';
+  var _ordersUrl = '{% url "investigations:list" %}';
+
+  function clearSearch() {
+    input.value = '';
+    results.style.display = 'none';
+    results.innerHTML = '';
+  }
+
+  clearBtn.addEventListener('click', clearSearch);
+
+  input.addEventListener('keyup', function(e) {
+    if (e.key === 'Escape') { clearSearch(); return; }
+    clearTimeout(_timer);
+    var q = input.value.trim();
+    if (q.length < 2) { results.style.display = 'none'; return; }
+    _timer = setTimeout(function() {
+      fetch(_searchUrl + '?q=' + encodeURIComponent(q), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          results.innerHTML = '';
+          if (!data.length) {
+            results.innerHTML = '<div class="list-group-item text-muted small py-2">No patients found</div>';
+          } else {
+            data.forEach(function(p) {
+              var a = document.createElement('a');
+              a.className = 'list-group-item list-group-item-action py-2';
+              a.href = _ordersUrl + '?patient=' + encodeURIComponent(p.patient_id);
+              a.innerHTML = '<span class="fw-semibold">' + p.name + '</span> <span class="text-muted small ms-2">' + p.patient_id + '</span>';
+              results.appendChild(a);
+            });
+          }
+          results.style.display = 'block';
+        }).catch(function() {});
+    }, 280);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!input.contains(e.target) && !results.contains(e.target)) {
+      results.style.display = 'none';
+    }
+  });
+}());
+</script>
 {% endblock %}

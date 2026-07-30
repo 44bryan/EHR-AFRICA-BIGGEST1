@@ -318,10 +318,24 @@ def add_result_view(request, pk):
         elif 'FUNDUS' in code_up or 'FUNDUS' in name_up or 'PHOTO' in name_up:
             imaging_subtype = 'FUNDUS'
 
+    # Last 5 completed results for the same test type on this patient (for comparison)
+    from .models import InvestigationOrder as _IO
+    prev_results = list(
+        _IO.objects.filter(
+            patient=order.patient,
+            investigation_type=order.investigation_type,
+            status='COMPLETED',
+            is_deleted=False,
+        ).exclude(pk=order.pk)
+        .select_related('result')
+        .order_by('-created_at')[:5]
+    )
+
     return render(request, 'investigations/result_form.html', {
         'form': form,
         'order': order,
         'imaging_subtype': imaging_subtype,
+        'prev_results': prev_results,
     })
 
 
@@ -600,11 +614,17 @@ def investigation_stats_view(request):
     ])
 
     # ── Top tests ──────────────────────────────────────────────────────────────
-    top_tests = list(
-        base.values('investigation_type__name', 'investigation_type__category')
+    top_tests = [
+        {
+            'name': r['investigation_type__name'],
+            'category': r['investigation_type__category'],
+            'category_display': (r['investigation_type__category'] or '').replace('_', ' ').title(),
+            'count': r['count'],
+        }
+        for r in base.values('investigation_type__name', 'investigation_type__category')
         .annotate(count=Count('id'))
         .order_by('-count')[:10]
-    )
+    ]
 
     # ── By status ──────────────────────────────────────────────────────────────
     status_json = json.dumps([
