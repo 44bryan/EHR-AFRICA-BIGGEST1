@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('consultations', '0003_allow_blank_presenting_complaint'),
-        ('patients', '0018_patientconsent'),
+        ('patients', '0028_visittierchange_is_deleted'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
