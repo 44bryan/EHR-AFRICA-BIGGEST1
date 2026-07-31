@@ -653,14 +653,15 @@ def patient_detail_view(request, patient_id):
         'can_dispatch':         u.can_do_triage,
         'can_counsel':          u.is_counseling_nurse,
         'can_book_appointment': is_doctor or u.is_receptionist or u.is_medical_director or u.is_super_admin or u.is_ceo or u.is_admin_director,
-        'can_edit_demographics': u.is_receptionist or u.is_cashier or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director,
+        # JCI MOI.2: only registration staff edit demographics — cashier processes payment, not demographics
+        'can_edit_demographics': u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director,
         'can_print_pdf':        is_doctor or u.is_medical_director or u.role == 'medical_records' or u.is_super_admin or u.is_ceo,
         'can_qr_card':          u.is_receptionist or u.is_super_admin,
         'can_full_history':     is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
-        # Tabs — each gated strictly to the roles that genuinely need that data
-        # Timeline/vitals: clinical staff only — NOT counseling nurse (triage is a separate workflow)
-        'tab_timeline':         is_doctor or is_clinical_nurse or u.is_opd_nurse or u.is_investigation_tech or u.is_lab_tech or u.role == 'medical_records' or u.is_super_admin or u.is_ceo or u.is_medical_director,
-        'tab_dept_clinical':    is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_ceo or u.is_medical_director,
+        # Tabs — gated strictly per JCI MOI.2 / HIPAA minimum-necessary principle
+        # Timeline/vitals: clinical staff only
+        'tab_timeline':         is_doctor or is_clinical_nurse or u.is_opd_nurse or u.is_investigation_tech or u.is_lab_tech or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        'tab_dept_clinical':    is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
         'tab_problems':         is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
         # Allergies: doctors, nurses, pharmacist (drug safety), paramedicals
         'tab_allergies':        is_doctor or is_clinical_nurse or u.is_pharmacist or u.is_opd_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
@@ -668,21 +669,21 @@ def patient_detail_view(request, patient_id):
         'tab_medications':      is_doctor or u.is_pharmacist or u.is_ward_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
         # Prescriptions: doctors, pharmacist (drug dispensing), optical dispenser (spectacle Rx)
         'tab_prescriptions':    is_doctor or u.is_pharmacist or u.is_optical_dispenser or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
-        # Surgical: doctors, theatre/ward nurses, counseling nurse (their primary function), admission
+        # Surgical: doctors, theatre/ward nurses, counseling nurse, anaesthetist, admission
         'tab_surgical':         is_doctor or u.is_theatre_nurse or u.is_ward_nurse or u.is_admission_officer or u.is_counseling_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
         'tab_ipd':              is_doctor or u.is_ward_nurse or u.is_theatre_nurse or u.is_admission_officer or u.role == 'anaesthetist' or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
-        # Visit log: all clinical staff (not billing-only)
-        'tab_visits':           not is_billing_only,
-        # Insurance: admin/reception/medical_records/billing officer (for billing workflow)
-        'tab_insurance':        u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or u.role == 'billing_officer',
-        # Demographics: clinical/admin staff — NOT billing-only roles
-        'tab_demographics':     u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or is_doctor or u.is_medical_director or u.role == 'billing_officer',
-        # Billing tab: billing officer sees their scope; finance roles already blocked at decorator level
-        'tab_billing':          is_finance_role,
-        # Documents tab: clinical, admin, medical records, super admin
-        'tab_documents':        is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or u.is_medical_director or is_clinical_nurse or is_admin_staff,
-        # Consents: receptionist (obtains consent), doctors, medical records, admin
-        'tab_consents':         u.is_receptionist or is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.is_ceo or u.is_medical_director,
+        # Visit log: clinical + admin records only — NOT finance/billing (JCI MOI.2)
+        'tab_visits':           is_doctor or is_clinical_nurse or u.is_opd_nurse or u.is_investigation_tech or u.is_lab_tech or u.is_pharmacist or u.is_optical_dispenser or u.is_receptionist or u.is_admission_officer or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Insurance: admin/reception/medical_records/billing officer only (billing workflow)
+        'tab_insurance':        u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or u.is_admin_director or u.role == 'billing_officer' or u.is_cashier,
+        # Demographics: clinical + admin records — NOT CEO/admin director (aggregate reports only per JCI GLD)
+        'tab_demographics':     u.is_receptionist or u.role == 'medical_records' or u.is_super_admin or is_doctor or u.is_medical_director or u.role == 'billing_officer' or u.is_cashier,
+        # Billing tab: finance/billing roles only — NOT medical director or admin director (they use revenue reports)
+        'tab_billing':          u.role in ('finance_director', 'billing_officer', 'accountant', 'senior_accountant', 'chief_cashier', 'cashier') or u.is_super_admin or u.is_ceo,
+        # Documents: clinical + medical records only — CEO/admin director use aggregate reports (JCI MOI.2 / HIPAA)
+        'tab_documents':        is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director or is_clinical_nurse,
+        # Consents (JCI PFR.5): treating doctors + nurses (care continuity) + medical records (filing) — NOT admin/billing/CEO
+        'tab_consents':         is_doctor or is_clinical_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
         # Quick prescribe panel in patient record
         'show_quick_prescribe': u.can_create_consultation,
         # Inline nursing/ward actions
@@ -2598,9 +2599,14 @@ def problem_delete_view(request, patient_id, problem_id):
 
 # ── Patient Consent (JCI PFR.5) ──────────────────────────────────────────────
 
-@clinical_staff_required
+@login_required
 def consent_list_view(request, patient_id):
-    """List all consent records for a patient."""
+    """List all consent records for a patient — doctors, nurses, medical records, super admin, medical director."""
+    u = request.user
+    _allowed = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'medical_records' or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse or u.is_opd_nurse or u.role == 'consultation_nurse'
+    if not _allowed:
+        messages.error(request, 'Access denied — consent records are restricted to clinical staff.')
+        return redirect('patients:detail', patient_id=patient_id)
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent
     consents = PatientConsent.objects.filter(patient=patient).select_related(
@@ -2612,9 +2618,13 @@ def consent_list_view(request, patient_id):
     })
 
 
-@clinical_staff_required
+@login_required
 def consent_create_view(request, patient_id):
-    """Create a new informed consent record."""
+    """Create a new informed consent record — JCI PFR.5: treating doctors only."""
+    u = request.user
+    if not (u.is_doctor or u.is_medical_director or u.is_super_admin):
+        messages.error(request, 'Access denied — only treating doctors can obtain informed consent (JCI PFR.5).')
+        return redirect('patients:consent_list', patient_id=patient_id)
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent, ConsentType
 
@@ -2682,14 +2692,23 @@ def consent_create_view(request, patient_id):
     })
 
 
-@clinical_staff_required
+@login_required
 def consent_detail_view(request, patient_id, consent_id):
-    """View consent detail / handle revocation."""
+    """View consent detail / handle revocation — doctors + nurses + medical records."""
+    u = request.user
+    _can_view = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'medical_records' or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse or u.is_opd_nurse or u.role == 'consultation_nurse'
+    if not _can_view:
+        messages.error(request, 'Access denied.')
+        return redirect('patients:detail', patient_id=patient_id)
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent
     consent = get_object_or_404(PatientConsent, pk=consent_id, patient=patient)
 
     if request.method == 'POST' and request.POST.get('action') == 'revoke':
+        # Only the treating doctor or medical director can revoke (JCI PFR.5)
+        if not (u.is_doctor or u.is_medical_director or u.is_super_admin):
+            messages.error(request, 'Only doctors can revoke a consent (JCI PFR.5).')
+            return redirect('patients:consent_detail', patient_id=patient_id, consent_id=consent_id)
         reason = request.POST.get('revocation_reason', '').strip()
         consent.revoke(reason=reason)
         messages.warning(request, 'Consent revoked.')
@@ -2701,9 +2720,14 @@ def consent_detail_view(request, patient_id, consent_id):
     })
 
 
-@clinical_staff_required
+@login_required
 def consent_print_view(request, patient_id, consent_id):
-    """Render a professional consent form PDF with letterhead and signature blocks."""
+    """Render consent form PDF — doctors, nurses, medical records only."""
+    u = request.user
+    _can_print = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'medical_records' or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse
+    if not _can_print:
+        messages.error(request, 'Access denied.')
+        return redirect('patients:consent_list', patient_id=patient_id)
     from apps.reports.views import render_pdf
     from django.utils import timezone as tz
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
