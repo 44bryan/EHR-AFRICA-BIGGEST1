@@ -251,6 +251,18 @@ def consultation_create_view(request, patient_id):
             consultation.consulting_doctor = request.user
             consultation.created_by = request.user
 
+            # Prevent duplicates: reuse existing IN_PROGRESS consultation for this visit+doctor
+            # (same guard as draft mode and autosave — without this, autosave+full-submit creates two records)
+            _existing_draft = Consultation.objects.filter(
+                patient=patient, visit=visit,
+                consulting_doctor=request.user,
+                status=ConsultationStatus.IN_PROGRESS,
+                is_deleted=False,
+            ).first()
+            if _existing_draft:
+                consultation.pk = _existing_draft.pk
+                consultation.created_by = _existing_draft.created_by
+
             # Save dept_ prefixed exam fields from the same form submission
             dept_data = {
                 k[5:]: ', '.join(filter(None, [v.strip() for v in request.POST.getlist(k)]))
