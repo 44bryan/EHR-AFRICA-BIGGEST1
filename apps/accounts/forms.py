@@ -115,7 +115,7 @@ class UserEditForm(forms.ModelForm):
         fields = [
             'first_name', 'last_name', 'email',
             'role', 'department', 'phone_number', 'profile_photo', 'is_active',
-            'cashier_station', 'consultation_unit', 'patient_tier',
+            'cashier_station', 'consultation_unit', 'patient_tier', 'can_do_reception',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),

@@ -154,6 +154,12 @@ class User(AbstractUser):
     # ── Two-Factor Authentication (TOTP) ─────────────────────────────────
     totp_secret   = models.CharField(max_length=64, blank=True, default='')
     totp_enabled  = models.BooleanField(default=False)
+    # ── Dual-role flag: cashier who can also register / check-in patients ─
+    can_do_reception = models.BooleanField(
+        default=False,
+        help_text='Allow this cashier to also register patients and perform reception tasks '
+                  '(useful for VIP desks or small departments where one person covers both roles).'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -323,6 +329,11 @@ class User(AbstractUser):
     @property
     def is_receptionist(self):
         return self.role == UserRole.RECEPTIONIST
+
+    @property
+    def can_act_as_receptionist(self):
+        """True for receptionists AND for cashiers with the dual-role flag enabled."""
+        return self.is_receptionist or (self.is_cashier and self.can_do_reception)
 
     @property
     def is_admission_officer(self):
