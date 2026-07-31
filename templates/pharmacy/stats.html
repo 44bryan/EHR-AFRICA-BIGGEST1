@@ -1,0 +1,252 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Pharmacy Statistics — {{ month_name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-graph-up text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Pharmacy Statistics</h5>
+      <div class="text-muted small">{{ month_name }} — dispensing &amp; stock overview</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    {# Month navigation #}
+    <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-chevron-left"></i>
+    </a>
+    <span class="fw-semibold small">{{ month_name }}</span>
+    {% if year != today.year or month != today.month %}
+    <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-chevron-right"></i>
+    </a>
+    {% endif %}
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-dark">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPI Row ─────────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_dispensings }}</div>
+        <div class="small text-muted">Total Dispensings</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ dispensed_count }}</div>
+        <div class="small text-muted">Fully Dispensed</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ partial_count }}</div>
+        <div class="small text-muted">Partial</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-secondary">{{ cancelled_count }}</div>
+        <div class="small text-muted">Cancelled</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info">{{ completion_rate }}%</div>
+        <div class="small text-muted">Completion Rate</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h3 fw-bold text-success">{{ revenue|floatformat:0|intcomma }}</div>
+        <div class="small text-muted">Revenue (FCFA)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── Daily Volume Chart ────────────────────────────────────────────────── #}
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold">
+        <i class="bi bi-bar-chart-fill text-primary me-2"></i>Daily Dispensings (Last 14 Days)
+      </div>
+      <div class="card-body">
+        <canvas id="dailyChart" height="90"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# ── Gender + Status Doughnuts ─────────────────────────────────────────── #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-people me-1 text-primary"></i>Patient Gender
+      </div>
+      <div class="card-body pb-2 pt-2">
+        <canvas id="genderChart" height="140"></canvas>
+        <div class="d-flex justify-content-center gap-3 mt-1 small text-muted">
+          <span><i class="bi bi-circle-fill text-primary me-1"></i>Male {{ male_count }}</span>
+          <span><i class="bi bi-circle-fill text-danger me-1"></i>Female {{ female_count }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-pie-chart me-1 text-primary"></i>Dispensing Status
+      </div>
+      <div class="card-body pb-2 pt-2">
+        <canvas id="statusChart" height="140"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── Top 15 Drugs ─────────────────────────────────────────────────────── #}
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold">
+        <i class="bi bi-capsule-pill text-primary me-2"></i>Top 15 Drugs Dispensed
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 small align-middle">
+            <thead class="table-light">
+              <tr><th>#</th><th>Drug</th><th class="text-center">Dispensings</th><th class="text-center">Qty Dispensed</th><th style="width:120px;">Volume</th></tr>
+            </thead>
+            <tbody>
+              {% for d in top_drugs %}
+              <tr>
+                <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+                <td class="fw-semibold">{{ d.drug_name }}</td>
+                <td class="text-center">{{ d.count }}</td>
+                <td class="text-center fw-bold text-primary">{{ d.qty }}</td>
+                <td>
+                  <div class="progress" style="height:6px;">
+                    <div class="progress-bar bg-primary" style="width:{% widthratio d.qty top_drugs.0.qty 100 %}%"></div>
+                  </div>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-4">No dispensing data for this period</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Stock Health ─────────────────────────────────────────────────────── #}
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold">
+        <i class="bi bi-box-seam me-2 {% if low_stock_count %}text-danger{% else %}text-success{% endif %}"></i>
+        Stock Health Snapshot
+        {% if low_stock_count %}<span class="badge bg-danger ms-1">{{ low_stock_count }} low</span>{% endif %}
+      </div>
+      <div class="card-body">
+        <div class="row g-2 text-center mb-3">
+          <div class="col-4">
+            <div class="fw-bold fs-4 {% if low_stock_count %}text-danger{% else %}text-success{% endif %}">{{ low_stock_count }}</div>
+            <div class="text-muted small">Low / Out of Stock</div>
+          </div>
+          <div class="col-4">
+            <div class="fw-bold fs-4 text-primary">{{ total_items }}</div>
+            <div class="text-muted small">Items Dispensed</div>
+          </div>
+          <div class="col-4">
+            <div class="fw-bold fs-4 text-info">{{ male_count|add:female_count }}</div>
+            <div class="text-muted small">Patients Served</div>
+          </div>
+        </div>
+        <canvas id="topDrugsChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const DAILY  = {{ daily_json|safe }};
+const GENDER = {{ gender_json|safe }};
+const STATUS = {{ status_json|safe }};
+const TOP    = {{ top_drugs|length }};
+
+/* Daily bar */
+new Chart(document.getElementById('dailyChart'), {
+  type: 'bar',
+  data: {
+    labels: DAILY.labels,
+    datasets: [{ label: 'Dispensings', data: DAILY.data,
+      backgroundColor: 'rgba(13,110,253,.7)', borderRadius: 4 }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+});
+
+/* Gender doughnut */
+new Chart(document.getElementById('genderChart'), {
+  type: 'doughnut',
+  data: {
+    labels: GENDER.map(g => g.label),
+    datasets: [{ data: GENDER.map(g => g.count),
+      backgroundColor: ['#0d6efd','#dc3545','#6c757d'] }]
+  },
+  options: { responsive: true, cutout: '65%',
+    plugins: { legend: { display: false } } }
+});
+
+/* Status doughnut */
+new Chart(document.getElementById('statusChart'), {
+  type: 'doughnut',
+  data: {
+    labels: STATUS.labels,
+    datasets: [{ data: STATUS.data,
+      backgroundColor: ['#198754','#ffc107','#6c757d','#0dcaf0'] }]
+  },
+  options: { responsive: true, cutout: '60%',
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+});
+
+/* Top drugs horizontal bar */
+{% if top_drugs %}
+new Chart(document.getElementById('topDrugsChart'), {
+  type: 'bar',
+  data: {
+    labels: [{% for d in top_drugs|slice:":8" %}"{{ d.drug_name|truncatechars:20 }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+    datasets: [{ label: 'Qty', indexAxis: 'y',
+      data: [{% for d in top_drugs|slice:":8" %}{{ d.qty }}{% if not forloop.last %},{% endif %}{% endfor %}],
+      backgroundColor: 'rgba(13,110,253,.65)', borderRadius: 3 }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true } } }
+});
+{% endif %}
+</script>
+{% endblock %}

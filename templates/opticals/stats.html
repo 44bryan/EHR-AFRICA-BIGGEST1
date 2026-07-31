@@ -1,0 +1,197 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Optical Statistics — {{ month_name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-graph-up text-info fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Optical Statistics</h5>
+      <div class="text-muted small">{{ month_name }} — orders, delivery &amp; revenue</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-chevron-left"></i>
+    </a>
+    <span class="fw-semibold small">{{ month_name }}</span>
+    {% if year != today.year or month != today.month %}
+    <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-chevron-right"></i>
+    </a>
+    {% endif %}
+    <a href="{% url 'opticals:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-dark">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPI Row ─────────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_orders }}</div>
+        <div class="small text-muted">Total Orders</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ delivered_count }}</div>
+        <div class="small text-muted">Delivered</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info">{{ ready_count }}</div>
+        <div class="small text-muted">Ready to Collect</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ lab_count }}</div>
+        <div class="small text-muted">At Lab</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ delivery_rate }}%</div>
+        <div class="small text-muted">Delivery Rate</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h3 fw-bold text-success">{{ revenue|floatformat:0|intcomma }}</div>
+        <div class="small text-muted">Revenue (FCFA)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── Daily Volume ── #}
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold">
+        <i class="bi bi-bar-chart-fill text-info me-2"></i>Daily Orders (Last 14 Days)
+      </div>
+      <div class="card-body">
+        <canvas id="dailyChart" height="90"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-pie-chart me-1 text-info"></i>Order Status
+      </div>
+      <div class="card-body pb-2 pt-2">
+        <canvas id="statusChart" height="160"></canvas>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-people me-1 text-info"></i>Gender Split
+      </div>
+      <div class="card-body pb-2 pt-2">
+        <canvas id="genderChart" height="100"></canvas>
+        <div class="d-flex justify-content-center gap-3 mt-1 small text-muted">
+          <span><i class="bi bi-circle-fill text-primary me-1"></i>Male {{ male_count }}</span>
+          <span><i class="bi bi-circle-fill text-danger me-1"></i>Female {{ female_count }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Top Frames ── #}
+{% if top_frames %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2 fw-semibold">
+    <i class="bi bi-eyeglasses text-info me-2"></i>Top Frames Ordered
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 small align-middle">
+        <thead class="table-light">
+          <tr><th>#</th><th>Frame</th><th>Brand</th><th class="text-center">Orders</th><th style="width:120px;">Volume</th></tr>
+        </thead>
+        <tbody>
+          {% for f in top_frames %}
+          <tr>
+            <td class="text-muted">{{ forloop.counter }}</td>
+            <td class="fw-semibold">{{ f.frame__name|default:"—" }}</td>
+            <td class="text-muted">{{ f.frame__brand|default:"—" }}</td>
+            <td class="text-center fw-bold text-info">{{ f.count }}</td>
+            <td>
+              <div class="progress" style="height:6px;">
+                <div class="progress-bar bg-info" style="width:{% widthratio f.count top_frames.0.count 100 %}%"></div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const DAILY  = {{ daily_json|safe }};
+const STATUS = {{ status_json|safe }};
+const GENDER = {{ gender_json|safe }};
+
+new Chart(document.getElementById('dailyChart'), {
+  type: 'bar',
+  data: {
+    labels: DAILY.labels,
+    datasets: [{ label: 'Orders', data: DAILY.data,
+      backgroundColor: 'rgba(13,202,240,.7)', borderRadius: 4 }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+});
+
+new Chart(document.getElementById('statusChart'), {
+  type: 'doughnut',
+  data: {
+    labels: STATUS.labels,
+    datasets: [{ data: STATUS.data,
+      backgroundColor: ['#198754','#0dcaf0','#ffc107','#0d6efd','#6c757d'] }]
+  },
+  options: { responsive: true, cutout: '55%',
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+});
+
+new Chart(document.getElementById('genderChart'), {
+  type: 'doughnut',
+  data: {
+    labels: GENDER.map(g => g.label),
+    datasets: [{ data: GENDER.map(g => g.count),
+      backgroundColor: ['#0d6efd','#dc3545'] }]
+  },
+  options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
+});
+</script>
+{% endblock %}
