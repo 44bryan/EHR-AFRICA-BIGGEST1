@@ -748,7 +748,7 @@ def _get_service_catalog(cashier_station=None):
             # Show services with no tier restriction OR matching this cashier's tier(s)
             qs = qs.filter(Q(tier='') | Q(tier__in=_tiers))
         return list(
-            qs.order_by('category', 'name')
+            qs.order_by('tier', 'category', 'name')
             .values('id', 'name', 'category', 'tier', 'price', 'nhis_price',
                     'insurance_price', 'requires_price_entry', 'code')
         )

@@ -98,6 +98,25 @@
   scrollbar-color: #dee2e6 transparent;
   box-shadow: 0 1px 3px rgba(0,0,0,.07);
 }
+/* ── Tier chips in catalog ───────────────────────────────── */
+.cat-tier-chip {
+  display: inline-block; border-radius: 3px; padding: 0 4px;
+  font-size: .6rem; font-weight: 700; letter-spacing: .03em;
+  vertical-align: middle; line-height: 1.5; text-transform: uppercase;
+}
+.cat-tc-standard  { background: #dbeafe; color: #1d4ed8; }
+.cat-tc-vip       { background: #ede9fe; color: #6d28d9; }
+.cat-tc-fast_track { background: #fef3c7; color: #92400e; }
+.cat-tc-express   { background: #e0f2fe; color: #0369a1; }
+/* Tier separator inside pane */
+.cat-tier-sep {
+  font-size: .68rem; font-weight: 700; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 0.4rem 0.2rem 0.2rem;
+  border-top: 1px dashed #e2e8f0; margin-top: 0.3rem;
+}
+/* Matching tier button highlight */
+.svc-btn.svc-tier-match { border-color: #0d6efd; background: #eff6ff; }
 
 /* Category tabs */
 .cat-tabs { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 0.6rem; }
@@ -534,12 +553,15 @@
       </div>
       {% endif %}
 
+      {# ── Tier chip helper macro (inline) ───────────────────────────── #}
+      {# Rendered by each pane — shows tier badge for tier-specific services #}
+
       {# Registration #}
       <div class="cat-pane {% if not doctor_orders %}active{% endif %}" data-cat="REG">
         {% for svc in service_catalog %}{% if svc.category == 'REG' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{{ svc.price|intcomma }}</span>
+        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
         </button>
         {% endif %}{% endfor %}
       </div>
@@ -547,59 +569,77 @@
       {# Consultation #}
       <div class="cat-pane" data-cat="CONSULT">
         {% for svc in service_catalog %}{% if svc.category == 'CONSULT' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{{ svc.price|intcomma }}</span>
+        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
         </button>
         {% endif %}{% endfor %}
       </div>
 
-      {# Investigations #}
+      {# Investigations — tier-sorted (universal first, then tier-specific) #}
       <div class="cat-pane" data-cat="INVEST">
-        {% for svc in service_catalog %}{% if svc.category == 'INVEST' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+        {% for svc in service_catalog %}{% if svc.category == 'INVEST' and svc.tier == '' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
           <span>{{ svc.name }}</span>
-          <span class="svc-price">{{ svc.price|intcomma }}</span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+        </button>
+        {% endif %}{% endfor %}
+        {% for svc in service_catalog %}{% if svc.category == 'INVEST' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
+        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
         </button>
         {% endif %}{% endfor %}
       </div>
 
-      {# Lab #}
+      {# Lab — tier-sorted #}
       <div class="cat-pane" data-cat="LAB">
-        {% for svc in service_catalog %}{% if svc.category == 'LAB' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+        {% for svc in service_catalog %}{% if svc.category == 'LAB' and svc.tier == '' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
           <span>{{ svc.name }}</span>
-          <span class="svc-price">{{ svc.price|intcomma }}</span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+        </button>
+        {% endif %}{% endfor %}
+        {% for svc in service_catalog %}{% if svc.category == 'LAB' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
+        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
         </button>
         {% endif %}{% endfor %}
       </div>
 
-      {# Pharmacy #}
+      {# Pharmacy / Optical — tier-sorted #}
       <div class="cat-pane" data-cat="PHARM">
         {% for svc in service_catalog %}{% if svc.category == 'PHARMACY' or svc.category == 'OPTICAL' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{% if svc.price > 0 %}{{ svc.price|intcomma }}{% else %}Enter price{% endif %}</span>
+        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+          <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
         </button>
         {% endif %}{% endfor %}
       </div>
 
-      {# Surgery #}
+      {# Surgery — tier-sorted #}
       <div class="cat-pane" data-cat="SURGERY">
-        {% for svc in service_catalog %}{% if svc.category == 'SURGICAL' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
+        {% for svc in service_catalog %}{% if svc.category == 'SURGICAL' and svc.tier == '' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
           <span>{{ svc.name }}</span>
-          <span class="svc-price">{{ svc.price|intcomma }}</span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+        </button>
+        {% endif %}{% endfor %}
+        {% for svc in service_catalog %}{% if svc.category == 'SURGICAL' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
+        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
         </button>
         {% endif %}{% endfor %}
       </div>
 
-      {# Other #}
+      {# Other / Admission #}
       <div class="cat-pane" data-cat="OTHER">
         {% for svc in service_catalog %}{% if svc.category == 'OTHER' or svc.category == 'ADMISSION' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }})">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{% if svc.price > 0 %}{{ svc.price|intcomma }}{% else %}Enter price{% endif %}</span>
+        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+          <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
         </button>
         {% endif %}{% endfor %}
       </div>
@@ -1005,10 +1045,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── Add item from catalog ─────────────────────────────────────────────────────
-function addItem(name, cat, price) {
+function addItem(name, cat, price, requiresEntry) {
   if (!INV_ID) { toast('No invoice. Please refresh.', 'danger'); return; }
   // Auto-resolve price from catalog (exact match first)
-  var resolvedPrice = price;
+  var resolvedPrice = parseFloat(price) || 0;
   if (resolvedPrice === 0 && CATALOG_PRICE_MAP[name] !== undefined) {
     resolvedPrice = CATALOG_PRICE_MAP[name];
   }
@@ -1019,14 +1059,17 @@ function addItem(name, cat, price) {
       resolvedPrice = CATALOG_PRICE_MAP[stripped];
     }
   }
-  // Show price-entry modal when price is still unknown:
-  // always for OPTICAL/PHARMACY, and also for INVESTIGATION/LAB orders not in catalog
-  var needsModal = (resolvedPrice === 0) &&
-    (cat === 'OPTICAL' || cat === 'PHARMACY' || cat === 'INVESTIGATION' || cat === 'LAB');
+  // Show price-entry modal when:
+  //  a) item is flagged requires_price_entry in charge master, OR
+  //  b) price is still 0 for categories where cashier must enter price
+  //  NOTE: DB category values are 'INVEST' (not 'INVESTIGATION') and 'LAB'
+  var needsModal = requiresEntry ||
+    ((resolvedPrice === 0) &&
+     (cat === 'OPTICAL' || cat === 'PHARMACY' || cat === 'INVEST' || cat === 'LAB'));
   if (needsModal) {
     document.getElementById('pendName').value = name;
     document.getElementById('pendCat').value  = cat;
-    document.getElementById('pendPrice').value = '';
+    document.getElementById('pendPrice').value = resolvedPrice > 0 ? resolvedPrice : '';
     document.getElementById('priceModalTitle').textContent = name;
     new bootstrap.Modal(document.getElementById('priceModal')).show();
     return;
@@ -1343,7 +1386,7 @@ function renderAi(suggestions) {
     b.className = 'svc-btn';
     b.style.cssText = 'background:#2d1657;border-color:#6d28d9;';
     b.innerHTML = `<span>${svc.name}</span><span class="svc-price" style="color:#c4b5fd;">${fmt(svc.price)} FCFA</span>`;
-    b.onclick = () => addItem(svc.name, svc.category, svc.price);
+    b.onclick = () => addItem(svc.name, svc.category, svc.price, false);
     list.appendChild(b);
   });
 }
