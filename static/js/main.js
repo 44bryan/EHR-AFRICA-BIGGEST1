@@ -46,10 +46,12 @@ function ehrInitOnce() {
     if (isPhone()) {
       const isOpen = sb.classList.toggle('mobile-open');
       if (bd) bd.classList.toggle('show', isOpen);
+      document.body.style.overflow = isOpen ? 'hidden' : '';
     } else if (isTablet()) {
       const isExpanded = sb.classList.toggle('tablet-expanded');
+      if (bd) bd.classList.toggle('show', isExpanded);
+      document.body.style.overflow = isExpanded ? 'hidden' : '';
       localStorage.setItem(TABLET_EXPANDED_KEY, isExpanded ? '1' : '0');
-      syncTooltips(!isExpanded);
     } else {
       const isCollapsed = sb.classList.toggle('collapsed');
       localStorage.setItem(COLLAPSED_KEY, isCollapsed ? '1' : '0');
@@ -63,8 +65,10 @@ function ehrInitOnce() {
     if (!e.target.closest('#sidebar-backdrop')) return;
     const sb = document.getElementById('sidebar');
     const bd = document.getElementById('sidebar-backdrop');
-    if (sb) sb.classList.remove('mobile-open');
-    if (bd) { bd.classList.remove('show'); document.body.style.overflow = ''; }
+    if (sb) sb.classList.remove('mobile-open', 'tablet-expanded');
+    if (bd) bd.classList.remove('show');
+    document.body.style.overflow = '';
+    localStorage.setItem('ehr_sidebar_tablet_expanded', '0');
   });
 
   // Global patient search — event delegation so it survives HTMX page swaps.
@@ -305,6 +309,15 @@ document.addEventListener('click', function (e) {
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
+    // Auto-close sidebar on mobile and tablet after selecting a page (like all modern apps).
+    const sb = document.getElementById('sidebar');
+    const bd = document.getElementById('sidebar-backdrop');
+    if (sb && window.innerWidth <= 1024) {
+      sb.classList.remove('mobile-open', 'tablet-expanded');
+      if (bd) bd.classList.remove('show');
+      document.body.style.overflow = '';
+      localStorage.setItem('ehr_sidebar_tablet_expanded', '0');
+    }
   }
 }, true);
 

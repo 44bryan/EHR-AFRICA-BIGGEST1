@@ -547,29 +547,41 @@ body {
 /* ── Tablet (769px – 1024px) ─────────────────────────────── */
 @media (min-width: 769px) and (max-width: 1024px) {
 
-  /* 1. SIDEBAR: icon-only so content gets maximum width */
-  #sidebar:not(.tablet-expanded) { width: var(--sidebar-mini); }
-  #sidebar:not(.tablet-expanded) .sidebar-brand-name,
-  #sidebar:not(.tablet-expanded) .sidebar-brand-role,
-  #sidebar:not(.tablet-expanded) .sidebar-label,
-  #sidebar:not(.tablet-expanded) .sidebar-link span {
-    opacity: 0; max-width: 0; overflow: hidden;
+  /* 1. SIDEBAR: overlay drawer — slides in via transform (GPU, no reflow, instant)
+     Default: hidden off-screen left. tablet-expanded: slides in over content. */
+  #sidebar {
+    position: fixed !important;
+    top: 0; left: 0;
+    height: 100% !important;
+    width: var(--sidebar-width) !important;
+    transform: translateX(-100%);
+    transition: transform 0.18s ease, box-shadow 0.18s ease !important;
+    z-index: 1045;
+    will-change: transform;
   }
-  #sidebar:not(.tablet-expanded) .sidebar-link { justify-content: center; padding: 10px; }
-  #sidebar:not(.tablet-expanded) .sidebar-header { justify-content: center; padding: 14px 8px; }
+  #sidebar.tablet-expanded {
+    transform: translateX(0);
+    box-shadow: 6px 0 32px rgba(0,0,0,0.45);
+  }
+  /* Show labels & full layout when expanded */
+  #sidebar .sidebar-brand-name,
+  #sidebar .sidebar-brand-role,
+  #sidebar .sidebar-label,
+  #sidebar .sidebar-link span { opacity: 1; max-width: none; overflow: visible; }
+  #sidebar .sidebar-link { justify-content: flex-start; padding: 9px 16px; }
+  #sidebar .sidebar-header { justify-content: flex-start; padding: 16px; }
 
-  /* 2. LAYOUT: content wrapper fills ALL remaining space edge-to-edge.
-     IMPORTANT: overflow-x must be 'clip' NOT 'hidden' here.
-     overflow:hidden creates a new scroll container which breaks position:sticky on .topbar.
-     overflow:clip visually clips overflowing content without creating a scroll context. */
+  /* 2. LAYOUT: content always full-width — sidebar is an overlay, not a pusher */
   #page-content-wrapper {
-    width: calc(100vw - var(--sidebar-mini));
-    max-width: calc(100vw - var(--sidebar-mini));
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin-left: 0 !important;
     overflow-x: clip;
   }
+  /* No adjustment needed when tablet-expanded — it's an overlay */
   #sidebar.tablet-expanded ~ #page-content-wrapper {
-    width: calc(100vw - var(--sidebar-width));
-    max-width: calc(100vw - var(--sidebar-width));
+    width: 100vw !important;
+    max-width: 100vw !important;
   }
 
   /* 3. CONTAINER: truly full width, no Bootstrap max-width cap */
