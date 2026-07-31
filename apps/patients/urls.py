@@ -42,7 +42,7 @@ urlpatterns = [
 
     # ── Insurance ───────────────────────────────────────────────────────────
     path('<str:patient_id>/insurance/add/', views.insurance_add_view, name='insurance_add'),
-    path('<str:patient_id>/insurance/<int:ins_id>/deactivate/', views.insurance_deactivate_view, name='insurance_deactivate'),
+    path('<str:patient_id>/insurance/<uuid:ins_id>/deactivate/', views.insurance_deactivate_view, name='insurance_deactivate'),
 
     # ── Problem List ─────────────────────────────────────────────────────────
     path('<str:patient_id>/problems/add/', views.problem_add_view, name='problem_add'),

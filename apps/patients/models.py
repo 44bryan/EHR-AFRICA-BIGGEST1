@@ -885,3 +885,65 @@ class PatientConsent(AuditModel):
             'SEVERE': 'bg-danger',
             'ANAPHYLAXIS': 'bg-danger',
         }.get(self.severity, 'bg-secondary')
+
+
+class PatientDocument(AuditModel):
+    """
+    Scanned or digital document attached to a patient record.
+    e.g. referral letters, external lab results, old records.
+    """
+
+    class DocType(models.TextChoices):
+        REFERRAL      = 'REFERRAL',      'Referral Letter'
+        LAB_RESULT    = 'LAB_RESULT',    'External Lab Result'
+        IMAGING       = 'IMAGING',       'Imaging / Radiology'
+        PRESCRIPTION  = 'PRESCRIPTION',  'External Prescription'
+        DISCHARGE     = 'DISCHARGE',     'Discharge Summary'
+        ID_DOCUMENT   = 'ID_DOCUMENT',   'ID / Insurance Card'
+        CONSENT       = 'CONSENT',       'Signed Consent'
+        OTHER         = 'OTHER',         'Other'
+
+    class Source(models.TextChoices):
+        SCAN      = 'SCAN',      'Physical Scan'
+        UPLOAD    = 'UPLOAD',    'Digital Upload'
+        EMAIL     = 'EMAIL',     'Received by Email'
+        WHATSAPP  = 'WHATSAPP',  'WhatsApp / Messaging'
+        OTHER     = 'OTHER',     'Other'
+
+    patient = models.ForeignKey(
+        Patient, on_delete=models.CASCADE, related_name='documents'
+    )
+    title = models.CharField(max_length=200)
+    document_type = models.CharField(
+        max_length=20, choices=DocType.choices, default=DocType.OTHER
+    )
+    source = models.CharField(
+        max_length=20, choices=Source.choices, default=Source.SCAN
+    )
+    description = models.TextField(blank=True)
+    document_date = models.DateField(
+        null=True, blank=True,
+        help_text='Date on the original document (if known)'
+    )
+    file = models.FileField(upload_to='patient_documents/%Y/%m/')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Patient Document'
+        verbose_name_plural = 'Patient Documents'
+
+    def __str__(self):
+        return f"{self.title} — {self.patient.full_name} ({self.get_document_type_display()})"
+
+    @property
+    def filename(self):
+        import os
+        return os.path.basename(self.file.name) if self.file else ''
+
+    @property
+    def is_image(self):
+        return self.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp'))
+
+    @property
+    def is_pdf(self):
+        return self.filename.lower().endswith('.pdf')
