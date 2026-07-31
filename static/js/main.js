@@ -15,26 +15,22 @@ function ehrInitOnce() {
 
   const isPhone  = () => window.innerWidth <= 768;
   const isTablet = () => window.innerWidth > 768 && window.innerWidth <= 1366;
-  // True when sidebar is an overlay (fixed/absolute) rather than a pinned panel.
-  // Works regardless of screen width — iPad Pro landscape, Android tablets, etc.
-  const isSidebarOverlay = () => {
-    const sb = document.getElementById('sidebar');
-    if (!sb) return false;
-    return window.getComputedStyle(sb).position === 'fixed';
-  };
+  // Phone: overlay drawer. Tablet + Desktop: pinned sidebar (same layout, never auto-closes).
 
-  // Desktop: start collapsed unless user explicitly expanded
-  if (window.innerWidth > 1024) {
+  // Desktop only (>1366px): respect user's collapse preference, default to collapsed.
+  // Tablet: always start expanded — full labels always visible, hamburger collapses to icons.
+  if (window.innerWidth > 1366) {
     const desktopPref = localStorage.getItem(COLLAPSED_KEY);
     if (desktopPref !== '0') {
       sidebar && sidebar.classList.add('collapsed');
       syncTooltips(true);
     }
-  }
-  // Tablets: start collapsed unless user explicitly expanded
-  if (isTablet()) {
-    if (localStorage.getItem(TABLET_EXPANDED_KEY) === '1') {
-      sidebar && sidebar.classList.add('tablet-expanded');
+  } else if (isTablet()) {
+    // Tablet: respect user's collapse preference but default to EXPANDED (full labels).
+    const tabletPref = localStorage.getItem(COLLAPSED_KEY);
+    if (tabletPref === '1') {
+      sidebar && sidebar.classList.add('collapsed');
+      syncTooltips(true);
     }
   }
   // Init sidebar tooltips once based on current state
@@ -42,24 +38,18 @@ function ehrInitOnce() {
   syncTooltips(isCollapsedNow);
 
   // Sidebar toggle — event delegation so it survives HTMX page swaps.
-  // #sidebarToggle lives inside #page-content-wrapper (topbar) which HTMX replaces
-  // with outerHTML on every navigation, destroying any directly-bound listeners.
   document.addEventListener('click', function (e) {
     if (!e.target.closest('#sidebarToggle')) return;
-    // Re-query sidebar on every click (belt-and-suspenders: in case DOM was rebuilt)
     const sb = document.getElementById('sidebar');
     const bd = document.getElementById('sidebar-backdrop');
     if (!sb) return;
     if (isPhone()) {
+      // Phone: overlay drawer — opens/closes over content
       const isOpen = sb.classList.toggle('mobile-open');
       if (bd) bd.classList.toggle('show', isOpen);
       document.body.style.overflow = isOpen ? 'hidden' : '';
-    } else if (isTablet()) {
-      const isExpanded = sb.classList.toggle('tablet-expanded');
-      if (bd) bd.classList.toggle('show', isExpanded);
-      document.body.style.overflow = isExpanded ? 'hidden' : '';
-      localStorage.setItem(TABLET_EXPANDED_KEY, isExpanded ? '1' : '0');
     } else {
+      // Tablet + Desktop: pinned sidebar — hamburger collapses/expands labels
       const isCollapsed = sb.classList.toggle('collapsed');
       localStorage.setItem(COLLAPSED_KEY, isCollapsed ? '1' : '0');
       syncTooltips(isCollapsed);
@@ -316,16 +306,16 @@ document.addEventListener('click', function (e) {
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
-    // Always close overlay sidebar on link click — removing classes that don't exist
-    // is a no-op, so this is safe on all screen sizes. Desktop pinned sidebar is
-    // unaffected because it never has mobile-open or tablet-expanded classes.
-    const sb = document.getElementById('sidebar');
-    const bd = document.getElementById('sidebar-backdrop');
-    if (sb) {
-      sb.classList.remove('mobile-open', 'tablet-expanded');
-      if (bd) bd.classList.remove('show');
-      document.body.style.overflow = '';
-      localStorage.setItem('ehr_sidebar_tablet_expanded', '0');
+    // On phone only: close the overlay drawer after link click.
+    // Tablet and desktop have pinned sidebars — they stay open.
+    if (window.innerWidth <= 768) {
+      const sb = document.getElementById('sidebar');
+      const bd = document.getElementById('sidebar-backdrop');
+      if (sb) {
+        sb.classList.remove('mobile-open');
+        if (bd) bd.classList.remove('show');
+        document.body.style.overflow = '';
+      }
     }
   }
 }, true);
