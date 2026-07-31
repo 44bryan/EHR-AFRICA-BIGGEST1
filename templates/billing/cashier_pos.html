@@ -1007,13 +1007,22 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Add item from catalog ─────────────────────────────────────────────────────
 function addItem(name, cat, price) {
   if (!INV_ID) { toast('No invoice. Please refresh.', 'danger'); return; }
-  // Auto-resolve price from catalog if not supplied (e.g. doctor work orders all pass 0)
+  // Auto-resolve price from catalog (exact match first)
   var resolvedPrice = price;
   if (resolvedPrice === 0 && CATALOG_PRICE_MAP[name] !== undefined) {
     resolvedPrice = CATALOG_PRICE_MAP[name];
   }
-  // Show "enter price" modal only for items that legitimately need variable pricing
-  var needsModal = (resolvedPrice === 0) && (cat === 'OPTICAL' || cat === 'PHARMACY');
+  // Doctor work orders have prefix like "Investigation: OCT Scan" — strip it and retry
+  if (resolvedPrice === 0) {
+    var stripped = name.replace(/^(Investigation|Lab|Laboratory|Pharmacy|Optical):\s*/i, '');
+    if (stripped !== name && CATALOG_PRICE_MAP[stripped] !== undefined) {
+      resolvedPrice = CATALOG_PRICE_MAP[stripped];
+    }
+  }
+  // Show price-entry modal when price is still unknown:
+  // always for OPTICAL/PHARMACY, and also for INVESTIGATION/LAB orders not in catalog
+  var needsModal = (resolvedPrice === 0) &&
+    (cat === 'OPTICAL' || cat === 'PHARMACY' || cat === 'INVESTIGATION' || cat === 'LAB');
   if (needsModal) {
     document.getElementById('pendName').value = name;
     document.getElementById('pendCat').value  = cat;
