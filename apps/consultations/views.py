@@ -262,6 +262,7 @@ def consultation_create_view(request, patient_id):
             if _existing_draft:
                 consultation.pk = _existing_draft.pk
                 consultation.created_by = _existing_draft.created_by
+                consultation._state.adding = False  # force UPDATE not INSERT
 
             # Save dept_ prefixed exam fields from the same form submission
             dept_data = {

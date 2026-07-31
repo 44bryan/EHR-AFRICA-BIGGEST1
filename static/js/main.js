@@ -309,23 +309,24 @@ document.addEventListener('click', function (e) {
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
-    // After link click: collapse sidebar to icon-only (Option B).
-    // On phone: close the overlay drawer fully.
-    // On tablet/desktop: collapse to icon-only — click hamburger to expand again.
-    const sb = document.getElementById('sidebar');
-    const bd = document.getElementById('sidebar-backdrop');
-    if (sb) {
-      if (window.innerWidth <= 768) {
-        // Phone — close overlay drawer
-        sb.classList.remove('mobile-open', 'tablet-expanded');
+    // Phone: close overlay drawer.
+    // Tablet: Option B — collapse expanded sidebar back to icon-only on link click.
+    // Desktop: sidebar stays in current state (already icon-only by default).
+    const _w = window.innerWidth;
+    if (_w <= 768) {
+      const sb = document.getElementById('sidebar');
+      const bd = document.getElementById('sidebar-backdrop');
+      if (sb) { sb.classList.remove('mobile-open', 'tablet-expanded'); document.body.style.overflow = ''; }
+      if (bd) bd.classList.remove('show');
+    } else if (_w <= 1024) {
+      // Tablet: if sidebar was expanded via hamburger, collapse it back to icon-only
+      const sb = document.getElementById('sidebar');
+      const bd = document.getElementById('sidebar-backdrop');
+      if (sb && sb.classList.contains('tablet-expanded')) {
+        sb.classList.remove('tablet-expanded');
         if (bd) bd.classList.remove('show');
         document.body.style.overflow = '';
         localStorage.setItem('ehr_sidebar_tablet_expanded', '0');
-      } else if (!sb.classList.contains('collapsed')) {
-        // Tablet + Desktop — collapse to icons
-        sb.classList.add('collapsed');
-        localStorage.setItem('ehr_sidebar_collapsed', '1');
-        syncTooltips(true);
       }
     }
   }
