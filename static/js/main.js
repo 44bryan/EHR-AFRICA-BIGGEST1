@@ -316,12 +316,12 @@ document.addEventListener('click', function (e) {
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
-    // Auto-close sidebar whenever it is in overlay/fixed mode (any tablet/phone size).
-    // Uses computed CSS position instead of a hardcoded pixel breakpoint so it works
-    // on all tablets (iPad Mini 768px, iPad Air 820px, iPad Pro 1366px, etc.).
+    // Auto-close sidebar if it was opened as an overlay (mobile or tablet).
+    // Checks for overlay classes directly — only present when user clicked hamburger
+    // to open the sidebar as a drawer. Desktop pinned sidebar never has these classes.
     const sb = document.getElementById('sidebar');
     const bd = document.getElementById('sidebar-backdrop');
-    if (sb && window.getComputedStyle(sb).position === 'fixed') {
+    if (sb && (sb.classList.contains('mobile-open') || sb.classList.contains('tablet-expanded'))) {
       sb.classList.remove('mobile-open', 'tablet-expanded');
       if (bd) bd.classList.remove('show');
       document.body.style.overflow = '';
