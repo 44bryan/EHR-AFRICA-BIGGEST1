@@ -306,15 +306,18 @@ document.addEventListener('click', function (e) {
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
-    // On phone only: close the overlay drawer after link click.
-    // Tablet and desktop have pinned sidebars — they stay open.
+    const sb = document.getElementById('sidebar');
+    const bd = document.getElementById('sidebar-backdrop');
     if (window.innerWidth <= 768) {
-      const sb = document.getElementById('sidebar');
-      const bd = document.getElementById('sidebar-backdrop');
-      if (sb) {
-        sb.classList.remove('mobile-open');
-        if (bd) bd.classList.remove('show');
-        document.body.style.overflow = '';
+      // Phone: close the overlay drawer
+      if (sb) { sb.classList.remove('mobile-open'); document.body.style.overflow = ''; }
+      if (bd) bd.classList.remove('show');
+    } else {
+      // Tablet + Desktop: auto-collapse to icon-only after navigating
+      if (sb && !sb.classList.contains('collapsed')) {
+        sb.classList.add('collapsed');
+        localStorage.setItem('ehr_sidebar_collapsed', '1');
+        syncTooltips(true);
       }
     }
   }
