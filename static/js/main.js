@@ -14,7 +14,14 @@ function ehrInitOnce() {
   const TABLET_EXPANDED_KEY = 'ehr_sidebar_tablet_expanded';
 
   const isPhone  = () => window.innerWidth <= 768;
-  const isTablet = () => window.innerWidth > 768 && window.innerWidth <= 1024;
+  const isTablet = () => window.innerWidth > 768 && window.innerWidth <= 1366;
+  // True when sidebar is an overlay (fixed/absolute) rather than a pinned panel.
+  // Works regardless of screen width — iPad Pro landscape, Android tablets, etc.
+  const isSidebarOverlay = () => {
+    const sb = document.getElementById('sidebar');
+    if (!sb) return false;
+    return window.getComputedStyle(sb).position === 'fixed';
+  };
 
   // Desktop: start collapsed unless user explicitly expanded
   if (window.innerWidth > 1024) {
@@ -309,10 +316,12 @@ document.addEventListener('click', function (e) {
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
-    // Auto-close sidebar on mobile and tablet after selecting a page (like all modern apps).
+    // Auto-close sidebar whenever it is in overlay/fixed mode (any tablet/phone size).
+    // Uses computed CSS position instead of a hardcoded pixel breakpoint so it works
+    // on all tablets (iPad Mini 768px, iPad Air 820px, iPad Pro 1366px, etc.).
     const sb = document.getElementById('sidebar');
     const bd = document.getElementById('sidebar-backdrop');
-    if (sb && window.innerWidth <= 1024) {
+    if (sb && window.getComputedStyle(sb).position === 'fixed') {
       sb.classList.remove('mobile-open', 'tablet-expanded');
       if (bd) bd.classList.remove('show');
       document.body.style.overflow = '';
