@@ -260,10 +260,16 @@ def consultation_create_view(request, patient_id):
                 is_deleted=False,
             ).first()
             if _existing_draft:
-                consultation.pk = _existing_draft.pk
-                consultation.created_by = _existing_draft.created_by
-                consultation.created_at = _existing_draft.created_at  # preserve original timestamp (auto_now_add skips it on UPDATE → null violation)
-                consultation._state.adding = False  # force UPDATE not INSERT
+                # Switch to the DB-fetched object so auto_now_add fields
+                # (created_at, consultation_date) are already set and kept.
+                # Copy every non-PK, non-auto_now_add field from the form object.
+                _orig_creator = _existing_draft.created_by
+                for _f in consultation._meta.concrete_fields:
+                    if _f.primary_key or getattr(_f, 'auto_now_add', False):
+                        continue
+                    setattr(_existing_draft, _f.attname, getattr(consultation, _f.attname))
+                _existing_draft.created_by = _orig_creator  # keep original creator
+                consultation = _existing_draft  # all subsequent assignments land here
 
             # Save dept_ prefixed exam fields from the same form submission
             dept_data = {
