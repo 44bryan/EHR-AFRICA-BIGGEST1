@@ -564,6 +564,9 @@
           <button type="button" class="btn btn-outline-secondary" id="tool-eraser" onclick="setFundusTool('eraser')">
             <i class="bi bi-eraser"></i> Erase
           </button>
+          <button type="button" class="btn btn-outline-info" id="tool-text" onclick="setFundusTool('text')">
+            <i class="bi bi-fonts"></i> Label
+          </button>
         </div>
         <div class="d-flex align-items-center gap-1 flex-wrap">
           <span class="small text-muted mb-0">Pathology:</span>
@@ -577,7 +580,8 @@
         </div>
         <div class="d-flex align-items-center gap-1">
           <label class="small mb-0">Size:</label>
-          <input type="range" id="draw-size" min="1" max="20" value="3" style="width:80px;">
+          <input type="range" id="draw-size" min="1" max="20" value="4" style="width:80px;">
+          <span id="draw-size-label" class="small text-muted">4</span>
         </div>
         <div class="ms-auto d-flex gap-1 flex-wrap">
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="undoFundusCanvas('re')"><i class="bi bi-arrow-counterclockwise"></i> Undo RE</button>
@@ -586,15 +590,25 @@
           <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearFundusCanvas('le')"><i class="bi bi-trash"></i> Clear LE</button>
         </div>
       </div>
+      {# Label tool input — shown only when Label mode is active #}
+      <div id="fundus-label-row" class="d-none align-items-center gap-2 mt-1 mb-1 px-1 py-1 rounded" style="background:#e0f2fe;border:1px solid #7dd3fc;">
+        <i class="bi bi-fonts text-info"></i>
+        <input type="text" id="fundus-label-text" class="form-control form-control-sm" style="max-width:220px;"
+               placeholder="Type label text here…" autocomplete="off">
+        <span class="small text-muted">then tap on the diagram to place it</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="setFundusTool('pen')">
+          <i class="bi bi-pencil"></i> Back to Draw
+        </button>
+      </div>
 
       <div class="row g-3 mb-3">
         <div class="col-md-6 text-center">
           <div class="fw-semibold text-primary small mb-1">RIGHT EYE (RE)</div>
-          <canvas id="canvas-re" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:none;cursor:crosshair;max-width:100%;"></canvas>
+          <canvas id="canvas-re" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:none;cursor:crosshair;width:100%;max-width:360px;aspect-ratio:1;"></canvas>
         </div>
         <div class="col-md-6 text-center">
           <div class="fw-semibold text-danger small mb-1">LEFT EYE (LE)</div>
-          <canvas id="canvas-le" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:none;cursor:crosshair;max-width:100%;"></canvas>
+          <canvas id="canvas-le" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:none;cursor:crosshair;width:100%;max-width:360px;aspect-ratio:1;"></canvas>
         </div>
       </div>
 
@@ -1046,6 +1060,10 @@ function addMgtOther() {
     currentTool = t;
     document.getElementById('tool-pen').classList.toggle('active', t === 'pen');
     document.getElementById('tool-eraser').classList.toggle('active', t === 'eraser');
+    document.getElementById('tool-text').classList.toggle('active', t === 'text');
+    var row = document.getElementById('fundus-label-row');
+    if (row) { row.classList.toggle('d-none', t !== 'text'); row.classList.toggle('d-flex', t === 'text'); }
+    if (t === 'text') document.getElementById('fundus-label-text').focus();
   };
 
   window.setFundusColor = function(c) {
@@ -1055,7 +1073,11 @@ function addMgtOther() {
   };
 
   document.getElementById('draw-color').addEventListener('input', function(e) { drawColor = e.target.value; });
-  document.getElementById('draw-size').addEventListener('input', function(e) { drawSize = parseInt(e.target.value); });
+  document.getElementById('draw-size').addEventListener('input', function(e) {
+    drawSize = parseInt(e.target.value);
+    var lbl = document.getElementById('draw-size-label');
+    if (lbl) lbl.textContent = e.target.value;
+  });
 
   function drawBase(ctx, id) {
     var sc = SIZE / 280;
@@ -1286,11 +1308,32 @@ function addMgtOther() {
     }
     function start(e) {
       e.preventDefault();
-      // Snapshot before stroke for undo
+      var p = getPos(e);
+      // ── Label / text tool: place typed text at tap position ──────────────
+      if (currentTool === 'text') {
+        var txt = (document.getElementById('fundus-label-text').value || '').trim();
+        if (!txt) { document.getElementById('fundus-label-text').focus(); return; }
+        history[id].push(ov.toDataURL('image/png'));
+        if (history[id].length > MAX_HISTORY) history[id].shift();
+        var fontSize = Math.max(12, drawSize * 3 + 7);
+        olCtx.save();
+        olCtx.font = 'bold ' + fontSize + 'px sans-serif';
+        olCtx.textBaseline = 'top';
+        var w = olCtx.measureText(txt).width;
+        // Semi-transparent white backing so text is readable over any anatomy
+        olCtx.fillStyle = 'rgba(255,255,255,0.78)';
+        olCtx.fillRect(p.x - 2, p.y - 1, w + 6, fontSize + 4);
+        olCtx.fillStyle = drawColor;
+        olCtx.fillText(txt, p.x + 1, p.y + 1);
+        olCtx.restore();
+        composite(id);
+        document.getElementById('fundoscopy-' + id + '-data').value = canvas.toDataURL('image/png');
+        return; // don't enter painting mode
+      }
+      // ── Pen / eraser: begin stroke ────────────────────────────────────────
       history[id].push(ov.toDataURL('image/png'));
       if (history[id].length > MAX_HISTORY) history[id].shift();
       painting = true;
-      var p = getPos(e);
       olCtx.beginPath(); olCtx.moveTo(p.x, p.y);
     }
     function move(e) {
