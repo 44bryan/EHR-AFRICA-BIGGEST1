@@ -332,8 +332,8 @@ class User(AbstractUser):
 
     @property
     def can_act_as_receptionist(self):
-        """True for receptionists AND for cashiers with the dual-role flag enabled."""
-        return self.is_receptionist or (self.is_cashier and self.can_do_reception)
+        """True for receptionists AND all cashiers (every cashier can also register patients)."""
+        return self.is_receptionist or self.is_cashier
 
     @property
     def is_admission_officer(self):
