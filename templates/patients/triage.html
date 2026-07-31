@@ -898,6 +898,25 @@ function setSelectVal(selId, inpId, val) {
 //   ROOM — routed to a specific room/doctor (room picker appears after dept chosen)
 // Quick-route buttons (Lab, Pharmacy, Cashier, Refraction etc.) bypass modes entirely.
 
+// Patient tier context — rooms matching this tier shown first
+const _PATIENT_TIER = '{{ visit.service_tier }}';
+// Nurse assigned tier — same as patient tier for strict zones; ALL means supervisor
+const _NURSE_TIER   = '{{ nurse_patient_tier }}';
+
+// Tier compatibility: which serves_tiers values are "home" for this patient
+const _TIER_HOME_MAP = {
+  'VIP':        ['VIP'],
+  'EXPRESS':    ['EXPRESS', 'FAST_TRACK'],
+  'FAST_TRACK': ['FAST_TRACK', 'EXPRESS'],
+  'STANDARD':   ['STANDARD'],
+};
+function _isHomeTier(serveTiersList) {
+  // serveTiersList = [] means the counter serves ALL tiers (shared zone)
+  if (!serveTiersList || serveTiersList.length === 0) return false; // shared → goes in "other"
+  const home = _TIER_HOME_MAP[_PATIENT_TIER] || [_PATIENT_TIER];
+  return serveTiersList.some(t => home.includes(t));
+}
+
 let _currentDeptId = '';      // UUID of currently selected department
 let _dispatchMode  = 'DEPT';  // 'DEPT' | 'ROOM'
 
@@ -1020,8 +1039,30 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
   document.getElementById('routeValidationAlert').classList.add('d-none');
 }
 
+function _buildRoomOption(room) {
+  var opt = document.createElement('option');
+  opt.value = room.id;
+  var label = room.name;
+  if (room.available && room.doctor) {
+    label += '  —  ' + room.doctor;
+    if (room.waiting > 0) {
+      label += '  (' + room.waiting + ' waiting';
+      if (room.estimated_wait > 0) label += ', ~' + room.estimated_wait + ' min';
+      label += ')';
+      if (room.waiting >= 5) label += '  \u26a0 BUSY';
+    } else {
+      label += '  (Available now)';
+    }
+  } else {
+    label += '  \u2014 No doctor assigned';
+    opt.disabled = true;
+    opt.style.color = '#9ca3af';
+  }
+  opt.textContent = label;
+  return opt;
+}
+
 function fetchRooms(deptId, deptLabel) {
-  // Fetch live room board from QMS counters (replaces old dept-based ConsultationRoom picker)
   const roomPanel  = document.getElementById('roomPickPanel');
   const deptNameEl = document.getElementById('roomPickDeptName');
   const roomSel    = document.getElementById('roomBtnGroup');
@@ -1029,60 +1070,72 @@ function fetchRooms(deptId, deptLabel) {
 
   roomPanel.classList.remove('d-none');
   if (deptNameEl) deptNameEl.textContent = 'Live Room Board';
-  roomSel.innerHTML = '<option value="">Loading rooms…</option>';
+  roomSel.innerHTML = '<option value="">Loading rooms\u2026</option>';
   roomSel.disabled = true;
 
   fetch('/qms/room-board/')
-    .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function(data) {
       roomSel.innerHTML = '<option value="">— Select a room —</option>';
       roomSel.disabled = false;
       window._roomsData = {};
-      var totalRooms = 0;
+
       if (!data.zones || data.zones.length === 0) {
-        roomSel.innerHTML = '<option value="">No rooms available — ensure QMS counters are configured.</option>';
+        roomSel.innerHTML = '<option value="">No rooms configured.</option>';
         roomSel.disabled = true;
         return;
       }
+
+      // ── Collect all rooms, split into "home tier" vs "other / shared" ──
+      var tierLabel = (_PATIENT_TIER || 'STANDARD').replace('_', ' ');
+      var homeRooms = [];   // rooms matching the patient's tier
+      var otherRooms = [];  // all other rooms (shared / different tier)
+
       data.zones.forEach(function(zone) {
-        if (!zone.rooms || zone.rooms.length === 0) return;
-        var grp = document.createElement('optgroup');
-        grp.label = zone.name;
-        zone.rooms.forEach(function(room) {
+        (zone.rooms || []).forEach(function(room) {
           window._roomsData[room.id] = room;
-          totalRooms++;
-          var opt = document.createElement('option');
-          opt.value = room.id;
-          var label = room.name;
-          if (room.available && room.doctor) {
-            label += '  —  ' + room.doctor;
-            if (room.waiting > 0) {
-              label += '  (' + room.waiting + ' waiting';
-              if (room.estimated_wait > 0) {
-                label += ',  ~' + room.estimated_wait + ' min';
-              }
-              label += ')';
-              if (room.waiting >= 5) label += '  \u26a0 BUSY';
-            } else {
-              label += '  (Available now)';
-            }
+          room._zoneName = zone.name;
+          if (_isHomeTier(room.serves_tiers)) {
+            homeRooms.push(room);
           } else {
-            label += '  — No doctor assigned';
-            opt.disabled = true;
-            opt.style.color = '#9ca3af';
+            otherRooms.push(room);
           }
-          opt.textContent = label;
-          grp.appendChild(opt);
         });
-        roomSel.appendChild(grp);
       });
-      if (totalRooms === 0) {
+
+      // ── Build "Home tier" optgroup first ──
+      if (homeRooms.length > 0) {
+        var grpHome = document.createElement('optgroup');
+        grpHome.label = '\u2b50 ' + tierLabel + ' Rooms';
+        homeRooms.forEach(r => grpHome.appendChild(_buildRoomOption(r)));
+        roomSel.appendChild(grpHome);
+      }
+
+      // ── Build "Other / Shared zones" optgroup second ──
+      if (otherRooms.length > 0) {
+        var grpOther = document.createElement('optgroup');
+        grpOther.label = '\u2194 Other / Shared Zones';
+        otherRooms.forEach(r => grpOther.appendChild(_buildRoomOption(r)));
+        roomSel.appendChild(grpOther);
+      }
+
+      if (homeRooms.length === 0 && otherRooms.length === 0) {
         roomSel.innerHTML = '<option value="">No rooms available.</option>';
         roomSel.disabled = true;
       }
+
+      // Update hint text
+      const hint = document.getElementById('roomPickHint');
+      if (hint) {
+        if (homeRooms.length > 0) {
+          hint.textContent = '\u2b50 ' + tierLabel + ' rooms appear first. Other zones available below.';
+        } else {
+          hint.textContent = 'No dedicated ' + tierLabel + ' rooms found. Dispatching to shared zone.';
+        }
+      }
     })
     .catch(function() {
-      roomSel.innerHTML = '<option value="">Could not load rooms — check QMS configuration.</option>';
+      roomSel.innerHTML = '<option value="">Could not load rooms \u2014 check QMS configuration.</option>';
       roomSel.disabled = true;
     });
 }

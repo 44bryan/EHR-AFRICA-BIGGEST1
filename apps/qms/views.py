@@ -2431,6 +2431,7 @@ def room_board_ajax(request):
             'id':              str(c.id),
             'name':            c.name,
             'service_type':    c.service_type,
+            'serves_tiers':    c.get_serves_tiers(),  # list of tier codes, empty = all
             'doctor':          c.staff_assigned.get_full_name() if c.is_checked_in_today else None,
             'doctor_id':       str(c.staff_assigned.pk) if c.is_checked_in_today else None,
             'waiting':         waiting,
