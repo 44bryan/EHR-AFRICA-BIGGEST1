@@ -316,12 +316,12 @@ document.addEventListener('click', function (e) {
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
-    // Auto-close sidebar if it was opened as an overlay (mobile or tablet).
-    // Checks for overlay classes directly — only present when user clicked hamburger
-    // to open the sidebar as a drawer. Desktop pinned sidebar never has these classes.
+    // Always close overlay sidebar on link click — removing classes that don't exist
+    // is a no-op, so this is safe on all screen sizes. Desktop pinned sidebar is
+    // unaffected because it never has mobile-open or tablet-expanded classes.
     const sb = document.getElementById('sidebar');
     const bd = document.getElementById('sidebar-backdrop');
-    if (sb && (sb.classList.contains('mobile-open') || sb.classList.contains('tablet-expanded'))) {
+    if (sb) {
       sb.classList.remove('mobile-open', 'tablet-expanded');
       if (bd) bd.classList.remove('show');
       document.body.style.overflow = '';
