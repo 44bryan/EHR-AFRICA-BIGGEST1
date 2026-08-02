@@ -18,6 +18,8 @@ from .models import (
     OutreachReferral, OutreachSyncLog,
     OutreachStatus, OutreachType, ReferralUrgency, ReferralStatus,
     SyncStatus, DIAGNOSIS_CHOICES, VA_CHOICES, IOPMethod,
+    PrincipalCause, PupilReaction, ConfVF, ColorVision,
+    _va_to_who_grade, WHO_VI_GRADE_LABELS,
 )
 
 
@@ -404,6 +406,19 @@ def exam_create(request, patient_pk):
             referral_urgency  = p.get('referral_urgency', ''),
             referral_reason   = p.get('referral_reason', ''),
             clinical_notes    = p.get('clinical_notes', ''),
+            # WHO / ICD-11 advanced fields
+            principal_cause_vi    = p.get('principal_cause_vi', ''),
+            pupil_re              = p.get('pupil_re', ''),
+            pupil_le              = p.get('pupil_le', ''),
+            conf_vf_re            = p.get('conf_vf_re', ''),
+            conf_vf_le            = p.get('conf_vf_le', ''),
+            color_vision_re       = p.get('color_vision_re', ''),
+            color_vision_le       = p.get('color_vision_le', ''),
+            external_exam         = p.get('external_exam', ''),
+            informed_consent      = 'informed_consent' in p,
+            consent_date          = p.get('consent_date') or None,
+            low_vision_referral   = 'low_vision_referral' in p,
+            examiner_designation  = p.get('examiner_designation', ''),
         )
         # Auto-create referral when flagged
         if exam.needs_referral and not hasattr(patient, 'referral'):
@@ -421,6 +436,10 @@ def exam_create(request, patient_pk):
         'patient': patient, 'va_choices': VA_CHOICES,
         'diag_choices': DIAGNOSIS_CHOICES, 'iop_methods': IOPMethod.choices,
         'urgency_choices': ReferralUrgency.choices, 'today': timezone.localdate(),
+        'principal_cause_choices': PrincipalCause.choices,
+        'pupil_choices': PupilReaction.choices,
+        'conf_vf_choices': ConfVF.choices,
+        'color_vision_choices': ColorVision.choices,
     })
 
 
@@ -467,6 +486,19 @@ def exam_edit(request, patient_pk):
         exam.referral_urgency  = p.get('referral_urgency', '')
         exam.referral_reason   = p.get('referral_reason', '')
         exam.clinical_notes    = p.get('clinical_notes', '')
+        # WHO / ICD-11 advanced fields
+        exam.principal_cause_vi   = p.get('principal_cause_vi', '')
+        exam.pupil_re             = p.get('pupil_re', '')
+        exam.pupil_le             = p.get('pupil_le', '')
+        exam.conf_vf_re           = p.get('conf_vf_re', '')
+        exam.conf_vf_le           = p.get('conf_vf_le', '')
+        exam.color_vision_re      = p.get('color_vision_re', '')
+        exam.color_vision_le      = p.get('color_vision_le', '')
+        exam.external_exam        = p.get('external_exam', '')
+        exam.informed_consent     = 'informed_consent' in p
+        exam.consent_date         = p.get('consent_date') or None
+        exam.low_vision_referral  = 'low_vision_referral' in p
+        exam.examiner_designation = p.get('examiner_designation', '')
         exam.updated_by = request.user
         exam.save()
         messages.success(request, 'Examination updated.')
@@ -477,6 +509,10 @@ def exam_edit(request, patient_pk):
         'diag_choices': DIAGNOSIS_CHOICES, 'iop_methods': IOPMethod.choices,
         'urgency_choices': ReferralUrgency.choices, 'today': timezone.localdate(),
         'edit': True,
+        'principal_cause_choices': PrincipalCause.choices,
+        'pupil_choices': PupilReaction.choices,
+        'conf_vf_choices': ConfVF.choices,
+        'color_vision_choices': ColorVision.choices,
     })
 
 
@@ -611,6 +647,105 @@ def stats_view(request):
         if agg['count']:
             by_type.append({'type': at, 'label': label, **agg})
 
+    # ── WHO-standard metrics (from individual examination records) ─────────────
+    exams_qs = OutreachExamination.objects.filter(
+        patient__activity__activity_date__year=year
+    )
+    total_exams = exams_qs.count()
+
+    # WHO Visual Impairment grading — iterate once over exams with VA data
+    who_counts  = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}   # grade → count (better eye)
+    blind_total = 0
+    avoidable_blind = 0
+    vi_total    = 0
+
+    # Principal cause of VI distribution
+    cause_counts = {}
+    for cause, label in PrincipalCause.choices:
+        cause_counts[cause] = 0
+
+    # RAAB7 age brackets (population survey standard)
+    raab_brackets = {'<40': 0, '40-49': 0, '50-59': 0, '60-69': 0, '70-79': 0, '>=80': 0}
+
+    # CSC numerator (cataract operated) = patients with surgery_type containing cataract
+    cataract_operated = exams_qs.filter(
+        surgery_type__icontains='cataract'
+    ).count()
+    # CSC denominator = patients with cataract diagnosis (RE or LE)
+    cataract_need = exams_qs.filter(
+        Q(diagnoses_re__icontains='CATARACT') | Q(diagnoses_le__icontains='CATARACT')
+    ).count()
+
+    # eREC: glasses dispensed / total needing refractive correction
+    refractive_need = exams_qs.filter(
+        Q(diagnoses_re__icontains='REFRACTIVE_ERROR') | Q(diagnoses_le__icontains='REFRACTIVE_ERROR')
+    ).count()
+    glasses_given   = exams_qs.filter(glasses_dispensed=True).count()
+
+    # Iterate for WHO grades + cause distribution
+    for ex in exams_qs.values('patient__date_of_birth', 'patient__age_years',
+                               'va_re_distance', 'va_le_distance',
+                               'principal_cause_vi'):
+        # WHO better eye grade
+        g_re = _va_to_who_grade(ex['va_re_distance'])
+        g_le = _va_to_who_grade(ex['va_le_distance'])
+        grade = None
+        if g_re is not None and g_le is not None:
+            grade = min(g_re, g_le)
+        elif g_re is not None:
+            grade = g_re
+        elif g_le is not None:
+            grade = g_le
+
+        if grade is not None:
+            who_counts[grade] = who_counts.get(grade, 0) + 1
+            if grade >= 1:
+                vi_total += 1
+            if grade >= 4:
+                blind_total += 1
+                if ex['principal_cause_vi'] in {
+                    PrincipalCause.CATARACT, PrincipalCause.REFRACTIVE_ERROR,
+                    PrincipalCause.TRACHOMA, PrincipalCause.CORNEAL_OPACITY,
+                    PrincipalCause.DIABETIC_RETINOPATHY,
+                }:
+                    avoidable_blind += 1
+
+        # Principal cause
+        cause = ex['principal_cause_vi']
+        if cause in cause_counts:
+            cause_counts[cause] = cause_counts[cause] + 1
+
+        # RAAB age bracket
+        from datetime import date as _date
+        dob  = ex['patient__date_of_birth']
+        age  = ex['patient__age_years']
+        if dob:
+            age = (_date.today() - dob).days // 365
+        if age is not None:
+            if age < 40:   raab_brackets['<40']   += 1
+            elif age < 50: raab_brackets['40-49']  += 1
+            elif age < 60: raab_brackets['50-59']  += 1
+            elif age < 70: raab_brackets['60-69']  += 1
+            elif age < 80: raab_brackets['70-79']  += 1
+            else:          raab_brackets['>=80']   += 1
+
+    # CSC / eREC rates
+    csc  = round(cataract_operated / cataract_need * 100, 1) if cataract_need else None
+    erec = round(glasses_given / refractive_need * 100, 1) if refractive_need else None
+
+    # Cause-of-blindness chart data (label, count) sorted descending
+    cause_chart = sorted(
+        [{'label': PrincipalCause(c).label, 'code': c, 'count': n}
+         for c, n in cause_counts.items() if n > 0],
+        key=lambda x: x['count'], reverse=True
+    )
+
+    who_grade_chart = [
+        {'grade': g, 'label': WHO_VI_GRADE_LABELS[g][0],
+         'color': WHO_VI_GRADE_LABELS[g][1], 'count': who_counts.get(g, 0)}
+        for g in range(5)
+    ]
+
     return render(request, 'outreach/stats.html', {
         'year': year, 'totals': totals, 'path_totals': path_totals,
         'pt_agg': pt_agg, 'ref_agg': ref_agg, 'conversion': conversion,
@@ -618,6 +753,17 @@ def stats_view(request):
         'activities_count': acts_qs.count(),
         'completed_count': acts_qs.filter(status=OutreachStatus.COMPLETED).count(),
         'today': today,
+        # WHO metrics
+        'total_exams': total_exams,
+        'who_counts': who_counts,
+        'who_grade_chart': who_grade_chart,
+        'vi_total': vi_total,
+        'blind_total': blind_total,
+        'avoidable_blind': avoidable_blind,
+        'cause_chart': cause_chart,
+        'raab_brackets': raab_brackets,
+        'csc': csc, 'csc_num': cataract_operated, 'csc_den': cataract_need,
+        'erec': erec, 'erec_num': glasses_given, 'erec_den': refractive_need,
     })
 
 

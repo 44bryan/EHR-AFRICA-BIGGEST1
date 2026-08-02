@@ -138,6 +138,196 @@
   </div>
 </div>
 
+<!-- ──────────────────────────────────────────────────────────── -->
+<!-- WHO / ICD-11 International Standards Section              -->
+<!-- ──────────────────────────────────────────────────────────── -->
+{% if total_exams %}
+<div class="mt-4 mb-2">
+  <h6 class="fw-bold text-primary mb-0">
+    <i class="bi bi-globe2 me-1"></i>WHO Visual Impairment Indicators
+    <span class="badge bg-primary fw-normal ms-1" style="font-size:.65rem">ICD-11 · WHO 2019</span>
+  </h6>
+  <p class="text-muted small mb-0">Based on {{ total_exams }} individual examination records with VA data</p>
+</div>
+
+<!-- WHO KPI Row -->
+<div class="row g-3 mb-4">
+  <!-- Blind rate -->
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #1e1b4b !important">
+      <div class="fs-3 fw-bold" style="color:#1e1b4b">{{ blind_total }}</div>
+      <div class="small text-muted">Blind (Grade 4)</div>
+      {% if total_exams %}
+      <div class="badge bg-dark fw-normal small">
+        {% widthratio blind_total total_exams 100 %}%
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <!-- Visually Impaired -->
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #ef4444 !important">
+      <div class="fs-3 fw-bold text-danger">{{ vi_total }}</div>
+      <div class="small text-muted">Visually Impaired</div>
+      {% if total_exams %}
+      <div class="badge bg-danger fw-normal small">
+        {% widthratio vi_total total_exams 100 %}%
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <!-- Avoidable blindness -->
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #f59e0b !important">
+      <div class="fs-3 fw-bold text-warning">{{ avoidable_blind }}</div>
+      <div class="small text-muted">Avoidable Blind</div>
+      {% if blind_total %}
+      <div class="badge bg-warning text-dark fw-normal small">
+        {% widthratio avoidable_blind blind_total 100 %}% of blind
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <!-- CSC -->
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #0ea5e9 !important">
+      {% if csc is not None %}
+      <div class="fs-3 fw-bold text-info">{{ csc }}%</div>
+      {% else %}
+      <div class="fs-3 fw-bold text-muted">—</div>
+      {% endif %}
+      <div class="small text-muted">Cataract Surgical Coverage</div>
+      <div class="small text-muted" style="font-size:.68rem">{{ csc_num }} operated / {{ csc_den }} need</div>
+    </div>
+  </div>
+  <!-- eREC -->
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #22c55e !important">
+      {% if erec is not None %}
+      <div class="fs-3 fw-bold text-success">{{ erec }}%</div>
+      {% else %}
+      <div class="fs-3 fw-bold text-muted">—</div>
+      {% endif %}
+      <div class="small text-muted">Effective REC Coverage (eREC)</div>
+      <div class="small text-muted" style="font-size:.68rem">{{ erec_num }} glasses / {{ erec_den }} need</div>
+    </div>
+  </div>
+</div>
+
+<!-- WHO Grade Distribution + Cause of Blindness -->
+<div class="row g-4 mb-4">
+  <!-- WHO Grade Distribution -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small" style="color:#0369a1">
+          <i class="bi bi-bar-chart-fill me-1"></i>WHO Visual Impairment Grade Distribution
+        </h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Grade</th>
+              <th>Classification</th>
+              <th class="text-end">Count</th>
+              <th>% of Examined</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for g in who_grade_chart %}
+            <tr>
+              <td><span class="badge bg-{{ g.color }}">{{ g.grade }}</span></td>
+              <td>{{ g.label }}</td>
+              <td class="fw-bold text-end">{{ g.count }}</td>
+              <td>
+                {% if total_exams and g.count %}
+                <div class="d-flex align-items-center gap-1">
+                  <div class="progress flex-grow-1" style="height:6px">
+                    <div class="progress-bar bg-{{ g.color }}"
+                         style="width:{% widthratio g.count total_exams 100 %}%"></div>
+                  </div>
+                  <small>{% widthratio g.count total_exams 100 %}%</small>
+                </div>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Principal Cause of VI -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-danger">
+          <i class="bi bi-clipboard2-pulse me-1"></i>Principal Cause of Visual Impairment (WHO)
+        </h6>
+      </div>
+      <div class="card-body p-0">
+        {% if cause_chart %}
+        <table class="table table-sm mb-0 small">
+          <tbody>
+            {% for row in cause_chart %}
+            <tr>
+              <td class="text-muted">{{ row.label }}</td>
+              <td class="fw-bold text-end">{{ row.count }}</td>
+              <td style="width:120px">
+                {% if total_exams %}
+                <div class="progress" style="height:6px">
+                  <div class="progress-bar bg-danger"
+                       style="width:{% widthratio row.count total_exams 100 %}%"></div>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-3 text-muted small text-center">No principal cause data recorded yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RAAB7 Age Brackets -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom py-2">
+    <h6 class="mb-0 fw-bold small" style="color:#7c3aed">
+      <i class="bi bi-people me-1"></i>RAAB7 Age Bracket Distribution
+      <span class="badge fw-normal ms-1" style="background:#ede9fe;color:#5b21b6;font-size:.65rem">WHO RAAB Protocol</span>
+    </h6>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Age Bracket</th>
+            {% for bracket, count in raab_brackets.items %}
+            <th class="text-center">{{ bracket }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="text-muted fw-semibold">Count</td>
+            {% for bracket, count in raab_brackets.items %}
+            <td class="text-center fw-bold">{{ count }}</td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Monthly Table -->
 <div class="card border-0 shadow-sm mt-4">
   <div class="card-header bg-transparent py-2">
