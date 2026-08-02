@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Price Quotation — {{ order.order_number }}</title>
+  <style>
+    @media print {
+      body { margin: 0; }
+      .no-print { display: none !important; }
+      .page { box-shadow: none !important; border: none !important; }
+    }
+    body { font-family: Arial, sans-serif; font-size: 13px; background: #f5f5f5; }
+    .page { background: #fff; max-width: 420px; margin: 20px auto; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.12); border-radius: 6px; }
+    .hospital-name { font-size: 16px; font-weight: bold; text-align: center; }
+    .hospital-sub { font-size: 11px; text-align: center; color: #555; margin-bottom: 4px; }
+    .divider { border: none; border-top: 1px dashed #ccc; margin: 10px 0; }
+    .title-box { text-align: center; background: #0d6efd; color: #fff; border-radius: 4px; padding: 6px 12px; font-size: 14px; font-weight: bold; margin: 10px 0; letter-spacing: .5px; }
+    .patient-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
+    .patient-row span:first-child { color: #666; }
+    .patient-row span:last-child { font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+    th { background: #f0f4ff; text-align: left; padding: 5px 6px; font-size: 11px; color: #444; border-bottom: 1px solid #ddd; }
+    td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; }
+    .total-row td { font-weight: bold; font-size: 14px; background: #f8fff8; border-top: 2px solid #198754; color: #198754; }
+    .cashier-box { border: 2px solid #0d6efd; border-radius: 6px; background: #f0f6ff; padding: 10px 14px; text-align: center; margin: 12px 0; font-size: 12px; }
+    .cashier-box strong { font-size: 13px; display: block; color: #0d6efd; margin-bottom: 3px; }
+    .order-no { font-family: monospace; background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+    .footer { text-align: center; color: #999; font-size: 10px; margin-top: 14px; }
+    .print-btn { display: block; margin: 16px auto 0; padding: 8px 24px; background: #0d6efd; color: #fff; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  {# ── Hospital letterhead ── #}
+  <div class="hospital-name">{{ hospital.hospital_name|default:"EHR Africa Eye Hospital" }}</div>
+  {% if hospital.hospital_address %}
+  <div class="hospital-sub">{{ hospital.hospital_address }}</div>
+  {% endif %}
+  {% if hospital.hospital_phone %}
+  <div class="hospital-sub">Tel: {{ hospital.hospital_phone }}</div>
+  {% endif %}
+
+  <hr class="divider">
+  <div class="title-box"><i>OPTICAL PRICE QUOTATION</i></div>
+  <hr class="divider">
+
+  {# ── Order reference ── #}
+  <div class="patient-row">
+    <span>Quote Ref</span>
+    <span class="order-no">{{ order.order_number }}</span>
+  </div>
+  <div class="patient-row">
+    <span>Date</span>
+    <span>{{ order.ordered_date|date:"d M Y" }}</span>
+  </div>
+  <hr class="divider">
+
+  {# ── Patient ── #}
+  <div class="patient-row">
+    <span>Patient Name</span>
+    <span>{{ order.patient.full_name }}</span>
+  </div>
+  <div class="patient-row">
+    <span>Patient ID</span>
+    <span>{{ order.patient.patient_id }}</span>
+  </div>
+  {% if order.prescription %}
+  <div class="patient-row">
+    <span>Prescription Date</span>
+    <span>{{ order.prescription.prescription_date|date:"d M Y" }}</span>
+  </div>
+  {% endif %}
+  <hr class="divider">
+
+  {# ── Pricing breakdown ── #}
+  <table>
+    <thead>
+      <tr><th>Item</th><th>Details</th><th style="text-align:right;">Amount (FCFA)</th></tr>
+    </thead>
+    <tbody>
+      {% if order.frame %}
+      <tr>
+        <td><strong>Frame</strong></td>
+        <td style="color:#555;">{{ order.frame }}{% if order.frame.color %} — {{ order.frame.color }}{% endif %}</td>
+        <td style="text-align:right;">{{ order.frame_price|floatformat:0 }}</td>
+      </tr>
+      {% endif %}
+      {% if order.lens %}
+      <tr>
+        <td><strong>Lens</strong></td>
+        <td style="color:#555;">{{ order.lens }}</td>
+        <td style="text-align:right;">{{ order.lens_price|floatformat:0 }}</td>
+      </tr>
+      {% endif %}
+      {% if order.lab_fee and order.lab_fee > 0 %}
+      <tr>
+        <td><strong>Lab Fee</strong></td>
+        <td style="color:#555;">Lens processing</td>
+        <td style="text-align:right;">{{ order.lab_fee|floatformat:0 }}</td>
+      </tr>
+      {% endif %}
+      {% if order.other_charges and order.other_charges > 0 %}
+      <tr>
+        <td><strong>Other</strong></td>
+        <td style="color:#555;">{{ order.other_charges_note|default:"Additional charges" }}</td>
+        <td style="text-align:right;">{{ order.other_charges|floatformat:0 }}</td>
+      </tr>
+      {% endif %}
+      <tr class="total-row">
+        <td colspan="2"><strong>TOTAL</strong></td>
+        <td style="text-align:right;"><strong>{{ order.total_amount|floatformat:0 }} FCFA</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  {# ── Cashier instruction ── #}
+  <div class="cashier-box">
+    <strong>Please proceed to the Optical Cashier to pay</strong>
+    Present this slip and Quote Ref <span class="order-no">{{ order.order_number }}</span>
+  </div>
+
+  {% if order.notes %}
+  <div style="font-size:11px;color:#555;margin-top:6px;">
+    <strong>Notes:</strong> {{ order.notes }}
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    This is a price quotation, not a receipt. Payment confirms your order.<br>
+    Glasses will be collected after payment is confirmed.<br>
+    Printed {{ "now"|date:"d M Y H:i" }}
+  </div>
+</div>
+
+<button class="print-btn no-print" onclick="window.print()">
+  Print / Save as PDF
+</button>
+</body>
+</html>
