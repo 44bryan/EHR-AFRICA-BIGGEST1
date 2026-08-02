@@ -38,19 +38,23 @@ def poll_notifications(request):
     Lightweight AJAX poll — returns unread count + latest unread notification
     for the toast popup. Called every 30s by main.js.
     Does NOT mark notifications as read (that only happens on the list page).
+    Always returns valid JSON — never 500s to the client.
     """
-    qs = Notification.objects.filter(
-        recipient=request.user, is_read=False
-    ).order_by('-created_at')
-    count = qs.count()
-    latest = qs.first()
-    return JsonResponse({
-        'count': count,
-        'latest': {
-            'id': latest.pk,
-            'title': latest.title,
-            'message': latest.message[:120],
-            'link': latest.link or '',
-            'priority': latest.priority,
-        } if latest else None,
-    })
+    try:
+        qs = Notification.objects.filter(
+            recipient=request.user, is_read=False
+        ).order_by('-created_at')
+        count = qs.count()
+        latest = qs.first()
+        return JsonResponse({
+            'count': count,
+            'latest': {
+                'id': latest.pk,
+                'title': latest.title or '',
+                'message': (latest.message or '')[:120],
+                'link': latest.link or '',
+                'priority': latest.priority or 'NORMAL',
+            } if latest else None,
+        })
+    except Exception:
+        return JsonResponse({'count': 0, 'latest': None})

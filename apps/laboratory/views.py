@@ -627,6 +627,7 @@ def enter_results_view(request, pk):
 
     if request.method == 'POST':
         all_valid = True
+        _had_critical = False
         for item in items:
             value = request.POST.get(f'result_value_{item.pk}', '').strip()
             if value:
@@ -652,6 +653,7 @@ def enter_results_view(request, pk):
                     try:
                         from apps.notifications.utils import notify_critical_lab_result
                         notify_critical_lab_result(result)
+                        _had_critical = True
                     except Exception:
                         pass
                 item.status = LabOrder.Status.COMPLETED
@@ -659,23 +661,25 @@ def enter_results_view(request, pk):
 
         order.status = LabOrder.Status.COMPLETED
         order.save(update_fields=['status'])
-        # Notify ordering doctor that all results are ready
+        # Notify ordering doctor — only send general "ready" notification when no
+        # critical notification was already sent (avoids duplicate alerts to the doctor)
         try:
-            from apps.notifications.utils import notify
-            from apps.notifications.models import NotificationType, NotificationPriority
-            doctor = getattr(order, 'ordered_by', None)
-            if doctor:
-                notify(
-                    recipient=doctor,
-                    title=f'Lab Results Ready — {order.patient.full_name}',
-                    message=(
-                        f'All laboratory results for {order.patient.full_name} are now available. '
-                        f'Order from {order.created_at:%d %b %Y}.'
-                    ),
-                    link=f'/lab/{order.id}/',
-                    notification_type=NotificationType.LAB_RESULT,
-                    priority=NotificationPriority.NORMAL,
-                )
+            if not _had_critical:
+                from apps.notifications.utils import notify
+                from apps.notifications.models import NotificationType, NotificationPriority
+                doctor = getattr(order, 'ordered_by', None)
+                if doctor:
+                    notify(
+                        recipient=doctor,
+                        title=f'Lab Results Ready — {order.patient.full_name}',
+                        message=(
+                            f'All laboratory results for {order.patient.full_name} are now available. '
+                            f'Order from {order.created_at:%d %b %Y}.'
+                        ),
+                        link=f'/laboratory/{order.id}/',
+                        notification_type=NotificationType.LAB_RESULT,
+                        priority=NotificationPriority.NORMAL,
+                    )
         except Exception:
             pass
         messages.success(request, 'Results saved successfully.')

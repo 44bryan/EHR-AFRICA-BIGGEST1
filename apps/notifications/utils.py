@@ -143,7 +143,7 @@ def notify_lab_result_ready(lab_order):
             recipient=doctor,
             title=f'Lab result ready: {lab_order.patient.full_name}',
             message=f'Lab order #{lab_order.order_number} results are now available.',
-            link=f'/laboratory/{lab_order.id}/',
+            link=f'/laboratory/{lab_order.id}/',  # correct: /laboratory/<uuid>/
             notification_type=NotificationType.LAB_RESULT,
             priority=NotificationPriority.NORMAL,
         )

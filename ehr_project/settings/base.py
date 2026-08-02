@@ -128,9 +128,10 @@ ASGI_APPLICATION = 'ehr_project.asgi.application'
 _db_url = env('DATABASE_URL', default='')
 if _db_url:
     DATABASES = {'default': env.db('DATABASE_URL')}
-    # Reuse DB connections for 60s instead of opening a new one per request.
-    # At 300 concurrent users this prevents PostgreSQL from being overwhelmed.
-    DATABASES['default']['CONN_MAX_AGE'] = 60
+    # Reuse DB connections: keep alive 5 min. At 300 users this avoids reconnect overhead.
+    DATABASES['default']['CONN_MAX_AGE'] = 300
+    # Auto-recover stale connections (network drop, DB restart) without 500 errors.
+    DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 else:
     DATABASES = {
         'default': {
@@ -262,7 +263,10 @@ HOSPITAL_EMAIL = env('HOSPITAL_EMAIL', default='')
 HOSPITAL_WEBSITE = env('HOSPITAL_WEBSITE', default='')
 HOSPITAL_REG_NUMBER = env('HOSPITAL_REG_NUMBER', default='')
 
-# Session security
+# Session — use Redis-backed cached_db for near-zero latency on every request
+# (Redis = ~0.1ms lookup vs DB = ~5-10ms; DB is the write-through fallback)
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+SESSION_CACHE_ALIAS = 'default'     # uses the Redis cache defined in CACHES
 SESSION_COOKIE_AGE = 28800          # 8 hours — matches a working shift
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # tablet-safe: session persists up to SESSION_COOKIE_AGE (8h)
 SESSION_COOKIE_HTTPONLY = True      # JS cannot read session cookie
