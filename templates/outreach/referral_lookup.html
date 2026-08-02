@@ -1,0 +1,80 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Outreach Referral Lookup{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h5 class="fw-bold mb-0">
+    <i class="bi bi-qr-code-scan text-primary me-2"></i>Outreach Referral Lookup
+  </h5>
+  <p class="text-muted small">For reception: enter the referral code from the patient's letter</p>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <form method="get" class="d-flex gap-2 mb-4">
+      <input type="text" name="code" value="{{ code }}"
+             class="form-control form-control-lg text-center fw-bold"
+             placeholder="REF-20260802-XXXX" style="letter-spacing:.1em"
+             autocomplete="off" autocapitalize="characters">
+      <button class="btn btn-primary btn-lg">
+        <i class="bi bi-search"></i>
+      </button>
+    </form>
+
+    {% if code and not referral %}
+    <div class="alert alert-danger">
+      <i class="bi bi-x-circle me-2"></i>No referral found for code <strong>{{ code }}</strong>.
+      Please check and try again.
+    </div>
+    {% endif %}
+
+    {% if referral %}
+    <div class="card border-{{ referral.urgency_color }} shadow-sm">
+      <div class="card-header bg-{{ referral.urgency_color }}-subtle py-2 d-flex justify-content-between">
+        <strong class="text-{{ referral.urgency_color }}-emphasis">
+          <i class="bi bi-person-check me-1"></i>Referral Found
+        </strong>
+        <span class="badge bg-{{ referral.urgency_color }}">{{ referral.get_urgency_display }}</span>
+      </div>
+      <div class="card-body">
+        <h5 class="fw-bold">{{ referral.patient.full_name }}</h5>
+        <div class="row g-2 mb-3 small">
+          <div class="col-6">
+            <strong>Field ID:</strong> {{ referral.patient.outreach_patient_id }}<br>
+            <strong>Age/Sex:</strong> {{ referral.patient.age_display }} / {{ referral.patient.get_sex_display }}<br>
+            <strong>Village:</strong> {{ referral.patient.village|default:"—" }}
+          </div>
+          <div class="col-6">
+            <strong>Outreach Site:</strong> {{ referral.patient.activity.title }}<br>
+            <strong>Camp Date:</strong> {{ referral.patient.activity.activity_date }}<br>
+            <strong>Status:</strong>
+            <span class="badge bg-{{ referral.status_color }}-subtle text-{{ referral.status_color }}-emphasis
+                          border border-{{ referral.status_color }}-subtle">
+              {{ referral.get_status_display }}
+            </span>
+          </div>
+        </div>
+        {% if referral.diagnosis %}<p class="mb-1 small"><strong>Diagnosis:</strong> {{ referral.diagnosis }}</p>{% endif %}
+        <p class="mb-2 small"><strong>Reason:</strong> {{ referral.reason }}</p>
+
+        {% if referral.status == 'PENDING' %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="code" value="{{ code }}">
+          <button class="btn btn-success w-100">
+            <i class="bi bi-check-circle me-1"></i>Mark as Arrived at Hospital
+          </button>
+        </form>
+        {% else %}
+        <div class="alert alert-success py-2 mb-0 small">
+          <i class="bi bi-check-circle me-1"></i>
+          Patient already marked: <strong>{{ referral.get_status_display }}</strong>
+          {% if referral.arrived_date %}on {{ referral.arrived_date }}{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

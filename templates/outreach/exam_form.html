@@ -1,0 +1,416 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{% if edit %}Edit{% else %}New{% endif %} Examination — {{ patient.full_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .eye-col { background: #f8fafc; border-radius: 6px; }
+  .section-header { font-size:.7rem; font-weight:700; text-transform:uppercase;
+                    letter-spacing:.05em; color:#64748b; border-bottom:1px solid #e2e8f0;
+                    padding-bottom:4px; margin-bottom:10px; }
+  .va-row td { padding: 4px 6px !important; font-size:.82rem; }
+  .diag-chip { cursor:pointer; user-select:none; }
+  .diag-chip input:checked + span {
+    background: #fee2e2 !important; color:#991b1b !important;
+    border-color:#fca5a5 !important;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <a href="{% url 'outreach:patient_detail' patient_pk=patient.pk %}" class="text-muted small">
+    <i class="bi bi-arrow-left me-1"></i>Back to {{ patient.full_name }}
+  </a>
+  <h5 class="fw-bold mb-0 mt-1">
+    <i class="bi bi-eye text-primary me-2"></i>
+    {% if edit %}Edit{% else %}New{% endif %} Ophthalmic Examination
+  </h5>
+  <p class="text-muted small mb-0">
+    {{ patient.full_name }} — {{ patient.age_display }} — {{ patient.activity.title }}
+  </p>
+</div>
+
+<form method="post" id="examForm">
+  {% csrf_token %}
+
+  {# ── Exam Date ────────────────────────────────────────────────────────── #}
+  <div class="row g-2 mb-3">
+    <div class="col-auto">
+      <label class="form-label small fw-semibold">Exam Date</label>
+      <input type="date" name="exam_date" class="form-control form-control-sm"
+             value="{{ exam.exam_date|date:'Y-m-d'|default:today|date:'Y-m-d' }}">
+    </div>
+  </div>
+
+  {# ── Visual Acuity ────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-primary bg-opacity-10 border-0 py-2">
+      <strong class="text-primary small"><i class="bi bi-eye me-1"></i>Visual Acuity</strong>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:200px"></th>
+              <th class="text-center text-primary">RE (Right Eye)</th>
+              <th class="text-center text-success">LE (Left Eye)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for field_re, field_le, label in va_rows %}
+            {% endfor %}
+            <tr class="va-row">
+              <td class="fw-semibold small">Distance — Unaided</td>
+              <td class="text-center p-1">
+                <select name="va_re_distance" class="form-select form-select-sm text-center">
+                  <option value="">—</option>
+                  {% for v, lbl in va_choices %}
+                  <option value="{{ v }}" {% if exam.va_re_distance == v %}selected{% endif %}>{{ lbl }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="text-center p-1">
+                <select name="va_le_distance" class="form-select form-select-sm text-center">
+                  <option value="">—</option>
+                  {% for v, lbl in va_choices %}
+                  <option value="{{ v }}" {% if exam.va_le_distance == v %}selected{% endif %}>{{ lbl }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <tr class="va-row">
+              <td class="small">Distance — Pinhole</td>
+              <td class="text-center p-1">
+                <select name="va_re_distance_ph" class="form-select form-select-sm text-center">
+                  <option value="">—</option>
+                  {% for v, lbl in va_choices %}
+                  <option value="{{ v }}" {% if exam.va_re_distance_ph == v %}selected{% endif %}>{{ lbl }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="text-center p-1">
+                <select name="va_le_distance_ph" class="form-select form-select-sm text-center">
+                  <option value="">—</option>
+                  {% for v, lbl in va_choices %}
+                  <option value="{{ v }}" {% if exam.va_le_distance_ph == v %}selected{% endif %}>{{ lbl }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <tr class="va-row">
+              <td class="small">Distance — Best Corrected</td>
+              <td class="text-center p-1">
+                <select name="va_re_distance_corrected" class="form-select form-select-sm text-center">
+                  <option value="">—</option>
+                  {% for v, lbl in va_choices %}
+                  <option value="{{ v }}" {% if exam.va_re_distance_corrected == v %}selected{% endif %}>{{ lbl }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="text-center p-1">
+                <select name="va_le_distance_corrected" class="form-select form-select-sm text-center">
+                  <option value="">—</option>
+                  {% for v, lbl in va_choices %}
+                  <option value="{{ v }}" {% if exam.va_le_distance_corrected == v %}selected{% endif %}>{{ lbl }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            <tr class="va-row">
+              <td class="small">Near Vision</td>
+              <td class="text-center p-1">
+                <input type="text" name="va_re_near" class="form-control form-control-sm text-center"
+                       value="{{ exam.va_re_near }}" placeholder="N6, N8…" maxlength="10">
+              </td>
+              <td class="text-center p-1">
+                <input type="text" name="va_le_near" class="form-control form-control-sm text-center"
+                       value="{{ exam.va_le_near }}" placeholder="N6, N8…" maxlength="10">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── IOP ──────────────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-warning bg-opacity-10 border-0 py-2">
+      <strong class="text-warning-emphasis small">
+        <i class="bi bi-speedometer2 me-1"></i>Intra-Ocular Pressure (IOP)
+      </strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-auto">
+          <label class="form-label small fw-semibold">RE (mmHg)</label>
+          <input type="number" name="iop_re" step="0.1" min="0" max="80"
+                 class="form-control form-control-sm text-center" style="width:90px"
+                 value="{{ exam.iop_re|default:'' }}">
+        </div>
+        <div class="col-auto">
+          <label class="form-label small fw-semibold">LE (mmHg)</label>
+          <input type="number" name="iop_le" step="0.1" min="0" max="80"
+                 class="form-control form-control-sm text-center" style="width:90px"
+                 value="{{ exam.iop_le|default:'' }}">
+        </div>
+        <div class="col-auto">
+          <label class="form-label small fw-semibold">Method</label>
+          <select name="iop_method" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            {% for v, lbl in iop_methods %}
+            <option value="{{ v }}" {% if exam.iop_method == v %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-auto">
+          <small class="text-muted">Normal: 10–21 mmHg</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Refraction ───────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-success bg-opacity-10 border-0 py-2">
+      <strong class="text-success small">
+        <i class="bi bi-eyeglasses me-1"></i>Refraction
+      </strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="eye-col p-3">
+            <div class="section-header">Right Eye (RE)</div>
+            <div class="row g-2">
+              <div class="col-4">
+                <label class="form-label small">Sphere (DS)</label>
+                <input type="number" name="re_sphere" step="0.25" class="form-control form-control-sm text-center"
+                       value="{{ exam.re_sphere|default:'' }}" placeholder="e.g. -2.50">
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Cylinder (DC)</label>
+                <input type="number" name="re_cylinder" step="0.25" class="form-control form-control-sm text-center"
+                       value="{{ exam.re_cylinder|default:'' }}" placeholder="e.g. -1.00">
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Axis (°)</label>
+                <input type="number" name="re_axis" min="0" max="180" class="form-control form-control-sm text-center"
+                       value="{{ exam.re_axis|default:'' }}" placeholder="1–180">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="eye-col p-3">
+            <div class="section-header">Left Eye (LE)</div>
+            <div class="row g-2">
+              <div class="col-4">
+                <label class="form-label small">Sphere (DS)</label>
+                <input type="number" name="le_sphere" step="0.25" class="form-control form-control-sm text-center"
+                       value="{{ exam.le_sphere|default:'' }}">
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Cylinder (DC)</label>
+                <input type="number" name="le_cylinder" step="0.25" class="form-control form-control-sm text-center"
+                       value="{{ exam.le_cylinder|default:'' }}">
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Axis (°)</label>
+                <input type="number" name="le_axis" min="0" max="180" class="form-control form-control-sm text-center"
+                       value="{{ exam.le_axis|default:'' }}">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Add Power (for presbyopia)</label>
+          <input type="number" name="add_power" step="0.25" min="0" max="4"
+                 class="form-control form-control-sm" value="{{ exam.add_power|default:'' }}"
+                 placeholder="+1.50">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label small fw-semibold">Frame Type Dispensed</label>
+          <input type="text" name="rx_frame_type" class="form-control form-control-sm"
+                 value="{{ exam.rx_frame_type }}" placeholder="e.g. Single vision distance, Bifocal…">
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="glasses_dispensed"
+                   id="chk_glasses" {% if exam.glasses_dispensed %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="chk_glasses">
+              <i class="bi bi-eyeglasses text-success me-1"></i>Glasses Dispensed at Camp
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Segments ─────────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-info bg-opacity-10 border-0 py-2">
+      <strong class="text-info-emphasis small">
+        <i class="bi bi-diagram-3 me-1"></i>Segment Findings
+      </strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="section-header">Anterior Segment</div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label small">RE</label>
+              <textarea name="ant_segment_re" rows="2" class="form-control form-control-sm"
+                        placeholder="Clear, PCIOL, nuclear sclerosis…">{{ exam.ant_segment_re }}</textarea>
+            </div>
+            <div class="col-6">
+              <label class="form-label small">LE</label>
+              <textarea name="ant_segment_le" rows="2" class="form-control form-control-sm">{{ exam.ant_segment_le }}</textarea>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="section-header">Posterior Segment</div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label small">RE</label>
+              <textarea name="post_segment_re" rows="2" class="form-control form-control-sm"
+                        placeholder="Disc normal, C/D 0.3, normal macula…">{{ exam.post_segment_re }}</textarea>
+            </div>
+            <div class="col-6">
+              <label class="form-label small">LE</label>
+              <textarea name="post_segment_le" rows="2" class="form-control form-control-sm">{{ exam.post_segment_le }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Diagnoses ─────────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-danger bg-opacity-10 border-0 py-2">
+      <strong class="text-danger small">
+        <i class="bi bi-clipboard2-pulse me-1"></i>Diagnoses
+      </strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        {% for eye_name, field_name in diag_eyes %}
+        {% endfor %}
+        <div class="col-md-6">
+          <div class="section-header text-primary">Right Eye (RE)</div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for code, label in diag_choices %}
+            <label class="diag-chip">
+              <input type="checkbox" name="diagnoses_re" value="{{ code }}" class="d-none"
+                     {% if exam.diagnoses_re and code in exam.diagnoses_re %}checked{% endif %}>
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1"
+                    style="cursor:pointer;font-size:.72rem">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="section-header text-success">Left Eye (LE)</div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for code, label in diag_choices %}
+            <label class="diag-chip">
+              <input type="checkbox" name="diagnoses_le" value="{{ code }}" class="d-none"
+                     {% if exam.diagnoses_le and code in exam.diagnoses_le %}checked{% endif %}>
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1"
+                    style="cursor:pointer;font-size:.72rem">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Treatment ─────────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-secondary bg-opacity-10 border-0 py-2">
+      <strong class="small"><i class="bi bi-capsule me-1"></i>Treatment Given</strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label small fw-semibold">Medications / Eye Drops Given</label>
+          <textarea name="medications_given" rows="2" class="form-control form-control-sm"
+                    placeholder="e.g. Chloramphenicol 0.5% eye drops, Vitamin A capsules…">{{ exam.medications_given }}</textarea>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold d-block">Surgery Performed</label>
+          <div class="form-check mt-2">
+            <input type="checkbox" name="surgery_performed" id="chk_sx"
+                   class="form-check-input" {% if exam.surgery_performed %}checked{% endif %}
+                   onchange="document.getElementById('sx_type').style.display=this.checked?'block':'none'">
+            <label class="form-check-label small" for="chk_sx">Yes — surgery performed</label>
+          </div>
+          <div id="sx_type" style="display:{% if exam.surgery_performed %}block{% else %}none{% endif %}">
+            <input type="text" name="surgery_type" class="form-control form-control-sm mt-2"
+                   value="{{ exam.surgery_type }}" placeholder="e.g. Couching, Pterygium excision…">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Referral Recommendation ───────────────────────────────────────────── #}
+  <div class="card border-warning shadow-sm mb-3">
+    <div class="card-header bg-warning bg-opacity-10 border-0 py-2">
+      <strong class="text-warning-emphasis small">
+        <i class="bi bi-send me-1"></i>Referral to Hospital
+      </strong>
+    </div>
+    <div class="card-body">
+      <div class="form-check mb-3">
+        <input type="checkbox" name="needs_referral" id="chk_ref"
+               class="form-check-input" {% if exam.needs_referral %}checked{% endif %}
+               onchange="document.getElementById('ref_details').style.display=this.checked?'block':'none'">
+        <label class="form-check-label fw-semibold" for="chk_ref">
+          This patient needs referral to the hospital
+        </label>
+      </div>
+      <div id="ref_details" style="display:{% if exam.needs_referral %}block{% else %}none{% endif %}">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Urgency</label>
+            <select name="referral_urgency" class="form-select form-select-sm">
+              {% for v, lbl in urgency_choices %}
+              <option value="{{ v }}" {% if exam.referral_urgency == v %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label small fw-semibold">Reason for Referral</label>
+            <input type="text" name="referral_reason" class="form-control form-control-sm"
+                   value="{{ exam.referral_reason }}"
+                   placeholder="e.g. Mature cataract requiring surgery, IOP >30 mmHg…">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Notes ────────────────────────────────────────────────────────────── #}
+  <div class="mb-3">
+    <label class="form-label small fw-semibold">Clinical Notes</label>
+    <textarea name="clinical_notes" rows="3" class="form-control"
+              placeholder="Additional findings, patient concerns, follow-up plan…">{{ exam.clinical_notes }}</textarea>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-primary"
+            onclick="document.getElementById('examForm').submit()">
+      <i class="bi bi-check-circle me-1"></i>
+      {% if edit %}Update{% else %}Save{% endif %} Examination
+    </button>
+    <a href="{% url 'outreach:patient_detail' patient_pk=patient.pk %}"
+       class="btn btn-outline-secondary ms-auto">Cancel</a>
+  </div>
+</form>
+{% endblock %}

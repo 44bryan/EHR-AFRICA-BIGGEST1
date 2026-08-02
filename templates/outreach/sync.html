@@ -1,0 +1,185 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Outreach Sync Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h5 class="fw-bold mb-0">
+      <i class="bi bi-cloud-arrow-up text-primary me-2"></i>Field Sync Dashboard
+    </h5>
+    <p class="text-muted small mb-0">
+      Monitor and troubleshoot data sync from field laptops to the hospital server
+    </p>
+  </div>
+  <a href="{% url 'outreach:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Outreach
+  </a>
+</div>
+
+{# ── Status Cards ──────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center">
+        <div class="display-6 fw-bold {% if pending_patients > 0 %}text-warning{% else %}text-success{% endif %}">
+          {{ pending_patients }}
+        </div>
+        <div class="small text-muted mt-1">Patients Pending Sync</div>
+        {% if pending_patients == 0 %}
+        <i class="bi bi-check-circle text-success"></i>
+        {% else %}
+        <i class="bi bi-exclamation-triangle text-warning"></i>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center">
+        <div class="display-6 fw-bold {% if pending_referrals > 0 %}text-warning{% else %}text-success{% endif %}">
+          {{ pending_referrals }}
+        </div>
+        <div class="small text-muted mt-1">Referrals Pending Sync</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center">
+        {% if last_success %}
+        <div class="text-success fw-bold small">Last Successful Sync</div>
+        <div class="fw-bold mt-1">{{ last_success.device_label|default:last_success.device_id }}</div>
+        <div class="text-muted small">{{ last_success.created_at|naturaltime }}</div>
+        <div class="small mt-1">
+          {{ last_success.patients_synced }} patients,
+          {{ last_success.examinations_synced }} exams,
+          {{ last_success.referrals_synced }} referrals
+        </div>
+        {% else %}
+        <div class="text-muted small">No successful syncs yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="small fw-bold mb-2">Sync API Endpoint</div>
+        <code class="small d-block bg-light p-2 rounded mb-2">
+          POST /outreach/api/sync/
+        </code>
+        <div class="small text-muted">
+          Field laptop sends JSON payload.<br>
+          Auth: Bearer token or hospital session.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Field App Instructions ─────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-primary bg-opacity-10 border-0 py-2">
+    <strong class="text-primary small">
+      <i class="bi bi-laptop me-1"></i>Field App Setup Instructions
+    </strong>
+  </div>
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-md-4">
+        <div class="d-flex gap-2">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:28px;height:28px;font-size:.75rem;font-weight:700">1</div>
+          <div class="small">
+            <strong>Before leaving</strong><br>
+            Copy the <code>outreach_field/</code> folder to the outreach laptop.
+            Run <code>run_field.bat</code> (Windows) or <code>run_field.sh</code> (Linux/Mac)
+            to start the local server at <code>http://localhost:8765</code>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="d-flex gap-2">
+          <div class="bg-success text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:28px;height:28px;font-size:.75rem;font-weight:700">2</div>
+          <div class="small">
+            <strong>In the field</strong><br>
+            Open <code>http://localhost:8765</code> in any browser.
+            Register patients, record examinations, generate referral letters.
+            All data is saved locally — no internet needed.
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="d-flex gap-2">
+          <div class="bg-warning text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:28px;height:28px;font-size:.75rem;font-weight:700">3</div>
+          <div class="small">
+            <strong>Back at hospital</strong><br>
+            Connect to hospital network, then run
+            <code>python sync_to_hospital.py</code>.
+            All field records upload automatically.
+            Check this dashboard for sync confirmation.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Sync History ──────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light border-0 py-2">
+    <strong class="small">Sync History (Last 20 Events)</strong>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Time</th>
+          <th>Device</th>
+          <th>Status</th>
+          <th class="text-center">Activities</th>
+          <th class="text-center">Patients</th>
+          <th class="text-center">Exams</th>
+          <th class="text-center">Referrals</th>
+          <th>Synced By</th>
+          <th>Errors</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="small text-muted">{{ log.created_at|date:"d/m/Y H:i" }}</td>
+          <td class="small">{{ log.device_label|default:log.device_id }}</td>
+          <td>
+            <span class="badge
+              {% if log.sync_status == 'SUCCESS' %}bg-success
+              {% elif log.sync_status == 'PARTIAL' %}bg-warning text-dark
+              {% elif log.sync_status == 'FAILED' %}bg-danger
+              {% else %}bg-secondary{% endif %}">
+              {{ log.get_sync_status_display }}
+            </span>
+          </td>
+          <td class="text-center small">{{ log.activities_synced }}</td>
+          <td class="text-center small">{{ log.patients_synced }}</td>
+          <td class="text-center small">{{ log.examinations_synced }}</td>
+          <td class="text-center small">{{ log.referrals_synced }}</td>
+          <td class="small">{{ log.synced_by.get_full_name|default:"—" }}</td>
+          <td class="small text-danger">
+            {% if log.error_log %}
+            <span title="{{ log.error_log }}" class="cursor-help">
+              <i class="bi bi-exclamation-circle"></i> {{ log.error_log|truncatechars:40 }}
+            </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No sync events yet</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

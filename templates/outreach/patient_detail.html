@@ -1,0 +1,356 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}{{ patient.full_name }} — Outreach{% endblock %}
+
+{% block content %}
+<div class="mb-3 no-print">
+  <a href="{% url 'outreach:patient_list' pk=patient.activity.pk %}" class="text-muted small">
+    <i class="bi bi-arrow-left me-1"></i>Back to Patient Register — {{ patient.activity.title }}
+  </a>
+</div>
+
+{# ── Patient Banner ────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <div class="row align-items-center">
+      <div class="col">
+        <div class="d-flex align-items-center gap-3">
+          <div class="bg-success bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center"
+               style="width:52px;height:52px;">
+            <i class="bi bi-person-fill text-success fs-4"></i>
+          </div>
+          <div>
+            <h5 class="fw-bold mb-0">{{ patient.full_name }}</h5>
+            <div class="small text-muted">
+              <code>{{ patient.outreach_patient_id }}</code>
+              &nbsp;·&nbsp;{{ patient.age_display }}
+              &nbsp;·&nbsp;{{ patient.get_sex_display }}
+              {% if patient.village %}&nbsp;·&nbsp;{{ patient.village }}{% endif %}
+            </div>
+            {% if patient.known_diabetic or patient.known_hypertensive or patient.previous_eye_surgery %}
+            <div class="mt-1">
+              {% if patient.known_diabetic %}
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1">Diabetic</span>
+              {% endif %}
+              {% if patient.known_hypertensive %}
+              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1">Hypertensive</span>
+              {% endif %}
+              {% if patient.previous_eye_surgery %}
+              <span class="badge bg-info-subtle text-info border border-info-subtle">Prev. Eye Surgery</span>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-auto no-print d-flex gap-2">
+        {% if can_examine %}
+          {% if patient.has_examination %}
+          <a href="{% url 'outreach:exam_edit' patient_pk=patient.pk %}"
+             class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-pencil me-1"></i>Edit Exam
+          </a>
+          {% else %}
+          <a href="{% url 'outreach:exam_create' patient_pk=patient.pk %}"
+             class="btn btn-sm btn-success">
+            <i class="bi bi-eye me-1"></i>Start Examination
+          </a>
+          {% endif %}
+        {% endif %}
+        {% if not patient.has_referral %}
+        <a href="{% url 'outreach:referral_create' patient_pk=patient.pk %}"
+           class="btn btn-sm btn-outline-warning">
+          <i class="bi bi-send me-1"></i>Create Referral
+        </a>
+        {% else %}
+        <a href="{% url 'outreach:referral_letter' patient_pk=patient.pk %}"
+           class="btn btn-sm btn-outline-secondary" target="_blank">
+          <i class="bi bi-printer me-1"></i>Print Referral
+        </a>
+        {% endif %}
+      </div>
+    </div>
+    {% if patient.chief_complaint %}
+    <div class="mt-2 p-2 bg-light rounded small">
+      <strong>Chief complaint:</strong> {{ patient.chief_complaint }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  {# ── Examination ──────────────────────────────────────────────────────────── #}
+  <div class="col-lg-8">
+    {% if patient.has_examination %}
+    {% with exam=patient.examination %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-primary bg-opacity-10 border-0 py-2 d-flex justify-content-between">
+        <strong class="text-primary small">
+          <i class="bi bi-eye me-1"></i>Ophthalmic Examination — {{ exam.exam_date }}
+        </strong>
+        <small class="text-muted">Examiner: {{ exam.examiner.get_full_name|default:exam.examiner.username }}</small>
+      </div>
+      <div class="card-body p-0">
+
+        {# VA Table #}
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-0" style="font-size:.82rem">
+            <thead class="table-light">
+              <tr>
+                <th>Visual Acuity</th>
+                <th class="text-center">RE (Right)</th>
+                <th class="text-center">LE (Left)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Distance — Unaided</td>
+                <td class="text-center">{{ exam.va_re_distance|default:"—" }}</td>
+                <td class="text-center">{{ exam.va_le_distance|default:"—" }}</td>
+              </tr>
+              <tr>
+                <td>Distance — Pinhole</td>
+                <td class="text-center">{{ exam.va_re_distance_ph|default:"—" }}</td>
+                <td class="text-center">{{ exam.va_le_distance_ph|default:"—" }}</td>
+              </tr>
+              <tr>
+                <td>Distance — Best Corrected</td>
+                <td class="text-center">{{ exam.va_re_distance_corrected|default:"—" }}</td>
+                <td class="text-center">{{ exam.va_le_distance_corrected|default:"—" }}</td>
+              </tr>
+              <tr>
+                <td>Near</td>
+                <td class="text-center">{{ exam.va_re_near|default:"—" }}</td>
+                <td class="text-center">{{ exam.va_le_near|default:"—" }}</td>
+              </tr>
+              {% if exam.iop_re or exam.iop_le %}
+              <tr class="{% if exam.iop_re_flag or exam.iop_le_flag %}table-warning{% endif %}">
+                <td>IOP (mmHg) {% if exam.iop_method %}— {{ exam.iop_method }}{% endif %}</td>
+                <td class="text-center fw-bold">
+                  {{ exam.iop_re|default:"—" }}
+                  {% if exam.iop_re_flag %}<i class="bi bi-exclamation-triangle text-danger ms-1"></i>{% endif %}
+                </td>
+                <td class="text-center fw-bold">
+                  {{ exam.iop_le|default:"—" }}
+                  {% if exam.iop_le_flag %}<i class="bi bi-exclamation-triangle text-danger ms-1"></i>{% endif %}
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="p-3">
+          {# Refraction #}
+          {% if exam.re_sphere or exam.le_sphere %}
+          <div class="mb-3">
+            <h6 class="fw-semibold small text-muted mb-2">REFRACTION</h6>
+            <div class="row g-2">
+              <div class="col-6">
+                <div class="border rounded p-2 text-center small">
+                  <div class="text-muted mb-1">Right Eye (RE)</div>
+                  <strong>
+                    Sph {{ exam.re_sphere|default:"plano" }}
+                    {% if exam.re_cylinder %} / Cyl {{ exam.re_cylinder }} × {{ exam.re_axis }}°{% endif %}
+                  </strong>
+                  {% if exam.add_power %}<div class="text-muted">Add +{{ exam.add_power }}</div>{% endif %}
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="border rounded p-2 text-center small">
+                  <div class="text-muted mb-1">Left Eye (LE)</div>
+                  <strong>
+                    Sph {{ exam.le_sphere|default:"plano" }}
+                    {% if exam.le_cylinder %} / Cyl {{ exam.le_cylinder }} × {{ exam.le_axis }}°{% endif %}
+                  </strong>
+                </div>
+              </div>
+            </div>
+            {% if exam.glasses_dispensed %}
+            <div class="mt-2 p-2 bg-success-subtle border border-success-subtle rounded small">
+              <i class="bi bi-check-circle-fill text-success me-1"></i>
+              Glasses dispensed{% if exam.rx_frame_type %}: {{ exam.rx_frame_type }}{% endif %}
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {# Diagnoses #}
+          {% if exam.diagnoses_re or exam.diagnoses_le %}
+          <div class="mb-3">
+            <h6 class="fw-semibold small text-muted mb-2">DIAGNOSES</h6>
+            <div class="row g-2">
+              {% if exam.diagnoses_re_list %}
+              <div class="col-6">
+                <div class="small fw-semibold mb-1">Right Eye:</div>
+                {% for d in exam.diagnoses_re_list %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1 mb-1">
+                  {{ diag_map|default:d|default:d }}
+                </span>
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% if exam.diagnoses_le_list %}
+              <div class="col-6">
+                <div class="small fw-semibold mb-1">Left Eye:</div>
+                {% for d in exam.diagnoses_le_list %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1 mb-1">
+                  {{ diag_map|default:d|default:d }}
+                </span>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Segments #}
+          {% if exam.ant_segment_re or exam.post_segment_re %}
+          <div class="mb-3">
+            <h6 class="fw-semibold small text-muted mb-2">SEGMENT FINDINGS</h6>
+            <div class="row g-2 small">
+              {% if exam.ant_segment_re or exam.ant_segment_le %}
+              <div class="col-6">
+                <strong>Anterior:</strong><br>
+                RE: {{ exam.ant_segment_re|default:"Normal" }}<br>
+                LE: {{ exam.ant_segment_le|default:"Normal" }}
+              </div>
+              {% endif %}
+              {% if exam.post_segment_re or exam.post_segment_le %}
+              <div class="col-6">
+                <strong>Posterior:</strong><br>
+                RE: {{ exam.post_segment_re|default:"Normal" }}<br>
+                LE: {{ exam.post_segment_le|default:"Normal" }}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Interventions #}
+          {% if exam.medications_given %}
+          <div class="mb-2 small">
+            <strong>Medications given:</strong> {{ exam.medications_given }}
+          </div>
+          {% endif %}
+          {% if exam.surgery_performed %}
+          <div class="mb-2 small">
+            <span class="badge bg-info-subtle text-info border border-info-subtle">
+              <i class="bi bi-scissors me-1"></i>Surgery: {{ exam.surgery_type|default:"See notes" }}
+            </span>
+          </div>
+          {% endif %}
+          {% if exam.clinical_notes %}
+          <div class="small text-muted mt-2">
+            <strong>Notes:</strong> {{ exam.clinical_notes }}
+          </div>
+          {% endif %}
+
+          {# Referral recommendation from exam #}
+          {% if exam.needs_referral %}
+          <div class="mt-2 p-2 bg-warning-subtle border border-warning-subtle rounded small">
+            <i class="bi bi-send-check me-1"></i>
+            <strong>Referral recommended</strong>
+            {% if exam.referral_urgency %} — <em>{{ exam.get_referral_urgency_display }}</em>{% endif %}
+            {% if exam.referral_reason %}: {{ exam.referral_reason }}{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+    {% else %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-eye display-4"></i>
+        <p class="mt-2">No examination recorded yet</p>
+        {% if can_examine %}
+        <a href="{% url 'outreach:exam_create' patient_pk=patient.pk %}"
+           class="btn btn-success btn-sm">Start Examination</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Referral & Info Panel ─────────────────────────────────────────────── #}
+  <div class="col-lg-4">
+    {# Referral card #}
+    {% if patient.has_referral %}
+    {% with ref=patient.referral %}
+    <div class="card border-{{ ref.urgency_color }} shadow-sm mb-3">
+      <div class="card-header bg-{{ ref.urgency_color }}-subtle border-0 py-2">
+        <strong class="text-{{ ref.urgency_color }}-emphasis small">
+          <i class="bi bi-send me-1"></i>Referral — {{ ref.referral_code }}
+        </strong>
+      </div>
+      <div class="card-body small">
+        <div class="mb-2">
+          <span class="badge bg-{{ ref.urgency_color }}-subtle text-{{ ref.urgency_color }}-emphasis
+                        border border-{{ ref.urgency_color }}-subtle">
+            {{ ref.get_urgency_display }}
+          </span>
+          <span class="badge bg-{{ ref.status_color }}-subtle text-{{ ref.status_color }}-emphasis
+                        border border-{{ ref.status_color }}-subtle ms-1">
+            {{ ref.get_status_display }}
+          </span>
+        </div>
+        {% if ref.diagnosis %}<p class="mb-1"><strong>Diagnosis:</strong> {{ ref.diagnosis }}</p>{% endif %}
+        <p class="mb-1"><strong>Reason:</strong> {{ ref.reason }}</p>
+        {% if ref.recommendations %}<p class="mb-0 text-muted">{{ ref.recommendations }}</p>{% endif %}
+        {% if ref.arrived_date %}
+        <hr class="my-2">
+        <p class="mb-0 text-success small">
+          <i class="bi bi-hospital me-1"></i>Arrived {{ ref.arrived_date }}
+        </p>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-transparent border-0 d-flex gap-1 no-print">
+        <a href="{% url 'outreach:referral_letter' patient_pk=patient.pk %}"
+           class="btn btn-xs btn-outline-secondary flex-fill" target="_blank">
+          <i class="bi bi-printer me-1"></i>Print
+        </a>
+        {% if can_manage %}
+        <form method="post" action="{% url 'outreach:referral_status' referral_pk=ref.pk %}"
+              class="flex-fill d-flex gap-1">
+          {% csrf_token %}
+          <select name="status" class="form-select form-select-sm">
+            <option value="PENDING">Pending</option>
+            <option value="ARRIVED" {% if ref.status == 'ARRIVED' %}selected{% endif %}>Arrived</option>
+            <option value="IN_TREATMENT" {% if ref.status == 'IN_TREATMENT' %}selected{% endif %}>In Treatment</option>
+            <option value="COMPLETED" {% if ref.status == 'COMPLETED' %}selected{% endif %}>Completed</option>
+            <option value="DID_NOT_ATTEND" {% if ref.status == 'DID_NOT_ATTEND' %}selected{% endif %}>DNA</option>
+          </select>
+          <button class="btn btn-xs btn-outline-primary">Update</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endwith %}
+    {% endif %}
+
+    {# Patient info card #}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light border-0 py-2">
+        <strong class="small">Patient Info</strong>
+      </div>
+      <div class="card-body small">
+        {% if patient.phone %}<p class="mb-1"><i class="bi bi-telephone me-1 text-muted"></i>{{ patient.phone }}</p>{% endif %}
+        {% if patient.next_of_kin %}<p class="mb-1"><i class="bi bi-people me-1 text-muted"></i>{{ patient.next_of_kin }}</p>{% endif %}
+        {% if patient.district %}<p class="mb-1"><i class="bi bi-geo me-1 text-muted"></i>{{ patient.district }}</p>{% endif %}
+        <p class="mb-1"><i class="bi bi-calendar me-1 text-muted"></i>{{ patient.activity.activity_date }} — {{ patient.activity.location_name }}</p>
+        {% if patient.registered_by %}
+        <p class="mb-0 text-muted"><i class="bi bi-person-check me-1"></i>Registered by {{ patient.registered_by.get_full_name }}</p>
+        {% endif %}
+        {% if patient.hospital_patient %}
+        <hr class="my-2">
+        <div class="text-success small">
+          <i class="bi bi-link-45deg me-1"></i>
+          Linked to hospital record: <a href="{% url 'patients:detail' visit_number=patient.hospital_patient.visit_number %}">{{ patient.hospital_patient.full_name }}</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

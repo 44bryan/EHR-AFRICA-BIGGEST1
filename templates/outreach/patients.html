@@ -1,0 +1,113 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Patients — {{ act.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3 no-print">
+  <div>
+    <a href="{% url 'outreach:detail' pk=act.pk %}" class="text-muted small">
+      <i class="bi bi-arrow-left me-1"></i>{{ act.title }}
+    </a>
+    <h5 class="fw-bold mb-0 mt-1">
+      <i class="bi bi-people text-success me-2"></i>Patient Register
+      <span class="badge bg-secondary ms-2">{{ patients.count }}</span>
+    </h5>
+    <p class="text-muted small mb-0">{{ act.location_name }} — {{ act.activity_date }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <form class="d-flex gap-2" method="get">
+      <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm"
+             placeholder="Search name / ID / village…" style="width:220px">
+      <button class="btn btn-sm btn-outline-secondary">Search</button>
+    </form>
+    {% if can_manage or can_examine %}
+    <a href="{% url 'outreach:patient_register' pk=act.pk %}"
+       class="btn btn-sm btn-success">
+      <i class="bi bi-person-plus me-1"></i>Register Patient
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if patients %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Age/Sex</th>
+          <th>Village</th>
+          <th>Chief Complaint</th>
+          <th class="text-center">Examined</th>
+          <th class="text-center">Referral</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pt in patients %}
+        <tr>
+          <td><code class="small">{{ pt.outreach_patient_id }}</code></td>
+          <td class="fw-semibold">{{ pt.full_name }}</td>
+          <td>{{ pt.age_display }} / {{ pt.get_sex_display }}</td>
+          <td class="text-muted small">{{ pt.village|default:"—" }}</td>
+          <td class="small">{{ pt.chief_complaint|default:"—"|truncatechars:40 }}</td>
+          <td class="text-center">
+            {% if pt.has_examination %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle">
+                <i class="bi bi-check-circle"></i> Done
+              </span>
+            {% else %}
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                <i class="bi bi-clock"></i> Pending
+              </span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if pt.has_referral %}
+              <span class="badge urgency-{{ pt.referral.urgency|lower }}
+                           bg-{{ pt.referral.urgency_color }}-subtle
+                           text-{{ pt.referral.urgency_color }}
+                           border border-{{ pt.referral.urgency_color }}-subtle">
+                {{ pt.referral.get_urgency_display }}
+              </span>
+            {% elif pt.has_examination and pt.examination.needs_referral %}
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+                Needs Referral
+              </span>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'outreach:patient_detail' patient_pk=pt.pk %}"
+               class="btn btn-xs btn-outline-primary">View</a>
+            {% if can_examine and not pt.has_examination %}
+            <a href="{% url 'outreach:exam_create' patient_pk=pt.pk %}"
+               class="btn btn-xs btn-outline-success">Examine</a>
+            {% endif %}
+            {% if pt.has_referral %}
+            <a href="{% url 'outreach:referral_letter' patient_pk=pt.pk %}"
+               class="btn btn-xs btn-outline-secondary" target="_blank">
+              <i class="bi bi-printer"></i>
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-people display-4"></i>
+  <p class="mt-2">{% if q %}No patients matching "{{ q }}"{% else %}No patients registered yet{% endif %}</p>
+  {% if can_manage or can_examine %}
+  <a href="{% url 'outreach:patient_register' pk=act.pk %}"
+     class="btn btn-success mt-2">Register First Patient</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

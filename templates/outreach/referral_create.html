@@ -1,0 +1,80 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Create Referral — {{ patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <a href="{% url 'outreach:patient_detail' patient_pk=patient.pk %}" class="text-muted small">
+    <i class="bi bi-arrow-left me-1"></i>Back to {{ patient.full_name }}
+  </a>
+  <h5 class="fw-bold mb-0 mt-1">
+    <i class="bi bi-send text-warning me-2"></i>Create Referral Letter
+  </h5>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <form method="post">
+      {% csrf_token %}
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Urgency</label>
+              <select name="urgency" class="form-select">
+                {% for v, lbl in urgency_choices %}
+                <option value="{{ v }}"
+                  {% if exam and exam.referral_urgency == v %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label small fw-semibold">Primary Diagnosis</label>
+              <select name="diagnosis" class="form-select">
+                <option value="">— Select —</option>
+                {% for code, label in diag_choices %}
+                <option value="{{ label }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Reason for Referral <span class="text-danger">*</span></label>
+              <textarea name="reason" class="form-control" rows="3" required
+                placeholder="Describe the clinical findings requiring hospital-level care…">{{ exam.referral_reason|default:'' }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Recommendations to Receiving Doctor</label>
+              <textarea name="recommendations" class="form-control" rows="2"
+                placeholder="Please assess for surgery, OCT, HVF, etc."></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer bg-transparent border-0">
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-send me-1"></i>Create Referral
+          </button>
+          <a href="{% url 'outreach:patient_detail' patient_pk=patient.pk %}"
+             class="btn btn-outline-secondary ms-2">Cancel</a>
+        </div>
+      </div>
+    </form>
+  </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light border-0 py-2">
+        <strong class="small">Patient Summary</strong>
+      </div>
+      <div class="card-body small">
+        <p class="fw-bold mb-1">{{ patient.full_name }}</p>
+        <p class="mb-1">{{ patient.age_display }} / {{ patient.get_sex_display }}</p>
+        <p class="mb-1 text-muted">{{ patient.village }}</p>
+        {% if exam %}
+        <hr class="my-2">
+        <p class="mb-1"><strong>VA RE:</strong> {{ exam.va_re_distance|default:"—" }}
+           &nbsp; <strong>LE:</strong> {{ exam.va_le_distance|default:"—" }}</p>
+        {% if exam.iop_re %}<p class="mb-0"><strong>IOP RE:</strong> {{ exam.iop_re }} &nbsp; <strong>LE:</strong> {{ exam.iop_le }}</p>{% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
