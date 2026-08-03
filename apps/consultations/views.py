@@ -2220,6 +2220,16 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
                 from django.db import transaction as _tx2
                 today = timezone.localdate()
                 with _tx2.atomic():
+                    # Complete ALL active tokens for this visit before routing to next stop
+                    # Prevents stale tokens (e.g., old CASHIER token) lingering in queues
+                    if visit.patient:
+                        QueueToken.objects.filter(
+                            patient=visit.patient,
+                            token_date=today,
+                            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                            is_deleted=False,
+                        ).update(status=TokenStatus.COMPLETED, completed_at=timezone.now())
+
                     # Issue new token for destination
                     if qms_service and visit.patient:
                         already_waiting = QueueToken.objects.filter(
