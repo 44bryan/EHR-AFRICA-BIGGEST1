@@ -14,16 +14,54 @@
           data-url-suffix="{{ scan_url_suffix|default:'/' }}"
         />
       </div>
-      <span class="text-muted small d-none d-sm-inline text-nowrap">
+      {# Camera scan button — shows on tablets/phones with camera #}
+      <button type="button" id="qrCameraBtn"
+              class="btn btn-sm btn-outline-primary flex-shrink-0"
+              title="Scan with camera"
+              style="white-space:nowrap;">
+        <i class="bi bi-camera-fill me-1"></i><span class="d-none d-sm-inline">Camera</span>
+      </button>
+      <span class="text-muted small d-none d-md-inline text-nowrap">
         <i class="bi bi-lightning-charge-fill text-warning me-1"></i>Instant lookup
       </span>
     </div>
   </div>
 </div>
+
+{# Camera scanning modal #}
+<div class="modal fade" id="qrCameraModal" tabindex="-1" aria-labelledby="qrCameraModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="qrCameraModalLabel">
+          <i class="bi bi-camera-fill me-2 text-primary"></i>Scan Patient QR Code
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2 text-center">
+        <div style="position:relative;width:100%;max-width:400px;margin:0 auto;">
+          <video id="qrVideo" playsinline style="width:100%;border-radius:8px;background:#000;"></video>
+          <canvas id="qrCanvas" style="display:none;"></canvas>
+          {# Scan overlay #}
+          <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;display:flex;align-items:center;justify-content:center;">
+            <div style="width:200px;height:200px;border:3px solid #2563eb;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,0.3);"></div>
+          </div>
+        </div>
+        <p id="qrStatus" class="text-muted small mt-2 mb-0">Point camera at patient card QR code…</p>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   var inp = document.getElementById('qrScanInput');
   if (!inp) return;
+
+  // ── Text input: Enter key navigates ──────────────────────────────────────
   inp.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -33,9 +71,109 @@
       window.location.href = url;
     }
   });
-  // Auto-focus on any click in the page to keep scanner active
-  document.addEventListener('click', function (e) {
-    if (!inp.contains(e.target)) return;
+
+  // ── Camera scanning ──────────────────────────────────────────────────────
+  var camBtn = document.getElementById('qrCameraBtn');
+  var modal = document.getElementById('qrCameraModal');
+  var video = document.getElementById('qrVideo');
+  var canvas = document.getElementById('qrCanvas');
+  var status = document.getElementById('qrStatus');
+  var stream = null;
+  var scanInterval = null;
+  var bsModal = null;
+
+  if (!camBtn || !modal || !video || !canvas) return;
+
+  function stopCamera() {
+    if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+    if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
+    video.srcObject = null;
+  }
+
+  function navigate(code) {
+    var val = code.trim();
+    if (!val) return;
+    // Strip URL prefix if scanner encodes full URL
+    var prefix = inp.dataset.urlPrefix || '/patients/';
+    var suffix = inp.dataset.urlSuffix || '/';
+    // If code already looks like a full URL path, navigate directly
+    if (val.startsWith('http') || val.startsWith('/')) {
+      window.location.href = val;
+    } else {
+      window.location.href = prefix + encodeURIComponent(val) + suffix;
+    }
+  }
+
+  // Prefer BarcodeDetector (native Chrome/Android), fallback to jsQR
+  function startScanning() {
+    status.textContent = 'Starting camera…';
+    var constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+    navigator.mediaDevices.getUserMedia(constraints).then(function(s) {
+      stream = s;
+      video.srcObject = s;
+      video.play();
+      status.textContent = 'Point camera at patient card QR code…';
+
+      if (window.BarcodeDetector) {
+        // Native BarcodeDetector (Chrome 88+, Android Chrome, Edge)
+        var detector = new BarcodeDetector({ formats: ['qr_code'] });
+        scanInterval = setInterval(function() {
+          if (video.readyState < 2) return;
+          detector.detect(video).then(function(barcodes) {
+            if (barcodes.length > 0) {
+              var code = barcodes[0].rawValue;
+              status.textContent = 'Found: ' + code;
+              clearInterval(scanInterval); scanInterval = null;
+              if (bsModal) bsModal.hide();
+              setTimeout(function(){ navigate(code); }, 300);
+            }
+          }).catch(function(){});
+        }, 300);
+      } else {
+        // Load jsQR dynamically as fallback
+        var script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+        script.onload = function() {
+          var ctx = canvas.getContext('2d');
+          scanInterval = setInterval(function() {
+            if (video.readyState < 2) return;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+            if (code && code.data) {
+              status.textContent = 'Found: ' + code.data;
+              clearInterval(scanInterval); scanInterval = null;
+              if (bsModal) bsModal.hide();
+              setTimeout(function(){ navigate(code.data); }, 300);
+            }
+          }, 250);
+        };
+        script.onerror = function() {
+          status.textContent = 'Scanner unavailable. Please type the Patient ID manually.';
+        };
+        document.head.appendChild(script);
+      }
+    }).catch(function(err) {
+      status.textContent = 'Camera access denied. Please allow camera access or type the Patient ID manually.';
+    });
+  }
+
+  camBtn.addEventListener('click', function() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('Camera scanning is not supported on this browser. Please type the Patient ID manually.');
+      return;
+    }
+    if (!bsModal && window.bootstrap) {
+      bsModal = new bootstrap.Modal(modal);
+    }
+    if (bsModal) bsModal.show();
+    startScanning();
+  });
+
+  modal.addEventListener('hidden.bs.modal', function() {
+    stopCamera();
   });
 })();
 </script>
