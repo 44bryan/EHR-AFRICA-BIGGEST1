@@ -801,8 +801,18 @@
         </div>
         <div class="col-12">
           <label class="form-label small fw-semibold mb-1">Overall / Summary Diagnosis</label>
-          <textarea name="dept_diagnosis_summary" id="diagSummary" class="form-control form-control-sm" rows="2"
-                    placeholder="Overall clinical impression / summary diagnosis">{{ d.diagnosis_summary|default:'' }}</textarea>
+          <div class="ehr-combo d-flex gap-1 align-items-start">
+            <textarea name="dept_diagnosis_summary" id="diagSummary" class="form-control form-control-sm flex-grow-1" rows="2"
+                      placeholder="Overall clinical impression, or pick from list →">{{ d.diagnosis_summary|default:'' }}</textarea>
+            <div class="dropdown" style="flex-shrink:0;">
+              <button type="button" class="btn btn-sm ehr-add-btn dropdown-toggle" data-bs-toggle="dropdown">＋ Add</button>
+              <ul class="dropdown-menu dropdown-menu-end ehr-add-menu">
+                {% for v in DX_LIST|split:"," %}
+                <li><button type="button" class="dropdown-item">{{ v }}</button></li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
       {% endwith %}
@@ -883,7 +893,10 @@ function runAIDiagnosis() {
 
   var examData = {};
   fd.forEach(function(v, k) {
-    if (k.startsWith('dept_') && v) examData[k.slice(5)] = v;
+    // Skip binary/image fields — base64 PNGs cause 413 Request Entity Too Large
+    if (k.startsWith('dept_') && v && !k.includes('drawing') && !k.includes('image') && !k.includes('signature')) {
+      examData[k.slice(5)] = v;
+    }
   });
   var payload = {
     chief_complaint: cc,
