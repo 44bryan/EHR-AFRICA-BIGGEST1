@@ -1648,13 +1648,17 @@ def triage_workstation_view(request):
     if tier_filter and _is_supervisor:
         show_mode = tier_filter  # supervisors only can freely switch via URL
     elif assigned_counter:
-        tiers = assigned_counter.get_serves_tiers()
-        if 'VIP' in tiers:
-            show_mode = 'VIP'        # VIP counter → VIP patients only
-        elif 'EXPRESS' in tiers or 'FAST_TRACK' in tiers:
-            show_mode = 'EXPRESS'    # Express/Fast Track counter → Express+FT patients only
+        # Use raw serves_tiers string — get_serves_tiers() expands blank→ALL which
+        # causes a blank STANDARD counter to match 'VIP in tiers' incorrectly.
+        _st = assigned_counter.serves_tiers  # blank = counter serves all tiers
+        if not _st:
+            show_mode = 'ALL'        # all-tier counter → supervisor-style view
+        elif 'VIP' in _st:
+            show_mode = 'VIP'        # explicitly VIP counter
+        elif 'EXPRESS' in _st or 'FAST_TRACK' in _st:
+            show_mode = 'EXPRESS'    # Express / Fast Track counter
         else:
-            show_mode = 'STANDARD'
+            show_mode = 'STANDARD'   # Standard-only counter
     elif _nurse_pt == 'VIP':
         show_mode = 'VIP'           # VIP triage sector — PARAMS_VIP filtered to VIP only
     elif _nurse_pt in ('EXPRESS', 'FAST_TRACK'):
