@@ -851,9 +851,10 @@ def consultation_complete_view(request, pk):
 
     # Route patient to next destination if selected by the doctor
     next_dest = request.POST.get('next_destination', '').strip().upper()
+    _route_counter_id = request.POST.get('counter_id', '').strip() or None
     _route_room_id = request.POST.get('room_id', '').strip() or None
     if next_dest and visit:
-        routed, label = _inline_route_visit(visit, next_dest, request.user, room_id=_route_room_id)
+        routed, label = _inline_route_visit(visit, next_dest, request.user, room_id=_route_room_id, counter_id=_route_counter_id)
         if routed:
             messages.success(request, f'Consultation complete — patient sent to {label}.')
         else:
@@ -1482,6 +1483,27 @@ def workstation_view(request):
     else:
         ready_to_route_doctor = []
 
+    # ── Active counters for routing picker ────────────────────────────────────
+    # Show QMS counters checked in today so doctor can route patient to a specific doctor
+    active_counters = []
+    if _qms_active():
+        try:
+            from apps.qms.models import ServiceCounter as _SC_WS
+            _consult_types = [
+                'GENERAL', 'EXP_CONSULT', 'VIP_CONSULT', 'REFRACTION', 'GLAUCOMA',
+                'RETINA', 'CORNEA', 'NEURO', 'CATARACT', 'UVEITIS', 'OCULOPLASTY',
+                'PEDIATRIC', 'LOW_VISION', 'GEN_PHYS', 'INSUR_CONSULT',
+            ]
+            active_counters = list(
+                _SC_WS.objects.filter(
+                    service_type__in=_consult_types,
+                    is_active=True,
+                    checked_in_date=today,
+                ).select_related('staff_assigned').order_by('service_type', 'name')
+            )
+        except Exception:
+            pass
+
     # ── Incoming referrals to this doctor's department ───────────────────────
     # Consultations from another doctor that set referral_department = this dept
     incoming_referrals = []
@@ -1524,6 +1546,7 @@ def workstation_view(request):
         'checked_in_counter': _ws_checked_in_counter,
         'ready_to_route_doctor': ready_to_route_doctor,
         'incoming_referrals': incoming_referrals,
+        'active_counters': active_counters,
     })
 
 
@@ -2118,7 +2141,7 @@ def clinic_call_patient_view(request, visit_pk):
 
 
 # ── Shared routing helper — used by complete_consultation_view AND nurse_route_patient_view ──
-def _inline_route_visit(visit, destination, routed_by, room_id=None):
+def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=None):
     """
     Route a visit to its next destination.
     Returns (success: bool, label: str).
@@ -2162,9 +2185,22 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None):
                 pass
         visit.save(update_fields=_save_fields)
 
-        # Room/doctor assignment
+        # Doctor/counter assignment
         _room_note = ''
-        if room_id:
+        _assigned_counter = None
+        if counter_id:
+            try:
+                from apps.qms.models import ServiceCounter as _SC_IR
+                _assigned_counter = _SC_IR.objects.select_related('staff_assigned').get(
+                    id=counter_id, is_active=True
+                )
+                if _assigned_counter.staff_assigned:
+                    visit.attending_doctor = _assigned_counter.staff_assigned
+                    visit.save(update_fields=['attending_doctor', 'updated_at'])
+                    _room_note = f' → {_assigned_counter.name} (Dr. {_assigned_counter.staff_assigned.last_name})'
+            except Exception:
+                pass
+        elif room_id:
             try:
                 from apps.departments.models import ConsultationRoom as _CR2
                 _room = _CR2.objects.select_related('assigned_doctor').get(id=room_id, is_active=True)
@@ -2205,6 +2241,7 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None):
                                 service_tier=tier,
                                 issuance_point=IssuancePoint.SYSTEM,
                                 priority=TIER_PRIORITY.get(tier, 0),
+                                counter=_assigned_counter,
                                 notes=f'Routed by {routed_by.get_full_name()} to {label}{_room_note}',
                                 issued_by=routed_by,
                             )
@@ -2265,11 +2302,21 @@ def nurse_route_patient_view(request, visit_pk):
     destination = request.POST.get('destination', '').upper()
     referral_reason = request.POST.get('referral_reason', '').strip()
 
-    # Optional: route to a specific room (pre-assign attending_doctor)
+    # Optional: route to a specific counter (preferred) or room (legacy)
+    counter_id = request.POST.get('counter_id', '').strip()
     room_id = request.POST.get('room_id', '').strip()
+    _target_counter = None
     _target_room = None
     _room_note = ''
-    if room_id:
+    if counter_id:
+        try:
+            from apps.qms.models import ServiceCounter as _SC_NR
+            _target_counter = _SC_NR.objects.select_related('staff_assigned').get(id=counter_id, is_active=True)
+            if _target_counter.staff_assigned:
+                _room_note = f' → {_target_counter.name} (Dr. {_target_counter.staff_assigned.last_name})'
+        except Exception:
+            pass
+    elif room_id:
         try:
             from apps.departments.models import ConsultationRoom as _CR
             _target_room = _CR.objects.select_related('assigned_doctor').get(id=room_id, is_active=True)
@@ -2377,8 +2424,11 @@ def nurse_route_patient_view(request, visit_pk):
             pass
     visit.save(update_fields=_save_fields)
 
-    # Assign to specific doctor/room if requested
-    if _target_room and _target_room.assigned_doctor:
+    # Assign to specific counter (preferred) or legacy room
+    if _target_counter and _target_counter.staff_assigned:
+        visit.attending_doctor = _target_counter.staff_assigned
+        visit.save(update_fields=['attending_doctor', 'updated_at'])
+    elif _target_room and _target_room.assigned_doctor:
         visit.attending_doctor = _target_room.assigned_doctor
         visit.save(update_fields=['attending_doctor', 'updated_at'])
 
@@ -2427,6 +2477,7 @@ def nurse_route_patient_view(request, visit_pk):
                             service_tier=tier,
                             issuance_point=IssuancePoint.SYSTEM,
                             priority=TIER_PRIORITY.get(tier, 0),
+                            counter=_target_counter,
                             notes=f'Routed by {user.get_full_name()} to {label}{_room_note}' + (f' — {referral_reason[:120]}' if referral_reason else ''),
                             issued_by=user,
                         )

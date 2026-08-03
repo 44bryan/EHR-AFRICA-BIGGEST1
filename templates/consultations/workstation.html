@@ -479,19 +479,22 @@
               <i class="bi bi-door-open me-1"></i>Done
             </button>
           </div>
-          {# Room picker — optional, only if dept has multiple rooms with assigned doctors #}
-          {% if dept_rooms %}
-          <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
-            <span class="text-muted small">Specific room:</span>
+          {# Counter picker — active counters checked in today #}
+          {% if active_counters %}
+          <div class="mt-2 d-flex align-items-center gap-2 flex-wrap" id="ws-counter-row-{{ v.pk }}">
+            <span class="text-muted small">Send to:</span>
             <button class="btn btn-xs btn-outline-secondary ws-room-any py-0 px-2 active" data-visit="{{ v.pk }}" style="font-size:.75rem;">
               Any
             </button>
-            {% for room in dept_rooms %}
-            {% if room.assigned_doctor %}
-            <button class="btn btn-xs btn-outline-secondary ws-room-pick py-0 px-2" data-visit="{{ v.pk }}" data-room="{{ room.id }}" style="font-size:.75rem;">
-              Room {{ room.room_number }} — Dr. {{ room.assigned_doctor.last_name }}
+            {% for ctr in active_counters %}
+            <button class="btn btn-xs btn-outline-secondary ws-room-pick py-0 px-2"
+                    data-visit="{{ v.pk }}"
+                    data-room="{{ ctr.id }}"
+                    data-service="{{ ctr.service_type }}"
+                    title="{{ ctr.name }}{% if ctr.staff_assigned %} — Dr. {{ ctr.staff_assigned.last_name }}{% endif %}"
+                    style="font-size:.75rem;">
+              {{ ctr.name|truncatechars:20 }}{% if ctr.staff_assigned %} <span class="text-muted">({{ ctr.staff_assigned.last_name }})</span>{% endif %}
             </button>
-            {% endif %}
             {% endfor %}
           </div>
           {% endif %}
@@ -1134,7 +1137,7 @@ setInterval(() => {
       btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
       const fd = new FormData();
       fd.append('destination', dest);
-      if (roomId) fd.append('room_id', roomId);
+      if (roomId) fd.append('counter_id', roomId);
       fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
       fetch(_wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', vPk), {
         method: 'POST', body: fd,
