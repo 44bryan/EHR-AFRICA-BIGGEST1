@@ -591,13 +591,19 @@
         </div>
       </div>
       {# Label tool input — shown only when Label mode is active #}
-      <div id="fundus-label-row" class="d-none align-items-center gap-2 mt-1 mb-1 px-1 py-1 rounded" style="background:#e0f2fe;border:1px solid #7dd3fc;">
+      <div id="fundus-label-row" class="d-none align-items-center gap-2 mt-1 mb-1 px-1 py-1 rounded flex-wrap" style="background:#e0f2fe;border:1px solid #7dd3fc;">
         <i class="bi bi-fonts text-info"></i>
-        <input type="text" id="fundus-label-text" class="form-control form-control-sm" style="max-width:220px;"
-               placeholder="Type label text here…" autocomplete="off">
-        <span class="small text-muted">then tap on the diagram to place it</span>
+        <input type="text" id="fundus-label-text" class="form-control form-control-sm" style="max-width:190px;"
+               placeholder="Label text…" autocomplete="off">
+        <span class="small text-muted d-none d-md-inline">Tap to place &middot; drag to move</span>
+        <div class="d-flex align-items-center gap-1">
+          <span class="small text-muted">Size:</span>
+          <button type="button" id="label-font-dec" class="btn btn-sm btn-outline-secondary px-2 py-0" style="font-weight:700;line-height:1.5;">A-</button>
+          <span id="label-font-size-val" class="small fw-semibold" style="min-width:32px;text-align:center;">16px</span>
+          <button type="button" id="label-font-inc" class="btn btn-sm btn-outline-secondary px-2 py-0" style="font-weight:700;line-height:1.5;">A+</button>
+        </div>
         <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="setFundusTool('pen')">
-          <i class="bi bi-pencil"></i> Back to Draw
+          <i class="bi bi-pencil"></i> Draw
         </button>
       </div>
 
@@ -1052,8 +1058,10 @@ function addMgtOther() {
   var currentTool = 'pen';
   var drawColor = '#e60000';
   var drawSize = 3;
+  var labelFontSize = 16;
   var overlays = {};
-  var history = { re: [], le: [] };
+  var labels = { re: [], le: [] };   // draggable label objects
+  var history = { re: [], le: [] };  // each entry: { overlay: dataUrl, labels: [...] }
   var MAX_HISTORY = 20;
 
   window.setFundusTool = function(t) {
@@ -1077,6 +1085,16 @@ function addMgtOther() {
     drawSize = parseInt(e.target.value);
     var lbl = document.getElementById('draw-size-label');
     if (lbl) lbl.textContent = e.target.value;
+  });
+
+  // Label font size A- / A+ buttons
+  document.getElementById('label-font-dec').addEventListener('click', function() {
+    labelFontSize = Math.max(8, labelFontSize - 2);
+    document.getElementById('label-font-size-val').textContent = labelFontSize + 'px';
+  });
+  document.getElementById('label-font-inc').addEventListener('click', function() {
+    labelFontSize = Math.min(52, labelFontSize + 2);
+    document.getElementById('label-font-size-val').textContent = labelFontSize + 'px';
   });
 
   function drawBase(ctx, id) {
@@ -1276,11 +1294,35 @@ function addMgtOther() {
     ctx.fillText('I', CX, SIZE - Math.round(10 * sc));
   }
 
+  // ── Draw all floating labels on top of base + overlay ───────────────────
+  function drawLabels(ctx, id) {
+    labels[id].forEach(function(l) {
+      ctx.save();
+      ctx.font = 'bold ' + l.fontSize + 'px sans-serif';
+      ctx.textBaseline = 'top';
+      var w = ctx.measureText(l.text).width;
+      ctx.fillStyle = 'rgba(255,255,255,0.82)';
+      ctx.fillRect(l.x - 2, l.y - 1, w + 6, l.fontSize + 4);
+      ctx.fillStyle = l.color;
+      ctx.fillText(l.text, l.x + 1, l.y + 1);
+      ctx.restore();
+    });
+  }
+
   function composite(id) {
     var canvas = document.getElementById('canvas-' + id);
     var ctx = canvas.getContext('2d');
     drawBase(ctx, id);
     ctx.drawImage(overlays[id], 0, 0);
+    drawLabels(ctx, id);
+  }
+
+  function saveHistory(id) {
+    history[id].push({
+      overlay: overlays[id].toDataURL('image/png'),
+      labels:  JSON.parse(JSON.stringify(labels[id]))
+    });
+    if (history[id].length > MAX_HISTORY) history[id].shift();
   }
 
   function initCanvas(id) {
@@ -1291,6 +1333,8 @@ function addMgtOther() {
     overlays[id] = ov;
     var olCtx = ov.getContext('2d');
     var painting = false;
+    var draggingIdx = -1;   // index of label being dragged (-1 = none)
+    var dragOX = 0, dragOY = 0;
 
     var savedData = document.getElementById('fundoscopy-' + id + '-data').value;
     if (savedData) {
@@ -1306,40 +1350,67 @@ function addMgtOther() {
       var src = e.touches ? e.touches[0] : e;
       return { x: (src.clientX - r.left) * (SIZE / r.width), y: (src.clientY - r.top) * (SIZE / r.height) };
     }
+
+    // Returns index of label whose bounding box contains (x, y), or -1
+    function hitLabel(x, y) {
+      var lbls = labels[id];
+      // Test in reverse order so topmost label wins
+      for (var i = lbls.length - 1; i >= 0; i--) {
+        var l = lbls[i];
+        // Estimate width from char count (cheap; measureText needs a 2d ctx)
+        var w = l.fontSize * l.text.length * 0.62;
+        if (x >= l.x - 5 && x <= l.x + w + 10 &&
+            y >= l.y - 4  && y <= l.y + l.fontSize + 6) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
     function start(e) {
       e.preventDefault();
       var p = getPos(e);
-      // ── Label / text tool: place typed text at tap position ──────────────
       if (currentTool === 'text') {
-        var txt = (document.getElementById('fundus-label-text').value || '').trim();
-        if (!txt) { document.getElementById('fundus-label-text').focus(); return; }
-        history[id].push(ov.toDataURL('image/png'));
-        if (history[id].length > MAX_HISTORY) history[id].shift();
-        var fontSize = Math.max(12, drawSize * 3 + 7);
-        olCtx.save();
-        olCtx.font = 'bold ' + fontSize + 'px sans-serif';
-        olCtx.textBaseline = 'top';
-        var w = olCtx.measureText(txt).width;
-        // Semi-transparent white backing so text is readable over any anatomy
-        olCtx.fillStyle = 'rgba(255,255,255,0.78)';
-        olCtx.fillRect(p.x - 2, p.y - 1, w + 6, fontSize + 4);
-        olCtx.fillStyle = drawColor;
-        olCtx.fillText(txt, p.x + 1, p.y + 1);
-        olCtx.restore();
-        composite(id);
-        document.getElementById('fundoscopy-' + id + '-data').value = canvas.toDataURL('image/png');
-        return; // don't enter painting mode
+        var hit = hitLabel(p.x, p.y);
+        if (hit >= 0) {
+          // ── Drag existing label ──────────────────────────────────────────
+          saveHistory(id);
+          draggingIdx = hit;
+          dragOX = p.x - labels[id][hit].x;
+          dragOY = p.y - labels[id][hit].y;
+          canvas.style.cursor = 'move';
+        } else {
+          // ── Place new label ──────────────────────────────────────────────
+          var txt = (document.getElementById('fundus-label-text').value || '').trim();
+          if (!txt) { document.getElementById('fundus-label-text').focus(); return; }
+          saveHistory(id);
+          labels[id].push({ text: txt, x: p.x, y: p.y, fontSize: labelFontSize, color: drawColor });
+          composite(id);
+          document.getElementById('fundoscopy-' + id + '-data').value = canvas.toDataURL('image/png');
+        }
+        return;
       }
-      // ── Pen / eraser: begin stroke ────────────────────────────────────────
-      history[id].push(ov.toDataURL('image/png'));
-      if (history[id].length > MAX_HISTORY) history[id].shift();
+      // ── Pen / eraser ─────────────────────────────────────────────────────
+      saveHistory(id);
       painting = true;
       olCtx.beginPath(); olCtx.moveTo(p.x, p.y);
     }
+
     function move(e) {
       e.preventDefault();
-      if (!painting) return;
       var p = getPos(e);
+      if (currentTool === 'text') {
+        if (draggingIdx >= 0) {
+          labels[id][draggingIdx].x = p.x - dragOX;
+          labels[id][draggingIdx].y = p.y - dragOY;
+          composite(id);
+        } else {
+          // Show move cursor when hovering an existing label
+          canvas.style.cursor = hitLabel(p.x, p.y) >= 0 ? 'move' : 'crosshair';
+        }
+        return;
+      }
+      if (!painting) return;
       if (currentTool === 'eraser') {
         olCtx.clearRect(p.x - drawSize * 2, p.y - drawSize * 2, drawSize * 4, drawSize * 4);
       } else {
@@ -1349,13 +1420,20 @@ function addMgtOther() {
       }
       composite(id);
     }
+
     function stop() {
+      if (currentTool === 'text' && draggingIdx >= 0) {
+        draggingIdx = -1;
+        canvas.style.cursor = 'crosshair';
+        document.getElementById('fundoscopy-' + id + '-data').value = canvas.toDataURL('image/png');
+        return;
+      }
       if (!painting) return;
       painting = false;
       olCtx.beginPath();
-      // Save composite (base eye diagram + drawing overlay), not just the overlay
       document.getElementById('fundoscopy-' + id + '-data').value = canvas.toDataURL('image/png');
     }
+
     canvas.addEventListener('mousedown', start);
     canvas.addEventListener('mousemove', move);
     canvas.addEventListener('mouseup', stop);
@@ -1367,6 +1445,7 @@ function addMgtOther() {
 
   window.clearFundusCanvas = function(id) {
     history[id] = [];
+    labels[id]  = [];
     overlays[id].getContext('2d').clearRect(0, 0, SIZE, SIZE);
     composite(id);
     document.getElementById('fundoscopy-' + id + '-data').value = '';
@@ -1374,7 +1453,8 @@ function addMgtOther() {
 
   window.undoFundusCanvas = function(id) {
     if (!history[id] || history[id].length === 0) return;
-    var dataUrl = history[id].pop();
+    var snap = history[id].pop();
+    labels[id] = snap.labels;
     var ov = overlays[id];
     var olCtx = ov.getContext('2d');
     olCtx.clearRect(0, 0, SIZE, SIZE);
@@ -1385,7 +1465,7 @@ function addMgtOther() {
       composite(id);
       document.getElementById('fundoscopy-' + id + '-data').value = c.toDataURL('image/png');
     };
-    img.src = dataUrl;
+    img.src = snap.overlay;
   };
 
   initCanvas('re');
