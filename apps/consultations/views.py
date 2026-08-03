@@ -1359,18 +1359,31 @@ def workstation_view(request):
         except Exception:
             pass
 
-    # Apply room filter to queue.
-    # Priority: (1) QMS counter filter (new system) if doctor is checked in today
-    #           (2) ConsultationRoom filter (old system) as fallback
-    # Rule: tokens with no counter/room always appear in all views (never silently dropped).
-    if _qms_active() and _ws_checked_in_counter:
-        waiting_tokens = [
-            t for t in waiting_tokens
-            if (
-                getattr(t, 'counter_id', None) is None
-                or getattr(t, 'counter_id', None) == _ws_checked_in_counter.id
-            )
-        ]
+    # Apply room/counter filter to queue.
+    # Rule: a token dispatched to a specific counter belongs to that counter's doctor.
+    #   - Doctor IS checked into counter X  → see their counter's tokens + pool tokens (no counter)
+    #   - Doctor is NOT in any counter       → see pool tokens + tokens from unoccupied counters
+    #     (prevents routed tokens leaking into ALL doctors' workstations)
+    if _qms_active():
+        if _ws_checked_in_counter:
+            # I am in counter X — show only my counter's tokens + unassigned pool tokens
+            waiting_tokens = [
+                t for t in waiting_tokens
+                if (
+                    getattr(t, 'counter_id', None) is None
+                    or getattr(t, 'counter_id', None) == _ws_checked_in_counter.id
+                )
+            ]
+        else:
+            # I am not checked into any counter — only see pool tokens (no counter)
+            # and tokens from counters that have no active doctor today (fallback / orphan tokens)
+            waiting_tokens = [
+                t for t in waiting_tokens
+                if (
+                    getattr(t, 'counter_id', None) is None
+                    or not (t.counter and t.counter.is_checked_in_today)
+                )
+            ]
     elif selected_room:
         if _qms_active():
             waiting_tokens = [
