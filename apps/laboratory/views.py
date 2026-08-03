@@ -588,6 +588,28 @@ def lab_detail_view(request, pk):
 
 
 @login_required
+@login_required
+def bulk_collect_sample_view(request):
+    """Mark multiple lab orders as SAMPLE_COLLECTED in one click."""
+    from django.views.decorators.http import require_POST as _rp
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+    if request.method != 'POST':
+        return redirect('laboratory:dashboard')
+    pks = request.POST.getlist('order_ids')
+    if not pks:
+        messages.warning(request, 'No orders selected.')
+        return redirect('laboratory:dashboard')
+    updated = LabOrder.objects.filter(
+        pk__in=pks,
+        status=LabOrder.Status.ORDERED,
+        is_deleted=False,
+    ).update(status=LabOrder.Status.SAMPLE_COLLECTED)
+    messages.success(request, f'{updated} order(s) marked as Sample Collected.')
+    return redirect('laboratory:dashboard')
+
+
+@login_required
 def collect_sample_view(request, pk):
     if not (request.user.is_lab_tech or request.user.is_medical_director):
         return HttpResponseForbidden()

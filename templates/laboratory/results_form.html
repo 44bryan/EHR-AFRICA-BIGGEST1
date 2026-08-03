@@ -24,6 +24,32 @@
     </div>
     {% endif %}
 
+    {# ── AI Panel Summary ─────────────────────────────────────────────────── #}
+    <div class="card border-0 shadow-sm mb-3" id="aiPanelCard">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-robot fs-5 text-primary"></i>
+          <div>
+            <div class="fw-semibold small">AI Panel Summary</div>
+            <div class="text-muted" style="font-size:.75rem;">Combined clinical interpretation of all entered results</div>
+          </div>
+        </div>
+        <button type="button" id="btnAIPanelSummary" class="btn btn-sm btn-primary ms-auto">
+          <i class="bi bi-stars me-1"></i>Summarise All Results
+        </button>
+      </div>
+      <div id="aiPanelResult" class="d-none px-3 pb-3">
+        <div class="border-top pt-3" style="white-space:pre-wrap;font-size:.85rem;line-height:1.6;"></div>
+      </div>
+    </div>
+
+    {# ── Critical Value Alert Banner ── shown by JS when panic value detected #}
+    <div id="criticalValueBanner" class="d-none alert alert-danger py-2 mb-3 small" role="alert">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      <strong>Critical Value Detected:</strong> <span id="criticalValueMsg"></span>
+      — Notify ordering physician immediately.
+    </div>
+
     <form method="post" id="resultsForm">
       {% csrf_token %}
 
@@ -1129,5 +1155,157 @@ document.querySelectorAll('.ai-interpret-btn').forEach(function (btn) {
     });
   });
 });
+
+/* ── Critical Value Detection (client-side, instant) ─────────────────────── */
+(function () {
+  // Panic / critical ranges for common tests — key = lowercase substring of test name
+  var CRITICAL = [
+    { key: ['glucose','fbs','rbs','blood sugar'], lo: 2.5, hi: 25,   unit: 'mmol/L' },
+    { key: ['hba1c','haemoglobin a1c'],           hi: 14,            unit: '%'       },
+    { key: ['potassium','k+'],                    lo: 2.5, hi: 6.5,  unit: 'mmol/L' },
+    { key: ['sodium','na+'],                      lo: 120, hi: 160,  unit: 'mmol/L' },
+    { key: ['haemoglobin','hemoglobin',' hb ','hgb'], lo: 5,         unit: 'g/dL'   },
+    { key: ['creatinine'],                        hi: 500,           unit: 'µmol/L' },
+    { key: ['urea'],                              hi: 40,            unit: 'mmol/L' },
+    { key: ['white blood','wbc','leucocyte'],     lo: 2, hi: 30,     unit: '×10⁹/L' },
+    { key: ['platelet'],                          lo: 50, hi: 1000,  unit: '×10⁹/L' },
+    { key: ['iop','intraocular'],                 hi: 35,            unit: 'mmHg'   },
+    { key: ['ph'],                                lo: 7.2, hi: 7.6,  unit: ''       },
+  ];
+
+  var banner  = document.getElementById('criticalValueBanner');
+  var msgEl   = document.getElementById('criticalValueMsg');
+  var criticals = [];
+
+  function checkValue(testName, rawVal) {
+    var num = parseFloat(rawVal);
+    if (isNaN(num)) return null;
+    var name = (testName || '').toLowerCase();
+    for (var i = 0; i < CRITICAL.length; i++) {
+      var rule = CRITICAL[i];
+      var match = rule.key.some(function(k) { return name.indexOf(k) >= 0; });
+      if (!match) continue;
+      if ((rule.lo !== undefined && num < rule.lo) || (rule.hi !== undefined && num > rule.hi)) {
+        var desc = testName + ': ' + rawVal + (rule.unit ? ' ' + rule.unit : '');
+        if (rule.lo !== undefined && num < rule.lo) desc += ' (below critical low ' + rule.lo + ')';
+        else desc += ' (above critical high ' + rule.hi + ')';
+        return desc;
+      }
+    }
+    return null;
+  }
+
+  function refreshBanner() {
+    if (criticals.length > 0) {
+      msgEl.textContent = criticals.join(' | ');
+      banner.classList.remove('d-none');
+    } else {
+      banner.classList.add('d-none');
+    }
+  }
+
+  document.querySelectorAll('.result-card').forEach(function(card) {
+    var testName = card.querySelector('.fw-semibold') ? card.querySelector('.fw-semibold').textContent.trim() : '';
+    var inputs = card.querySelectorAll('input[type="number"], input[type="text"][name^="result_value_"]');
+    inputs.forEach(function(inp) {
+      inp.addEventListener('input', function() {
+        var alert = checkValue(testName, this.value);
+        // Remove old entry for this input, re-add if critical
+        var key = 'cv-' + (inp.name || inp.id);
+        criticals = criticals.filter(function(c) { return c.indexOf(key) < 0; });
+        if (alert) criticals.push(key + ': ' + alert);
+        // Rebuild display list without key prefix
+        var display = criticals.map(function(c) { return c.replace(/^cv-[^:]+: /, ''); });
+        if (display.length > 0) {
+          msgEl.textContent = display.join(' | ');
+          banner.classList.remove('d-none');
+        } else {
+          banner.classList.add('d-none');
+        }
+        // Also flash the input border
+        inp.style.borderColor = alert ? '#dc3545' : '';
+        inp.style.boxShadow   = alert ? '0 0 0 0.2rem rgba(220,53,69,.25)' : '';
+      });
+    });
+  });
+}());
+
+/* ── AI Panel Summary ────────────────────────────────────────────────────── */
+(function () {
+  var btn       = document.getElementById('btnAIPanelSummary');
+  var resultDiv = document.getElementById('aiPanelResult');
+  var resultInner = resultDiv ? resultDiv.querySelector('div') : null;
+  if (!btn) return;
+
+  btn.addEventListener('click', function () {
+    // Collect all entered results
+    var tests = [];
+    document.querySelectorAll('.result-card').forEach(function (card) {
+      var testName = card.dataset.item || '';
+      // Get the test name from the card header
+      var nameEl = card.querySelector('.fw-semibold');
+      var name = nameEl ? nameEl.textContent.trim() : '';
+      var itemId = card.dataset.itemId;
+      if (!itemId) return;
+
+      var valueInput = card.querySelector('[name="result_value_' + itemId + '"]');
+      var val = valueInput ? valueInput.value.trim() : '';
+      var radioChecked = card.querySelector('[name="result_value_' + itemId + '"]:checked');
+      if (radioChecked) val = radioChecked.value;
+      if (!val) return;  // skip empty results
+
+      var abnEl = card.querySelector('[id^="abn_"]');
+      var critEl = card.querySelector('[id^="crit_"]');
+      var unitEl = card.querySelector('[data-unit]');
+      var refEl  = card.querySelector('[data-ref]');
+
+      tests.push({
+        name:        name,
+        value:       val,
+        unit:        unitEl ? unitEl.dataset.unit : '',
+        ref:         refEl  ? refEl.dataset.ref   : '',
+        is_abnormal: !!(abnEl && abnEl.checked),
+        is_critical: !!(critEl && critEl.checked),
+      });
+    });
+
+    if (tests.length === 0) {
+      resultInner.textContent = 'Please enter at least one result value before requesting AI summary.';
+      resultDiv.classList.remove('d-none');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Analysing panel…';
+    resultInner.textContent = '';
+    resultDiv.classList.remove('d-none');
+
+    fetch('{% url "ai_assistant:lab_panel_summary" %}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+      body: JSON.stringify({
+        tests: tests,
+        patient_age:          '{{ order.patient.age|default:"" }}',
+        patient_gender:       '{{ order.patient.gender|default:"" }}',
+        clinical_indication:  '{{ order.clinical_indication|default:""|escapejs }}',
+      }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-stars me-1"></i>Summarise All Results';
+      if (data.success) {
+        resultInner.textContent = data.summary;
+      } else {
+        resultInner.textContent = 'AI error: ' + (data.error || 'unknown');
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-stars me-1"></i>Summarise All Results';
+      resultInner.textContent = 'Connection error — please try again.';
+    });
+  });
+}());
 </script>
 {% endblock %}

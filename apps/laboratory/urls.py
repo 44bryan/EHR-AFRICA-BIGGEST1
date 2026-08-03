@@ -9,6 +9,7 @@ urlpatterns = [
     path('stats/', views.lab_stats_view, name='stats'),
     path('order/<uuid:consultation_pk>/', views.lab_order_view, name='order'),
     path('<uuid:pk>/', views.lab_detail_view, name='detail'),
+    path('bulk-collect/', views.bulk_collect_sample_view, name='bulk_collect'),
     path('<uuid:pk>/collect-sample/', views.collect_sample_view, name='collect_sample'),
     path('<uuid:pk>/results/', views.enter_results_view, name='enter_results'),
     path('result/<uuid:result_id>/verify/', views.verify_result, name='verify_result'),

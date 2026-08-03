@@ -903,6 +903,79 @@ def ai_lab_interpret_view(request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AI LAB PANEL SUMMARY — combined interpretation of all results in an order
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@login_required
+@require_POST
+def ai_lab_panel_summary_view(request):
+    """
+    AI combined clinical interpretation for all lab results in a single order.
+    POST JSON: {
+      tests: [{name, value, unit, ref, is_abnormal, is_critical}, ...],
+      patient_age, patient_gender, clinical_indication, diagnosis
+    }
+    Returns: { success, summary, critical_flags, pattern, next_steps }
+    """
+    if not (request.user.is_lab_tech or request.user.is_medical_director or
+            request.user.is_super_admin or request.user.is_doctor or request.user.role == 'admin'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    tests = data.get('tests', [])
+    if not tests:
+        return JsonResponse({'error': 'No test results provided'}, status=400)
+
+    age         = data.get('patient_age', '') or 'unknown'
+    gender      = data.get('patient_gender', '') or 'unknown'
+    indication  = data.get('clinical_indication', '') or 'not specified'
+    diagnosis   = data.get('diagnosis', '') or ''
+
+    # Build test summary lines
+    lines = []
+    for t in tests:
+        flag = ''
+        if t.get('is_critical'): flag = ' ⚠ CRITICAL'
+        elif t.get('is_abnormal'): flag = ' ↑↓ ABNORMAL'
+        unit = f" {t['unit']}" if t.get('unit') else ''
+        ref  = f" (ref: {t['ref']})" if t.get('ref') else ''
+        lines.append(f"  • {t['name']}: {t['value']}{unit}{ref}{flag}")
+
+    test_block = '\n'.join(lines)
+
+    prompt = (
+        f"Patient: {gender}, age {age}\n"
+        f"Clinical indication: {indication}\n"
+        + (f"Working diagnosis: {diagnosis}\n" if diagnosis else '')
+        + f"\nLab results panel:\n{test_block}\n\n"
+        "Provide a structured clinical interpretation of this lab panel with the following sections:\n"
+        "1. OVERALL IMPRESSION: 2-3 sentence summary of what the results mean together\n"
+        "2. CRITICAL / URGENT FINDINGS: list any values requiring immediate action (or 'None')\n"
+        "3. CLINICAL PATTERN: identify any metabolic, haematological or biochemical pattern\n"
+        "4. SUGGESTED NEXT STEPS: 2-4 specific follow-up tests or clinical actions\n"
+        "Be concise, precise, and evidence-based. Use clinical language appropriate for a physician."
+    )
+
+    try:
+        from apps.ai_assistant.claude_client import _get_chat_fn, OPHTHALMOLOGY_SYSTEM_PROMPT
+        chat_fn = _get_chat_fn()
+        response = chat_fn(
+            system=OPHTHALMOLOGY_SYSTEM_PROMPT,
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=600,
+        )
+        text = response.get('content', '') if isinstance(response, dict) else str(response)
+        return JsonResponse({'success': True, 'summary': text.strip()})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # AI INVESTIGATION FINDINGS TEMPLATE GENERATOR
 # ─────────────────────────────────────────────────────────────────────────────
 

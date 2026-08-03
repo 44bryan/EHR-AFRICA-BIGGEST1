@@ -149,14 +149,33 @@
   <!-- Pending work queue -->
   <div class="col-md-8">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-clock-history text-primary me-2"></i>Pending Work Queue
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2 flex-wrap">
+        <span class="fw-semibold"><i class="bi bi-clock-history text-primary me-2"></i>Pending Work Queue</span>
+        <form method="post" action="{% url 'laboratory:bulk_collect' %}" class="ms-auto d-inline" id="labBulkCollectAllForm">
+          {% csrf_token %}
+          {% for order in pending_orders %}{% if order.status == 'ORDERED' %}<input type="hidden" name="order_ids" value="{{ order.pk }}">{% endif %}{% endfor %}
+          <button type="submit" class="btn btn-xs btn-outline-info" style="font-size:.75rem;padding:3px 8px;"
+                  onclick="return confirm('Mark ALL ordered samples as collected?')">
+            <i class="bi bi-collection me-1"></i>Collect All Ordered
+          </button>
+        </form>
       </div>
+      {# Bulk collect selected — action bar #}
+      <form method="post" action="{% url 'laboratory:bulk_collect' %}" id="labBulkSelectForm">
+        {% csrf_token %}
+        <div id="labBulkBar" class="d-none align-items-center gap-2 px-3 py-2 border-bottom bg-light">
+          <span id="labBulkLabel" class="small fw-semibold text-info"></span>
+          <button type="submit" class="btn btn-sm btn-info text-white">
+            <i class="bi bi-collection me-1"></i>Mark Sample Collected
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="labBulkClear">Clear</button>
+        </div>
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover small mb-0">
             <thead class="table-light">
               <tr>
+                <th style="width:32px;"><input type="checkbox" id="labChkAll" title="Select all ORDERED"></th>
                 <th>Patient</th>
                 <th>Tests</th>
                 <th>Urgency</th>
@@ -169,6 +188,11 @@
             <tbody>
               {% for order in pending_orders %}
               <tr class="{% if order.urgency == 'EMERGENCY' %}table-danger{% elif order.urgency == 'URGENT' %}table-warning{% elif order.is_paid == False %}table-warning{% endif %}">
+                <td>
+                  {% if order.status == 'ORDERED' %}
+                  <input type="checkbox" name="order_ids" value="{{ order.pk }}" class="lab-row-chk">
+                  {% endif %}
+                </td>
                 <td>
                   <div class="fw-semibold">{{ order.patient.full_name }}</div>
                   <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
@@ -219,7 +243,7 @@
               </tr>
               {% empty %}
               <tr>
-                <td colspan="7" class="text-center text-muted py-4">
+                <td colspan="8" class="text-center text-muted py-4">
                   <i class="bi bi-check-circle-fill text-success fs-3 d-block mb-2"></i>
                   No pending lab orders — All clear!
                 </td>
@@ -229,6 +253,7 @@
           </table>
         </div>
       </div>
+      </form>
     </div>
   </div>
 
@@ -340,6 +365,48 @@
     if (!input.contains(e.target) && !results.contains(e.target)) {
       results.style.display = 'none';
     }
+  });
+})();
+
+/* ── Lab bulk sample collection checkboxes ─────────────────────────── */
+(function () {
+  var selectAll = document.getElementById('labChkAll');
+  var bar       = document.getElementById('labBulkBar');
+  var label     = document.getElementById('labBulkLabel');
+  var clearBtn  = document.getElementById('labBulkClear');
+  var form      = document.getElementById('labBulkSelectForm');
+  if (!selectAll) return;
+
+  function syncBar() {
+    var checked = document.querySelectorAll('.lab-row-chk:checked');
+    var all     = document.querySelectorAll('.lab-row-chk');
+    if (checked.length > 0) {
+      label.textContent = checked.length + ' order(s) selected';
+      bar.classList.remove('d-none'); bar.classList.add('d-flex');
+      // Copy selected PKs into the bulk form
+      form.querySelectorAll('input[name="order_ids"]').forEach(function(i){ i.remove(); });
+      checked.forEach(function(chk) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'order_ids'; inp.value = chk.value;
+        form.appendChild(inp);
+      });
+    } else {
+      bar.classList.add('d-none'); bar.classList.remove('d-flex');
+    }
+    selectAll.checked = all.length > 0 && checked.length === all.length;
+    selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+  }
+
+  selectAll.addEventListener('change', function () {
+    document.querySelectorAll('.lab-row-chk').forEach(function(c){ c.checked = selectAll.checked; });
+    syncBar();
+  });
+  document.addEventListener('change', function(e){
+    if (e.target.classList.contains('lab-row-chk')) syncBar();
+  });
+  if (clearBtn) clearBtn.addEventListener('click', function(){
+    document.querySelectorAll('.lab-row-chk').forEach(function(c){ c.checked = false; });
+    selectAll.checked = false; syncBar();
   });
 })();
 </script>

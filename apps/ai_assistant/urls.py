@@ -36,4 +36,6 @@ urlpatterns = [
     path('lab-interpret/', views.ai_lab_interpret_view, name='lab_interpret'),
     # AI Investigation Findings Template Generator
     path('investigation-template/', views.ai_investigation_template_view, name='investigation_template'),
+    # AI Lab Panel Summary — combined interpretation of all results in one order
+    path('lab-panel-summary/', views.ai_lab_panel_summary_view, name='lab_panel_summary'),
 ]
