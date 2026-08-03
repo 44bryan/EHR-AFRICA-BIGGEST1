@@ -542,80 +542,15 @@
   }, 1000);
 })();
 
-// ── Queue skip-reason enforcement ─────────────────────────────────────────────
+// ── Triage button — navigate directly to vitals form ──────────────────────────
 (function () {
-  var skipModal  = new bootstrap.Modal(document.getElementById('skipQueueModal'));
-  var reasonText = document.getElementById('skipReasonText');
-  var confirmBtn = document.getElementById('skipConfirmBtn');
-  var nameEl     = document.getElementById('skipPatientName');
-  var aheadEl    = document.getElementById('skipAheadMsg');
-
-  var _pendingUrl    = '';
-  var _pendingToken  = '';
-
   document.querySelectorAll('.triage-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var pos      = parseInt(this.dataset.position, 10);
-      var name     = this.dataset.patientName || 'This patient';
-      var url      = this.dataset.triageUrl;
-      var tokenId  = this.dataset.tokenId;
-
-      if (pos === 1) {
-        // First in queue — proceed directly, no reason needed
-        window.location.href = url;
-        return;
-      }
-
-      // Not first — collect reason before proceeding
-      _pendingUrl   = url;
-      _pendingToken = tokenId;
-      nameEl.textContent  = name;
-      aheadEl.textContent = pos > 2
-        ? ' There ' + (pos - 1) + ' patient(s) ahead.'
-        : ' There is 1 patient ahead.';
-      reasonText.value = '';
-      reasonText.classList.remove('is-invalid');
-      skipModal.show();
+      var url = this.dataset.triageUrl;
+      if (url) window.location.href = url;
     });
   });
 
-  if (confirmBtn) {
-    confirmBtn.addEventListener('click', function() {
-      var reason = reasonText.value.trim();
-      if (!reason) {
-        reasonText.classList.add('is-invalid');
-        return;
-      }
-      reasonText.classList.remove('is-invalid');
-      confirmBtn.disabled = true;
-      confirmBtn.textContent = 'Saving…';
-
-      var csrfToken = document.cookie.match(/csrftoken=([^;]+)/);
-      csrfToken = csrfToken ? csrfToken[1] : '';
-
-      fetch('{% url "consultations:skip_queue_reason" %}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken },
-        body: 'token_id=' + encodeURIComponent(_pendingToken)
-            + '&reason='   + encodeURIComponent(reason)
-            + '&redirect_url=' + encodeURIComponent(_pendingUrl),
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.success) {
-          window.location.href = _pendingUrl;
-        } else {
-          confirmBtn.disabled = false;
-          confirmBtn.textContent = 'Record Reason & Proceed';
-          alert(data.error || 'Could not save reason.');
-        }
-      })
-      .catch(function() {
-        // Network error — still let nurse proceed (don't block care)
-        window.location.href = _pendingUrl;
-      });
-    });
-  }
 })();
 
 // ── Triage Patient search modal ────────────────────────────────────────────────
