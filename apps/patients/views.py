@@ -682,8 +682,8 @@ def patient_detail_view(request, patient_id):
         'tab_billing':          u.role in ('finance_director', 'billing_officer', 'accountant', 'senior_accountant', 'chief_cashier', 'cashier') or u.is_super_admin or u.is_ceo,
         # Documents: clinical + medical records only — CEO/admin director use aggregate reports (JCI MOI.2 / HIPAA)
         'tab_documents':        is_doctor or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director or is_clinical_nurse,
-        # Consents (JCI PFR.5): treating doctors + nurses (care continuity) + medical records (filing) — NOT admin/billing/CEO
-        'tab_consents':         is_doctor or is_clinical_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director,
+        # Consents (JCI PFR.5): treating doctors + nurses (care continuity) + medical records (filing) + admin oversight
+        'tab_consents':         is_doctor or is_clinical_nurse or u.role == 'medical_records' or u.is_super_admin or u.is_medical_director or u.role == 'admin' or u.is_admin_director or u.is_ceo,
         # Quick prescribe panel in patient record
         'show_quick_prescribe': u.can_create_consultation,
         # Inline nursing/ward actions
@@ -2605,7 +2605,7 @@ def problem_delete_view(request, patient_id, problem_id):
 def consent_list_view(request, patient_id):
     """List all consent records for a patient — doctors, nurses, medical records, super admin, medical director."""
     u = request.user
-    _allowed = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'medical_records' or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse or u.is_opd_nurse or u.role == 'consultation_nurse'
+    _allowed = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role in ('medical_records', 'admin', 'consultation_nurse') or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse or u.is_opd_nurse or u.is_admin_director or u.is_ceo
     if not _allowed:
         messages.error(request, 'Access denied — consent records are restricted to clinical staff.')
         return redirect('patients:detail', patient_id=patient_id)
@@ -2624,7 +2624,7 @@ def consent_list_view(request, patient_id):
 def consent_create_view(request, patient_id):
     """Create a new informed consent record — JCI PFR.5: treating doctors only."""
     u = request.user
-    if not (u.is_doctor or u.is_medical_director or u.is_super_admin):
+    if not (u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'admin' or u.is_admin_director):
         messages.error(request, 'Access denied — only treating doctors can obtain informed consent (JCI PFR.5).')
         return redirect('patients:consent_list', patient_id=patient_id)
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
@@ -2698,7 +2698,7 @@ def consent_create_view(request, patient_id):
 def consent_detail_view(request, patient_id, consent_id):
     """View consent detail / handle revocation — doctors + nurses + medical records."""
     u = request.user
-    _can_view = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'medical_records' or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse or u.is_opd_nurse or u.role == 'consultation_nurse'
+    _can_view = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role in ('medical_records', 'admin', 'consultation_nurse') or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse or u.is_opd_nurse or u.is_admin_director or u.is_ceo
     if not _can_view:
         messages.error(request, 'Access denied.')
         return redirect('patients:detail', patient_id=patient_id)
@@ -2708,7 +2708,7 @@ def consent_detail_view(request, patient_id, consent_id):
 
     if request.method == 'POST' and request.POST.get('action') == 'revoke':
         # Only the treating doctor or medical director can revoke (JCI PFR.5)
-        if not (u.is_doctor or u.is_medical_director or u.is_super_admin):
+        if not (u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'admin' or u.is_admin_director):
             messages.error(request, 'Only doctors can revoke a consent (JCI PFR.5).')
             return redirect('patients:consent_detail', patient_id=patient_id, consent_id=consent_id)
         reason = request.POST.get('revocation_reason', '').strip()
