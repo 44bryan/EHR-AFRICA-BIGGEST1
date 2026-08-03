@@ -290,9 +290,11 @@ def patient_register_view(request):
                 after_consent = reverse('qms:receptionist')
             else:
                 after_consent = f'/patients/{patient.patient_id}/'
+            # After consent, always show the registration card so staff can print it
+            _card_url = f'/patients/{patient.patient_id}/card/?next={quote(after_consent, safe="")}'
             return redirect(
                 f'/patients/{patient.patient_id}/consents/new/'
-                f'?type=GENERAL&next={quote(after_consent, safe="")}'
+                f'?type=GENERAL&next={quote(_card_url, safe="")}'
             )
     else:
         g = request.GET

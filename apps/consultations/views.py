@@ -2498,8 +2498,8 @@ def nurse_route_patient_view(request, visit_pk):
 @login_required
 def route_rooms_view(request):
     """
-    GET /consultations/route/rooms/?tier=VIP
-    Returns active consultation rooms grouped: same-tier first, then others.
+    GET /consultations/route/rooms/?tier=VIP&service=GENERAL
+    Returns checked-in consultation counters grouped: same-tier first, then others.
     Used by the unified EhrRoute JS modal to build the room board dynamically.
     """
     user = request.user
@@ -2508,38 +2508,67 @@ def route_rooms_view(request):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     patient_tier = request.GET.get('tier', 'STANDARD').upper()
+    service_filter = request.GET.get('service', '').upper()
 
-    from apps.departments.models import ConsultationRoom as _CR
+    from apps.qms.models import ServiceCounter as _SC, QueueToken as _QT, TokenStatus as _TS
     from django.db.models import Count as _Cnt, Q as _DQ
 
-    rooms_qs = (
-        _CR.objects.filter(is_active=True, assigned_doctor__isnull=False)
-        .select_related('assigned_doctor', 'department')
-        .annotate(
-            waiting_count=_Cnt(
-                'assigned_doctor__attended_visits',
-                filter=_DQ(assigned_doctor__attended_visits__status='WAITING'),
-            )
+    _consult_types = [
+        'GENERAL', 'EXP_CONSULT', 'VIP_CONSULT', 'REFRACTION', 'GLAUCOMA',
+        'RETINA', 'CORNEA', 'NEURO', 'CATARACT', 'UVEITIS', 'OCULOPLASTY',
+        'PEDIATRIC', 'LOW_VISION', 'GEN_PHYS', 'INSUR_CONSULT',
+    ]
+    if service_filter and service_filter in _consult_types:
+        _types = [service_filter]
+    else:
+        _types = _consult_types
+
+    counters_qs = (
+        _SC.objects.filter(
+            is_active=True,
+            staff_assigned__isnull=False,
+            checked_in_date=timezone.localdate(),
+            service_type__in=_types,
         )
-        .order_by('department__name', 'room_number')
+        .select_related('staff_assigned', 'zone')
+        .order_by('service_type', 'name')
     )
+
+    # Get waiting token counts per counter in one query
+    waiting_counts = dict(
+        _QT.objects.filter(
+            token_date=timezone.localdate(),
+            status__in=[_TS.WAITING, _TS.CALLED, _TS.SERVING],
+            counter__isnull=False,
+            is_deleted=False,
+        ).values('counter_id').annotate(n=_Cnt('id')).values_list('counter_id', 'n')
+    )
+
+    _tier_labels = {
+        'STANDARD': 'Standard', 'VIP': 'VIP', 'EXPRESS': 'Express',
+        'FAST_TRACK': 'Fast Track', 'ALL': 'All Tiers', '': 'All Tiers',
+    }
 
     same_tier = []
     other_tier = []
-    for room in rooms_qs:
+    for ctr in counters_qs:
+        serves = ctr.serves_tiers or ''
+        tier_label = _tier_labels.get(serves, serves or 'All Tiers')
+        zone_name = ctr.zone.name if ctr.zone else ctr.service_type
         entry = {
-            'id': str(room.id),
-            'room_number': room.room_number,
-            'label': room.label or f'Room {room.room_number}',
-            'dept_name': room.department.name,
-            'dept_code': room.department.code,
-            'tier': room.room_tier,
-            'tier_label': room.get_room_tier_display(),
-            'doctor_name': f'Dr. {room.assigned_doctor.last_name}',
-            'doctor_full': room.assigned_doctor.get_full_name(),
-            'waiting_count': room.waiting_count or 0,
+            'id': str(ctr.id),
+            'room_number': ctr.code or ctr.name,
+            'label': ctr.name,
+            'dept_name': zone_name,
+            'dept_code': ctr.service_type,
+            'tier': serves or 'ALL',
+            'tier_label': tier_label,
+            'doctor_name': f'Dr. {ctr.staff_assigned.last_name}',
+            'doctor_full': ctr.staff_assigned.get_full_name(),
+            'waiting_count': waiting_counts.get(ctr.id, 0),
         }
-        if room.room_tier == patient_tier or room.room_tier == 'ALL':
+        # Same tier: counter serves all tiers (blank) OR explicitly includes patient_tier
+        if not serves or patient_tier in serves:
             same_tier.append(entry)
         else:
             other_tier.append(entry)
