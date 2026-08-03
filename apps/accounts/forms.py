@@ -79,7 +79,7 @@ class UserCreateForm(forms.ModelForm):
         return val if val else None
 
     def clean_employee_id(self):
-        val = self.cleaned_data.get('employee_id', '').strip()
+        val = (self.cleaned_data.get('employee_id') or '').strip()
         if not val:
             return None
         # Check uniqueness only if a value is provided
