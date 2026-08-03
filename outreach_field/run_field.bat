@@ -59,14 +59,7 @@ echo Running database setup...
 python manage.py migrate --settings=outreach_field.settings_field --run-syncdb 2>nul
 
 :: Create default admin if needed
-python manage.py shell --settings=outreach_field.settings_field -c "
-from apps.accounts.models import User
-if not User.objects.filter(username='field_admin').exists():
-    u = User.objects.create_superuser('field_admin', '', 'field123')
-    u.role = 'super_admin'
-    u.save()
-    print('Default login: field_admin / field123')
-" 2>nul
+python outreach_field\create_admin.py 2>nul
 
 echo.
 echo  Opening browser...

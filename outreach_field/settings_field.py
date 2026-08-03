@@ -22,7 +22,6 @@ INSTALLED_APPS = [
     # EHR apps needed for the field module
     'apps.accounts',
     'apps.core',
-    'apps.patients',
     'apps.outreach',
 ]
 
