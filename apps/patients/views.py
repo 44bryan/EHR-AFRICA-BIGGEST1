@@ -976,27 +976,29 @@ def change_visit_tier_view(request, visit_number):
                 'FAST_TRACK': 'EXP_CONSULT',
                 'STANDARD':   'GENERAL',
             }
-            # Cancel any WAITING tokens for this visit
-            cancelled = QueueToken.objects.filter(
-                visit=visit,
-                status=TokenStatus.WAITING,
-            ).update(status=TokenStatus.CANCELLED, notes='Tier changed — re-queued at new tier')
+            from django.db import transaction as _tier_tx
+            with _tier_tx.atomic():
+                # Cancel any WAITING tokens for this visit
+                cancelled = QueueToken.objects.filter(
+                    visit=visit,
+                    status=TokenStatus.WAITING,
+                ).update(status=TokenStatus.CANCELLED, notes='Tier changed — re-queued at new tier')
 
-            # Create a new token at the correct service_type
-            new_service_type = _TIER_TO_SERVICE.get(new_tier, 'GENERAL')
-            token_number = DailyTokenSequence.next_dept_token(new_service_type)
-            QueueToken.objects.create(
-                token_number=token_number,
-                service_type=new_service_type,
-                patient=visit.patient,
-                visit=visit,
-                service_tier=new_tier,
-                issuance_point=IssuancePoint.SYSTEM,
-                priority=TIER_PRIORITY.get(new_tier, 0),
-                status=TokenStatus.WAITING,
-                notes=f'Re-queued after tier change ({old_tier} → {new_tier}) by {u.get_full_name()}',
-                created_by=u,
-            )
+                # Create a new token at the correct service_type
+                new_service_type = _TIER_TO_SERVICE.get(new_tier, 'GENERAL')
+                token_number = DailyTokenSequence.next_dept_token(new_service_type)
+                QueueToken.objects.create(
+                    token_number=token_number,
+                    service_type=new_service_type,
+                    patient=visit.patient,
+                    visit=visit,
+                    service_tier=new_tier,
+                    issuance_point=IssuancePoint.SYSTEM,
+                    priority=TIER_PRIORITY.get(new_tier, 0),
+                    status=TokenStatus.WAITING,
+                    notes=f'Re-queued after tier change ({old_tier} → {new_tier}) by {u.get_full_name()}',
+                    created_by=u,
+                )
             if cancelled:
                 messages.info(request, f'{cancelled} previous queue token(s) cancelled and re-issued at {new_tier} tier.')
         except Exception as exc:

@@ -32,18 +32,20 @@ def _auto_route_to_dept(visit, visit_status, qms_service_type, dept_code, trigge
             from apps.qms.models import (
                 QueueToken, DailyTokenSequence, IssuancePoint, TokenStatus
             )
-            token_number = DailyTokenSequence.next_dept_token(qms_service_type)
-            QueueToken.objects.create(
-                token_number=token_number,
-                service_type=qms_service_type,
-                patient=visit.patient,
-                visit=visit,
-                service_tier=getattr(visit, 'service_tier', 'STANDARD'),
-                issuance_point=IssuancePoint.SYSTEM,
-                status=TokenStatus.WAITING,
-                notes=notes,
-                issued_by=triggered_by,
-            )
+            from django.db import transaction as _pf_tx
+            with _pf_tx.atomic():
+                token_number = DailyTokenSequence.next_dept_token(qms_service_type)
+                QueueToken.objects.create(
+                    token_number=token_number,
+                    service_type=qms_service_type,
+                    patient=visit.patient,
+                    visit=visit,
+                    service_tier=getattr(visit, 'service_tier', 'STANDARD'),
+                    issuance_point=IssuancePoint.SYSTEM,
+                    status=TokenStatus.WAITING,
+                    notes=notes,
+                    issued_by=triggered_by,
+                )
         except Exception:
             pass
 

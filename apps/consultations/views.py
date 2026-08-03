@@ -376,20 +376,22 @@ def consultation_create_view(request, patient_id):
                                 QueueToken, DailyTokenSequence, IssuancePoint,
                                 TokenStatus, TIER_PRIORITY,
                             )
+                            from django.db import transaction as _opt_tx
                             tier = visit.service_tier or 'STANDARD'
-                            token_number = DailyTokenSequence.next_dept_token('OPTICAL')
-                            QueueToken.objects.create(
-                                token_number=token_number,
-                                service_type='OPTICAL',
-                                patient=patient,
-                                visit=visit,
-                                service_tier=tier,
-                                issuance_point=IssuancePoint.SYSTEM,
-                                priority=TIER_PRIORITY.get(tier, 0),
-                                status=TokenStatus.WAITING,
-                                notes=f'Glasses Rx by Dr. {request.user.get_full_name()}',
-                                created_by=request.user,
-                            )
+                            with _opt_tx.atomic():
+                                token_number = DailyTokenSequence.next_dept_token('OPTICAL')
+                                QueueToken.objects.create(
+                                    token_number=token_number,
+                                    service_type='OPTICAL',
+                                    patient=patient,
+                                    visit=visit,
+                                    service_tier=tier,
+                                    issuance_point=IssuancePoint.SYSTEM,
+                                    priority=TIER_PRIORITY.get(tier, 0),
+                                    status=TokenStatus.WAITING,
+                                    notes=f'Glasses Rx by Dr. {request.user.get_full_name()}',
+                                    created_by=request.user,
+                                )
                         messages.info(request, 'Glasses prescription detected — patient sent to Optical queue.')
                 except Exception:
                     pass  # Never block the doctor
@@ -403,21 +405,23 @@ def consultation_create_view(request, patient_id):
                             QueueToken, DailyTokenSequence, IssuancePoint,
                             TokenStatus, TIER_PRIORITY,
                         )
+                        from django.db import transaction as _couns_tx
                         tier = visit.service_tier or 'STANDARD'
-                        token_number = DailyTokenSequence.next_dept_token('COUNSEL')
-                        QueueToken.objects.create(
-                            token_number=token_number,
-                            service_type='COUNSEL',
-                            patient=patient,
-                            visit=visit,
-                            service_tier=tier,
-                            issuance_point=IssuancePoint.SYSTEM,
-                            priority=TIER_PRIORITY.get(tier, 0),
-                            status=TokenStatus.WAITING,
-                            notes=f'Surgery referral by Dr. {request.user.get_full_name()} — '
-                                  f'{dept_data.get("surgical_procedure", "")}',
-                            created_by=request.user,
-                        )
+                        with _couns_tx.atomic():
+                            token_number = DailyTokenSequence.next_dept_token('COUNSEL')
+                            QueueToken.objects.create(
+                                token_number=token_number,
+                                service_type='COUNSEL',
+                                patient=patient,
+                                visit=visit,
+                                service_tier=tier,
+                                issuance_point=IssuancePoint.SYSTEM,
+                                priority=TIER_PRIORITY.get(tier, 0),
+                                status=TokenStatus.WAITING,
+                                notes=f'Surgery referral by Dr. {request.user.get_full_name()} — '
+                                      f'{dept_data.get("surgical_procedure", "")}',
+                                created_by=request.user,
+                            )
                         messages.info(request, 'Patient sent to Surgical Counseling queue.')
                     visit.status = 'COUNSELING'
                     visit.save(update_fields=['status', 'updated_at'])
@@ -456,24 +460,26 @@ def consultation_create_view(request, patient_id):
                                 QueueToken, DailyTokenSequence, IssuancePoint,
                                 TokenStatus, TIER_PRIORITY,
                             )
+                            from django.db import transaction as _ref_tx
                             tier = visit.service_tier or 'STANDARD'
-                            token_number = DailyTokenSequence.next_dept_token(svc)
-                            QueueToken.objects.create(
-                                token_number=token_number,
-                                service_type=svc,
-                                patient=patient,
-                                visit=visit,
-                                service_tier=tier,
-                                issuance_point=IssuancePoint.SYSTEM,
-                                priority=TIER_PRIORITY.get(tier, 0),
-                                status=TokenStatus.WAITING,
-                                notes=(
-                                    f'Referred by Dr. {request.user.get_full_name()} '
-                                    f'({consultation.department.name if consultation.department else ""})'
-                                    + (f': {consultation.referral_reason[:120]}' if consultation.referral_reason else '')
-                                ),
-                                created_by=request.user,
-                            )
+                            with _ref_tx.atomic():
+                                token_number = DailyTokenSequence.next_dept_token(svc)
+                                QueueToken.objects.create(
+                                    token_number=token_number,
+                                    service_type=svc,
+                                    patient=patient,
+                                    visit=visit,
+                                    service_tier=tier,
+                                    issuance_point=IssuancePoint.SYSTEM,
+                                    priority=TIER_PRIORITY.get(tier, 0),
+                                    status=TokenStatus.WAITING,
+                                    notes=(
+                                        f'Referred by Dr. {request.user.get_full_name()} '
+                                        f'({consultation.department.name if consultation.department else ""})'
+                                        + (f': {consultation.referral_reason[:120]}' if consultation.referral_reason else '')
+                                    ),
+                                    created_by=request.user,
+                                )
                         messages.info(
                             request,
                             f'Patient referred and routed to {ref_dept.name}.'
@@ -1386,22 +1392,14 @@ def workstation_view(request):
                 )
             ]
     elif selected_room:
-        if _qms_active():
-            waiting_tokens = [
-                t for t in waiting_tokens
-                if (
-                    getattr(getattr(t, 'ws_visit', None), 'consultation_room_id', None) is None
-                    or getattr(getattr(t, 'ws_visit', None), 'consultation_room_id', None) == selected_room.id
-                )
-            ]
-        else:
-            waiting_visits = [
-                v for v in waiting_visits
-                if (
-                    getattr(v, 'consultation_room_id', None) is None
-                    or getattr(v, 'consultation_room_id', None) == selected_room.id
-                )
-            ]
+        # QMS OFF: filter by legacy ConsultationRoom assignment
+        waiting_visits = [
+            v for v in waiting_visits
+            if (
+                getattr(v, 'consultation_room_id', None) is None
+                or getattr(v, 'consultation_room_id', None) == selected_room.id
+            )
+        ]
 
     # Recompute stats after any room/counter filter
     if _qms_active():
@@ -1544,6 +1542,7 @@ def workstation_view(request):
         'is_refrac': dept_code in ('REFRAC', 'PEDS_REFRAC'),
         'refrac_counter': _refrac_counter if dept_code in ('REFRAC', 'PEDS_REFRAC') else None,
         'checked_in_counter': _ws_checked_in_counter,
+        'my_counter_id': _ws_checked_in_counter.id if _ws_checked_in_counter else None,
         'ready_to_route_doctor': ready_to_route_doctor,
         'incoming_referrals': incoming_referrals,
         'active_counters': active_counters,

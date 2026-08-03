@@ -172,9 +172,8 @@
             </thead>
             <tbody>
               {% for tok in waiting_tokens %}
-              {# Determine if patient is claimed by another room (dept-wide view only) #}
-              {% if not selected_room and tok.ws_visit and tok.ws_visit.consultation_room %}
-                {% with claimed=True %}
+              {# Determine if patient is already assigned to a specific counter doctor (dept-wide view only) #}
+              {% if not selected_room and tok.counter_id and tok.counter_id != my_counter_id %}
                 <tr style="opacity:.55;">
                   <td><span class="badge bg-secondary">{{ tok.display_token_number }}</span></td>
                   <td class="fw-semibold text-muted">{{ tok.display_name }}</td>
@@ -191,7 +190,7 @@
                   </td>
                   <td class="d-none d-lg-table-cell">
                     <span class="badge bg-secondary bg-opacity-25 text-secondary border" style="font-size:.7rem;">
-                      <i class="bi bi-door-closed me-1"></i>Room {{ tok.ws_visit.consultation_room.room_number }}
+                      <i class="bi bi-person-check me-1"></i>{% if tok.counter %}{{ tok.counter.name }}{% else %}Assigned{% endif %}
                     </span>
                   </td>
                   <td class="text-muted d-none d-sm-table-cell">{{ tok.issued_at|time:"H:i" }}</td>
@@ -200,9 +199,8 @@
                     {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark">Called</span>
                     {% elif tok.status == 'SERVING' %}<span class="badge bg-primary">Serving</span>{% endif %}
                   </td>
-                  <td><span class="text-muted small fst-italic d-none d-sm-inline">In Room {{ tok.ws_visit.consultation_room.room_number }}</span></td>
+                  <td><span class="text-muted small fst-italic d-none d-sm-inline">{% if tok.counter %}{{ tok.counter.name }}{% else %}Assigned elsewhere{% endif %}</span></td>
                 </tr>
-                {% endwith %}
               {% else %}
               <tr>
                 <td><span class="badge bg-primary">{{ tok.display_token_number }}</span></td>
