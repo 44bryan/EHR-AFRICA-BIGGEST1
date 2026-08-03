@@ -2293,6 +2293,11 @@ _NURSE_ROUTE_MAP = {
     'LASER':       ('WAITING',           'LASER',      'Laser Clinic'),
     'INJECTION':   ('WAITING',           'INJECTION',  'Injection Clinic'),
     'DISCHARGE':   ('COMPLETED',         None,         'Discharge / Done'),
+    # Aliases — service_type codes from ServiceCounter used as routing destinations
+    'EXP_CONSULT':  ('WAITING',          'EXP_CONSULT',  'Express Consultation'),
+    'VIP_CONSULT':  ('WAITING',          'VIP_CONSULT',  'VIP Consultation'),
+    'INVEST':       ('INVESTIGATION',    'INVEST',       'Investigations'),
+    'COUNSEL':      ('COUNSELING',       'COUNSEL',      'Surgical Counseling'),
 }
 
 
@@ -2609,12 +2614,17 @@ def smart_route_view(request):
     visit_pk = request.POST.get('visit_pk', '').strip()
     destination = request.POST.get('destination', '').upper().strip()
     room_id = request.POST.get('room_id', '').strip() or None
+    counter_id = request.POST.get('counter_id', '').strip() or None
     complete_pk = request.POST.get('complete_pk', '').strip() or None
 
     if not visit_pk or not destination:
         return JsonResponse({'error': 'Missing visit_pk or destination'}, status=400)
 
-    visit = get_object_or_404(Visit, pk=visit_pk, is_deleted=False)
+    try:
+        import uuid as _uuid
+        visit = Visit.objects.get(pk=_uuid.UUID(visit_pk), is_deleted=False)
+    except Exception:
+        return JsonResponse({'error': 'Visit not found'}, status=404)
 
     # Optionally complete a consultation before routing
     redirect_url = None
@@ -2632,7 +2642,7 @@ def smart_route_view(request):
         except Exception:
             pass
 
-    routed, label = _inline_route_visit(visit, destination, user, room_id=room_id)
+    routed, label = _inline_route_visit(visit, destination, user, room_id=room_id, counter_id=counter_id)
     if not routed:
         return JsonResponse({'error': f'Unknown destination: {destination}'}, status=400)
 
