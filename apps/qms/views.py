@@ -2071,6 +2071,7 @@ def counter_create_view(request):
                 staff_assigned=staff, zone=zone,
                 station_type=station_type,
                 anti_starvation_minutes=anti_min,
+                checked_in_date=timezone.localdate() if staff else None,
             )
             messages.success(request, f'Counter "{name}" created.')
             return redirect('qms:counter_manage')
@@ -2128,9 +2129,15 @@ def counter_edit_view(request, counter_id):
             counter.zone = zone
             counter.station_type = station_type
             counter.anti_starvation_minutes = anti_min
+            # If staff is being assigned, mark them as checked-in today so the roster reflects it immediately
+            if staff:
+                counter.checked_in_date = timezone.localdate()
+            elif not staff:
+                counter.checked_in_date = None
             counter.save(update_fields=['name', 'code', 'service_type', 'serves_tiers',
                                         'is_active', 'staff_assigned', 'zone',
-                                        'station_type', 'anti_starvation_minutes', 'updated_at'])
+                                        'station_type', 'anti_starvation_minutes',
+                                        'checked_in_date', 'updated_at'])
             messages.success(request, f'Counter "{name}" updated.')
             return redirect('qms:counter_manage')
 
