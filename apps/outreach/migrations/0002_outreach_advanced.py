@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('outreach', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('patients', '0018_alter_patient_email'),
+        ('patients', '0018_preregistration_arrival_tracking'),
     ]
 
     operations = [
