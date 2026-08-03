@@ -509,6 +509,24 @@ def start_investigation_view(request, pk):
 
 
 @login_required
+@require_POST
+def bulk_start_view(request):
+    """Mark multiple investigation orders as IN_PROGRESS in one action."""
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    pks = request.POST.getlist('order_ids')
+    if not pks:
+        messages.warning(request, 'No orders selected.')
+        return redirect('investigations:workstation')
+    updated = InvestigationOrder.objects.filter(
+        pk__in=pks,
+        status=InvestigationOrder.Status.ORDERED,
+    ).update(status=InvestigationOrder.Status.IN_PROGRESS)
+    messages.success(request, f'{updated} test(s) marked as In Progress.')
+    return redirect('investigations:workstation')
+
+
+@login_required
 def cancel_investigation_order(request, pk):
     """
     Cancel a pending investigation order.

@@ -208,17 +208,43 @@
 
 {# ── Routine Pending Orders ── #}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2 gap-2 flex-wrap">
     <h6 class="mb-0 fw-semibold">
       <i class="bi bi-clock me-2 text-warning"></i>Routine — Pending Orders
     </h6>
-    <span class="badge bg-warning text-dark">{{ routine_orders|length }}</span>
+    <div class="d-flex align-items-center gap-2 ms-auto">
+      <span class="badge bg-warning text-dark">{{ routine_orders|length }}</span>
+      {% if routine_orders %}
+      <form method="post" action="{% url 'investigations:bulk_start' %}" id="bulkStartAllForm">
+        {% csrf_token %}
+        {% for order in routine_orders %}{% if order.is_paid != False and order.status == 'ORDERED' %}<input type="hidden" name="order_ids" value="{{ order.pk }}">{% endif %}{% endfor %}
+        <button type="submit" class="btn btn-sm btn-outline-success" id="btnStartAllPaid"
+                onclick="return confirm('Start ALL paid pending tests?')">
+          <i class="bi bi-play-fill me-1"></i>Start All Paid
+        </button>
+      </form>
+      {% endif %}
+    </div>
   </div>
   {% if routine_orders %}
+  {# Bulk-start form wraps the table — checkboxes submit here #}
+  <form method="post" action="{% url 'investigations:bulk_start' %}" id="bulkSelectForm">
+    {% csrf_token %}
+    {# Floating action bar — appears when checkboxes are ticked #}
+    <div id="bulkActionBar" class="d-none align-items-center gap-2 px-3 py-2 border-bottom bg-light">
+      <span id="bulkCountLabel" class="small fw-semibold text-primary"></span>
+      <button type="submit" class="btn btn-sm btn-success">
+        <i class="bi bi-play-fill me-1"></i>Start Selected
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSel">Clear</button>
+    </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
         <tr>
+          <th style="width:36px;">
+            <input type="checkbox" id="chkSelectAll" title="Select all paid/ordered tests">
+          </th>
           <th>Patient</th>
           <th>Test</th>
           <th>Category</th>
@@ -233,6 +259,11 @@
       <tbody>
         {% for order in routine_orders %}
         <tr {% if order.is_paid == False %}class="table-warning"{% endif %}>
+          <td>
+            {% if order.is_paid != False and order.status == 'ORDERED' %}
+            <input type="checkbox" name="order_ids" value="{{ order.pk }}" class="row-chk">
+            {% endif %}
+          </td>
           <td class="fw-semibold">{{ order.patient.full_name }}</td>
           <td>{{ order.investigation_type.name }}</td>
           <td><span class="badge bg-light text-dark border">{{ order.investigation_type.get_category_display }}</span></td>
@@ -245,7 +276,7 @@
             {% endif %}
           </td>
           <td class="text-muted">Dr. {{ order.ordered_by.last_name|default:order.ordered_by.full_name }}</td>
-          <td class="text-muted" style="max-width:180px;">{{ order.clinical_indication|truncatechars:60 }}</td>
+          <td class="text-muted" style="max-width:160px;">{{ order.clinical_indication|truncatechars:55 }}</td>
           <td class="text-muted">{{ order.created_at|date:"d M, H:i" }}</td>
           <td>
             {% if order.is_paid == False %}
@@ -273,6 +304,7 @@
       </tbody>
     </table>
   </div>
+  </form>
   {% else %}
   <div class="card-body text-center text-muted py-5">
     <i class="bi bi-inbox fs-2 d-block mb-2"></i>
@@ -374,6 +406,45 @@
       else { countdown = INTERVAL / 1000; } // reset if user is typing
     }
   }, 1000);
+}());
+
+// ── Bulk-select checkboxes ───────────────────────────────────────────────────
+(function() {
+  var selectAll = document.getElementById('chkSelectAll');
+  var actionBar = document.getElementById('bulkActionBar');
+  var countLabel = document.getElementById('bulkCountLabel');
+  var clearBtn = document.getElementById('btnClearSel');
+  if (!selectAll) return;
+
+  function updateBar() {
+    var checked = document.querySelectorAll('.row-chk:checked');
+    if (checked.length > 0) {
+      countLabel.textContent = checked.length + ' test(s) selected';
+      actionBar.classList.remove('d-none');
+      actionBar.classList.add('d-flex');
+    } else {
+      actionBar.classList.add('d-none');
+      actionBar.classList.remove('d-flex');
+    }
+    var all = document.querySelectorAll('.row-chk');
+    selectAll.checked = all.length > 0 && checked.length === all.length;
+    selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+  }
+
+  selectAll.addEventListener('change', function() {
+    document.querySelectorAll('.row-chk').forEach(function(c) { c.checked = selectAll.checked; });
+    updateBar();
+  });
+
+  document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('row-chk')) updateBar();
+  });
+
+  if (clearBtn) clearBtn.addEventListener('click', function() {
+    document.querySelectorAll('.row-chk').forEach(function(c) { c.checked = false; });
+    selectAll.checked = false;
+    updateBar();
+  });
 }());
 
 // ── Patient search ───────────────────────────────────────────────────────────
