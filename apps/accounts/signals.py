@@ -120,7 +120,10 @@ def auto_create_counter(sender, instance, created, **kwargs):
     if not _qms_active():
         return
 
-    from apps.qms.models import ServiceCounter
+    try:
+        from apps.qms.models import ServiceCounter
+    except (ImportError, RuntimeError):
+        return  # QMS app not installed (e.g. field app)
 
     # Don't create a duplicate counter for this user
     if ServiceCounter.objects.filter(staff_assigned=instance).exists():

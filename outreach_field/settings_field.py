@@ -22,8 +22,21 @@ INSTALLED_APPS = [
     # EHR apps needed for the field module
     'apps.accounts',
     'apps.core',
+    'apps.departments',
+    'apps.appointments',
+    'apps.patients',
+    'apps.consultations',
     'apps.outreach',
 ]
+
+# Skip the complex cross-app migration graph for these apps.
+# Use syncdb (direct table creation from models) instead — safe for SQLite field app.
+# accounts, departments, outreach still use normal migrations.
+MIGRATION_MODULES = {
+    'appointments': None,
+    'patients': None,
+    'consultations': None,
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -78,6 +91,11 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'outreach_field' / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Suppress FK-to-uninstalled-app checks: hospital_patient and hospital_visit are
+# nullable sync fields, only filled after sync to hospital server. In field app
+# context, patients/visits don't exist but the NULL FK columns work fine in SQLite.
+SILENCED_SYSTEM_CHECKS = ['fields.E300', 'fields.E307', 'signals.E001']
 
 # Field device identity — edit this before deploying to a specific laptop
 FIELD_DEVICE_ID = os.environ.get('FIELD_DEVICE_ID', 'OUTREACH-LAPTOP-01')
