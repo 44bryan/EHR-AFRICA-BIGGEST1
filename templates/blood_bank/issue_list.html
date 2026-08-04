@@ -1,0 +1,78 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Blood Issues{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <h5 class="mb-0 fw-bold">Blood Issues / Transfusion Log</h5>
+  <a href="{% url 'blood_bank:issue_create' %}" class="btn btn-danger btn-sm"><i class="bi bi-send me-1"></i>Issue Blood</a>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Issue #</th><th>Patient</th><th>Unit</th><th>BG</th><th>Issued</th><th>Issued By</th><th>Collected By</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for iss in issues %}
+          <tr {% if iss.status == 'REACTION' %}class="table-danger"{% endif %}>
+            <td>{{ iss.issue_number }}</td>
+            <td class="fw-semibold">{{ iss.patient.full_name }}</td>
+            <td><code>{{ iss.blood_unit.unit_number }}</code></td>
+            <td><span class="badge bg-danger">{{ iss.blood_unit.blood_group }}</span></td>
+            <td>{{ iss.issued_at|date:"d M Y H:i" }}</td>
+            <td>{{ iss.issued_by.get_full_name }}</td>
+            <td>{{ iss.received_by|default:"—" }}</td>
+            <td>
+              {% if iss.status == 'TRANSFUSED' %}<span class="badge bg-success">Transfused</span>
+              {% elif iss.status == 'REACTION' %}<span class="badge bg-danger">Reaction</span>
+              {% elif iss.status == 'RETURNED' %}<span class="badge bg-secondary">Returned</span>
+              {% else %}<span class="badge bg-warning text-dark">In Progress</span>{% endif %}
+            </td>
+            <td>
+              {% if iss.status == 'ISSUED' %}
+              <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#updModal{{ forloop.counter }}">Update</button>
+              <div class="modal fade" id="updModal{{ forloop.counter }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="post" action="{% url 'blood_bank:issue_status' iss.pk %}">
+                    {% csrf_token %}
+                    <div class="modal-content">
+                      <div class="modal-header"><h6 class="modal-title">Update Transfusion Status</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                      <div class="modal-body">
+                        <div class="mb-2">
+                          <label class="form-label">Outcome</label>
+                          <select name="status" class="form-select">
+                            {% for val, label in status_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+                          </select>
+                        </div>
+                        <div class="mb-2">
+                          <label class="form-label">Volume Transfused (mL)</label>
+                          <input type="number" name="volume_transfused_ml" class="form-control" placeholder="Leave blank if returned">
+                        </div>
+                        <div class="mb-2">
+                          <label class="form-label">Reaction Description (if any)</label>
+                          <textarea name="reaction_description" class="form-control" rows="2"></textarea>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9" class="text-muted text-center py-4">No issue records.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

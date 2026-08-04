@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.utils import timezone
-from .models import Frame, Lens, OpticalOrder, OpticalOrderStatus
+from .models import Frame, Lens, OpticalOrder, OpticalOrderStatus, ContactLensFitting, LowVisionAidDispensing
 
 
 @login_required
@@ -683,10 +683,10 @@ def optical_stats_view(request):
         {'label': 'Female', 'count': female_count},
     ])
 
-    # Top frames
+    # Top frames — Frame model uses 'model' + 'brand' fields (no 'name' field)
     top_frames = list(
         base.filter(frame__isnull=False)
-        .values('frame__name', 'frame__brand')
+        .values('frame__model', 'frame__brand')
         .annotate(count=Count('id'))
         .order_by('-count')[:10]
     )
@@ -750,3 +750,189 @@ def patient_search(request):
                 'recent_rx': recent_rx,
             })
     return render(request, 'opticals/patient_search.html', {'q': q, 'results': results})
+
+
+# ── Contact Lens Fitting ──────────────────────────────────────────────────────
+
+@login_required
+def cl_fitting_list(request):
+    """All contact lens fittings — orthoptist / optometrist view."""
+    from apps.accounts.models import UserRole
+    allowed = {UserRole.ORTHOPTIST, UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST,
+               UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR, UserRole.OPTICAL_DISPENSER}
+    if request.user.role not in allowed:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    fittings = ContactLensFitting.objects.filter(is_deleted=False).select_related(
+        'patient', 'fitted_by', 'optical_prescription'
+    ).order_by('-fitting_date')
+
+    follow_up_due = fittings.filter(
+        next_follow_up__lte=timezone.localdate(),
+        next_follow_up__isnull=False,
+    ).count()
+
+    return render(request, 'opticals/cl_fitting_list.html', {
+        'fittings': fittings[:100],
+        'follow_up_due': follow_up_due,
+    })
+
+
+@login_required
+def cl_fitting_create(request, patient_id=None):
+    """Create a new contact lens fitting record."""
+    from apps.accounts.models import UserRole
+    allowed = {UserRole.ORTHOPTIST, UserRole.OPTOMETRIST, UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR}
+    if request.user.role not in allowed:
+        messages.error(request, 'Only orthoptists and optometrists can record contact lens fittings.')
+        return redirect('opticals:cl_fitting_list')
+
+    from apps.patients.models import Patient
+    from apps.prescriptions.models import OpticalPrescription
+
+    patient = None
+    if patient_id:
+        patient = get_object_or_404(Patient, id=patient_id)
+
+    if request.method == 'POST':
+        patient = get_object_or_404(Patient, id=request.POST.get('patient'))
+        rx_id = request.POST.get('optical_prescription')
+        optical_rx = OpticalPrescription.objects.filter(id=rx_id).first() if rx_id else None
+
+        def decimal_or_none(val):
+            if not val:
+                return None
+            try:
+                from decimal import Decimal
+                return Decimal(val)
+            except Exception:
+                return None
+
+        import datetime
+        fitting = ContactLensFitting.objects.create(
+            patient=patient,
+            fitted_by=request.user,
+            optical_prescription=optical_rx,
+            lens_type=request.POST.get('lens_type', ''),
+            brand=request.POST.get('brand', ''),
+            fitting_date=request.POST.get('fitting_date') or timezone.localdate(),
+            # RE params
+            re_sphere=decimal_or_none(request.POST.get('re_sphere')),
+            re_cylinder=decimal_or_none(request.POST.get('re_cylinder')),
+            re_axis=request.POST.get('re_axis') or None,
+            re_add=decimal_or_none(request.POST.get('re_add')),
+            re_base_curve=decimal_or_none(request.POST.get('re_base_curve')),
+            re_diameter=decimal_or_none(request.POST.get('re_diameter')),
+            # LE params
+            le_sphere=decimal_or_none(request.POST.get('le_sphere')),
+            le_cylinder=decimal_or_none(request.POST.get('le_cylinder')),
+            le_axis=request.POST.get('le_axis') or None,
+            le_add=decimal_or_none(request.POST.get('le_add')),
+            le_base_curve=decimal_or_none(request.POST.get('le_base_curve')),
+            le_diameter=decimal_or_none(request.POST.get('le_diameter')),
+            # Dispensing
+            quantity_dispensed=int(request.POST.get('quantity_dispensed', 1)),
+            price_per_unit=decimal_or_none(request.POST.get('price_per_unit')) or 0,
+            care_solution_included='care_solution_included' in request.POST,
+            care_solution_price=decimal_or_none(request.POST.get('care_solution_price')) or 0,
+            # Follow-up
+            next_follow_up=request.POST.get('next_follow_up') or None,
+            fitting_assessment=request.POST.get('fitting_assessment', ''),
+            over_refraction_va=request.POST.get('over_refraction_va', ''),
+            patient_education_given='patient_education_given' in request.POST,
+            is_successful='is_successful' in request.POST,
+            follow_up_notes=request.POST.get('follow_up_notes', ''),
+        )
+        messages.success(request, f'Contact lens fitting {fitting.fitting_number} recorded.')
+        return redirect('opticals:cl_fitting_list')
+
+    from apps.prescriptions.models import OpticalPrescription
+    rxs = OpticalPrescription.objects.filter(
+        patient=patient, is_deleted=False
+    ).order_by('-prescription_date')[:10] if patient else []
+
+    from .models import ContactLensType
+    return render(request, 'opticals/cl_fitting_form.html', {
+        'patient': patient,
+        'lens_types': ContactLensType.choices,
+        'rxs': rxs,
+        'today': timezone.localdate(),
+    })
+
+
+# ── Low Vision Aid Dispensing ─────────────────────────────────────────────────
+
+@login_required
+def lva_dispensing_list(request):
+    """All low vision aid dispensings — LV specialist view."""
+    from apps.accounts.models import UserRole
+    allowed = {UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST, UserRole.OPTOMETRIST,
+               UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR}
+    if request.user.role not in allowed:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    dispensings = LowVisionAidDispensing.objects.filter(is_deleted=False).select_related(
+        'patient', 'dispensed_by'
+    ).order_by('-dispensing_date')
+
+    return render(request, 'opticals/lva_dispensing_list.html', {
+        'dispensings': dispensings[:100],
+    })
+
+
+@login_required
+def lva_dispensing_create(request, patient_id=None):
+    """Record a low vision aid dispensing."""
+    from apps.accounts.models import UserRole
+    allowed = {UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST, UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR}
+    if request.user.role not in allowed:
+        messages.error(request, 'Only low vision specialists can record LVA dispensings.')
+        return redirect('opticals:lva_dispensing_list')
+
+    from apps.patients.models import Patient
+
+    patient = get_object_or_404(Patient, id=patient_id) if patient_id else None
+
+    if request.method == 'POST':
+        patient = get_object_or_404(Patient, id=request.POST.get('patient'))
+
+        def decimal_or_none(val):
+            if not val:
+                return None
+            try:
+                from decimal import Decimal
+                return Decimal(val)
+            except Exception:
+                return None
+
+        dispensing = LowVisionAidDispensing.objects.create(
+            patient=patient,
+            dispensed_by=request.user,
+            dispensing_date=request.POST.get('dispensing_date') or timezone.localdate(),
+            distance_va_re=request.POST.get('distance_va_re', ''),
+            distance_va_le=request.POST.get('distance_va_le', ''),
+            near_va_re=request.POST.get('near_va_re', ''),
+            near_va_le=request.POST.get('near_va_le', ''),
+            vision_goal=request.POST.get('vision_goal', ''),
+            aid_type=request.POST.get('aid_type', ''),
+            aid_brand_model=request.POST.get('aid_brand_model', ''),
+            magnification=request.POST.get('magnification', ''),
+            va_achieved_with_aid=request.POST.get('va_achieved_with_aid', ''),
+            unit_price=decimal_or_none(request.POST.get('unit_price')) or 0,
+            quantity=int(request.POST.get('quantity', 1)),
+            training_given=request.POST.get('training_given', ''),
+            follow_up_date=request.POST.get('follow_up_date') or None,
+            notes=request.POST.get('notes', ''),
+            patient_satisfied='patient_satisfied' in request.POST,
+        )
+        messages.success(request, f'LVA dispensing {dispensing.dispensing_number} recorded.')
+        return redirect('opticals:lva_dispensing_list')
+
+    from .models import LowVisionAidType
+    return render(request, 'opticals/lva_dispensing_form.html', {
+        'patient': patient,
+        'aid_types': LowVisionAidType.choices,
+        'today': timezone.localdate(),
+    })

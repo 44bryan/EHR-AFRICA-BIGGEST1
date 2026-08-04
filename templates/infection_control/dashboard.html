@@ -1,0 +1,108 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Infection Control{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <div class="rounded-3 d-flex align-items-center justify-content-center"
+       style="width:40px;height:40px;background:linear-gradient(135deg,#dc2626,#991b1b);">
+    <i class="bi bi-bug text-white" style="font-size:1.1rem;"></i>
+  </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Infection Control</h5>
+    <small class="text-muted">HAI Surveillance · Antibiogram · Outbreak Alerts</small>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-danger">{{ stats.total_hai }}</div>
+      <div class="small text-muted">Total HAI Reports</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-warning">{{ stats.open_hai }}</div>
+      <div class="small text-muted">Open HAIs</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if stats.active_outbreaks > 0 %}text-danger{% else %}text-success{% endif %}">{{ stats.active_outbreaks }}</div>
+      <div class="small text-muted">Active Outbreaks</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ stats.antibiogram_records }}</div>
+      <div class="small text-muted">Antibiogram Records</div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-4">
+  <a href="{% url 'infection_control:hai_create' %}" class="btn btn-danger"><i class="bi bi-plus-lg me-1"></i>Report HAI</a>
+  <a href="{% url 'infection_control:sensitivity_create' %}" class="btn btn-outline-primary"><i class="bi bi-plus-lg me-1"></i>Add Antibiogram</a>
+  <a href="{% url 'infection_control:outbreak_create' %}" class="btn btn-outline-warning"><i class="bi bi-exclamation-triangle me-1"></i>Issue Outbreak Alert</a>
+</div>
+
+{% if active_outbreaks %}
+<div class="alert alert-danger mb-3">
+  <strong><i class="bi bi-exclamation-triangle-fill me-1"></i>Active Outbreaks</strong>
+  {% for o in active_outbreaks %}
+  <div class="mt-1"><span class="badge bg-danger">{{ o.get_alert_level_display }}</span> {{ o.title }} — {{ o.case_count }} cases in {{ o.affected_areas }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2 d-flex justify-content-between align-items-center">
+        <span>Recent HAI Reports</span>
+        <a href="{% url 'infection_control:hai_list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light"><tr><th>Report #</th><th>Patient</th><th>Type</th><th>Ward</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for r in recent_hai %}
+            <tr>
+              <td><a href="{% url 'infection_control:hai_detail' r.pk %}">{{ r.report_number }}</a></td>
+              <td>{{ r.patient.full_name }}</td>
+              <td><small>{{ r.get_hai_type_display }}</small></td>
+              <td>{{ r.ward.name|default:"—" }}</td>
+              <td>{{ r.onset_date }}</td>
+              <td>
+                {% if r.status == 'RESOLVED' or r.status == 'CLOSED' %}<span class="badge bg-success">{{ r.get_status_display }}</span>
+                {% elif r.status == 'INVESTIGATING' %}<span class="badge bg-warning text-dark">Investigating</span>
+                {% else %}<span class="badge bg-danger">Reported</span>{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-muted text-center py-3">No HAI reports yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">HAI by Type</div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for item in hai_by_type %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <small>{{ item.hai_type }}</small>
+            <span class="badge bg-danger rounded-pill">{{ item.count }}</span>
+          </li>
+          {% empty %}
+          <li class="list-group-item text-muted">No data.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

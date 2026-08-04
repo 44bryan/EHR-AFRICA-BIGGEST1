@@ -719,8 +719,18 @@ def enter_results_view(request, pk):
         )
         .exclude(order_item__order=order)
         .select_related('order_item__test_type', 'order_item__order', 'performed_by', 'verified_by')
-        .order_by('-created_at')[:10]
+        .order_by('-created_at')[:20]
     )
+
+    # Build delta check map: test_type_id → most recent prior result
+    _prev_map = {}
+    for pr in prev_results:
+        tid = pr.order_item.test_type_id
+        if tid not in _prev_map:
+            _prev_map[tid] = pr
+
+    for item in items:
+        item._prev_result = _prev_map.get(item.test_type_id)
 
     return render(request, 'laboratory/results_form.html', {
         'order': order,

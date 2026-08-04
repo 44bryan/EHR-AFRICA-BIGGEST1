@@ -1,0 +1,76 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Chronic Prescription Refills{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <div class="rounded-3 d-flex align-items-center justify-content-center"
+         style="width:40px;height:40px;background:linear-gradient(135deg,#059669,#047857);">
+      <i class="bi bi-arrow-repeat text-white" style="font-size:1.1rem;"></i>
+    </div>
+    <div>
+      <h5 class="mb-0 fw-bold">Chronic Rx Refill Tracker</h5>
+      <small class="text-muted">Long-term repeating prescriptions — refill schedule & alerts</small>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if overdue %}
+    <span class="badge bg-danger fs-6">{{ overdue|length }} Overdue</span>
+    {% endif %}
+    {% if request.user.is_pharmacist or request.user.is_super_admin or request.user.is_medical_director %}
+    <a href="{% url 'pharmacy:chronic_rx_create' %}" class="btn btn-sm btn-success">
+      <i class="bi bi-plus-lg me-1"></i>Add Chronic Rx
+    </a>
+    {% endif %}
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary">← Pharmacy</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if overdue %}
+<div class="card border-danger border-0 shadow-sm mb-3">
+  <div class="card-header bg-danger text-white fw-semibold py-2">
+    <i class="bi bi-exclamation-triangle me-2"></i>Overdue Refills ({{ overdue|length }})
+  </div>
+  <div class="card-body p-0">
+    {% include "pharmacy/_chronic_rx_table.html" with rows=overdue badge_class="bg-danger" show_refill=True %}
+  </div>
+</div>
+{% endif %}
+
+{% if due_today %}
+<div class="card border-warning border-0 shadow-sm mb-3">
+  <div class="card-header bg-warning text-dark fw-semibold py-2">
+    <i class="bi bi-calendar-check me-2"></i>Due Today ({{ due_today|length }})
+  </div>
+  <div class="card-body p-0">
+    {% include "pharmacy/_chronic_rx_table.html" with rows=due_today badge_class="bg-warning text-dark" show_refill=True %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light fw-semibold py-2">
+    <i class="bi bi-calendar3 me-2"></i>Upcoming Refills ({{ upcoming|length }})
+  </div>
+  <div class="card-body p-0">
+    {% include "pharmacy/_chronic_rx_table.html" with rows=upcoming badge_class="bg-info" show_refill=False %}
+  </div>
+</div>
+
+<script>
+function markRefilled(rxId) {
+  if (!confirm('Mark this prescription as refilled today?')) return;
+  fetch(`/pharmacy/chronic-rx/${rxId}/refill/`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': '{{ csrf_token }}'},
+  }).then(r => r.json()).then(d => {
+    if (d.success) { location.reload(); }
+    else { alert(d.error || 'Error'); }
+  });
+}
+</script>
+{% endblock %}

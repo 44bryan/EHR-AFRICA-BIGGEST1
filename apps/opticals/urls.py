@@ -23,4 +23,14 @@ urlpatterns = [
     path('orders/<uuid:order_id>/quick-status/', views.quick_update_status, name='quick_status'),
     path('stats/', views.optical_stats_view, name='stats'),
     path('search/', views.patient_search, name='patient_search'),
+
+    # Contact lens fittings
+    path('contact-lens/', views.cl_fitting_list, name='cl_fitting_list'),
+    path('contact-lens/new/', views.cl_fitting_create, name='cl_fitting_create'),
+    path('contact-lens/new/<uuid:patient_id>/', views.cl_fitting_create, name='cl_fitting_create_patient'),
+
+    # Low vision aid dispensings
+    path('low-vision/', views.lva_dispensing_list, name='lva_dispensing_list'),
+    path('low-vision/new/', views.lva_dispensing_create, name='lva_dispensing_create'),
+    path('low-vision/new/<uuid:patient_id>/', views.lva_dispensing_create, name='lva_dispensing_create_patient'),
 ]

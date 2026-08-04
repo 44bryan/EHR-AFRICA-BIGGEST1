@@ -83,26 +83,59 @@ def send_whatsapp(to_number: str, message: str) -> bool:
         return False
 
 
-def notify_patient_sms(patient, message: str):
+def notify_patient_sms(patient, message: str, message_type='CUSTOM', sent_by=None):
     """
     Send an SMS to a patient using their phone number.
+    Logs to PatientMessage for audit trail.
     Silently skips if patient has no phone number.
     """
+    from django.utils import timezone as _tz
     phone = getattr(patient, 'phone_number', None)
     if not phone:
         return
     phone_str = str(phone)
-    send_sms(phone_str, message)
+    try:
+        from .models import PatientMessage, MessageStatus
+        pm = PatientMessage.objects.create(
+            channel='SMS', message_type=message_type, recipient_number=phone_str,
+            patient=patient, sent_by=sent_by, body=message, status=MessageStatus.PENDING,
+        )
+    except Exception as e:
+        logger.warning(f'Could not log PatientMessage: {e}')
+        pm = None
+    ok = send_sms(phone_str, message)
+    if pm:
+        from .models import MessageStatus
+        pm.status = MessageStatus.SENT if ok else MessageStatus.FAILED
+        pm.sent_at = _tz.now() if ok else None
+        pm.save(update_fields=['status', 'sent_at'])
 
 
-def notify_patient_whatsapp(patient, message: str):
+def notify_patient_whatsapp(patient, message: str, message_type='CUSTOM', sent_by=None):
     """
     Send a WhatsApp message to a patient using their phone number.
+    Logs to PatientMessage for audit trail.
     """
+    from django.utils import timezone as _tz
     phone = getattr(patient, 'phone_number', None)
     if not phone:
         return
-    send_whatsapp(str(phone), message)
+    phone_str = str(phone)
+    try:
+        from .models import PatientMessage, MessageStatus
+        pm = PatientMessage.objects.create(
+            channel='WHATSAPP', message_type=message_type, recipient_number=phone_str,
+            patient=patient, sent_by=sent_by, body=message, status=MessageStatus.PENDING,
+        )
+    except Exception as e:
+        logger.warning(f'Could not log PatientMessage: {e}')
+        pm = None
+    ok = send_whatsapp(phone_str, message)
+    if pm:
+        from .models import MessageStatus
+        pm.status = MessageStatus.SENT if ok else MessageStatus.FAILED
+        pm.sent_at = _tz.now() if ok else None
+        pm.save(update_fields=['status', 'sent_at'])
 
 
 def notify(recipient, title, message='', link='',

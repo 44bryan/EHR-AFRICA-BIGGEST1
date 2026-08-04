@@ -176,3 +176,84 @@ def mark_no_show_appointments_task(self):
         logger.warning('mark_no_shows: could not send notifications — %s', e)
 
     return {'status': 'ok', 'no_shows_marked': updated, 'date': str(today)}
+
+
+@shared_task(name='ipd.auto_bill_bed_charges', bind=True, max_retries=1)
+def auto_bill_bed_charges(self):
+    """
+    Nightly task: auto-add a bed charge line to each active inpatient's invoice.
+
+    Schedule: runs daily at 23:55 (or 00:05 next day). For each currently
+    ADMITTED patient, if they've been in bed for at least 1 night, a BedCharge
+    InvoiceItem is added to their visit invoice at the ward's nightly_rate.
+
+    Idempotency: uses today's date as the charge_date. A unique_together
+    constraint on (admission, charge_date) prevents double-billing.
+    """
+    from django.db import IntegrityError
+    from apps.ipd.models import Admission, AdmissionStatus
+
+    today = timezone.localdate()
+    billed = 0
+    errors = []
+
+    active_admissions = Admission.objects.filter(
+        status=AdmissionStatus.ADMITTED, is_deleted=False
+    ).select_related('bed__ward', 'patient')
+
+    for admission in active_admissions:
+        rate = admission.bed.nightly_rate
+        if not rate or rate <= 0:
+            continue
+
+        # Only charge if patient has been here at least 1 day
+        los = (timezone.now() - admission.admission_date).days
+        if los < 1:
+            continue
+
+        try:
+            from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus
+            from apps.patients.models import Visit, VisitStatus
+
+            # Find the patient's current open invoice (visit-based)
+            visit = Visit.objects.filter(
+                patient=admission.patient,
+                is_deleted=False,
+            ).order_by('-visit_date').first()
+
+            if not visit:
+                continue
+
+            invoice = Invoice.objects.filter(
+                visit=visit,
+                status__in=[InvoiceStatus.DRAFT, InvoiceStatus.PARTIAL],
+                is_deleted=False,
+            ).first()
+
+            if not invoice:
+                continue
+
+            # Check if today's bed charge was already billed (avoid duplicates)
+            already_billed = invoice.items.filter(
+                service_name__startswith='Bed Charge',
+                notes__contains=str(today),
+            ).exists()
+
+            if already_billed:
+                continue
+
+            InvoiceItem.objects.create(
+                invoice=invoice,
+                service_name=f'Bed Charge — {admission.bed.ward.name} ({admission.bed.bed_number})',
+                quantity=1,
+                unit_price=rate,
+                notes=f'Auto-billed for {today}',
+            )
+            billed += 1
+
+        except Exception as e:
+            errors.append(f'Admission {admission.admission_number}: {e}')
+            logger.warning('auto_bill_bed_charges: error for %s — %s', admission.admission_number, e)
+
+    logger.info('auto_bill_bed_charges: billed %d admissions for %s', billed, today)
+    return {'status': 'ok', 'billed': billed, 'date': str(today), 'errors': errors}

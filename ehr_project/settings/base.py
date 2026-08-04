@@ -73,6 +73,12 @@ LOCAL_APPS = [
     'apps.notifications',
     'apps.outreach',
     'apps.patient_portal',
+    # New enterprise modules
+    'apps.hmo',
+    'apps.blood_bank',
+    'apps.infection_control',
+    'apps.dietary',
+    'apps.mortuary',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -337,6 +343,11 @@ CELERY_BEAT_SCHEDULE = {
     'daily-mark-no-shows': {
         'task': 'appointments.mark_no_shows',
         'schedule': crontab(hour=19, minute=0),
+    },
+    # 23:55 — auto-bill nightly bed charges for all admitted inpatients
+    'nightly-bed-charges': {
+        'task': 'ipd.auto_bill_bed_charges',
+        'schedule': crontab(hour=23, minute=55),
     },
 }
 

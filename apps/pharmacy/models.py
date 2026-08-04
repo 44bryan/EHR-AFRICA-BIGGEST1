@@ -36,6 +36,13 @@ class DrugForm(models.TextChoices):
     OTHER = 'OTHER', 'Other'
 
 
+class ControlledSchedule(models.TextChoices):
+    S2 = 'S2', 'Schedule II — Opioids / Strong Narcotics'
+    S3 = 'S3', 'Schedule III — Moderate Controlled'
+    S4 = 'S4', 'Schedule IV — Benzodiazepines / Controlled'
+    S5 = 'S5', 'Schedule V — Cough Preparations / Mild Controlled'
+
+
 class Drug(AuditModel):
     """Master drug formulary"""
     name = models.CharField(max_length=200)
@@ -53,6 +60,15 @@ class Drug(AuditModel):
     # Pricing
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Controlled drug classification
+    is_controlled = models.BooleanField(
+        default=False,
+        help_text='Requires narcotics register entry and witness signature on every dispensing'
+    )
+    controlled_schedule = models.CharField(
+        max_length=5, blank=True, choices=ControlledSchedule.choices,
+        help_text='WHO/national controlled drug schedule'
+    )
 
     class Meta:
         ordering = ['name']
@@ -212,3 +228,134 @@ class StockAdjustment(AuditModel):
         # Apply the change to the batch
         self.batch.quantity_remaining = max(0, self.quantity_after)
         self.batch.save(update_fields=['quantity_remaining'])
+
+
+# ── Controlled Drugs Register ────────────────────────────────────────────────
+
+class ControlledDrugEntryType(models.TextChoices):
+    STOCK_IN   = 'STOCK_IN',   'Stock Received'
+    DISPENSE   = 'DISPENSE',   'Dispensed to Patient'
+    RETURN     = 'RETURN',     'Patient Return'
+    WASTAGE    = 'WASTAGE',    'Wastage / Destroyed'
+    ADJUSTMENT = 'ADJUSTMENT', 'Manual Adjustment'
+
+
+class ControlledDrugEntry(AuditModel):
+    """
+    Narcotics/controlled drugs register — every movement of a scheduled drug
+    recorded here with pharmacist + witness (JCI MMU.3.1).
+    """
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='controlled_entries')
+    batch = models.ForeignKey(DrugStock, on_delete=models.PROTECT, null=True, blank=True, related_name='controlled_entries')
+    entry_type = models.CharField(max_length=20, choices=ControlledDrugEntryType.choices)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    balance_before = models.DecimalField(max_digits=10, decimal_places=2)
+    balance_after = models.DecimalField(max_digits=10, decimal_places=2)
+    patient = models.ForeignKey('patients.Patient', on_delete=models.SET_NULL, null=True, blank=True, related_name='controlled_drug_entries')
+    dispensing = models.ForeignKey(Dispensing, on_delete=models.SET_NULL, null=True, blank=True, related_name='controlled_entries')
+    performed_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='controlled_entries_made')
+    witness = models.ForeignKey('accounts.User', on_delete=models.PROTECT, null=True, blank=True, related_name='controlled_entries_witnessed')
+    witness_confirmed = models.BooleanField(default=False, help_text='Witness has counter-signed this entry')
+    notes = models.TextField(blank=True)
+    entry_date = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-entry_date']
+        verbose_name = 'Controlled Drug Entry'
+        verbose_name_plural = 'Controlled Drug Register'
+
+    def __str__(self):
+        return f"{self.drug.name} | {self.get_entry_type_display()} | {self.quantity} | {self.entry_date:%Y-%m-%d %H:%M}"
+
+
+# ── Ward Drug Return ─────────────────────────────────────────────────────────
+
+class WardDrugReturnStatus(models.TextChoices):
+    PENDING  = 'PENDING',  'Pending Pharmacy Acceptance'
+    ACCEPTED = 'ACCEPTED', 'Accepted — Stock Restored'
+    REJECTED = 'REJECTED', 'Rejected — Disposed'
+
+
+class WardDrugReturn(AuditModel):
+    """
+    Drug return from ward on patient discharge — nurse submits, pharmacist accepts/rejects.
+    """
+    return_number = models.CharField(max_length=30, unique=True)
+    admission = models.ForeignKey('ipd.Admission', on_delete=models.PROTECT, related_name='drug_returns')
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='ward_returns')
+    batch = models.ForeignKey(DrugStock, on_delete=models.SET_NULL, null=True, blank=True, related_name='ward_returns')
+    quantity_returned = models.PositiveIntegerField()
+    reason = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=WardDrugReturnStatus.choices, default=WardDrugReturnStatus.PENDING)
+    returned_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='drug_returns_submitted')
+    returned_at = models.DateTimeField(default=timezone.now)
+    actioned_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='drug_returns_actioned')
+    actioned_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-returned_at']
+
+    def __str__(self):
+        return f"{self.return_number} — {self.drug.name} × {self.quantity_returned}"
+
+    def save(self, *args, **kwargs):
+        if not self.return_number:
+            today = timezone.localdate()
+            count = WardDrugReturn.objects.filter(returned_at__date=today).count() + 1
+            self.return_number = f"WDR-{today.strftime('%Y%m%d')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+# ── Chronic Prescription Refill Tracking ─────────────────────────────────────
+
+class ChronicPrescription(AuditModel):
+    """
+    Long-term repeating prescription for chronic conditions.
+    Flags patients due for refill so pharmacist can proactively contact them.
+    """
+    patient = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='chronic_prescriptions')
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='chronic_prescriptions')
+    prescribing_doctor = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='chronic_prescriptions_written')
+    dose = models.CharField(max_length=100, help_text='e.g. 1 drop OD, 5 mg daily')
+    frequency = models.CharField(max_length=100, help_text='e.g. Once daily, BD, TDS')
+    quantity_per_refill = models.PositiveIntegerField(help_text='Units dispensed per refill visit')
+    refill_interval_days = models.PositiveIntegerField(default=30)
+    start_date = models.DateField(default=timezone.now)
+    next_refill_date = models.DateField(null=True, blank=True)
+    last_refill_date = models.DateField(null=True, blank=True)
+    refill_count = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['next_refill_date']
+        unique_together = ('patient', 'drug')
+
+    def __str__(self):
+        return f"{self.patient.full_name} — {self.drug.name} (every {self.refill_interval_days}d)"
+
+    def save(self, *args, **kwargs):
+        import datetime
+        if not self.next_refill_date and self.start_date:
+            self.next_refill_date = self.start_date + datetime.timedelta(days=self.refill_interval_days)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_due(self):
+        return self.is_active and self.next_refill_date and self.next_refill_date <= timezone.localdate()
+
+    @property
+    def days_until_refill(self):
+        if not self.next_refill_date:
+            return None
+        return (self.next_refill_date - timezone.localdate()).days
+
+    def record_refill(self):
+        """Call when a refill dispensing is completed to advance the schedule."""
+        import datetime
+        today = timezone.localdate()
+        self.refill_count += 1
+        self.last_refill_date = today
+        self.next_refill_date = today + datetime.timedelta(days=self.refill_interval_days)
+        self.save(update_fields=['refill_count', 'last_refill_date', 'next_refill_date'])

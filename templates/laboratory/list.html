@@ -1,47 +1,158 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}Laboratory{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-  <h1 class="h3 mb-0">Laboratory Orders</h1>
-  {% if patient_id_filter %}
-  <div class="d-flex align-items-center gap-2">
-    <span class="badge bg-primary-subtle text-primary border">
-      <i class="bi bi-person-fill me-1"></i>Filtered: {{ patient_id_filter }}
-    </span>
-    <a href="{% url 'laboratory:list' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-x-circle me-1"></i>Clear filter
+{% block title %}All Lab Orders{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-3">
+    <div class="rounded-3 d-flex align-items-center justify-content-center"
+         style="width:44px;height:44px;background:linear-gradient(135deg,#0ea5e9,#0284c7);">
+      <i class="bi bi-journal-medical text-white fs-5"></i>
+    </div>
+    <div>
+      <h5 class="mb-0 fw-bold">All Laboratory Orders</h5>
+      <div class="text-muted small">Search, filter and audit all lab requisitions</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    {% if request.user.is_lab_tech or request.user.is_super_admin or request.user.is_medical_director %}
+    <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-activity me-1"></i>Go to Workstation
+    </a>
+    {% endif %}
+    <a href="{% url 'laboratory:stats' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-graph-up me-1"></i>Stats
     </a>
   </div>
-  {% endif %}
 </div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Status tab strip ── #}
+<div class="d-flex gap-1 mb-3 flex-wrap">
+  <a href="{% url 'laboratory:list' %}" class="btn btn-sm {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+  {% for code, label in status_choices %}
+  <a href="{% url 'laboratory:list' %}?status={{ code }}{% if urgency_filter %}&urgency={{ urgency_filter }}{% endif %}{% if patient_id_filter %}&patient_id={{ patient_id_filter }}{% endif %}"
+     class="btn btn-sm {% if status_filter == code %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    {{ label }}
+  </a>
+  {% endfor %}
+</div>
+
+{# ── Filters ── #}
 <div class="card border-0 shadow-sm mb-3">
-  <div class="card-body">
-    <form method="get" class="row g-2">
-      <div class="col-md-4"><select name="status" class="form-select form-select-sm"><option value="">All Statuses</option>{% for code, label in status_choices %}<option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-      <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm w-100">Filter</button></div>
+  <div class="card-body py-2 px-3">
+    <form method="get" class="row g-2 align-items-end">
+      {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">Urgency</label>
+        <select name="urgency" class="form-select form-select-sm">
+          <option value="">All Urgencies</option>
+          {% for code, label in urgency_choices %}
+          <option value="{{ code }}" {% if urgency_filter == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">Patient ID</label>
+        <input type="text" name="patient_id" class="form-control form-control-sm"
+               placeholder="e.g. GEN-001" value="{{ patient_id_filter }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-funnel me-1"></i>Apply
+        </button>
+        {% if status_filter or urgency_filter or patient_id_filter %}
+        <a href="{% url 'laboratory:list' %}" class="btn btn-sm btn-outline-secondary ms-1">
+          <i class="bi bi-x me-1"></i>Clear
+        </a>
+        {% endif %}
+      </div>
     </form>
   </div>
 </div>
+
+{% if patient_id_filter %}
+<div class="alert alert-info py-2 mb-3 small">
+  <i class="bi bi-person-fill me-1"></i>Showing results for patient ID: <strong>{{ patient_id_filter }}</strong>
+</div>
+{% endif %}
+
+{# ── Orders table ── #}
 <div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+    <span class="fw-semibold small"><i class="bi bi-list-ul text-primary me-2"></i>{{ orders|length }} order{{ orders|length|pluralize }} shown</span>
+    <span class="text-muted small">Last 200 results — use filters to narrow down</span>
+  </div>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0 align-middle">
+      <table class="table table-hover mb-0 align-middle small">
         <thead class="table-light">
-          <tr><th>Patient</th><th>Tests</th><th>Urgency</th><th>Ordered By</th><th>Date</th><th>Status</th><th></th></tr>
+          <tr>
+            <th>Patient</th>
+            <th>Tests</th>
+            <th>Urgency</th>
+            <th>Ordered By</th>
+            <th>Date &amp; Time</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {% for order in orders %}
           <tr>
-            <td><div class="fw-semibold">{{ order.patient.full_name }}</div><div class="text-muted small">{{ order.patient.patient_id }}</div></td>
-            <td class="small">{{ order.items.all|length }} test(s)</td>
-            <td><span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span></td>
-            <td class="small">{{ order.ordered_by.full_name }}</td>
-            <td class="small">{{ order.created_at|date:"d M Y" }}</td>
-            <td><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ order.get_status_display }}</span></td>
-            <td><a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+            <td>
+              <div class="fw-semibold">{{ order.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:.72rem;">{{ order.patient.patient_id }}</div>
+            </td>
+            <td>
+              {% for item in order.items.all %}
+              <span class="badge bg-light text-dark border me-1" style="font-size:.65rem;">{{ item.test_type.code }}</span>
+              {% endfor %}
+            </td>
+            <td>
+              {% if order.urgency == 'EMERGENCY' %}<span class="badge bg-danger">Emergency</span>
+              {% elif order.urgency == 'URGENT' %}<span class="badge bg-warning text-dark">Urgent</span>
+              {% else %}<span class="badge bg-secondary">Routine</span>{% endif %}
+            </td>
+            <td class="text-muted">{{ order.ordered_by.get_full_name|default:order.ordered_by.username }}</td>
+            <td class="text-muted">
+              {{ order.created_at|date:"d M Y" }}
+              <div style="font-size:.72rem;">{{ order.created_at|time:"H:i" }}</div>
+            </td>
+            <td>
+              {% if order.status == 'COMPLETED' %}
+                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Completed</span>
+              {% elif order.status == 'ORDERED' %}
+                <span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>Ordered</span>
+              {% elif order.status == 'SAMPLE_COLLECTED' %}
+                <span class="badge bg-info">Sample ✓</span>
+              {% elif order.status == 'PROCESSING' %}
+                <span class="badge bg-primary">Processing</span>
+              {% elif order.status == 'CANCELLED' %}
+                <span class="badge bg-danger">Cancelled</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ order.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-eye me-1"></i>View
+              </a>
+              {% if order.status != 'COMPLETED' and order.status != 'CANCELLED' and request.user.is_lab_tech %}
+              <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-sm btn-outline-primary ms-1">
+                <i class="bi bi-pencil me-1"></i>Results
+              </a>
+              {% endif %}
+            </td>
           </tr>
           {% empty %}
-          <tr><td colspan="7" class="text-center text-muted py-4">No lab orders found.</td></tr>
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+              No lab orders found{% if status_filter or urgency_filter or patient_id_filter %} matching your filters{% endif %}.
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>

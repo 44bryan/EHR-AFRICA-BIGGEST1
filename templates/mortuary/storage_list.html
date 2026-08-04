@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Mortuary Storage{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="fas fa-snowflake me-2 text-info"></i>Cold Storage</h4>
+  <a href="{% url 'mortuary:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+<!-- Add Compartment Form -->
+{% if can_manage %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>Add Compartment</strong></div>
+  <div class="card-body">
+    <form method="post" action="{% url 'mortuary:storage_manage' %}" class="row g-2 align-items-end">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add">
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Compartment #</label>
+        <input type="text" name="compartment_number" class="form-control form-control-sm" placeholder="e.g. A-01" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Section</label>
+        <input type="text" name="section" class="form-control form-control-sm" placeholder="e.g. Freezer 1">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Temp (°C)</label>
+        <input type="number" name="temperature_celsius" class="form-control form-control-sm" step="0.1" placeholder="e.g. -4">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-sm btn-primary" type="submit">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- Storage Grid -->
+<div class="row g-3">
+  {% for comp in compartments %}
+  <div class="col-6 col-md-3 col-lg-2">
+    <div class="card border-2 h-100
+      {% if comp.status == 'AVAILABLE' %}border-success
+      {% elif comp.status == 'OCCUPIED' %}border-danger
+      {% else %}border-warning{% endif %}">
+      <div class="card-body text-center p-3">
+        <div class="display-6 fw-bold mb-1
+          {% if comp.status == 'AVAILABLE' %}text-success
+          {% elif comp.status == 'OCCUPIED' %}text-danger
+          {% else %}text-warning{% endif %}">
+          <i class="fas {% if comp.status == 'AVAILABLE' %}fa-check-circle{% elif comp.status == 'OCCUPIED' %}fa-ban{% else %}fa-tools{% endif %}"></i>
+        </div>
+        <div class="fw-bold">{{ comp.compartment_number }}</div>
+        {% if comp.section %}<div class="text-muted small">{{ comp.section }}</div>{% endif %}
+        <div class="small mt-1">
+          {% if comp.status == 'OCCUPIED' and comp.current_body %}
+            <span class="text-danger">{{ comp.current_body.full_name|truncatechars:15 }}</span>
+            <br><a href="{% url 'mortuary:admission_detail' comp.current_body.pk %}" class="btn btn-xs btn-outline-danger mt-1">View</a>
+          {% elif comp.status == 'AVAILABLE' %}
+            <span class="text-success">Available</span>
+          {% else %}
+            <span class="text-warning">Maintenance</span>
+          {% endif %}
+        </div>
+        {% if comp.temperature_celsius %}
+        <div class="text-muted mt-1" style="font-size:0.7rem;">
+          <i class="fas fa-thermometer-half"></i> {{ comp.temperature_celsius }}°C
+        </div>
+        {% endif %}
+        {% if can_manage %}
+        <form method="post" action="{% url 'mortuary:storage_manage' %}" class="mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_temp">
+          <input type="hidden" name="compartment_id" value="{{ comp.pk }}">
+          <div class="input-group input-group-sm">
+            <input type="number" name="temperature_celsius" class="form-control form-control-sm"
+              placeholder="°C" step="0.1" value="{{ comp.temperature_celsius|default:'' }}">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="fas fa-save"></i>
+            </button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="col-12 text-center text-muted py-5">
+    No storage compartments configured. {% if can_manage %}Add compartments above.{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

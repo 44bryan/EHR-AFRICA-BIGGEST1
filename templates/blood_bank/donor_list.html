@@ -1,0 +1,44 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Blood Donors{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <h5 class="mb-0 fw-bold">Blood Donor Register</h5>
+  <a href="{% url 'blood_bank:donor_create' %}" class="btn btn-danger btn-sm"><i class="bi bi-person-plus me-1"></i>Register Donor</a>
+</div>
+{% endblock %}
+{% block content %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-5">
+    <input type="text" name="q" class="form-control" placeholder="Donor ID or name…" value="{{ q }}">
+  </div>
+  <div class="col-md-2"><button type="submit" class="btn btn-outline-secondary w-100">Search</button></div>
+</form>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>Donor ID</th><th>Name</th><th>Blood Group</th><th>Category</th><th>Last Donation</th><th>Donations</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for d in donors %}
+        <tr>
+          <td><code>{{ d.donor_id }}</code></td>
+          <td>{{ d.full_name }}</td>
+          <td><span class="badge bg-danger">{{ d.blood_group }}</span></td>
+          <td>{{ d.get_category_display }}</td>
+          <td>{{ d.last_donation|default:"—" }}</td>
+          <td class="text-center">{{ d.total_donations }}</td>
+          <td>
+            {% if d.is_deferred %}<span class="badge bg-warning text-dark">Deferred</span>
+            {% elif not d.can_donate %}<span class="badge bg-secondary">Ineligible (56 day rule)</span>
+            {% else %}<span class="badge bg-success">Eligible</span>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-4">No donors found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

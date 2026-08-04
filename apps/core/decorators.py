@@ -58,8 +58,11 @@ CAN_VIEW_PATIENT = (
     UserRole.WARD_NURSE,
     UserRole.COUNSELING_NURSE,
     UserRole.CONSULTATION_NURSE,
+    UserRole.NURSE_DIRECTOR,       # nursing oversight — JCI NUR.1
     UserRole.INVESTIGATION_TECHNICIAN,
     UserRole.LAB_TECHNICIAN,
+    # Quality / compliance — chart audits for JCI QPS
+    UserRole.QUALITY_OFFICER,
     # Clinical — dispensing (tab-restricted to prescriptions/medications only)
     UserRole.PHARMACIST,
     UserRole.OPTICAL_DISPENSER,

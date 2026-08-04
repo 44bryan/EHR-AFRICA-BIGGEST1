@@ -1,0 +1,85 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Send Message{% endblock %}
+{% block page_header %}<h5 class="mb-0 fw-bold">Send SMS / WhatsApp to Patient</h5>{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    {% if templates %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-light fw-semibold py-2">Quick Templates</div>
+      <div class="card-body d-flex flex-wrap gap-2">
+        {% for t in templates %}
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                onclick="applyTemplate('{{ t.body|escapejs }}', '{{ t.channel }}', '{{ t.message_type }}')">
+          {{ t.name }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <form method="post" class="card border-0 shadow-sm" id="sendForm">
+      {% csrf_token %}
+      <div class="card-body">
+        <div class="row g-3">
+          {% if patient %}
+          <input type="hidden" name="patient" value="{{ patient.pk }}">
+          <div class="col-12">
+            <div class="p-2 rounded bg-light">
+              <div class="fw-semibold">{{ patient.full_name }}</div>
+              <small class="text-muted">{{ patient.patient_id }} · {{ patient.phone_number }}</small>
+            </div>
+          </div>
+          {% else %}
+          <div class="col-12">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <select name="patient" class="form-select" required>
+              <option value="">— Select patient —</option>
+              {% for p in patients %}<option value="{{ p.pk }}">{{ p.full_name }} ({{ p.patient_id }}) — {{ p.phone_number }}</option>{% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Channel</label>
+            <select name="channel" class="form-select" id="channelSel">
+              <option value="SMS">SMS</option>
+              <option value="WHATSAPP">WhatsApp</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Message Type</label>
+            <select name="message_type" class="form-select" id="msgTypeSel">
+              {% for val, label in message_types %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Message <span class="text-danger">*</span></label>
+            <textarea name="body" id="msgBody" class="form-control" rows="4" required
+                      placeholder="Type your message…" oninput="countChars()"></textarea>
+            <small class="text-muted"><span id="charCount">0</span> chars
+              — SMS limit: 160 chars per segment</small>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer bg-transparent d-flex gap-2">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Send</button>
+        <a href="{% url 'notifications:sms_log' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function countChars() {
+  document.getElementById('charCount').textContent =
+    document.getElementById('msgBody').value.length;
+}
+function applyTemplate(body, channel, msgType) {
+  document.getElementById('msgBody').value = body;
+  document.getElementById('channelSel').value = channel === 'BOTH' ? 'SMS' : channel;
+  document.getElementById('msgTypeSel').value = msgType;
+  countChars();
+}
+</script>
+{% endblock %}

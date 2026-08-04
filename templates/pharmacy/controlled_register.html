@@ -1,0 +1,143 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Controlled Drugs Register{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <div class="rounded-3 d-flex align-items-center justify-content-center"
+         style="width:40px;height:40px;background:linear-gradient(135deg,#7c3aed,#5b21b6);">
+      <i class="bi bi-journal-lock text-white" style="font-size:1.1rem;"></i>
+    </div>
+    <div>
+      <h5 class="mb-0 fw-bold">Controlled Drugs Register</h5>
+      <small class="text-muted">Narcotics & Scheduled Drug Movement Log — JCI MMU.3.1</small>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if request.user.is_pharmacist or request.user.is_super_admin %}
+    <a href="{% url 'pharmacy:controlled_entry_create' %}" class="btn btn-sm btn-danger">
+      <i class="bi bi-plus-lg me-1"></i>Log Entry
+    </a>
+    {% endif %}
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary">← Pharmacy</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Drug filter -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-2">
+        <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+          <label class="text-muted small mb-0">Filter by drug:</label>
+          <select name="drug" class="form-select form-select-sm" style="width:260px;" onchange="this.form.submit()">
+            <option value="">— All Controlled Drugs —</option>
+            {% for d in controlled_drugs %}
+            <option value="{{ d.pk }}" {% if selected_drug and selected_drug.pk == d.pk %}selected{% endif %}>
+              {{ d.name }} {% if d.controlled_schedule %}({{ d.controlled_schedule }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          {% if selected_drug %}
+          <a href="{% url 'pharmacy:controlled_register' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Register table -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th>Date / Time</th>
+                <th>Drug</th>
+                <th>Schedule</th>
+                <th>Type</th>
+                <th>Patient</th>
+                <th class="text-end">Qty</th>
+                <th class="text-end">Balance Before</th>
+                <th class="text-end">Balance After</th>
+                <th>Performed By</th>
+                <th>Witness</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for entry in entries %}
+              <tr>
+                <td class="text-nowrap small">{{ entry.entry_date|date:"d M Y H:i" }}</td>
+                <td class="fw-semibold">{{ entry.drug.name }}</td>
+                <td>
+                  {% if entry.drug.controlled_schedule %}
+                  <span class="badge bg-danger-subtle text-danger">{{ entry.drug.controlled_schedule }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if entry.entry_type == 'DISPENSE' %}
+                  <span class="badge bg-warning text-dark">Dispensed</span>
+                  {% elif entry.entry_type == 'STOCK_IN' %}
+                  <span class="badge bg-success">Stock In</span>
+                  {% elif entry.entry_type == 'RETURN' %}
+                  <span class="badge bg-info">Return</span>
+                  {% elif entry.entry_type == 'WASTAGE' %}
+                  <span class="badge bg-secondary">Wastage</span>
+                  {% else %}
+                  <span class="badge bg-light text-dark">{{ entry.get_entry_type_display }}</span>
+                  {% endif %}
+                </td>
+                <td>{{ entry.patient.full_name|default:"—" }}</td>
+                <td class="text-end fw-semibold">{{ entry.quantity }}</td>
+                <td class="text-end text-muted">{{ entry.balance_before }}</td>
+                <td class="text-end fw-bold {% if entry.balance_after < 0 %}text-danger{% endif %}">{{ entry.balance_after }}</td>
+                <td class="small">{{ entry.performed_by.get_full_name }}</td>
+                <td>
+                  {% if entry.witness_confirmed %}
+                  <span class="text-success small"><i class="bi bi-check2-circle me-1"></i>{{ entry.witness.get_full_name }}</span>
+                  {% elif entry.witness %}
+                  <span class="text-warning small"><i class="bi bi-clock me-1"></i>Pending</span>
+                  {% else %}
+                  <button class="btn btn-xs btn-outline-warning py-0 px-1 small witness-btn"
+                          data-entry="{{ entry.pk }}"
+                          style="font-size:.75rem;">
+                    <i class="bi bi-pen me-1"></i>Witness
+                  </button>
+                  {% endif %}
+                </td>
+                <td class="text-muted small">{{ entry.notes|truncatechars:40 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="11" class="text-center text-muted py-4">No entries yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll('.witness-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const entryId = this.dataset.entry;
+    fetch(`{% url 'pharmacy:controlled_witness' '00000000-0000-0000-0000-000000000000' %}`.replace('00000000-0000-0000-0000-000000000000', entryId), {
+      method: 'POST',
+      headers: {'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded'},
+    }).then(r => r.json()).then(d => {
+      if (d.success) { location.reload(); }
+      else { alert(d.error); }
+    });
+  });
+});
+</script>
+{% endblock %}

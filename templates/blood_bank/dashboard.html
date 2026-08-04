@@ -1,0 +1,144 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Blood Bank{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <div class="rounded-3 d-flex align-items-center justify-content-center"
+       style="width:40px;height:40px;background:linear-gradient(135deg,#dc2626,#b91c1c);">
+    <i class="bi bi-droplet-fill text-white" style="font-size:1.1rem;"></i>
+  </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Blood Bank</h5>
+    <small class="text-muted">Donor Register · Inventory · Cross-Match · Transfusion</small>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<!-- KPIs -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ stats.total_available }}</div>
+      <div class="small text-muted">Available Units</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-warning">{{ stats.reserved }}</div>
+      <div class="small text-muted">Reserved (XM'd)</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-danger">{{ stats.expiring_soon }}</div>
+      <div class="small text-muted">Expired Units</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-info">{{ stats.pending_xm }}</div>
+      <div class="small text-muted">Pending Cross-Match</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ stats.issues_today }}</div>
+      <div class="small text-muted">Issued Today</div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick actions -->
+<div class="d-flex flex-wrap gap-2 mb-4">
+  <a href="{% url 'blood_bank:unit_create' %}" class="btn btn-danger"><i class="bi bi-plus-lg me-1"></i>Add Blood Unit</a>
+  <a href="{% url 'blood_bank:crossmatch_create' %}" class="btn btn-outline-warning"><i class="bi bi-intersect me-1"></i>Request Cross-Match</a>
+  <a href="{% url 'blood_bank:issue_create' %}" class="btn btn-outline-success"><i class="bi bi-send me-1"></i>Issue Blood</a>
+  <a href="{% url 'blood_bank:donor_create' %}" class="btn btn-outline-secondary"><i class="bi bi-person-plus me-1"></i>Register Donor</a>
+</div>
+
+<!-- Blood Group Inventory Grid -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light fw-semibold py-2"><i class="bi bi-grid-3x3-gap text-danger me-1"></i>Inventory by Blood Group</div>
+  <div class="card-body">
+    <div class="row g-2">
+      {% for bg, label in blood_groups %}
+      <div class="col-6 col-md-3 col-lg-{% if bg|length == 2 %}2{% else %}2{% endif %}">
+        <div class="border rounded p-2 text-center {% if by_group|default_if_none:0 == 0 %}bg-light text-muted{% else %}{% endif %}">
+          <div class="fs-5 fw-bold text-danger">{{ bg }}</div>
+          <div class="fs-4 fw-bold">{{ by_group|default:0 }}</div>
+          <div class="small text-muted">units</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Pending Cross-Matches -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-intersect text-warning me-1"></i>Pending Cross-Matches</span>
+        <a href="{% url 'blood_bank:crossmatch_list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="card-body p-0">
+        {% if pending_xm %}
+        <div class="list-group list-group-flush">
+          {% for xm in pending_xm %}
+          <div class="list-group-item py-2 d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold small">{{ xm.patient.full_name }}</div>
+              <small class="text-muted">{{ xm.blood_unit.unit_number }} · {{ xm.blood_unit.blood_group }}</small>
+            </div>
+            <form method="post" action="{% url 'blood_bank:crossmatch_result' xm.pk %}" class="d-flex gap-1">
+              {% csrf_token %}
+              <select name="result" class="form-select form-select-sm" style="width:auto;">
+                <option value="COMPATIBLE">Compatible</option>
+                <option value="INCOMPATIBLE">Incompatible</option>
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary">Save</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3 mb-0">No pending cross-matches.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Issues -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-droplet text-danger me-1"></i>Recent Issues</span>
+        <a href="{% url 'blood_bank:issue_list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light"><tr><th>Issue #</th><th>Patient</th><th>Unit</th><th>BG</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for iss in recent_issues %}
+            <tr>
+              <td>{{ iss.issue_number }}</td>
+              <td>{{ iss.patient.full_name }}</td>
+              <td><code>{{ iss.blood_unit.unit_number }}</code></td>
+              <td><span class="badge bg-danger">{{ iss.blood_unit.blood_group }}</span></td>
+              <td>
+                {% if iss.status == 'TRANSFUSED' %}<span class="badge bg-success">Transfused</span>
+                {% elif iss.status == 'REACTION' %}<span class="badge bg-danger">Reaction!</span>
+                {% elif iss.status == 'RETURNED' %}<span class="badge bg-secondary">Returned</span>
+                {% else %}<span class="badge bg-warning text-dark">Issued</span>{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted text-center py-3">No issues recorded today.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}New Diet Order{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+  <a href="{% url 'dietary:order_list' %}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="fas fa-arrow-left"></i>
+  </a>
+  <h4 class="mb-0">New Diet Order</h4>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:700px;">
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Patient (Admitted)</label>
+        <select name="admission" class="form-select" required>
+          <option value="">— Select Admitted Patient —</option>
+          {% for adm in admissions %}
+          <option value="{{ adm.pk }}">{{ adm.patient.get_full_name }} — {{ adm.patient.patient_id }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Diet Type</label>
+        <select name="diet_type" class="form-select" required id="dietType" onchange="toggleOther()">
+          {% for val, label in diet_choices %}
+          <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3 d-none" id="otherRow">
+        <label class="form-label">Specify Other Diet</label>
+        <input type="text" name="diet_type_other" class="form-control" placeholder="Describe diet type…">
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label">Calorie Target (kcal/day)</label>
+          <input type="number" name="calorie_target" class="form-control" min="0" placeholder="e.g. 1800">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Protein Target (g/day)</label>
+          <input type="number" name="protein_target" class="form-control" step="0.1" min="0" placeholder="e.g. 60">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Fluid Restriction (mL/day)</label>
+          <input type="number" name="fluid_restriction" class="form-control" min="0" placeholder="e.g. 1500">
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="form-label">Special Instructions</label>
+        <textarea name="special_instructions" class="form-control" rows="3"
+          placeholder="Allergies, texture modifications, cultural preferences…"></textarea>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-success">Create Order</button>
+        <a href="{% url 'dietary:order_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function toggleOther() {
+  const sel = document.getElementById('dietType');
+  const row = document.getElementById('otherRow');
+  row.classList.toggle('d-none', sel.value !== 'OTHER');
+}
+</script>
+{% endblock %}

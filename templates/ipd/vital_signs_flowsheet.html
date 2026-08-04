@@ -1,0 +1,215 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Vital Signs — {{ admission.patient.full_name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <div class="rounded-3 d-flex align-items-center justify-content-center"
+         style="width:40px;height:40px;background:linear-gradient(135deg,#dc2626,#b91c1c);">
+      <i class="bi bi-heart-pulse text-white" style="font-size:1.1rem;"></i>
+    </div>
+    <div>
+      <h5 class="mb-0 fw-bold">Vital Signs Flowsheet</h5>
+      <small class="text-muted">{{ admission.patient.full_name }} — {{ admission.admission_number }} — {{ admission.bed }}</small>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'ipd:admission_detail' admission.pk %}" class="btn btn-sm btn-outline-secondary">← Admission</a>
+    <a href="{% url 'ipd:fluid_balance' admission.pk %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-droplet me-1"></i>Fluid Balance
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Trend chart -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light py-2 fw-semibold">Trend — Last 24 Observations</div>
+      <div class="card-body" style="height:220px;position:relative;">
+        <canvas id="vitalsChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- New entry form -->
+  {% if can_add %}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header py-2 fw-semibold" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;">
+        <i class="bi bi-plus-circle me-2"></i>Record New Observation
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-2 align-items-end">
+            <div class="col-md-2">
+              <label class="form-label small">Date/Time</label>
+              <input type="datetime-local" name="recorded_at" class="form-control form-control-sm"
+                     value="{{ now|date:'Y-m-d' }}T{{ now|date:'H:i' }}">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">Temp °C</label>
+              <input type="number" name="temperature" step="0.1" class="form-control form-control-sm" placeholder="37.0">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">Pulse</label>
+              <input type="number" name="pulse" class="form-control form-control-sm" placeholder="80">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">RR</label>
+              <input type="number" name="respiratory_rate" class="form-control form-control-sm" placeholder="16">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">SpO2 %</label>
+              <input type="number" name="spo2" class="form-control form-control-sm" placeholder="98">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">BP Sys</label>
+              <input type="number" name="bp_systolic" class="form-control form-control-sm" placeholder="120">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">BP Dia</label>
+              <input type="number" name="bp_diastolic" class="form-control form-control-sm" placeholder="80">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">Glucose</label>
+              <input type="number" name="blood_glucose" step="0.1" class="form-control form-control-sm" placeholder="5.0">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">Pain 0-10</label>
+              <input type="number" name="pain_score" min="0" max="10" class="form-control form-control-sm" placeholder="0">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">GCS</label>
+              <input type="number" name="gcs" min="3" max="15" class="form-control form-control-sm" placeholder="15">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small">&nbsp;</label>
+              <button type="submit" class="btn btn-danger btn-sm w-100">Save</button>
+            </div>
+          </div>
+          <!-- Ophthalmic post-op vitals (collapse) -->
+          <div class="mt-2">
+            <a data-bs-toggle="collapse" href="#ophthalmic-vitals" class="small text-muted">
+              <i class="bi bi-chevron-down me-1"></i>Post-op ophthalmic vitals (VA / IOP)
+            </a>
+            <div class="collapse" id="ophthalmic-vitals">
+              <div class="row g-2 mt-1">
+                <div class="col-md-2">
+                  <label class="form-label small">VA Right Eye</label>
+                  <input type="text" name="visual_acuity_re" class="form-control form-control-sm" placeholder="e.g. 6/18">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label small">VA Left Eye</label>
+                  <input type="text" name="visual_acuity_le" class="form-control form-control-sm" placeholder="e.g. 6/6">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label small">IOP RE (mmHg)</label>
+                  <input type="number" name="iop_re" step="0.1" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label small">IOP LE (mmHg)</label>
+                  <input type="number" name="iop_le" step="0.1" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Notes</label>
+                  <input type="text" name="notes" class="form-control form-control-sm" placeholder="Any observations…">
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Flowsheet table -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light py-2 fw-semibold">Observation History</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th>Date/Time</th>
+                <th class="text-center">Temp °C</th>
+                <th class="text-center">Pulse</th>
+                <th class="text-center">RR</th>
+                <th class="text-center">SpO2</th>
+                <th class="text-center">BP</th>
+                <th class="text-center">Glucose</th>
+                <th class="text-center">Pain</th>
+                <th class="text-center">GCS</th>
+                <th class="text-center">VA RE</th>
+                <th class="text-center">VA LE</th>
+                <th>By</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for v in entries %}
+              <tr>
+                <td class="small text-nowrap">{{ v.recorded_at|date:"d M H:i" }}</td>
+                <td class="text-center {% if v.temperature and v.temperature > 37.5 %}text-danger fw-bold{% endif %}">
+                  {{ v.temperature|default:"—" }}
+                </td>
+                <td class="text-center {% if v.pulse and v.pulse > 100 %}text-danger{% elif v.pulse and v.pulse < 60 %}text-warning{% endif %}">
+                  {{ v.pulse|default:"—" }}
+                </td>
+                <td class="text-center">{{ v.respiratory_rate|default:"—" }}</td>
+                <td class="text-center {% if v.spo2 and v.spo2 < 95 %}text-danger fw-bold{% endif %}">
+                  {{ v.spo2|default:"—" }}{% if v.spo2 %}%{% endif %}
+                </td>
+                <td class="text-center fw-semibold">{{ v.bp_display }}</td>
+                <td class="text-center">{{ v.blood_glucose|default:"—" }}</td>
+                <td class="text-center {% if v.pain_score and v.pain_score >= 7 %}text-danger fw-bold{% endif %}">
+                  {{ v.pain_score|default:"—" }}
+                </td>
+                <td class="text-center {% if v.gcs and v.gcs < 14 %}text-danger fw-bold{% endif %}">
+                  {{ v.gcs|default:"—" }}
+                </td>
+                <td class="text-center small">{{ v.visual_acuity_re|default:"—" }}</td>
+                <td class="text-center small">{{ v.visual_acuity_le|default:"—" }}</td>
+                <td class="small">{{ v.recorded_by.get_full_name|truncatechars:15 }}</td>
+                <td class="text-muted small">{{ v.notes|truncatechars:30 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="13" class="text-center text-muted py-4">No vitals recorded yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+const chartData = {{ chart_data_json|safe }};
+const labels = chartData.map(d => d.time);
+new Chart(document.getElementById('vitalsChart'), {
+  type: 'line',
+  data: {
+    labels: labels,
+    datasets: [
+      { label: 'Pulse', data: chartData.map(d => d.pulse), borderColor: '#ef4444', tension: 0.3, fill: false },
+      { label: 'BP Sys', data: chartData.map(d => d.bp_sys), borderColor: '#3b82f6', tension: 0.3, fill: false },
+      { label: 'SpO2 %', data: chartData.map(d => d.spo2), borderColor: '#10b981', tension: 0.3, fill: false },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' } },
+    scales: { y: { beginAtZero: false } }
+  }
+});
+</script>
+{% endblock %}

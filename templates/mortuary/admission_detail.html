@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}{{ adm.body_number }} — Mortuary{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+  <a href="{% url 'mortuary:admission_list' %}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="fas fa-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="mb-0">{{ adm.full_name }}</h4>
+    <div class="text-muted small">Ref: {{ adm.body_number }} · Received {{ adm.received_at|date:"d M Y H:i" }}</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    {% if can_manage and not adm.post_mortem and adm.status != 'RELEASED' %}
+    <a href="{% url 'mortuary:postmortem_create' adm.pk %}" class="btn btn-sm btn-warning">
+      <i class="fas fa-microscope me-1"></i>Request PM
+    </a>
+    {% endif %}
+    {% if can_manage and not adm.release and adm.status != 'RELEASED' %}
+    <a href="{% url 'mortuary:release_create' adm.pk %}" class="btn btn-sm btn-success">
+      <i class="fas fa-sign-out-alt me-1"></i>Release Body
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Body Info -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Body Information</strong>
+        {% if adm.status == 'IN_STORAGE' %}<span class="badge bg-primary">In Storage</span>
+        {% elif adm.status == 'RELEASED' %}<span class="badge bg-success">Released</span>
+        {% elif adm.status == 'POST_MORTEM' %}<span class="badge bg-warning text-dark">Awaiting PM</span>
+        {% elif adm.status == 'RECEIVED' %}<span class="badge bg-secondary">Received</span>
+        {% else %}<span class="badge bg-light text-dark">{{ adm.get_status_display }}</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <dl class="row small mb-0">
+          <dt class="col-5">Gender</dt><dd class="col-7">{{ adm.get_gender_display }}</dd>
+          <dt class="col-5">Age</dt><dd class="col-7">{{ adm.age_years|default:"Unknown" }}{% if adm.age_years %} yrs{% endif %}</dd>
+          <dt class="col-5">Date of Death</dt><dd class="col-7">{{ adm.date_of_death|date:"d M Y H:i" }}</dd>
+          <dt class="col-5">Place</dt><dd class="col-7">{{ adm.place_of_death|default:"—" }}</dd>
+          <dt class="col-5">Cause</dt><dd class="col-7">{{ adm.get_cause_of_death_display }}</dd>
+          <dt class="col-5">Condition</dt><dd class="col-7">{{ adm.get_body_condition_display }}</dd>
+          {% if adm.doctor_who_certified %}
+          <dt class="col-5">Certified By</dt><dd class="col-7">{{ adm.doctor_who_certified }}</dd>
+          {% endif %}
+          {% if adm.police_case_number %}
+          <dt class="col-5">Police Ref</dt><dd class="col-7">{{ adm.police_case_number }}</dd>
+          {% endif %}
+        </dl>
+        {% if adm.provisional_cause_text %}
+        <hr class="my-2">
+        <div class="small"><strong>Clinical Summary:</strong><br>{{ adm.provisional_cause_text|linebreaksbr }}</div>
+        {% endif %}
+        {% if adm.identifying_marks %}
+        <hr class="my-2">
+        <div class="small"><strong>Identifying Marks:</strong><br>{{ adm.identifying_marks|linebreaksbr }}</div>
+        {% endif %}
+      </div>
+      {% if can_manage and adm.status != 'RELEASED' %}
+      <div class="card-footer bg-white">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_status">
+          <div class="input-group input-group-sm">
+            <select name="status" class="form-select form-select-sm">
+              {% for val, label in status_choices %}
+              <option value="{{ val }}" {% if val == adm.status %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-outline-secondary" type="submit">Update</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Next of Kin -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white"><strong>Next of Kin</strong></div>
+      <div class="card-body small">
+        {% if adm.next_of_kin_name %}
+        <div><strong>{{ adm.next_of_kin_name }}</strong></div>
+        {% if adm.next_of_kin_relationship %}<div class="text-muted">{{ adm.next_of_kin_relationship }}</div>{% endif %}
+        {% if adm.next_of_kin_phone %}<div><i class="fas fa-phone me-1"></i>{{ adm.next_of_kin_phone }}</div>{% endif %}
+        {% else %}
+        <span class="text-muted">Not recorded.</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Storage -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white"><strong>Storage Assignment</strong></div>
+      <div class="card-body small">
+        {% if storage %}
+          <div class="fw-semibold">Compartment {{ storage.compartment_number }}</div>
+          {% if storage.section %}<div class="text-muted">{{ storage.section }}</div>{% endif %}
+          {% if storage.temperature_celsius %}
+          <div><i class="fas fa-thermometer-half me-1"></i>{{ storage.temperature_celsius }} °C</div>
+          {% endif %}
+        {% else %}
+          <span class="text-muted">Not assigned to storage.</span>
+        {% endif %}
+      </div>
+      {% if can_manage and adm.status != 'RELEASED' and available_compartments %}
+      <div class="card-footer bg-white">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="assign_storage">
+          <div class="input-group input-group-sm">
+            <select name="compartment" class="form-select form-select-sm">
+              <option value="">Assign compartment…</option>
+              {% for comp in available_compartments %}
+              <option value="{{ comp.pk }}">{{ comp.compartment_number }}{% if comp.section %} ({{ comp.section }}){% endif %}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-outline-primary" type="submit">Assign</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right: PM + Release -->
+  <div class="col-lg-8">
+    <!-- Post-Mortem -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Post-Mortem</strong>
+        {% if not adm.post_mortem and can_manage and adm.status != 'RELEASED' %}
+        <a href="{% url 'mortuary:postmortem_create' adm.pk %}" class="btn btn-xs btn-warning">Request</a>
+        {% endif %}
+      </div>
+      {% if adm.post_mortem %}
+      {% with pm=adm.post_mortem %}
+      <div class="card-body">
+        <div class="row small mb-3">
+          <div class="col-md-6">
+            <dl class="row mb-0">
+              <dt class="col-5">Type</dt><dd class="col-7">{{ pm.get_pm_type_display }}</dd>
+              <dt class="col-5">Status</dt>
+              <dd class="col-7">
+                {% if pm.status == 'COMPLETED' %}<span class="badge bg-success">Completed</span>
+                {% elif pm.status == 'IN_PROGRESS' %}<span class="badge bg-warning text-dark">In Progress</span>
+                {% elif pm.status == 'APPROVED' %}<span class="badge bg-primary">Approved</span>
+                {% else %}<span class="badge bg-secondary">{{ pm.get_status_display }}</span>{% endif %}
+              </dd>
+              {% if pm.pathologist %}
+              <dt class="col-5">Pathologist</dt><dd class="col-7">{{ pm.pathologist }}</dd>
+              {% endif %}
+              {% if pm.scheduled_at %}
+              <dt class="col-5">Scheduled</dt><dd class="col-7">{{ pm.scheduled_at|date:"d M Y H:i" }}</dd>
+              {% endif %}
+              {% if pm.completed_at %}
+              <dt class="col-5">Completed</dt><dd class="col-7">{{ pm.completed_at|date:"d M Y H:i" }}</dd>
+              {% endif %}
+            </dl>
+          </div>
+          <div class="col-md-6">
+            {% if pm.final_cause_of_death %}
+            <div class="fw-semibold">Final Cause of Death:</div>
+            <div>{{ pm.final_cause_of_death }}</div>
+            {% endif %}
+            {% if pm.report_reference %}
+            <div class="text-muted mt-1">Report Ref: {{ pm.report_reference }}</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="small mb-2"><strong>Reason:</strong> {{ pm.reason }}</div>
+        {% if pm.findings %}
+        <div class="small"><strong>Findings:</strong><br>{{ pm.findings|linebreaksbr }}</div>
+        {% endif %}
+        {% if can_manage and pm.status != 'COMPLETED' and pm.status != 'CANCELLED' %}
+        <hr>
+        <form method="post" action="{% url 'mortuary:postmortem_update' pm.pk %}">
+          {% csrf_token %}
+          <div class="row g-2">
+            <div class="col-md-4">
+              <select name="status" class="form-select form-select-sm">
+                <option value="REQUESTED" {% if pm.status == 'REQUESTED' %}selected{% endif %}>Requested</option>
+                <option value="APPROVED" {% if pm.status == 'APPROVED' %}selected{% endif %}>Approved</option>
+                <option value="IN_PROGRESS" {% if pm.status == 'IN_PROGRESS' %}selected{% endif %}>In Progress</option>
+                <option value="COMPLETED" {% if pm.status == 'COMPLETED' %}selected{% endif %}>Completed</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <input type="text" name="pathologist" class="form-control form-control-sm"
+                placeholder="Pathologist name" value="{{ pm.pathologist }}">
+            </div>
+            <div class="col-md-4">
+              <input type="text" name="final_cause_of_death" class="form-control form-control-sm"
+                placeholder="Final cause of death" value="{{ pm.final_cause_of_death }}">
+            </div>
+            <div class="col-12">
+              <textarea name="findings" class="form-control form-control-sm" rows="2"
+                placeholder="Findings…">{{ pm.findings }}</textarea>
+            </div>
+            <div class="col-md-4">
+              <input type="text" name="report_reference" class="form-control form-control-sm"
+                placeholder="Report reference" value="{{ pm.report_reference }}">
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-sm btn-warning" type="submit">Update PM</button>
+            </div>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+      {% endwith %}
+      {% else %}
+      <div class="card-body text-muted small py-3 text-center">No post-mortem requested.</div>
+      {% endif %}
+    </div>
+
+    <!-- Body Release -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Body Release</strong>
+        {% if not adm.release and can_manage and adm.status != 'RELEASED' %}
+        <a href="{% url 'mortuary:release_create' adm.pk %}" class="btn btn-xs btn-success">Release Body</a>
+        {% endif %}
+      </div>
+      {% if adm.release %}
+      {% with rel=adm.release %}
+      <div class="card-body small">
+        <div class="row">
+          <div class="col-md-6">
+            <dl class="row mb-0">
+              <dt class="col-5">Released To</dt><dd class="col-7 fw-semibold">{{ rel.released_to_name }}</dd>
+              {% if rel.relationship %}
+              <dt class="col-5">Relationship</dt><dd class="col-7">{{ rel.relationship }}</dd>
+              {% endif %}
+              {% if rel.released_to_phone %}
+              <dt class="col-5">Phone</dt><dd class="col-7">{{ rel.released_to_phone }}</dd>
+              {% endif %}
+              {% if rel.released_to_id_number %}
+              <dt class="col-5">ID</dt><dd class="col-7">{{ rel.released_to_id_type }}: {{ rel.released_to_id_number }}</dd>
+              {% endif %}
+              <dt class="col-5">Released At</dt><dd class="col-7">{{ rel.released_at|date:"d M Y H:i" }}</dd>
+              <dt class="col-5">Released By</dt><dd class="col-7">{{ rel.released_by.get_full_name }}</dd>
+            </dl>
+          </div>
+          <div class="col-md-6">
+            {% if rel.funeral_home %}<div><strong>Funeral Home:</strong> {{ rel.funeral_home }}</div>{% endif %}
+            {% if rel.transport_provider %}<div><strong>Transport:</strong> {{ rel.transport_provider }}</div>{% endif %}
+            <div class="mt-2">
+              {% if rel.death_certificate_issued %}
+                <span class="badge bg-success"><i class="fas fa-check me-1"></i>Death Certificate Issued</span>
+                {% if rel.certificate_number %}<span class="ms-2 text-muted">{{ rel.certificate_number }}</span>{% endif %}
+              {% else %}
+                <span class="badge bg-warning text-dark">Certificate Not Issued</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endwith %}
+      {% else %}
+      <div class="card-body text-muted small py-3 text-center">Body not yet released.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

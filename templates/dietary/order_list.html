@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Diet Orders{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="fas fa-clipboard-list me-2 text-success"></i>Diet Orders</h4>
+  <a href="{% url 'dietary:order_create' %}" class="btn btn-success btn-sm">
+    <i class="fas fa-plus me-1"></i>New Order
+  </a>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          {% for val, label in status_choices %}
+          <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <select name="diet" class="form-select form-select-sm">
+          <option value="">All Diet Types</option>
+          {% for val, label in diet_choices %}
+          <option value="{{ val }}" {% if val == diet_filter %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-outline-secondary btn-sm" type="submit">Filter</button>
+        <a href="{% url 'dietary:order_list' %}" class="btn btn-link btn-sm">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Diet Type</th>
+          <th>Calories</th>
+          <th>Status</th>
+          <th>Ordered By</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ order.admission.patient.get_full_name }}</div>
+            <div class="text-muted small">{{ order.admission.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if order.diet_type == 'NPO' %}
+              <span class="badge bg-danger">NPO</span>
+            {% elif order.diet_type in 'DIABETIC,RENAL,CARDIAC' %}
+              <span class="badge bg-warning text-dark">{{ order.get_diet_type_display }}</span>
+            {% else %}
+              <span class="badge bg-success-subtle text-success">{{ order.get_diet_type_display }}</span>
+            {% endif %}
+          </td>
+          <td class="small">{% if order.calorie_target %}{{ order.calorie_target }} kcal/d{% else %}—{% endif %}</td>
+          <td>
+            {% if order.status == 'ACTIVE' %}
+              <span class="badge bg-success">Active</span>
+            {% elif order.status == 'ON_HOLD' %}
+              <span class="badge bg-warning text-dark">On Hold</span>
+            {% elif order.status == 'CANCELLED' %}
+              <span class="badge bg-danger">Cancelled</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ order.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ order.ordered_by.get_full_name }}</td>
+          <td class="small text-muted">{{ order.created_at|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'dietary:order_detail' order.pk %}" class="btn btn-xs btn-outline-primary">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No diet orders found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

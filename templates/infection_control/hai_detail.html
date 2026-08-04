@@ -1,0 +1,73 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}HAI Report {{ report.report_number }}{% endblock %}
+{% block page_header %}<h5 class="mb-0 fw-bold">HAI Report {{ report.report_number }}</h5>{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">Details</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-5 text-muted">Patient</dt><dd class="col-7">{{ report.patient.full_name }}</dd>
+          <dt class="col-5 text-muted">Type</dt><dd class="col-7">{{ report.get_hai_type_display }}</dd>
+          <dt class="col-5 text-muted">Organism</dt><dd class="col-7">{{ report.organism|default:"—" }}</dd>
+          <dt class="col-5 text-muted">Ward</dt><dd class="col-7">{{ report.ward.name|default:"—" }}</dd>
+          <dt class="col-5 text-muted">Onset</dt><dd class="col-7">{{ report.onset_date }}</dd>
+          <dt class="col-5 text-muted">Status</dt><dd class="col-7">{{ report.get_status_display }}</dd>
+          <dt class="col-5 text-muted">Reported By</dt><dd class="col-7">{{ report.reported_by.get_full_name }}</dd>
+          {% if report.reviewed_by %}
+          <dt class="col-5 text-muted">Reviewed By</dt><dd class="col-7">{{ report.reviewed_by.get_full_name }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+    {% if report.clinical_details %}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-light fw-semibold py-2">Clinical Details</div>
+      <div class="card-body"><p class="mb-0">{{ report.clinical_details }}</p></div>
+    </div>
+    {% endif %}
+  </div>
+  <div class="col-md-7">
+    {% if can_manage %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">Investigation &amp; Resolution</div>
+      <form method="post">
+        {% csrf_token %}
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-select">
+              {% for v, l in status_choices %}<option value="{{ v }}" {% if report.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Root Cause Analysis</label>
+            <textarea name="root_cause" class="form-control" rows="3">{{ report.root_cause }}</textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Corrective Action</label>
+            <textarea name="corrective_action" class="form-control" rows="3">{{ report.corrective_action }}</textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Resolved Date</label>
+            <input type="date" name="resolved_date" class="form-control" value="{{ report.resolved_date|date:'Y-m-d'|default:'' }}">
+          </div>
+        </div>
+        <div class="card-footer bg-transparent">
+          <button type="submit" class="btn btn-primary btn-sm">Save Investigation</button>
+        </div>
+      </form>
+    </div>
+    {% elif report.root_cause %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">Root Cause / Corrective Action</div>
+      <div class="card-body">
+        <p><strong>Root Cause:</strong> {{ report.root_cause }}</p>
+        <p class="mb-0"><strong>Action:</strong> {{ report.corrective_action }}</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

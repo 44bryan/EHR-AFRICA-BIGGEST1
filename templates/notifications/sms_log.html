@@ -1,0 +1,64 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}SMS / WhatsApp Log{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-chat-dots me-2"></i>Patient SMS / WhatsApp Log</h5>
+  <a href="{% url 'notifications:sms_send' %}" class="btn btn-primary btn-sm"><i class="bi bi-send me-1"></i>Send Message</a>
+</div>
+{% endblock %}
+{% block content %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-5">
+    <input type="text" name="q" class="form-control" placeholder="Patient name or phone…" value="{{ q }}">
+  </div>
+  <div class="col-md-3">
+    <select name="channel" class="form-select">
+      <option value="">All Channels</option>
+      <option value="SMS" {% if channel == 'SMS' %}selected{% endif %}>SMS</option>
+      <option value="WHATSAPP" {% if channel == 'WHATSAPP' %}selected{% endif %}>WhatsApp</option>
+    </select>
+  </div>
+  <div class="col-md-2"><button type="submit" class="btn btn-outline-secondary w-100">Search</button></div>
+</form>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Date</th><th>Patient</th><th>Channel</th><th>Type</th><th>Number</th><th>Message (preview)</th><th>Status</th><th>Sent By</th></tr>
+        </thead>
+        <tbody>
+          {% for msg in messages_log %}
+          <tr>
+            <td>{{ msg.created_at|date:"d M Y H:i" }}</td>
+            <td>{{ msg.patient.full_name|default:"—" }}</td>
+            <td>
+              {% if msg.channel == 'WHATSAPP' %}
+              <span class="badge bg-success"><i class="bi bi-whatsapp"></i> WhatsApp</span>
+              {% else %}
+              <span class="badge bg-primary"><i class="bi bi-chat-left-text"></i> SMS</span>
+              {% endif %}
+            </td>
+            <td><small class="text-muted">{{ msg.get_message_type_display }}</small></td>
+            <td><code>{{ msg.recipient_number }}</code></td>
+            <td><small>{{ msg.body|truncatechars:60 }}</small></td>
+            <td>
+              {% if msg.status == 'SENT' or msg.status == 'DELIVERED' %}
+              <span class="badge bg-success">{{ msg.get_status_display }}</span>
+              {% elif msg.status == 'FAILED' %}
+              <span class="badge bg-danger">Failed</span>
+              {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+              {% endif %}
+            </td>
+            <td>{{ msg.sent_by.get_full_name|default:"System" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="text-muted text-center py-4">No messages found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -41,6 +41,12 @@ urlpatterns = [
     path('outreach/', include('apps.outreach.urls', namespace='outreach')),
     path('departments/', include('apps.departments.urls', namespace='departments')),
     path('portal/', include('apps.patient_portal.urls', namespace='portal')),
+    # New enterprise modules
+    path('hmo/', include('apps.hmo.urls', namespace='hmo')),
+    path('blood-bank/', include('apps.blood_bank.urls', namespace='blood_bank')),
+    path('infection-control/', include('apps.infection_control.urls', namespace='infection_control')),
+    path('dietary/', include('apps.dietary.urls', namespace='dietary')),
+    path('mortuary/', include('apps.mortuary.urls', namespace='mortuary')),
 ]
 
 if settings.DEBUG:

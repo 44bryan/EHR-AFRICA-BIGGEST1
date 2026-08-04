@@ -1,0 +1,143 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Batch {{ batch.batch_number }}{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <div>
+    <h5 class="mb-0 fw-bold">Batch {{ batch.batch_number }}</h5>
+    <small class="text-muted">{{ batch.scheme.name }} &mdash; {{ batch.get_status_display }}</small>
+  </div>
+  {% if batch.status == 'DRAFT' %}
+  <form method="post" action="{% url 'hmo:batch_submit' batch.pk %}" class="d-inline">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Submit this batch to the scheme?')">
+      <i class="bi bi-send me-1"></i>Submit to Scheme
+    </button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block content %}
+<!-- Summary -->
+<div class="row g-3 mb-3">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold">{{ batch.claims.count }}</div>
+      <div class="small text-muted">Claims</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-primary">{{ batch.total_claimed|floatformat:0 }}</div>
+      <div class="small text-muted">Claimed (FCFA)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-success">{{ batch.total_approved|floatformat:0 }}</div>
+      <div class="small text-muted">Approved (FCFA)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-warning">{{ batch.total_paid|floatformat:0 }}</div>
+      <div class="small text-muted">Paid (FCFA)</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Claims in batch -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">Claims in this Batch</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light"><tr><th>Claim #</th><th>Patient</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody>
+              {% for c in claims %}
+              <tr>
+                <td><a href="{% url 'hmo:claim_detail' c.pk %}">{{ c.claim_number }}</a></td>
+                <td>{{ c.member.patient.full_name }}</td>
+                <td>{{ c.service_date }}</td>
+                <td>{{ c.claimed_amount|floatformat:0 }}</td>
+                <td><span class="badge bg-secondary">{{ c.get_status_display }}</span></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-muted text-center py-3">No claims in this batch yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <!-- Add unbatched claims (only for DRAFT batch) -->
+    {% if batch.status == 'DRAFT' and unbatched %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-light fw-semibold py-2">Add Unbatched Claims</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light"><tr><th>Claim #</th><th>Patient</th><th>Amount</th><th></th></tr></thead>
+            <tbody>
+              {% for c in unbatched %}
+              <tr>
+                <td>{{ c.claim_number }}</td>
+                <td>{{ c.member.patient.full_name }}</td>
+                <td>{{ c.claimed_amount|floatformat:0 }}</td>
+                <td>
+                  <form method="post" action="{% url 'hmo:batch_add_claim' batch.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="claim_id" value="{{ c.pk }}">
+                    <button type="submit" class="btn btn-xs btn-outline-primary">Add</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Record Payment (submitted/processing batches) -->
+    {% if batch.status in 'SUBMITTED,PROCESSING,PARTIAL' %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">Record Scheme Payment</div>
+      <form method="post" action="{% url 'hmo:batch_payment' batch.pk %}">
+        {% csrf_token %}
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label">Total Approved (FCFA)</label>
+            <input type="number" name="total_approved" class="form-control" value="{{ batch.total_approved }}" step="100">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Total Paid (FCFA)</label>
+            <input type="number" name="total_paid" class="form-control" value="{{ batch.total_paid }}" step="100">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Payment Date</label>
+            <input type="date" name="payment_date" class="form-control" value="{{ batch.payment_date|date:'Y-m-d'|default:'' }}">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Payment Reference</label>
+            <input type="text" name="payment_ref" class="form-control" value="{{ batch.payment_ref }}" placeholder="Cheque # / EFT ref">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2">{{ batch.notes }}</textarea>
+          </div>
+        </div>
+        <div class="card-footer bg-transparent">
+          <button type="submit" class="btn btn-success btn-sm w-100">Record Payment</button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

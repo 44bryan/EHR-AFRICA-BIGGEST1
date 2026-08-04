@@ -1,72 +1,87 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Investigation Workstation{% endblock %}
 
-{% block content %}
-{% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up patient record…" %}
-
-<div class="d-flex justify-content-between align-items-start mb-3">
-  <div>
-    <h4 class="fw-bold mb-0">
-      <i class="bi bi-search-heart me-2 text-primary"></i>Investigation Workstation
-    </h4>
-    <div class="text-muted small">
-      {{ request.user.full_name }} &bull; {{ today|date:"l, d F Y" }}
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-3">
+    <div class="rounded-3 d-flex align-items-center justify-content-center"
+         style="width:44px;height:44px;background:linear-gradient(135deg,#4f46e5,#7c3aed);">
+      <i class="bi bi-search-heart text-white fs-5"></i>
+    </div>
+    <div>
+      <h5 class="mb-0 fw-bold">Investigation Workstation</h5>
+      <div class="text-muted small">{{ request.user.get_full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
     </div>
   </div>
-  <div class="d-flex align-items-center gap-2">
-    <span class="badge bg-light border text-muted small d-flex align-items-center gap-1"
-          title="Queue auto-refreshes every 30 seconds">
-      <i class="bi bi-arrow-clockwise"></i> <span id="wsRefreshCountdown">30s</span>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <span class="badge bg-light border text-muted d-flex align-items-center gap-1"
+          title="Auto-refreshes every 30 s">
+      <i class="bi bi-arrow-clockwise"></i><span id="wsRefreshCountdown">30s</span>
     </span>
-    <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary btn-sm">
+    <a href="{% url 'investigations:stats' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-graph-up me-1"></i>Stats
+    </a>
+    <a href="{% url 'investigations:list' %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-list-ul me-1"></i>All Orders
     </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up their investigation orders…" %}
+
+{# ── Workflow Pipeline Bar ── #}
+<div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#f8f9ff,#eef2ff);">
+  <div class="card-body py-3 px-4">
+    <div class="d-flex align-items-center gap-0 flex-nowrap overflow-auto">
+
+      <div class="text-center px-3" style="min-width:90px;">
+        <div class="fw-bold fs-4" style="color:#6366f1;">{{ queued_count }}</div>
+        <div class="small text-muted">Queued</div>
+        <div class="mt-1"><span class="badge bg-primary-subtle text-primary border" style="font-size:.65rem;"><i class="bi bi-person-walking me-1"></i>Waiting</span></div>
+      </div>
+
+      <div class="text-muted px-1" style="font-size:1.4rem;">›</div>
+
+      <div class="text-center px-3" style="min-width:90px;">
+        <div class="fw-bold fs-4 text-warning">{{ ordered_count }}</div>
+        <div class="small text-muted">Ordered</div>
+        <div class="mt-1"><span class="badge bg-warning-subtle text-warning border" style="font-size:.65rem;"><i class="bi bi-clock me-1"></i>Pending</span></div>
+      </div>
+
+      <div class="text-muted px-1" style="font-size:1.4rem;">›</div>
+
+      <div class="text-center px-3" style="min-width:90px;">
+        <div class="fw-bold fs-4" style="color:#0ea5e9;">{{ in_progress_count }}</div>
+        <div class="small text-muted">In Progress</div>
+        <div class="mt-1"><span class="badge bg-info-subtle text-info border" style="font-size:.65rem;"><i class="bi bi-activity me-1"></i>Running</span></div>
+      </div>
+
+      <div class="text-muted px-1" style="font-size:1.4rem;">›</div>
+
+      <div class="text-center px-3" style="min-width:90px;">
+        <div class="fw-bold fs-4 text-success">{{ completed_count }}</div>
+        <div class="small text-muted">Done Today</div>
+        <div class="mt-1"><span class="badge bg-success-subtle text-success border" style="font-size:.65rem;"><i class="bi bi-check-circle me-1"></i>Completed</span></div>
+      </div>
+
+    </div>
   </div>
 </div>
 
 {# ── Patient Quick Search ── #}
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-body py-2 px-3">
-    <div class="input-group input-group-sm">
-      <span class="input-group-text bg-white border-end-0">
-        <i class="bi bi-search text-muted"></i>
-      </span>
+    <div class="input-group">
+      <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
       <input type="text" id="invPatientSearch" class="form-control border-start-0"
-             placeholder="Search patient by name or ID to view their investigation orders…"
-             autocomplete="off">
+             placeholder="Search patient by name or ID to view their investigation orders…" autocomplete="off">
       <button class="btn btn-outline-secondary" type="button" id="invSearchClear" title="Clear">
         <i class="bi bi-x"></i>
       </button>
     </div>
     <div id="invSearchResults" class="list-group mt-2" style="display:none;"></div>
-  </div>
-</div>
-
-{# ── Stat cards ── #}
-<div class="row g-3 mb-4">
-  <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-primary mb-0">{{ queued_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-person-walking me-1"></i>Patients Waiting</div>
-    </div>
-  </div>
-  <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-danger mb-0">{{ urgent_orders|length }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Urgent Orders</div>
-    </div>
-  </div>
-  <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-warning mb-0">{{ routine_orders|length }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-hourglass-split me-1"></i>Routine Pending</div>
-    </div>
-  </div>
-  <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-success mb-0">{{ completed_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Completed Today</div>
-    </div>
   </div>
 </div>
 
@@ -155,7 +170,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for order in urgent_orders %}
+        {% for order in urgent_orders %}{% if order.status == 'ORDERED' %}
         <tr {% if order.is_paid == False %}class="table-warning"{% endif %}>
           <td class="fw-semibold">{{ order.patient.full_name }}</td>
           <td>{{ order.investigation_type.name }}</td>
@@ -199,7 +214,53 @@
             </a>
           </td>
         </tr>
-        {% endfor %}
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── In Progress — Tests Currently on Machine ── #}
+{% if in_progress_count %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #0ea5e9!important;">
+  <div class="card-header d-flex align-items-center justify-content-between py-2"
+       style="background:linear-gradient(90deg,#e0f7ff,#f0faff);">
+    <h6 class="mb-0 fw-bold" style="color:#0284c7;">
+      <i class="bi bi-activity me-2"></i>In Progress — Tests Running Now
+    </h6>
+    <span class="badge bg-info text-white">{{ in_progress_count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th><th>Test</th><th>Eye</th><th>Urgency</th><th>Ordered By</th><th>Started</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in urgent_orders %}{% if order.status == 'IN_PROGRESS' %}
+        <tr style="background:#f0faff;">
+          <td class="fw-semibold">{{ order.patient.full_name }}<div class="text-muted" style="font-size:.72rem;">{{ order.patient.patient_id }}</div></td>
+          <td>{{ order.investigation_type.name }}</td>
+          <td><span class="badge bg-secondary">{{ order.eye }}</span></td>
+          <td><span class="badge bg-danger">{{ order.urgency }}</span></td>
+          <td class="text-muted">Dr. {{ order.ordered_by.last_name|default:order.ordered_by.get_full_name }}</td>
+          <td class="text-muted">{{ order.updated_at|timesince }} ago</td>
+          <td><a href="{% url 'investigations:add_result' pk=order.pk %}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil-square me-1"></i>Enter Result</a></td>
+        </tr>
+        {% endif %}{% endfor %}
+        {% for order in routine_orders %}{% if order.status == 'IN_PROGRESS' %}
+        <tr style="background:#f0faff;">
+          <td class="fw-semibold">{{ order.patient.full_name }}<div class="text-muted" style="font-size:.72rem;">{{ order.patient.patient_id }}</div></td>
+          <td>{{ order.investigation_type.name }}</td>
+          <td><span class="badge bg-secondary">{{ order.eye }}</span></td>
+          <td><span class="badge bg-secondary">Routine</span></td>
+          <td class="text-muted">Dr. {{ order.ordered_by.last_name|default:order.ordered_by.get_full_name }}</td>
+          <td class="text-muted">{{ order.updated_at|timesince }} ago</td>
+          <td><a href="{% url 'investigations:add_result' pk=order.pk %}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil-square me-1"></i>Enter Result</a></td>
+        </tr>
+        {% endif %}{% endfor %}
       </tbody>
     </table>
   </div>
@@ -257,10 +318,10 @@
         </tr>
       </thead>
       <tbody>
-        {% for order in routine_orders %}
+        {% for order in routine_orders %}{% if order.status == 'ORDERED' %}
         <tr {% if order.is_paid == False %}class="table-warning"{% endif %}>
           <td>
-            {% if order.is_paid != False and order.status == 'ORDERED' %}
+            {% if order.is_paid != False %}
             <input type="checkbox" name="order_ids" value="{{ order.pk }}" class="row-chk">
             {% endif %}
           </td>
@@ -300,7 +361,7 @@
             {% endif %}
           </td>
         </tr>
-        {% endfor %}
+        {% endif %}{% endfor %}
       </tbody>
     </table>
   </div>

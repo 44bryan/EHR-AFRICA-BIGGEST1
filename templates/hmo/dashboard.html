@@ -1,0 +1,166 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}HMO & Insurance Claims{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <div class="rounded-3 d-flex align-items-center justify-content-center"
+       style="width:40px;height:40px;background:linear-gradient(135deg,#0ea5e9,#0284c7);">
+    <i class="bi bi-shield-check text-white" style="font-size:1.1rem;"></i>
+  </div>
+  <div>
+    <h5 class="mb-0 fw-bold">HMO / Insurance Claims</h5>
+    <small class="text-muted">CNPS · Mutual de Santé · Corporate Schemes</small>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- KPI Row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ stats.active_schemes }}</div>
+      <div class="small text-muted">Active Schemes</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ stats.active_members }}</div>
+      <div class="small text-muted">Enrolled Members</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-warning">{{ stats.pending_preauths }}</div>
+      <div class="small text-muted">Pending Pre-Auths</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-info">{{ stats.open_claims }}</div>
+      <div class="small text-muted">Open Claims</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-secondary">{{ stats.batches_draft }}</div>
+      <div class="small text-muted">Draft Batches</div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="d-flex flex-wrap gap-2 mb-4">
+  <a href="{% url 'hmo:claim_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>New Claim</a>
+  <a href="{% url 'hmo:preauth_create' %}" class="btn btn-outline-warning"><i class="bi bi-clock-history me-1"></i>Request Pre-Auth</a>
+  <a href="{% url 'hmo:batch_create' %}" class="btn btn-outline-success"><i class="bi bi-collection me-1"></i>New Batch</a>
+  <a href="{% url 'hmo:member_enrol' %}" class="btn btn-outline-secondary"><i class="bi bi-person-plus me-1"></i>Enrol Member</a>
+</div>
+
+<div class="row g-3">
+  <!-- Pending Pre-Auths -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clock-history text-warning me-1"></i>Pending Pre-Auths</span>
+        <a href="{% url 'hmo:preauth_list' %}?status=PENDING" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="card-body p-0">
+        {% if pending_auths %}
+        <div class="list-group list-group-flush">
+          {% for auth in pending_auths %}
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="fw-semibold small">{{ auth.member.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:0.78rem;">{{ auth.member.scheme.code }} · {{ auth.estimated_cost|floatformat:0 }} FCFA</div>
+            </div>
+            <a href="{% url 'hmo:preauth_respond' auth.pk %}" class="btn btn-sm btn-outline-primary">Respond</a>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3 mb-0">No pending pre-auth requests.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Claims -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-file-earmark-medical text-primary me-1"></i>Recent Claims</span>
+        <a href="{% url 'hmo:claim_list' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Claim #</th>
+                <th>Patient</th>
+                <th>Scheme</th>
+                <th>Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for claim in recent_claims %}
+              <tr>
+                <td><a href="{% url 'hmo:claim_detail' claim.pk %}">{{ claim.claim_number }}</a></td>
+                <td>{{ claim.member.patient.full_name }}</td>
+                <td><span class="badge bg-light text-dark border">{{ claim.member.scheme.code }}</span></td>
+                <td>{{ claim.claimed_amount|floatformat:0 }}</td>
+                <td>
+                  {% if claim.status == 'PAID' %}<span class="badge bg-success">Paid</span>
+                  {% elif claim.status == 'APPROVED' %}<span class="badge bg-primary">Approved</span>
+                  {% elif claim.status == 'REJECTED' %}<span class="badge bg-danger">Rejected</span>
+                  {% elif claim.status == 'SUBMITTED' %}<span class="badge bg-info">Submitted</span>
+                  {% elif claim.status == 'PARTIAL' %}<span class="badge bg-warning text-dark">Partial</span>
+                  {% else %}<span class="badge bg-secondary">Draft</span>{% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-muted text-center py-3">No claims yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Schemes Summary -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">
+        <i class="bi bi-shield-check text-primary me-1"></i>Active Insurance Schemes
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>Scheme</th><th>Code</th><th>Type</th><th>Coverage %</th><th>Pre-Auth?</th><th>Members</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for s in schemes %}
+              <tr>
+                <td class="fw-semibold">{{ s.name }}</td>
+                <td><code>{{ s.code }}</code></td>
+                <td>{{ s.get_scheme_type_display }}</td>
+                <td>{{ s.coverage_pct }}%</td>
+                <td>{% if s.pre_auth_required %}<span class="badge bg-warning text-dark">Required</span>{% else %}<span class="text-muted">No</span>{% endif %}</td>
+                <td>{{ s.members.count }}</td>
+                <td><a href="{% url 'hmo:scheme_edit' s.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="7" class="text-muted text-center py-3">No schemes yet. <a href="{% url 'hmo:scheme_create' %}">Add one</a>.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

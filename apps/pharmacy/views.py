@@ -6,7 +6,13 @@ from django.db.models import Q, Sum, F, Value, IntegerField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.http import JsonResponse
-from .models import Drug, DrugStock, Dispensing, DispensingItem, DispensingStatus, StockAdjustment, AdjustmentReason
+from .models import (
+    Drug, DrugStock, Dispensing, DispensingItem, DispensingStatus,
+    StockAdjustment, AdjustmentReason,
+    ControlledDrugEntry, ControlledDrugEntryType,
+    WardDrugReturn, WardDrugReturnStatus,
+    ChronicPrescription,
+)
 from .forms import DrugCreateForm, AddStockForm, DispensingItemForm
 from apps.patients.models import Patient
 from apps.prescriptions.models import DrugPrescription
@@ -216,12 +222,20 @@ def pharmacy_stats_view(request):
         total=Sum('total_amount')
     )['total'] or 0
 
-    # Top 15 drugs dispensed
-    top_drugs = list(
-        base_items.values('drug_name')
-        .annotate(count=Count('id'), qty=Sum('quantity'))
+    # Top 15 drugs dispensed — group by drug FK + custom name
+    top_drugs_raw = list(
+        base_items.values('drug__name', 'custom_drug_name')
+        .annotate(count=Count('id'), qty=Sum('quantity_dispensed'))
         .order_by('-qty')[:15]
     )
+    # Normalise to single drug_name key
+    top_drugs = []
+    for d in top_drugs_raw:
+        top_drugs.append({
+            'drug_name': d['drug__name'] or d['custom_drug_name'] or 'Non-formulary Drug',
+            'count': d['count'],
+            'qty': d['qty'] or 0,
+        })
 
     # Daily volume (last 14 days)
     from datetime import timedelta
@@ -1170,3 +1184,291 @@ def rx_declined(request, rx_id):
         rx.save(update_fields=['is_dispensed', 'dispensed_by', 'dispensed_at', 'notes'])
         messages.info(request, 'Prescription marked as bought elsewhere and removed from queue.')
     return redirect('pharmacy:patient_search')
+
+
+# ── Controlled Drugs Register ─────────────────────────────────────────────────
+
+@login_required
+def controlled_register(request):
+    """Narcotics/controlled drug register — full movement log."""
+    from apps.core.decorators import CAN_VIEW_PATIENT
+    if request.user.role not in CAN_VIEW_PATIENT and not request.user.is_super_admin:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    drug_id = request.GET.get('drug')
+    entries = ControlledDrugEntry.objects.select_related(
+        'drug', 'batch', 'patient', 'performed_by', 'witness', 'dispensing'
+    )
+    if drug_id:
+        entries = entries.filter(drug_id=drug_id)
+
+    controlled_drugs = Drug.objects.filter(is_controlled=True, is_deleted=False, is_active=True).order_by('name')
+    selected_drug = Drug.objects.filter(id=drug_id).first() if drug_id else None
+
+    # Running balance grouped by drug if not filtered
+    context = {
+        'entries': entries[:200],
+        'controlled_drugs': controlled_drugs,
+        'selected_drug': selected_drug,
+        'entry_types': ControlledDrugEntryType,
+    }
+    return render(request, 'pharmacy/controlled_register.html', context)
+
+
+@login_required
+def controlled_entry_create(request):
+    """Add a controlled drug entry (stock-in, wastage, manual adjustment)."""
+    if not (request.user.is_pharmacist or request.user.is_super_admin or request.user.is_medical_director):
+        messages.error(request, 'Only pharmacists can log controlled drug entries.')
+        return redirect('pharmacy:controlled_register')
+
+    if request.method == 'POST':
+        drug_id = request.POST.get('drug')
+        batch_id = request.POST.get('batch')
+        entry_type = request.POST.get('entry_type')
+        quantity = request.POST.get('quantity')
+        witness_id = request.POST.get('witness')
+        notes = request.POST.get('notes', '')
+
+        drug = get_object_or_404(Drug, id=drug_id, is_controlled=True)
+        batch = DrugStock.objects.filter(id=batch_id).first() if batch_id else None
+        from apps.accounts.models import User
+        witness = User.objects.filter(id=witness_id).first() if witness_id else None
+
+        try:
+            from decimal import Decimal
+            qty = Decimal(quantity)
+        except Exception:
+            messages.error(request, 'Invalid quantity.')
+            return redirect('pharmacy:controlled_register')
+
+        # Compute running balance for this drug
+        last_entry = ControlledDrugEntry.objects.filter(drug=drug).order_by('-entry_date').first()
+        balance_before = last_entry.balance_after if last_entry else Decimal('0')
+
+        is_out = entry_type in (ControlledDrugEntryType.DISPENSE, ControlledDrugEntryType.WASTAGE)
+        balance_after = balance_before - qty if is_out else balance_before + qty
+
+        ControlledDrugEntry.objects.create(
+            drug=drug,
+            batch=batch,
+            entry_type=entry_type,
+            quantity=qty,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            performed_by=request.user,
+            witness=witness,
+            witness_confirmed=False,
+            notes=notes,
+        )
+        messages.success(request, f'Controlled drug entry recorded. Balance: {balance_after}')
+        return redirect('pharmacy:controlled_register')
+
+    controlled_drugs = Drug.objects.filter(is_controlled=True, is_deleted=False, is_active=True)
+    from apps.accounts.models import User
+    pharmacists = User.objects.filter(role__in=['pharmacist', 'super_admin'], is_active=True)
+    return render(request, 'pharmacy/controlled_entry_form.html', {
+        'controlled_drugs': controlled_drugs,
+        'pharmacists': pharmacists,
+        'entry_types': ControlledDrugEntryType.choices,
+    })
+
+
+@login_required
+@require_POST
+def controlled_entry_witness_confirm(request, entry_id):
+    """Second pharmacist / witness confirms their counter-signature."""
+    entry = get_object_or_404(ControlledDrugEntry, id=entry_id)
+    if entry.performed_by == request.user:
+        return JsonResponse({'error': 'Witness cannot be the same person who made the entry.'}, status=400)
+    if not request.user.is_pharmacist and not request.user.is_super_admin:
+        return JsonResponse({'error': 'Only a pharmacist can act as witness.'}, status=403)
+    entry.witness = request.user
+    entry.witness_confirmed = True
+    entry.save(update_fields=['witness', 'witness_confirmed'])
+    return JsonResponse({'success': True, 'witness': request.user.get_full_name()})
+
+
+# ── Ward Drug Return ──────────────────────────────────────────────────────────
+
+@login_required
+def ward_return_list(request):
+    """List all ward drug returns — pharmacist view."""
+    if not (request.user.is_pharmacist or request.user.is_super_admin or request.user.is_medical_director
+            or request.user.is_ward_nurse or request.user.is_nurse_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    status_filter = request.GET.get('status', '')
+    returns = WardDrugReturn.objects.select_related(
+        'drug', 'batch', 'admission__patient', 'returned_by', 'actioned_by'
+    )
+    if status_filter:
+        returns = returns.filter(status=status_filter)
+    context = {
+        'returns': returns[:100],
+        'status_filter': status_filter,
+        'statuses': WardDrugReturnStatus,
+        'pending_count': WardDrugReturn.objects.filter(status=WardDrugReturnStatus.PENDING).count(),
+    }
+    return render(request, 'pharmacy/ward_return_list.html', context)
+
+
+@login_required
+def ward_return_create(request):
+    """Nurse submits a drug return from ward on patient discharge."""
+    if not (request.user.is_ward_nurse or request.user.is_theatre_nurse
+            or request.user.is_nurse_director or request.user.is_super_admin):
+        messages.error(request, 'Only ward nurses can submit drug returns.')
+        return redirect('pharmacy:ward_return_list')
+
+    if request.method == 'POST':
+        from apps.ipd.models import Admission
+        admission_id = request.POST.get('admission')
+        drug_id = request.POST.get('drug')
+        batch_id = request.POST.get('batch')
+        qty = request.POST.get('quantity_returned')
+        reason = request.POST.get('reason', '')
+
+        admission = get_object_or_404(Admission, id=admission_id)
+        drug = get_object_or_404(Drug, id=drug_id)
+        batch = DrugStock.objects.filter(id=batch_id).first() if batch_id else None
+
+        WardDrugReturn.objects.create(
+            admission=admission,
+            drug=drug,
+            batch=batch,
+            quantity_returned=int(qty),
+            reason=reason,
+            returned_by=request.user,
+        )
+        messages.success(request, f'Drug return submitted. Pending pharmacy acceptance.')
+        return redirect('pharmacy:ward_return_list')
+
+    from apps.ipd.models import Admission, AdmissionStatus
+    active_admissions = Admission.objects.filter(
+        status=AdmissionStatus.ADMITTED, is_deleted=False
+    ).select_related('patient').order_by('-admission_date')[:50]
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    return render(request, 'pharmacy/ward_return_form.html', {
+        'admissions': active_admissions,
+        'drugs': drugs,
+    })
+
+
+@login_required
+@require_POST
+def ward_return_action(request, return_id):
+    """Pharmacist accepts or rejects a ward drug return."""
+    if not (request.user.is_pharmacist or request.user.is_super_admin):
+        return JsonResponse({'error': 'Only pharmacists can action drug returns.'}, status=403)
+
+    drug_return = get_object_or_404(WardDrugReturn, id=return_id, status=WardDrugReturnStatus.PENDING)
+    action = request.POST.get('action')
+
+    if action == 'accept':
+        # Restore stock to the batch (or create a note if no batch)
+        if drug_return.batch:
+            drug_return.batch.quantity_remaining += drug_return.quantity_returned
+            drug_return.batch.save(update_fields=['quantity_remaining'])
+        drug_return.status = WardDrugReturnStatus.ACCEPTED
+        drug_return.actioned_by = request.user
+        drug_return.actioned_at = timezone.now()
+        drug_return.save(update_fields=['status', 'actioned_by', 'actioned_at'])
+        messages.success(request, f'{drug_return.return_number} accepted — stock restored.')
+    elif action == 'reject':
+        drug_return.status = WardDrugReturnStatus.REJECTED
+        drug_return.actioned_by = request.user
+        drug_return.actioned_at = timezone.now()
+        drug_return.rejection_reason = request.POST.get('rejection_reason', '')
+        drug_return.save(update_fields=['status', 'actioned_by', 'actioned_at', 'rejection_reason'])
+        messages.warning(request, f'{drug_return.return_number} rejected — will be disposed.')
+    return redirect('pharmacy:ward_return_list')
+
+
+# ── Chronic Rx Refill Tracking ────────────────────────────────────────────────
+
+@login_required
+def chronic_rx_list(request):
+    """List all chronic prescriptions — highlight overdue refills."""
+    if not (request.user.is_pharmacist or request.user.is_super_admin
+            or request.user.is_medical_director or request.user.is_nurse_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    rxs = ChronicPrescription.objects.filter(is_active=True, is_deleted=False).select_related(
+        'patient', 'drug', 'prescribing_doctor'
+    ).order_by('next_refill_date')
+
+    overdue = [r for r in rxs if r.next_refill_date and r.next_refill_date < today]
+    due_today = [r for r in rxs if r.next_refill_date == today]
+    upcoming = [r for r in rxs if r.next_refill_date and r.next_refill_date > today]
+
+    return render(request, 'pharmacy/chronic_rx_list.html', {
+        'overdue': overdue,
+        'due_today': due_today,
+        'upcoming': upcoming,
+        'today': today,
+    })
+
+
+@login_required
+def chronic_rx_create(request):
+    """Create a new chronic prescription (link from dispensing or standalone)."""
+    if not (request.user.is_pharmacist or request.user.is_super_admin or request.user.is_medical_director):
+        messages.error(request, 'Only pharmacists can create chronic prescription records.')
+        return redirect('pharmacy:chronic_rx_list')
+
+    if request.method == 'POST':
+        patient_id = request.POST.get('patient')
+        drug_id = request.POST.get('drug')
+        patient = get_object_or_404(Patient, id=patient_id)
+        drug = get_object_or_404(Drug, id=drug_id)
+
+        import datetime
+        try:
+            interval = int(request.POST.get('refill_interval_days', 30))
+            qty = int(request.POST.get('quantity_per_refill', 1))
+            start = datetime.date.fromisoformat(request.POST.get('start_date', str(timezone.localdate())))
+        except (ValueError, TypeError):
+            messages.error(request, 'Invalid date or quantity.')
+            return redirect('pharmacy:chronic_rx_create')
+
+        ChronicPrescription.objects.update_or_create(
+            patient=patient, drug=drug,
+            defaults={
+                'prescribing_doctor': request.user,
+                'dose': request.POST.get('dose', ''),
+                'frequency': request.POST.get('frequency', ''),
+                'quantity_per_refill': qty,
+                'refill_interval_days': interval,
+                'start_date': start,
+                'is_active': True,
+                'notes': request.POST.get('notes', ''),
+            }
+        )
+        messages.success(request, f'Chronic Rx for {patient.full_name} — {drug.name} saved.')
+        return redirect('pharmacy:chronic_rx_list')
+
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    return render(request, 'pharmacy/chronic_rx_form.html', {
+        'drugs': drugs,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+@require_POST
+def chronic_rx_refill(request, rx_id):
+    """Record a completed refill dispensing and advance the next_refill_date."""
+    if not (request.user.is_pharmacist or request.user.is_super_admin):
+        return JsonResponse({'error': 'Permission denied.'}, status=403)
+    rx = get_object_or_404(ChronicPrescription, id=rx_id, is_active=True)
+    rx.record_refill()
+    return JsonResponse({
+        'success': True,
+        'refill_count': rx.refill_count,
+        'next_refill_date': rx.next_refill_date.isoformat(),
+    })

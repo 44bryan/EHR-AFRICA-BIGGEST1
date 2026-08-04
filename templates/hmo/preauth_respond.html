@@ -1,0 +1,63 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Pre-Auth Response{% endblock %}
+{% block page_header %}<h5 class="mb-0 fw-bold">Record Scheme Response</h5>{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <!-- Summary card -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-6"><small class="text-muted">Patient</small><div class="fw-semibold">{{ auth.member.patient.full_name }}</div></div>
+          <div class="col-6"><small class="text-muted">Scheme</small><div>{{ auth.member.scheme.name }}</div></div>
+          <div class="col-12"><small class="text-muted">Service</small><div>{{ auth.service_description }}</div></div>
+          <div class="col-6"><small class="text-muted">Estimated Cost</small><div>{{ auth.estimated_cost|floatformat:0 }} FCFA</div></div>
+          <div class="col-6"><small class="text-muted">Requested</small><div>{{ auth.requested_at|date:"d M Y H:i" }}</div></div>
+        </div>
+      </div>
+    </div>
+
+    <form method="post" class="card border-0 shadow-sm">
+      {% csrf_token %}
+      <div class="card-header bg-light fw-semibold py-2">Scheme Decision</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Status <span class="text-danger">*</span></label>
+            <select name="status" class="form-select" required id="statusSel">
+              {% for val, label in status_choices %}
+              <option value="{{ val }}" {% if auth.status == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Auth Code (if Approved)</label>
+            <input type="text" name="auth_code" class="form-control" value="{{ auth.auth_code }}" placeholder="Scheme reference code">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Valid Until</label>
+            <input type="date" name="valid_until" class="form-control" value="{{ auth.valid_until|date:'Y-m-d'|default:'' }}">
+          </div>
+          <div class="col-12" id="rejDiv">
+            <label class="form-label">Rejection Reason</label>
+            <textarea name="rejection_reason" class="form-control" rows="2">{{ auth.rejection_reason }}</textarea>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer bg-transparent d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Save Decision</button>
+        <a href="{% url 'hmo:preauth_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const sel = document.getElementById('statusSel');
+const rejDiv = document.getElementById('rejDiv');
+function toggle() { rejDiv.style.display = sel.value === 'REJECTED' ? '' : 'none'; }
+sel.addEventListener('change', toggle);
+toggle();
+</script>
+{% endblock %}

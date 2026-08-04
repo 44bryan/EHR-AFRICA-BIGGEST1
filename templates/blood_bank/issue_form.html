@@ -1,0 +1,57 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Issue Blood{% endblock %}
+{% block page_header %}<h5 class="mb-0 fw-bold">Issue Blood Unit to Patient</h5>{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <form method="post" class="card border-0 shadow-sm">
+      {% csrf_token %}
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <select name="patient" class="form-select" required>
+              <option value="">— Select patient —</option>
+              {% for p in patients %}<option value="{{ p.pk }}">{{ p.full_name }} ({{ p.patient_id }})</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Blood Unit <span class="text-danger">*</span></label>
+            <select name="blood_unit" class="form-select" required>
+              <option value="">— Select unit —</option>
+              {% for u in units %}
+              <option value="{{ u.pk }}">{{ u.unit_number }} — {{ u.blood_group }} {{ u.get_product_display }}
+                {% if u.status == 'RESERVED' %} [RESERVED]{% endif %}
+                (exp: {{ u.expiry_date }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% if compatible_xm %}
+          <div class="col-12">
+            <label class="form-label">Link to Cross-Match (optional)</label>
+            <select name="cross_match" class="form-select">
+              <option value="">— None —</option>
+              {% for xm in compatible_xm %}
+              <option value="{{ xm.pk }}">{{ xm.patient.full_name }} × {{ xm.blood_unit.unit_number }} [Compatible]</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-12">
+            <label class="form-label">Collected By (Nurse/Doctor Name)</label>
+            <input type="text" name="received_by" class="form-control" placeholder="Name of ward nurse or doctor collecting the unit">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer bg-transparent d-flex gap-2">
+        <button type="submit" class="btn btn-danger"><i class="bi bi-send me-1"></i>Issue Blood</button>
+        <a href="{% url 'blood_bank:issue_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

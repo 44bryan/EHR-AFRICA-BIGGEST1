@@ -123,6 +123,8 @@ def investigation_workstation_view(request):
 
     urgent = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY')]
     routine = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY')]
+    in_progress_count = sum(1 for o in pending_orders if o.status == InvestigationOrder.Status.IN_PROGRESS)
+    ordered_count = sum(1 for o in pending_orders if o.status == InvestigationOrder.Status.ORDERED)
 
     return render(request, 'investigations/workstation.html', {
         'queued_no_order': queued_no_order,
@@ -131,6 +133,8 @@ def investigation_workstation_view(request):
         'completed_today': completed_today,
         'queued_count': len(queued_no_order),
         'pending_count': len(pending_orders),
+        'in_progress_count': in_progress_count,
+        'ordered_count': ordered_count,
         'completed_count': len(completed_today),
         'today': today,
     })

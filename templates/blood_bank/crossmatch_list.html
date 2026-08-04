@@ -1,0 +1,51 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Cross-Match Records{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <h5 class="mb-0 fw-bold">Cross-Match Records</h5>
+  <a href="{% url 'blood_bank:crossmatch_create' %}" class="btn btn-warning btn-sm text-dark"><i class="bi bi-plus-lg me-1"></i>Request Cross-Match</a>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Unit #</th><th>Blood Group</th><th>Requested</th><th>Result</th><th>Performed By</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        {% for xm in crossmatches %}
+        <tr>
+          <td class="fw-semibold">{{ xm.patient.full_name }}</td>
+          <td><code>{{ xm.blood_unit.unit_number }}</code></td>
+          <td><span class="badge bg-danger">{{ xm.blood_unit.blood_group }}</span></td>
+          <td>{{ xm.requested_at|date:"d M Y H:i" }}</td>
+          <td>
+            {% if xm.result == 'COMPATIBLE' %}<span class="badge bg-success">Compatible</span>
+            {% elif xm.result == 'INCOMPATIBLE' %}<span class="badge bg-danger">Incompatible</span>
+            {% else %}<span class="badge bg-warning text-dark">Pending</span>{% endif %}
+          </td>
+          <td>{{ xm.performed_by.get_full_name|default:"—" }}</td>
+          <td>
+            {% if xm.result == 'PENDING' %}
+            <form method="post" action="{% url 'blood_bank:crossmatch_result' xm.pk %}" class="d-flex gap-1">
+              {% csrf_token %}
+              <select name="result" class="form-select form-select-sm" style="width:auto;">
+                <option value="COMPATIBLE">Compatible</option>
+                <option value="INCOMPATIBLE">Incompatible</option>
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary">Save</button>
+            </form>
+            {% elif xm.result == 'COMPATIBLE' %}
+            <a href="{% url 'blood_bank:issue_create' %}" class="btn btn-sm btn-outline-success">Issue Blood</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No cross-match records.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

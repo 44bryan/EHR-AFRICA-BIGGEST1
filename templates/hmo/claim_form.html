@@ -1,0 +1,120 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Insurance Claim{% endblock %}
+{% block page_header %}<h5 class="mb-0 fw-bold">Create Insurance Claim</h5>{% endblock %}
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light fw-semibold py-2">Patient & Member</div>
+        <div class="card-body">
+          {% if member %}
+          <input type="hidden" name="member" value="{{ member.pk }}">
+          <div class="p-2 rounded bg-light mb-3">
+            <div class="fw-semibold">{{ member.patient.full_name }}</div>
+            <small class="text-muted">{{ member.scheme.name }} · {{ member.member_number }}</small>
+          </div>
+          {% else %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Insured Member <span class="text-danger">*</span></label>
+            <select name="member" class="form-select" required>
+              <option value="">— Select —</option>
+              {% for m in members %}
+              <option value="{{ m.pk }}">{{ m.patient.full_name }} — {{ m.scheme.code }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label">Service Date</label>
+            <input type="date" name="service_date" class="form-control" value="{{ today|date:'Y-m-d' }}">
+          </div>
+          {% if visits %}
+          <div class="mb-3">
+            <label class="form-label">Link to Visit (optional)</label>
+            <select name="visit" class="form-select">
+              <option value="">— None —</option>
+              {% for v in visits %}
+              <option value="{{ v.pk }}">{{ v.visit_date }} — {{ v.get_visit_type_display }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          {% if pre_auths %}
+          <div class="mb-3">
+            <label class="form-label">Pre-Auth Reference (optional)</label>
+            <select name="pre_auth" class="form-select">
+              <option value="">— None —</option>
+              {% for a in pre_auths %}
+              <option value="{{ a.pk }}">{{ a.auth_code }} — valid {{ a.valid_until }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span>Service Lines</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()">
+            <i class="bi bi-plus-lg"></i> Add Line
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="lines">
+            <div class="row g-2 mb-2 line-row">
+              <div class="col-6"><input type="text" name="service_name" class="form-control form-control-sm" placeholder="Service / procedure name" required></div>
+              <div class="col-2"><input type="number" name="quantity" class="form-control form-control-sm" min="1" value="1" placeholder="Qty"></div>
+              <div class="col-3"><input type="number" name="unit_price" class="form-control form-control-sm" min="0" step="100" placeholder="Unit price (FCFA)" oninput="calcTotal()"></div>
+              <div class="col-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLine(this)"><i class="bi bi-x"></i></button></div>
+            </div>
+          </div>
+          <hr class="my-2">
+          <div class="text-end fw-semibold">Total Claimed: <span id="grand-total">0</span> FCFA</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 d-flex gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Create Claim</button>
+      <a href="{% url 'hmo:claim_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </div>
+</form>
+{% endblock %}
+{% block extra_js %}
+<script>
+function addLine() {
+  const container = document.getElementById('lines');
+  const row = document.createElement('div');
+  row.className = 'row g-2 mb-2 line-row';
+  row.innerHTML = `
+    <div class="col-6"><input type="text" name="service_name" class="form-control form-control-sm" placeholder="Service name"></div>
+    <div class="col-2"><input type="number" name="quantity" class="form-control form-control-sm" min="1" value="1" placeholder="Qty"></div>
+    <div class="col-3"><input type="number" name="unit_price" class="form-control form-control-sm" min="0" step="100" placeholder="Unit price" oninput="calcTotal()"></div>
+    <div class="col-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLine(this)"><i class="bi bi-x"></i></button></div>`;
+  container.appendChild(row);
+}
+function removeLine(btn) {
+  const rows = document.querySelectorAll('.line-row');
+  if (rows.length > 1) { btn.closest('.line-row').remove(); calcTotal(); }
+}
+function calcTotal() {
+  let total = 0;
+  document.querySelectorAll('.line-row').forEach(row => {
+    const qty = parseFloat(row.querySelector('[name="quantity"]').value) || 0;
+    const price = parseFloat(row.querySelector('[name="unit_price"]').value) || 0;
+    total += qty * price;
+  });
+  document.getElementById('grand-total').textContent = total.toLocaleString();
+}
+</script>
+{% endblock %}

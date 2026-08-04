@@ -1,0 +1,68 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Insurance Claims{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <h5 class="mb-0 fw-bold">Insurance Claims</h5>
+  <a href="{% url 'hmo:claim_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Claim</a>
+</div>
+{% endblock %}
+{% block content %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <input type="text" name="q" class="form-control" placeholder="Claim # or patient name…" value="{{ q }}">
+  </div>
+  <div class="col-md-3">
+    <select name="status" class="form-select">
+      <option value="">All Statuses</option>
+      {% for val, label in status_choices %}
+      <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <select name="scheme" class="form-select">
+      <option value="">All Schemes</option>
+      {% for s in schemes %}
+      <option value="{{ s.pk }}" {% if scheme_id == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2"><button type="submit" class="btn btn-outline-secondary w-100">Search</button></div>
+</form>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Claim #</th><th>Patient</th><th>Scheme</th><th>Date</th><th>Claimed</th><th>Approved</th><th>Paid</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for c in claims %}
+          <tr>
+            <td><a href="{% url 'hmo:claim_detail' c.pk %}">{{ c.claim_number }}</a></td>
+            <td>{{ c.member.patient.full_name }}</td>
+            <td><span class="badge bg-light text-dark border">{{ c.member.scheme.code }}</span></td>
+            <td>{{ c.service_date }}</td>
+            <td>{{ c.claimed_amount|floatformat:0 }}</td>
+            <td>{{ c.approved_amount|floatformat:0 }}</td>
+            <td>{{ c.paid_amount|floatformat:0 }}</td>
+            <td>
+              {% if c.status == 'PAID' %}<span class="badge bg-success">Paid</span>
+              {% elif c.status == 'APPROVED' %}<span class="badge bg-primary">Approved</span>
+              {% elif c.status == 'REJECTED' %}<span class="badge bg-danger">Rejected</span>
+              {% elif c.status == 'SUBMITTED' %}<span class="badge bg-info">Submitted</span>
+              {% elif c.status == 'PARTIAL' %}<span class="badge bg-warning text-dark">Partial</span>
+              {% else %}<span class="badge bg-secondary">Draft</span>{% endif %}
+            </td>
+            <td><a href="{% url 'hmo:claim_detail' c.pk %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9" class="text-center text-muted py-4">No claims found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

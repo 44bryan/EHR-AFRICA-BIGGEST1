@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Diet Order — {{ order.admission.patient.get_full_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+  <a href="{% url 'dietary:order_list' %}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="fas fa-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="mb-0">Diet Order</h4>
+    <div class="text-muted small">{{ order.admission.patient.get_full_name }} · {{ order.admission.patient.patient_id }}</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{% url 'dietary:meal_plan_create' order.pk %}" class="btn btn-sm btn-success">
+      <i class="fas fa-plus me-1"></i>Add Meal Plan
+    </a>
+    <a href="{% url 'dietary:assessment_create' order.admission.pk %}?next={{ request.path }}" class="btn btn-sm btn-outline-primary">
+      <i class="fas fa-weight me-1"></i>Assessment
+    </a>
+    <a href="{% url 'dietary:restriction_add' order.admission.pk %}?next={{ request.path }}" class="btn btn-sm btn-outline-warning">
+      <i class="fas fa-exclamation-triangle me-1"></i>Add Restriction
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Order Details -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white"><strong>Order Details</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-5">Diet Type</dt>
+          <dd class="col-7">
+            {% if order.diet_type == 'NPO' %}
+              <span class="badge bg-danger">NPO</span>
+            {% else %}
+              <span class="badge bg-success">{{ order.get_diet_type_display }}</span>
+            {% endif %}
+          </dd>
+          {% if order.diet_type_other %}
+          <dt class="col-5">Specification</dt>
+          <dd class="col-7">{{ order.diet_type_other }}</dd>
+          {% endif %}
+          <dt class="col-5">Status</dt>
+          <dd class="col-7">
+            {% if order.status == 'ACTIVE' %}<span class="badge bg-success">Active</span>
+            {% elif order.status == 'ON_HOLD' %}<span class="badge bg-warning text-dark">On Hold</span>
+            {% elif order.status == 'CANCELLED' %}<span class="badge bg-danger">Cancelled</span>
+            {% else %}<span class="badge bg-secondary">{{ order.get_status_display }}</span>{% endif %}
+          </dd>
+          {% if order.calorie_target %}
+          <dt class="col-5">Calories</dt>
+          <dd class="col-7">{{ order.calorie_target }} kcal/day</dd>
+          {% endif %}
+          {% if order.protein_target %}
+          <dt class="col-5">Protein</dt>
+          <dd class="col-7">{{ order.protein_target }} g/day</dd>
+          {% endif %}
+          {% if order.fluid_restriction %}
+          <dt class="col-5">Fluid Limit</dt>
+          <dd class="col-7">{{ order.fluid_restriction }} mL/day</dd>
+          {% endif %}
+          <dt class="col-5">Ordered By</dt>
+          <dd class="col-7">{{ order.ordered_by.get_full_name }}</dd>
+          <dt class="col-5">Date</dt>
+          <dd class="col-7">{{ order.created_at|date:"d M Y" }}</dd>
+        </dl>
+        {% if order.special_instructions %}
+        <hr class="my-2">
+        <div class="small"><strong>Instructions:</strong><br>{{ order.special_instructions|linebreaksbr }}</div>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-white">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="update_status" value="1">
+          <div class="input-group input-group-sm">
+            <select name="status" class="form-select form-select-sm">
+              {% for val, label in status_choices %}
+              <option value="{{ val }}" {% if val == order.status %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-outline-secondary" type="submit">Update</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Dietary Restrictions -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Dietary Restrictions</strong>
+        <a href="{% url 'dietary:restriction_add' order.admission.pk %}?next={{ request.path }}"
+           class="btn btn-xs btn-outline-warning">Add</a>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for r in restrictions %}
+        <li class="list-group-item py-2">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <span class="badge bg-warning text-dark me-1">{{ r.get_category_display }}</span>
+              <span class="small">{{ r.description }}</span>
+            </div>
+            {% if r.severity == 'SEVERE' %}
+              <span class="badge bg-danger ms-2">Anaphylactic</span>
+            {% elif r.severity == 'MODERATE' %}
+              <span class="badge bg-warning text-dark ms-2">Moderate</span>
+            {% endif %}
+          </div>
+        </li>
+        {% empty %}
+        <li class="list-group-item text-muted small py-2">No restrictions recorded.</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- Nutritional Assessments -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white"><strong>Assessments</strong></div>
+      <ul class="list-group list-group-flush">
+        {% for a in assessments %}
+        <li class="list-group-item py-2 small">
+          <div class="d-flex justify-content-between">
+            <div>
+              <strong>{{ a.get_nutritional_status_display }}</strong>
+              {% if a.bmi %} · BMI {{ a.bmi }}{% endif %}
+            </div>
+            <span class="text-muted">{{ a.created_at|date:"d M" }}</span>
+          </div>
+          <div class="text-muted">{{ a.weight_kg }} kg / {{ a.height_cm }} cm
+            · MUST {{ a.must_score }}
+            · {{ a.get_feeding_route_display }}</div>
+        </li>
+        {% empty %}
+        <li class="list-group-item text-muted small py-2">No assessments yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <!-- Meal Plans -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Meal Plans</strong>
+        <a href="{% url 'dietary:meal_plan_create' order.pk %}" class="btn btn-sm btn-success">
+          <i class="fas fa-plus me-1"></i>Add Plan
+        </a>
+      </div>
+      {% if meal_plans %}
+        {% for plan in meal_plans %}
+        <div class="card-body border-bottom">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div>
+              <strong>{{ plan.plan_date|date:"l, d M Y" }}</strong>
+              {% if plan.total_calories %}<span class="text-muted small ms-2">{{ plan.total_calories }} kcal</span>{% endif %}
+            </div>
+            {% if plan.served %}
+              <span class="badge bg-success"><i class="fas fa-check me-1"></i>Served {{ plan.served_at|date:"H:i" }}</span>
+            {% else %}
+              <form method="post" action="{% url 'dietary:meal_plan_serve' plan.pk %}">
+                {% csrf_token %}
+                <button class="btn btn-xs btn-outline-success">Mark Served</button>
+              </form>
+            {% endif %}
+          </div>
+          {% if plan.items.all %}
+          <table class="table table-sm mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Time</th>
+                <th>Meal</th>
+                <th class="text-end">kcal</th>
+                <th class="text-end">Protein</th>
+                <th class="text-end">Carbs</th>
+                <th class="text-end">Fat</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in plan.items.all %}
+              <tr>
+                <td class="small"><span class="badge bg-light text-dark">{{ item.get_meal_time_display }}</span></td>
+                <td class="small">{{ item.description }}</td>
+                <td class="text-end small">{% if item.calories_kcal %}{{ item.calories_kcal }}{% else %}—{% endif %}</td>
+                <td class="text-end small">{% if item.protein_g %}{{ item.protein_g }}g{% else %}—{% endif %}</td>
+                <td class="text-end small">{% if item.carbs_g %}{{ item.carbs_g }}g{% else %}—{% endif %}</td>
+                <td class="text-end small">{% if item.fat_g %}{{ item.fat_g }}g{% else %}—{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+          {% if plan.notes %}
+          <div class="mt-2 text-muted small"><i class="fas fa-sticky-note me-1"></i>{{ plan.notes }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="card-body text-center text-muted py-4">
+          No meal plans yet. <a href="{% url 'dietary:meal_plan_create' order.pk %}">Create one</a>.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

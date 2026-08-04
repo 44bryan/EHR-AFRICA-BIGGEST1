@@ -563,6 +563,13 @@ class HospitalConfig(models.Model):
     module_feedback     = models.BooleanField(default=True,  verbose_name='Patient Feedback & NPS')
     module_leads        = models.BooleanField(default=True,  verbose_name='Lead Management (CRM)')
 
+    # ── Enterprise modules ───────────────────────────────
+    module_hmo              = models.BooleanField(default=True,  verbose_name='HMO & Insurance Claims')
+    module_blood_bank       = models.BooleanField(default=True,  verbose_name='Blood Bank')
+    module_infection_control = models.BooleanField(default=True, verbose_name='Infection Control / Antibiogram')
+    module_dietary          = models.BooleanField(default=True,  verbose_name='Dietary & Nutrition')
+    module_mortuary         = models.BooleanField(default=True,  verbose_name='Mortuary')
+
     # ── Consultation validity threshold ──────────────────
     consultation_days   = models.PositiveSmallIntegerField(
         default=15,

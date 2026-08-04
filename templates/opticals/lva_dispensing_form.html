@@ -1,0 +1,130 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Low Vision Aid Dispensing{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <div class="rounded-3 d-flex align-items-center justify-content-center"
+       style="width:40px;height:40px;background:linear-gradient(135deg,#7c3aed,#6d28d9);">
+    <i class="bi bi-zoom-in text-white" style="font-size:1.1rem;"></i>
+  </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Low Vision Aid Dispensing</h5>
+    <small class="text-muted">Record assessment outcome and aid dispensed</small>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+  <div class="row g-3">
+
+    <div class="col-lg-5">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light fw-semibold py-2">Patient & Assessment</div>
+        <div class="card-body">
+          {% if patient %}
+          <input type="hidden" name="patient" value="{{ patient.pk }}">
+          <div class="mb-3 p-2 rounded bg-light">
+            <div class="fw-semibold">{{ patient.full_name }}</div>
+            <small class="text-muted">{{ patient.patient_id }}</small>
+          </div>
+          {% else %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <input type="text" id="pt-search" class="form-control" placeholder="Search…">
+            <input type="hidden" name="patient" id="pt-id" required>
+            <div id="pt-results" class="list-group mt-1"></div>
+          </div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Date</label>
+            <input type="date" name="dispensing_date" class="form-control" value="{{ today|date:'Y-m-d' }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Vision Goal</label>
+            <textarea name="vision_goal" class="form-control" rows="2" placeholder="e.g. Read newspaper print, recognise faces at 2m"></textarea>
+          </div>
+          <!-- Unaided VA grid -->
+          <table class="table table-sm table-bordered mb-3">
+            <thead class="table-light text-center"><tr><th>Eye</th><th>Distance VA</th><th>Near VA</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="fw-bold text-center">R</td>
+                <td><input type="text" name="distance_va_re" class="form-control form-control-sm text-center" placeholder="e.g. 3/60"></td>
+                <td><input type="text" name="near_va_re" class="form-control form-control-sm text-center" placeholder="e.g. N36"></td>
+              </tr>
+              <tr>
+                <td class="fw-bold text-center">L</td>
+                <td><input type="text" name="distance_va_le" class="form-control form-control-sm text-center"></td>
+                <td><input type="text" name="near_va_le" class="form-control form-control-sm text-center"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light fw-semibold py-2">Aid Dispensed</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Aid Type <span class="text-danger">*</span></label>
+              <select name="aid_type" class="form-select" required>
+                {% for val, label in aid_types %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Brand / Model</label>
+              <input type="text" name="aid_brand_model" class="form-control" placeholder="e.g. Eschenbach 4×">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Magnification</label>
+              <input type="text" name="magnification" class="form-control" placeholder="e.g. 4×, 8D">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">VA with Aid</label>
+              <input type="text" name="va_achieved_with_aid" class="form-control" placeholder="e.g. 6/18">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Quantity</label>
+              <input type="number" name="quantity" min="1" class="form-control" value="1">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Unit Price (FCFA)</label>
+              <input type="number" name="unit_price" step="100" min="0" class="form-control" value="0">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Follow-up Date</label>
+              <input type="date" name="follow_up_date" class="form-control">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Training Given</label>
+              <textarea name="training_given" class="form-control" rows="2" placeholder="Describe adaptation training provided…"></textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input type="checkbox" name="patient_satisfied" class="form-check-input" id="sat" checked>
+                <label class="form-check-label" for="sat">Patient satisfied with aid</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 d-flex gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save LVA Dispensing</button>
+      <a href="{% url 'opticals:lva_dispensing_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </div>
+</form>
+{% endblock %}

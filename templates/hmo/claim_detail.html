@@ -1,0 +1,123 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Claim {{ claim.claim_number }}{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <div>
+    <h5 class="mb-0 fw-bold">Claim {{ claim.claim_number }}</h5>
+    <small class="text-muted">{{ claim.member.scheme.name }} &mdash; {{ claim.get_status_display }}</small>
+  </div>
+  <div class="d-flex gap-2">
+    {% if claim.status == 'DRAFT' %}
+    <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#rejectModal">Mark Rejected</button>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <!-- Details -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">Claim Details</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-5 text-muted">Patient</dt><dd class="col-7">{{ claim.member.patient.full_name }}</dd>
+          <dt class="col-5 text-muted">Member #</dt><dd class="col-7">{{ claim.member.member_number }}</dd>
+          <dt class="col-5 text-muted">Scheme</dt><dd class="col-7">{{ claim.member.scheme.name }}</dd>
+          <dt class="col-5 text-muted">Service Date</dt><dd class="col-7">{{ claim.service_date }}</dd>
+          <dt class="col-5 text-muted">Status</dt><dd class="col-7">{{ claim.get_status_display }}</dd>
+          {% if claim.batch %}
+          <dt class="col-5 text-muted">Batch</dt>
+          <dd class="col-7"><a href="{% url 'hmo:batch_detail' claim.batch.pk %}">{{ claim.batch.batch_number }}</a></dd>
+          {% endif %}
+          {% if claim.pre_auth %}
+          <dt class="col-5 text-muted">Auth Code</dt><dd class="col-7">{{ claim.pre_auth.auth_code }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-light fw-semibold py-2">Financials</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-6 text-muted">Claimed</dt><dd class="col-6">{{ claim.claimed_amount|floatformat:0 }} FCFA</dd>
+          <dt class="col-6 text-muted">Approved</dt><dd class="col-6">{{ claim.approved_amount|floatformat:0 }} FCFA</dd>
+          <dt class="col-6 text-muted">Paid</dt><dd class="col-6">{{ claim.paid_amount|floatformat:0 }} FCFA</dd>
+          <dt class="col-6 text-muted">Patient Co-pay</dt><dd class="col-6">{{ claim.patient_copay|floatformat:0 }} FCFA</dd>
+        </dl>
+        {% if claim.rejection_reason %}
+        <div class="alert alert-danger mt-2 mb-0 py-2">
+          <small><strong>Rejection:</strong> {{ claim.rejection_reason }}</small>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Line Items -->
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light fw-semibold py-2">Service Lines</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Service</th><th class="text-center">Qty</th><th class="text-end">Unit</th><th class="text-end">Claimed</th><th class="text-end">Approved</th></tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>{{ item.service_name }}</td>
+              <td class="text-center">{{ item.quantity }}</td>
+              <td class="text-end">{{ item.unit_price|floatformat:0 }}</td>
+              <td class="text-end">{{ item.claimed_amount|floatformat:0 }}</td>
+              <td class="text-end">
+                {% if item.approved_amount %}{{ item.approved_amount|floatformat:0 }}
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted text-center py-3">No line items.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-semibold">
+            <tr>
+              <td colspan="3">Total</td>
+              <td class="text-end">{{ claim.claimed_amount|floatformat:0 }}</td>
+              <td class="text-end">{{ claim.approved_amount|floatformat:0 }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    {% if claim.notes %}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-body py-2"><small class="text-muted">Notes:</small> {{ claim.notes }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Reject modal -->
+{% if claim.status == 'DRAFT' %}
+<div class="modal fade" id="rejectModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="post" action="{% url 'hmo:claim_reject' claim.pk %}">
+      {% csrf_token %}
+      <div class="modal-content">
+        <div class="modal-header"><h6 class="modal-title">Reject Claim</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <label class="form-label">Rejection Reason <span class="text-danger">*</span></label>
+          <textarea name="rejection_reason" class="form-control" rows="3" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-danger">Confirm Rejection</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

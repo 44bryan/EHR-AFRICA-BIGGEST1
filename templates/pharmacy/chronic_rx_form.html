@@ -1,0 +1,106 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Add Chronic Prescription{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <div class="rounded-3 d-flex align-items-center justify-content-center"
+       style="width:40px;height:40px;background:linear-gradient(135deg,#059669,#047857);">
+    <i class="bi bi-arrow-repeat text-white" style="font-size:1.1rem;"></i>
+  </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Add Chronic Prescription</h5>
+    <small class="text-muted">Set up a repeating refill schedule for a long-term medication</small>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <input type="text" id="patient-search" class="form-control" placeholder="Search patient by name or ID…">
+            <input type="hidden" name="patient" id="patient-id" required>
+            <div id="patient-results" class="list-group mt-1"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Drug <span class="text-danger">*</span></label>
+            <select name="drug" class="form-select" required>
+              <option value="">— Select drug —</option>
+              {% for d in drugs %}
+              <option value="{{ d.pk }}">{{ d.name }} {{ d.strength }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Dose <span class="text-danger">*</span></label>
+              <input type="text" name="dose" class="form-control" placeholder="e.g. 1 drop OD" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Frequency <span class="text-danger">*</span></label>
+              <input type="text" name="frequency" class="form-control" placeholder="e.g. Once daily, BD" required>
+            </div>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-4">
+              <label class="form-label fw-semibold">Qty Per Refill <span class="text-danger">*</span></label>
+              <input type="number" name="quantity_per_refill" min="1" class="form-control" value="1" required>
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold">Interval (days) <span class="text-danger">*</span></label>
+              <input type="number" name="refill_interval_days" min="1" class="form-control" value="30" required>
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold">Start Date <span class="text-danger">*</span></label>
+              <input type="date" name="start_date" class="form-control" value="{{ today|date:'Y-m-d' }}" required>
+            </div>
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success"><i class="bi bi-plus-circle me-1"></i>Save Chronic Rx</button>
+            <a href="{% url 'pharmacy:chronic_rx_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let searchTimer;
+document.getElementById('patient-search').addEventListener('input', function() {
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  if (q.length < 2) { document.getElementById('patient-results').innerHTML = ''; return; }
+  searchTimer = setTimeout(() => {
+    fetch(`/patients/search-ajax/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        const results = document.getElementById('patient-results');
+        results.innerHTML = '';
+        (data.results || data).forEach(p => {
+          const a = document.createElement('a');
+          a.href = '#';
+          a.className = 'list-group-item list-group-item-action py-1';
+          a.textContent = `${p.name} — ${p.patient_id || p.id}`;
+          a.onclick = e => {
+            e.preventDefault();
+            document.getElementById('patient-search').value = p.name;
+            document.getElementById('patient-id').value = p.id;
+            results.innerHTML = '';
+          };
+          results.appendChild(a);
+        });
+      });
+  }, 300);
+});
+</script>
+{% endblock %}

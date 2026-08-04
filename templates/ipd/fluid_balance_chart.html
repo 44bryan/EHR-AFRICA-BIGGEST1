@@ -1,0 +1,150 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Fluid Balance — {{ admission.patient.full_name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <div class="rounded-3 d-flex align-items-center justify-content-center"
+         style="width:40px;height:40px;background:linear-gradient(135deg,#0891b2,#0e7490);">
+      <i class="bi bi-droplet-half text-white" style="font-size:1.1rem;"></i>
+    </div>
+    <div>
+      <h5 class="mb-0 fw-bold">Fluid Balance Chart</h5>
+      <small class="text-muted">{{ admission.patient.full_name }} — {{ admission.admission_number }}</small>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'ipd:vital_signs' admission.pk %}" class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-heart-pulse me-1"></i>Vital Signs
+    </a>
+    <a href="{% url 'ipd:admission_detail' admission.pk %}" class="btn btn-sm btn-outline-secondary">← Admission</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Running totals KPI row -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center p-3" style="border-top:4px solid #10b981 !important;">
+      <div class="text-muted small">Total Intake</div>
+      <div class="fw-bold fs-4 text-success">{{ total_in|intcomma }} mL</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center p-3" style="border-top:4px solid #ef4444 !important;">
+      <div class="text-muted small">Total Output</div>
+      <div class="fw-bold fs-4 text-danger">{{ total_out|intcomma }} mL</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center p-3"
+         style="border-top:4px solid {% if balance >= 0 %}#3b82f6{% else %}#f97316{% endif %} !important;">
+      <div class="text-muted small">Net Balance</div>
+      <div class="fw-bold fs-4 {% if balance >= 0 %}text-primary{% else %}text-warning{% endif %}">
+        {% if balance >= 0 %}+{% endif %}{{ balance|intcomma }} mL
+      </div>
+    </div>
+  </div>
+
+  <!-- New entry form -->
+  {% if can_add %}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header py-2 fw-semibold" style="background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;">
+        <i class="bi bi-plus-circle me-2"></i>Record Entry
+      </div>
+      <div class="card-body">
+        <form method="post" class="row g-2 align-items-end">
+          {% csrf_token %}
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Type <span class="text-danger">*</span></label>
+            <select name="entry_type" class="form-select form-select-sm" required>
+              <optgroup label="— Intake —">
+                <option value="IV_FLUID">IV Fluid</option>
+                <option value="ORAL">Oral Intake</option>
+                <option value="NG_FEED">NG / Nasogastric Feed</option>
+                <option value="BLOOD">Blood Transfusion</option>
+              </optgroup>
+              <optgroup label="— Output —">
+                <option value="URINE">Urine Output</option>
+                <option value="DRAIN">Drain / Wound Drainage</option>
+                <option value="VOMIT">Vomit</option>
+                <option value="STOOL">Stool</option>
+                <option value="OTHER_OUT">Other Output</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Description</label>
+            <input type="text" name="description" class="form-control form-control-sm"
+                   placeholder="e.g. NS 0.9%, Ringer Lactate">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small fw-semibold">Volume (mL) <span class="text-danger">*</span></label>
+            <input type="number" name="volume_ml" min="1" class="form-control form-control-sm" required placeholder="500">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Notes</label>
+            <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional notes">
+          </div>
+          <div class="col-md-1">
+            <label class="form-label small">&nbsp;</label>
+            <button type="submit" class="btn btn-primary btn-sm w-100">Add</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Fluid log table -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light py-2 fw-semibold">Fluid Log</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th>Date/Time</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th class="text-center">Direction</th>
+                <th class="text-end">Volume (mL)</th>
+                <th>Recorded By</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for e in entries %}
+              <tr>
+                <td class="small text-nowrap">{{ e.recorded_at|date:"d M H:i" }}</td>
+                <td class="small">{{ e.get_entry_type_display }}</td>
+                <td class="small text-muted">{{ e.description|default:"—" }}</td>
+                <td class="text-center">
+                  {% if e.is_intake %}
+                  <span class="badge bg-success">IN</span>
+                  {% else %}
+                  <span class="badge bg-danger">OUT</span>
+                  {% endif %}
+                </td>
+                <td class="text-end fw-semibold {% if e.is_intake %}text-success{% else %}text-danger{% endif %}">
+                  {% if e.is_intake %}+{% else %}-{% endif %}{{ e.volume_ml|intcomma }}
+                </td>
+                <td class="small">{{ e.recorded_by.get_full_name|truncatechars:15 }}</td>
+                <td class="text-muted small">{{ e.notes|truncatechars:30 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="7" class="text-center text-muted py-4">No fluid entries yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

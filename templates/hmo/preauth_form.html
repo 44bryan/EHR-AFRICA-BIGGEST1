@@ -1,0 +1,52 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Request Pre-Authorisation{% endblock %}
+{% block page_header %}<h5 class="mb-0 fw-bold">Request Pre-Authorisation</h5>{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <form method="post" class="card border-0 shadow-sm">
+      {% csrf_token %}
+      <div class="card-body">
+        <div class="row g-3">
+          {% if member %}
+          <div class="col-12">
+            <input type="hidden" name="member" value="{{ member.pk }}">
+            <div class="p-2 rounded bg-light">
+              <div class="fw-semibold">{{ member.patient.full_name }}</div>
+              <small class="text-muted">{{ member.scheme.name }} · {{ member.member_number }}</small>
+            </div>
+          </div>
+          {% else %}
+          <div class="col-12">
+            <label class="form-label fw-semibold">Insured Member <span class="text-danger">*</span></label>
+            <select name="member" class="form-select" required>
+              <option value="">— Select member —</option>
+              {% for m in members %}
+              <option value="{{ m.pk }}">{{ m.patient.full_name }} — {{ m.scheme.code }} ({{ m.member_number }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-12">
+            <label class="form-label fw-semibold">Service / Procedure Description <span class="text-danger">*</span></label>
+            <textarea name="service_description" class="form-control" rows="3" required
+                      placeholder="Describe the procedure or service requiring authorisation…"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Estimated Cost (FCFA) <span class="text-danger">*</span></label>
+            <input type="number" name="estimated_cost" class="form-control" min="0" step="100" required value="0">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes / Supporting Info</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer bg-transparent d-flex gap-2">
+        <button type="submit" class="btn btn-warning text-dark"><i class="bi bi-send me-1"></i>Submit Request</button>
+        <a href="{% url 'hmo:preauth_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

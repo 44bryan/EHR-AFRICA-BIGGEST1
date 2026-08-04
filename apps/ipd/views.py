@@ -8,7 +8,7 @@ from .models import (
     Ward, Bed, Admission, NursingNote, MAREntry, BedStatus, AdmissionStatus,
     SurgicalBooking, SurgicalBookingStatus, SurgeryType,
     TheatreSession, TheatreSessionStatus, TheatreProcedure, ProcedureOutcome, WardRound,
-    WardType,
+    WardType, VitalSigns, FluidBalance, FluidEntryType,
 )
 from apps.core.context_processors import qms_active as _qms_active
 
@@ -2035,4 +2035,144 @@ def preop_instruction_sheet(request, booking_id):
     return render(request, 'ipd/preop_instruction_sheet.html', {
         'booking': booking,
         'patient': booking.patient,
+    })
+
+
+# ── Vital Signs Flowsheet ─────────────────────────────────────────────────────
+
+def _can_chart_vitals(user):
+    from apps.accounts.models import UserRole
+    return user.role in {
+        UserRole.WARD_NURSE, UserRole.THEATRE_NURSE, UserRole.NURSE_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN,
+        UserRole.ANAESTHETIST,
+    } or user.is_doctor
+
+
+@login_required
+def vital_signs_flowsheet(request, admission_id):
+    """View and add vital signs for an admitted patient."""
+    admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
+    if not _can_chart_vitals(request.user):
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        def int_or_none(val):
+            try: return int(val) if val else None
+            except: return None
+
+        def decimal_or_none(val):
+            if not val: return None
+            try:
+                from decimal import Decimal
+                return Decimal(val)
+            except: return None
+
+        recorded_at_raw = request.POST.get('recorded_at')
+        try:
+            from django.utils.dateparse import parse_datetime
+            recorded_at = parse_datetime(recorded_at_raw) if recorded_at_raw else timezone.now()
+            if recorded_at and timezone.is_naive(recorded_at):
+                recorded_at = timezone.make_aware(recorded_at)
+        except Exception:
+            recorded_at = timezone.now()
+
+        VitalSigns.objects.create(
+            admission=admission,
+            recorded_by=request.user,
+            recorded_at=recorded_at or timezone.now(),
+            temperature=decimal_or_none(request.POST.get('temperature')),
+            pulse=int_or_none(request.POST.get('pulse')),
+            respiratory_rate=int_or_none(request.POST.get('respiratory_rate')),
+            spo2=int_or_none(request.POST.get('spo2')),
+            bp_systolic=int_or_none(request.POST.get('bp_systolic')),
+            bp_diastolic=int_or_none(request.POST.get('bp_diastolic')),
+            blood_glucose=decimal_or_none(request.POST.get('blood_glucose')),
+            pain_score=int_or_none(request.POST.get('pain_score')),
+            visual_acuity_re=request.POST.get('visual_acuity_re', ''),
+            visual_acuity_le=request.POST.get('visual_acuity_le', ''),
+            iop_re=decimal_or_none(request.POST.get('iop_re')),
+            iop_le=decimal_or_none(request.POST.get('iop_le')),
+            gcs=int_or_none(request.POST.get('gcs')),
+            notes=request.POST.get('notes', ''),
+        )
+        messages.success(request, 'Vital signs recorded.')
+        return redirect('ipd:vital_signs', admission_id=admission_id)
+
+    entries = admission.vital_signs.select_related('recorded_by').order_by('-recorded_at')
+
+    # Build chart series data (last 24 entries, chronological)
+    chart_data = []
+    for v in reversed(list(entries[:24])):
+        chart_data.append({
+            'time': v.recorded_at.strftime('%d/%m %H:%M'),
+            'pulse': v.pulse,
+            'bp_sys': v.bp_systolic,
+            'bp_dia': v.bp_diastolic,
+            'spo2': v.spo2,
+            'temp': float(v.temperature) if v.temperature else None,
+        })
+
+    import json as _json
+    return render(request, 'ipd/vital_signs_flowsheet.html', {
+        'admission': admission,
+        'entries': entries,
+        'chart_data_json': _json.dumps(chart_data),
+        'now': timezone.now(),
+        'can_add': _can_chart_vitals(request.user),
+    })
+
+
+# ── Fluid Balance Chart ───────────────────────────────────────────────────────
+
+@login_required
+def fluid_balance_chart(request, admission_id):
+    """View and add fluid balance entries for an admitted patient."""
+    admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
+    if not _can_chart_vitals(request.user):
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        entry_type = request.POST.get('entry_type', '')
+        volume_ml = request.POST.get('volume_ml', '0')
+        description = request.POST.get('description', '')
+        notes = request.POST.get('notes', '')
+
+        try:
+            vol = int(volume_ml)
+        except ValueError:
+            messages.error(request, 'Invalid volume.')
+            return redirect('ipd:fluid_balance', admission_id=admission_id)
+
+        FluidBalance.objects.create(
+            admission=admission,
+            recorded_by=request.user,
+            entry_type=entry_type,
+            volume_ml=vol,
+            description=description,
+            notes=notes,
+        )
+        messages.success(request, 'Fluid entry recorded.')
+        return redirect('ipd:fluid_balance', admission_id=admission_id)
+
+    entries = admission.fluid_entries.select_related('recorded_by').order_by('-recorded_at')
+
+    from django.db.models import Sum, Case, When, IntegerField, Value
+    totals = admission.fluid_entries.aggregate(
+        total_in=Sum(Case(When(is_intake=True, then='volume_ml'), default=Value(0), output_field=IntegerField())),
+        total_out=Sum(Case(When(is_intake=False, then='volume_ml'), default=Value(0), output_field=IntegerField())),
+    )
+    total_in = totals['total_in'] or 0
+    total_out = totals['total_out'] or 0
+    balance = total_in - total_out
+
+    return render(request, 'ipd/fluid_balance_chart.html', {
+        'admission': admission,
+        'entries': entries,
+        'total_in': total_in,
+        'total_out': total_out,
+        'balance': balance,
+        'entry_types': FluidEntryType.choices,
+        'can_add': _can_chart_vitals(request.user),
+        'now': timezone.now(),
     })

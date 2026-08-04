@@ -830,3 +830,98 @@ class NursingCarePlan(AuditModel):
     def __str__(self):
         return (f"Care Plan — {self.admission.patient.full_name} "
                 f"({self.plan_date}) by {self.nurse.full_name if self.nurse else 'Unknown'}")
+
+
+# ── Vital Signs Flowsheet ────────────────────────────────────────────────────
+
+class VitalSigns(TimeStampedModel):
+    """
+    Nurse-charted vital signs for admitted patients — timestamped observations
+    recorded at each monitoring interval (e.g. q4h, q1h post-op).
+    """
+    admission = models.ForeignKey(Admission, on_delete=models.CASCADE, related_name='vital_signs')
+    recorded_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='vitals_recorded')
+    recorded_at = models.DateTimeField(default=timezone.now)
+
+    # Core vitals
+    temperature = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='°C')
+    pulse = models.PositiveSmallIntegerField(null=True, blank=True, help_text='bpm')
+    respiratory_rate = models.PositiveSmallIntegerField(null=True, blank=True, help_text='breaths/min')
+    spo2 = models.PositiveSmallIntegerField(null=True, blank=True, help_text='%')
+    bp_systolic = models.PositiveSmallIntegerField(null=True, blank=True, help_text='mmHg')
+    bp_diastolic = models.PositiveSmallIntegerField(null=True, blank=True, help_text='mmHg')
+    # Blood sugar
+    blood_glucose = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, help_text='mmol/L')
+    # Pain
+    pain_score = models.PositiveSmallIntegerField(null=True, blank=True, help_text='0–10 VAS')
+    # Ophthalmic post-op
+    visual_acuity_re = models.CharField(max_length=20, blank=True, help_text='Post-op VA Right Eye')
+    visual_acuity_le = models.CharField(max_length=20, blank=True, help_text='Post-op VA Left Eye')
+    iop_re = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='IOP Right Eye mmHg')
+    iop_le = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='IOP Left Eye mmHg')
+    # Glasgow Coma Scale (post-op monitoring)
+    gcs = models.PositiveSmallIntegerField(null=True, blank=True, help_text='3–15')
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-recorded_at']
+        verbose_name = 'Vital Signs Entry'
+        verbose_name_plural = 'Vital Signs Flowsheet'
+
+    def __str__(self):
+        return f"Vitals — {self.admission.patient.full_name} @ {self.recorded_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def bp_display(self):
+        if self.bp_systolic and self.bp_diastolic:
+            return f"{self.bp_systolic}/{self.bp_diastolic}"
+        return '—'
+
+
+# ── Fluid Balance Chart ──────────────────────────────────────────────────────
+
+class FluidEntryType(models.TextChoices):
+    # Intake
+    IV_FLUID    = 'IV_FLUID',   'IV Fluid'
+    ORAL        = 'ORAL',       'Oral Intake'
+    NG_FEED     = 'NG_FEED',    'NG / Nasogastric Feed'
+    BLOOD_TRANSFUSION = 'BLOOD','Blood Transfusion'
+    # Output
+    URINE       = 'URINE',      'Urine Output'
+    DRAIN       = 'DRAIN',      'Drain / Wound Drainage'
+    VOMIT       = 'VOMIT',      'Vomit'
+    STOOL       = 'STOOL',      'Stool'
+    OTHER_OUT   = 'OTHER_OUT',  'Other Output'
+
+
+class FluidBalance(TimeStampedModel):
+    """
+    Fluid balance chart for admitted patients — tracks all intake and output
+    to compute running balance (essential post-op & ICU monitoring).
+    """
+    admission = models.ForeignKey(Admission, on_delete=models.CASCADE, related_name='fluid_entries')
+    recorded_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='fluid_entries_recorded')
+    recorded_at = models.DateTimeField(default=timezone.now)
+    entry_type = models.CharField(max_length=20, choices=FluidEntryType.choices)
+    description = models.CharField(max_length=200, blank=True, help_text='e.g. Normal Saline 0.9%, Ringer Lactate')
+    volume_ml = models.PositiveIntegerField(help_text='Volume in millilitres')
+    is_intake = models.BooleanField(help_text='True = intake, False = output')
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-recorded_at']
+        verbose_name = 'Fluid Balance Entry'
+        verbose_name_plural = 'Fluid Balance Chart'
+
+    def __str__(self):
+        direction = 'IN' if self.is_intake else 'OUT'
+        return f"{self.admission.patient.full_name} | {direction} | {self.volume_ml} mL | {self.get_entry_type_display()}"
+
+    def save(self, *args, **kwargs):
+        # Auto-set is_intake based on entry type
+        output_types = {
+            FluidEntryType.URINE, FluidEntryType.DRAIN,
+            FluidEntryType.VOMIT, FluidEntryType.STOOL, FluidEntryType.OTHER_OUT
+        }
+        self.is_intake = self.entry_type not in output_types
+        super().save(*args, **kwargs)

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Body Register{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="fas fa-list me-2"></i>Body Register</h4>
+  <a href="{% url 'mortuary:admission_create' %}" class="btn btn-secondary btn-sm">
+    <i class="fas fa-plus me-1"></i>Receive Body
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2">
+      <div class="col-auto">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search name or ref…" value="{{ q }}">
+      </div>
+      <div class="col-auto">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          {% for val, label in status_choices %}
+          <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-outline-secondary btn-sm" type="submit">Filter</button>
+        <a href="{% url 'mortuary:admission_list' %}" class="btn btn-link btn-sm">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Reference</th>
+          <th>Name</th>
+          <th>Gender / Age</th>
+          <th>Date of Death</th>
+          <th>Cause</th>
+          <th>Status</th>
+          <th>Next of Kin</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for adm in admissions %}
+        <tr>
+          <td class="fw-semibold small">{{ adm.body_number }}</td>
+          <td>
+            <div class="fw-semibold">{{ adm.full_name }}</div>
+            {% if adm.patient %}<div class="text-muted small">Patient: {{ adm.patient.patient_id }}</div>{% endif %}
+          </td>
+          <td class="small">{{ adm.get_gender_display }}{% if adm.age_years %}, {{ adm.age_years }} yrs{% endif %}</td>
+          <td class="small">{{ adm.date_of_death|date:"d M Y H:i" }}</td>
+          <td class="small">{{ adm.get_cause_of_death_display }}</td>
+          <td>
+            {% if adm.status == 'IN_STORAGE' %}<span class="badge bg-primary">In Storage</span>
+            {% elif adm.status == 'RELEASED' %}<span class="badge bg-success">Released</span>
+            {% elif adm.status == 'POST_MORTEM' %}<span class="badge bg-warning text-dark">Awaiting PM</span>
+            {% elif adm.status == 'RECEIVED' %}<span class="badge bg-secondary">Received</span>
+            {% else %}<span class="badge bg-light text-dark">{{ adm.get_status_display }}</span>{% endif %}
+          </td>
+          <td class="small">{{ adm.next_of_kin_name|default:"—" }}</td>
+          <td>
+            <a href="{% url 'mortuary:admission_detail' adm.pk %}" class="btn btn-xs btn-outline-secondary">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No records found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}HAI Reports{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <h5 class="mb-0 fw-bold">HAI Reports</h5>
+  <a href="{% url 'infection_control:hai_create' %}" class="btn btn-danger btn-sm"><i class="bi bi-plus-lg me-1"></i>Report HAI</a>
+</div>
+{% endblock %}
+{% block content %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-3"><select name="status" class="form-select">
+    <option value="">All Statuses</option>
+    {% for v, l in status_choices %}<option value="{{ v }}" {% if status_filter == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+  </select></div>
+  <div class="col-md-3"><select name="type" class="form-select">
+    <option value="">All Types</option>
+    {% for v, l in type_choices %}<option value="{{ v }}" {% if type_filter == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+  </select></div>
+  <div class="col-md-2"><button type="submit" class="btn btn-outline-secondary w-100">Filter</button></div>
+</form>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light"><tr><th>Report #</th><th>Patient</th><th>Type</th><th>Organism</th><th>Ward</th><th>Date</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td><a href="{% url 'infection_control:hai_detail' r.pk %}">{{ r.report_number }}</a></td>
+          <td class="fw-semibold">{{ r.patient.full_name }}</td>
+          <td><small>{{ r.get_hai_type_display }}</small></td>
+          <td>{{ r.organism|default:"—" }}</td>
+          <td>{{ r.ward.name|default:"—" }}</td>
+          <td>{{ r.onset_date }}</td>
+          <td>
+            {% if r.status == 'RESOLVED' or r.status == 'CLOSED' %}<span class="badge bg-success">{{ r.get_status_display }}</span>
+            {% elif r.status == 'INVESTIGATING' %}<span class="badge bg-warning text-dark">Investigating</span>
+            {% else %}<span class="badge bg-danger">Reported</span>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-4">No reports found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -394,7 +394,7 @@ def home_view(request):
             dispensing_count = dispensing_qs.count()
             low_stock_count  = Drug.objects.filter(
                 is_active=True, is_deleted=False,
-                stock_batches__quantity_remaining__lte=10
+                stock_items__quantity_remaining__lte=10
             ).distinct().count()
         except Exception:
             pharmacy_revenue = dispensing_count = low_stock_count = 0
@@ -452,23 +452,29 @@ def home_view(request):
             'consulting_doctor__first_name', 'consulting_doctor__last_name'
         ).annotate(count=Count('id')).order_by('-count')[:8])
 
-        from apps.consultations.models import ConsultationDiagnosis
-        top_diagnoses = list(ConsultationDiagnosis.objects.filter(
-            consultation__created_at__date__gte=last_30,
-            consultation__is_deleted=False,
-        ).values('diagnosis__description').annotate(count=Count('id')).order_by('-count')[:10])
+        try:
+            from apps.consultations.models import ConsultationDiagnosis
+            top_diagnoses = list(ConsultationDiagnosis.objects.filter(
+                consultation__created_at__date__gte=last_30,
+                consultation__is_deleted=False,
+            ).values('diagnosis__description').annotate(count=Count('id')).order_by('-count')[:10])
+        except Exception:
+            top_diagnoses = []
 
         # ── PATIENT VOLUME TREND (6 months) ───────────────────────────────
-        monthly_trend = []
-        for i in range(5, -1, -1):
-            m_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
-            m_end   = (m_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-            count = Visit.objects.filter(
-                visit_date__date__gte=m_start,
-                visit_date__date__lt=m_end,
-                is_deleted=False,
-            ).count()
-            monthly_trend.append({'month': m_start.strftime('%b'), 'count': count})
+        try:
+            monthly_trend = []
+            for i in range(5, -1, -1):
+                m_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
+                m_end   = (m_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+                count = Visit.objects.filter(
+                    visit_date__date__gte=m_start,
+                    visit_date__date__lt=m_end,
+                    is_deleted=False,
+                ).count()
+                monthly_trend.append({'month': m_start.strftime('%b'), 'count': count})
+        except Exception:
+            monthly_trend = []
 
         # ── FEEDBACK / NPS ────────────────────────────────────────────────
         try:

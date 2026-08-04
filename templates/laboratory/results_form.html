@@ -734,6 +734,33 @@
           {% endif %}{# end panel sub-type #}
 
           {% else %}
+          {# ── Delta Check inline display ── #}
+          {% if item._prev_result %}
+          <div class="delta-check-bar d-flex align-items-center gap-2 mb-2 px-2 py-1 rounded"
+               style="background:#f0f7ff;border:1px solid #c8dff8;"
+               data-prev-value="{{ item._prev_result.result_value }}"
+               data-prev-unit="{{ item._prev_result.result_unit }}"
+               data-prev-date="{{ item._prev_result.created_at|date:'d M Y' }}"
+               data-item-id="{{ item.pk }}"
+               data-prev-abnormal="{{ item._prev_result.is_abnormal|yesno:'true,false' }}"
+               data-prev-critical="{{ item._prev_result.is_critical|yesno:'true,false' }}">
+            <i class="bi bi-clock-history text-primary" style="font-size:.85rem;"></i>
+            <span class="small text-muted">Previous result:</span>
+            <span class="fw-semibold small {% if item._prev_result.is_critical %}text-danger{% elif item._prev_result.is_abnormal %}text-warning{% else %}text-success{% endif %}">
+              {{ item._prev_result.result_value }} {{ item._prev_result.result_unit }}
+            </span>
+            {% if item._prev_result.is_critical %}
+            <span class="badge bg-danger" style="font-size:.65rem;">Critical</span>
+            {% elif item._prev_result.is_abnormal %}
+            <span class="badge bg-warning text-dark" style="font-size:.65rem;">Abnormal</span>
+            {% else %}
+            <span class="badge bg-success" style="font-size:.65rem;">Normal</span>
+            {% endif %}
+            <span class="text-muted small">— {{ item._prev_result.created_at|date:"d M Y" }}</span>
+            <span class="delta-arrow ms-auto fw-bold" id="delta_arrow_{{ item.pk }}" style="font-size:1rem;"></span>
+            <span class="delta-pct small text-muted" id="delta_pct_{{ item.pk }}"></span>
+          </div>
+          {% endif %}
           <div class="row g-2 align-items-end">
             <div class="col-sm-4">
               <label class="form-label small fw-semibold mb-1">Result Value <span class="text-danger">*</span></label>
@@ -1024,6 +1051,45 @@ document.querySelectorAll('.qualitative-radio, .semi-quant-radio').forEach(radio
   radio.addEventListener('change', function() { setQualFlag(this); });
   // Set initial state for pre-filled values
   if (radio.checked) setQualFlag(radio);
+});
+
+// ── DELTA CHECK: show trend arrow + % change vs previous result ──
+function updateDeltaArrow(itemId, newVal) {
+  var bar = document.querySelector('.delta-check-bar[data-item-id="' + itemId + '"]');
+  if (!bar) return;
+  var prevVal = parseFloat(bar.dataset.prevValue);
+  var arrowEl = document.getElementById('delta_arrow_' + itemId);
+  var pctEl   = document.getElementById('delta_pct_' + itemId);
+  if (isNaN(prevVal) || isNaN(newVal) || !arrowEl) return;
+
+  if (prevVal === 0) {
+    arrowEl.textContent = newVal > 0 ? '↑' : (newVal < 0 ? '↓' : '→');
+    arrowEl.style.color = newVal > 0 ? '#dc3545' : (newVal < 0 ? '#198754' : '#6c757d');
+    if (pctEl) pctEl.textContent = '';
+    return;
+  }
+  var pct = ((newVal - prevVal) / Math.abs(prevVal)) * 100;
+  var absPct = Math.abs(pct).toFixed(1);
+  var arrow, color;
+  if (pct > 10) {     arrow = '↑'; color = '#dc3545'; }
+  else if (pct > 0) { arrow = '↑'; color = '#fd7e14'; }
+  else if (pct < -10){ arrow = '↓'; color = '#198754'; }
+  else if (pct < 0) { arrow = '↓'; color = '#20c997'; }
+  else {              arrow = '→'; color = '#6c757d'; }
+
+  arrowEl.textContent = arrow;
+  arrowEl.style.color = color;
+  if (pctEl) { pctEl.textContent = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%'; pctEl.style.color = color; }
+}
+
+// Trigger on input (live) and on blur
+document.querySelectorAll('.result-value').forEach(function(input) {
+  var card = input.closest('.result-card');
+  if (!card) return;
+  var itemId = card.dataset.itemId;
+  // Show delta on page load if value already filled (editing existing result)
+  if (input.value) updateDeltaArrow(itemId, parseFloat(input.value));
+  input.addEventListener('input', function() { updateDeltaArrow(itemId, parseFloat(this.value)); });
 });
 
 // ── QUANTITATIVE: auto-flag abnormal based on value vs reference range ──

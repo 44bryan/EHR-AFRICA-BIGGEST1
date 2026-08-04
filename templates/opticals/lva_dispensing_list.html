@@ -1,0 +1,79 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
+{% block title %}Low Vision Aid Dispensings{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <div class="rounded-3 d-flex align-items-center justify-content-center"
+         style="width:40px;height:40px;background:linear-gradient(135deg,#7c3aed,#6d28d9);">
+      <i class="bi bi-zoom-in text-white" style="font-size:1.1rem;"></i>
+    </div>
+    <div>
+      <h5 class="mb-0 fw-bold">Low Vision Aid Dispensings</h5>
+      <small class="text-muted">Magnifiers, telescopes & rehabilitation aids — Low Vision Clinic</small>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:lva_dispensing_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Dispensing
+    </a>
+    <a href="{% url 'opticals:dashboard' %}" class="btn btn-sm btn-outline-secondary">← Opticals</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Ref #</th>
+            <th>Patient</th>
+            <th>Date</th>
+            <th>Aid Type</th>
+            <th>Brand / Model</th>
+            <th>Magnification</th>
+            <th>VA Achieved</th>
+            <th class="text-end">Amount (FCFA)</th>
+            <th>Follow-up</th>
+            <th>Dispensed By</th>
+            <th>Outcome</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in dispensings %}
+          <tr>
+            <td class="fw-semibold small">{{ d.dispensing_number }}</td>
+            <td>
+              <div class="fw-semibold">{{ d.patient.full_name }}</div>
+              <small class="text-muted">{{ d.patient.patient_id }}</small>
+            </td>
+            <td class="small">{{ d.dispensing_date|date:"d M Y" }}</td>
+            <td><span class="badge bg-primary-subtle text-primary-emphasis">{{ d.get_aid_type_display }}</span></td>
+            <td class="small">{{ d.aid_brand_model|default:"—" }}</td>
+            <td class="small">{{ d.magnification|default:"—" }}</td>
+            <td>{{ d.va_achieved_with_aid|default:"—" }}</td>
+            <td class="text-end fw-semibold">{{ d.total_amount|floatformat:0|intcomma }}</td>
+            <td>
+              {% if d.follow_up_date %}
+              <span class="badge bg-light text-dark">{{ d.follow_up_date|date:"d M Y" }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="small">{{ d.dispensed_by.get_full_name }}</td>
+            <td>
+              {% if d.patient_satisfied %}<span class="badge bg-success">Satisfied</span>
+              {% else %}<span class="badge bg-warning text-dark">Review</span>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="11" class="text-center text-muted py-4">No LVA dispensings yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

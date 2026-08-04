@@ -62,4 +62,10 @@ urlpatterns = [
     path('pre-op/checkin/', views.pre_op_checkin, name='pre_op_checkin'),
     path('stats/', views.admission_stats, name='admission_stats'),
     path('surgical-booking/<uuid:booking_id>/preop-sheet/', views.preop_instruction_sheet, name='preop_instruction_sheet'),
+
+    # ── Vital Signs Flowsheet ─────────────────────────────────────────────────
+    path('admissions/<uuid:admission_id>/vitals/', views.vital_signs_flowsheet, name='vital_signs'),
+
+    # ── Fluid Balance Chart ───────────────────────────────────────────────────
+    path('admissions/<uuid:admission_id>/fluids/', views.fluid_balance_chart, name='fluid_balance'),
 ]

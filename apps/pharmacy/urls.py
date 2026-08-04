@@ -29,4 +29,19 @@ urlpatterns = [
     path('rx/<uuid:rx_id>/declined/', views.rx_declined, name='rx_declined'),
     path('adjustments/', views.stock_adjustment_list, name='stock_adjustment_list'),
     path('stock/<uuid:batch_id>/adjust/', views.stock_adjustment_create, name='stock_adjustment_create'),
+
+    # Controlled drugs register
+    path('controlled/', views.controlled_register, name='controlled_register'),
+    path('controlled/new/', views.controlled_entry_create, name='controlled_entry_create'),
+    path('controlled/<uuid:entry_id>/witness/', views.controlled_entry_witness_confirm, name='controlled_witness'),
+
+    # Ward drug returns
+    path('ward-returns/', views.ward_return_list, name='ward_return_list'),
+    path('ward-returns/new/', views.ward_return_create, name='ward_return_create'),
+    path('ward-returns/<uuid:return_id>/action/', views.ward_return_action, name='ward_return_action'),
+
+    # Chronic Rx refill tracking
+    path('chronic-rx/', views.chronic_rx_list, name='chronic_rx_list'),
+    path('chronic-rx/new/', views.chronic_rx_create, name='chronic_rx_create'),
+    path('chronic-rx/<uuid:rx_id>/refill/', views.chronic_rx_refill, name='chronic_rx_refill'),
 ]
