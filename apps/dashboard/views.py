@@ -1637,7 +1637,7 @@ def sysadmin_user_create(request):
 
 
 @login_required
-def sysadmin_user_edit(request, pk):
+def sysadmin_user_edit(request, username):
     """Edit an existing staff account from the sysadmin panel."""
     if not _sysadmin_guard(request.user):
         return redirect('dashboard:home')
@@ -1646,7 +1646,7 @@ def sysadmin_user_edit(request, pk):
     from apps.accounts.forms import UserEditForm
     from apps.departments.models import Department
 
-    staff = get_object_or_404(User, pk=pk)
+    staff = get_object_or_404(User, username=username)
 
     if request.method == 'POST':
         form = UserEditForm(request.POST, request.FILES, instance=staff)
@@ -1667,7 +1667,7 @@ def sysadmin_user_edit(request, pk):
 
 
 @login_required
-def sysadmin_user_reset_password(request, pk):
+def sysadmin_user_reset_password(request, username):
     """Reset a staff member's password from the sysadmin panel."""
     if not _sysadmin_guard(request.user):
         return redirect('dashboard:home')
@@ -1675,7 +1675,7 @@ def sysadmin_user_reset_password(request, pk):
     from apps.accounts.models import User
     from django.contrib.auth.forms import SetPasswordForm
 
-    staff = get_object_or_404(User, pk=pk)
+    staff = get_object_or_404(User, username=username)
 
     if request.method == 'POST':
         form = SetPasswordForm(staff, request.POST)
@@ -1696,7 +1696,7 @@ def sysadmin_user_reset_password(request, pk):
 
 
 @login_required
-def sysadmin_user_toggle(request, pk):
+def sysadmin_user_toggle(request, username):
     """Lock or unlock a staff account."""
     if not _sysadmin_guard(request.user):
         return redirect('dashboard:home')
@@ -1704,7 +1704,7 @@ def sysadmin_user_toggle(request, pk):
         return redirect('dashboard:sysadmin')
 
     from apps.accounts.models import User
-    staff = get_object_or_404(User, pk=pk)
+    staff = get_object_or_404(User, username=username)
     if staff == request.user:
         from django.contrib import messages
         messages.error(request, 'You cannot lock your own account.')

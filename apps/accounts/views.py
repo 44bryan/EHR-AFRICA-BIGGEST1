@@ -131,11 +131,11 @@ def user_create_view(request):
 
 
 @login_required
-def user_edit_view(request, pk):
+def user_edit_view(request, username):
     if not (request.user.is_medical_director or request.user.is_admin_staff):
         return HttpResponseForbidden()
 
-    user = get_object_or_404(User, pk=pk)
+    user = get_object_or_404(User, username=username)
     if request.method == 'POST':
         form = UserEditForm(request.POST, request.FILES, instance=user)
         if form.is_valid():
@@ -269,12 +269,12 @@ def staff_hub_view(request):
 
 @login_required
 @require_POST
-def toggle_user_active_view(request, pk):
+def toggle_user_active_view(request, username):
     """Super Admin: toggle a staff member's active status."""
     if not _require_super_admin(request.user):
         return HttpResponseForbidden()
 
-    user = get_object_or_404(User, pk=pk)
+    user = get_object_or_404(User, username=username)
     if user == request.user:
         messages.error(request, 'You cannot deactivate your own account.')
         return redirect('accounts:staff_hub')
@@ -288,14 +288,14 @@ def toggle_user_active_view(request, pk):
 
 @login_required
 @require_POST
-def set_patient_tier_view(request, pk):
+def set_patient_tier_view(request, username):
     """Super Admin / Admin Director: set which patient tier a staff member serves."""
     if not (request.user.is_super_admin or request.user.is_admin_director or
             request.user.is_medical_director):
         return HttpResponseForbidden()
 
     from .models import PatientTier
-    staff = get_object_or_404(User, pk=pk)
+    staff = get_object_or_404(User, username=username)
     new_tier = request.POST.get('patient_tier', '').strip()
     if new_tier not in dict(PatientTier.choices):
         messages.error(request, 'Invalid patient tier.')
@@ -312,14 +312,14 @@ def set_patient_tier_view(request, pk):
 
 @login_required
 @require_POST
-def set_consultation_unit_view(request, pk):
+def set_consultation_unit_view(request, username):
     """Super Admin / Admin Director: set which consultation unit a doctor belongs to."""
     if not (request.user.is_super_admin or request.user.is_admin_director or
             request.user.is_medical_director):
         return HttpResponseForbidden()
 
     from .models import ConsultationUnit
-    staff = get_object_or_404(User, pk=pk)
+    staff = get_object_or_404(User, username=username)
     new_unit = request.POST.get('consultation_unit', '').strip()
     if new_unit not in dict(ConsultationUnit.choices):
         messages.error(request, 'Invalid consultation unit.')
@@ -335,12 +335,12 @@ def set_consultation_unit_view(request, pk):
 
 
 @login_required
-def reset_staff_password_view(request, pk):
+def reset_staff_password_view(request, username):
     """Super Admin: set a new password for any staff member."""
     if not _require_super_admin(request.user):
         return HttpResponseForbidden()
 
-    staff = get_object_or_404(User, pk=pk)
+    staff = get_object_or_404(User, username=username)
     if request.method == 'POST':
         form = SetPasswordForm(staff, request.POST)
         if form.is_valid():
