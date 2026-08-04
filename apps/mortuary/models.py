@@ -21,7 +21,7 @@ class StorageStatus(models.TextChoices):
 class PostMortemType(models.TextChoices):
     CLINICAL = 'CLINICAL', 'Clinical / Hospital'
     MEDICOLEGAL = 'MEDICOLEGAL', 'Medico-Legal'
-    CORONER = 'CORONER', 'Coroner's Request'
+    CORONER = 'CORONER', "Coroner's Request"
 
 
 class PostMortemStatus(models.TextChoices):

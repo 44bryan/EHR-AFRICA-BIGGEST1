@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('opticals', '0001_initial'),
-        ('patients', '0018_patientconsent'),
+        ('patients', '0017_patientconsent'),
         ('prescriptions', '0002_druginteraction'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]

@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('pharmacy', '0004_dispensingitem_custom_drug'),
-        ('patients', '0018_patientconsent'),
+        ('patients', '0017_patientconsent'),
         ('ipd', '0006_anaestheticrecord_nursingcareplan'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
