@@ -479,7 +479,7 @@ def home_view(request):
         # ── FEEDBACK / NPS ────────────────────────────────────────────────
         try:
             from apps.feedback.models import PatientFeedback
-            from django.db.models import Count, Case, When, IntegerField as _IntF
+            from django.db.models import Case, When, IntegerField as _IntF
             _fb_agg = PatientFeedback.objects.filter(
                 nps_score__isnull=False, is_deleted=False
             ).aggregate(

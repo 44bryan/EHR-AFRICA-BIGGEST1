@@ -34,6 +34,12 @@ def merge_dict(d1, d2):
 
 
 @register.filter
+def getattribute(obj, attr):
+    """Get an attribute from an object by name. Usage: object|getattribute:"field_name" """
+    return getattr(obj, str(attr), 'NT')
+
+
+@register.filter
 def dictfirst(dictionary, keys_str):
     """
     Return the first non-empty value from a dict for any of the comma-separated keys.
