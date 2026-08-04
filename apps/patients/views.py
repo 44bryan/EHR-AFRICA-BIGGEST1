@@ -2605,9 +2605,16 @@ def problem_delete_view(request, patient_id, problem_id):
 def consent_list_view(request, patient_id):
     """List all consent records for a patient — doctors, nurses, medical records, super admin, medical director."""
     u = request.user
-    _allowed = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role in ('medical_records', 'admin', 'consultation_nurse') or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse or u.is_opd_nurse or u.is_admin_director or u.is_ceo
+    _allowed_roles = {
+        'admin', 'consultation_nurse', 'receptionist',
+        'cashier', 'admission_officer', 'medical_records', 'billing_officer',
+    }
+    _allowed = (u.is_doctor or u.is_medical_director or u.is_super_admin
+                or u.role in _allowed_roles
+                or u.is_ward_nurse or u.is_theatre_nurse or u.is_counseling_nurse
+                or u.is_opd_nurse or u.is_admin_director or u.is_ceo)
     if not _allowed:
-        messages.error(request, 'Access denied — consent records are restricted to clinical staff.')
+        messages.error(request, 'Access denied — consent records are restricted to authorised staff.')
         return redirect('patients:detail', patient_id=patient_id)
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent
@@ -2622,11 +2629,24 @@ def consent_list_view(request, patient_id):
 
 @login_required
 def consent_create_view(request, patient_id):
-    """Create a new informed consent record — JCI PFR.5: treating doctors only."""
+    """Create a new informed consent record.
+    General/registration consent: any front-desk or clinical staff.
+    Procedure/surgical/anaesthesia consent: doctors only (JCI PFR.5).
+    """
     u = request.user
-    if not (u.is_doctor or u.is_medical_director or u.is_super_admin or u.role == 'admin' or u.is_admin_director):
-        messages.error(request, 'Access denied — only treating doctors can obtain informed consent (JCI PFR.5).')
-        return redirect('patients:consent_list', patient_id=patient_id)
+    from .models import ConsentType as _CT
+    requested_type = request.GET.get('type', '') or request.POST.get('consent_type', '')
+    _registration_types = {_CT.GENERAL, 'GENERAL', _CT.PRIVACY, 'PRIVACY', _CT.FINANCIAL, 'FINANCIAL'}
+    _front_desk_roles = {'receptionist', 'cashier', 'admission_officer', 'medical_records', 'billing_officer'}
+    _is_front_desk = u.role in _front_desk_roles
+    _is_clinical = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role in ('admin', 'consultation_nurse') or u.is_admin_director
+    # Front-desk staff may only take general/privacy/financial consent, not clinical consents
+    if _is_front_desk and requested_type not in _registration_types:
+        messages.error(request, 'Access denied — clinical consent must be obtained by a doctor (JCI PFR.5).')
+        return redirect('patients:detail', patient_id=patient_id)
+    if not (_is_clinical or _is_front_desk):
+        messages.error(request, 'Access denied — consent records are restricted to authorised staff.')
+        return redirect('patients:detail', patient_id=patient_id)
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent, ConsentType
 
