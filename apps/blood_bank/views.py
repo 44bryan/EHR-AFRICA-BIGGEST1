@@ -55,9 +55,10 @@ def dashboard(request):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
 
+    from datetime import timedelta
     today = timezone.localdate()
     inventory = BloodUnit.objects.filter(is_deleted=False, status=BloodUnitStatus.AVAILABLE)
-    expiring_soon = inventory.filter(expiry_date__lte=today.replace(day=today.day + 7 if today.day <= 24 else 31))
+    expiring_soon = inventory.filter(expiry_date__lte=today + timedelta(days=7))
 
     # Group available by blood group
     by_group = {}

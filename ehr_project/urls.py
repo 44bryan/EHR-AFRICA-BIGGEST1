@@ -46,7 +46,6 @@ urlpatterns = [
     path('blood-bank/', include('apps.blood_bank.urls', namespace='blood_bank')),
     path('infection-control/', include('apps.infection_control.urls', namespace='infection_control')),
     path('dietary/', include('apps.dietary.urls', namespace='dietary')),
-    path('mortuary/', include('apps.mortuary.urls', namespace='mortuary')),
 ]
 
 if settings.DEBUG:

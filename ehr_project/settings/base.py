@@ -78,7 +78,6 @@ LOCAL_APPS = [
     'apps.blood_bank',
     'apps.infection_control',
     'apps.dietary',
-    'apps.mortuary',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
