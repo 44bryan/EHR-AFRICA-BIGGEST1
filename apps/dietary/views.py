@@ -15,8 +15,8 @@ from .models import (
 def _is_dietary_staff(user):
     return user.role in [
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.NURSE, UserRole.WARD_NURSE, UserRole.HEAD_NURSE, UserRole.NURSE_DIRECTOR,
-        UserRole.DOCTOR, UserRole.OPHTHALMOLOGIST, UserRole.ORTHOPTIST,
+        UserRole.NURSE, UserRole.WARD_NURSE, UserRole.CONSULTATION_NURSE, UserRole.NURSE_DIRECTOR,
+        UserRole.GENERAL_PHYSICIAN, UserRole.OPHTHALMOLOGIST, UserRole.ORTHOPTIST,
     ]
 
 

@@ -2634,14 +2634,13 @@ def consent_create_view(request, patient_id):
     Procedure/surgical/anaesthesia consent: doctors only (JCI PFR.5).
     """
     u = request.user
-    from .models import ConsentType as _CT
     requested_type = request.GET.get('type', '') or request.POST.get('consent_type', '')
-    _registration_types = {_CT.GENERAL, 'GENERAL', _CT.PRIVACY, 'PRIVACY', _CT.FINANCIAL, 'FINANCIAL'}
+    # GENERAL consent can be taken by front-desk staff at registration.
+    # All clinical consents require a doctor (JCI PFR.5).
     _front_desk_roles = {'receptionist', 'cashier', 'admission_officer', 'medical_records', 'billing_officer'}
     _is_front_desk = u.role in _front_desk_roles
     _is_clinical = u.is_doctor or u.is_medical_director or u.is_super_admin or u.role in ('admin', 'consultation_nurse') or u.is_admin_director
-    # Front-desk staff may only take general/privacy/financial consent, not clinical consents
-    if _is_front_desk and requested_type not in _registration_types:
+    if _is_front_desk and requested_type not in ('GENERAL', ''):
         messages.error(request, 'Access denied — clinical consent must be obtained by a doctor (JCI PFR.5).')
         return redirect('patients:detail', patient_id=patient_id)
     if not (_is_clinical or _is_front_desk):
