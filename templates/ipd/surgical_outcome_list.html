@@ -1,0 +1,71 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Surgical Outcomes{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-clipboard2-pulse me-2 text-primary"></i>Surgical Outcomes</h4>
+    <p class="text-muted small mb-0">Pre/post-operative visual outcomes for all surgical cases.</p>
+  </div>
+  <a href="{% url 'ipd:surgical_outcome_report' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-bar-chart me-1"></i>Outcome Report</a>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-5">
+    <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Search patient / procedure...">
+  </div>
+  <div class="col-md-4">
+    <select name="grade" class="form-select form-select-sm">
+      <option value="">All Grades</option>
+      {% for val, label in grade_choices %}<option value="{{ val }}" {% if grade == val %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+    <a href="{% url 'ipd:surgical_outcome_list' %}" class="btn btn-sm btn-outline-secondary ms-1">Clear</a>
+  </div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Patient</th>
+        <th>Procedure</th>
+        <th>Surgeon</th>
+        <th>Date</th>
+        <th>Pre VA (R/L)</th>
+        <th>Post VA (R/L)</th>
+        <th>Grade</th>
+        <th>Follow-up</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in outcomes %}
+      <tr>
+        <td><a href="{% url 'patients:detail' o.patient.id %}" class="fw-semibold text-decoration-none">{{ o.patient.full_name }}</a></td>
+        <td class="small">{{ o.booking.get_procedure_display }}</td>
+        <td class="small">{{ o.surgeon.get_full_name|default:"—" }}</td>
+        <td class="small">{{ o.surgery_date|date:"d M Y"|default:"—" }}</td>
+        <td class="small text-muted">{{ o.pre_va_right|default:"—" }} / {{ o.pre_va_left|default:"—" }}</td>
+        <td class="small fw-semibold">{{ o.post_va_right|default:"—" }} / {{ o.post_va_left|default:"—" }}</td>
+        <td>
+          {% if o.outcome_grade == 'EXCELLENT' %}<span class="badge bg-success">Excellent</span>
+          {% elif o.outcome_grade == 'GOOD' %}<span class="badge bg-primary">Good</span>
+          {% elif o.outcome_grade == 'FAIR' %}<span class="badge bg-warning text-dark">Fair</span>
+          {% elif o.outcome_grade == 'POOR' %}<span class="badge bg-danger">Poor</span>
+          {% elif o.outcome_grade == 'COMPLICATED' %}<span class="badge bg-dark">Complicated</span>
+          {% else %}<span class="badge bg-light text-dark border">—</span>{% endif %}
+        </td>
+        <td class="small">{{ o.follow_up_date|date:"d M Y"|default:"—" }}</td>
+        <td>
+          <a href="{% url 'ipd:surgical_outcome_create' o.booking.id %}" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="9" class="text-center text-muted py-4">No outcomes recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

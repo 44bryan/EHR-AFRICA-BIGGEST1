@@ -936,3 +936,107 @@ def lva_dispensing_create(request, patient_id=None):
         'aid_types': LowVisionAidType.choices,
         'today': timezone.localdate(),
     })
+
+
+# ── Optical Lab Job Card ──────────────────────────────────────────────────────
+
+def _can_manage_optical(user):
+    return user.role in ('optical_dispenser', 'super_admin', 'admin', 'admin_director', 'medical_director')
+
+
+@login_required
+def lab_job_queue(request):
+    """Lab queue — shows all orders currently in the glazing/fabrication pipeline."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    from .models import OpticalLabJob, LabJobStatus
+    status_filter = request.GET.get('status', '')
+    qs = OpticalLabJob.objects.filter(is_deleted=False).select_related('order__patient', 'sent_by', 'received_by')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    else:
+        qs = qs.exclude(status=LabJobStatus.COLLECTED)
+
+    today = timezone.localdate()
+    return render(request, 'opticals/lab_queue.html', {
+        'jobs': qs[:200],
+        'status_choices': LabJobStatus.choices,
+        'status_filter': status_filter,
+        'today': today,
+    })
+
+
+@login_required
+def send_to_lab(request, order_id):
+    """Send an optical order to the lab / mark as in fabrication."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    from .models import OpticalOrder, OpticalLabJob, LabJobStatus, OpticalOrderStatus
+    order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
+
+    if request.method == 'POST':
+        job, _ = OpticalLabJob.objects.get_or_create(order=order)
+        job.lab_name = request.POST.get('lab_name', 'In-House Glazing Lab').strip()
+        job.job_number = request.POST.get('job_number', '').strip()
+        job.sent_date = request.POST.get('sent_date') or timezone.localdate()
+        job.expected_return_date = request.POST.get('expected_return_date') or None
+        job.special_notes = request.POST.get('special_notes', '').strip()
+        job.status = LabJobStatus.SENT
+        job.sent_by = request.user
+        job.save()
+
+        order.status = OpticalOrderStatus.LAB_PROCESSING
+        order.save(update_fields=['status'])
+
+        messages.success(request, f'Order {order.order_number} sent to lab — Job #{job.job_number or "—"}.')
+        return redirect('opticals:lab_job_queue')
+
+    return render(request, 'opticals/lab_send_form.html', {
+        'order': order,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def lab_job_action(request, job_id):
+    """Mark a lab job as returned / ready / collected."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    from .models import OpticalLabJob, LabJobStatus, OpticalOrderStatus
+    job = get_object_or_404(OpticalLabJob, id=job_id, is_deleted=False)
+    action = request.POST.get('action', '')
+
+    if action == 'returned':
+        job.status = LabJobStatus.RETURNED
+        job.actual_return_date = timezone.localdate()
+        job.received_by = request.user
+        job.save()
+        messages.success(request, f'Job marked as returned from lab.')
+
+    elif action == 'ready':
+        job.status = LabJobStatus.READY
+        job.order.status = OpticalOrderStatus.READY
+        job.order.save(update_fields=['status'])
+        job.save()
+        messages.success(request, f'Order {job.order.order_number} is ready for collection.')
+
+    elif action == 'collected':
+        job.status = LabJobStatus.COLLECTED
+        job.order.status = OpticalOrderStatus.DELIVERED
+        job.order.delivered_date = timezone.localdate()
+        job.order.save(update_fields=['status', 'delivered_date'])
+        job.save()
+        messages.success(request, f'Order {job.order.order_number} collected by patient.')
+
+    elif action == 'cancel':
+        job.status = LabJobStatus.CANCELLED
+        job.save()
+        messages.warning(request, 'Lab job cancelled.')
+
+    return redirect('opticals:lab_job_queue')

@@ -1,0 +1,110 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Live Bed Map{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-grid me-2 text-primary"></i>Live Bed Occupancy Map</h4>
+    <p class="text-muted small mb-0">As of {{ now|date:"d M Y H:i" }} — auto-refreshes every 60 s</p>
+  </div>
+  <a href="{% url 'ipd:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>IPD Dashboard</a>
+</div>
+
+{# Summary KPIs #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-primary bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ total_beds }}</div>
+      <div class="small text-muted">Total Beds</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-danger bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-danger">{{ total_occupied }}</div>
+      <div class="small text-muted">Occupied</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-success bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ total_available }}</div>
+      <div class="small text-muted">Available</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-secondary bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-secondary">{{ overall_rate }}%</div>
+      <div class="small text-muted">Occupancy Rate</div>
+    </div>
+  </div>
+</div>
+
+{# Legend #}
+<div class="d-flex gap-3 mb-3 flex-wrap">
+  <span class="badge bg-danger py-2 px-3">Occupied</span>
+  <span class="badge bg-success py-2 px-3">Available</span>
+  <span class="badge bg-warning text-dark py-2 px-3">Reserved</span>
+  <span class="badge bg-secondary py-2 px-3">Maintenance</span>
+</div>
+
+{% for wd in ward_data %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <div class="fw-semibold">
+      <i class="bi bi-hospital me-1 text-primary"></i>{{ wd.ward.name }}
+      <span class="badge bg-light text-dark border ms-2">{{ wd.ward.get_ward_type_display }}</span>
+    </div>
+    <div class="small text-muted">
+      {{ wd.occupied_count }}/{{ wd.total_count }} occupied
+      <div class="progress d-inline-flex ms-2" style="width:80px;height:8px;vertical-align:middle;">
+        <div class="progress-bar {% if wd.occupancy_rate >= 90 %}bg-danger{% elif wd.occupancy_rate >= 70 %}bg-warning{% else %}bg-success{% endif %}"
+             style="width:{{ wd.occupancy_rate }}%"></div>
+      </div>
+      <span class="ms-1 fw-semibold">{{ wd.occupancy_rate }}%</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-2">
+      {% for bed in wd.beds %}
+      {% with adm=bed.active_admissions.0 %}
+      <div class="bed-cell p-2 rounded border text-center position-relative"
+           style="min-width:110px;max-width:140px;cursor:default;"
+           data-bs-toggle="tooltip"
+           title="{% if adm %}{{ adm.patient.full_name }} — admitted {{ adm.admission_date|date:'d M Y' }}{% else %}Bed {{ bed.bed_number }} — Available{% endif %}">
+        <div class="fw-bold small mb-1">Bed {{ bed.bed_number }}</div>
+        {% if bed.status == 'OCCUPIED' and adm %}
+          <div class="badge bg-danger w-100 mb-1">Occupied</div>
+          <div class="text-truncate" style="font-size:.7rem;max-width:120px;">{{ adm.patient.full_name }}</div>
+          <div class="text-muted" style="font-size:.65rem;">{{ adm.admission_date|date:"d M" }}</div>
+        {% elif bed.status == 'AVAILABLE' %}
+          <div class="badge bg-success w-100">Available</div>
+        {% elif bed.status == 'RESERVED' %}
+          <div class="badge bg-warning text-dark w-100">Reserved</div>
+        {% elif bed.status == 'MAINTENANCE' %}
+          <div class="badge bg-secondary w-100">Maintenance</div>
+        {% else %}
+          <div class="badge bg-light text-dark border w-100">{{ bed.get_status_display }}</div>
+        {% endif %}
+      </div>
+      {% endwith %}
+      {% empty %}
+      <p class="text-muted small">No beds configured for this ward.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% empty %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-building fs-1"></i>
+  <p class="mt-2">No active wards configured. <a href="{% url 'ipd:ward_manage' %}">Set up wards</a>.</p>
+</div>
+{% endfor %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh every 60 seconds
+setTimeout(() => location.reload(), 60000);
+// Bootstrap tooltips
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+</script>
+{% endblock %}

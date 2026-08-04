@@ -287,6 +287,58 @@ class SurgicalBooking(AuditModel):
             self.booking_number = f"SB-{today.strftime('%Y')}-{count:04d}"
         super().save(*args, **kwargs)
 
+
+# ── Surgical Outcome Tracking ─────────────────────────────────────────────────
+
+class OutcomeGrade(models.TextChoices):
+    EXCELLENT   = 'EXCELLENT',   'Excellent — VA ≥ 6/18'
+    GOOD        = 'GOOD',        'Good — VA 6/36 to 6/60'
+    FAIR        = 'FAIR',        'Fair — VA < 6/60'
+    POOR        = 'POOR',        'Poor — No visual gain'
+    COMPLICATED = 'COMPLICATED', 'Complicated — Adverse outcome'
+
+
+class SurgicalOutcome(AuditModel):
+    """
+    Pre/post-operative visual outcome record.
+    Core quality metric for a specialist eye hospital — tracks VA and IOP
+    before and after every surgical procedure.
+    """
+    booking  = models.OneToOneField(SurgicalBooking, on_delete=models.CASCADE, related_name='outcome')
+    patient  = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='surgical_outcomes')
+    surgeon  = models.ForeignKey(
+        'accounts.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='surgical_outcomes_recorded'
+    )
+    surgery_date = models.DateField(null=True, blank=True)
+
+    # Pre-operative vision
+    pre_va_right  = models.CharField(max_length=20, blank=True, verbose_name='Pre-op VA (Right Eye)')
+    pre_va_left   = models.CharField(max_length=20, blank=True, verbose_name='Pre-op VA (Left Eye)')
+    pre_iop_right = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, verbose_name='Pre-op IOP Right (mmHg)')
+    pre_iop_left  = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, verbose_name='Pre-op IOP Left (mmHg)')
+
+    # Post-operative vision (day 1 / discharge)
+    post_va_right  = models.CharField(max_length=20, blank=True, verbose_name='Post-op VA (Right Eye)')
+    post_va_left   = models.CharField(max_length=20, blank=True, verbose_name='Post-op VA (Left Eye)')
+    post_iop_right = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, verbose_name='Post-op IOP Right (mmHg)')
+    post_iop_left  = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, verbose_name='Post-op IOP Left (mmHg)')
+
+    outcome_grade                = models.CharField(max_length=20, choices=OutcomeGrade.choices, blank=True)
+    intraoperative_complications = models.TextField(blank=True)
+    postoperative_complications  = models.TextField(blank=True)
+    follow_up_date               = models.DateField(null=True, blank=True)
+    notes                        = models.TextField(blank=True)
+    recorded_by                  = models.ForeignKey(
+        'accounts.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='outcomes_entered'
+    )
+
+    class Meta:
+        ordering = ['-surgery_date', '-created_at']
+        verbose_name = 'Surgical Outcome'
+
+    def __str__(self):
+        return f"Outcome — {self.patient.full_name} ({self.booking.get_procedure_display()})"
+
     @property
     def balance_due(self):
         return max(self.deposit_required - self.deposit_paid, 0)

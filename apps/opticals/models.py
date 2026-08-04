@@ -206,6 +206,57 @@ class LowVisionAidType(models.TextChoices):
     OTHER                = 'OTHER',    'Other Aid'
 
 
+# ── Optical Lab Job Card ──────────────────────────────────────────────────────
+
+class LabJobStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'Pending Send'
+    SENT      = 'SENT',      'Sent to Lab'
+    RETURNED  = 'RETURNED',  'Returned — QC Check'
+    READY     = 'READY',     'Ready for Collection'
+    COLLECTED = 'COLLECTED', 'Collected by Patient'
+    CANCELLED = 'CANCELLED', 'Cancelled'
+
+
+class OpticalLabJob(AuditModel):
+    """
+    Tracks an optical order through the glazing / fabrication lab workflow.
+    Created automatically when an order is sent to the lab for lens cutting.
+    """
+    order      = models.OneToOneField(OpticalOrder, on_delete=models.CASCADE, related_name='lab_job')
+    lab_name   = models.CharField(max_length=120, default='In-House Glazing Lab')
+    job_number = models.CharField(max_length=60, blank=True, help_text='Lab reference / job ticket number')
+    status     = models.CharField(max_length=20, choices=LabJobStatus.choices, default=LabJobStatus.PENDING)
+
+    sent_date            = models.DateField(null=True, blank=True)
+    expected_return_date = models.DateField(null=True, blank=True)
+    actual_return_date   = models.DateField(null=True, blank=True)
+    special_notes        = models.TextField(blank=True)
+
+    sent_by     = models.ForeignKey(
+        'accounts.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='lab_jobs_sent'
+    )
+    received_by = models.ForeignKey(
+        'accounts.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='lab_jobs_received'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Lab Job — {self.order.order_number} [{self.get_status_display()}]"
+
+    @property
+    def is_overdue(self):
+        from django.utils import timezone
+        if self.expected_return_date and self.status in (LabJobStatus.SENT,):
+            return timezone.localdate() > self.expected_return_date
+        return False
+
+
+# ── Low Vision Aid Dispensing ─────────────────────────────────────────────────
+
 class LowVisionAidDispensing(AuditModel):
     """
     Low Vision Aid dispensing record — Low Vision Specialist records

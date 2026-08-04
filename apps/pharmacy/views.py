@@ -1472,3 +1472,36 @@ def chronic_rx_refill(request, rx_id):
         'refill_count': rx.refill_count,
         'next_refill_date': rx.next_refill_date.isoformat(),
     })
+
+
+# ── Drug Expiry & Low-Stock Alert Page ───────────────────────────────────────
+
+@login_required
+def drug_expiry_alerts(request):
+    """Dedicated page: expired drugs still in stock + drugs expiring within 30/60/90 days + low stock."""
+    if not (request.user.is_pharmacist or request.user.is_medical_director
+            or request.user.is_admin_staff or request.user.is_super_admin
+            or request.user.is_ceo or request.user.is_admin_director
+            or request.user.is_finance_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    base_qs = DrugStock.objects.filter(is_deleted=False, quantity_remaining__gt=0).select_related('drug')
+
+    expired           = base_qs.filter(expiry_date__lt=today).order_by('expiry_date')
+    expiring_30       = base_qs.filter(expiry_date__gte=today, expiry_date__lte=today + timezone.timedelta(days=30)).order_by('expiry_date')
+    expiring_60       = base_qs.filter(expiry_date__gt=today + timezone.timedelta(days=30), expiry_date__lte=today + timezone.timedelta(days=60)).order_by('expiry_date')
+    expiring_90       = base_qs.filter(expiry_date__gt=today + timezone.timedelta(days=60), expiry_date__lte=today + timezone.timedelta(days=90)).order_by('expiry_date')
+    low_stock         = [d for d in Drug.objects.filter(is_active=True, is_deleted=False).annotate(
+        stock_total=Coalesce(Sum(F('stock_items__quantity_remaining'), filter=Q(stock_items__is_deleted=False)), Value(0), output_field=IntegerField())
+    ) if d.stock_total <= d.reorder_level]
+
+    return render(request, 'pharmacy/expiry_alerts.html', {
+        'expired': expired,
+        'expiring_30': expiring_30,
+        'expiring_60': expiring_60,
+        'expiring_90': expiring_90,
+        'low_stock': low_stock,
+        'today': today,
+    })

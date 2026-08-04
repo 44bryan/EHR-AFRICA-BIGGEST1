@@ -33,4 +33,9 @@ urlpatterns = [
     path('low-vision/', views.lva_dispensing_list, name='lva_dispensing_list'),
     path('low-vision/new/', views.lva_dispensing_create, name='lva_dispensing_create'),
     path('low-vision/new/<uuid:patient_id>/', views.lva_dispensing_create, name='lva_dispensing_create_patient'),
+
+    # Lab Job Card
+    path('lab/', views.lab_job_queue, name='lab_job_queue'),
+    path('orders/<uuid:order_id>/send-to-lab/', views.send_to_lab, name='send_to_lab'),
+    path('lab/<uuid:job_id>/action/', views.lab_job_action, name='lab_job_action'),
 ]

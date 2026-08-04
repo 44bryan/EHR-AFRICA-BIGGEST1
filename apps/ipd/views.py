@@ -9,6 +9,7 @@ from .models import (
     SurgicalBooking, SurgicalBookingStatus, SurgeryType,
     TheatreSession, TheatreSessionStatus, TheatreProcedure, ProcedureOutcome, WardRound,
     WardType, VitalSigns, FluidBalance, FluidEntryType,
+    SurgicalOutcome, OutcomeGrade,
 )
 from apps.core.context_processors import qms_active as _qms_active
 
@@ -2175,4 +2176,261 @@ def fluid_balance_chart(request, admission_id):
         'entry_types': FluidEntryType.choices,
         'can_add': _can_chart_vitals(request.user),
         'now': timezone.now(),
+    })
+
+
+# ── Bed Map ───────────────────────────────────────────────────────────────────
+
+@login_required
+def bed_map_view(request):
+    """Real-time visual bed occupancy grid grouped by ward."""
+    from django.db.models import Prefetch, Count, Q
+    wards = (
+        Ward.objects
+        .filter(is_deleted=False, is_active=True)
+        .prefetch_related(
+            Prefetch(
+                'beds',
+                queryset=Bed.objects.filter(is_deleted=False).select_related(
+                    'admissions__patient'
+                ).prefetch_related(
+                    Prefetch(
+                        'admissions',
+                        queryset=Admission.objects.filter(
+                            status=AdmissionStatus.ADMITTED, is_deleted=False
+                        ).select_related('patient'),
+                        to_attr='active_admissions'
+                    )
+                ),
+                to_attr='bed_list'
+            )
+        )
+        .order_by('name')
+    )
+
+    ward_data = []
+    total_beds = total_occupied = total_available = total_maintenance = 0
+    for ward in wards:
+        beds = ward.bed_list
+        occupied = [b for b in beds if b.status == BedStatus.OCCUPIED]
+        available = [b for b in beds if b.status == BedStatus.AVAILABLE]
+        maintenance = [b for b in beds if b.status == BedStatus.MAINTENANCE]
+        reserved = [b for b in beds if b.status == BedStatus.RESERVED]
+        occ_rate = round(len(occupied) / len(beds) * 100) if beds else 0
+        ward_data.append({
+            'ward': ward,
+            'beds': beds,
+            'occupied_count': len(occupied),
+            'available_count': len(available),
+            'maintenance_count': len(maintenance),
+            'reserved_count': len(reserved),
+            'total_count': len(beds),
+            'occupancy_rate': occ_rate,
+        })
+        total_beds += len(beds)
+        total_occupied += len(occupied)
+        total_available += len(available)
+        total_maintenance += len(maintenance)
+
+    overall_rate = round(total_occupied / total_beds * 100) if total_beds else 0
+    return render(request, 'ipd/bed_map.html', {
+        'ward_data': ward_data,
+        'total_beds': total_beds,
+        'total_occupied': total_occupied,
+        'total_available': total_available,
+        'total_maintenance': total_maintenance,
+        'overall_rate': overall_rate,
+        'now': timezone.now(),
+    })
+
+
+# ── Surgical Outcome Tracking ─────────────────────────────────────────────────
+
+def _can_record_outcome(user):
+    return user.role in (
+        'super_admin', 'medical_director', 'admin_director',
+        'ophthalmologist', 'retina_specialist', 'glaucoma_specialist',
+        'cataract_surgeon', 'cornea_specialist', 'oculoplastics_surgeon',
+        'neuro_ophthalmologist', 'uveitis_specialist', 'pediatric_ophthalmologist',
+        'admission_officer',
+    )
+
+
+@login_required
+def surgical_outcome_list(request):
+    """List all surgical outcomes — searchable, filterable by procedure/grade."""
+    if not _can_record_outcome(request.user):
+        return HttpResponseForbidden()
+
+    qs = SurgicalOutcome.objects.filter(is_deleted=False).select_related(
+        'patient', 'surgeon', 'booking'
+    )
+    q = request.GET.get('q', '').strip()
+    grade = request.GET.get('grade', '')
+    if q:
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(patient__first_name__icontains=q) |
+            Q(patient__last_name__icontains=q) |
+            Q(booking__procedure__icontains=q)
+        )
+    if grade:
+        qs = qs.filter(outcome_grade=grade)
+
+    return render(request, 'ipd/surgical_outcome_list.html', {
+        'outcomes': qs[:200],
+        'grade_choices': OutcomeGrade.choices,
+        'q': q,
+        'grade': grade,
+    })
+
+
+@login_required
+def surgical_outcome_create(request, booking_id):
+    """Create or edit surgical outcome for a booking."""
+    if not _can_record_outcome(request.user):
+        return HttpResponseForbidden()
+
+    booking = get_object_or_404(SurgicalBooking, id=booking_id, is_deleted=False)
+    outcome, _ = SurgicalOutcome.objects.get_or_create(
+        booking=booking,
+        defaults={'patient': booking.patient, 'surgeon': booking.surgeon}
+    )
+
+    if request.method == 'POST':
+        outcome.surgery_date = request.POST.get('surgery_date') or None
+        outcome.pre_va_right = request.POST.get('pre_va_right', '').strip()
+        outcome.pre_va_left = request.POST.get('pre_va_left', '').strip()
+        outcome.pre_iop_right = request.POST.get('pre_iop_right') or None
+        outcome.pre_iop_left = request.POST.get('pre_iop_left') or None
+        outcome.post_va_right = request.POST.get('post_va_right', '').strip()
+        outcome.post_va_left = request.POST.get('post_va_left', '').strip()
+        outcome.post_iop_right = request.POST.get('post_iop_right') or None
+        outcome.post_iop_left = request.POST.get('post_iop_left') or None
+        outcome.outcome_grade = request.POST.get('outcome_grade', '').strip()
+        outcome.intraoperative_complications = request.POST.get('intraoperative_complications', '').strip()
+        outcome.postoperative_complications = request.POST.get('postoperative_complications', '').strip()
+        outcome.follow_up_date = request.POST.get('follow_up_date') or None
+        outcome.notes = request.POST.get('notes', '').strip()
+        outcome.recorded_by = request.user
+        outcome.save()
+        messages.success(request, f'Surgical outcome recorded for {booking.patient.full_name}.')
+        return redirect('ipd:surgical_outcome_list')
+
+    va_choices = ['6/6','6/9','6/12','6/18','6/24','6/36','6/60','3/60','1/60','CF','HM','PL','NPL']
+    return render(request, 'ipd/surgical_outcome_form.html', {
+        'booking': booking,
+        'outcome': outcome,
+        'outcome_grade_choices': OutcomeGrade.choices,
+        'va_choices': va_choices,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def surgical_outcome_report(request):
+    """Statistics: outcomes by grade, procedure, surgeon, month."""
+    if not _can_record_outcome(request.user):
+        return HttpResponseForbidden()
+
+    from django.db.models import Count
+    from django.db.models.functions import TruncMonth
+
+    outcomes = SurgicalOutcome.objects.filter(is_deleted=False)
+    by_grade = (
+        outcomes.exclude(outcome_grade='').values('outcome_grade')
+        .annotate(total=Count('id')).order_by('outcome_grade')
+    )
+    by_procedure = (
+        outcomes.values('booking__procedure')
+        .annotate(total=Count('id')).order_by('-total')[:10]
+    )
+    by_surgeon = (
+        outcomes.filter(surgeon__isnull=False)
+        .values('surgeon__first_name', 'surgeon__last_name')
+        .annotate(total=Count('id')).order_by('-total')[:10]
+    )
+    by_month = (
+        outcomes.filter(surgery_date__isnull=False)
+        .annotate(month=TruncMonth('surgery_date'))
+        .values('month').annotate(total=Count('id')).order_by('-month')[:12]
+    )
+    grade_map = dict(OutcomeGrade.choices)
+    grade_data = [{'grade': grade_map.get(r['outcome_grade'], r['outcome_grade']), 'total': r['total']} for r in by_grade]
+    complications = outcomes.exclude(
+        intraoperative_complications='', postoperative_complications=''
+    ).count()
+
+    return render(request, 'ipd/surgical_outcome_report.html', {
+        'total_outcomes': outcomes.count(),
+        'by_grade': grade_data,
+        'by_procedure': by_procedure,
+        'by_surgeon': by_surgeon,
+        'by_month': list(by_month),
+        'complications_count': complications,
+    })
+
+
+# ── Theatre Utilization Report ────────────────────────────────────────────────
+
+@login_required
+def theatre_utilization_report(request):
+    """Surgery volume by type, surgeon, session, and month."""
+    if not _can_record_outcome(request.user):
+        return HttpResponseForbidden()
+
+    from django.db.models import Count, Q
+    from django.db.models.functions import TruncMonth
+
+    bookings = SurgicalBooking.objects.filter(
+        is_deleted=False, status=SurgicalBookingStatus.COMPLETED
+    )
+
+    # Filter by date range
+    from_date = request.GET.get('from_date', '')
+    to_date = request.GET.get('to_date', '')
+    if from_date:
+        bookings = bookings.filter(surgery_date__date__gte=from_date)
+    if to_date:
+        bookings = bookings.filter(surgery_date__date__lte=to_date)
+
+    by_procedure = (
+        bookings.values('procedure').annotate(total=Count('id')).order_by('-total')
+    )
+    by_surgeon = (
+        bookings.filter(surgeon__isnull=False)
+        .values('surgeon__first_name', 'surgeon__last_name')
+        .annotate(total=Count('id')).order_by('-total')
+    )
+    by_category = (
+        bookings.exclude(surgery_category='').values('surgery_category')
+        .annotate(total=Count('id')).order_by('-total')
+    )
+    by_month = (
+        bookings.filter(surgery_date__isnull=False)
+        .annotate(month=TruncMonth('surgery_date'))
+        .values('month').annotate(total=Count('id')).order_by('-month')[:12]
+    )
+    by_anaesthesia = (
+        bookings.exclude(anaesthesia_type='').values('anaesthesia_type')
+        .annotate(total=Count('id')).order_by('-total')
+    )
+
+    surgery_type_map = dict(SurgeryType.choices)
+    category_labels = dict([
+        ('CATARACT', 'Cataract'), ('RETINA', 'Retina/VR'), ('GLAUCOMA', 'Glaucoma'),
+        ('CORNEA', 'Cornea'), ('OCULOPLASTY', 'Oculoplasty'), ('STRABISMUS', 'Strabismus'),
+        ('PTERYGIUM', 'Pterygium'), ('LACRIMAL', 'Lacrimal'), ('CHALAZION', 'Chalazion'),
+        ('TRAUMA', 'Trauma'), ('TUMOUR', 'Tumour/Orbital'), ('OTHER', 'Other'),
+    ])
+
+    return render(request, 'ipd/theatre_utilization.html', {
+        'total_surgeries': bookings.count(),
+        'by_procedure': [{'label': surgery_type_map.get(r['procedure'], r['procedure']), 'total': r['total']} for r in by_procedure],
+        'by_surgeon': list(by_surgeon),
+        'by_category': [{'label': category_labels.get(r['surgery_category'], r['surgery_category']), 'total': r['total']} for r in by_category],
+        'by_month': list(by_month),
+        'by_anaesthesia': list(by_anaesthesia),
+        'from_date': from_date,
+        'to_date': to_date,
     })

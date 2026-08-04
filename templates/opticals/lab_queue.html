@@ -1,0 +1,96 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Optical Lab Queue{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-eyeglasses me-2 text-primary"></i>Optical Lab Queue</h4>
+    <p class="text-muted small mb-0">Track optical orders through the glazing / fabrication lab.</p>
+  </div>
+  <a href="{% url 'opticals:order_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All Orders</a>
+</div>
+
+{# Status filter tabs #}
+<ul class="nav nav-pills mb-3 flex-wrap gap-1">
+  <li class="nav-item">
+    <a class="nav-link {% if not status_filter %}active{% endif %}" href="{% url 'opticals:lab_job_queue' %}">All Active</a>
+  </li>
+  {% for val, label in status_choices %}
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == val %}active{% endif %}" href="?status={{ val }}">{{ label }}</a>
+  </li>
+  {% endfor %}
+</ul>
+
+{% if not jobs %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-check-circle fs-1 text-success"></i>
+  <p class="mt-2">No lab jobs found for the selected filter.</p>
+</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Order #</th>
+        <th>Patient</th>
+        <th>Lab</th>
+        <th>Job #</th>
+        <th>Sent</th>
+        <th>Expected Return</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr class="{% if job.is_overdue %}table-danger{% elif job.status == 'READY' %}table-success{% endif %}">
+        <td><a href="{% url 'opticals:order_detail' job.order.id %}" class="fw-semibold text-decoration-none">{{ job.order.order_number }}</a></td>
+        <td>{{ job.order.patient.full_name }}</td>
+        <td>{{ job.lab_name }}</td>
+        <td class="text-muted small">{{ job.job_number|default:"—" }}</td>
+        <td class="small">{{ job.sent_date|date:"d M Y"|default:"—" }}</td>
+        <td class="small">
+          {{ job.expected_return_date|date:"d M Y"|default:"—" }}
+          {% if job.is_overdue %}<span class="badge bg-danger ms-1">Overdue</span>{% endif %}
+        </td>
+        <td>
+          {% if job.status == 'PENDING' %}<span class="badge bg-secondary">Pending</span>
+          {% elif job.status == 'SENT' %}<span class="badge bg-warning text-dark">At Lab</span>
+          {% elif job.status == 'RETURNED' %}<span class="badge bg-info text-dark">Returned</span>
+          {% elif job.status == 'READY' %}<span class="badge bg-success">Ready</span>
+          {% elif job.status == 'COLLECTED' %}<span class="badge bg-primary">Collected</span>
+          {% elif job.status == 'CANCELLED' %}<span class="badge bg-dark">Cancelled</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if job.status == 'SENT' %}
+          <form method="post" action="{% url 'opticals:lab_job_action' job.id %}" class="d-inline">
+            {% csrf_token %}<input type="hidden" name="action" value="returned">
+            <button class="btn btn-xs btn-outline-info" title="Mark Returned">Returned</button>
+          </form>
+          {% elif job.status == 'RETURNED' %}
+          <form method="post" action="{% url 'opticals:lab_job_action' job.id %}" class="d-inline">
+            {% csrf_token %}<input type="hidden" name="action" value="ready">
+            <button class="btn btn-xs btn-outline-success" title="Mark Ready for Collection">Ready</button>
+          </form>
+          {% elif job.status == 'READY' %}
+          <form method="post" action="{% url 'opticals:lab_job_action' job.id %}" class="d-inline">
+            {% csrf_token %}<input type="hidden" name="action" value="collected">
+            <button class="btn btn-xs btn-success" title="Mark Collected by Patient">Collected ✓</button>
+          </form>
+          {% endif %}
+          {% if job.status not in 'COLLECTED,CANCELLED' %}
+          <form method="post" action="{% url 'opticals:lab_job_action' job.id %}" class="d-inline"
+                onsubmit="return confirm('Cancel this lab job?')">
+            {% csrf_token %}<input type="hidden" name="action" value="cancel">
+            <button class="btn btn-xs btn-outline-danger ms-1"><i class="bi bi-x"></i></button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

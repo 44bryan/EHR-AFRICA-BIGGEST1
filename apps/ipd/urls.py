@@ -68,4 +68,15 @@ urlpatterns = [
 
     # ── Fluid Balance Chart ───────────────────────────────────────────────────
     path('admissions/<uuid:admission_id>/fluids/', views.fluid_balance_chart, name='fluid_balance'),
+
+    # ── Bed Map ───────────────────────────────────────────────────────────────
+    path('bed-map/', views.bed_map_view, name='bed_map'),
+
+    # ── Surgical Outcome Tracking ─────────────────────────────────────────────
+    path('surgical-outcomes/', views.surgical_outcome_list, name='surgical_outcome_list'),
+    path('surgical-booking/<uuid:booking_id>/outcome/', views.surgical_outcome_create, name='surgical_outcome_create'),
+    path('surgical-outcomes/report/', views.surgical_outcome_report, name='surgical_outcome_report'),
+
+    # 25002500 Theatre Utilization Report 25002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500
+    path('theatre/utilization/', views.theatre_utilization_report, name='theatre_utilization'),
 ]

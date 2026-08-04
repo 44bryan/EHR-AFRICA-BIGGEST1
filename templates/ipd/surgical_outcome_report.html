@@ -1,0 +1,148 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Surgical Outcome Report{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-bar-chart-fill me-2 text-primary"></i>Surgical Outcome Report</h4>
+    <p class="text-muted small mb-0">Aggregate visual outcome statistics — core quality metric.</p>
+  </div>
+  <a href="{% url 'ipd:surgical_outcome_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All Outcomes</a>
+</div>
+
+{# KPI row #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-primary bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ total_outcomes }}</div>
+      <div class="small text-muted">Total Outcomes</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-success bg-opacity-10 text-center py-3">
+      {% with exc=by_grade|first %}
+      <div class="fs-2 fw-bold text-success">
+        {% for g in by_grade %}{% if g.grade == 'Excellent — VA ≥ 6/18' %}{{ g.total }}{% endif %}{% endfor %}
+      </div>
+      {% endwith %}
+      <div class="small text-muted">Excellent / Good</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-danger bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-danger">{{ complications_count }}</div>
+      <div class="small text-muted">With Complications</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-info bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-info">{{ by_procedure|length }}</div>
+      <div class="small text-muted">Procedure Types</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# Outcomes by grade #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">Outcomes by Grade</div>
+      <div class="card-body">
+        {% for g in by_grade %}
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="small">{{ g.grade }}</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="progress" style="width:100px;height:8px;">
+              <div class="progress-bar
+                {% if 'Excellent' in g.grade %}bg-success
+                {% elif 'Good' in g.grade %}bg-primary
+                {% elif 'Fair' in g.grade %}bg-warning
+                {% elif 'Poor' in g.grade %}bg-danger
+                {% else %}bg-dark{% endif %}"
+                style="width:{% if total_outcomes %}{{ g.total|divisibleby:total_outcomes|default:0 }}%{% else %}0%{% endif %}"></div>
+            </div>
+            <span class="badge bg-secondary">{{ g.total }}</span>
+          </div>
+        </div>
+        {% empty %}
+        <p class="text-muted small">No data yet.</p>
+        {% endfor %}
+        <canvas id="gradeChart" height="200" class="mt-3"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# Top procedures #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">Top 10 Procedures</div>
+      <div class="card-body">
+        {% for p in by_procedure %}
+        <div class="d-flex justify-content-between mb-2">
+          <span class="small">{{ p.booking__procedure|default:"Other" }}</span>
+          <span class="badge bg-primary">{{ p.total }}</span>
+        </div>
+        {% empty %}<p class="text-muted small">No data.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# By surgeon #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">By Surgeon</div>
+      <div class="card-body">
+        {% for s in by_surgeon %}
+        <div class="d-flex justify-content-between mb-2">
+          <span class="small">Dr. {{ s.surgeon__first_name }} {{ s.surgeon__last_name }}</span>
+          <span class="badge bg-info text-dark">{{ s.total }}</span>
+        </div>
+        {% empty %}<p class="text-muted small">No data.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# By month #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">Monthly Volume (Last 12 months)</div>
+      <div class="card-body">
+        <canvas id="monthChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% load static %}{% static 'vendor/chart.min.js' %}"></script>
+<script>
+{% load static %}
+// Grade doughnut
+const gradeCtx = document.getElementById('gradeChart');
+if (gradeCtx) {
+  new Chart(gradeCtx, {
+    type: 'doughnut',
+    data: {
+      labels: [{% for g in by_grade %}"{{ g.grade|escapejs }}",{% endfor %}],
+      datasets: [{ data: [{% for g in by_grade %}{{ g.total }},{% endfor %}],
+        backgroundColor: ['#198754','#0d6efd','#ffc107','#dc3545','#212529'] }]
+    },
+    options: { plugins: { legend: { position: 'bottom' } } }
+  });
+}
+// Monthly bar
+const monthCtx = document.getElementById('monthChart');
+if (monthCtx) {
+  new Chart(monthCtx, {
+    type: 'bar',
+    data: {
+      labels: [{% for m in by_month %}"{{ m.month|date:'M Y' }}",{% endfor %}],
+      datasets: [{ label: 'Surgeries', data: [{% for m in by_month %}{{ m.total }},{% endfor %}],
+        backgroundColor: '#0d6efd88' }]
+    },
+    options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } }
+  });
+}
+</script>
+{% endblock %}

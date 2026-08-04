@@ -1,0 +1,117 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Surgical Outcome{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <h5 class="fw-semibold mb-0"><i class="bi bi-clipboard2-pulse me-2 text-primary"></i>Surgical Outcome Record</h5>
+        <div class="text-muted small mt-1">
+          {{ booking.patient.full_name }} &mdash;
+          {{ booking.get_procedure_display }}
+          {% if booking.eye_laterality %}({{ booking.get_eye_laterality_display }}){% endif %}
+        </div>
+      </div>
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Date of Surgery</label>
+            <input type="date" name="surgery_date" class="form-control" value="{{ outcome.surgery_date|date:'Y-m-d'|default:today }}">
+          </div>
+
+          {# Pre-operative VA & IOP #}
+          <h6 class="fw-bold text-muted text-uppercase small border-bottom pb-2 mt-4">Pre-Operative Vision</h6>
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <label class="form-label small">Pre-op VA — Right Eye</label>
+              <select name="pre_va_right" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for v in va_choices %}<option value="{{ v }}" {% if outcome.pre_va_right == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small">Pre-op VA — Left Eye</label>
+              <select name="pre_va_left" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for v in va_choices %}<option value="{{ v }}" {% if outcome.pre_va_left == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small">Pre-op IOP Right (mmHg)</label>
+              <input type="number" name="pre_iop_right" class="form-control form-control-sm" step="0.1" min="0" max="80" value="{{ outcome.pre_iop_right|default:'' }}">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small">Pre-op IOP Left (mmHg)</label>
+              <input type="number" name="pre_iop_left" class="form-control form-control-sm" step="0.1" min="0" max="80" value="{{ outcome.pre_iop_left|default:'' }}">
+            </div>
+          </div>
+
+          {# Post-operative VA & IOP #}
+          <h6 class="fw-bold text-muted text-uppercase small border-bottom pb-2 mt-4">Post-Operative Vision (Day 1 / Discharge)</h6>
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <label class="form-label small">Post-op VA — Right Eye</label>
+              <select name="post_va_right" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for v in va_choices %}<option value="{{ v }}" {% if outcome.post_va_right == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small">Post-op VA — Left Eye</label>
+              <select name="post_va_left" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for v in va_choices %}<option value="{{ v }}" {% if outcome.post_va_left == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small">Post-op IOP Right (mmHg)</label>
+              <input type="number" name="post_iop_right" class="form-control form-control-sm" step="0.1" min="0" max="80" value="{{ outcome.post_iop_right|default:'' }}">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small">Post-op IOP Left (mmHg)</label>
+              <input type="number" name="post_iop_left" class="form-control form-control-sm" step="0.1" min="0" max="80" value="{{ outcome.post_iop_left|default:'' }}">
+            </div>
+          </div>
+
+          {# Outcome assessment #}
+          <h6 class="fw-bold text-muted text-uppercase small border-bottom pb-2 mt-4">Outcome Assessment</h6>
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold small">Overall Outcome Grade</label>
+              <select name="outcome_grade" class="form-select form-select-sm">
+                <option value="">— Select —</option>
+                {% for val, label in outcome_grade_choices %}
+                <option value="{{ val }}" {% if outcome.outcome_grade == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small">Follow-up Date</label>
+              <input type="date" name="follow_up_date" class="form-control form-control-sm" value="{{ outcome.follow_up_date|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Intraoperative Complications</label>
+              <textarea name="intraoperative_complications" class="form-control form-control-sm" rows="2">{{ outcome.intraoperative_complications }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Postoperative Complications</label>
+              <textarea name="postoperative_complications" class="form-control form-control-sm" rows="2">{{ outcome.postoperative_complications }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Additional Notes</label>
+              <textarea name="notes" class="form-control form-control-sm" rows="2">{{ outcome.notes }}</textarea>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end mt-4">
+            <a href="{% url 'ipd:surgical_outcome_list' %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Outcome</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

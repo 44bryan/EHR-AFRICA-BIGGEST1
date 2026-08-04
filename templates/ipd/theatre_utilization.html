@@ -1,0 +1,157 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+{% block title %}Theatre Utilization Report{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-hospital me-2 text-primary"></i>Theatre Utilization Report</h4>
+    <p class="text-muted small mb-0">Completed surgeries — volume, type, surgeon, and trend analysis.</p>
+  </div>
+  <a href="{% url 'ipd:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>IPD Dashboard</a>
+</div>
+
+{# Date filter #}
+<form method="get" class="row g-2 mb-4">
+  <div class="col-auto">
+    <label class="form-label small fw-semibold mb-1">From</label>
+    <input type="date" name="from_date" class="form-control form-control-sm" value="{{ from_date }}">
+  </div>
+  <div class="col-auto">
+    <label class="form-label small fw-semibold mb-1">To</label>
+    <input type="date" name="to_date" class="form-control form-control-sm" value="{{ to_date }}">
+  </div>
+  <div class="col-auto d-flex align-items-end">
+    <button type="submit" class="btn btn-sm btn-primary me-1">Apply</button>
+    <a href="{% url 'ipd:theatre_utilization' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+  </div>
+</form>
+
+{# KPI #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-primary bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ total_surgeries }}</div>
+      <div class="small text-muted">Total Surgeries</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-success bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ by_surgeon|length }}</div>
+      <div class="small text-muted">Surgeons Active</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-warning bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ by_category|length }}</div>
+      <div class="small text-muted">Procedure Categories</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 bg-info bg-opacity-10 text-center py-3">
+      <div class="fs-2 fw-bold text-info">{{ by_month|length }}</div>
+      <div class="small text-muted">Active Months</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# Monthly trend chart #}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Monthly Surgery Volume</div>
+      <div class="card-body"><canvas id="monthChart" height="80"></canvas></div>
+    </div>
+  </div>
+
+  {# By category #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">By Category</div>
+      <div class="card-body">
+        <canvas id="categoryChart" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# By surgeon #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">By Surgeon</div>
+      <div class="card-body">
+        {% for s in by_surgeon %}
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="small">Dr. {{ s.surgeon__first_name }} {{ s.surgeon__last_name }}</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="progress" style="width:80px;height:8px;">
+              <div class="progress-bar bg-primary" style="width:{% if total_surgeries %}{{ s.total|floatformat:0 }}%{% else %}0%{% endif %}"></div>
+            </div>
+            <span class="badge bg-primary">{{ s.total }}</span>
+          </div>
+        </div>
+        {% empty %}<p class="text-muted small">No data.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# Top procedures #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">Top Procedures</div>
+      <div class="card-body">
+        {% for p in by_procedure %}
+        <div class="d-flex justify-content-between mb-2">
+          <span class="small">{{ p.label }}</span>
+          <span class="badge bg-secondary">{{ p.total }}</span>
+        </div>
+        {% empty %}<p class="text-muted small">No data.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# Anaesthesia type #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold">Anaesthesia Type</div>
+      <div class="card-body">
+        {% for a in by_anaesthesia %}
+        <div class="d-flex justify-content-between mb-2">
+          <span class="small">
+            {% if a.anaesthesia_type == 'LOCAL' %}Local / Peribulbar
+            {% elif a.anaesthesia_type == 'GENERAL' %}General Anaesthesia (GA)
+            {% elif a.anaesthesia_type == 'SEDATION' %}Monitored Sedation
+            {% else %}{{ a.anaesthesia_type }}{% endif %}
+          </span>
+          <span class="badge bg-info text-dark">{{ a.total }}</span>
+        </div>
+        {% empty %}<p class="text-muted small">No data.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+const monthCtx = document.getElementById('monthChart');
+if (monthCtx) new Chart(monthCtx, {
+  type: 'bar',
+  data: {
+    labels: [{% for m in by_month %}"{{ m.month|date:'M Y' }}",{% endfor %}],
+    datasets: [{ label: 'Surgeries', data: [{% for m in by_month %}{{ m.total }},{% endfor %}], backgroundColor: '#0d6efd88', borderColor: '#0d6efd', borderWidth: 1 }]
+  },
+  options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } }
+});
+const catCtx = document.getElementById('categoryChart');
+if (catCtx) new Chart(catCtx, {
+  type: 'doughnut',
+  data: {
+    labels: [{% for c in by_category %}"{{ c.label }}",{% endfor %}],
+    datasets: [{ data: [{% for c in by_category %}{{ c.total }},{% endfor %}],
+      backgroundColor: ['#0d6efd','#198754','#ffc107','#dc3545','#6610f2','#fd7e14','#0dcaf0','#6c757d','#20c997','#d63384','#adb5bd','#343a40'] }]
+  },
+  options: { plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
+});
+</script>
+{% endblock %}
