@@ -2191,9 +2191,7 @@ def bed_map_view(request):
         .prefetch_related(
             Prefetch(
                 'beds',
-                queryset=Bed.objects.filter(is_deleted=False).select_related(
-                    'admissions__patient'
-                ).prefetch_related(
+                queryset=Bed.objects.filter(is_deleted=False).prefetch_related(
                     Prefetch(
                         'admissions',
                         queryset=Admission.objects.filter(
