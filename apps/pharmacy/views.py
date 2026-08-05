@@ -96,7 +96,7 @@ def pharmacy_dashboard(request):
     from apps.patients.models import Visit
     from apps.prescriptions.models import DrugPrescription
     work_order_patient_ids = {wo.patient_id for wo in pharmacy_work_orders}
-    from django.db.models import Case, When, IntegerField, Value as _V
+    from django.db.models import Case, When, Value as _V
     _tier_order = Case(When(service_tier='VIP', then=_V(3)), When(service_tier='FAST_TRACK', then=_V(2)),
                        When(service_tier='EXPRESS', then=_V(1)), default=_V(0), output_field=IntegerField())
     _pt = getattr(request.user, 'patient_tier', 'ALL')
