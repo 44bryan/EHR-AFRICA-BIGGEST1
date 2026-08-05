@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('ipd', '0007_vitalsigns_fluidbalance'),
-        ('patients', '0029_alter_patient_options'),
+        ('patients', '0029_patientdocument'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
