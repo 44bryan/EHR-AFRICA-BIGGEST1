@@ -1045,8 +1045,13 @@
     </a>
     {% endif %}
 
-    {# Telemedicine — all clinical, nursing, reception and admin roles #}
-    {% if u.is_doctor or u.is_nurse or u.is_ward_nurse or u.is_consultation_nurse or u.is_counseling_nurse or u.is_nurse_director or u.is_anaesthetist or u.is_orthoptist or u.is_receptionist or u.is_admin_director or u.is_ceo or u.role == 'admission_officer' or u.role == 'medical_records' %}
+    {# ── Telemedicine (international access model) ─────────────────────────
+       VIEW:     doctors + nurse director + OPD/ward/consult nurses + reception + admin oversight
+       SCHEDULE: doctors + nurse director + receptionist + admission officer  (Schedule link shown)
+       CONDUCT:  doctors + nurse director only  (no sidebar link — accessed from appointment detail)
+       EXCLUDED: anaesthetist, orthoptist, theatre nurse, counseling nurse, pharmacist, lab, finance
+    #}
+    {% if u.is_doctor and u.role != 'orthoptist' or u.is_nurse_director or u.is_nurse or u.is_ward_nurse or u.is_consultation_nurse or u.is_receptionist or u.is_admin_director or u.is_ceo or u.role == 'admission_officer' or u.role == 'medical_records' %}
     <div class="sidebar-label">Telemedicine</div>
     <a href="{% url 'telemedicine:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Telemedicine Dashboard">
@@ -1056,10 +1061,13 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Tele-Appointments">
       <i class="bi bi-calendar2-week"></i><span>Appointments</span>
     </a>
+    {# Schedule link — clinicians + receptionist/admission only #}
+    {% if u.is_doctor and u.role != 'orthoptist' or u.is_nurse_director or u.is_receptionist or u.role == 'admission_officer' %}
     <a href="{% url 'telemedicine:appointment_create' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Schedule Tele-Appointment">
       <i class="bi bi-calendar-plus"></i><span>Schedule</span>
     </a>
+    {% endif %}
     {% endif %}
 
     {# HMO / Insurance Claims — Finance/Admin/Cashier roles #}

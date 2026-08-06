@@ -6,7 +6,6 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.db.models import Q
 from django.views.decorators.http import require_POST
-from django.views.decorators.csrf import csrf_exempt
 
 from apps.accounts.models import UserRole, User
 from apps.patients.models import Patient
@@ -15,35 +14,58 @@ from .models import (
     AppointmentStatus, AppointmentType,
 )
 
+# ── Role tiers (international standard) ──────────────────────────────────────
+#
+# CONDUCT  — licensed clinicians who start/end sessions & write SOAP notes
+# SCHEDULE — can book/cancel appointments (doctors + front desk)
+# VIEW     — read-only access: nurses (care coordination), admin oversight
+#
+# Excluded entirely: Anaesthetist, Orthoptist, Theatre Nurse, Counseling Nurse,
+#                    Pharmacist, Lab Tech, Cashier, Finance roles
+
+_CONDUCT_ROLES = [
+    UserRole.SUPER_ADMIN,
+    UserRole.MEDICAL_DIRECTOR,
+    UserRole.OPHTHALMOLOGIST,
+    UserRole.RETINA_SPECIALIST,
+    UserRole.GLAUCOMA_SPECIALIST,
+    UserRole.PEDIATRIC_OPHTHALMOLOGIST,
+    UserRole.PEDIATRIC_REFRACTIONIST,
+    UserRole.CATARACT_SURGEON,
+    UserRole.CORNEA_SPECIALIST,
+    UserRole.OCULOPLASTICS_SURGEON,
+    UserRole.NEURO_OPHTHALMOLOGIST,
+    UserRole.UVEITIS_SPECIALIST,
+    UserRole.OPTOMETRIST,
+    UserRole.LOW_VISION_SPECIALIST,
+    UserRole.INTERN,
+    UserRole.GENERAL_PHYSICIAN,
+    UserRole.NURSE_DIRECTOR,   # licensed to conduct independent consultations
+]
+
+_SCHEDULE_ROLES = _CONDUCT_ROLES + [
+    UserRole.RECEPTIONIST,
+    UserRole.ADMISSION_OFFICER,
+]
+
+_VIEW_ROLES = _SCHEDULE_ROLES + [
+    UserRole.ADMIN_DIRECTOR,   # oversight only
+    UserRole.CEO,              # oversight only
+    UserRole.NURSE,            # care coordination — view schedule, no session control
+    UserRole.CONSULTATION_NURSE,
+    UserRole.WARD_NURSE,
+    UserRole.MEDICAL_RECORDS,
+]
+
 
 def _can_view(user):
-    return user.role in [
-        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.CEO, UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST,
-        UserRole.GLAUCOMA_SPECIALIST, UserRole.PEDIATRIC_OPHTHALMOLOGIST,
-        UserRole.PEDIATRIC_REFRACTIONIST, UserRole.CATARACT_SURGEON,
-        UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
-        UserRole.NEURO_OPHTHALMOLOGIST, UserRole.UVEITIS_SPECIALIST,
-        UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST,
-        UserRole.INTERN, UserRole.GENERAL_PHYSICIAN, UserRole.ANAESTHETIST,
-        UserRole.NURSE, UserRole.CONSULTATION_NURSE, UserRole.WARD_NURSE,
-        UserRole.COUNSELING_NURSE, UserRole.NURSE_DIRECTOR,
-        UserRole.RECEPTIONIST, UserRole.ADMISSION_OFFICER, UserRole.MEDICAL_RECORDS,
-    ]
+    return user.role in _VIEW_ROLES
 
+def _can_schedule(user):
+    return user.role in _SCHEDULE_ROLES
 
 def _can_conduct(user):
-    """Roles that can start/end sessions and write SOAP notes."""
-    return user.role in [
-        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST,
-        UserRole.GLAUCOMA_SPECIALIST, UserRole.PEDIATRIC_OPHTHALMOLOGIST,
-        UserRole.PEDIATRIC_REFRACTIONIST, UserRole.CATARACT_SURGEON,
-        UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
-        UserRole.NEURO_OPHTHALMOLOGIST, UserRole.UVEITIS_SPECIALIST,
-        UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST,
-        UserRole.INTERN, UserRole.GENERAL_PHYSICIAN, UserRole.NURSE_DIRECTOR,
-    ]
+    return user.role in _CONDUCT_ROLES
 
 
 @login_required
@@ -84,6 +106,7 @@ def dashboard(request):
         'active': active,
         'stats': stats,
         'can_conduct': _can_conduct(request.user),
+        'can_schedule': _can_schedule(request.user),
     }
     return render(request, 'telemedicine/dashboard.html', context)
 
@@ -118,30 +141,22 @@ def appointment_list(request):
         'q': q,
         'date_filter': date_filter,
         'can_conduct': _can_conduct(request.user),
+        'can_schedule': _can_schedule(request.user),
     }
     return render(request, 'telemedicine/appointment_list.html', context)
 
 
 @login_required
 def appointment_create(request):
-    if not _can_view(request.user):
-        messages.error(request, 'Access denied.')
+    if not _can_schedule(request.user):
+        messages.error(request, 'Access denied. Only clinical staff and reception can schedule appointments.')
         return redirect('dashboard:home')
 
     patients = Patient.objects.filter(is_deleted=False).order_by('last_name', 'first_name')
 
     doctors = User.objects.filter(
         is_active=True,
-        role__in=[
-            UserRole.OPHTHALMOLOGIST, UserRole.RETINA_SPECIALIST,
-            UserRole.GLAUCOMA_SPECIALIST, UserRole.PEDIATRIC_OPHTHALMOLOGIST,
-            UserRole.PEDIATRIC_REFRACTIONIST, UserRole.CATARACT_SURGEON,
-            UserRole.CORNEA_SPECIALIST, UserRole.OCULOPLASTICS_SURGEON,
-            UserRole.NEURO_OPHTHALMOLOGIST, UserRole.UVEITIS_SPECIALIST,
-            UserRole.OPTOMETRIST, UserRole.LOW_VISION_SPECIALIST,
-            UserRole.INTERN, UserRole.GENERAL_PHYSICIAN,
-            UserRole.MEDICAL_DIRECTOR,
-        ]
+        role__in=_CONDUCT_ROLES,
     ).order_by('last_name', 'first_name')
 
     if request.method == 'POST':
@@ -191,6 +206,7 @@ def appointment_detail(request, pk):
         'note': note,
         'intake': intake,
         'can_conduct': _can_conduct(request.user),
+        'can_schedule': _can_schedule(request.user),
         'join_link': request.build_absolute_uri(
             f"/telemedicine/join/{appt.session_room_id}/{appt.patient_join_token}/"
         ),
@@ -201,7 +217,7 @@ def appointment_detail(request, pk):
 @login_required
 def session_start(request, pk):
     if not _can_conduct(request.user):
-        messages.error(request, 'Access denied.')
+        messages.error(request, 'Only licensed clinicians can start sessions.')
         return redirect('dashboard:home')
 
     appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
@@ -219,7 +235,7 @@ def session_start(request, pk):
 @login_required
 def session_end(request, pk):
     if not _can_conduct(request.user):
-        messages.error(request, 'Access denied.')
+        messages.error(request, 'Only licensed clinicians can end sessions.')
         return redirect('dashboard:home')
 
     appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
@@ -238,7 +254,7 @@ def session_end(request, pk):
 
 @login_required
 def session_room(request, pk):
-    """Full-screen video room view (doctor side)."""
+    """Live video room — clinicians only."""
     if not _can_conduct(request.user):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
@@ -258,7 +274,7 @@ def session_room(request, pk):
 @login_required
 def session_notes(request, pk):
     if not _can_conduct(request.user):
-        messages.error(request, 'Access denied.')
+        messages.error(request, 'Only licensed clinicians can write session notes.')
         return redirect('dashboard:home')
 
     appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
@@ -300,7 +316,7 @@ def session_notes(request, pk):
 
 @login_required
 def cancel_appointment(request, pk):
-    if not _can_view(request.user):
+    if not _can_schedule(request.user):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
 
@@ -333,7 +349,6 @@ def patient_join(request, room_id, token):
     intake = getattr(appt, 'intake', None)
     show_intake_form = not (intake and intake.submitted_at)
 
-    # Mark patient joined once they reach the final join step
     if not show_intake_form and not appt.patient_joined:
         appt.patient_joined = True
         if appt.status == AppointmentStatus.SCHEDULED:
@@ -377,7 +392,6 @@ def patient_intake_submit(request, room_id, token):
         intake.temperature = request.POST.get('temperature', '').strip()
         intake.submitted_at = timezone.now()
 
-        # Run AI triage (non-blocking on failure)
         if intake.symptoms:
             try:
                 from apps.ai_assistant.groq_client import tele_triage_summary
@@ -400,7 +414,6 @@ def patient_intake_submit(request, room_id, token):
 
         intake.save()
 
-        # Mark patient as joined, move to WAITING
         if not appt.patient_joined:
             appt.patient_joined = True
         if appt.status == AppointmentStatus.SCHEDULED:
@@ -413,7 +426,7 @@ def patient_intake_submit(request, room_id, token):
 @login_required
 @require_POST
 def ai_soap_generate(request, pk):
-    """AJAX: generate SOAP note from appointment + intake data."""
+    """AJAX: generate SOAP note — clinicians only."""
     if not _can_conduct(request.user):
         return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
 
@@ -454,7 +467,7 @@ def ai_soap_generate(request, pk):
 @login_required
 @require_POST
 def ai_diagnose(request, pk):
-    """AJAX: suggest differential diagnoses based on complaint and intake."""
+    """AJAX: differential diagnosis suggestions — clinicians only."""
     if not _can_conduct(request.user):
         return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
 
