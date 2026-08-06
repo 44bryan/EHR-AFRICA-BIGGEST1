@@ -72,10 +72,18 @@ class TeleAppointment(AuditModel):
 
     @property
     def session_url(self):
-        """Public Jitsi Meet room URL for this appointment."""
+        """Public Jitsi Meet room URL for this appointment.
+        Config fragment skips the pre-join lobby and goes straight into the room.
+        """
         jitsi = getattr(settings, 'JITSI_SERVER', 'https://meet.jit.si')
-        room = f"EHR-{self.session_room_id.hex[:16].upper()}"
-        return f"{jitsi}/{room}"
+        room = f"EHRAfrica{self.session_room_id.hex[:12].upper()}"
+        config = (
+            "#config.prejoinPageEnabled=false"
+            "&config.startWithAudioMuted=false"
+            "&config.startWithVideoMuted=false"
+            "&config.disableDeepLinking=true"
+        )
+        return f"{jitsi}/{room}{config}"
 
     @property
     def patient_join_token(self):
