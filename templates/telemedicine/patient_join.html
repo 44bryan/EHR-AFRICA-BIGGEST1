@@ -9,7 +9,14 @@
   <style>
     body { background: #0f172a; color: #fff; min-height: 100vh; }
     .top-bar { background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); padding: 0.75rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); }
-    .join-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 1rem; }
+    .main-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 1rem; }
+    .form-control, .form-select { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); color: #fff; }
+    .form-control:focus, .form-select:focus { background: rgba(255,255,255,0.12); border-color: rgba(99,102,241,0.6); color: #fff; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+    .form-control::placeholder { color: rgba(255,255,255,0.35); }
+    .form-label { color: rgba(255,255,255,0.75); font-size: 0.85rem; font-weight: 500; }
+    .form-check-input { background-color: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
+    .form-check-input:checked { background-color: #6366f1; border-color: #6366f1; }
+    .step-badge { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; font-size: 0.75rem; font-weight: 700; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
   </style>
 </head>
@@ -20,41 +27,143 @@
       <i class="bi bi-camera-video-fill text-primary fs-5"></i>
       <strong>EHR Africa Telemedicine</strong>
     </div>
-    <div class="small text-light opacity-75">
-      {{ appt.scheduled_at|date:"d M Y · H:i" }}
-    </div>
+    <div class="small text-light opacity-75">{{ appt.scheduled_at|date:"d M Y · H:i" }}</div>
   </div>
 
-  <div class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
-    <div class="join-card p-5 text-center" style="max-width:480px; width:100%;">
+  <div class="flex-grow-1 d-flex align-items-center justify-content-center p-3">
+    <div class="main-card p-4 p-md-5" style="max-width:560px; width:100%;">
 
-      {% if appt.status == 'SCHEDULED' or appt.status == 'WAITING' %}
-        <!-- Waiting for doctor -->
-        <div class="mb-4">
-          <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem;" role="status"></div>
-          <h5 class="fw-bold mb-2">Your doctor will be with you shortly</h5>
-          <p class="text-muted small mb-0">
-            Keep this page open. Click the button below to enter the video room when you are ready — your doctor will join you there.
-          </p>
+      {% if show_intake_form %}
+      {# ─── STEP 1: Pre-Consultation Intake ─────────────────────────────────── #}
+      <div class="text-center mb-4">
+        <div class="mb-3 d-flex align-items-center justify-content-center gap-2 small">
+          <span class="step-badge bg-primary">1</span>
+          <span>Health check</span>
+          <i class="bi bi-arrow-right text-muted"></i>
+          <span class="step-badge bg-secondary opacity-50">2</span>
+          <span class="text-muted">Video call</span>
         </div>
-        <meta http-equiv="refresh" content="20">
-      {% else %}
-        <!-- Session active or completed -->
-        <div class="mb-4">
-          {% if appt.status == 'IN_SESSION' or appt.status == 'COMPLETED' %}
-          <div class="mb-3">
-            <span class="badge bg-danger px-3 py-2" style="animation:pulse 1.5s infinite;">● Session Active</span>
+        <h5 class="fw-bold mb-1">Pre-Consultation Check</h5>
+        <p class="text-muted small mb-0">Help Dr. {{ appt.doctor.get_full_name }} prepare — takes about 1 minute. Your answers go directly to the doctor.</p>
+      </div>
+
+      <form method="post" action="{{ intake_url }}">
+        {% csrf_token %}
+
+        <div class="mb-3">
+          <label class="form-label">Main symptoms <span class="text-danger">*</span></label>
+          <textarea name="symptoms" class="form-control" rows="3" required
+            placeholder="e.g. Blurred vision in right eye, headache, eye redness for 3 days..."></textarea>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">How long?</label>
+            <input type="text" name="duration" class="form-control" placeholder="e.g. 3 days, 2 weeks">
           </div>
-          {% endif %}
-          <h5 class="fw-bold mb-2">Your consultation room is ready</h5>
-          <p class="text-muted small">
-            Click the button below to join your video call with<br>
-            <strong class="text-white">Dr. {{ appt.doctor.get_full_name }}</strong>
-          </p>
+          <div class="col-md-6">
+            <label class="form-label">Severity: <span id="sevVal" class="text-warning fw-bold">5</span>/10</label>
+            <input type="range" name="severity_score" id="sevSlider" min="1" max="10" value="5"
+              class="w-100 mt-2" style="accent-color:#6366f1;"
+              oninput="document.getElementById('sevVal').textContent=this.value">
+            <div class="d-flex justify-content-between" style="font-size:0.65rem; opacity:0.45;">
+              <span>Mild</span><span>Moderate</span><span>Severe</span>
+            </div>
+          </div>
         </div>
+
+        <div class="mb-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="worsening" id="worseCheck">
+            <label class="form-check-label form-label mb-0" for="worseCheck">Symptoms are getting worse</label>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Any other symptoms?</label>
+          <input type="text" name="other_symptoms" class="form-control" placeholder="e.g. Nausea, fever, pain, discharge...">
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Current medications</label>
+            <textarea name="current_medications" class="form-control" rows="2" placeholder="List any medications you take"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Known allergies</label>
+            <textarea name="known_allergies" class="form-control" rows="2" placeholder="e.g. Penicillin, latex..."></textarea>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <label class="form-label">Blood pressure (if known)</label>
+            <input type="text" name="blood_pressure" class="form-control" placeholder="e.g. 120/80 mmHg">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Temperature (if known)</label>
+            <input type="text" name="temperature" class="form-control" placeholder="e.g. 37.5°C">
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg w-100 fw-semibold">
+          <i class="bi bi-arrow-right-circle me-2"></i>Submit &amp; Proceed to Video
+        </button>
+
+        <p class="small text-center mt-3 mb-0" style="opacity:0.35;">
+          <i class="bi bi-shield-lock me-1"></i>Your answers are only shared with your doctor
+        </p>
+      </form>
+
+      {% else %}
+      {# ─── STEP 2: Join Video Call ──────────────────────────────────────────── #}
+      <div class="text-center mb-4">
+        <div class="mb-3 d-flex align-items-center justify-content-center gap-2 small">
+          <span class="step-badge bg-success"><i class="bi bi-check" style="font-size:0.7rem;"></i></span>
+          <span class="text-muted text-decoration-line-through">Health check</span>
+          <i class="bi bi-arrow-right text-muted"></i>
+          <span class="step-badge bg-primary">2</span>
+          <span>Video call</span>
+        </div>
+
+        {% if appt.status == 'SCHEDULED' or appt.status == 'WAITING' %}
+          <div class="mb-4">
+            <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem;" role="status"></div>
+            <h5 class="fw-bold mb-2">Your doctor will be with you shortly</h5>
+            <p class="text-muted small mb-0">Your symptoms have been received by Dr. {{ appt.doctor.get_full_name }}.<br>Click below to enter the video room — your doctor will join you there.</p>
+          </div>
+          <meta http-equiv="refresh" content="20">
+        {% else %}
+          <div class="mb-4">
+            {% if appt.status == 'IN_SESSION' or appt.status == 'COMPLETED' %}
+            <div class="mb-3">
+              <span class="badge bg-danger px-3 py-2" style="animation:pulse 1.5s infinite;">● Session Active</span>
+            </div>
+            {% endif %}
+            <h5 class="fw-bold mb-2">Your consultation room is ready</h5>
+            <p class="text-muted small">Dr. <strong class="text-white">{{ appt.doctor.get_full_name }}</strong> is waiting for you.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      {% if intake and intake.ai_triage_summary %}
+      <div class="rounded p-3 mb-4" style="background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.2);">
+        <div class="small fw-semibold mb-1 text-primary"><i class="bi bi-robot me-1"></i>AI has reviewed your symptoms</div>
+        <p class="small mb-0" style="opacity:0.8;">{{ intake.ai_triage_summary }}</p>
+        {% if intake.ai_urgency == 'emergency' or intake.ai_urgency == 'high' %}
+        <div class="mt-2"><span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ intake.urgency_label }}</span></div>
+        {% elif intake.ai_urgency == 'moderate' %}
+        <div class="mt-2"><span class="badge bg-warning text-dark">{{ intake.urgency_label }}</span></div>
+        {% endif %}
+      </div>
+      {% elif intake %}
+      <div class="rounded p-3 mb-4" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08);">
+        <div class="small text-muted mb-1">Your reported symptoms</div>
+        <p class="small mb-0">{{ intake.symptoms }}</p>
+        {% if intake.duration %}<p class="small text-muted mb-0 mt-1">Duration: {{ intake.duration }}</p>{% endif %}
+      </div>
       {% endif %}
 
-      <!-- Doctor info -->
       <div class="d-flex align-items-center gap-3 p-3 mb-4 rounded" style="background:rgba(255,255,255,0.08);">
         <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
              style="width:48px;height:48px;background:rgba(255,255,255,0.15);">
@@ -66,22 +175,22 @@
         </div>
       </div>
 
-      <!-- Join button -->
       <a href="{{ appt.session_url }}" target="_blank" rel="noopener"
          class="btn btn-primary btn-lg w-100 mb-3 fw-semibold">
         <i class="bi bi-camera-video-fill me-2"></i>Join Video Call
       </a>
 
-      <p class="small mb-0" style="opacity:0.5;">
+      <p class="small mb-0 text-center" style="opacity:0.4;">
         <i class="bi bi-shield-lock me-1"></i>
         End-to-end encrypted · EHR Africa does not record video calls
       </p>
+      {% endif %}
 
     </div>
   </div>
 
   <div class="text-center pb-3">
-    <small style="opacity:0.3;">EHR Africa Telemedicine · Powered by Jitsi Meet</small>
+    <small style="opacity:0.3;">EHR Africa Telemedicine · AI-Enhanced Consultations</small>
   </div>
 
 </body>

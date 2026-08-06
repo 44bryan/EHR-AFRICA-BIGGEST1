@@ -14,11 +14,83 @@
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-8">
+<div class="row g-4 justify-content-center">
+
+  {% if intake and intake.submitted_at %}
+  <!-- AI Intake Summary Sidebar -->
+  <div class="col-lg-4 order-lg-2">
+    <div class="card border-0 shadow-sm mb-3 border-start border-4
+      {% if intake.ai_urgency == 'emergency' or intake.ai_urgency == 'high' %}border-danger
+      {% elif intake.ai_urgency == 'moderate' %}border-warning
+      {% else %}border-success{% endif %}">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-robot text-primary"></i>
+        <h6 class="mb-0 fw-semibold small">AI Intake Summary</h6>
+        {% if intake.ai_urgency %}
+        <span class="ms-auto badge bg-{{ intake.urgency_color }}">{{ intake.urgency_label }}</span>
+        {% endif %}
+      </div>
+      <div class="card-body py-3 small">
+        {% if intake.ai_triage_summary %}
+        <p class="mb-2">{{ intake.ai_triage_summary }}</p>
+        {% endif %}
+        {% if intake.ai_key_concerns %}
+        <div class="fw-semibold text-muted mb-1">Key Concerns</div>
+        <ul class="mb-2 ps-3">
+          {% for concern in intake.ai_key_concerns %}
+          <li>{{ concern }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if intake.ai_doctor_notes %}
+        <div class="alert alert-warning py-2 mb-2 small">
+          <i class="bi bi-lightbulb me-1"></i>{{ intake.ai_doctor_notes }}
+        </div>
+        {% endif %}
+        <hr class="my-2">
+        <div><span class="text-muted">Symptoms: </span>{{ intake.symptoms|truncatechars:120 }}</div>
+        {% if intake.duration %}<div><span class="text-muted">Duration: </span>{{ intake.duration }}</div>{% endif %}
+        <div><span class="text-muted">Severity: </span>
+          <span class="fw-semibold {% if intake.severity_score >= 7 %}text-danger{% elif intake.severity_score >= 4 %}text-warning{% else %}text-success{% endif %}">
+            {{ intake.severity_score }}/10
+          </span>
+        </div>
+        {% if intake.worsening %}<div class="text-danger"><i class="bi bi-arrow-up-circle me-1"></i>Worsening</div>{% endif %}
+        {% if intake.current_medications %}<div><span class="text-muted">Meds: </span>{{ intake.current_medications|truncatechars:80 }}</div>{% endif %}
+        {% if intake.known_allergies %}<div><span class="text-muted">Allergies: </span><span class="text-danger">{{ intake.known_allergies }}</span></div>{% endif %}
+      </div>
+    </div>
+
+    <!-- AI Generate button -->
+    <div class="card border-0 shadow-sm border-start border-4 border-primary">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small"><i class="bi bi-stars me-1 text-primary"></i>AI SOAP Generator</h6>
+      </div>
+      <div class="card-body py-3">
+        <p class="small text-muted mb-3">Generate a SOAP note draft from the patient's intake and chief complaint. Review and edit before saving.</p>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Your session notes (optional)</label>
+          <textarea id="aiDoctorNotes" class="form-control form-control-sm" rows="3"
+            placeholder="Add any notes from the session to improve the AI output..."></textarea>
+        </div>
+        <button type="button" class="btn btn-primary w-100 btn-sm" onclick="generateSOAP()">
+          <i class="bi bi-stars me-1"></i>Generate SOAP with AI
+        </button>
+        <div id="aiSpinner" class="text-center mt-2 d-none">
+          <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+          <span class="small text-muted ms-2">AI is generating notes…</span>
+        </div>
+        <div id="aiError" class="alert alert-danger alert-sm py-2 mt-2 small d-none"></div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- SOAP Notes Form -->
+  <div class="col-lg-{% if intake and intake.submitted_at %}8{% else %}8{% endif %} order-lg-1">
     <div class="card border-0 shadow-sm">
       <div class="card-body p-4">
-        <form method="post">
+        <form method="post" id="notesForm">
           {% csrf_token %}
 
           <div class="mb-4">
@@ -26,7 +98,7 @@
               <span class="badge bg-primary me-2">S</span>Subjective
               <small class="text-muted fw-normal">— patient's complaint in their own words</small>
             </label>
-            <textarea name="subjective" class="form-control" rows="3" required
+            <textarea name="subjective" id="f_subjective" class="form-control" rows="3" required
               placeholder="e.g. 'Patient reports blurred vision in the right eye for 3 days…'">{{ note.subjective|default:'' }}</textarea>
           </div>
 
@@ -35,8 +107,8 @@
               <span class="badge bg-secondary me-2">O</span>Objective
               <small class="text-muted fw-normal">— observations, vitals reported by patient</small>
             </label>
-            <textarea name="objective" class="form-control" rows="3"
-              placeholder="e.g. 'Patient appears alert. Reports BP 130/80 measured at home. Visual acuity reported as 6/18 RE…'">{{ note.objective|default:'' }}</textarea>
+            <textarea name="objective" id="f_objective" class="form-control" rows="3"
+              placeholder="e.g. 'Patient appears alert. Reports BP 130/80 measured at home…'">{{ note.objective|default:'' }}</textarea>
           </div>
 
           <div class="mb-4">
@@ -44,7 +116,7 @@
               <span class="badge bg-warning text-dark me-2">A</span>Assessment
               <small class="text-muted fw-normal">— diagnosis or clinical impression</small>
             </label>
-            <textarea name="assessment" class="form-control" rows="3"
+            <textarea name="assessment" id="f_assessment" class="form-control" rows="3"
               placeholder="e.g. 'Likely allergic conjunctivitis. Rule out early cataract…'">{{ note.assessment|default:'' }}</textarea>
           </div>
 
@@ -53,14 +125,14 @@
               <span class="badge bg-success me-2">P</span>Plan
               <small class="text-muted fw-normal">— treatment plan, medications, referrals</small>
             </label>
-            <textarea name="plan" class="form-control" rows="4"
-              placeholder="e.g. 'Prescribe Fluorometholone 0.1% eye drops BD for 7 days. Advise in-person visit if no improvement…'">{{ note.plan|default:'' }}</textarea>
+            <textarea name="plan" id="f_plan" class="form-control" rows="4"
+              placeholder="e.g. 'Prescribe Fluorometholone 0.1% eye drops BD for 7 days…'">{{ note.plan|default:'' }}</textarea>
           </div>
 
           <div class="mb-4">
             <label class="form-label fw-semibold">Follow-Up</label>
             <div class="input-group" style="max-width:250px;">
-              <input type="number" name="follow_up_days" class="form-control"
+              <input type="number" name="follow_up_days" id="f_followup" class="form-control"
                 placeholder="Days" min="1" max="365"
                 value="{{ note.follow_up_days|default:'' }}">
               <span class="input-group-text text-muted">days</span>
@@ -78,5 +150,52 @@
       </div>
     </div>
   </div>
+
 </div>
+
+<script>
+const AI_SOAP_URL = "{% url 'telemedicine:ai_soap' appt.pk %}";
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+function generateSOAP() {
+  const doctorNotes = document.getElementById('aiDoctorNotes').value;
+  const spinner = document.getElementById('aiSpinner');
+  const errBox = document.getElementById('aiError');
+  spinner.classList.remove('d-none');
+  errBox.classList.add('d-none');
+
+  fetch(AI_SOAP_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+    body: JSON.stringify({doctor_notes: doctorNotes}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    spinner.classList.add('d-none');
+    if (data.success) {
+      if (data.subjective) document.getElementById('f_subjective').value = data.subjective;
+      if (data.objective)  document.getElementById('f_objective').value  = data.objective;
+      if (data.assessment) document.getElementById('f_assessment').value = data.assessment;
+      if (data.plan)       document.getElementById('f_plan').value       = data.plan;
+      if (data.follow_up_days) document.getElementById('f_followup').value = data.follow_up_days;
+      // Highlight filled fields
+      ['f_subjective','f_objective','f_assessment','f_plan'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.value) {
+          el.style.borderColor = '#6366f1';
+          setTimeout(() => el.style.borderColor = '', 3000);
+        }
+      });
+    } else {
+      errBox.textContent = data.error || 'AI generation failed. Please write notes manually.';
+      errBox.classList.remove('d-none');
+    }
+  })
+  .catch(() => {
+    spinner.classList.add('d-none');
+    errBox.textContent = 'Network error. Please write notes manually.';
+    errBox.classList.remove('d-none');
+  });
+}
+</script>
 {% endblock %}

@@ -710,3 +710,78 @@ Provide differential diagnoses."""
         max_tokens=4096,  # R1 needs room for reasoning + JSON output
     )
     return result
+
+
+# ── Telemedicine AI functions ─────────────────────────────────────────────────
+
+def tele_triage_summary(symptoms: str, duration: str = '', severity: int = 5,
+                        medications: str = '', allergies: str = '', other: str = '') -> dict:
+    """
+    AI triage for telemedicine pre-consultation intake.
+    Returns JSON: { summary, urgency, key_concerns, doctor_notes, red_flags }
+    urgency: low | moderate | high | emergency
+    """
+    system = """You are a clinical triage AI for EHR Africa telemedicine.
+
+Given patient-reported symptoms, produce a structured triage summary for the doctor.
+Return JSON only:
+{
+  "summary": "2-3 sentence clinical summary of the presentation",
+  "urgency": "low|moderate|high|emergency",
+  "key_concerns": ["concern 1", "concern 2"],
+  "doctor_notes": "Brief note on what the doctor should specifically focus on",
+  "red_flags": ["any red flags present"]
+}
+
+urgency levels: low=routine/stable, moderate=see soon, high=urgent symptoms, emergency=immediate action needed"""
+
+    content = f"""Patient pre-consultation intake:
+Symptoms: {symptoms}
+Duration: {duration or 'not stated'}
+Self-rated severity: {severity}/10
+Worsening: {'Indicated (severity >= 7)' if severity >= 7 else 'Not specifically indicated'}
+Current medications: {medications or 'None reported'}
+Known allergies: {allergies or 'None reported'}
+Other symptoms: {other or 'None'}"""
+
+    return groq_json(
+        messages=[{'role': 'user', 'content': content}],
+        system=system,
+        max_tokens=800,
+    )
+
+
+def tele_generate_soap(chief_complaint: str, intake_symptoms: str = '', duration: str = '',
+                       severity: int = 5, medications: str = '', doctor_notes: str = '',
+                       assessment_hint: str = '') -> dict:
+    """
+    Generate a SOAP note for a telemedicine session using AI.
+    Returns JSON: { subjective, objective, assessment, plan, follow_up_days }
+    """
+    system = """You are a clinical documentation AI for telemedicine consultations at EHR Africa.
+
+Generate a professional SOAP note from the provided information. Return JSON only:
+{
+  "subjective": "Patient's complaint in their own words — what they reported, symptoms, duration, severity",
+  "objective": "Relevant observations, patient-reported vitals, current medications noted",
+  "assessment": "Clinical impression / working diagnosis based on the presentation",
+  "plan": "Treatment plan: specific medications with doses if appropriate, referrals, investigations, follow-up advice",
+  "follow_up_days": 7
+}
+
+follow_up_days: integer (7/14/30/90) or 0 if no follow-up needed.
+Be concise and clinically professional. Use medical terminology appropriately."""
+
+    content = f"""Chief complaint: {chief_complaint or 'Not specified'}
+Patient-reported symptoms: {intake_symptoms or 'Not provided via intake form'}
+Duration: {duration or 'Not stated'}
+Self-rated severity: {severity}/10
+Current medications: {medications or 'None'}
+Doctor session notes: {doctor_notes or 'None provided'}
+Assessment hint: {assessment_hint or 'None'}"""
+
+    return groq_json(
+        messages=[{'role': 'user', 'content': content}],
+        system=system,
+        max_tokens=1500,
+    )

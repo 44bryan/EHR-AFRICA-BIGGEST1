@@ -111,6 +111,56 @@ class TeleAppointment(AuditModel):
         return f"{self.duration_minutes} min (planned)"
 
 
+class IntakeUrgency(models.TextChoices):
+    LOW = 'low', 'Low — Routine'
+    MODERATE = 'moderate', 'Moderate — Soon'
+    HIGH = 'high', 'High — Urgent'
+    EMERGENCY = 'emergency', 'Emergency — Immediate'
+
+
+class PreConsultationIntake(AuditModel):
+    """Patient-submitted symptom intake — auto-triaged by AI before the session."""
+
+    id = models.BigAutoField(primary_key=True)
+
+    appointment = models.OneToOneField(
+        TeleAppointment,
+        on_delete=models.CASCADE,
+        related_name='intake',
+    )
+    symptoms = models.TextField(help_text='Main symptoms / reason for this call')
+    duration = models.CharField(max_length=100, blank=True)
+    severity_score = models.PositiveSmallIntegerField(
+        default=5, help_text='Self-rated severity 1 (mild) to 10 (severe)'
+    )
+    worsening = models.BooleanField(default=False)
+    current_medications = models.TextField(blank=True)
+    known_allergies = models.TextField(blank=True)
+    other_symptoms = models.TextField(blank=True)
+    blood_pressure = models.CharField(max_length=20, blank=True)
+    temperature = models.CharField(max_length=10, blank=True)
+    # AI-generated
+    ai_triage_summary = models.TextField(blank=True)
+    ai_urgency = models.CharField(max_length=20, blank=True, choices=IntakeUrgency.choices)
+    ai_key_concerns = models.JSONField(default=list, blank=True)
+    ai_doctor_notes = models.TextField(blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Pre-Consultation Intake'
+
+    def __str__(self):
+        return f'Intake for Tele-{self.appointment_id}'
+
+    @property
+    def urgency_color(self):
+        return {'low': 'success', 'moderate': 'warning', 'high': 'danger', 'emergency': 'danger'}.get(self.ai_urgency, 'secondary')
+
+    @property
+    def urgency_label(self):
+        return {'low': 'Routine', 'moderate': 'See Soon', 'high': 'Urgent', 'emergency': 'EMERGENCY'}.get(self.ai_urgency, '—')
+
+
 class TeleSessionNote(AuditModel):
     """SOAP note recorded during or after a telemedicine session."""
 

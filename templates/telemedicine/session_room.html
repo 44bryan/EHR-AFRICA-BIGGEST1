@@ -37,24 +37,24 @@
     <div class="flex-grow-1">
       <h6 class="mb-1 text-white fw-bold">Video Room Ready</h6>
       <p class="mb-0 small" style="opacity:0.8;">
-        Click the button to open the secure video room in a new window. Keep this page open so you can manage the session, share the patient link, and write notes after the call.
+        Click to open the secure video room in a new window. Keep this page open to manage the session and write notes after the call.
       </p>
     </div>
     <a href="{{ appt.session_url }}" target="_blank" rel="noopener"
        class="btn btn-warning fw-semibold flex-shrink-0 px-4"
-       onclick="markVideoOpened()">
+       onclick="markVideoOpened(this)">
       <i class="bi bi-camera-video-fill me-2"></i>Open Video Room
     </a>
   </div>
 </div>
 
 <div class="row g-3">
-  <!-- Session status -->
-  <div class="col-lg-9">
+  <!-- Session control -->
+  <div class="col-lg-8">
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
         <h6 class="mb-0 fw-semibold">Session Control</h6>
-        <span class="badge bg-danger px-3 py-2" id="liveBadge" style="animation:pulse 1.5s infinite;">● LIVE</span>
+        <span class="badge bg-danger px-3 py-2" style="animation:pulse 1.5s infinite;">● LIVE</span>
       </div>
       <div class="card-body">
         <div class="row g-3 text-center">
@@ -75,7 +75,7 @@
           <div class="col-md-4">
             <div class="p-3 rounded" style="background:#f8f9fa;">
               <div class="text-muted small mb-1">Started At</div>
-              <div class="fw-bold" id="sessionTimer">{{ appt.started_at|date:"H:i" }}</div>
+              <div class="fw-bold">{{ appt.started_at|date:"H:i" }}</div>
               <div class="text-muted small" id="elapsed">calculating…</div>
             </div>
           </div>
@@ -113,48 +113,94 @@
   </div>
 
   <!-- Side panel -->
-  <div class="col-lg-3">
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom py-2">
-        <h6 class="mb-0 fw-semibold small">Patient</h6>
-      </div>
-      <div class="card-body py-2">
-        <div class="fw-semibold">{{ appt.patient.full_name }}</div>
-        <div class="text-muted small">{{ appt.patient.patient_id }}</div>
-        <hr class="my-2">
-        <div class="small"><span class="text-muted">Type: </span>{{ appt.get_appointment_type_display }}</div>
-        {% if appt.chief_complaint %}
-        <div class="small mt-1"><span class="text-muted">Complaint: </span>{{ appt.chief_complaint }}</div>
+  <div class="col-lg-4">
+
+    <!-- AI Intake Summary -->
+    {% if intake and intake.submitted_at %}
+    <div class="card border-0 shadow-sm mb-3 border-start border-4
+      {% if intake.ai_urgency == 'emergency' or intake.ai_urgency == 'high' %}border-danger
+      {% elif intake.ai_urgency == 'moderate' %}border-warning
+      {% else %}border-success{% endif %}">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-robot text-primary"></i>
+        <h6 class="mb-0 fw-semibold small">AI Patient Intake</h6>
+        {% if intake.ai_urgency %}
+        <span class="ms-auto badge bg-{{ intake.urgency_color }} py-1">{{ intake.urgency_label }}</span>
         {% endif %}
       </div>
-    </div>
+      <div class="card-body py-3">
+        {% if intake.ai_triage_summary %}
+        <p class="small mb-2">{{ intake.ai_triage_summary }}</p>
+        {% endif %}
 
+        {% if intake.ai_key_concerns %}
+        <div class="small fw-semibold text-muted mb-1">Key Concerns</div>
+        <ul class="small mb-2 ps-3">
+          {% for concern in intake.ai_key_concerns %}
+          <li>{{ concern }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if intake.ai_doctor_notes %}
+        <div class="alert alert-warning py-2 mb-2 small">
+          <i class="bi bi-lightbulb me-1"></i>{{ intake.ai_doctor_notes }}
+        </div>
+        {% endif %}
+
+        <hr class="my-2">
+        <div class="small">
+          <div><span class="text-muted">Symptoms: </span>{{ intake.symptoms|truncatechars:100 }}</div>
+          {% if intake.duration %}<div><span class="text-muted">Duration: </span>{{ intake.duration }}</div>{% endif %}
+          <div><span class="text-muted">Severity: </span>
+            <span class="fw-semibold {% if intake.severity_score >= 7 %}text-danger{% elif intake.severity_score >= 4 %}text-warning{% else %}text-success{% endif %}">
+              {{ intake.severity_score }}/10
+            </span>
+          </div>
+          {% if intake.worsening %}<div class="text-danger small"><i class="bi bi-arrow-up-circle me-1"></i>Patient reports worsening</div>{% endif %}
+          {% if intake.current_medications %}<div class="mt-1"><span class="text-muted">Medications: </span>{{ intake.current_medications|truncatechars:80 }}</div>{% endif %}
+          {% if intake.known_allergies %}<div><span class="text-muted">Allergies: </span><span class="text-danger">{{ intake.known_allergies }}</span></div>{% endif %}
+          {% if intake.blood_pressure %}<div><span class="text-muted">BP: </span>{{ intake.blood_pressure }}</div>{% endif %}
+          {% if intake.temperature %}<div><span class="text-muted">Temp: </span>{{ intake.temperature }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small"><i class="bi bi-person me-1"></i>Patient Intake</h6>
+      </div>
+      <div class="card-body py-3 text-center text-muted small">
+        <i class="bi bi-hourglass-split d-block fs-4 mb-2"></i>
+        Waiting for patient to complete intake form…
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Patient join link -->
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white border-bottom py-2">
         <h6 class="mb-0 fw-semibold small">Patient Join Link</h6>
       </div>
       <div class="card-body py-2">
-        <p class="small text-muted mb-2">If the patient hasn't joined yet, share this link:</p>
+        <p class="small text-muted mb-2">Share this link with the patient:</p>
         <div class="input-group input-group-sm mb-2">
           <input type="text" class="form-control font-monospace" id="joinLink"
-            value="{{ join_link }}"
-            readonly style="font-size:0.7rem;">
+            value="{{ join_link }}" readonly style="font-size:0.65rem;">
           <button class="btn btn-outline-secondary" type="button" onclick="copyLink()">
             <i class="bi bi-clipboard"></i>
           </button>
         </div>
-        <a href="https://wa.me/?text={{ appt.session_url|urlencode }}" target="_blank"
+        <a href="https://wa.me/?text={{ join_link|urlencode }}" target="_blank"
           class="btn btn-sm btn-outline-success w-100">
           <i class="bi bi-whatsapp me-1"></i>WhatsApp
         </a>
       </div>
     </div>
 
+    <!-- Quick links -->
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom py-2">
-        <h6 class="mb-0 fw-semibold small">Quick Actions</h6>
-      </div>
-      <div class="list-group list-group-flush">
+      <div class="list-group list-group-flush rounded">
         <a href="{% url 'telemedicine:session_notes' appt.pk %}" class="list-group-item list-group-item-action small">
           <i class="bi bi-file-text me-2"></i>Write Session Notes
         </a>
@@ -163,6 +209,7 @@
         </a>
       </div>
     </div>
+
   </div>
 </div>
 
@@ -178,10 +225,9 @@ function copyLink() {
   btn.innerHTML = '<i class="bi bi-check"></i>';
   setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i>', 1500);
 }
-function markVideoOpened() {
-  const btn = event.currentTarget;
+function markVideoOpened(btn) {
   btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Video Opened';
-  btn.classList.replace('btn-warning','btn-success');
+  btn.classList.replace('btn-warning', 'btn-success');
 }
 // Elapsed timer
 (function() {
