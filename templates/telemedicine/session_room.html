@@ -26,22 +26,89 @@
 {% endblock %}
 
 {% block content %}
+
+<!-- Video launch banner -->
+<div class="card border-0 shadow-sm mb-4" style="background: linear-gradient(135deg,#1e3a5f,#0f2340); color:#fff;">
+  <div class="card-body d-flex align-items-center gap-4 py-4">
+    <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+         style="width:72px;height:72px;background:rgba(255,255,255,0.12);">
+      <i class="bi bi-camera-video-fill fs-2"></i>
+    </div>
+    <div class="flex-grow-1">
+      <h6 class="mb-1 text-white fw-bold">Video Room Ready</h6>
+      <p class="mb-0 small" style="opacity:0.8;">
+        Click the button to open the secure video room in a new window. Keep this page open so you can manage the session, share the patient link, and write notes after the call.
+      </p>
+    </div>
+    <a href="{{ appt.session_url }}" target="_blank" rel="noopener"
+       class="btn btn-warning fw-semibold flex-shrink-0 px-4"
+       onclick="markVideoOpened()">
+      <i class="bi bi-camera-video-fill me-2"></i>Open Video Room
+    </a>
+  </div>
+</div>
+
 <div class="row g-3">
-  <!-- Video room -->
+  <!-- Session status -->
   <div class="col-lg-9">
-    <div class="card border-0 shadow-sm" style="height: 70vh;">
-      <div class="card-body p-0 position-relative" style="height:100%;">
-        <iframe
-          id="jitsiFrame"
-          src="{{ appt.session_url }}#config.startWithVideoMuted=false&config.startWithAudioMuted=false&userInfo.displayName={{ request.user.get_full_name|urlencode }}&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.TOOLBAR_BUTTONS=[%22microphone%22,%22camera%22,%22desktop%22,%22fullscreen%22,%22fodeviceselection%22,%22hangup%22,%22chat%22,%22settings%22,%22videoquality%22]"
-          allow="camera; microphone; fullscreen; display-capture; autoplay"
-          style="width:100%; height:100%; border:0; border-radius:0.5rem;"
-        ></iframe>
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold">Session Control</h6>
+        <span class="badge bg-danger px-3 py-2" id="liveBadge" style="animation:pulse 1.5s infinite;">● LIVE</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3 text-center">
+          <div class="col-md-4">
+            <div class="p-3 rounded" style="background:#f8f9fa;">
+              <div class="text-muted small mb-1">Patient</div>
+              <div class="fw-bold">{{ appt.patient.full_name }}</div>
+              <div class="text-muted small">{{ appt.patient.patient_id }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="p-3 rounded" style="background:#f8f9fa;">
+              <div class="text-muted small mb-1">Consultation Type</div>
+              <div class="fw-bold">{{ appt.get_appointment_type_display }}</div>
+              <div class="text-muted small">{{ appt.duration_minutes }} min planned</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="p-3 rounded" style="background:#f8f9fa;">
+              <div class="text-muted small mb-1">Started At</div>
+              <div class="fw-bold" id="sessionTimer">{{ appt.started_at|date:"H:i" }}</div>
+              <div class="text-muted small" id="elapsed">calculating…</div>
+            </div>
+          </div>
+        </div>
+        {% if appt.chief_complaint %}
+        <div class="alert alert-light border mt-3 mb-0 py-2 small">
+          <span class="text-muted">Chief Complaint: </span>{{ appt.chief_complaint }}
+        </div>
+        {% endif %}
       </div>
     </div>
-    <div class="small text-muted mt-2 text-center">
-      <i class="bi bi-shield-lock me-1"></i>End-to-end encrypted via Jitsi Meet ·
-      <a href="{{ appt.session_url }}" target="_blank" class="text-muted">Open in new window</a>
+
+    <!-- Quick actions -->
+    <div class="row g-3">
+      <div class="col-md-4">
+        <a href="{{ appt.session_url }}" target="_blank" rel="noopener"
+           class="card border-0 shadow-sm text-decoration-none h-100 d-flex flex-column align-items-center justify-content-center py-4 text-dark">
+          <i class="bi bi-camera-video-fill fs-3 text-danger mb-2"></i>
+          <span class="fw-semibold small">Reopen Video</span>
+        </a>
+      </div>
+      <div class="col-md-4">
+        <a href="{% url 'telemedicine:session_notes' appt.pk %}" class="card border-0 shadow-sm text-decoration-none h-100 d-flex flex-column align-items-center justify-content-center py-4 text-dark">
+          <i class="bi bi-file-text fs-3 text-primary mb-2"></i>
+          <span class="fw-semibold small">Write Notes</span>
+        </a>
+      </div>
+      <div class="col-md-4">
+        <a href="{% url 'patients:detail' appt.patient.pk %}" target="_blank" class="card border-0 shadow-sm text-decoration-none h-100 d-flex flex-column align-items-center justify-content-center py-4 text-dark">
+          <i class="bi bi-person-lines-fill fs-3 text-success mb-2"></i>
+          <span class="fw-semibold small">Patient Chart</span>
+        </a>
+      </div>
     </div>
   </div>
 
@@ -100,10 +167,7 @@
 </div>
 
 <style>
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 </style>
 <script>
 function copyLink() {
@@ -114,5 +178,21 @@ function copyLink() {
   btn.innerHTML = '<i class="bi bi-check"></i>';
   setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i>', 1500);
 }
+function markVideoOpened() {
+  const btn = event.currentTarget;
+  btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Video Opened';
+  btn.classList.replace('btn-warning','btn-success');
+}
+// Elapsed timer
+(function() {
+  const startedAt = new Date("{{ appt.started_at|date:'c' }}");
+  const el = document.getElementById('elapsed');
+  if (!el || isNaN(startedAt)) return;
+  setInterval(() => {
+    const diff = Math.floor((Date.now() - startedAt) / 1000);
+    const m = Math.floor(diff / 60), s = diff % 60;
+    el.textContent = `${m}m ${s.toString().padStart(2,'0')}s elapsed`;
+  }, 1000);
+})();
 </script>
 {% endblock %}

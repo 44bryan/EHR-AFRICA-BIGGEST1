@@ -7,44 +7,82 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <style>
-    body { background: #0f172a; color: #fff; }
-    #jitsiFrame { width: 100%; height: calc(100vh - 120px); border: 0; border-radius: 8px; }
-    .top-bar { background: rgba(0,0,0,0.4); backdrop-filter: blur(6px); padding: 0.6rem 1rem; }
-    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    body { background: #0f172a; color: #fff; min-height: 100vh; }
+    .top-bar { background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); padding: 0.75rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .join-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 1rem; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
   </style>
 </head>
-<body>
+<body class="d-flex flex-column">
+
   <div class="top-bar d-flex align-items-center justify-content-between">
-    <div>
-      <strong class="text-white">EHR Africa Telemedicine</strong>
-      <span class="badge bg-danger ms-2" style="animation:pulse 1.5s infinite;">LIVE</span>
+    <div class="d-flex align-items-center gap-3">
+      <i class="bi bi-camera-video-fill text-primary fs-5"></i>
+      <strong>EHR Africa Telemedicine</strong>
     </div>
-    <div class="small text-light">
-      Dr. {{ appt.doctor.get_full_name }} ·
-      {{ appt.scheduled_at|date:"d M Y H:i" }}
+    <div class="small text-light opacity-75">
+      {{ appt.scheduled_at|date:"d M Y · H:i" }}
     </div>
   </div>
 
-  {% if appt.status == 'SCHEDULED' or appt.status == 'WAITING' %}
-  <div class="text-center py-5">
-    <div class="spinner-border text-primary mb-3" role="status"></div>
-    <h5>Waiting for your doctor to start the session…</h5>
-    <p class="text-muted small">Please keep this page open. The video will start automatically when the doctor joins.</p>
-    <meta http-equiv="refresh" content="15">
-  </div>
-  {% else %}
-  <iframe
-    id="jitsiFrame"
-    src="{{ appt.session_url }}#config.startWithVideoMuted=false&config.startWithAudioMuted=false&userInfo.displayName={{ appt.patient.full_name|urlencode }}&interfaceConfig.SHOW_JITSI_WATERMARK=false"
-    allow="camera; microphone; fullscreen; display-capture; autoplay"
-  ></iframe>
-  {% endif %}
+  <div class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
+    <div class="join-card p-5 text-center" style="max-width:480px; width:100%;">
 
-  <div class="text-center mt-2 pb-3">
-    <small class="text-muted">
-      <i class="bi bi-shield-lock me-1"></i>
-      Your consultation is end-to-end encrypted. EHR Africa does not store video recordings.
-    </small>
+      {% if appt.status == 'SCHEDULED' or appt.status == 'WAITING' %}
+        <!-- Waiting for doctor -->
+        <div class="mb-4">
+          <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem;" role="status"></div>
+          <h5 class="fw-bold mb-2">Your doctor will be with you shortly</h5>
+          <p class="text-muted small mb-0">
+            Keep this page open. Click the button below to enter the video room when you are ready — your doctor will join you there.
+          </p>
+        </div>
+        <meta http-equiv="refresh" content="20">
+      {% else %}
+        <!-- Session active or completed -->
+        <div class="mb-4">
+          {% if appt.status == 'IN_SESSION' or appt.status == 'COMPLETED' %}
+          <div class="mb-3">
+            <span class="badge bg-danger px-3 py-2" style="animation:pulse 1.5s infinite;">● Session Active</span>
+          </div>
+          {% endif %}
+          <h5 class="fw-bold mb-2">Your consultation room is ready</h5>
+          <p class="text-muted small">
+            Click the button below to join your video call with<br>
+            <strong class="text-white">Dr. {{ appt.doctor.get_full_name }}</strong>
+          </p>
+        </div>
+      {% endif %}
+
+      <!-- Doctor info -->
+      <div class="d-flex align-items-center gap-3 p-3 mb-4 rounded" style="background:rgba(255,255,255,0.08);">
+        <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+             style="width:48px;height:48px;background:rgba(255,255,255,0.15);">
+          <i class="bi bi-person-fill fs-5"></i>
+        </div>
+        <div class="text-start">
+          <div class="fw-semibold">Dr. {{ appt.doctor.get_full_name }}</div>
+          <div class="small text-muted">{{ appt.get_appointment_type_display }}</div>
+        </div>
+      </div>
+
+      <!-- Join button -->
+      <a href="{{ appt.session_url }}" target="_blank" rel="noopener"
+         class="btn btn-primary btn-lg w-100 mb-3 fw-semibold">
+        <i class="bi bi-camera-video-fill me-2"></i>Join Video Call
+      </a>
+
+      <p class="small mb-0" style="opacity:0.5;">
+        <i class="bi bi-shield-lock me-1"></i>
+        End-to-end encrypted · EHR Africa does not record video calls
+      </p>
+
+    </div>
   </div>
+
+  <div class="text-center pb-3">
+    <small style="opacity:0.3;">EHR Africa Telemedicine · Powered by Jitsi Meet</small>
+  </div>
+
 </body>
 </html>
