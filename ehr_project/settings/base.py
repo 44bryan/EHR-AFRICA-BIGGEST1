@@ -367,11 +367,8 @@ EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = f"{HOSPITAL_NAME} <{EMAIL_HOST_USER}>"
 
-# Telemedicine — Jitsi Meet server
-# meet.jit.si now requires authentication for moderators — use a community
-# instance or self-host Jitsi on your LAN for full control.
-# Recommended long-term: apt install jitsi-meet on this Ubuntu server.
-JITSI_SERVER = env('JITSI_SERVER', default='https://jitsi.linux.it')
+# Telemedicine — Jitsi Meet server (can be self-hosted)
+JITSI_SERVER = env('JITSI_SERVER', default='https://meet.jit.si')
 
 # File upload limits
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
