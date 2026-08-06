@@ -1,0 +1,97 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Schedule Tele-Appointment{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-calendar-plus me-2"></i>Schedule Tele-Appointment</h5>
+  <a href="{% url 'telemedicine:appointment_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <select name="patient" class="form-select" required>
+              <option value="">— Select patient —</option>
+              {% for p in patients %}
+              <option value="{{ p.pk }}">{{ p.full_name }} ({{ p.patient_id }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Consulting Doctor <span class="text-danger">*</span></label>
+            <select name="doctor" class="form-select" required>
+              <option value="">— Select doctor —</option>
+              {% for d in doctors %}
+              <option value="{{ d.pk }}">{{ d.get_full_name }} ({{ d.get_role_display }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Appointment Type</label>
+              <select name="appointment_type" class="form-select">
+                {% for val, label in type_choices %}
+                <option value="{{ val }}" {% if val == 'FOLLOW_UP' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Duration (min)</label>
+              <select name="duration_minutes" class="form-select">
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20" selected>20</option>
+                <option value="30">30</option>
+                <option value="45">45</option>
+                <option value="60">60</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Date & Time <span class="text-danger">*</span></label>
+            <input type="datetime-local" name="scheduled_at" class="form-control" required>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Chief Complaint / Reason</label>
+            <textarea name="chief_complaint" class="form-control" rows="3"
+              placeholder="Brief description of why the patient is seeking teleconsultation…"></textarea>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-calendar-check me-1"></i>Schedule Appointment
+            </button>
+            <a href="{% url 'telemedicine:appointment_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2"><i class="bi bi-info-circle me-1 text-primary"></i>How it works</h6>
+        <ol class="mb-0 small text-muted">
+          <li>Schedule the appointment and share the patient join link (via SMS or WhatsApp).</li>
+          <li>On the day, the doctor clicks <strong>Start Session</strong> to open the video room.</li>
+          <li>The patient opens their link — they are taken directly into the same room.</li>
+          <li>After the call, the doctor records SOAP notes and the appointment is marked complete.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

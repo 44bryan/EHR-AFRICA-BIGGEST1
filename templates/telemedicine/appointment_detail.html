@@ -1,0 +1,198 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Tele-Appointment — {{ appt.patient.full_name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-camera-video me-2"></i>Tele-Appointment #{{ appt.pk }}</h5>
+    <small class="text-muted">{{ appt.scheduled_at|date:"l, d F Y \a\t H:i" }}</small>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if can_conduct and appt.can_start %}
+    <form method="post" action="{% url 'telemedicine:session_start' appt.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger btn-sm">
+        <i class="bi bi-camera-video-fill me-1"></i>Start Session
+      </button>
+    </form>
+    {% endif %}
+    {% if can_conduct and appt.status == 'IN_SESSION' %}
+    <a href="{% url 'telemedicine:session_room' appt.pk %}" class="btn btn-danger btn-sm">
+      <i class="bi bi-camera-video-fill me-1"></i>Rejoin Session
+    </a>
+    <form method="post" action="{% url 'telemedicine:session_end' appt.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger btn-sm">End Session</button>
+    </form>
+    {% endif %}
+    {% if can_conduct and appt.status == 'COMPLETED' and not note %}
+    <a href="{% url 'telemedicine:session_notes' appt.pk %}" class="btn btn-warning btn-sm">
+      <i class="bi bi-file-text me-1"></i>Add Notes
+    </a>
+    {% endif %}
+    {% if appt.status == 'SCHEDULED' or appt.status == 'WAITING' %}
+    <a href="{% url 'telemedicine:cancel_appointment' appt.pk %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+    {% endif %}
+    <a href="{% url 'telemedicine:appointment_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+  <!-- Left column: Appointment info -->
+  <div class="col-lg-5">
+    <!-- Patient card -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">Patient</h6>
+      </div>
+      <div class="card-body">
+        <div class="fw-bold fs-6">{{ appt.patient.full_name }}</div>
+        <div class="text-muted small mb-2">{{ appt.patient.patient_id }}</div>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted ps-0">Gender</td><td>{{ appt.patient.get_gender_display }}</td></tr>
+          <tr><td class="text-muted ps-0">Phone</td><td>{{ appt.patient.phone|default:"—" }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Appointment info -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">Appointment Details</h6>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr>
+            <td class="text-muted ps-0" style="width:40%">Status</td>
+            <td>
+              {% if appt.status == 'SCHEDULED' %}<span class="badge bg-secondary">Scheduled</span>
+              {% elif appt.status == 'WAITING' %}<span class="badge bg-warning text-dark">Patient Waiting</span>
+              {% elif appt.status == 'IN_SESSION' %}<span class="badge bg-danger">In Session</span>
+              {% elif appt.status == 'COMPLETED' %}<span class="badge bg-success">Completed</span>
+              {% elif appt.status == 'CANCELLED' %}<span class="badge bg-light text-dark border">Cancelled</span>
+              {% elif appt.status == 'NO_SHOW' %}<span class="badge bg-warning text-dark">No Show</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr><td class="text-muted ps-0">Type</td><td>{{ appt.get_appointment_type_display }}</td></tr>
+          <tr><td class="text-muted ps-0">Doctor</td><td>{{ appt.doctor.get_full_name }}</td></tr>
+          <tr><td class="text-muted ps-0">Scheduled</td><td>{{ appt.scheduled_at|date:"d M Y H:i" }}</td></tr>
+          <tr><td class="text-muted ps-0">Duration</td><td>{{ appt.duration_display }}</td></tr>
+          {% if appt.patient_joined %}<tr><td class="text-muted ps-0">Patient</td><td><span class="badge bg-success">Joined</span></td></tr>{% endif %}
+          {% if appt.chief_complaint %}
+          <tr><td class="text-muted ps-0 align-top">Complaint</td><td>{{ appt.chief_complaint }}</td></tr>
+          {% endif %}
+          {% if appt.cancellation_reason %}
+          <tr><td class="text-muted ps-0 align-top">Cancel reason</td><td class="text-danger">{{ appt.cancellation_reason }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+
+    <!-- Patient join link -->
+    {% if appt.status != 'CANCELLED' %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-share me-1"></i>Patient Join Link</h6>
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">Share this link with the patient so they can join the session from their device.</p>
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control font-monospace" id="joinLink" value="{{ join_link }}" readonly>
+          <button class="btn btn-outline-secondary" type="button" onclick="copyJoinLink()">
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+        <div class="mt-2">
+          <a href="https://wa.me/?text={{ join_link|urlencode }}" target="_blank" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-whatsapp me-1"></i>Share via WhatsApp
+          </a>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Right column: Session notes -->
+  <div class="col-lg-7">
+    {% if note %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-file-text me-1"></i>Session Notes (SOAP)</h6>
+        {% if can_conduct %}
+        <a href="{% url 'telemedicine:session_notes' appt.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold mb-1">S — Subjective</div>
+          <p class="mb-0">{{ note.subjective }}</p>
+        </div>
+        {% if note.objective %}
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold mb-1">O — Objective</div>
+          <p class="mb-0">{{ note.objective }}</p>
+        </div>
+        {% endif %}
+        {% if note.assessment %}
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold mb-1">A — Assessment</div>
+          <p class="mb-0">{{ note.assessment }}</p>
+        </div>
+        {% endif %}
+        {% if note.plan %}
+        <div class="mb-3">
+          <div class="text-muted small fw-semibold mb-1">P — Plan</div>
+          <p class="mb-0">{{ note.plan }}</p>
+        </div>
+        {% endif %}
+        {% if note.follow_up_days %}
+        <div class="alert alert-info py-2 mb-0 mt-3">
+          <i class="bi bi-calendar-event me-1"></i>
+          Follow-up recommended in <strong>{{ note.follow_up_days }} days</strong>
+        </div>
+        {% endif %}
+        <div class="text-muted small mt-3">
+          Recorded by {{ note.created_by.get_full_name|default:"—" }} on {{ note.created_at|date:"d M Y H:i" }}
+          {% if note.updated_at != note.created_at %} · Updated {{ note.updated_at|date:"d M Y H:i" }}{% endif %}
+        </div>
+      </div>
+    </div>
+    {% elif can_conduct and appt.status == 'COMPLETED' %}
+    <div class="card border-0 shadow-sm border-warning">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-file-earmark-text display-4 text-warning mb-3"></i>
+        <p class="text-muted">Session completed — no notes recorded yet.</p>
+        <a href="{% url 'telemedicine:session_notes' appt.pk %}" class="btn btn-warning">
+          <i class="bi bi-pencil me-1"></i>Add Session Notes
+        </a>
+      </div>
+    </div>
+    {% elif appt.status in 'SCHEDULED,WAITING,IN_SESSION' %}
+    <div class="card border-0 shadow-sm bg-light">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-clock display-4 text-secondary mb-3"></i>
+        <p class="text-muted mb-0">Session notes will be available after the consultation is completed.</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function copyJoinLink() {
+  const el = document.getElementById('joinLink');
+  el.select();
+  document.execCommand('copy');
+  const btn = el.nextElementSibling;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i class="bi bi-check"></i>';
+  setTimeout(() => btn.innerHTML = orig, 1500);
+}
+</script>
+{% endblock %}

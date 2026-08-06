@@ -78,6 +78,8 @@ LOCAL_APPS = [
     'apps.blood_bank',
     'apps.infection_control',
     'apps.dietary',
+    'apps.mortuary',
+    'apps.telemedicine',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -364,6 +366,9 @@ EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
 EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = f"{HOSPITAL_NAME} <{EMAIL_HOST_USER}>"
+
+# Telemedicine — Jitsi Meet server (can be self-hosted)
+JITSI_SERVER = env('JITSI_SERVER', default='https://meet.jit.si')
 
 # File upload limits
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB

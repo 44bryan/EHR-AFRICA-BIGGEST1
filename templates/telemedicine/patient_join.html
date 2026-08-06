@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tele-Consultation — EHR Africa</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    body { background: #0f172a; color: #fff; }
+    #jitsiFrame { width: 100%; height: calc(100vh - 120px); border: 0; border-radius: 8px; }
+    .top-bar { background: rgba(0,0,0,0.4); backdrop-filter: blur(6px); padding: 0.6rem 1rem; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  </style>
+</head>
+<body>
+  <div class="top-bar d-flex align-items-center justify-content-between">
+    <div>
+      <strong class="text-white">EHR Africa Telemedicine</strong>
+      <span class="badge bg-danger ms-2" style="animation:pulse 1.5s infinite;">LIVE</span>
+    </div>
+    <div class="small text-light">
+      Dr. {{ appt.doctor.get_full_name }} ·
+      {{ appt.scheduled_at|date:"d M Y H:i" }}
+    </div>
+  </div>
+
+  {% if appt.status == 'SCHEDULED' or appt.status == 'WAITING' %}
+  <div class="text-center py-5">
+    <div class="spinner-border text-primary mb-3" role="status"></div>
+    <h5>Waiting for your doctor to start the session…</h5>
+    <p class="text-muted small">Please keep this page open. The video will start automatically when the doctor joins.</p>
+    <meta http-equiv="refresh" content="15">
+  </div>
+  {% else %}
+  <iframe
+    id="jitsiFrame"
+    src="{{ appt.session_url }}#config.startWithVideoMuted=false&config.startWithAudioMuted=false&userInfo.displayName={{ appt.patient.full_name|urlencode }}&interfaceConfig.SHOW_JITSI_WATERMARK=false"
+    allow="camera; microphone; fullscreen; display-capture; autoplay"
+  ></iframe>
+  {% endif %}
+
+  <div class="text-center mt-2 pb-3">
+    <small class="text-muted">
+      <i class="bi bi-shield-lock me-1"></i>
+      Your consultation is end-to-end encrypted. EHR Africa does not store video recordings.
+    </small>
+  </div>
+</body>
+</html>
