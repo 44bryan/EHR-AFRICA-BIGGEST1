@@ -82,6 +82,9 @@ class TeleAppointment(AuditModel):
             "&config.startWithAudioMuted=false"
             "&config.startWithVideoMuted=false"
             "&config.disableDeepLinking=true"
+            "&config.enableLobby=false"
+            "&config.disableModeratorIndicator=true"
+            "&config.requireDisplayName=false"
         )
         return f"{jitsi}/{room}{config}"
 
