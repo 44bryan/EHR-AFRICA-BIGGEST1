@@ -27,6 +27,9 @@ class AppointmentType(models.TextChoices):
 class TeleAppointment(AuditModel):
     """A scheduled telemedicine (video) consultation."""
 
+    # Override the UUID pk inherited from TimeStampedModel — DB column is bigint
+    id = models.BigAutoField(primary_key=True)
+
     patient = models.ForeignKey(
         'patients.Patient',
         on_delete=models.CASCADE,
@@ -99,6 +102,9 @@ class TeleAppointment(AuditModel):
 
 class TeleSessionNote(AuditModel):
     """SOAP note recorded during or after a telemedicine session."""
+
+    # Override the UUID pk inherited from TimeStampedModel — DB column is bigint
+    id = models.BigAutoField(primary_key=True)
 
     appointment = models.OneToOneField(
         TeleAppointment,

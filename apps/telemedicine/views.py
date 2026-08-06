@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.utils import timezone
 from django.db.models import Q, Count
 
-from apps.accounts.models import UserRole
+from apps.accounts.models import UserRole, User
 from apps.patients.models import Patient
 from .models import TeleAppointment, TeleSessionNote, AppointmentStatus, AppointmentType
 
@@ -123,7 +123,6 @@ def appointment_create(request):
     patients = Patient.objects.filter(is_deleted=False).order_by('last_name', 'first_name')
 
     # Doctors only for selection (clinical staff who conduct sessions)
-    from apps.accounts.models import User
     doctors = User.objects.filter(
         is_active=True,
         role__in=[
@@ -236,7 +235,10 @@ def session_room(request, pk):
         return redirect('dashboard:home')
 
     appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
-    return render(request, 'telemedicine/session_room.html', {'appt': appt})
+    join_link = request.build_absolute_uri(
+        f"/telemedicine/join/{appt.session_room_id}/{appt.patient_join_token}/"
+    )
+    return render(request, 'telemedicine/session_room.html', {'appt': appt, 'join_link': join_link})
 
 
 @login_required
