@@ -256,6 +256,35 @@ def pharmacy_stats_view(request):
                    total_dispensings - dispensed_count - partial_count - cancelled_count],
     })
 
+    # Tier breakdown — join dispensings to same-day visits via patient
+    try:
+        from apps.patients.models import Visit
+        from django.db.models import OuterRef, Subquery, CharField
+        tier_subq = Visit.objects.filter(
+            patient=OuterRef('patient'),
+            visit_date__date=OuterRef('dispensed_at__date'),
+            is_deleted=False,
+        ).order_by('-visit_date').values('service_tier')[:1]
+        tier_raw = (
+            base.annotate(tier=Subquery(tier_subq, output_field=CharField()))
+            .values('tier')
+            .annotate(count=Count('id'))
+        )
+        tier_map = {row['tier'] or 'STANDARD': row['count'] for row in tier_raw}
+        tier_stats = [
+            {'label': 'Standard',   'key': 'STANDARD',   'color': '#0d6efd', 'count': tier_map.get('STANDARD', 0)},
+            {'label': 'Fast Track', 'key': 'FAST_TRACK', 'color': '#fd7e14', 'count': tier_map.get('FAST_TRACK', 0)},
+            {'label': 'VIP',        'key': 'VIP',        'color': '#6f42c1', 'count': tier_map.get('VIP', 0)},
+        ]
+        tier_json = json.dumps({
+            'labels': [t['label'] for t in tier_stats],
+            'data':   [t['count'] for t in tier_stats],
+            'colors': [t['color'] for t in tier_stats],
+        })
+    except Exception:
+        tier_stats = []
+        tier_json  = json.dumps({'labels': [], 'data': [], 'colors': []})
+
     # Low stock snapshot
     low_stock_drugs = [d for d in Drug.objects.filter(is_active=True, is_deleted=False) if d.needs_reorder]
 
@@ -282,6 +311,8 @@ def pharmacy_stats_view(request):
         'male_count': male_count,
         'female_count': female_count,
         'low_stock_count': len(low_stock_drugs),
+        'tier_stats': tier_stats,
+        'tier_json': tier_json,
         'today': today,
     }
     return render(request, 'pharmacy/stats.html', context)
