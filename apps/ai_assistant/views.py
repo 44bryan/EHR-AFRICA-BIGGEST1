@@ -1145,6 +1145,11 @@ def stats_insights_view(request):
             raw = raw.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
 
         insights = _json.loads(raw)
+        # Model sometimes wraps array in {"insights": [...]}
+        if isinstance(insights, dict):
+            insights = insights.get('insights') or insights.get('data') or list(insights.values())
+            if insights and isinstance(insights[0], list):
+                insights = insights[0]
         if not isinstance(insights, list):
             insights = [{'type': 'info', 'title': 'AI Insight', 'body': str(insights)}]
         return JsonResponse({'success': True, 'insights': insights})
