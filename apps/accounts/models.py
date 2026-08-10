@@ -510,6 +510,10 @@ class User(AbstractUser):
     def can_use_ai_assistant(self):
         return self.is_super_admin or self.is_executive or self.role in self.DOCTOR_ROLES or self.role in (
             UserRole.ADMIN, UserRole.MEDICAL_DIRECTOR,
+            UserRole.NURSE_DIRECTOR, UserRole.ANAESTHETIST,
+            UserRole.WARD_NURSE, UserRole.THEATRE_NURSE,
+            UserRole.CONSULTATION_NURSE, UserRole.NURSE,
+            UserRole.INVESTIGATION_TECHNICIAN, UserRole.LAB_TECHNICIAN,
         )
 
 

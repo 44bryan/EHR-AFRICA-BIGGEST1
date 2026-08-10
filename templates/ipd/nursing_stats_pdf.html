@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Surgical Bookings Register</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 20px 28px; }
+
+    .letterhead { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0d6efd; padding-bottom: 12px; margin-bottom: 14px; }
+    .hosp-name  { font-size: 20px; font-weight: 700; color: #0d6efd; }
+    .hosp-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+    .report-box { text-align: right; }
+    .report-title { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .report-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+                     color: #0d6efd; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin: 16px 0 8px; }
+
+    .kpi-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .kpi-card { flex: 1; min-width: 90px; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 12px; text-align: center; }
+    .kpi-val  { font-size: 22px; font-weight: 700; color: #0d6efd; }
+    .kpi-val.green  { color: #198754; }
+    .kpi-val.orange { color: #fd7e14; }
+    .kpi-val.teal   { color: #0dcaf0; }
+    .kpi-val.red    { color: #dc3545; }
+    .kpi-val.grey   { color: #6c757d; }
+    .kpi-label { font-size: 10px; color: #6c757d; margin-top: 2px; }
+
+    .two-col { display: flex; gap: 16px; }
+    .two-col > div { flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #0d6efd; color: #fff; padding: 6px 8px; text-align: left; font-size: 10px; }
+    td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8f9fa; }
+
+    .stat-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 11px; }
+    .stat-row:last-child { border-bottom: none; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+
+    .revenue-box { border: 1px solid #dee2e6; border-radius: 6px; padding: 12px 16px; }
+    .revenue-val { font-size: 18px; font-weight: 700; color: #198754; }
+    .revenue-label { font-size: 10px; color: #6c757d; margin-top: 2px; }
+
+    .footer { margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 10px;
+              display: flex; justify-content: space-between; font-size: 10px; color: #adb5bd; }
+
+    @media print {
+      body { padding: 0; }
+      button { display: none !important; }
+      @page { margin: 15mm 12mm; size: A4 portrait; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Letterhead ───────────────────────────────────────────────────────── -->
+<div class="letterhead">
+  <div>
+    <div class="hosp-name">{{ config.hospital_name }}</div>
+    <div class="hosp-sub">{{ config.hospital_address }}</div>
+    <div class="hosp-sub">Tel: {{ config.hospital_phone }}{% if config.hospital_email %} &nbsp;|&nbsp; {{ config.hospital_email }}{% endif %}</div>
+  </div>
+  <div class="report-box">
+    <div class="report-title">Surgical Bookings Register</div>
+    <div class="report-sub">
+      {% if show_all %}All Records{% else %}{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}{% endif %}
+    </div>
+    <div class="report-sub">Generated: {{ today|date:"d M Y" }}</div>
+  </div>
+</div>
+
+<!-- ── KPI Summary ───────────────────────────────────────────────────────── -->
+<div class="section-title">Bookings Summary</div>
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-val">{{ total_prescribed }}</div>
+    <div class="kpi-label">Prescribed</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val orange">{{ pending_payment }}</div>
+    <div class="kpi-label">Pending Payment</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val green">{{ paid }}</div>
+    <div class="kpi-label">Paid Deposit</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val teal">{{ admitted_count }}</div>
+    <div class="kpi-label">Admitted</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val grey">{{ completed }}</div>
+    <div class="kpi-label">Surgery Done</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val red">{{ cancelled }}</div>
+    <div class="kpi-label">Cancelled</div>
+  </div>
+</div>
+
+<!-- ── Financial Summary ─────────────────────────────────────────────────── -->
+<div class="section-title">Financial Summary</div>
+<div class="two-col">
+  <div class="revenue-box">
+    <div class="revenue-val">{{ revenue.total_invoiced|default:0|floatformat:0 }} FCFA</div>
+    <div class="revenue-label">Total Invoiced</div>
+  </div>
+  <div class="revenue-box">
+    <div class="revenue-val" style="color:#0d6efd;">{{ revenue.total_deposited|default:0|floatformat:0 }} FCFA</div>
+    <div class="revenue-label">Total Deposits Collected</div>
+  </div>
+</div>
+
+<!-- ── Surgery Categories ────────────────────────────────────────────────── -->
+<div class="two-col" style="margin-top: 4px;">
+  <div>
+    <div class="section-title">Surgery by Category</div>
+    {% for c in category_breakdown %}
+    <div class="stat-row">
+      <span><span class="dot" style="background:#0d6efd;"></span>{{ c.surgery_category }}</span>
+      <strong>{{ c.count }}</strong>
+    </div>
+    {% empty %}
+    <div class="stat-row" style="color:#6c757d;">No category data available</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="section-title">Booking Status</div>
+    <div class="stat-row"><span><span class="dot" style="background:#ffc107;"></span>Pending Payment</span><strong>{{ pending_payment }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Paid Deposit</span><strong>{{ paid }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#0dcaf0;"></span>Admitted (Returned)</span><strong>{{ admitted_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#6c757d;"></span>Surgery Done</span><strong>{{ completed }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#dc3545;"></span>Cancelled</span><strong>{{ cancelled }}</strong></div>
+  </div>
+</div>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<div class="footer">
+  <span>{{ config.hospital_name }} &mdash; Surgical / IPD Department</span>
+  <span>Report generated by EHR Africa &nbsp;|&nbsp; {{ today|date:"d M Y" }}</span>
+  <span>Confidential &mdash; Internal Use Only</span>
+</div>
+
+<div style="margin-top:18px;text-align:center;">
+  <button onclick="window.print()"
+    style="padding:8px 28px;background:#0d6efd;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+    Print / Save as PDF
+  </button>
+</div>
+
+</body>
+</html>

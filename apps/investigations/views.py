@@ -609,6 +609,10 @@ def investigation_stats_view(request):
     _cache_key = f'inv_stats_{year}_{month}'
     _cached = cache.get(_cache_key)
     if _cached:
+        if request.GET.get('pdf'):
+            from apps.accounts.models import HospitalConfig
+            _cached['config'] = HospitalConfig.get()
+            return render(request, 'investigations/stats_pdf.html', _cached)
         return render(request, 'investigations/stats.html', _cached)
     _cache_ttl = 300 if (year == today.year and month == today.month) else 86400
 
@@ -831,6 +835,11 @@ def investigation_stats_view(request):
         'gender_json': gender_json, 'age_json': age_json,
         'dept_json': dept_json, 'tier_json': tier_json,
         'is_current_month': (year == today.year and month == today.month),
+        'today': today,
     }
     cache.set(_cache_key, ctx, _cache_ttl)
+    if request.GET.get('pdf'):
+        from apps.accounts.models import HospitalConfig
+        ctx['config'] = HospitalConfig.get()
+        return render(request, 'investigations/stats_pdf.html', ctx)
     return render(request, 'investigations/stats.html', ctx)

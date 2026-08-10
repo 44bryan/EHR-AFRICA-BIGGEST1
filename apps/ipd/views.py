@@ -963,6 +963,10 @@ def ipd_nursing_stats(request):
         'month_start': month_start,
         'today': today,
     }
+    if request.GET.get('pdf'):
+        from apps.accounts.models import HospitalConfig
+        context['config'] = HospitalConfig.get()
+        return render(request, 'ipd/nursing_stats_pdf.html', context)
     return render(request, 'ipd/nursing_stats.html', context)
 
 
@@ -2011,7 +2015,7 @@ def admission_stats(request):
         .annotate(n=Count('id')).order_by('-n')[:5]
     )
 
-    return render(request, 'ipd/admission_stats.html', {
+    _ipd_ctx = {
         'total': total,
         'by_status': by_status,
         'by_procedure': by_procedure,
@@ -2022,7 +2026,13 @@ def admission_stats(request):
         'top_surgeons': top_surgeons,
         'period': period,
         'booking_statuses': SurgicalBookingStatus.choices,
-    })
+        'today': timezone.localdate(),
+    }
+    if request.GET.get('pdf'):
+        from apps.accounts.models import HospitalConfig
+        _ipd_ctx['config'] = HospitalConfig.get()
+        return render(request, 'ipd/admission_stats_pdf.html', _ipd_ctx)
+    return render(request, 'ipd/admission_stats.html', _ipd_ctx)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

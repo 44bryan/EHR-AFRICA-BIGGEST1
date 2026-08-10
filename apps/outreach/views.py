@@ -747,14 +747,13 @@ def stats_view(request):
         for g in range(5)
     ]
 
-    return render(request, 'outreach/stats.html', {
+    _out_ctx = {
         'year': year, 'totals': totals, 'path_totals': path_totals,
         'pt_agg': pt_agg, 'ref_agg': ref_agg, 'conversion': conversion,
         'monthly': monthly, 'by_type': by_type,
         'activities_count': acts_qs.count(),
         'completed_count': acts_qs.filter(status=OutreachStatus.COMPLETED).count(),
         'today': today,
-        # WHO metrics
         'total_exams': total_exams,
         'who_counts': who_counts,
         'who_grade_chart': who_grade_chart,
@@ -765,7 +764,12 @@ def stats_view(request):
         'raab_brackets': raab_brackets,
         'csc': csc, 'csc_num': cataract_operated, 'csc_den': cataract_need,
         'erec': erec, 'erec_num': glasses_given, 'erec_den': refractive_need,
-    })
+    }
+    if request.GET.get('pdf'):
+        from apps.accounts.models import HospitalConfig
+        _out_ctx['config'] = HospitalConfig.get()
+        return render(request, 'outreach/stats_pdf.html', _out_ctx)
+    return render(request, 'outreach/stats.html', _out_ctx)
 
 
 # ─── Sync Dashboard ───────────────────────────────────────────────────────────

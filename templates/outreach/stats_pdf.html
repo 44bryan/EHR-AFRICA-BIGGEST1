@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Outreach Annual Statistics — {{ year }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 20px 28px; }
+
+    .letterhead { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #198754; padding-bottom: 12px; margin-bottom: 14px; }
+    .hosp-name  { font-size: 20px; font-weight: 700; color: #198754; }
+    .hosp-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+    .report-box { text-align: right; }
+    .report-title { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .report-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+                     color: #198754; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin: 16px 0 8px; }
+
+    .kpi-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .kpi-card { flex: 1; min-width: 90px; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 12px; text-align: center; }
+    .kpi-val  { font-size: 22px; font-weight: 700; color: #198754; }
+    .kpi-val.blue   { color: #0d6efd; }
+    .kpi-val.orange { color: #fd7e14; }
+    .kpi-val.red    { color: #dc3545; }
+    .kpi-val.grey   { color: #6c757d; }
+    .kpi-label { font-size: 10px; color: #6c757d; margin-top: 2px; }
+
+    .two-col { display: flex; gap: 16px; }
+    .three-col { display: flex; gap: 14px; }
+    .two-col > div, .three-col > div { flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #198754; color: #fff; padding: 6px 8px; text-align: left; font-size: 10px; }
+    td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8f9fa; }
+
+    .stat-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 11px; }
+    .stat-row:last-child { border-bottom: none; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+
+    .rate-box { border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 14px; text-align: center; }
+    .rate-val { font-size: 28px; font-weight: 700; color: #198754; }
+    .rate-sub { font-size: 10px; color: #6c757d; margin-top: 2px; }
+    .rate-formula { font-size: 10px; color: #adb5bd; margin-top: 4px; }
+
+    .footer { margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 10px;
+              display: flex; justify-content: space-between; font-size: 10px; color: #adb5bd; }
+
+    @media print {
+      body { padding: 0; }
+      button { display: none !important; }
+      @page { margin: 15mm 12mm; size: A4 portrait; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Letterhead ───────────────────────────────────────────────────────── -->
+<div class="letterhead">
+  <div>
+    <div class="hosp-name">{{ config.hospital_name }}</div>
+    <div class="hosp-sub">{{ config.hospital_address }}</div>
+    <div class="hosp-sub">Tel: {{ config.hospital_phone }}{% if config.hospital_email %} &nbsp;|&nbsp; {{ config.hospital_email }}{% endif %}</div>
+  </div>
+  <div class="report-box">
+    <div class="report-title">Outreach Annual Statistics</div>
+    <div class="report-sub">Year: {{ year }}</div>
+    <div class="report-sub">Generated: {{ today|date:"d M Y" }}</div>
+  </div>
+</div>
+
+<!-- ── KPI Summary ───────────────────────────────────────────────────────── -->
+<div class="section-title">Activity Summary — {{ year }}</div>
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-val blue">{{ activities_count }}</div>
+    <div class="kpi-label">Activities</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val">{{ totals.screened|default:0 }}</div>
+    <div class="kpi-label">Screened</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val">{{ totals.treated|default:0 }}</div>
+    <div class="kpi-label">Treated</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val orange">{{ totals.referred|default:0 }}</div>
+    <div class="kpi-label">Referred</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val red">{{ totals.surgeries|default:0 }}</div>
+    <div class="kpi-label">Surgeries</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val grey">{{ totals.glasses|default:0 }}</div>
+    <div class="kpi-label">Glasses Given</div>
+  </div>
+</div>
+
+<!-- ── Demographics & Pathology ─────────────────────────────────────────── -->
+<div class="three-col" style="margin-top:16px;">
+
+  <!-- Demographics -->
+  <div>
+    <div class="section-title">Demographics</div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#0d6efd;"></span>Male Screened</span>
+      <strong>{{ totals.male|default:0 }}</strong>
+    </div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#dc3545;"></span>Female Screened</span>
+      <strong>{{ totals.female|default:0 }}</strong>
+    </div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#6f42c1;"></span>Children (&lt;18)</span>
+      <strong>{{ totals.children|default:0 }}</strong>
+    </div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#fd7e14;"></span>Elderly (60+)</span>
+      <strong>{{ totals.elderly|default:0 }}</strong>
+    </div>
+  </div>
+
+  <!-- Conditions Found -->
+  <div>
+    <div class="section-title">Conditions Found</div>
+    <div class="stat-row"><span>Normal Vision</span><strong>{{ path_totals.normal|default:0 }}</strong></div>
+    <div class="stat-row"><span>Refractive Errors</span><strong>{{ path_totals.refractive|default:0 }}</strong></div>
+    <div class="stat-row"><span>Cataract</span><strong>{{ path_totals.cataract|default:0 }}</strong></div>
+    <div class="stat-row"><span>Glaucoma Suspect</span><strong>{{ path_totals.glaucoma|default:0 }}</strong></div>
+    <div class="stat-row"><span>Diabetic Retinopathy</span><strong>{{ path_totals.dr|default:0 }}</strong></div>
+    <div class="stat-row"><span>Pterygium</span><strong>{{ path_totals.pterygium|default:0 }}</strong></div>
+    <div class="stat-row"><span>Trachoma</span><strong>{{ path_totals.trachoma|default:0 }}</strong></div>
+    <div class="stat-row"><span>Corneal Opacity</span><strong>{{ path_totals.corneal|default:0 }}</strong></div>
+  </div>
+
+  <!-- Referrals -->
+  <div>
+    <div class="section-title">Referral Breakdown</div>
+    <div class="stat-row"><span><span class="dot" style="background:#dc3545;"></span>Cataract</span><strong>{{ totals.ref_cataract|default:0 }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#fd7e14;"></span>Glaucoma</span><strong>{{ totals.ref_glaucoma|default:0 }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#0d6efd;"></span>Retina</span><strong>{{ totals.ref_retina|default:0 }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#6c757d;"></span>Other</span><strong>{{ totals.ref_other|default:0 }}</strong></div>
+
+    <div class="section-title" style="margin-top:12px;">Blindness Indicators</div>
+    <div class="stat-row"><span>Visually Impaired</span><strong>{{ vi_total }}</strong></div>
+    <div class="stat-row"><span>Blind (VA &lt;3/60)</span><strong>{{ blind_total }}</strong></div>
+    <div class="stat-row"><span>Avoidable Blindness</span><strong>{{ avoidable_blind }}</strong></div>
+  </div>
+
+</div>
+
+<!-- ── WHO Rates ─────────────────────────────────────────────────────────── -->
+<div class="section-title">WHO Performance Indicators</div>
+<div class="two-col">
+  <div class="rate-box">
+    <div class="rate-val">
+      {% if csc is not None %}{{ csc }}%{% else %}—{% endif %}
+    </div>
+    <div class="rate-sub">Cataract Surgical Coverage (CSC)</div>
+    <div class="rate-formula">
+      {% if csc is not None %}
+        {{ csc_num }} operated / {{ csc_den }} estimated need
+      {% else %}
+        Insufficient data to calculate
+      {% endif %}
+    </div>
+  </div>
+  <div class="rate-box">
+    <div class="rate-val">
+      {% if erec is not None %}{{ erec }}%{% else %}—{% endif %}
+    </div>
+    <div class="rate-sub">Effective Refractive Error Coverage (eREC)</div>
+    <div class="rate-formula">
+      {% if erec is not None %}
+        {{ erec_num }} glasses given / {{ erec_den }} estimated need
+      {% else %}
+        Insufficient data to calculate
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<div class="footer">
+  <span>{{ config.hospital_name }} &mdash; Outreach Department</span>
+  <span>Report generated by EHR Africa &nbsp;|&nbsp; {{ today|date:"d M Y" }}</span>
+  <span>Confidential &mdash; Internal Use Only</span>
+</div>
+
+<div style="margin-top:18px;text-align:center;">
+  <button onclick="window.print()"
+    style="padding:8px 28px;background:#198754;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+    Print / Save as PDF
+  </button>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Laboratory Statistics — {{ month_start|date:"F Y" }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 20px 28px; }
+
+    .letterhead { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0d6efd; padding-bottom: 12px; margin-bottom: 14px; }
+    .hosp-name  { font-size: 20px; font-weight: 700; color: #0d6efd; }
+    .hosp-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+    .report-box { text-align: right; }
+    .report-title { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .report-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+                     color: #0d6efd; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin: 16px 0 8px; }
+
+    .kpi-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .kpi-card { flex: 1; min-width: 100px; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 12px; text-align: center; }
+    .kpi-val  { font-size: 22px; font-weight: 700; color: #0d6efd; }
+    .kpi-val.green  { color: #198754; }
+    .kpi-val.orange { color: #fd7e14; }
+    .kpi-val.grey   { color: #6c757d; }
+    .kpi-val.teal   { color: #0dcaf0; }
+    .kpi-val.red    { color: #dc3545; }
+    .kpi-label { font-size: 10px; color: #6c757d; margin-top: 2px; }
+
+    .two-col { display: flex; gap: 16px; }
+    .two-col > div { flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #0d6efd; color: #fff; padding: 6px 8px; text-align: left; font-size: 10px; }
+    td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8f9fa; }
+    .bar-wrap { background: #e9ecef; border-radius: 3px; height: 6px; margin-top: 3px; }
+    .bar-fill { background: #0d6efd; border-radius: 3px; height: 6px; }
+
+    .stat-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 11px; }
+    .stat-row:last-child { border-bottom: none; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+
+    .footer { margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 10px;
+              display: flex; justify-content: space-between; font-size: 10px; color: #adb5bd; }
+
+    @media print {
+      body { padding: 0; }
+      button { display: none !important; }
+      @page { margin: 15mm 12mm; size: A4 portrait; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Letterhead ───────────────────────────────────────────────────────── -->
+<div class="letterhead">
+  <div>
+    <div class="hosp-name">{{ config.hospital_name }}</div>
+    <div class="hosp-sub">{{ config.hospital_address }}</div>
+    <div class="hosp-sub">Tel: {{ config.hospital_phone }}{% if config.hospital_email %} &nbsp;|&nbsp; {{ config.hospital_email }}{% endif %}</div>
+  </div>
+  <div class="report-box">
+    <div class="report-title">Laboratory Statistics Report</div>
+    <div class="report-sub">Period: {{ month_start|date:"F Y" }}</div>
+    <div class="report-sub">Generated: {{ today|date:"d M Y" }}</div>
+  </div>
+</div>
+
+<!-- ── KPI Summary ───────────────────────────────────────────────────────── -->
+<div class="section-title">Summary</div>
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-val">{{ total_orders }}</div>
+    <div class="kpi-label">Lab Requests</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val teal">{{ total_items }}</div>
+    <div class="kpi-label">Tests Performed</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val orange">{{ total_abnormal }}</div>
+    <div class="kpi-label">Abnormal Results</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val red">{{ total_critical }}</div>
+    <div class="kpi-label">Critical Results</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val green">{{ positivity_rate|floatformat:1 }}%</div>
+    <div class="kpi-label">Overall Positivity</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val">{{ male_count|add:female_count }}</div>
+    <div class="kpi-label">Patients Served</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val grey">{{ paed_count }}</div>
+    <div class="kpi-label">Paediatric (0–14)</div>
+  </div>
+</div>
+
+<!-- ── Demographics & Categories ────────────────────────────────────────── -->
+<div class="two-col" style="margin-top:16px;">
+
+  <!-- Gender -->
+  <div>
+    <div class="section-title">Patient Gender</div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#0d6efd;"></span>Male</span>
+      <strong>{{ male_count }}</strong>
+    </div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#dc3545;"></span>Female</span>
+      <strong>{{ female_count }}</strong>
+    </div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#6f42c1;"></span>Paediatric (0–14)</span>
+      <strong>{{ paed_count }}</strong>
+    </div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#198754;"></span>Adult (15+)</span>
+      <strong>{{ adult_count }}</strong>
+    </div>
+  </div>
+
+  <!-- Category volume -->
+  <div>
+    <div class="section-title">Tests by Category</div>
+    {% for c in category_volume %}
+    <div class="stat-row">
+      <span>{{ c.label }}</span>
+      <strong>{{ c.count }}</strong>
+    </div>
+    {% empty %}
+    <div class="stat-row" style="color:#6c757d;">No category data available</div>
+    {% endfor %}
+  </div>
+
+  <!-- Age groups -->
+  <div>
+    <div class="section-title">WHO Age Groups</div>
+    {% for band, cnt in age_counts.items %}
+    <div class="stat-row">
+      <span>{{ band }} yrs</span>
+      <strong>{{ cnt }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+<!-- ── Top Tests ─────────────────────────────────────────────────────────── -->
+<div class="section-title">Top 10 Tests — {{ month_start|date:"F Y" }}</div>
+{% if top_tests %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Test Name</th>
+      <th>Code</th>
+      <th style="text-align:center;">Count</th>
+      <th style="width:130px;">Volume</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in top_tests %}
+    <tr>
+      <td style="color:#6c757d;font-weight:700;">{{ forloop.counter }}</td>
+      <td style="font-weight:600;">{{ t.test_type__name }}</td>
+      <td style="color:#6c757d;">{{ t.test_type__code }}</td>
+      <td style="text-align:center;font-weight:700;color:#0d6efd;">{{ t.count }}</td>
+      <td>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width:{% widthratio t.count top_tests.0.count 100 %}%;"></div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#6c757d;font-style:italic;padding:8px 0;">No laboratory data recorded for this period.</p>
+{% endif %}
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<div class="footer">
+  <span>{{ config.hospital_name }} &mdash; Laboratory Department</span>
+  <span>Report generated by EHR Africa &nbsp;|&nbsp; {{ today|date:"d M Y" }}</span>
+  <span>Confidential &mdash; Internal Use Only</span>
+</div>
+
+<div style="margin-top:18px;text-align:center;">
+  <button onclick="window.print()"
+    style="padding:8px 28px;background:#0d6efd;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+    Print / Save as PDF
+  </button>
+</div>
+
+</body>
+</html>
