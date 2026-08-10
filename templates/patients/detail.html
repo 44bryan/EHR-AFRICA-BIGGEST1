@@ -1970,7 +1970,10 @@ function loadAIRisk() {
 var _chatHistory = [];
 var _chatPatientId = '{{ patient.patient_id }}';
 var _chatUrl = '{% url "ai_assistant:patient_chat" patient_id=patient.patient_id %}';
-var _chatCsrf = '{{ csrf_token }}';
+function _getCsrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '{{ csrf_token }}';
+}
 
 function togglePatientChat() {
   var panel = document.getElementById('patientChatPanel');
@@ -2031,7 +2034,7 @@ function sendChatMessage() {
 
   fetch(_chatUrl, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json', 'X-CSRFToken': _chatCsrf},
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': _getCsrf()},
     body: JSON.stringify({question: q, history: _chatHistory.slice(0, -1)})
   })
   .then(function(r) {
