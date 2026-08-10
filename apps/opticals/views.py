@@ -691,6 +691,35 @@ def optical_stats_view(request):
         .order_by('-count')[:10]
     )
 
+    # Tier breakdown — join to same-day visit
+    try:
+        from apps.patients.models import Visit
+        from django.db.models import OuterRef, Subquery, CharField
+        tier_subq = Visit.objects.filter(
+            patient=OuterRef('patient'),
+            visit_date__date=OuterRef('ordered_date'),
+            is_deleted=False,
+        ).order_by('-visit_date').values('service_tier')[:1]
+        tier_raw = (
+            base.annotate(tier=Subquery(tier_subq, output_field=CharField()))
+            .values('tier')
+            .annotate(count=Count('id'))
+        )
+        tier_map = {row['tier'] or 'STANDARD': row['count'] for row in tier_raw}
+        tier_stats = [
+            {'label': 'Standard',   'key': 'STANDARD',   'color': '#0d6efd', 'count': tier_map.get('STANDARD', 0)},
+            {'label': 'Fast Track', 'key': 'FAST_TRACK', 'color': '#fd7e14', 'count': tier_map.get('FAST_TRACK', 0)},
+            {'label': 'VIP',        'key': 'VIP',        'color': '#6f42c1', 'count': tier_map.get('VIP', 0)},
+        ]
+        tier_json = json.dumps({
+            'labels': [t['label'] for t in tier_stats],
+            'data':   [t['count'] for t in tier_stats],
+            'colors': [t['color'] for t in tier_stats],
+        })
+    except Exception:
+        tier_stats = []
+        tier_json  = json.dumps({'labels': [], 'data': [], 'colors': []})
+
     # Month nav
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1)  if month == 12 else (year, month + 1)
@@ -713,6 +742,8 @@ def optical_stats_view(request):
         'male_count': male_count,
         'female_count': female_count,
         'top_frames': top_frames,
+        'tier_stats': tier_stats,
+        'tier_json': tier_json,
         'today': today,
     }
     return render(request, 'opticals/stats.html', context)
