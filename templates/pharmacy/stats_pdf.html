@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pharmacy Statistics Report — {{ month_name }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 20px 28px; }
+
+    /* ── Letterhead ─────────────────────────────────────────────────────── */
+    .letterhead { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0d6efd; padding-bottom: 12px; margin-bottom: 14px; }
+    .hosp-name  { font-size: 20px; font-weight: 700; color: #0d6efd; }
+    .hosp-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+    .report-box { text-align: right; }
+    .report-title { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .report-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+
+    /* ── Section headers ────────────────────────────────────────────────── */
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+                     color: #0d6efd; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin: 16px 0 8px; }
+
+    /* ── KPI grid ───────────────────────────────────────────────────────── */
+    .kpi-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .kpi-card { flex: 1; min-width: 100px; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 12px; text-align: center; }
+    .kpi-val  { font-size: 22px; font-weight: 700; color: #0d6efd; }
+    .kpi-val.green  { color: #198754; }
+    .kpi-val.orange { color: #fd7e14; }
+    .kpi-val.grey   { color: #6c757d; }
+    .kpi-val.teal   { color: #0dcaf0; }
+    .kpi-label { font-size: 10px; color: #6c757d; margin-top: 2px; }
+
+    /* ── Two-column layout ──────────────────────────────────────────────── */
+    .two-col { display: flex; gap: 16px; }
+    .two-col > div { flex: 1; }
+
+    /* ── Table ──────────────────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #0d6efd; color: #fff; padding: 6px 8px; text-align: left; font-size: 10px; }
+    td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8f9fa; }
+    .bar-wrap { background: #e9ecef; border-radius: 3px; height: 6px; margin-top: 3px; }
+    .bar-fill { background: #0d6efd; border-radius: 3px; height: 6px; }
+
+    /* ── Tier / Gender rows ─────────────────────────────────────────────── */
+    .stat-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 11px; }
+    .stat-row:last-child { border-bottom: none; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+
+    /* ── Footer ─────────────────────────────────────────────────────────── */
+    .footer { margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 10px;
+              display: flex; justify-content: space-between; font-size: 10px; color: #adb5bd; }
+
+    /* ── Stock alert ────────────────────────────────────────────────────── */
+    .alert-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 8px 12px; font-size: 11px; }
+
+    @media print {
+      body { padding: 0; }
+      button { display: none !important; }
+      @page { margin: 15mm 12mm; size: A4 portrait; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Letterhead ───────────────────────────────────────────────────────── -->
+<div class="letterhead">
+  <div>
+    <div class="hosp-name">{{ config.hospital_name }}</div>
+    <div class="hosp-sub">{{ config.hospital_address }}</div>
+    <div class="hosp-sub">Tel: {{ config.hospital_phone }}{% if config.hospital_email %} &nbsp;|&nbsp; {{ config.hospital_email }}{% endif %}</div>
+  </div>
+  <div class="report-box">
+    <div class="report-title">Pharmacy Statistics Report</div>
+    <div class="report-sub">Period: {{ month_name }}</div>
+    <div class="report-sub">Generated: {{ today|date:"d M Y" }}</div>
+  </div>
+</div>
+
+<!-- ── KPI Summary ───────────────────────────────────────────────────────── -->
+<div class="section-title">Summary</div>
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-val">{{ total_dispensings }}</div>
+    <div class="kpi-label">Total Dispensings</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val green">{{ dispensed_count }}</div>
+    <div class="kpi-label">Fully Dispensed</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val orange">{{ partial_count }}</div>
+    <div class="kpi-label">Partial</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val grey">{{ cancelled_count }}</div>
+    <div class="kpi-label">Cancelled</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val teal">{{ completion_rate }}%</div>
+    <div class="kpi-label">Completion Rate</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val green">{{ revenue|floatformat:0 }}</div>
+    <div class="kpi-label">Revenue (FCFA)</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val">{{ male_count|add:female_count }}</div>
+    <div class="kpi-label">Patients Served</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val{% if low_stock_count %} orange{% else %} green{% endif %}">{{ low_stock_count }}</div>
+    <div class="kpi-label">Low / Out of Stock</div>
+  </div>
+</div>
+
+<!-- ── Breakdown ────────────────────────────────────────────────────────── -->
+<div class="two-col" style="margin-top:16px;">
+
+  <!-- Gender -->
+  <div>
+    <div class="section-title">Patient Gender</div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#0d6efd;"></span>Male</span>
+      <strong>{{ male_count }}</strong>
+    </div>
+    <div class="stat-row">
+      <span><span class="dot" style="background:#dc3545;"></span>Female</span>
+      <strong>{{ female_count }}</strong>
+    </div>
+  </div>
+
+  <!-- Tier -->
+  <div>
+    <div class="section-title">Dispensings by Tier</div>
+    {% for t in tier_stats %}
+    <div class="stat-row">
+      <span><span class="dot" style="background:{{ t.color }};"></span>{{ t.label }}</span>
+      <strong>{{ t.count }}</strong>
+    </div>
+    {% empty %}
+    <div class="stat-row" style="color:#6c757d;">No tier data available</div>
+    {% endfor %}
+  </div>
+
+  <!-- Status -->
+  <div>
+    <div class="section-title">Dispensing Status</div>
+    <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Dispensed</span><strong>{{ dispensed_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#ffc107;"></span>Partial</span><strong>{{ partial_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#6c757d;"></span>Cancelled</span><strong>{{ cancelled_count }}</strong></div>
+  </div>
+
+</div>
+
+<!-- ── Top Drugs ─────────────────────────────────────────────────────────── -->
+<div class="section-title">Top 15 Drugs Dispensed — {{ month_name }}</div>
+{% if top_drugs %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Drug Name</th>
+      <th style="text-align:center;">Dispensings</th>
+      <th style="text-align:center;">Qty Dispensed</th>
+      <th style="width:120px;">Volume</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in top_drugs %}
+    <tr>
+      <td style="color:#6c757d;font-weight:700;">{{ forloop.counter }}</td>
+      <td style="font-weight:600;">{{ d.drug_name }}</td>
+      <td style="text-align:center;">{{ d.count }}</td>
+      <td style="text-align:center;font-weight:700;color:#0d6efd;">{{ d.qty }}</td>
+      <td>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width:{% widthratio d.qty top_drugs.0.qty 100 %}%;"></div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#6c757d;font-style:italic;padding:8px 0;">No dispensing data recorded for this period.</p>
+{% endif %}
+
+{% if low_stock_count %}
+<!-- ── Stock Alert ────────────────────────────────────────────────────────── -->
+<div class="section-title" style="color:#dc3545;border-color:#dc3545;">Stock Alert</div>
+<div class="alert-box">
+  <strong>{{ low_stock_count }} drug(s)</strong> are currently at or below reorder level.
+  Please review the stock register and place orders promptly.
+</div>
+{% endif %}
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<div class="footer">
+  <span>{{ config.hospital_name }} &mdash; Pharmacy Department</span>
+  <span>Report generated by EHR Africa &nbsp;|&nbsp; {{ today|date:"d M Y" }}</span>
+  <span>Confidential &mdash; Internal Use Only</span>
+</div>
+
+<div style="margin-top:18px;text-align:center;">
+  <button onclick="window.print()"
+    style="padding:8px 28px;background:#0d6efd;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+    Print / Save as PDF
+  </button>
+</div>
+
+</body>
+</html>

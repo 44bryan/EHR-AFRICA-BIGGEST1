@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Optical Statistics Report — {{ month_name }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 20px 28px; }
+
+    .letterhead { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0dcaf0; padding-bottom: 12px; margin-bottom: 14px; }
+    .hosp-name  { font-size: 20px; font-weight: 700; color: #0d6efd; }
+    .hosp-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+    .report-box { text-align: right; }
+    .report-title { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .report-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
+
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+                     color: #0dcaf0; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin: 16px 0 8px; }
+
+    .kpi-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .kpi-card { flex: 1; min-width: 100px; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 12px; text-align: center; }
+    .kpi-val  { font-size: 22px; font-weight: 700; color: #0d6efd; }
+    .kpi-val.green  { color: #198754; }
+    .kpi-val.orange { color: #fd7e14; }
+    .kpi-val.grey   { color: #6c757d; }
+    .kpi-val.teal   { color: #0dcaf0; }
+    .kpi-label { font-size: 10px; color: #6c757d; margin-top: 2px; }
+
+    .two-col { display: flex; gap: 16px; }
+    .two-col > div { flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #0d6efd; color: #fff; padding: 6px 8px; text-align: left; font-size: 10px; }
+    td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8f9fa; }
+    .bar-wrap { background: #e9ecef; border-radius: 3px; height: 6px; margin-top: 3px; }
+    .bar-fill { background: #0dcaf0; border-radius: 3px; height: 6px; }
+
+    .stat-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 11px; }
+    .stat-row:last-child { border-bottom: none; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+
+    .footer { margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 10px;
+              display: flex; justify-content: space-between; font-size: 10px; color: #adb5bd; }
+
+    @media print {
+      body { padding: 0; }
+      button { display: none !important; }
+      @page { margin: 15mm 12mm; size: A4 portrait; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="letterhead">
+  <div>
+    <div class="hosp-name">{{ config.hospital_name }}</div>
+    <div class="hosp-sub">{{ config.hospital_address }}</div>
+    <div class="hosp-sub">Tel: {{ config.hospital_phone }}{% if config.hospital_email %} &nbsp;|&nbsp; {{ config.hospital_email }}{% endif %}</div>
+  </div>
+  <div class="report-box">
+    <div class="report-title">Optical Department Statistics</div>
+    <div class="report-sub">Period: {{ month_name }}</div>
+    <div class="report-sub">Generated: {{ today|date:"d M Y" }}</div>
+  </div>
+</div>
+
+<div class="section-title">Summary</div>
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-val">{{ total_orders }}</div>
+    <div class="kpi-label">Total Orders</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val green">{{ delivered_count }}</div>
+    <div class="kpi-label">Delivered</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val teal">{{ ready_count }}</div>
+    <div class="kpi-label">Ready for Collection</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val orange">{{ lab_count }}</div>
+    <div class="kpi-label">At Lab</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val grey">{{ cancelled_count }}</div>
+    <div class="kpi-label">Cancelled</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val teal">{{ delivery_rate }}%</div>
+    <div class="kpi-label">Delivery Rate</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val green">{{ revenue|floatformat:0 }}</div>
+    <div class="kpi-label">Revenue (FCFA)</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val">{{ male_count|add:female_count }}</div>
+    <div class="kpi-label">Patients Served</div>
+  </div>
+</div>
+
+<div class="two-col" style="margin-top:16px;">
+  <div>
+    <div class="section-title">Patient Gender</div>
+    <div class="stat-row"><span><span class="dot" style="background:#0d6efd;"></span>Male</span><strong>{{ male_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#dc3545;"></span>Female</span><strong>{{ female_count }}</strong></div>
+  </div>
+  <div>
+    <div class="section-title">Orders by Tier</div>
+    {% for t in tier_stats %}
+    <div class="stat-row">
+      <span><span class="dot" style="background:{{ t.color }};"></span>{{ t.label }}</span>
+      <strong>{{ t.count }}</strong>
+    </div>
+    {% empty %}
+    <div class="stat-row" style="color:#6c757d;">No tier data available</div>
+    {% endfor %}
+  </div>
+  <div>
+    <div class="section-title">Order Status</div>
+    <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Delivered</span><strong>{{ delivered_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#0dcaf0;"></span>Ready</span><strong>{{ ready_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#ffc107;"></span>At Lab</span><strong>{{ lab_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#6c757d;"></span>Cancelled</span><strong>{{ cancelled_count }}</strong></div>
+  </div>
+</div>
+
+<div class="section-title">Top Frames / Lens Types — {{ month_name }}</div>
+{% if top_frames %}
+<table>
+  <thead>
+    <tr><th>#</th><th>Item</th><th style="text-align:center;">Orders</th><th style="width:140px;">Volume</th></tr>
+  </thead>
+  <tbody>
+    {% for f in top_frames %}
+    <tr>
+      <td style="color:#6c757d;font-weight:700;">{{ forloop.counter }}</td>
+      <td style="font-weight:600;">{{ f.name }}</td>
+      <td style="text-align:center;font-weight:700;color:#0d6efd;">{{ f.count }}</td>
+      <td>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width:{% widthratio f.count top_frames.0.count 100 %}%;"></div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#6c757d;font-style:italic;padding:8px 0;">No order data recorded for this period.</p>
+{% endif %}
+
+<div class="footer">
+  <span>{{ config.hospital_name }} &mdash; Optical Department</span>
+  <span>Report generated by EHR Africa &nbsp;|&nbsp; {{ today|date:"d M Y" }}</span>
+  <span>Confidential &mdash; Internal Use Only</span>
+</div>
+
+<div style="margin-top:18px;text-align:center;">
+  <button onclick="window.print()"
+    style="padding:8px 28px;background:#0d6efd;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+    Print / Save as PDF
+  </button>
+</div>
+
+</body>
+</html>

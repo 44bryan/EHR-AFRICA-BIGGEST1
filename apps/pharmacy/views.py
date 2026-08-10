@@ -315,6 +315,10 @@ def pharmacy_stats_view(request):
         'tier_json': tier_json,
         'today': today,
     }
+    if request.GET.get('pdf'):
+        from apps.accounts.models import HospitalConfig
+        context['config'] = HospitalConfig.get()
+        return render(request, 'pharmacy/stats_pdf.html', context)
     return render(request, 'pharmacy/stats.html', context)
 
 
