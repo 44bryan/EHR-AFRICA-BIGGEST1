@@ -14,6 +14,17 @@
     .report-title { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .report-sub   { font-size: 11px; color: #6c757d; margin-top: 2px; }
 
+    /* ── Professional header elements ──────────────────────────────────────── */
+    .accred-bar  { background:#198754; color:#fff; font-size:8px; letter-spacing:.08em;
+                   text-transform:uppercase; padding:4px 12px; margin-bottom:12px;
+                   display:flex; justify-content:space-between; align-items:center; border-radius:3px; }
+    .report-band { background:#198754; color:#fff; padding:9px 14px; margin-bottom:14px;
+                   border-radius:3px; display:flex; justify-content:space-between; align-items:center; }
+    .report-band-title { font-size:13px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
+    .report-band-meta  { font-size:10px; font-weight:400; opacity:.85; text-align:right; }
+    .confidential { background:#fff3cd; border:1px solid #ffc107; border-radius:4px; padding:3px 8px;
+                    font-size:9px; font-weight:700; color:#856404; text-transform:uppercase; letter-spacing:.04em; }
+
     .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
                      color: #198754; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin: 16px 0 8px; }
 
@@ -57,6 +68,12 @@
 </head>
 <body>
 
+<!-- ── Accred bar ───────────────────────────────────────────────────────── -->
+<div class="accred-bar">
+  <span>{{ config.hospital_name }}</span>
+  <span>EHR Africa &nbsp;&bull;&nbsp; Department Statistics Report</span>
+</div>
+
 <!-- ── Letterhead ───────────────────────────────────────────────────────── -->
 <div class="letterhead">
   <div>
@@ -64,11 +81,15 @@
     <div class="hosp-sub">{{ config.hospital_address }}</div>
     <div class="hosp-sub">Tel: {{ config.hospital_phone }}{% if config.hospital_email %} &nbsp;|&nbsp; {{ config.hospital_email }}{% endif %}</div>
   </div>
-  <div class="report-box">
-    <div class="report-title">Outreach Annual Statistics</div>
-    <div class="report-sub">Year: {{ year }}</div>
-    <div class="report-sub">Generated: {{ today|date:"d M Y" }}</div>
+  <div style="text-align:right;">
+    <span class="confidential">Confidential &mdash; Internal Use Only</span>
   </div>
+</div>
+
+<!-- ── Report title band ─────────────────────────────────────────────────── -->
+<div class="report-band">
+  <div class="report-band-title">Outreach Annual Statistics</div>
+  <div class="report-band-meta">Year: {{ year }}<br>Generated: {{ today|date:"d M Y" }}</div>
 </div>
 
 <!-- ── KPI Summary ───────────────────────────────────────────────────────── -->
@@ -153,8 +174,43 @@
 
 </div>
 
+<!-- ── WHO Grade Distribution ────────────────────────────────────────────── -->
+{% if total_exams %}
+<div class="section-title">WHO Visual Impairment Grade Distribution <span style="font-weight:400;color:#6c757d;font-size:9px;">ICD-11 / WHO 2019 Classification</span></div>
+<table>
+  <thead>
+    <tr>
+      <th>WHO Grade</th>
+      <th>Classification</th>
+      <th style="text-align:center;">Patients</th>
+      <th style="width:130px;">Proportion</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in who_grade_chart %}
+    <tr>
+      <td style="font-weight:700;color:{{ row.color }};">Grade {{ row.grade }}</td>
+      <td>{{ row.label }}</td>
+      <td style="text-align:center;font-weight:700;">{{ row.count }}</td>
+      <td>
+        <div class="bar-wrap">
+          {% if total_exams > 0 %}
+          <div class="bar-fill" style="background:{{ row.color }};width:{% widthratio row.count total_exams 100 %}%;"></div>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div style="margin-top:6px;font-size:9px;color:#6c757d;font-style:italic;">
+  Based on {{ total_exams }} individual examination records with VA data. Grades determined by better-eye presenting VA.
+  Source: WHO World Report on Vision 2019 / ICD-11 Chapter 9.
+</div>
+{% endif %}
+
 <!-- ── WHO Rates ─────────────────────────────────────────────────────────── -->
-<div class="section-title">WHO Performance Indicators</div>
+<div class="section-title">WHO Performance Indicators <span style="font-weight:400;color:#6c757d;font-size:9px;">VISION 2020 Global Initiative</span></div>
 <div class="two-col">
   <div class="rate-box">
     <div class="rate-val">
@@ -184,11 +240,20 @@
   </div>
 </div>
 
+<!-- ── WHO Standards Note ─────────────────────────────────────────────────── -->
+<div style="margin-top:16px;background:#f0fff4;border:1px solid #bbf7d0;border-radius:5px;padding:8px 12px;font-size:9px;color:#166534;">
+  <strong>WHO Standards Compliance:</strong>
+  This report follows the WHO/ICD-11 Visual Impairment Classification (2019),
+  VISION 2020 — Right to Sight Global Initiative indicators (CSC, eREC),
+  and the RAAB7 Rapid Assessment of Avoidable Blindness protocol.
+  All prevalence calculations use standard WHO methodologies for blindness programme reporting.
+</div>
+
 <!-- ── Footer ─────────────────────────────────────────────────────────────── -->
 <div class="footer">
   <span>{{ config.hospital_name }} &mdash; Outreach Department</span>
   <span>Report generated by EHR Africa &nbsp;|&nbsp; {{ today|date:"d M Y" }}</span>
-  <span>Confidential &mdash; Internal Use Only</span>
+  <span>WHO/ICD-11 Compliant Report</span>
 </div>
 
 <div style="margin-top:18px;text-align:center;">
