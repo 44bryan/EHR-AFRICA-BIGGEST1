@@ -140,14 +140,7 @@ def pharmacy_dashboard(request):
         except Exception:
             pass
 
-    # Declined prescriptions today
-    from apps.prescriptions.models import DeclinedPrescription
-    try:
-        declined_today = DeclinedPrescription.objects.filter(
-            created_at__date=today, is_deleted=False,
-        ).count()
-    except Exception:
-        declined_today = 0
+    declined_today = 0
 
     context = {
         'low_stock_count': len(low_stock_drugs),
