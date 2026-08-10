@@ -70,13 +70,9 @@ CAN_VIEW_PATIENT = (
     UserRole.RECEPTIONIST,
     UserRole.ADMISSION_OFFICER,
     UserRole.MEDICAL_RECORDS,
-    # Billing — invoice/patient lookup
-    UserRole.BILLING_OFFICER,
+    # Billing — patient lookup limited to CASHIER (POS) and RECEPTIONIST only
+    # HIPAA §164.514(d): financial roles see invoices, NOT clinical records
     UserRole.CASHIER,
-    UserRole.CHIEF_CASHIER,
-    UserRole.ACCOUNTANT,
-    UserRole.SENIOR_ACCOUNTANT,
-    UserRole.FINANCE_DIRECTOR,
 )
 
 # ── Roles that can CREATE consultations ─────────────────────────────────────
@@ -136,7 +132,6 @@ CAN_MANAGE_BILLING = (
     UserRole.ACCOUNTANT,
     UserRole.SENIOR_ACCOUNTANT,
     UserRole.RECEPTIONIST,
-    UserRole.ADMIN,
     UserRole.ADMIN_DIRECTOR,
     UserRole.CEO,
     UserRole.FINANCE_DIRECTOR,

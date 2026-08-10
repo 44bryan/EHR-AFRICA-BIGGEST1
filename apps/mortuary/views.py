@@ -15,9 +15,9 @@ from .models import (
 def _can_access(user):
     return user.role in [
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.DOCTOR, UserRole.OPHTHALMOLOGIST, UserRole.NURSE,
-        UserRole.WARD_NURSE, UserRole.HEAD_NURSE, UserRole.NURSE_DIRECTOR,
-        UserRole.MEDICAL_RECORDS, UserRole.RECEPTIONIST,
+        UserRole.CEO, UserRole.OPHTHALMOLOGIST, UserRole.NURSE,
+        UserRole.WARD_NURSE, UserRole.NURSE_DIRECTOR,
+        UserRole.MEDICAL_RECORDS,
     ]
 
 

@@ -35,11 +35,10 @@ DESK_TIER_GROUPS = {
 #   FINANCE_DIRECTOR → full access including P&L, waivers, strategic reports
 
 def _can_cancel_invoice(user):
-    """Cancel / void invoices — ACCOUNTING OFFICE only. Cashiers cannot."""
+    """Cancel / void invoices — ACCOUNTING OFFICE only. Cashiers and billing officers cannot."""
     return user.role in (
         UserRole.ACCOUNTANT,
         UserRole.SENIOR_ACCOUNTANT,
-        UserRole.BILLING_OFFICER,
         UserRole.FINANCE_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR,
         UserRole.SUPER_ADMIN,
@@ -52,11 +51,10 @@ def _can_authorize_billing(user):
 
 
 def _can_process_refund(user):
-    """Refunds — Accountants and above only."""
+    """Refunds — Accountants and above only. Billing officers cannot."""
     return user.role in (
         UserRole.ACCOUNTANT,
         UserRole.SENIOR_ACCOUNTANT,
-        UserRole.BILLING_OFFICER,
         UserRole.FINANCE_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR,
         UserRole.SUPER_ADMIN,
@@ -122,14 +120,12 @@ def _can_view_pl(user):
 
 
 def _can_record_expense(user):
-    """Submit expenses for approval — Accountants and above."""
+    """Submit expenses for approval — Accountants and above. IT Admin role excluded."""
     return user.role in (
         UserRole.ACCOUNTANT,
         UserRole.SENIOR_ACCOUNTANT,
         UserRole.FINANCE_DIRECTOR,
-        UserRole.BILLING_OFFICER,
         UserRole.ADMIN_DIRECTOR,
-        UserRole.ADMIN,
         UserRole.MEDICAL_DIRECTOR,
         UserRole.SUPER_ADMIN,
     ) or user.is_superuser
@@ -4745,7 +4741,7 @@ from .models import GLAccount, AccountType, JournalEntry, JournalLine
 def _can_access_gl(user):
     return user.role in (
         UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.ACCOUNTANT, UserRole.ADMIN, UserRole.SUPER_ADMIN,
+        UserRole.ACCOUNTANT, UserRole.SUPER_ADMIN,
     )
 
 
@@ -5093,7 +5089,7 @@ from .models import APVendor, APBill, APPayment, APBillStatus
 def _can_access_ap(user):
     return user.role in (
         UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.ACCOUNTANT, UserRole.ADMIN, UserRole.SUPER_ADMIN,
+        UserRole.ACCOUNTANT, UserRole.SUPER_ADMIN,
     )
 
 

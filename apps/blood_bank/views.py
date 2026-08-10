@@ -36,7 +36,7 @@ def _can_request(user):
     """Can request cross-match and view blood bank data."""
     return user.role in [
         UserRole.SUPER_ADMIN, UserRole.LAB_TECHNICIAN, UserRole.INVESTIGATION_TECHNICIAN,
-        UserRole.MEDICAL_DIRECTOR, UserRole.DOCTOR, UserRole.OPHTHALMOLOGIST,
+        UserRole.MEDICAL_DIRECTOR, UserRole.OPHTHALMOLOGIST, UserRole.GENERAL_PHYSICIAN,
         UserRole.NURSE, UserRole.WARD_NURSE, UserRole.THEATRE_NURSE,
         UserRole.CEO, UserRole.ADMIN_DIRECTOR,
     ] or getattr(user, 'role', '') == 'anaesthetist'
