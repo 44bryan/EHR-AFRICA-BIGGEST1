@@ -1031,3 +1031,123 @@ def ai_investigation_template_view(request):
         return JsonResponse({'success': True, 'template_text': text.strip()})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ── Department Stats AI Insights ──────────────────────────────────────────────
+
+_DEPT_PROMPTS = {
+    'pharmacy': (
+        "You are a clinical pharmacy analyst for {hospital} in Cameroon. "
+        "Analyse the following pharmacy statistics and provide 3–5 concise, actionable insights. "
+        "Focus on: stock alerts, dispensing patterns, high-volume drugs, completion rates, and revenue trends. "
+        "Format your response as a JSON array of insight objects:\n"
+        '[{{"type":"warning|info|success|danger","title":"Short title","body":"1-2 sentence insight"}}]\n'
+        "Return ONLY valid JSON. No preamble.\n\nStats:\n{stats}"
+    ),
+    'optical': (
+        "You are a clinical optical/optometry analyst for {hospital} in Cameroon. "
+        "Analyse the following optical department statistics and provide 3–5 concise, actionable insights. "
+        "Focus on: frame/lens usage, order completion rates, refraction trends, patient throughput. "
+        "Format your response as a JSON array:\n"
+        '[{{"type":"warning|info|success|danger","title":"Short title","body":"1-2 sentence insight"}}]\n'
+        "Return ONLY valid JSON. No preamble.\n\nStats:\n{stats}"
+    ),
+    'investigations': (
+        "You are a clinical investigations analyst for {hospital} in Cameroon. "
+        "Analyse the following eye investigation statistics and provide 3–5 concise, actionable insights. "
+        "Focus on: urgent/emergency order volume, abnormal result rates, test completion, high-demand investigations, gender/age patterns. "
+        "Format your response as a JSON array:\n"
+        '[{{"type":"warning|info|success|danger","title":"Short title","body":"1-2 sentence insight"}}]\n'
+        "Return ONLY valid JSON. No preamble.\n\nStats:\n{stats}"
+    ),
+    'laboratory': (
+        "You are a medical laboratory analyst for {hospital} in Cameroon. "
+        "Analyse the following laboratory statistics and provide 3–5 concise, actionable insights. "
+        "Focus on: critical/abnormal result rates, test volume, category breakdown, turnaround quality, positivity rates. "
+        "Format your response as a JSON array:\n"
+        '[{{"type":"warning|info|success|danger","title":"Short title","body":"1-2 sentence insight"}}]\n'
+        "Return ONLY valid JSON. No preamble.\n\nStats:\n{stats}"
+    ),
+    'ipd': (
+        "You are a surgical/IPD operations analyst for {hospital} in Cameroon. "
+        "Analyse the following inpatient/surgical booking statistics and provide 3–5 concise, actionable insights. "
+        "Focus on: booking status distribution, revenue collection, top procedures, theatre utilisation, deposit rates. "
+        "Format your response as a JSON array:\n"
+        '[{{"type":"warning|info|success|danger","title":"Short title","body":"1-2 sentence insight"}}]\n'
+        "Return ONLY valid JSON. No preamble.\n\nStats:\n{stats}"
+    ),
+    'outreach': (
+        "You are a community ophthalmology program analyst for {hospital} in Cameroon. "
+        "Analyse the following outreach statistics and provide 3–5 concise, actionable insights. "
+        "Focus on: WHO CSC/eREC rates, blindness prevention, referral conversion, demographic coverage, disease burden patterns. "
+        "Format your response as a JSON array:\n"
+        '[{{"type":"warning|info|success|danger","title":"Short title","body":"1-2 sentence insight"}}]\n'
+        "Return ONLY valid JSON. No preamble.\n\nStats:\n{stats}"
+    ),
+    'nursing': (
+        "You are a surgical theatre/IPD operations analyst for {hospital} in Cameroon. "
+        "Analyse the following surgical bookings register statistics and provide 3–5 concise, actionable insights. "
+        "Focus on: surgery completion rates, cancellation reasons, deposit collection, theatre scheduling efficiency. "
+        "Format your response as a JSON array:\n"
+        '[{{"type":"warning|info|success|danger","title":"Short title","body":"1-2 sentence insight"}}]\n'
+        "Return ONLY valid JSON. No preamble.\n\nStats:\n{stats}"
+    ),
+}
+
+
+@login_required
+@require_POST
+def stats_insights_view(request):
+    """
+    AI-powered insights for department statistics pages.
+    POST body: {dept: str, stats: dict}
+    Returns:   {success: bool, insights: [{type, title, body}]}
+    """
+    if not request.user.can_use_ai_assistant():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        body = json.loads(request.body)
+        dept = body.get('dept', '').lower().strip()
+        stats = body.get('stats', {})
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON body'}, status=400)
+
+    prompt_tmpl = _DEPT_PROMPTS.get(dept)
+    if not prompt_tmpl:
+        return JsonResponse({'success': False, 'error': f'Unknown department: {dept}'}, status=400)
+
+    from apps.accounts.models import HospitalConfig
+    hospital = HospitalConfig.get().hospital_name
+
+    import json as _json
+    stats_text = _json.dumps(stats, indent=2, default=str)
+    prompt = prompt_tmpl.format(hospital=hospital, stats=stats_text)
+
+    try:
+        from .claude_client import _get_json_fn
+        json_fn = _get_json_fn()
+        response = json_fn(
+            system=(
+                "You are an expert hospital analytics AI. Return ONLY a valid JSON array. "
+                "No markdown, no explanation, no code fences."
+            ),
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=700,
+        )
+        if not response.get('success'):
+            return JsonResponse({'success': False, 'error': response.get('error', 'AI unavailable')})
+
+        raw = response.get('text') or response.get('content', '[]')
+        # Strip markdown fences if model added them
+        raw = raw.strip()
+        if raw.startswith('```'):
+            raw = raw.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
+
+        insights = _json.loads(raw)
+        if not isinstance(insights, list):
+            insights = [{'type': 'info', 'title': 'AI Insight', 'body': str(insights)}]
+        return JsonResponse({'success': True, 'insights': insights})
+    except Exception as e:
+        logger.error(f'stats_insights_view error: {e}', exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

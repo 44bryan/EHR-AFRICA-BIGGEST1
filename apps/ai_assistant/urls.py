@@ -38,4 +38,6 @@ urlpatterns = [
     path('investigation-template/', views.ai_investigation_template_view, name='investigation_template'),
     # AI Lab Panel Summary — combined interpretation of all results in one order
     path('lab-panel-summary/', views.ai_lab_panel_summary_view, name='lab_panel_summary'),
+    # Department Stats AI Insights
+    path('stats-insights/', views.stats_insights_view, name='stats_insights'),
 ]

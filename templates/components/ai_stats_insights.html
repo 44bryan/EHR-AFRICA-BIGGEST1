@@ -1,0 +1,94 @@
+{# ── AI Stats Insights Panel ─────────────────────────────────────────────────
+   Usage:
+     <script>window._AI_STATS={dept:'pharmacy',data:{...}};</script>
+     {% include "components/ai_stats_insights.html" %}
+   The including template must set window._AI_STATS before this include.
+#}
+{% if request.user.can_use_ai_assistant %}
+<div class="card border-0 shadow-sm mt-4" id="aiInsightsCard">
+  <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-stars text-primary"></i>
+      <span class="fw-semibold small">AI Insights &amp; Recommendations</span>
+      <span class="badge bg-primary-subtle text-primary border" style="font-size:.7rem;">Powered by Groq AI</span>
+    </div>
+    <button class="btn btn-sm btn-primary px-3" id="aiInsightsBtn" onclick="loadAiInsights()">
+      <i class="bi bi-stars me-1"></i>Generate Insights
+    </button>
+  </div>
+  <div class="card-body" id="aiInsightsBody">
+    <div class="text-center text-muted py-3 small">
+      <i class="bi bi-stars fs-2 d-block mb-2 opacity-25"></i>
+      Click <strong>Generate Insights</strong> to get AI-powered analysis and recommendations based on this period's data.
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  function getCsrf() {
+    var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  window.loadAiInsights = function() {
+    var ai = window._AI_STATS || {};
+    var dept = ai.dept || 'unknown';
+    var stats = ai.data || {};
+
+    var btn  = document.getElementById('aiInsightsBtn');
+    var body = document.getElementById('aiInsightsBody');
+    if (!btn || !body) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Analysing…';
+    body.innerHTML = '<div class="text-center text-muted py-4 small"><span class="spinner-border spinner-border-sm me-2"></span>AI is analysing your statistics, please wait…</div>';
+
+    fetch('{% url "ai_assistant:stats_insights" %}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+      body: JSON.stringify({dept: dept, stats: stats})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh';
+
+      if (!data.success || !data.insights || !data.insights.length) {
+        body.innerHTML = '<div class="text-muted small text-center py-3">' + (data.error || 'No insights available for this period.') + '</div>';
+        return;
+      }
+
+      var colorMap = {warning:'warning', info:'primary', success:'success', danger:'danger'};
+      var iconMap  = {warning:'exclamation-triangle-fill', info:'info-circle-fill', success:'check-circle-fill', danger:'x-octagon-fill'};
+      var bgMap    = {warning:'#fffbeb', info:'#eff6ff', success:'#f0fdf4', danger:'#fff1f2'};
+      var bdMap    = {warning:'#fde68a', info:'#bfdbfe', success:'#bbf7d0', danger:'#fecdd3'};
+
+      var html = '<div class="row g-3">';
+      data.insights.forEach(function(ins) {
+        var t   = ins.type || 'info';
+        var col = colorMap[t] || 'primary';
+        var icon= iconMap[t]  || 'info-circle-fill';
+        var bg  = bgMap[t]    || '#eff6ff';
+        var bd  = bdMap[t]    || '#bfdbfe';
+        html += '<div class="col-md-6 col-lg-4">'
+              + '<div class="p-3 rounded-3 h-100" style="background:' + bg + ';border:1px solid ' + bd + ';">'
+              + '<div class="d-flex align-items-start gap-2">'
+              + '<i class="bi bi-' + icon + ' text-' + col + ' mt-1 flex-shrink-0" style="font-size:.95rem;"></i>'
+              + '<div>'
+              + '<div class="fw-semibold small mb-1">' + (ins.title || '') + '</div>'
+              + '<div class="small text-muted" style="line-height:1.55;">' + (ins.body || '') + '</div>'
+              + '</div></div></div></div>';
+      });
+      html += '</div>';
+      body.innerHTML = html;
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-stars me-1"></i>Generate Insights';
+      body.innerHTML = '<div class="text-danger small text-center py-3"><i class="bi bi-exclamation-circle me-1"></i>' + err.message + '</div>';
+    });
+  };
+})();
+</script>
+{% endif %}
