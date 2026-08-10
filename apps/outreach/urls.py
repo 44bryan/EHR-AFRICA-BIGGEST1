@@ -32,5 +32,6 @@ urlpatterns = [
 
     # ── Field sync ───────────────────────────────────────────────────────────
     path('sync/', views.sync_dashboard, name='sync_dashboard'),
+    path('sync/now/', views.sync_now, name='sync_now'),
     path('api/sync/', views.sync_api, name='sync_api'),
 ]

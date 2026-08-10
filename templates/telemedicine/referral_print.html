@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Referral Letter — {{ appt.patient.full_name }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 13px; color: #1a1a1a; margin: 0; padding: 24px; max-width: 720px; }
+    .header { border-bottom: 2px solid #0d6efd; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .hospital-name { font-size: 18px; font-weight: 700; color: #0d6efd; }
+    .title { font-size: 16px; font-weight: 700; text-align: center; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; }
+    .badge-urgency { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; margin-left: 10px; }
+    .urgency-ROUTINE { background: #d1e7dd; color: #0f5132; }
+    .urgency-SOON { background: #fff3cd; color: #664d03; }
+    .urgency-URGENT { background: #f8d7da; color: #842029; }
+    .urgency-EMERGENCY { background: #dc3545; color: #fff; }
+    .section { margin-bottom: 16px; }
+    .section-label { font-size: 11px; font-weight: 700; color: #6c757d; text-transform: uppercase; margin-bottom: 4px; }
+    .section-value { border: 1px solid #dee2e6; border-radius: 4px; padding: 8px 12px; min-height: 36px; background: #f8f9fa; }
+    .two-col { display: flex; gap: 20px; }
+    .two-col > div { flex: 1; }
+    .footer { border-top: 1px solid #dee2e6; margin-top: 40px; padding-top: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .signature-line { border-top: 1px solid #495057; width: 220px; text-align: center; font-size: 11px; color: #6c757d; padding-top: 4px; }
+    @media print { button { display: none; } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="hospital-name">{{ config.hospital_name }}</div>
+    <div style="font-size:11px;color:#6c757d;">{{ config.hospital_address }} · {{ config.hospital_phone }}</div>
+  </div>
+  <div style="font-size:11px;color:#6c757d;">{{ appt.ended_at|date:"d M Y"|default:appt.scheduled_at|date:"d M Y" }}</div>
+</div>
+
+<div class="title">
+  Referral Letter
+  {% if referral %}
+  <span class="badge-urgency urgency-{{ referral.urgency }}">{{ referral.get_urgency_display }}</span>
+  {% endif %}
+</div>
+
+<div class="two-col mb-3">
+  <div>
+    <div class="section-label">To</div>
+    <div class="section-value">{{ referral.referral_to|default:"—" }}</div>
+  </div>
+  <div>
+    <div class="section-label">From</div>
+    <div class="section-value">Dr. {{ appt.doctor.get_full_name }} · {{ config.hospital_name }}</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-label">Patient</div>
+  <div class="section-value">
+    <strong>{{ appt.patient.full_name }}</strong> &nbsp;|&nbsp;
+    ID: {{ appt.patient.patient_id }} &nbsp;|&nbsp;
+    DOB: {{ appt.patient.date_of_birth|date:"d M Y"|default:"—" }}
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-label">Reason for Referral</div>
+  <div class="section-value">{{ referral.reason|default:"—"|linebreaksbr }}</div>
+</div>
+
+{% if referral.clinical_summary %}
+<div class="section">
+  <div class="section-label">Clinical Summary</div>
+  <div class="section-value">{{ referral.clinical_summary|linebreaksbr }}</div>
+</div>
+{% endif %}
+
+{% if referral.notes %}
+<div class="section">
+  <div class="section-label">Additional Notes / Requests</div>
+  <div class="section-value">{{ referral.notes|linebreaksbr }}</div>
+</div>
+{% endif %}
+
+{% with rxs=appt.prescriptions.all %}
+{% if rxs %}
+<div class="section">
+  <div class="section-label">Current Medications (Prescribed)</div>
+  <div class="section-value">
+    {% for rx in rxs %}{{ rx.drug_name }} {{ rx.dose }}{% if rx.frequency %} — {{ rx.frequency }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+
+<div class="footer">
+  <div style="font-size:11px;color:#adb5bd;">EHR Africa Telemedicine · {{ config.hospital_name }}</div>
+  <div>
+    <div style="margin-bottom:30px;">&nbsp;</div>
+    <div class="signature-line">Dr. {{ appt.doctor.get_full_name }}</div>
+  </div>
+</div>
+
+<div style="margin-top:20px;text-align:center;">
+  <button onclick="window.print()" style="padding:8px 24px;background:#0d6efd;color:#fff;border:none;border-radius:4px;cursor:pointer;">
+    Print
+  </button>
+</div>
+
+</body>
+</html>

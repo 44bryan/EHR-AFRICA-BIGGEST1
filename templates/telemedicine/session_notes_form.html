@@ -149,13 +149,218 @@
         </form>
       </div>
     </div>
+
+    <!-- Prescriptions -->
+    <div class="card border-0 shadow-sm mt-4">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-capsule me-2 text-success"></i>Prescriptions</h6>
+        {% if appt.prescriptions.count %}
+        <a href="{% url 'telemedicine:print_prescription' appt.pk %}" target="_blank" class="btn btn-outline-success btn-sm">
+          <i class="bi bi-printer me-1"></i>Print
+        </a>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <div id="rxList">
+          {% for rx in appt.prescriptions.all %}
+          <div class="d-flex align-items-start gap-2 mb-2 p-2 rounded border" id="rxRow{{ rx.pk }}">
+            <div class="flex-grow-1">
+              <strong>{{ rx.drug_name }}</strong> {{ rx.dose }}
+              {% if rx.route %}<span class="badge bg-light text-dark ms-1">{{ rx.route }}</span>{% endif %}
+              <div class="small text-muted">
+                {% if rx.frequency %}{{ rx.frequency }}{% endif %}
+                {% if rx.duration %} · {{ rx.duration }}{% endif %}
+                {% if rx.instructions %} · {{ rx.instructions }}{% endif %}
+              </div>
+            </div>
+            <button type="button" class="btn btn-outline-danger btn-sm flex-shrink-0" onclick="deleteRx({{ rx.pk }}, this)">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+          {% empty %}
+          <p class="text-muted small mb-3" id="rxEmpty">No prescriptions added yet.</p>
+          {% endfor %}
+        </div>
+        <div class="border rounded p-3 bg-light mt-2">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4"><input type="text" id="rxDrug" class="form-control form-control-sm" placeholder="Drug name *"></div>
+            <div class="col-md-2"><input type="text" id="rxDose" class="form-control form-control-sm" placeholder="Dose *"></div>
+            <div class="col-md-2"><input type="text" id="rxFreq" class="form-control form-control-sm" placeholder="Frequency"></div>
+            <div class="col-md-2"><input type="text" id="rxDuration" class="form-control form-control-sm" placeholder="Duration"></div>
+            <div class="col-md-2">
+              <select id="rxRoute" class="form-select form-select-sm">
+                <option value="">Route</option>
+                <option>Oral</option><option>Topical</option><option>IV</option><option>IM</option>
+                <option>SC</option><option>Inhaled</option><option>Sublingual</option><option>Rectal</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2">
+            <div class="col-md-8"><input type="text" id="rxInstr" class="form-control form-control-sm" placeholder="Special instructions"></div>
+            <div class="col-md-4"><button type="button" class="btn btn-success btn-sm w-100" onclick="addRx()"><i class="bi bi-plus-circle me-1"></i>Add Drug</button></div>
+          </div>
+          <div id="rxError" class="text-danger small mt-1 d-none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Referral -->
+    <div class="card border-0 shadow-sm mt-4">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-arrow-right-square me-2 text-warning"></i>Referral</h6>
+        {% if appt.referrals.count %}
+        <a href="{% url 'telemedicine:print_referral' appt.pk %}" target="_blank" class="btn btn-outline-warning btn-sm">
+          <i class="bi bi-printer me-1"></i>Print Referral Letter
+        </a>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% with ref=appt.referrals.first %}
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Refer to *</label>
+            <input type="text" id="refTo" class="form-control form-control-sm"
+              placeholder="e.g. Glaucoma Specialist, General Hospital Yaoundé"
+              value="{{ ref.referral_to|default:'' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Urgency</label>
+            <select id="refUrgency" class="form-select form-select-sm">
+              <option value="ROUTINE" {% if not ref or ref.urgency == 'ROUTINE' %}selected{% endif %}>Routine</option>
+              <option value="SOON" {% if ref and ref.urgency == 'SOON' %}selected{% endif %}>Soon — within a week</option>
+              <option value="URGENT" {% if ref and ref.urgency == 'URGENT' %}selected{% endif %}>Urgent — 24 hours</option>
+              <option value="EMERGENCY" {% if ref and ref.urgency == 'EMERGENCY' %}selected{% endif %}>Emergency</option>
+            </select>
+          </div>
+          <div class="col-md-3 d-flex align-items-end">
+            <button type="button" class="btn btn-warning btn-sm w-100" onclick="saveReferral()">
+              <i class="bi bi-save me-1"></i>Save Referral
+            </button>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Reason *</label>
+            <textarea id="refReason" class="form-control form-control-sm" rows="2"
+              placeholder="e.g. Suspected glaucoma — needs full field test and specialist review">{{ ref.reason|default:'' }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Clinical summary</label>
+            <textarea id="refSummary" class="form-control form-control-sm" rows="2"
+              placeholder="Brief clinical background for receiving doctor">{{ ref.clinical_summary|default:'' }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Additional notes</label>
+            <textarea id="refNotes" class="form-control form-control-sm" rows="2"
+              placeholder="Any other instructions">{{ ref.notes|default:'' }}</textarea>
+          </div>
+        </div>
+        <div id="refStatus" class="mt-2 d-none"></div>
+        {% endwith %}
+      </div>
+    </div>
+
   </div>
 
 </div>
 
 <script>
-const AI_SOAP_URL = "{% url 'telemedicine:ai_soap' appt.pk %}";
+const AI_SOAP_URL  = "{% url 'telemedicine:ai_soap' appt.pk %}";
+const ADD_RX_URL   = "{% url 'telemedicine:add_prescription' appt.pk %}";
+const SAVE_REF_URL = "{% url 'telemedicine:save_referral' appt.pk %}";
 const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+// ── Prescriptions ─────────────────────────────────────────────────────────────
+function addRx() {
+  const drug = document.getElementById('rxDrug').value.trim();
+  const dose = document.getElementById('rxDose').value.trim();
+  const errBox = document.getElementById('rxError');
+  if (!drug || !dose) {
+    errBox.textContent = 'Drug name and dose are required.';
+    errBox.classList.remove('d-none');
+    return;
+  }
+  errBox.classList.add('d-none');
+  const fd = new FormData();
+  fd.append('drug_name', drug);
+  fd.append('dose', dose);
+  fd.append('frequency', document.getElementById('rxFreq').value.trim());
+  fd.append('duration', document.getElementById('rxDuration').value.trim());
+  fd.append('route', document.getElementById('rxRoute').value);
+  fd.append('instructions', document.getElementById('rxInstr').value.trim());
+  fd.append('csrfmiddlewaretoken', CSRF);
+
+  fetch(ADD_RX_URL, {method:'POST', body: fd})
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        const rx = data.rx;
+        const empty = document.getElementById('rxEmpty');
+        if (empty) empty.remove();
+        const div = document.createElement('div');
+        div.className = 'd-flex align-items-start gap-2 mb-2 p-2 rounded border';
+        div.id = 'rxRow' + rx.id;
+        div.innerHTML = `<div class="flex-grow-1">
+          <strong>${rx.drug_name}</strong> ${rx.dose}
+          ${rx.route ? '<span class="badge bg-light text-dark ms-1">'+rx.route+'</span>' : ''}
+          <div class="small text-muted">
+            ${rx.frequency || ''}${rx.duration ? ' · '+rx.duration : ''}${rx.instructions ? ' · '+rx.instructions : ''}
+          </div></div>
+          <button type="button" class="btn btn-outline-danger btn-sm flex-shrink-0" onclick="deleteRx(${rx.id}, this)">
+            <i class="bi bi-trash"></i></button>`;
+        document.getElementById('rxList').appendChild(div);
+        // Clear inputs
+        ['rxDrug','rxDose','rxFreq','rxDuration','rxInstr'].forEach(id => document.getElementById(id).value='');
+        document.getElementById('rxRoute').value='';
+        // Show print button
+        document.querySelectorAll('.rx-print-btn').forEach(b => b.classList.remove('d-none'));
+      } else {
+        errBox.textContent = data.error;
+        errBox.classList.remove('d-none');
+      }
+    })
+    .catch(() => { errBox.textContent = 'Error saving.'; errBox.classList.remove('d-none'); });
+}
+
+function deleteRx(rxId, btn) {
+  if (!confirm('Remove this drug?')) return;
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fetch(ADD_RX_URL.replace('/add/', '/' + rxId + '/delete/'), {method:'POST', body: fd})
+    .then(r => r.json())
+    .then(data => { if (data.success) document.getElementById('rxRow'+rxId).remove(); });
+}
+
+// ── Referral ──────────────────────────────────────────────────────────────────
+function saveReferral() {
+  const to = document.getElementById('refTo').value.trim();
+  const reason = document.getElementById('refReason').value.trim();
+  const status = document.getElementById('refStatus');
+  if (!to || !reason) {
+    status.className = 'alert alert-danger py-2 small mt-2';
+    status.textContent = 'Refer to and reason are required.';
+    status.classList.remove('d-none');
+    return;
+  }
+  const fd = new FormData();
+  fd.append('referral_to', to);
+  fd.append('urgency', document.getElementById('refUrgency').value);
+  fd.append('reason', reason);
+  fd.append('clinical_summary', document.getElementById('refSummary').value.trim());
+  fd.append('notes', document.getElementById('refNotes').value.trim());
+  fd.append('csrfmiddlewaretoken', CSRF);
+
+  fetch(SAVE_REF_URL, {method:'POST', body: fd})
+    .then(r => r.json())
+    .then(data => {
+      status.classList.remove('d-none');
+      if (data.success) {
+        status.className = 'alert alert-success py-2 small mt-2';
+        status.textContent = `Referral saved — ${data.referral.referral_to} (${data.referral.urgency})`;
+      } else {
+        status.className = 'alert alert-danger py-2 small mt-2';
+        status.textContent = data.error;
+      }
+    });
+}
 
 function generateSOAP() {
   const doctorNotes = document.getElementById('aiDoctorNotes').value;

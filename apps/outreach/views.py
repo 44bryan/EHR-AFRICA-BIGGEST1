@@ -10,6 +10,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseForbidden, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.db.models import Sum, Count, Q
 from django.db import transaction
 
@@ -768,6 +769,107 @@ def stats_view(request):
 
 
 # ─── Sync Dashboard ───────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def sync_now(request):
+    """
+    One-click sync from the field app UI.
+    Collects all unsynced local records and POSTs them to the hospital server.
+    Only works when HOSPITAL_SERVER_URL is set (i.e. running in field-app mode).
+    """
+    if not _can_manage(request.user):
+        return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
+
+    from django.conf import settings as djsettings
+    server_url = getattr(djsettings, 'HOSPITAL_SERVER_URL', None)
+    if not server_url:
+        return JsonResponse({
+            'success': False,
+            'error': 'HOSPITAL_SERVER_URL is not set. This button only works on the field laptop.',
+        })
+
+    sync_token   = getattr(djsettings, 'OUTREACH_SYNC_TOKEN', '')
+    device_id    = getattr(djsettings, 'FIELD_DEVICE_ID', 'UNKNOWN-DEVICE')
+    device_label = getattr(djsettings, 'FIELD_DEVICE_LABEL', 'Field Laptop')
+
+    def _str(v): return str(v) if v is not None else None
+    def _date(v): return str(v) if v else None
+
+    # Collect unsynced data
+    activities_data = [
+        {'id': str(a.id), 'title': a.title, 'activity_type': a.activity_type,
+         'status': a.status, 'location_name': a.location_name, 'region': a.region,
+         'town': a.town, 'activity_date': _date(a.activity_date), 'objectives': a.objectives}
+        for a in OutreachActivity.objects.all()
+    ]
+    patients_data = [
+        {'id': str(pt.id), 'activity_id': str(pt.activity_id),
+         'outreach_patient_id': pt.outreach_patient_id,
+         'first_name': pt.first_name, 'last_name': pt.last_name,
+         'date_of_birth': _date(pt.date_of_birth), 'age_years': pt.age_years,
+         'sex': pt.sex, 'village': pt.village, 'district': pt.district,
+         'phone': pt.phone, 'chief_complaint': pt.chief_complaint,
+         'known_diabetic': pt.known_diabetic, 'known_hypertensive': pt.known_hypertensive,
+         'previous_eye_surgery': pt.previous_eye_surgery}
+        for pt in OutreachPatient.objects.filter(is_synced=False)
+    ]
+    exams_data = []
+    for ex in OutreachExamination.objects.filter(patient__is_synced=False):
+        exams_data.append({
+            'id': str(ex.id), 'patient_id': str(ex.patient_id),
+            'exam_date': _date(ex.exam_date),
+            'va_re_distance': ex.va_re_distance, 'va_le_distance': ex.va_le_distance,
+            're_sphere': float(ex.re_sphere) if ex.re_sphere is not None else None,
+            're_cylinder': float(ex.re_cylinder) if ex.re_cylinder is not None else None,
+            're_axis': ex.re_axis,
+            'le_sphere': float(ex.le_sphere) if ex.le_sphere is not None else None,
+            'le_cylinder': float(ex.le_cylinder) if ex.le_cylinder is not None else None,
+            'le_axis': ex.le_axis,
+            'iop_re': float(ex.iop_re) if ex.iop_re is not None else None,
+            'iop_le': float(ex.iop_le) if ex.iop_le is not None else None,
+            'diagnoses_re': ex.diagnoses_re, 'diagnoses_le': ex.diagnoses_le,
+            'needs_referral': ex.needs_referral, 'referral_urgency': ex.referral_urgency,
+            'referral_reason': ex.referral_reason, 'clinical_notes': ex.clinical_notes,
+        })
+    referrals_data = [
+        {'id': str(ref.id), 'patient_id': str(ref.patient_id),
+         'referral_code': ref.referral_code, 'urgency': ref.urgency,
+         'diagnosis': ref.diagnosis, 'reason': ref.reason}
+        for ref in OutreachReferral.objects.filter(is_synced=False)
+    ]
+
+    payload = {
+        'device_id': device_id, 'device_label': device_label,
+        'activities': activities_data, 'patients': patients_data,
+        'examinations': exams_data, 'referrals': referrals_data, 'records': [],
+    }
+
+    import urllib.request as urllib_req
+    sync_url = f"{server_url.rstrip('/')}/outreach/api/sync/"
+    try:
+        data    = json.dumps(payload).encode('utf-8')
+        headers = {'Content-Type': 'application/json'}
+        if sync_token:
+            headers['Authorization'] = f'Bearer {sync_token}'
+        req = urllib_req.Request(sync_url, data=data, headers=headers, method='POST')
+        with urllib_req.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode())
+            if result.get('status') in ('ok', 'partial'):
+                OutreachPatient.objects.filter(is_synced=False).update(is_synced=True)
+                OutreachReferral.objects.filter(is_synced=False).update(is_synced=True)
+            c = result.get('created', {})
+            return JsonResponse({
+                'success': True,
+                'status': result.get('status', 'ok'),
+                'patients': c.get('patients', 0),
+                'examinations': c.get('examinations', 0),
+                'referrals': c.get('referrals', 0),
+                'errors': result.get('errors', [])[:5],
+            })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
 
 @login_required
 def sync_dashboard(request):

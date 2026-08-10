@@ -161,6 +161,59 @@ class PreConsultationIntake(AuditModel):
         return {'low': 'Routine', 'moderate': 'See Soon', 'high': 'Urgent', 'emergency': 'EMERGENCY'}.get(self.ai_urgency, '—')
 
 
+class TelePrescription(AuditModel):
+    """Drug prescribed during or after a telemedicine session."""
+
+    id = models.BigAutoField(primary_key=True)
+    appointment = models.ForeignKey(
+        'TeleAppointment', on_delete=models.CASCADE, related_name='prescriptions'
+    )
+    drug_name = models.CharField(max_length=200)
+    dose = models.CharField(max_length=100)
+    frequency = models.CharField(max_length=100, blank=True)
+    duration = models.CharField(max_length=100, blank=True)
+    route = models.CharField(max_length=60, blank=True, help_text='e.g. Oral, Topical, IV')
+    instructions = models.TextField(blank=True)
+    prescribed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='tele_prescriptions_given',
+    )
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = 'Tele-Prescription Item'
+
+    def __str__(self):
+        return f"{self.drug_name} {self.dose} — Tele-{self.appointment_id}"
+
+
+class TeleReferral(AuditModel):
+    """Referral generated from a telemedicine session."""
+
+    class Urgency(models.TextChoices):
+        ROUTINE   = 'ROUTINE',   'Routine'
+        SOON      = 'SOON',      'Soon — within a week'
+        URGENT    = 'URGENT',    'Urgent — within 24 hours'
+        EMERGENCY = 'EMERGENCY', 'Emergency — same day'
+
+    id = models.BigAutoField(primary_key=True)
+    appointment = models.ForeignKey(
+        'TeleAppointment', on_delete=models.CASCADE, related_name='referrals'
+    )
+    referral_to = models.CharField(max_length=200, help_text='Specialist / department / hospital')
+    urgency = models.CharField(max_length=20, choices=Urgency.choices, default=Urgency.ROUTINE)
+    reason = models.TextField()
+    clinical_summary = models.TextField(blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Tele-Referral'
+
+    def __str__(self):
+        return f"Referral to {self.referral_to} — Tele-{self.appointment_id}"
+
+
 class TeleSessionNote(AuditModel):
     """SOAP note recorded during or after a telemedicine session."""
 

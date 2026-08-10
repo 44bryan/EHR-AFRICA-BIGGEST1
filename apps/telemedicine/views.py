@@ -11,6 +11,7 @@ from apps.accounts.models import UserRole, User
 from apps.patients.models import Patient
 from .models import (
     TeleAppointment, TeleSessionNote, PreConsultationIntake,
+    TelePrescription, TeleReferral,
     AppointmentStatus, AppointmentType,
 )
 
@@ -248,8 +249,46 @@ def session_end(request, pk):
                 appt.actual_duration_minutes = int(delta.total_seconds() // 60)
             appt.updated_by = request.user
             appt.save()
+            # Auto-create billing invoice for the teleconsultation
+            _create_tele_invoice(appt, request.user)
             messages.success(request, 'Session ended. Please add session notes.')
     return redirect('telemedicine:session_notes', pk=pk)
+
+
+def _create_tele_invoice(appt, user):
+    """Auto-generate an invoice for a completed teleconsultation."""
+    try:
+        from apps.accounts.models import HospitalConfig
+        from apps.billing.models import Invoice, InvoiceItem
+        cfg = HospitalConfig.get()
+        fee = cfg.teleconsultation_fee
+        if not fee or fee <= 0:
+            return  # billing disabled
+
+        # Don't create duplicate invoices
+        existing = Invoice.objects.filter(
+            patient=appt.patient,
+            notes__startswith=f'[TELE-{appt.pk}]',
+        ).exists()
+        if existing:
+            return
+
+        invoice = Invoice(
+            patient=appt.patient,
+            notes=f'[TELE-{appt.pk}] Teleconsultation — {appt.get_appointment_type_display()} with Dr. {appt.doctor.get_full_name()}',
+            created_by=user,
+        )
+        invoice.save()
+
+        InvoiceItem.objects.create(
+            invoice=invoice,
+            description=f'Teleconsultation ({appt.get_appointment_type_display()})',
+            quantity=1,
+            unit_price=fee,
+            created_by=user,
+        )
+    except Exception:
+        pass  # never crash session end due to billing failure
 
 
 @login_required
@@ -493,3 +532,126 @@ def ai_diagnose(request, pk):
         return JsonResponse({'success': False, 'error': result.get('error', 'AI failed')})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+# ── Prescriptions ─────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def add_prescription(request, pk):
+    """Add one drug to this appointment's prescription list."""
+    if not _can_conduct(request.user):
+        return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
+
+    appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
+    drug_name = request.POST.get('drug_name', '').strip()
+    dose      = request.POST.get('dose', '').strip()
+    if not drug_name or not dose:
+        return JsonResponse({'success': False, 'error': 'Drug name and dose are required.'})
+
+    rx = TelePrescription.objects.create(
+        appointment=appt,
+        drug_name=drug_name,
+        dose=dose,
+        frequency=request.POST.get('frequency', '').strip(),
+        duration=request.POST.get('duration', '').strip(),
+        route=request.POST.get('route', '').strip(),
+        instructions=request.POST.get('instructions', '').strip(),
+        prescribed_by=request.user,
+        created_by=request.user,
+    )
+    return JsonResponse({
+        'success': True,
+        'rx': {
+            'id': rx.pk,
+            'drug_name': rx.drug_name,
+            'dose': rx.dose,
+            'frequency': rx.frequency,
+            'duration': rx.duration,
+            'route': rx.route,
+            'instructions': rx.instructions,
+        },
+    })
+
+
+@login_required
+@require_POST
+def delete_prescription(request, pk, rx_pk):
+    """Remove a prescription line."""
+    if not _can_conduct(request.user):
+        return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
+
+    rx = get_object_or_404(TelePrescription, pk=rx_pk, appointment_id=pk)
+    rx.delete()
+    return JsonResponse({'success': True})
+
+
+@login_required
+def print_prescription(request, pk):
+    """Printable prescription sheet."""
+    if not _can_conduct(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+
+    appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
+    prescriptions = appt.prescriptions.filter(is_deleted=False)
+    from apps.accounts.models import HospitalConfig
+    return render(request, 'telemedicine/prescription_print.html', {
+        'appt': appt,
+        'prescriptions': prescriptions,
+        'config': HospitalConfig.get(),
+    })
+
+
+# ── Referral ──────────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def save_referral(request, pk):
+    """Create or update the referral for this appointment."""
+    if not _can_conduct(request.user):
+        return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
+
+    appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
+    referral_to = request.POST.get('referral_to', '').strip()
+    reason      = request.POST.get('reason', '').strip()
+    if not referral_to or not reason:
+        return JsonResponse({'success': False, 'error': 'Refer to and reason are required.'})
+
+    ref, created = TeleReferral.objects.get_or_create(
+        appointment=appt,
+        defaults={'created_by': request.user},
+    )
+    ref.referral_to       = referral_to
+    ref.urgency           = request.POST.get('urgency', TeleReferral.Urgency.ROUTINE)
+    ref.reason            = reason
+    ref.clinical_summary  = request.POST.get('clinical_summary', '').strip()
+    ref.notes             = request.POST.get('notes', '').strip()
+    ref.updated_by        = request.user
+    ref.save()
+    return JsonResponse({
+        'success': True,
+        'referral': {
+            'id': ref.pk,
+            'referral_to': ref.referral_to,
+            'urgency': ref.get_urgency_display(),
+            'reason': ref.reason,
+        },
+    })
+
+
+@login_required
+def print_referral(request, pk):
+    """Printable referral letter."""
+    if not _can_conduct(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+
+    appt = get_object_or_404(TeleAppointment, pk=pk, is_deleted=False)
+    referral = appt.referrals.filter(is_deleted=False).first()
+    from apps.accounts.models import HospitalConfig
+    return render(request, 'telemedicine/referral_print.html', {
+        'appt': appt,
+        'referral': referral,
+        'config': HospitalConfig.get(),
+    })

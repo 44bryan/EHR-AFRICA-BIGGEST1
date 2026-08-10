@@ -250,13 +250,14 @@ class User(AbstractUser):
     @property
     def is_medical_director(self):
         """Medical Director controls all clinical operations."""
-        return self.role in (UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN)
+        return self.role == UserRole.MEDICAL_DIRECTOR
 
     @property
     def can_see_everything(self):
-        """CEO, Finance Director, Admin Director, Medical Director, Super Admin — full read access."""
+        """CEO, Admin Director, Medical Director, Super Admin — full read access.
+        FINANCE_DIRECTOR removed: financial authority does not grant clinical record access (HIPAA §164.514(d))."""
         return self.role in (
-            UserRole.CEO, UserRole.FINANCE_DIRECTOR, UserRole.ADMIN_DIRECTOR,
+            UserRole.CEO, UserRole.ADMIN_DIRECTOR,
             UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN,
         )
 
@@ -569,6 +570,13 @@ class HospitalConfig(models.Model):
     module_infection_control = models.BooleanField(default=True, verbose_name='Infection Control / Antibiogram')
     module_dietary          = models.BooleanField(default=True,  verbose_name='Dietary & Nutrition')
     module_mortuary         = models.BooleanField(default=True,  verbose_name='Mortuary')
+
+    # ── Telemedicine ──────────────────────────────────────
+    teleconsultation_fee = models.DecimalField(
+        max_digits=10, decimal_places=2, default=5000,
+        verbose_name='Teleconsultation Fee (FCFA)',
+        help_text='Default fee charged when a tele-session ends. Set 0 to disable auto-billing.',
+    )
 
     # ── Consultation validity threshold ──────────────────
     consultation_days   = models.PositiveSmallIntegerField(

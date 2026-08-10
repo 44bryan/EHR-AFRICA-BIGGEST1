@@ -12,10 +12,16 @@
       Monitor and troubleshoot data sync from field laptops to the hospital server
     </p>
   </div>
-  <a href="{% url 'outreach:dashboard' %}" class="btn btn-sm btn-outline-secondary">
-    <i class="bi bi-arrow-left me-1"></i>Back to Outreach
-  </a>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-primary btn-sm" id="syncNowBtn" onclick="doSyncNow()">
+      <i class="bi bi-cloud-arrow-up me-1"></i>Sync Now
+    </button>
+    <a href="{% url 'outreach:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back to Outreach
+    </a>
+  </div>
 </div>
+<div id="syncResult" class="d-none mb-3"></div>
 
 {# ── Status Cards ──────────────────────────────────────────────────────────── #}
 <div class="row g-3 mb-4">
@@ -117,10 +123,10 @@
                style="width:28px;height:28px;font-size:.75rem;font-weight:700">3</div>
           <div class="small">
             <strong>Back at hospital</strong><br>
-            Connect to hospital network, then run
-            <code>python sync_to_hospital.py</code>.
+            Connect to hospital network, then click the
+            <strong>Sync Now</strong> button above.
             All field records upload automatically.
-            Check this dashboard for sync confirmation.
+            The result shows here immediately.
           </div>
         </div>
       </div>
@@ -182,4 +188,45 @@
     </table>
   </div>
 </div>
+
+<script>
+const SYNC_NOW_URL = "{% url 'outreach:sync_now' %}";
+const CSRF = '{{ csrf_token }}';
+
+function doSyncNow() {
+  const btn = document.getElementById('syncNowBtn');
+  const result = document.getElementById('syncResult');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Syncing…';
+  result.className = 'alert alert-info py-2 small mb-3';
+  result.textContent = 'Connecting to hospital server…';
+  result.classList.remove('d-none');
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fetch(SYNC_NOW_URL, {method:'POST', body: fd})
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Sync Now';
+      if (data.success) {
+        result.className = 'alert alert-success py-2 small mb-3';
+        result.innerHTML = `<i class="bi bi-check-circle me-1"></i>
+          Sync complete — <strong>${data.patients}</strong> patients,
+          <strong>${data.examinations}</strong> exams,
+          <strong>${data.referrals}</strong> referrals uploaded.
+          ${data.errors && data.errors.length ? '<br><span class="text-warning">Warnings: '+data.errors.join(', ')+'</span>' : ''}`;
+        setTimeout(() => location.reload(), 2500);
+      } else {
+        result.className = 'alert alert-danger py-2 small mb-3';
+        result.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + data.error;
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Sync Now';
+      result.className = 'alert alert-danger py-2 small mb-3';
+      result.textContent = 'Network error — make sure you are on the hospital network.';
+    });
+}
+</script>
 {% endblock %}

@@ -16,6 +16,13 @@ urlpatterns = [
     # AI endpoints
     path('appointments/<int:pk>/ai-soap/', views.ai_soap_generate, name='ai_soap'),
     path('appointments/<int:pk>/ai-diagnose/', views.ai_diagnose, name='ai_diagnose'),
+    # Prescriptions
+    path('appointments/<int:pk>/prescriptions/add/', views.add_prescription, name='add_prescription'),
+    path('appointments/<int:pk>/prescriptions/<int:rx_pk>/delete/', views.delete_prescription, name='delete_prescription'),
+    path('appointments/<int:pk>/prescription-print/', views.print_prescription, name='print_prescription'),
+    # Referral
+    path('appointments/<int:pk>/referral/save/', views.save_referral, name='save_referral'),
+    path('appointments/<int:pk>/referral/print/', views.print_referral, name='print_referral'),
     # Patient join (no auth)
     path('join/<uuid:room_id>/<str:token>/', views.patient_join, name='patient_join'),
     path('join/<uuid:room_id>/<str:token>/intake/', views.patient_intake_submit, name='patient_intake'),
