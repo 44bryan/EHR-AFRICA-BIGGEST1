@@ -2557,6 +2557,7 @@ def route_rooms_view(request):
             checked_in_date=timezone.localdate(),
             service_type__in=_types,
         )
+        .exclude(staff_assigned=user)
         .select_related('staff_assigned', 'zone')
         .order_by('service_type', 'name')
     )
