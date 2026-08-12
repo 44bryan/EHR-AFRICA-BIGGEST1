@@ -51,12 +51,7 @@
 </div>
 {% endif %}
 
-<div class="row g-3" id="ward-bed-grid"
-     hx-get="{{ request.get_full_path }}"
-     hx-trigger="every 20s"
-     hx-target="#ward-bed-grid"
-     hx-select="#ward-bed-grid"
-     hx-swap="outerHTML">
+<div class="row g-3" id="ward-bed-grid">
   {% for ward in wards %}
   <div class="col-md-6 col-xl-4">
     <div class="card border-0 shadow-sm h-100">
@@ -141,4 +136,20 @@
 .bed-tile-label { font-size: .68rem; font-weight: 700; margin-top: 2px; }
 </style>
 
+{% endblock %}
+{% block extra_js %}
+<script>
+(function(){
+  setInterval(function(){
+    fetch(window.location.href,{credentials:'same-origin'})
+      .then(function(r){return r.text();})
+      .then(function(html){
+        var doc=new DOMParser().parseFromString(html,'text/html');
+        var fresh=doc.getElementById('ward-bed-grid');
+        var cur=document.getElementById('ward-bed-grid');
+        if(fresh&&cur) cur.innerHTML=fresh.innerHTML;
+      }).catch(function(){});
+  },20000);
+})();
+</script>
 {% endblock %}

@@ -44,13 +44,8 @@
   </div>
 </div>
 
-{# ── Live queue zone — auto-refreshes via HTMX ── #}
-<div id="inv-live-zone"
-     hx-get="{{ request.get_full_path }}"
-     hx-trigger="every 15s"
-     hx-target="#inv-live-zone"
-     hx-select="#inv-live-zone"
-     hx-swap="outerHTML">
+{# ── Live queue zone — auto-refreshes via JS fetch ── #}
+<div id="inv-live-zone">
 
 {# ── Patients routed here via QMS (no formal order yet) ── #}
 {% if queued_no_order %}
@@ -419,10 +414,20 @@
 
 {% block extra_js %}
 <script>
-// Queue auto-refresh handled by HTMX on #inv-live-zone (every 15s)
+// ── Live queue polling (JS fetch) ─────────────────────────────────────────
 (function(){
   var el = document.getElementById('wsRefreshCountdown');
   if (el) el.textContent = 'Live';
+  setInterval(function(){
+    fetch(window.location.href,{credentials:'same-origin'})
+      .then(function(r){return r.text();})
+      .then(function(html){
+        var doc=new DOMParser().parseFromString(html,'text/html');
+        var fresh=doc.getElementById('inv-live-zone');
+        var cur=document.getElementById('inv-live-zone');
+        if(fresh&&cur) cur.innerHTML=fresh.innerHTML;
+      }).catch(function(){});
+  },15000);
 }());
 
 // ── Bulk-select checkboxes ───────────────────────────────────────────────────
