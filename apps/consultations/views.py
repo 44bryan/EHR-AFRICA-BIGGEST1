@@ -133,6 +133,19 @@ def consultation_create_view(request, patient_id):
             else:
                 return render(request, 'consultations/walkin_confirm.html', {'patient': patient})
 
+    # ── Resume existing draft: if doctor already saved a draft for this visit, redirect to edit ──
+    if visit and request.method == 'GET':
+        existing_draft = Consultation.objects.filter(
+            patient=patient,
+            visit=visit,
+            consulting_doctor=request.user,
+            status=ConsultationStatus.IN_PROGRESS,
+            is_deleted=False,
+        ).order_by('-created_at').first()
+        if existing_draft:
+            messages.info(request, 'Resuming your saved draft consultation.')
+            return redirect('consultations:edit', pk=existing_draft.pk)
+
     # ── Claim mechanic: soft-assign this visit to the doctor's room if it's unclaimed ──
     # Prevents two doctors from opening the same unassigned patient simultaneously.
     try:
