@@ -2164,7 +2164,7 @@ def export_patient_list(request):
             p.date_of_birth.strftime('%Y-%m-%d') if p.date_of_birth else '',
             p.get_gender_display() if hasattr(p, 'get_gender_display') else p.gender,
             str(p.phone_number) if p.phone_number else '',
-            p.get_tier_display() if hasattr(p, 'get_tier_display') else p.tier,
+            '',  # Patient has no tier; tier is on Visit
             p.created_at.strftime('%Y-%m-%d') if p.created_at else '',
         ])
     return response
