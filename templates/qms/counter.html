@@ -465,10 +465,22 @@ function clearCounter() {
 }
 
 (function(){
-  var SECS=15, secs=SECS, paused=false;
-  document.addEventListener('show.bs.modal',function(){paused=true;secs=SECS;});
-  document.addEventListener('hide.bs.modal',function(){paused=false;secs=SECS;});
-  setInterval(function(){ if(paused)return; secs--; if(secs<=0){location.reload();} },1000);
+  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/opd/';
+  var paused = false;
+  var _fallback;
+  document.addEventListener('show.bs.modal', function(){ paused = true; });
+  document.addEventListener('hide.bs.modal', function(){ paused = false; });
+  function doReload(){ if(!paused) location.reload(); }
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
+    ws.onclose = function(){ setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
 })();
 </script>
 {% endblock %}

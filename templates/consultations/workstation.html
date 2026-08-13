@@ -851,30 +851,36 @@ function qfPick(fieldId, sel) {
   sel.value = '';
 }
 
-// Auto-refresh the waiting queue every 45 seconds.
-// PAUSED when the doctor is actively filling a form (to prevent data loss).
-let _refreshTimer = 45;
+// WebSocket live refresh — paused when doctor form is dirty
 let _formDirty = false;
 const _refreshEl = document.createElement('small');
 _refreshEl.className = 'text-muted ms-2';
 _refreshEl.style.fontSize = '0.7rem';
 document.querySelector('.d-flex.gap-2 .btn-outline-secondary')?.after(_refreshEl);
 
-// Mark dirty on any input change
 document.addEventListener('input',  () => { _formDirty = true; });
 document.addEventListener('change', () => { _formDirty = true; });
-// Clear dirty state after form submit
 document.addEventListener('submit', () => { _formDirty = false; });
 
-setInterval(() => {
-  if (_formDirty) {
-    _refreshEl.textContent = '(auto-refresh paused — form in use)';
-    return;
+(function(){
+  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/workstation/';
+  var _fallback;
+  function doReload(){
+    if (_formDirty) { _refreshEl.textContent = '(auto-refresh paused — form in use)'; return; }
+    _refreshEl.textContent = '';
+    if (window.doRefresh) { window.doRefresh(); } else { location.reload(); }
   }
-  _refreshTimer--;
-  _refreshEl.textContent = `(refresh in ${_refreshTimer}s)`;
-  if (_refreshTimer <= 0) { _refreshTimer = 30; (window.doRefresh || function(){ location.reload(); })(); }
-}, 1000);
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ _refreshEl.textContent = '(live)'; startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
+    ws.onclose = function(){ _refreshEl.textContent = '(reconnecting…)'; setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
+})();
 
 // ── Quick Patient Search ──────────────────────────────────────────────────────
 (function() {
@@ -1163,21 +1169,6 @@ setInterval(() => {
   });
 })();
 
-// ── Live queue polling (JS fetch — bypasses HTMX inheritance) ────────────
-(function(){
-  var ids = ['ws-stat-cards','ws-queue-live'];
-  setInterval(function(){
-    fetch(window.location.href, {credentials:'same-origin'})
-      .then(function(r){return r.text();})
-      .then(function(html){
-        var doc = new DOMParser().parseFromString(html,'text/html');
-        ids.forEach(function(id){
-          var fresh = doc.getElementById(id);
-          var cur   = document.getElementById(id);
-          if(fresh && cur) cur.innerHTML = fresh.innerHTML;
-        });
-      }).catch(function(){});
-  }, 12000);
-})();
+// Live refresh now handled by WebSocket above
 </script>
 {% endblock %}

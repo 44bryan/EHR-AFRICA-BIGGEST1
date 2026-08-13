@@ -3,6 +3,24 @@ Patient flow helpers — shared across lab, investigations, and other modules.
 Do NOT import Django models at module level here (circular import risk).
 """
 from apps.core.context_processors import qms_active as _qms_active
+from apps.core.ws_notify import notify_queue as _ws_notify
+
+
+# Map visit status → WebSocket room(s) to notify after routing
+_STATUS_ROOMS = {
+    'WAITING':       ['opd', 'workstation'],
+    'TRIAGE':        ['opd'],
+    'IN_CONSULTATION': ['workstation'],
+    'LABORATORY':    ['lab'],
+    'INVESTIGATION': ['invest'],
+    'OPTICAL':       ['workstation'],
+    'COUNSELING':    ['workstation'],
+    'PHARMACY':      ['pharmacy'],
+    'AT_CASHIER':    ['cashier'],
+    'BILLING':       ['cashier'],
+    'COMPLETED':     ['opd', 'workstation'],
+    'DISCHARGED':    ['opd'],
+}
 
 
 def _auto_route_to_dept(visit, visit_status, qms_service_type, dept_code, triggered_by, notes=''):
@@ -26,6 +44,10 @@ def _auto_route_to_dept(visit, visit_status, qms_service_type, dept_code, trigge
         visit.department = dept
         update_fields.append('department')
     visit.save(update_fields=update_fields)
+
+    # Instantly notify all relevant queue pages via WebSocket
+    for _room in _STATUS_ROOMS.get(visit_status, []):
+        _ws_notify(_room)
 
     if _qms_active():
         try:

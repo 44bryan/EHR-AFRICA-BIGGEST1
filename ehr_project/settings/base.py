@@ -30,6 +30,8 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'daphne',          # must be FIRST so it handles ASGI interface
+    'channels',
     'rest_framework',
     'crispy_forms',
     'crispy_bootstrap5',
@@ -225,6 +227,18 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': env('REDIS_URL', default='redis://127.0.0.1:6379/1'),
     }
+}
+
+# Django Channels — Redis channel layer (db=2 to avoid collision with Celery/cache)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [env('REDIS_URL', default='redis://127.0.0.1:6379/2')],
+            'capacity': 1500,
+            'expiry': 10,
+        },
+    },
 }
 
 # Axes (brute force protection)

@@ -414,16 +414,23 @@
 
 {% block extra_js %}
 <script>
-// ── Live queue polling (JS fetch) ─────────────────────────────────────────
+// ── WebSocket live refresh ────────────────────────────────────────────────
 (function(){
-  var INTERVAL=20, countdown=INTERVAL;
-  var el=document.getElementById('wsRefreshCountdown');
+  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/invest/';
+  var el = document.getElementById('wsRefreshCountdown');
+  var _fallback;
   function hasActiveInput(){var a=document.activeElement;return a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT');}
-  setInterval(function(){
-    countdown--;
-    if(el) el.textContent=countdown+'s';
-    if(countdown<=0){if(!hasActiveInput()){location.reload();}else{countdown=INTERVAL;}}
-  },1000);
+  function doReload(){if(!hasActiveInput()) location.reload();}
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ if(el) el.textContent='Live'; startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
+    ws.onclose = function(){ if(el) el.textContent='…'; setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
 }());
 
 // ── Bulk-select checkboxes ───────────────────────────────────────────────────

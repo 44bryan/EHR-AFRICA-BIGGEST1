@@ -53,16 +53,19 @@
 {% block extra_js %}
 <script>
 (function(){
-  setInterval(function(){
-    fetch(window.location.href,{credentials:'same-origin'})
-      .then(function(r){return r.text();})
-      .then(function(html){
-        var doc=new DOMParser().parseFromString(html,'text/html');
-        var fresh=doc.getElementById('dispense-list-live');
-        var cur=document.getElementById('dispense-list-live');
-        if(fresh&&cur) cur.innerHTML=fresh.innerHTML;
-      }).catch(function(){});
-  },15000);
+  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/pharmacy/';
+  var _fallback;
+  function doReload(){ location.reload(); }
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
+    ws.onclose = function(){ setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
 })();
 </script>
 {% endblock %}

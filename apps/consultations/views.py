@@ -2120,6 +2120,13 @@ def clinic_call_patient_view(request, visit_pk):
     visit.status = VisitStatus.IN_CONSULTATION
     visit.save(update_fields=['status', 'updated_at'])
 
+    # Notify queue pages instantly via WebSocket
+    from apps.core.ws_notify import notify_queue as _ws_notify
+    _ws_notify('opd')
+    _ws_notify('workstation')
+    if visit.attending_doctor_id:
+        _ws_notify(f'doctor-{visit.attending_doctor_id}')
+
     # QMS: mark the matching token as CALLED
     if _qms_active():
         try:
@@ -2196,6 +2203,17 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
             except Exception:
                 pass
         visit.save(update_fields=_save_fields)
+
+        # Notify queue pages instantly via WebSocket
+        try:
+            from apps.core.ws_notify import notify_queue as _ws_notify_ir
+            from apps.core.patient_flow import _STATUS_ROOMS as _SR
+            for _room in _SR.get(new_status, []):
+                _ws_notify_ir(_room)
+            if visit.attending_doctor_id and new_status == 'IN_CONSULTATION':
+                _ws_notify_ir(f'doctor-{visit.attending_doctor_id}')
+        except Exception:
+            pass
 
         # Doctor/counter assignment
         _room_note = ''
