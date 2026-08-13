@@ -20,6 +20,7 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
 # Application definition
 DJANGO_APPS = [
+    'daphne',          # must be before staticfiles (daphne.E001)
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -30,7 +31,6 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
-    'daphne',          # must be FIRST so it handles ASGI interface
     'channels',
     'rest_framework',
     'crispy_forms',
