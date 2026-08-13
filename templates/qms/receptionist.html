@@ -211,18 +211,24 @@ function selectReturningPatient(patientId, name) {
   document.getElementById('rp_patient_info').classList.remove('d-none');
 }
 
-// ── Live queue polling ────────────────────────────────────────────────────
+// ── WebSocket live refresh ────────────────────────────────────────────────
 (function(){
-  setInterval(function(){
-    fetch(window.location.href, {credentials:'same-origin'})
-      .then(function(r){return r.text();})
-      .then(function(html){
-        var doc   = new DOMParser().parseFromString(html,'text/html');
-        var fresh = doc.getElementById('recept-queue-live');
-        var cur   = document.getElementById('recept-queue-live');
-        if(fresh && cur) cur.innerHTML = fresh.innerHTML;
-      }).catch(function(){});
-  }, 10000);
+  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/opd/';
+  var paused = false;
+  var _fallback;
+  document.addEventListener('show.bs.modal', function(){ paused = true; });
+  document.addEventListener('hide.bs.modal', function(){ paused = false; });
+  function doReload(){ if(!paused) location.reload(); }
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
+    ws.onclose = function(){ setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
 })();
 </script>
 {% endblock %}

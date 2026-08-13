@@ -526,20 +526,28 @@
 <script>
 // ── Auto-refresh queue every 30 s ─────────────────────────────────────────────
 (function() {
-  var countdown = 30;
   var badge = document.createElement('span');
   badge.className = 'badge bg-light text-muted border small';
   badge.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:999;font-size:.7rem;cursor:pointer;';
   badge.title = 'Click to refresh now';
-  badge.textContent = 'Auto-refresh in 30s';
+  badge.textContent = 'Live';
   var _refresh = function() { (window.doRefresh || function(){ location.reload(); })(); };
   badge.onclick = _refresh;
   document.body.appendChild(badge);
-  setInterval(function() {
-    countdown--;
-    if (countdown <= 0) { countdown = 30; _refresh(); }
-    badge.textContent = 'Auto-refresh in ' + countdown + 's';
-  }, 1000);
+
+  // WebSocket live refresh
+  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/opd/';
+  var _fallback;
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(_refresh, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ badge.textContent = 'Live'; startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') _refresh(); }catch(ex){} };
+    ws.onclose = function(){ badge.textContent = 'Reconnecting…'; setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
 })();
 
 // ── Triage button — navigate directly to vitals form ──────────────────────────

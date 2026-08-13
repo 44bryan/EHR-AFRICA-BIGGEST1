@@ -180,13 +180,23 @@
 
 {% block extra_js %}
 <script>
-let countdown = 30;
-const el = document.getElementById('refreshCountdown');
-setInterval(() => {
-  countdown--;
-  if (el) el.textContent = `Refresh in ${countdown}s`;
-  if (countdown <= 0) { countdown = 30; (window.doRefresh || function(){ location.reload(); })(); }
-}, 1000);
+// WebSocket live refresh
+(function(){
+  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/opd/';
+  var el = document.getElementById('refreshCountdown');
+  var _fallback;
+  function doReload(){ if(window.doRefresh){window.doRefresh();}else{location.reload();} }
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ if(el) el.textContent='Live'; startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
+    ws.onclose = function(){ if(el) el.textContent='…'; setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
+})();
 
 </script>
 {% endblock %}
