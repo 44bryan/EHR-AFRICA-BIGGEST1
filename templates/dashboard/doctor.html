@@ -1,6 +1,7 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}My Clinic — {{ user.get_role_display }}{% endblock %}
 {% block content %}
+<div id="doc-queue-live">
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <h1 class="h3 mb-1">Good {% now "G" as hour %}{% if hour < 12 %}morning{% elif hour < 17 %}afternoon{% else %}evening{% endif %}, Dr. {{ user.first_name }}</h1>
@@ -136,4 +137,39 @@
     {% endif %}
   </div>
 </div>
+</div>{# /doc-queue-live #}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  var QID='doc-queue-live',ROOMS=['workstation','opd'],_busy=false,_pend=false,_fb;
+  function isModal(){return !!document.querySelector('.modal.show');}
+  function toast(){var w=document.getElementById('_ehr_n');if(!w){w=document.createElement('div');w.id='_ehr_n';w.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;';document.body.appendChild(w);}clearTimeout(w._t);w.innerHTML='<div style="background:#198754;color:#fff;padding:10px 16px;border-radius:8px;font-size:.82rem;box-shadow:0 4px 16px rgba(0,0,0,.18);display:flex;align-items:center;gap:8px"><i class="bi bi-bell-fill"></i>&nbsp;New patient in queue</div>';w._t=setTimeout(function(){w.innerHTML='';},3500);}
+  function beep(){try{var c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.setValueAtTime(.2,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.start();o.stop(c.currentTime+.2);}catch(e){}}
+  function swap(){
+    if(_busy){_pend=true;return;}
+    var el=document.getElementById(QID);if(!el){location.reload();return;}
+    _busy=true;
+    fetch(location.href,{credentials:'same-origin'})
+      .then(function(r){return r.text();})
+      .then(function(h){var doc=new DOMParser().parseFromString(h,'text/html');var n=doc.getElementById(QID);if(n){el.innerHTML=n.innerHTML;beep();toast();}else{location.reload();}})
+      .catch(function(){location.reload();})
+      .finally(function(){_busy=false;if(_pend){_pend=false;swap();}});
+  }
+  function handle(){if(isModal()){_pend=true;return;}swap();}
+  function startFb(){clearTimeout(_fb);_fb=setTimeout(function(){location.reload();},300000);}
+  ROOMS.forEach(function(room){
+    (function connect(){
+      var ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/queue/'+room+'/');
+      ws.onopen=function(){startFb();};
+      ws.onmessage=function(e){try{var d=JSON.parse(e.data);if(d.action==='refresh')handle();}catch(ex){}};
+      ws.onclose=function(){setTimeout(connect,5000);};
+      ws.onerror=function(){ws.close();};
+    })();
+  });
+  document.addEventListener('hidden.bs.modal',function(){if(_pend){_pend=false;swap();}});
+  startFb();
+})();
+</script>
 {% endblock %}
