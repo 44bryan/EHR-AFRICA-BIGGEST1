@@ -1247,6 +1247,9 @@ function updateSplitBalance() {
 function collectPay() {
   if (!INV_ID) return;
   const btn = document.getElementById('collectBtn');
+  // Pre-open receipt window NOW (synchronous, inside click handler) so browsers
+  // don't block it as a popup when window.open is later called in a fetch callback.
+  _receiptWin = window.open('', 'ehr_receipt', 'width=460,height=760,toolbar=no,menubar=no,scrollbars=yes,resizable=yes');
 
   if (splitMode) {
     // Split payment: send two separate payment requests
@@ -1278,9 +1281,16 @@ function collectPay() {
 }
 
 // ── Receipt popup — opens receipt in a small print window ─────────────────────
+var _receiptWin = null;  // pre-opened window handle (avoids popup blocker)
+
 function openReceiptPopup(url) {
   var receiptUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'popup=1';
-  window.open(receiptUrl, 'ehr_receipt', 'width=460,height=760,toolbar=no,menubar=no,scrollbars=yes,resizable=yes');
+  if (_receiptWin && !_receiptWin.closed) {
+    _receiptWin.location.href = receiptUrl;
+    _receiptWin.focus();
+  } else {
+    _receiptWin = window.open(receiptUrl, 'ehr_receipt', 'width=460,height=760,toolbar=no,menubar=no,scrollbars=yes,resizable=yes');
+  }
   var ov = document.getElementById('paySuccessOverlay');
   ov.style.display = 'flex';
   document.getElementById('reprintBtn').onclick = function() {

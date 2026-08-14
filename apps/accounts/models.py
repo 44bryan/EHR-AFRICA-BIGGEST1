@@ -148,6 +148,13 @@ class User(AbstractUser):
         null=True,
         blank=True,
     )
+    signature = models.ImageField(
+        upload_to='staff/signatures/',
+        null=True,
+        blank=True,
+        help_text='Upload a PNG/JPG of your handwritten signature (transparent background preferred). '
+                  'This will appear on prescriptions, lab reports, and investigation reports.',
+    )
     employee_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
     must_change_password = models.BooleanField(default=False)
     last_password_change = models.DateTimeField(null=True, blank=True)

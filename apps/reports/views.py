@@ -10,6 +10,26 @@ from django.template.loader import render_to_string
 from django.conf import settings
 
 
+def _sig_b64(user):
+    """
+    Return a base64 data URI for a user's uploaded signature image,
+    or empty string if none exists.  Safe — never raises.
+    """
+    import os, base64 as _b64
+    try:
+        if not user or not user.signature:
+            return ''
+        path = user.signature.path
+        if not os.path.exists(path):
+            return ''
+        ext = os.path.splitext(path)[1].lower()
+        mime = 'image/png' if ext == '.png' else 'image/jpeg'
+        with open(path, 'rb') as _f:
+            return f'data:{mime};base64,' + _b64.b64encode(_f.read()).decode()
+    except Exception:
+        return ''
+
+
 def render_pdf(template_name, context):
     """
     Render an HTML template to PDF using WeasyPrint.
@@ -117,6 +137,7 @@ def drug_prescription_pdf_view(request, pk):
         'hospital_address': settings.HOSPITAL_ADDRESS,
         'hospital_phone': settings.HOSPITAL_PHONE,
         'pdf_filename': f'prescription_{prescription.patient.patient_id}_{prescription.prescription_date}.pdf',
+        'prescriber_signature': _sig_b64(prescription.prescribed_by),
     }
     return render_pdf('reports/pdf/drug_prescription.html', context)
 
@@ -144,6 +165,8 @@ def investigation_pdf_view(request, pk):
         pk=pk
     )
     result = getattr(order, 'result', None)
+    signer = (result.verified_by if result and result.verified_by else
+              result.performed_by if result else None)
     context = {
         'order': order,
         'result': result,
@@ -152,6 +175,7 @@ def investigation_pdf_view(request, pk):
         'hospital_address': settings.HOSPITAL_ADDRESS,
         'hospital_phone': settings.HOSPITAL_PHONE,
         'pdf_filename': f'investigation_{order.patient.patient_id}_{order.created_at:%Y%m%d}.pdf',
+        'signer_signature': _sig_b64(signer),
     }
     return render_pdf('reports/pdf/investigation_report.html', context)
 
@@ -196,6 +220,11 @@ def lab_report_pdf_view(request, pk):
         LabOrder.objects.select_related('patient', 'ordered_by').prefetch_related('items__test_type', 'items__result'),
         pk=pk
     )
+    # Pick the first result's performer/verifier to sign the lab report
+    first_item = order.items.select_related('result__performed_by', 'result__verified_by').first()
+    first_result = getattr(first_item, 'result', None) if first_item else None
+    lab_signer = (first_result.verified_by if first_result and first_result.verified_by else
+                  first_result.performed_by if first_result else None)
     context = {
         'order': order,
         'patient': order.patient,
@@ -203,6 +232,7 @@ def lab_report_pdf_view(request, pk):
         'hospital_address': settings.HOSPITAL_ADDRESS,
         'hospital_phone': settings.HOSPITAL_PHONE,
         'pdf_filename': f'lab_report_{order.patient.patient_id}_{order.created_at:%Y%m%d}.pdf',
+        'signer_signature': _sig_b64(lab_signer),
     }
     return render_pdf('reports/pdf/lab_report.html', context)
 

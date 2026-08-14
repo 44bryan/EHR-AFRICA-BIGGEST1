@@ -1267,11 +1267,6 @@ def pos_finalize(request, token_id):
         else:
             visit.status = VisitStatus.PARAMETERS
             visit.save(update_fields=['status', 'updated_at'])
-            try:
-                from apps.core.ws_notify import notify_queue as _ws_nq3
-                _ws_nq3('opd')
-            except Exception:
-                pass
 
         # 3 — Create triage token (tier-aware) — only when QMS is active
         if _qms_active():
@@ -1295,6 +1290,13 @@ def pos_finalize(request, token_id):
                 issued_by=request.user,
                 notes='Auto-routed after POS payment confirmation',
             )
+
+    # Notify triage AFTER atomic block so DB is fully committed before browser fetches
+    try:
+        from apps.core.ws_notify import notify_queue as _ws_nq3
+        _ws_nq3('opd')
+    except Exception:
+        pass
 
     # Open 15-day consultation window if invoice has a CONSULT or REG item
     _try_open_consultation_window(invoice)

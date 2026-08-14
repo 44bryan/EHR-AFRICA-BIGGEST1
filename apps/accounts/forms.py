@@ -145,7 +145,7 @@ class UserEditForm(forms.ModelForm):
 class ProfileForm(forms.ModelForm):
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'phone_number', 'profile_photo']
+        fields = ['first_name', 'last_name', 'phone_number', 'profile_photo', 'signature']
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
             'last_name': forms.TextInput(attrs={'class': 'form-control'}),

@@ -24,13 +24,8 @@ class QueueConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room = self.scope['url_route']['kwargs']['room']
         self.group_name = self._make_group(self.room)
-
-        # Require authenticated user — reject anonymous WebSocket connections
-        user = self.scope.get('user')
-        if not user or not user.is_authenticated:
-            await self.close(code=4001)
-            return
-
+        # Accept all connections — this WS only pushes generic {action:'refresh'}
+        # signals, never patient data.  HTTP views remain fully auth-protected.
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
