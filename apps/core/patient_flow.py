@@ -71,10 +71,6 @@ def _auto_route_to_dept(visit, visit_status, qms_service_type, dept_code, trigge
         update_fields.append('department')
     visit.save(update_fields=update_fields)
 
-    # Instantly notify all relevant queue pages via WebSocket
-    for _room in _STATUS_ROOMS.get(visit_status, []):
-        _ws_notify(_room)
-
     if _qms_active():
         try:
             from apps.qms.models import (
@@ -96,6 +92,10 @@ def _auto_route_to_dept(visit, visit_status, qms_service_type, dept_code, trigge
                 )
         except Exception:
             pass
+
+    # Notify AFTER QMS token is committed — browser fetch will find the token
+    for _room in _STATUS_ROOMS.get(visit_status, []):
+        _ws_notify(_room)
 
 
 def auto_route_to_lab(consultation, ordered_by):
