@@ -1293,14 +1293,7 @@ def triage_view(request, visit_number):
             if _ct_change_tier:
                 _save_fields.append('service_tier')
             visit.save(update_fields=_save_fields)
-            try:
-                from apps.core.ws_notify import notify_queue as _ws_nq
-                from apps.core.patient_flow import _STATUS_ROOMS as _SR
-                _ws_nq('opd')  # remove patient from triage queue view
-                for _rm in _SR.get(visit.status, []):
-                    _ws_nq(_rm)  # notify target department queue
-            except Exception:
-                pass
+            _notif_status = visit.status  # capture before any further changes
 
             # ── QMS Integration: flexible routing ─────────────────────────────
             # Priority 1: nurse picked a direct service (REFRACTION, LAB, etc.)
@@ -1395,6 +1388,17 @@ def triage_view(request, visit_number):
                         notes=f'Dispatched to {dest_label}{_doctor_note}{_room_note} by {request.user.get_full_name()}. Priority: {priority}',
                         issued_by=request.user,
                     )
+
+            # Notify WebSocket rooms AFTER QMS token is committed to DB
+            # so the receiving queue page fetches data that already exists.
+            try:
+                from apps.core.ws_notify import notify_queue as _ws_nq
+                from apps.core.patient_flow import _STATUS_ROOMS as _SR
+                _ws_nq('opd')  # remove patient from triage queue
+                for _rm in _SR.get(_notif_status, []):
+                    _ws_nq(_rm)  # notify target department queue
+            except Exception:
+                pass
 
             dept_name = dept.name if dept else (direct_service or 'department')
             messages.success(
