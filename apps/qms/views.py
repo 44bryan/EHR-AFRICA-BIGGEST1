@@ -1149,6 +1149,14 @@ def route_to_dept(request):
                     visit.department = target_dept
                     update_fields.append('department')
             visit.save(update_fields=update_fields)
+            if new_status:
+                try:
+                    from apps.core.ws_notify import notify_queue as _ws_nq
+                    from apps.core.patient_flow import _STATUS_ROOMS as _SR
+                    for _rm in _SR.get(new_status, []):
+                        _ws_nq(_rm)
+                except Exception:
+                    pass
 
     is_vip_call = _is_vip_call_early
     dept_label = dict(ServiceType.choices).get(service_type, service_type)
@@ -1507,6 +1515,11 @@ def cashier_complete(request, token_id):
         else:
             visit.status = VisitStatus.PARAMETERS
             visit.save(update_fields=['status', 'updated_at'])
+            try:
+                from apps.core.ws_notify import notify_queue as _ws_nq_qms
+                _ws_nq_qms('opd')
+            except Exception:
+                pass
 
         # 3 — Create triage token (tier-aware)
         triage_stype = (

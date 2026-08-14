@@ -1293,6 +1293,14 @@ def triage_view(request, visit_number):
             if _ct_change_tier:
                 _save_fields.append('service_tier')
             visit.save(update_fields=_save_fields)
+            try:
+                from apps.core.ws_notify import notify_queue as _ws_nq
+                from apps.core.patient_flow import _STATUS_ROOMS as _SR
+                _ws_nq('opd')  # remove patient from triage queue view
+                for _rm in _SR.get(visit.status, []):
+                    _ws_nq(_rm)  # notify target department queue
+            except Exception:
+                pass
 
             # ── QMS Integration: flexible routing ─────────────────────────────
             # Priority 1: nurse picked a direct service (REFRACTION, LAB, etc.)

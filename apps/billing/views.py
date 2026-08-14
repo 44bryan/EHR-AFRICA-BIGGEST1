@@ -548,6 +548,11 @@ def _route_patient_after_payment(invoice, request):
             else:
                 visit.status = VisitStatus.PARAMETERS
                 visit.save(update_fields=['status', 'updated_at'])
+                try:
+                    from apps.core.ws_notify import notify_queue as _ws_nq
+                    _ws_nq('opd')
+                except Exception:
+                    pass
 
             # QMS routing — best-effort, never blocks payment confirmation
             if _qms_active():
@@ -621,6 +626,11 @@ def _try_open_consultation_window(invoice):
             if visit.status == 'AT_CASHIER':
                 visit.status = 'PARAMETERS'
                 visit.save(update_fields=['status', 'updated_at'])
+                try:
+                    from apps.core.ws_notify import notify_queue as _ws_nq2
+                    _ws_nq2('opd')
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -1257,6 +1267,11 @@ def pos_finalize(request, token_id):
         else:
             visit.status = VisitStatus.PARAMETERS
             visit.save(update_fields=['status', 'updated_at'])
+            try:
+                from apps.core.ws_notify import notify_queue as _ws_nq3
+                _ws_nq3('opd')
+            except Exception:
+                pass
 
         # 3 — Create triage token (tier-aware) — only when QMS is active
         if _qms_active():
