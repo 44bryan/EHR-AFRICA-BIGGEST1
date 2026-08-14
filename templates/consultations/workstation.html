@@ -851,24 +851,20 @@ function qfPick(fieldId, sel) {
   sel.value = '';
 }
 
-// WebSocket live refresh — paused when doctor form is dirty
-let _formDirty = false;
+// WebSocket live refresh — only paused when a modal is open (doctor filling consultation)
 const _refreshEl = document.createElement('small');
 _refreshEl.className = 'text-muted ms-2';
 _refreshEl.style.fontSize = '0.7rem';
 document.querySelector('.d-flex.gap-2 .btn-outline-secondary')?.after(_refreshEl);
 
-document.addEventListener('input',  () => { _formDirty = true; });
-document.addEventListener('change', () => { _formDirty = true; });
-document.addEventListener('submit', () => { _formDirty = false; });
-
 (function(){
   var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/workstation/';
   var _fallback;
+  // Only block reload if a Bootstrap modal is actually open (consultation form visible)
+  function isModalOpen(){ return !!document.querySelector('.modal.show'); }
   function doReload(){
-    if (_formDirty) { _refreshEl.textContent = '(auto-refresh paused — form in use)'; return; }
-    _refreshEl.textContent = '';
-    if (window.doRefresh) { window.doRefresh(); } else { location.reload(); }
+    if (isModalOpen()){ _refreshEl.textContent = '(update ready — close form to apply)'; return; }
+    location.reload();  // direct reload — bypasses window.doRefresh which blocks on POST forms
   }
   function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
   function connect(){
@@ -878,6 +874,10 @@ document.addEventListener('submit', () => { _formDirty = false; });
     ws.onclose = function(){ _refreshEl.textContent = '(reconnecting…)'; setTimeout(connect, 5000); };
     ws.onerror = function(){ ws.close(); };
   }
+  // Also reload when modal closes if a refresh was pending
+  document.addEventListener('hidden.bs.modal', function(){
+    if (_refreshEl.textContent.includes('update ready')) location.reload();
+  });
   connect();
   startFallback();
 })();
