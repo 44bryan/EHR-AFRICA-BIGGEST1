@@ -8,20 +8,44 @@ from apps.core.ws_notify import notify_queue as _ws_notify
 
 # Map visit status → WebSocket room(s) to notify after routing
 _STATUS_ROOMS = {
-    'REGISTERED':    ['opd'],            # new patient just registered
-    'PARAMETERS':    ['opd'],            # patient sent to triage/vitals station
-    'WAITING':       ['opd', 'workstation'],
-    'TRIAGE':        ['opd'],
-    'IN_CONSULTATION': ['workstation'],
-    'LABORATORY':    ['lab'],
-    'INVESTIGATION': ['invest'],
-    'OPTICAL':       ['workstation'],
-    'COUNSELING':    ['workstation'],
-    'PHARMACY':      ['pharmacy'],
-    'AT_CASHIER':    ['cashier'],
-    'BILLING':       ['cashier'],
-    'COMPLETED':     ['opd', 'workstation'],
-    'DISCHARGED':    ['opd'],
+    # ── Entry ──────────────────────────────────────────────────────────
+    'REGISTERED':        ['opd'],
+    'AT_RECEPTIONIST':   ['opd'],
+    'AT_CASHIER':        ['cashier'],
+    # ── Triage ─────────────────────────────────────────────────────────
+    'PARAMETERS':        ['opd'],
+    'TRIAGE':            ['opd'],
+    # ── Doctor queue ───────────────────────────────────────────────────
+    'WAITING':           ['opd', 'workstation'],
+    'IN_CONSULTATION':   ['workstation'],
+    'INSURANCE_CONSULT': ['workstation'],
+    # ── Specialties — all land on workstation ───────────────────────────
+    'REFRACTION':        ['workstation'],
+    'UVEITIS':           ['workstation'],
+    'AT_RETINA':         ['workstation'],
+    'AT_GLAUCOMA':       ['workstation'],
+    'AT_CATARACT':       ['workstation'],
+    'AT_PEDIATRIC':      ['workstation'],
+    'AT_NEURO':          ['workstation'],
+    'AT_OCULOPLASTY':    ['workstation'],
+    'AT_CORNEA':         ['workstation'],
+    # ── Diagnostics ────────────────────────────────────────────────────
+    'LABORATORY':        ['lab'],
+    'INVESTIGATION':     ['invest'],
+    # ── Dispensing / optical ────────────────────────────────────────────
+    'PHARMACY':          ['pharmacy'],
+    'OPTICAL':           ['workstation'],
+    # ── Surgical pathway ────────────────────────────────────────────────
+    'COUNSELING':        ['workstation'],
+    'WAITING_ADMISSION': ['workstation'],
+    'ADMITTED':          ['workstation'],
+    'PRE_OP':            ['workstation'],
+    'IN_THEATRE':        ['workstation'],
+    'POST_OP':           ['workstation'],
+    # ── Billing / end ───────────────────────────────────────────────────
+    'BILLING':           ['cashier'],
+    'COMPLETED':         ['opd', 'workstation'],
+    'DISCHARGED':        ['opd'],
 }
 
 
