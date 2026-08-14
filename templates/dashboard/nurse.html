@@ -153,3 +153,23 @@
   </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  var wsUrl = (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/queue/opd/';
+  function doReload(){ location.reload(); }
+  var _fallback;
+  function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
+  function connect(){
+    var ws = new WebSocket(wsUrl);
+    ws.onopen = function(){ startFallback(); };
+    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
+    ws.onclose = function(){ setTimeout(connect, 5000); };
+    ws.onerror = function(){ ws.close(); };
+  }
+  connect();
+  startFallback();
+})();
+</script>
+{% endblock %}

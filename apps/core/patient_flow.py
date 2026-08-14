@@ -8,6 +8,8 @@ from apps.core.ws_notify import notify_queue as _ws_notify
 
 # Map visit status → WebSocket room(s) to notify after routing
 _STATUS_ROOMS = {
+    'REGISTERED':    ['opd'],            # new patient just registered
+    'PARAMETERS':    ['opd'],            # patient sent to triage/vitals station
     'WAITING':       ['opd', 'workstation'],
     'TRIAGE':        ['opd'],
     'IN_CONSULTATION': ['workstation'],
