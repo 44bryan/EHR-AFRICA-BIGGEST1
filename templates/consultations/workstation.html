@@ -927,16 +927,16 @@ function qfPick(fieldId, sel) {
   const bsModal = new bootstrap.Modal(modal);
   let _pendingVisit = null, _pendingDest = null;
 
-  document.querySelectorAll('.ws-referral-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      _pendingVisit = btn.dataset.visit;
-      _pendingDest  = btn.dataset.dest;
-      document.getElementById('refModalDestLabel').textContent  = btn.dataset.label || btn.dataset.dest;
-      document.getElementById('refModalPatientName').textContent = btn.dataset.patient || '';
-      document.getElementById('refModalReason').value = '';
-      document.getElementById('refModalError').style.display = 'none';
-      bsModal.show();
-    });
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-referral-btn');
+    if (!btn) return;
+    _pendingVisit = btn.dataset.visit;
+    _pendingDest  = btn.dataset.dest;
+    document.getElementById('refModalDestLabel').textContent  = btn.dataset.label || btn.dataset.dest;
+    document.getElementById('refModalPatientName').textContent = btn.dataset.patient || '';
+    document.getElementById('refModalReason').value = '';
+    document.getElementById('refModalError').style.display = 'none';
+    bsModal.show();
   });
 
   document.getElementById('refModalSubmit').addEventListener('click', function() {
@@ -980,17 +980,17 @@ function qfPick(fieldId, sel) {
   const bsModal = new bootstrap.Modal(modal);
   let _pendingVisit = null;
 
-  document.querySelectorAll('.ws-va-btn').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      _pendingVisit = btn.dataset.visit;
-      document.getElementById('vaModalPatient').textContent = btn.dataset.patient || '';
-      document.getElementById('vaModalOD').value = '';
-      document.getElementById('vaModalOS').value = '';
-      document.getElementById('vaModalMsg').style.display = 'none';
-      bsModal.show();
-      setTimeout(function(){ document.getElementById('vaModalOD').focus(); }, 400);
-    });
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-va-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    _pendingVisit = btn.dataset.visit;
+    document.getElementById('vaModalPatient').textContent = btn.dataset.patient || '';
+    document.getElementById('vaModalOD').value = '';
+    document.getElementById('vaModalOS').value = '';
+    document.getElementById('vaModalMsg').style.display = 'none';
+    bsModal.show();
+    setTimeout(function(){ document.getElementById('vaModalOD').focus(); }, 400);
   });
 
   document.getElementById('vaModalSave').addEventListener('click', function() {
@@ -1042,17 +1042,17 @@ function qfPick(fieldId, sel) {
   const bsModal = new bootstrap.Modal(modal);
   let _pendingVisit = null;
 
-  document.querySelectorAll('.ws-iop-btn').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      _pendingVisit = btn.dataset.visit;
-      document.getElementById('iopModalPatient').textContent = btn.dataset.patient || '';
-      document.getElementById('iopModalOD').value = '';
-      document.getElementById('iopModalOS').value = '';
-      document.getElementById('iopModalMsg').style.display = 'none';
-      bsModal.show();
-      setTimeout(function(){ document.getElementById('iopModalOD').focus(); }, 400);
-    });
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-iop-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    _pendingVisit = btn.dataset.visit;
+    document.getElementById('iopModalPatient').textContent = btn.dataset.patient || '';
+    document.getElementById('iopModalOD').value = '';
+    document.getElementById('iopModalOS').value = '';
+    document.getElementById('iopModalMsg').style.display = 'none';
+    bsModal.show();
+    setTimeout(function(){ document.getElementById('iopModalOD').focus(); }, 400);
   });
 
   document.getElementById('iopModalSave').addEventListener('click', function() {
@@ -1102,69 +1102,68 @@ function qfPick(fieldId, sel) {
   // Track selected room per visit
   const _selectedRoom = {};
 
-  // Room picker buttons
-  document.querySelectorAll('.ws-room-pick').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      const vPk = btn.dataset.visit;
-      _selectedRoom[vPk] = btn.dataset.room;
-      // Highlight selection
-      document.querySelectorAll(`.ws-room-pick[data-visit="${vPk}"], .ws-room-any[data-visit="${vPk}"]`).forEach(function(b){
-        b.classList.remove('btn-secondary', 'active');
-        b.classList.add('btn-outline-secondary');
-      });
-      btn.classList.remove('btn-outline-secondary');
-      btn.classList.add('btn-secondary', 'active');
+  // Room picker buttons — event delegation so they survive DOM swap
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-room-pick');
+    if (!btn) return;
+    var vPk = btn.dataset.visit;
+    _selectedRoom[vPk] = btn.dataset.room;
+    document.querySelectorAll('.ws-room-pick[data-visit="' + vPk + '"], .ws-room-any[data-visit="' + vPk + '"]').forEach(function(b){
+      b.classList.remove('btn-secondary', 'active');
+      b.classList.add('btn-outline-secondary');
     });
-  });
-  document.querySelectorAll('.ws-room-any').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      const vPk = btn.dataset.visit;
-      _selectedRoom[vPk] = '';
-      document.querySelectorAll(`.ws-room-pick[data-visit="${vPk}"], .ws-room-any[data-visit="${vPk}"]`).forEach(function(b){
-        b.classList.remove('btn-secondary', 'active');
-        b.classList.add('btn-outline-secondary');
-      });
-      btn.classList.remove('btn-outline-secondary');
-      btn.classList.add('btn-secondary', 'active');
-    });
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-secondary', 'active');
   });
 
-  // Route buttons
-  document.querySelectorAll('.ws-route-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      const vPk = btn.dataset.visit;
-      const dest = btn.dataset.dest;
-      const roomId = _selectedRoom[vPk] || '';
-      const row = document.getElementById('ws-route-row-' + vPk);
-      row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = true; });
-      const origHtml = btn.innerHTML;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-      const fd = new FormData();
-      fd.append('destination', dest);
-      if (roomId) fd.append('counter_id', roomId);
-      fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-      fetch(_wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', vPk), {
-        method: 'POST', body: fd,
-      })
-      .then(function(r){ return r.json(); })
-      .then(function(data) {
-        if (data.success) {
-          const btns = document.getElementById('ws-route-btns-' + vPk);
-          if (btns) btns.innerHTML = '<span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
-          row.style.opacity = '0.5';
-          // Reload page after 2s so the routed patient disappears cleanly
-          _formDirty = false;
-          setTimeout(function() { location.reload(); }, 2000);
-        } else {
-          btn.innerHTML = origHtml;
-          row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = false; });
-          alert(data.error || 'Routing failed. Please try again.');
-        }
-      })
-      .catch(function(){
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-room-any');
+    if (!btn) return;
+    var vPk = btn.dataset.visit;
+    _selectedRoom[vPk] = '';
+    document.querySelectorAll('.ws-room-pick[data-visit="' + vPk + '"], .ws-room-any[data-visit="' + vPk + '"]').forEach(function(b){
+      b.classList.remove('btn-secondary', 'active');
+      b.classList.add('btn-outline-secondary');
+    });
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-secondary', 'active');
+  });
+
+  // Route buttons — event delegation so they survive DOM swap
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-route-btn');
+    if (!btn) return;
+    var vPk = btn.dataset.visit;
+    var dest = btn.dataset.dest;
+    var roomId = _selectedRoom[vPk] || '';
+    var row = document.getElementById('ws-route-row-' + vPk);
+    row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = true; });
+    var origHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    var fd = new FormData();
+    fd.append('destination', dest);
+    if (roomId) fd.append('counter_id', roomId);
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch(_wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', vPk), {
+      method: 'POST', body: fd,
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var btns = document.getElementById('ws-route-btns-' + vPk);
+        if (btns) btns.innerHTML = '<span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
+        row.style.opacity = '0.5';
+        _formDirty = false;
+        setTimeout(function() { location.reload(); }, 2000);
+      } else {
         btn.innerHTML = origHtml;
         row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = false; });
-      });
+        alert(data.error || 'Routing failed. Please try again.');
+      }
+    })
+    .catch(function(){
+      btn.innerHTML = origHtml;
+      row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = false; });
     });
   });
 })();
