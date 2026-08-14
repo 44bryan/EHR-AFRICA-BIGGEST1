@@ -171,14 +171,18 @@
 <script>
 (function(){
   var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/opd/';
+  var _dot = document.createElement('div');
+  _dot.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:9999;background:#6c757d;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px;opacity:0.9;pointer-events:none;';
+  _dot.textContent = 'Connecting…';
+  document.body.appendChild(_dot);
   var _fallback;
   function doReload(){ location.reload(); }
   function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
   function connect(){
     var ws = new WebSocket(wsUrl);
-    ws.onopen = function(){ startFallback(); };
+    ws.onopen = function(){ _dot.style.background='#198754'; _dot.textContent='● Live'; startFallback(); };
     ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
-    ws.onclose = function(){ setTimeout(connect, 5000); };
+    ws.onclose = function(){ _dot.style.background='#dc3545'; _dot.textContent='● Reconnecting…'; setTimeout(connect, 5000); };
     ws.onerror = function(){ ws.close(); };
   }
   connect();

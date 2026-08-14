@@ -229,12 +229,12 @@ CACHES = {
     }
 }
 
-# Django Channels — Redis channel layer (db=2 to avoid collision with Celery/cache)
+# Django Channels — always use db=2, isolated from Celery (db=0) and cache (db=1)
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [env('REDIS_URL', default='redis://127.0.0.1:6379/2')],
+            'hosts': ['redis://127.0.0.1:6379/2'],
             'capacity': 1500,
             'expiry': 10,
         },

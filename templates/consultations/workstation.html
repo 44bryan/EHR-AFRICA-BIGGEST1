@@ -851,34 +851,54 @@ function qfPick(fieldId, sel) {
   sel.value = '';
 }
 
-// WebSocket live refresh — only paused when a modal is open (doctor filling consultation)
-const _refreshEl = document.createElement('small');
-_refreshEl.className = 'text-muted ms-2';
-_refreshEl.style.fontSize = '0.7rem';
-document.querySelector('.d-flex.gap-2 .btn-outline-secondary')?.after(_refreshEl);
-
+// WebSocket live refresh — subscribes to both 'workstation' and 'opd' rooms
 (function(){
-  var wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/queue/workstation/';
-  var _fallback;
-  // Only block reload if a Bootstrap modal is actually open (consultation form visible)
+  // Visible status badge fixed bottom-right — doctors can always see WS state
+  var _dot = document.createElement('div');
+  _dot.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:9999;background:#6c757d;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px;opacity:0.9;pointer-events:none;';
+  _dot.textContent = 'Connecting…';
+  document.body.appendChild(_dot);
+
   function isModalOpen(){ return !!document.querySelector('.modal.show'); }
   function doReload(){
-    if (isModalOpen()){ _refreshEl.textContent = '(update ready — close form to apply)'; return; }
-    location.reload();  // direct reload — bypasses window.doRefresh which blocks on POST forms
+    if (isModalOpen()){
+      _dot.style.background = '#fd7e14';
+      _dot.textContent = '● Update ready — close form';
+      return;
+    }
+    location.reload();
   }
+
+  var _fallback;
   function startFallback(){ clearTimeout(_fallback); _fallback = setTimeout(doReload, 300000); }
-  function connect(){
-    var ws = new WebSocket(wsUrl);
-    ws.onopen = function(){ _refreshEl.textContent = '(live)'; startFallback(); };
-    ws.onmessage = function(e){ try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){} };
-    ws.onclose = function(){ _refreshEl.textContent = '(reconnecting…)'; setTimeout(connect, 5000); };
-    ws.onerror = function(){ ws.close(); };
-  }
-  // Also reload when modal closes if a refresh was pending
-  document.addEventListener('hidden.bs.modal', function(){
-    if (_refreshEl.textContent.includes('update ready')) location.reload();
+
+  // Connect to both rooms — any routing event from either room triggers reload
+  ['workstation', 'opd'].forEach(function(room){
+    (function connect(){
+      var wsUrl = (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/queue/'+room+'/';
+      var ws = new WebSocket(wsUrl);
+      ws.onopen = function(){
+        _dot.style.background = '#198754';
+        _dot.textContent = '● Live';
+        startFallback();
+      };
+      ws.onmessage = function(e){
+        try{ var d=JSON.parse(e.data); if(d.action==='refresh') doReload(); }catch(ex){}
+      };
+      ws.onclose = function(){
+        _dot.style.background = '#dc3545';
+        _dot.textContent = '● Reconnecting…';
+        setTimeout(connect, 5000);
+      };
+      ws.onerror = function(){ ws.close(); };
+    })();
   });
-  connect();
+
+  // Auto-reload when doctor closes the consultation modal (if update was pending)
+  document.addEventListener('hidden.bs.modal', function(){
+    if (_dot.textContent.includes('Update ready')) location.reload();
+  });
+
   startFallback();
 })();
 
