@@ -908,7 +908,17 @@ def cashier_pos(request, token_id):
     prior_unpaid_invoices = []
 
     if patient:
-        invoice = get_or_create_today_invoice(patient, created_by=request.user)
+        # Find any non-cancelled invoice for today first (including PAID).
+        # Only create a new blank invoice if none exists at all — prevents
+        # a blank duplicate appearing after a patient's invoice is fully paid.
+        _today_date = timezone.localdate()
+        invoice = Invoice.objects.filter(
+            patient=patient,
+            issue_date=_today_date,
+            is_deleted=False,
+        ).exclude(status=InvoiceStatus.CANCELLED).order_by('created_at').first()
+        if not invoice:
+            invoice = get_or_create_today_invoice(patient, created_by=request.user)
         items = invoice.items.filter(is_deleted=False).order_by('created_at')
         payments = invoice.payments.filter(is_deleted=False).order_by('payment_date')
 
@@ -1042,8 +1052,9 @@ def pos_add_item(request, invoice_id):
         created_by=request.user,
     )
 
-    # Promote invoice from DRAFT to ISSUED when first item added
-    if invoice.status == InvoiceStatus.DRAFT:
+    # Promote DRAFT → ISSUED when first item added;
+    # revert PAID → ISSUED if a new item is added after payment (balance now positive again).
+    if invoice.status in (InvoiceStatus.DRAFT, InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID):
         invoice.status = InvoiceStatus.ISSUED
         invoice.save(update_fields=['status', 'updated_at'])
 
@@ -1229,11 +1240,12 @@ def pos_finalize(request, token_id):
         return JsonResponse({'success': False, 'error': 'No patient linked to this token.'}, status=400)
 
     today = timezone.localdate()
+    # Order by created_at so we always get the FIRST (real) invoice, not a blank duplicate.
     invoice = Invoice.objects.filter(
         patient=token.patient,
         issue_date=today,
         is_deleted=False,
-    ).exclude(status=InvoiceStatus.CANCELLED).first()
+    ).exclude(status=InvoiceStatus.CANCELLED).order_by('created_at').first()
 
     if not invoice:
         return JsonResponse({'success': False, 'error': 'No invoice found for today.'}, status=400)
@@ -1329,7 +1341,14 @@ def patient_pos(request, patient_id):
     Used when QMS is disabled or when a patient walks straight to the cashier.
     """
     patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
-    invoice = get_or_create_today_invoice(patient, created_by=request.user)
+    _today_date = timezone.localdate()
+    invoice = Invoice.objects.filter(
+        patient=patient,
+        issue_date=_today_date,
+        is_deleted=False,
+    ).exclude(status=InvoiceStatus.CANCELLED).order_by('created_at').first()
+    if not invoice:
+        invoice = get_or_create_today_invoice(patient, created_by=request.user)
     items = invoice.items.filter(is_deleted=False).order_by('created_at')
     payments = invoice.payments.filter(is_deleted=False).order_by('payment_date')
     active_consultation = patient.active_consultation_visit
@@ -1415,7 +1434,7 @@ def patient_finalize(request, patient_id):
     today = timezone.localdate()
     invoice = Invoice.objects.filter(
         patient=patient, issue_date=today, is_deleted=False,
-    ).exclude(status=InvoiceStatus.CANCELLED).first()
+    ).exclude(status=InvoiceStatus.CANCELLED).order_by('created_at').first()
 
     if not invoice:
         return JsonResponse({'success': False, 'error': 'No invoice found for today.'}, status=400)
