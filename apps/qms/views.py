@@ -2398,12 +2398,14 @@ def room_checkin_view(request):
     })
 
 
-@login_required
 def room_board_ajax(request):
     """
     AJAX — live room board for triage dispatch.
     Returns zones → rooms with doctor name, waiting count, estimated wait time.
+    Returns 401 JSON (not a 302 redirect) so the browser fetch can handle it cleanly.
     """
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'unauthenticated', 'zones': []}, status=401)
     if not _qms_active():
         return JsonResponse({'zones': []})
 
