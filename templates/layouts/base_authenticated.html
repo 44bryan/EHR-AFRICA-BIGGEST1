@@ -713,6 +713,30 @@
     arguments[1] = addSlot(url);
     return _open.apply(this, arguments);
   };
+
+  // Patch window.fetch: add ?s=N to URL + X-Session-Slot header for all fetch() calls.
+  // XHR patch above does not cover fetch() — they are separate browser APIs.
+  var _origFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    // Slot the URL
+    if (typeof url === 'string') {
+      url = addSlot(url);
+    } else if (url && typeof url === 'object' && url.url) {
+      url = new Request(addSlot(url.url), url);
+    }
+    // Merge headers with X-Session-Slot
+    opts = opts ? Object.assign({}, opts) : {};
+    try {
+      var h = opts.headers ? new Headers(opts.headers) : new Headers();
+      h.set('X-Session-Slot', slot);
+      opts.headers = h;
+    } catch (e) {}
+    // Append s=slot to FormData POST bodies so middleware can also resolve via POST field
+    if (opts.body instanceof FormData && !opts.body.has('s')) {
+      opts.body.append('s', slot);
+    }
+    return _origFetch.call(this, url, opts);
+  };
 })();
 </script>
 
