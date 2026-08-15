@@ -578,11 +578,17 @@ def _route_patient_after_payment(invoice, request):
                     if cashier_token.counter:
                         cashier_token.counter.current_serving = None
                         cashier_token.counter.save(update_fields=['current_serving', 'updated_at'])
-                    triage_stype = (
-                        ServiceType.PARAMETERS
-                        if cashier_token.service_tier == ServiceTier.STANDARD
-                        else ServiceType.PARAMETERS_VIP
-                    )
+                    # VIP patients skip triage and go directly to the VIP doctor workstation.
+                    # Express/FastTrack still go through VIP/Express triage (PARAMETERS_VIP).
+                    if cashier_token.service_tier == ServiceTier.STANDARD:
+                        triage_stype = ServiceType.PARAMETERS
+                    elif cashier_token.service_tier == ServiceTier.VIP:
+                        triage_stype = ServiceType.VIP_CONSULT
+                        # Promote visit status: VIP patients are waiting for doctor, not triage
+                        visit.status = VisitStatus.WAITING
+                        visit.save(update_fields=['status', 'updated_at'])
+                    else:
+                        triage_stype = ServiceType.PARAMETERS_VIP
                     triage_num = DailyTokenSequence.next_dept_token(triage_stype)
                     QueueToken.objects.create(
                         token_number=triage_num,
@@ -1253,6 +1259,10 @@ def pos_finalize(request, token_id):
             is_deleted=False,
         ).first()
 
+        # VIP patients skip triage — they go directly to VIP doctor workstation.
+        is_vip = (token.service_tier == ServiceTier.VIP)
+        initial_status = VisitStatus.WAITING if is_vip else VisitStatus.PARAMETERS
+
         if not visit:
             has_prior = Visit.objects.filter(
                 patient=token.patient, is_deleted=False
@@ -1261,21 +1271,25 @@ def pos_finalize(request, token_id):
                 patient=token.patient,
                 visit_type=VisitType.FOLLOW_UP if has_prior else VisitType.NEW,
                 chief_complaint='',
-                status=VisitStatus.PARAMETERS,
+                status=initial_status,
                 service_tier=token.service_tier,
                 created_by=request.user,
             )
         else:
-            visit.status = VisitStatus.PARAMETERS
+            visit.status = initial_status
             visit.save(update_fields=['status', 'updated_at'])
 
-        # 3 — Create triage token (tier-aware) — only when QMS is active
+        # 3 — Create next queue token (tier-aware) — only when QMS is active
+        # VIP → VIP_CONSULT (doctor workstation directly, no triage step)
+        # Express/FastTrack → PARAMETERS_VIP (VIP/Express triage)
+        # Standard → PARAMETERS (standard triage)
         if _qms_active():
-            triage_stype = (
-                ServiceType.PARAMETERS
-                if token.service_tier == ServiceTier.STANDARD
-                else ServiceType.PARAMETERS_VIP
-            )
+            if token.service_tier == ServiceTier.STANDARD:
+                triage_stype = ServiceType.PARAMETERS
+            elif is_vip:
+                triage_stype = ServiceType.VIP_CONSULT
+            else:
+                triage_stype = ServiceType.PARAMETERS_VIP
             triage_num = DailyTokenSequence.next_dept_token(triage_stype)
             QueueToken.objects.create(
                 token_number=triage_num,
