@@ -796,45 +796,4 @@
   document.addEventListener('htmx:afterSettle', function ()  { initInfoTips(document); });
 })();
 </script>
-
-<script>
-/* ── Global session-expiry guard for all fetch() calls ───────────────────────
-   Wraps the native fetch once so every AJAX call in the entire app automatically
-   detects a login-page redirect (session expired) and shows a non-intrusive
-   banner instead of a cryptic error message or silent failure.              */
-(function () {
-  var _nativeFetch = window.fetch;
-  var _bannerShown = false;
-
-  function _showSessionBanner() {
-    if (_bannerShown) return;
-    _bannerShown = true;
-    var bar = document.createElement('div');
-    bar.id = 'ehr-session-banner';
-    bar.style.cssText = [
-      'position:fixed;top:0;left:0;right:0;z-index:99999;',
-      'background:#dc2626;color:#fff;text-align:center;',
-      'padding:10px 16px;font-size:14px;font-weight:600;',
-      'display:flex;align-items:center;justify-content:center;gap:12px;'
-    ].join('');
-    bar.innerHTML = [
-      '<i class="bi bi-exclamation-triangle-fill"></i>',
-      '<span>Your session has expired.</span>',
-      '<a href="/accounts/login/?next=' + encodeURIComponent(window.location.pathname + window.location.search) + '"',
-      '   style="color:#fff;text-decoration:underline;font-weight:700;">Log in again</a>',
-      '<span style="font-size:12px;opacity:.8;">(unsaved work may be lost)</span>'
-    ].join(' ');
-    document.body.insertBefore(bar, document.body.firstChild);
-  }
-
-  window.fetch = function () {
-    return _nativeFetch.apply(this, arguments).then(function (response) {
-      if (response.url && response.url.includes('/accounts/login/')) {
-        _showSessionBanner();
-      }
-      return response;
-    });
-  };
-})();
-</script>
 {% endblock %}
