@@ -2069,8 +2069,8 @@ def counter_create_view(request):
         station_type = request.POST.get('station_type', '').strip()
         anti_min = int(request.POST.get('anti_starvation_minutes', 45) or 45)
 
-        if not name or not code or not service_type:
-            error = 'Name, Code, and Service Type are required.'
+        if not name or not code or not service_type or not station_type:
+            error = 'Name, Code, Service Type, and Station Type are required.'
         elif ServiceCounter.objects.filter(code=code).exists():
             error = f'A counter with code "{code}" already exists.'
         else:
@@ -2124,8 +2124,8 @@ def counter_edit_view(request, counter_id):
         station_type = request.POST.get('station_type', '').strip()
         anti_min = int(request.POST.get('anti_starvation_minutes', 45) or 45)
 
-        if not name or not code or not service_type:
-            error = 'Name, Code, and Service Type are required.'
+        if not name or not code or not service_type or not station_type:
+            error = 'Name, Code, Service Type, and Station Type are required.'
         elif ServiceCounter.objects.filter(code=code).exclude(id=counter.id).exists():
             error = f'A counter with code "{code}" already exists.'
         else:
