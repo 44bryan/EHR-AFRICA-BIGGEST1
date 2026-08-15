@@ -228,8 +228,9 @@
         EhrRoute._bsModal = null;
       });
 
-      // Load rooms
-      fetch('/consultations/route/rooms/?tier=' + this._tier, {headers:{'X-Requested-With':'XMLHttpRequest'}})
+      // Load rooms (include session slot so MultiSessionMiddleware uses correct session)
+      var _pageSlot = new URLSearchParams(window.location.search).get('s') || '1';
+      fetch('/consultations/route/rooms/?tier=' + this._tier + '&s=' + _pageSlot, {headers:{'X-Requested-With':'XMLHttpRequest'}})
         .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
         .then(function(data) { _renderRooms(data); })
         .catch(function() {
@@ -253,6 +254,7 @@
       if (counterId) payload.append('counter_id', counterId);
       else if (roomId) payload.append('room_id', roomId);
       if (this._completePk) payload.append('complete_pk', this._completePk);
+      payload.append('s', _pageSlot);
 
       var self = this;
       fetch('/consultations/route/', {
