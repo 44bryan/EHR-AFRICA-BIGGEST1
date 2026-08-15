@@ -108,19 +108,6 @@ def _can_view_financial_reports(user):
     ) or user.is_superuser
 
 
-def _can_manage_price_catalog(user):
-    """Service price catalog — Cashiers can manage prices during test period."""
-    return user.role in (
-        UserRole.CASHIER,
-        UserRole.CHIEF_CASHIER,
-        UserRole.ACCOUNTANT,
-        UserRole.SENIOR_ACCOUNTANT,
-        UserRole.FINANCE_DIRECTOR,
-        UserRole.BILLING_OFFICER,
-        UserRole.MEDICAL_DIRECTOR,
-        UserRole.SUPER_ADMIN,
-    ) or user.is_superuser
-
 
 def _can_view_pl(user):
     """P&L and strategic financial reports — Finance Director and above only."""
@@ -1447,11 +1434,14 @@ def receipt_view(request, invoice_id):
             .order_by('-issued_at')
             .first()
         )
+    total_paid = sum(p.amount for p in payments)
+    change_given = max(0, total_paid - invoice.total)
     ctx = {
         'invoice': invoice,
         'items': items,
         'payments': payments,
         'today_token': today_token,
+        'change_given': change_given,
     }
     if request.GET.get('format') == 'pdf':
         return _render_pdf(
@@ -2304,7 +2294,7 @@ def process_refund(request, invoice_id):
 @login_required
 def service_price_list(request):
     """List/manage all service prices in the Charge Master."""
-    if not _can_manage_price_catalog(request.user):
+    if not _can_view_financial_reports(request.user):
         messages.error(request, 'Access denied.')
         return redirect('billing:dashboard')
     from .models import ServiceTierFilter
@@ -2338,7 +2328,7 @@ def service_price_list(request):
 @require_POST
 def service_price_create(request):
     """Create a new service price entry."""
-    if not _can_manage_price_catalog(request.user):
+    if not _can_authorize_billing(request.user):
         messages.error(request, 'Access denied.')
         return redirect('billing:service_price_list')
     name = request.POST.get('name', '').strip()
@@ -2375,7 +2365,7 @@ def service_price_create(request):
 @require_POST
 def service_price_edit(request, price_id):
     """Edit an existing service price."""
-    if not _can_manage_price_catalog(request.user):
+    if not _can_authorize_billing(request.user):
         return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
     sp = get_object_or_404(ServicePrice, id=price_id, is_deleted=False)
     try:
@@ -2400,7 +2390,7 @@ def service_price_edit(request, price_id):
 @require_POST
 def service_price_toggle(request, price_id):
     """Toggle is_active on a service price."""
-    if not _can_manage_price_catalog(request.user):
+    if not _can_authorize_billing(request.user):
         return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
     sp = get_object_or_404(ServicePrice, id=price_id, is_deleted=False)
     sp.is_active = not sp.is_active
@@ -4279,7 +4269,7 @@ def export_shift_list(request):
 @login_required
 def export_service_prices(request):
     """CSV export of service price catalogue."""
-    if not _can_manage_price_catalog(request.user):
+    if not _can_view_financial_reports(request.user):
         messages.error(request, 'Access denied.')
         return redirect('billing:service_price_list')
     _log_export(request, 'service_prices')
