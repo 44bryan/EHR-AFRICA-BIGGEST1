@@ -167,6 +167,12 @@ class User(AbstractUser):
         help_text='Allow this cashier to also register patients and perform reception tasks '
                   '(useful for VIP desks or small departments where one person covers both roles).'
     )
+    can_do_refraction = models.BooleanField(
+        default=False,
+        help_text='Allow this doctor to also perform refraction (sphere, cylinder, axis, add) '
+                  'directly from their consultation workstation. Intended for VIP doctors who '
+                  'handle parameters, refraction and consultation in one room.'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

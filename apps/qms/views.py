@@ -2193,8 +2193,9 @@ def counter_delete_view(request, counter_id):
         return redirect('qms:counter_manage')
     counter = get_object_or_404(ServiceCounter, id=counter_id)
     if counter.current_serving_id:
-        messages.error(request, f'Cannot delete "{counter.name}" — it is currently serving a patient.')
-        return redirect('qms:counter_manage')
+        # Clear stale serving reference before deleting
+        counter.current_serving = None
+        counter.save(update_fields=['current_serving', 'updated_at'])
     name = counter.name
     counter.delete()
     messages.success(request, f'Counter "{name}" deleted.')

@@ -1212,6 +1212,9 @@ def workstation_view(request):
                         'ALL':           ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
                     }
                     service_types = _unit_svc_map.get(_cu, ['GENERAL'])
+                # VIP doctor with can_do_refraction also sees REFRACTION queue
+                if getattr(user, 'can_do_refraction', False) and 'REFRACTION' not in service_types:
+                    service_types = service_types + ['REFRACTION']
             if service_types:
                 from django.db.models import Q as _Q
                 # Both assigned-doctor tokens AND pool tokens must match this doctor's
@@ -1553,6 +1556,7 @@ def workstation_view(request):
         'selected_room': selected_room,
         'queue_filter': queue_filter if dept_code == 'GEN_OPH' else '',
         'is_refrac': dept_code in ('REFRAC', 'PEDS_REFRAC'),
+        'can_do_refraction': getattr(user, 'can_do_refraction', False),
         'refrac_counter': _refrac_counter if dept_code in ('REFRAC', 'PEDS_REFRAC') else None,
         'checked_in_counter': _ws_checked_in_counter,
         'my_counter_id': _ws_checked_in_counter.id if _ws_checked_in_counter else None,
