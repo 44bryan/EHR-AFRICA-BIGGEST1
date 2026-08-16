@@ -566,14 +566,18 @@ def home_view(request):
             ],
         ).order_by('visit_date')
 
-        # Filter queue strictly by department — every doctor sees ONLY patients
-        # explicitly dispatched to their unit. No NULL-department fallback.
+        # Filter queue by department. VIP doctors also see visits with no department
+        # (VIP patients bypass triage → visit has department=NULL until consulted).
         dept_obj = user.department
         if not dept_obj and user.role_department_code:
             from apps.departments.models import Department as _Dept
             dept_obj = _Dept.objects.filter(code=user.role_department_code).first()
         if dept_obj:
-            queue_qs = queue_qs.filter(department=dept_obj)
+            if _cu == 'VIP_CONSULT':
+                from django.db.models import Q as _DQ
+                queue_qs = queue_qs.filter(_DQ(department=dept_obj) | _DQ(department__isnull=True))
+            else:
+                queue_qs = queue_qs.filter(department=dept_obj)
         else:
             queue_qs = queue_qs.none()
 

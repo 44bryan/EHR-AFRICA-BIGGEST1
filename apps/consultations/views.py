@@ -559,6 +559,7 @@ def consultation_create_view(request, patient_id):
         'investigation_data': investigation_data,
         'patient_medications': patient_medications,
         'patient_allergies': patient_allergies,
+        'can_do_refraction': getattr(request.user, 'can_do_refraction', False),
     })
 
 
@@ -814,6 +815,7 @@ def consultation_edit_view(request, pk):
         'is_resuming': consultation.status == ConsultationStatus.IN_PROGRESS,
         'refraction_consult': refraction_consult,
         'refraction_data': refraction_data,
+        'can_do_refraction': getattr(request.user, 'can_do_refraction', False),
     })
 
 
