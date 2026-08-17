@@ -2,19 +2,80 @@
 {% load humanize %}
 {% block title %}Cashier Workstation{% endblock %}
 
+{% block extra_css %}
+<style>
+.cw-root { max-width: 1180px; margin: 0 auto; }
+.cw-header {
+  background: #fff; border: 1px solid #dee2e6; border-radius: 12px;
+  padding: .75rem 1.1rem; margin-bottom: .9rem;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.cw-grid { display: grid; grid-template-columns: 1fr 340px; gap: .9rem; align-items: start; }
+@media (max-width: 900px) { .cw-grid { grid-template-columns: 1fr; } }
+.cw-card {
+  background: #fff; border: 1px solid #dee2e6; border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; margin-bottom: .9rem;
+}
+.cw-card-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .55rem .9rem; border-bottom: 1px solid #f1f5f9; background: #f8fafc;
+}
+.cw-card-hdr-title { font-size: .8rem; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: .4rem; }
+.cw-stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin-bottom: .9rem; }
+.cw-stat {
+  background: #fff; border: 1px solid #dee2e6; border-radius: 10px;
+  padding: .7rem .9rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+.cw-stat-val { font-size: 1.5rem; font-weight: 800; color: #0d6efd; line-height: 1.1; }
+.cw-stat-lbl { font-size: .68rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+.cw-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.cw-tbl th { background: #f8fafc; color: #64748b; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: .4rem .7rem; border-bottom: 1px solid #e2e8f0; font-weight: 600; }
+.cw-tbl td { padding: .45rem .7rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #1e293b; }
+.cw-tbl tr:last-child td { border-bottom: none; }
+.cw-tbl tr:hover td { background: #f8fafc; }
+.cw-btn-pos { background: #0d6efd; color: #fff; border: none; border-radius: 6px; padding: 4px 12px; font-size: .75rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap; }
+.cw-btn-pos:hover { background: #0b5ed7; color: #fff; }
+.cw-btn-outline { background: #fff; color: #0d6efd; border: 1px solid #0d6efd; border-radius: 6px; padding: 4px 10px; font-size: .75rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap; }
+.cw-btn-outline:hover { background: #eff6ff; color: #0b5ed7; }
+.cw-search-wrap { padding: .75rem .9rem; }
+.cw-search-input {
+  width: 100%; border: 1px solid #dee2e6; border-radius: 8px;
+  padding: .5rem .75rem; font-size: .88rem; outline: none;
+  transition: border-color .15s;
+}
+.cw-search-input:focus { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13,110,253,.12); }
+.cw-token-badge { background: #0d6efd; color: #fff; border-radius: 6px; padding: 2px 8px; font-size: .78rem; font-weight: 700; }
+.cw-tier-vip    { background: #ede9fe; color: #6d28d9; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
+.cw-tier-std    { background: #dbeafe; color: #1d4ed8; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
+.cw-tier-ft     { background: #fef3c7; color: #92400e; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
+.cw-empty { text-align: center; padding: 1.5rem; color: #94a3b8; font-size: .8rem; }
+.cw-status-bar {
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px;
+  padding: .55rem .9rem; margin-bottom: .9rem;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+}
+.inv-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: .35rem .7rem; font-size: .78rem; font-weight: 600; color: #64748b; cursor: pointer; }
+.inv-tab-btn.active { color: #0d6efd; border-bottom-color: #0d6efd; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div id="cashier-dash-live">
-<div class="d-flex justify-content-between align-items-start mb-3">
+<div class="cw-root">
+
+{# ── Header bar ── #}
+<div class="cw-header">
   <div>
-    <h4 class="fw-bold mb-0">Cashier Workstation</h4>
-    <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+    <span class="fw-bold" style="font-size:1rem;">Cashier Workstation</span>
+    <span class="text-muted ms-2" style="font-size:.8rem;">{{ today|date:"l, d F Y" }}</span>
   </div>
-  <div class="d-flex align-items-center gap-2">
-    <span class="badge bg-primary bg-opacity-10 text-primary fw-semibold border border-primary">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <span class="badge bg-primary bg-opacity-10 text-primary fw-semibold border border-primary" style="font-size:.72rem;">
       <i class="bi bi-cash-coin me-1"></i>{{ cashier_station_label|default:"All Counters" }}
     </span>
     {% if not my_session %}
-    <a href="{% url 'billing:session_open' %}" class="btn btn-outline-primary btn-sm">
+    <a href="{% url 'billing:session_open' %}" class="btn btn-primary btn-sm">
       <i class="bi bi-play-circle me-1"></i>Open Session
     </a>
     {% endif %}
@@ -23,307 +84,233 @@
 
 {% include "components/qr_scan_bar.html" with placeholder="Scan patient card to open POS…" %}
 
-{# ── Desk Session Status Banner ── #}
+{# ── Session status ── #}
 {% if my_session %}
-<div class="alert border-0 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3"
-     style="background:#f0fdf4;border-left:4px solid #22c55e !important;border-radius:8px;">
-  <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-circle-fill text-success" style="font-size:.55rem;"></i>
-    <div>
-      <span class="fw-semibold text-success">Session Open</span>
-      <span class="text-muted ms-2 small">
-        Desk: <strong>{{ my_session.cash_desk.name }}</strong>
-        &bull; Float: <strong>{{ my_session.opening_float|floatformat:0 }} XAF</strong>
-        &bull; Collected: <strong class="text-success">{{ my_session.total_collected|floatformat:0 }} XAF</strong>
-        &bull; Since {{ my_session.opened_at|time:"H:i" }}
-      </span>
-    </div>
+<div class="cw-status-bar">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <i class="bi bi-circle-fill text-success" style="font-size:.5rem;"></i>
+    <span class="fw-semibold text-success" style="font-size:.82rem;">Session Open</span>
+    <span class="text-muted" style="font-size:.78rem;">
+      Desk: <strong>{{ my_session.cash_desk.name }}</strong>
+      &bull; Float: <strong>{{ my_session.opening_float|floatformat:0|intcomma }} FCFA</strong>
+      &bull; Collected: <strong class="text-success">{{ my_session.total_collected|floatformat:0|intcomma }} FCFA</strong>
+      &bull; Since {{ my_session.opened_at|time:"H:i" }}
+    </span>
   </div>
-  <div class="d-flex gap-2">
-    <a href="{% url 'billing:desk_queue' desk_id=my_session.cash_desk.pk %}" class="btn btn-sm btn-success">
-      <i class="bi bi-people-fill me-1"></i>My Desk Queue
-    </a>
-    <a href="{% url 'billing:session_detail' session_id=my_session.pk %}" class="btn btn-sm btn-outline-success">
-      <i class="bi bi-receipt-cutoff me-1"></i>Z-Report
-    </a>
-    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#closeSessionModal">
-      <i class="bi bi-door-open me-1"></i>Switch Desk
-    </button>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'billing:desk_queue' desk_id=my_session.cash_desk.pk %}" class="cw-btn-pos"><i class="bi bi-people-fill me-1"></i>My Queue</a>
+    <a href="{% url 'billing:session_detail' session_id=my_session.pk %}" class="cw-btn-outline"><i class="bi bi-receipt-cutoff me-1"></i>Z-Report</a>
+    <button type="button" class="cw-btn-outline" data-bs-toggle="modal" data-bs-target="#closeSessionModal"><i class="bi bi-arrow-left-right me-1"></i>Switch Desk</button>
   </div>
 </div>
-
-{# ── Switch Desk modal (close current session then open new one) ── #}
 <div class="modal fade" id="closeSessionModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header border-0 pb-0">
-        <h6 class="modal-title fw-bold">Switch to Another Desk?</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body pt-2">
-        <p class="small text-muted mb-1">
-          This will <strong>close your current session</strong> at
-          <strong>{{ my_session.cash_desk.name }}</strong>
-          and let you open a new one at a different counter (e.g. VIP desk).
-        </p>
-        <p class="small text-muted mb-0">You will be taken to the Z-report first — count your cash and confirm closing.</p>
-      </div>
+      <div class="modal-header border-0 pb-0"><h6 class="modal-title fw-bold">Switch to Another Desk?</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body pt-2 small text-muted">This will <strong>close your current session</strong> at <strong>{{ my_session.cash_desk.name }}</strong> and let you open a new one. You will be taken to the Z-report first.</div>
       <div class="modal-footer border-0 pt-0">
         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <a href="{% url 'billing:session_detail' session_id=my_session.pk %}" class="btn btn-sm btn-primary">
-          <i class="bi bi-receipt-cutoff me-1"></i>Go to Z-Report & Close
-        </a>
+        <a href="{% url 'billing:session_detail' session_id=my_session.pk %}" class="btn btn-sm btn-primary"><i class="bi bi-receipt-cutoff me-1"></i>Go to Z-Report &amp; Close</a>
       </div>
     </div>
   </div>
 </div>
 {% endif %}
 
-{# ── Patient Search — always available regardless of QMS state ── #}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-bottom d-flex align-items-center gap-2">
-    <i class="bi bi-search fs-5"></i>
-    <h6 class="mb-0">Find Patient — Open POS</h6>
+{# ── Stats row ── #}
+<div class="cw-stat-row">
+  <div class="cw-stat">
+    <div class="cw-stat-val">{{ cashier_queue|length }}</div>
+    <div class="cw-stat-lbl">In Queue Now</div>
   </div>
-  <div class="card-body">
-    <div class="row g-2 align-items-end">
-      <div class="col-md-8">
-        <label class="form-label small fw-semibold">Search by name, ID or phone</label>
-        <div class="input-group">
-          <span class="input-group-text"><i class="bi bi-person-search"></i></span>
-          <input type="text" class="form-control form-control-lg" id="cashierPatientSearch"
-                 placeholder="Type name, patient ID or phone number..." autocomplete="off" autofocus>
-        </div>
-        <div id="cashierSearchResults" class="list-group mt-1 shadow"
-             style="display:none;max-height:260px;overflow-y:auto;position:absolute;z-index:1050;width:calc(100% - 3rem);"></div>
-      </div>
-      <div class="col-md-4">
-        <a href="{% url 'billing:invoice_create' %}" class="btn btn-outline-secondary btn-lg w-100">
-          <i class="bi bi-file-earmark-plus me-1"></i>New Invoice
-        </a>
-      </div>
-    </div>
-    <div id="cashierSelectedPatient" class="alert alert-primary d-none mt-3 py-2">
-      <div class="d-flex align-items-center gap-3">
-        <i class="bi bi-person-check-fill fs-4"></i>
-        <div class="flex-grow-1">
-          <div class="fw-bold" id="cashierSelName"></div>
-          <small class="text-muted" id="cashierSelMeta"></small>
-        </div>
-        <a id="cashierOpenPosBtn" href="#" class="btn btn-success btn-sm px-3">
-          <i class="bi bi-receipt me-1"></i>Open POS
-        </a>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="cashierClearSel">
-          <i class="bi bi-x"></i>
-        </button>
-      </div>
-    </div>
+  <div class="cw-stat">
+    <div class="cw-stat-val">{{ invoices_today }}</div>
+    <div class="cw-stat-lbl">Invoices Today</div>
+  </div>
+  <div class="cw-stat" style="{% if unpaid_count > 0 %}border-color:#fbbf24;{% endif %}">
+    <div class="cw-stat-val {% if unpaid_count > 0 %}text-warning{% endif %}">{{ unpaid_count }}</div>
+    <div class="cw-stat-lbl">Unpaid</div>
   </div>
 </div>
 
-{% if qms_active and not cashier_queue %}
-<div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
-  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+{# ── 2-column grid: Queue (left) + Search/Invoices (right) ── #}
+<div class="cw-grid">
+
+  {# LEFT — Queue #}
   <div>
-    <strong>No counter assigned.</strong>
-    Ask the administrator to assign you to a cashier counter to use the full queue system.
-  </div>
-</div>
-{% endif %}
 
-{# ── Patients Waiting to Pay (no QMS) ── #}
-{% if pending_payment_visits %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
-    <div class="d-flex align-items-center gap-2">
-      <i class="bi bi-person-walking text-primary fs-5"></i>
-      <h6 class="mb-0 fw-bold">Patients Waiting to Pay</h6>
-      <span class="badge bg-primary">{{ pending_payment_visits|length }}</span>
+    {% if qms_active and not cashier_queue %}
+    <div class="cw-card mb-0" style="border-left:3px solid #f59e0b;">
+      <div style="padding:.65rem .9rem;font-size:.8rem;color:#92400e;background:#fffbeb;display:flex;align-items:center;gap:.5rem;">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span><strong>No counter assigned.</strong> Ask the administrator to assign you to a cashier counter.</span>
+      </div>
     </div>
-    <small class="text-muted">Registered today &mdash; not yet billed</small>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr><th>#</th><th>Patient</th><th>Visit Type</th><th>Complaint</th><th>Arrived</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for v in pending_payment_visits %}
-        <tr>
-          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
-          <td>
-            <div class="fw-semibold">{{ v.patient.full_name }}</div>
-            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
-          </td>
-          <td>
-            {% if v.visit_type == 'NEW' %}<span class="badge bg-primary">New Patient</span>
-            {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge bg-secondary">Follow-up</span>
-            {% else %}<span class="badge bg-primary">{{ v.get_visit_type_display }}</span>{% endif %}
-          </td>
-          <td class="text-muted">{{ v.chief_complaint|truncatechars:50 }}</td>
-          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
-          <td>
-            <a href="{% url 'billing:invoice_create' %}?patient={{ v.patient.pk }}" class="btn btn-sm btn-primary">
-              <i class="bi bi-receipt me-1"></i>Bill
-            </a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
+    {% endif %}
 
-{# ── My stats today ── #}
-<div class="row g-3 mb-4">
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h3 fw-bold text-primary mb-0">{{ invoices_today }}</div>
-      <div class="text-muted small mt-1">Invoices Issued Today</div>
+    {# Cashier Queue #}
+    <div class="cw-card">
+      <div class="cw-card-hdr">
+        <span class="cw-card-hdr-title"><i class="bi bi-people-fill text-primary"></i>Waiting at Cashier{% if cashier_station_label %} — {{ cashier_station_label }}{% endif %}</span>
+        <span style="background:#dbeafe;color:#1d4ed8;border-radius:20px;padding:1px 10px;font-size:.72rem;font-weight:700;">{{ cashier_queue|length }}</span>
+      </div>
+      {% if cashier_queue %}
+      <table class="cw-tbl">
+        <thead><tr><th>Token</th><th>Patient</th><th>Tier</th><th>Since</th><th></th></tr></thead>
+        <tbody>
+          {% for tok in cashier_queue %}
+          <tr>
+            <td><span class="cw-token-badge">{{ tok.display_token_number }}</span></td>
+            <td style="font-weight:600;">{{ tok.display_name }}</td>
+            <td>
+              {% with tl=tok.tier_label.0 %}
+              <span class="{% if tl == 'VIP' %}cw-tier-vip{% elif tl == 'FAST_TRACK' or tl == 'EXPRESS' %}cw-tier-ft{% else %}cw-tier-std{% endif %}">{{ tl }}</span>
+              {% endwith %}
+            </td>
+            <td style="color:#64748b;font-size:.75rem;">{{ tok.issued_at|time:"H:i" }}</td>
+            <td>
+              {% if tok.patient %}
+              <a href="{% url 'billing:cashier_pos' tok.id %}" class="cw-btn-pos"><i class="bi bi-receipt me-1"></i>Open POS</a>
+              {% else %}
+              <button class="cw-btn-outline"
+                      onclick="document.getElementById('cashierPatientSearch').value='{{ tok.patient_name|escapejs }}';document.getElementById('cashierPatientSearch').dispatchEvent(new Event('input'));document.getElementById('cashierPatientSearch').focus();">
+                <i class="bi bi-search me-1"></i>Find
+              </button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="cw-empty"><i class="bi bi-inbox" style="font-size:1.5rem;display:block;margin-bottom:.4rem;"></i>No patients in queue</div>
+      {% endif %}
     </div>
-  </div>
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h3 fw-bold text-primary mb-0">{{ cashier_queue|length }}</div>
-      <div class="text-muted small mt-1">Waiting at Cashier</div>
+
+    {# Pending payment visits (no QMS) #}
+    {% if pending_payment_visits %}
+    <div class="cw-card">
+      <div class="cw-card-hdr">
+        <span class="cw-card-hdr-title"><i class="bi bi-person-walking text-warning"></i>Walk-ins Waiting to Pay</span>
+        <span style="background:#fef3c7;color:#92400e;border-radius:20px;padding:1px 10px;font-size:.72rem;font-weight:700;">{{ pending_payment_visits|length }}</span>
+      </div>
+      <table class="cw-tbl">
+        <thead><tr><th>Patient</th><th>Type</th><th>Arrived</th><th></th></tr></thead>
+        <tbody>
+          {% for v in pending_payment_visits %}
+          <tr>
+            <td>
+              <div style="font-weight:600;">{{ v.patient.full_name }}</div>
+              <div style="color:#94a3b8;font-size:.7rem;">{{ v.patient.patient_id }}</div>
+            </td>
+            <td>{% if v.visit_type == 'NEW' %}<span class="cw-tier-std">New</span>{% else %}<span style="background:#f1f5f9;color:#64748b;border-radius:4px;padding:1px 7px;font-size:.68rem;font-weight:700;">{{ v.get_visit_type_display }}</span>{% endif %}</td>
+            <td style="color:#64748b;font-size:.75rem;">{{ v.visit_date|time:"H:i" }}</td>
+            <td><a href="{% url 'billing:invoice_create' %}?patient={{ v.patient.pk }}" class="cw-btn-pos"><i class="bi bi-receipt me-1"></i>Bill</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  </div>
-  <div class="col-sm-4">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h3 fw-bold text-primary mb-0">{{ unpaid_count }}</div>
-      <div class="text-muted small mt-1">My Unpaid Invoices</div>
+    {% endif %}
+
+    {# Invoices — tabbed #}
+    <div class="cw-card">
+      <div class="cw-card-hdr" style="gap:0;padding-bottom:0;border-bottom:none;">
+        <span class="cw-card-hdr-title"><i class="bi bi-receipt text-success"></i>Invoices</span>
+        <div>
+          <button class="inv-tab-btn active" id="tabToday" onclick="showInvTab('today')">Today ({{ invoices_today }})</button>
+          <button class="inv-tab-btn" id="tabUnpaid" onclick="showInvTab('unpaid')">Unpaid ({{ unpaid_count }})</button>
+        </div>
+      </div>
+      <div id="invPaneToday">
+        <table class="cw-tbl">
+          <thead><tr><th>Invoice</th><th>Time</th><th>Patient</th><th>Total</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for inv in invoices_today_list %}
+            <tr>
+              <td style="font-size:.72rem;color:#64748b;font-family:monospace;">{{ inv.invoice_number }}</td>
+              <td style="color:#94a3b8;font-size:.72rem;white-space:nowrap;">{{ inv.created_at|date:"H:i" }}</td>
+              <td style="font-weight:600;">{{ inv.patient.full_name }}</td>
+              <td style="white-space:nowrap;">{{ inv.total|floatformat:0|intcomma }}</td>
+              <td><span style="font-size:.68rem;font-weight:700;border-radius:4px;padding:1px 7px;background:{% if inv.status == 'PAID' %}#dcfce7;color:#15803d{% elif inv.status == 'PARTIAL' %}#fef3c7;color:#92400e{% elif inv.status == 'VOID' %}#fee2e2;color:#991b1b{% else %}#f1f5f9;color:#64748b{% endif %};">{{ inv.get_status_display }}</span></td>
+              <td><a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="cw-btn-outline">View</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="cw-empty">No invoices yet today.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div id="invPaneUnpaid" style="display:none;">
+        <table class="cw-tbl">
+          <thead><tr><th>Invoice</th><th>Time</th><th>Patient</th><th>Balance</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for inv in unpaid_invoices %}
+            <tr>
+              <td style="font-size:.72rem;color:#64748b;font-family:monospace;">{{ inv.invoice_number }}</td>
+              <td style="color:#94a3b8;font-size:.72rem;white-space:nowrap;">{{ inv.created_at|date:"H:i" }}</td>
+              <td style="font-weight:600;">{{ inv.patient.full_name }}</td>
+              <td style="color:#d97706;font-weight:700;white-space:nowrap;">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
+              <td><span style="font-size:.68rem;font-weight:700;border-radius:4px;padding:1px 7px;background:#fef3c7;color:#92400e;">{{ inv.get_status_display }}</span></td>
+              <td><a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="cw-btn-pos">Collect</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="cw-empty">No unpaid invoices.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
-</div>
 
-{# ── Cashier queue ── #}
-{% if cashier_queue %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
-    <h6 class="mb-0"><i class="bi bi-people-fill me-2"></i>Waiting at Cashier
-      {% if cashier_station_label %}<span class="badge bg-white text-primary ms-2">{{ cashier_station_label }}</span>{% endif %}
-    </h6>
-    <span class="badge bg-white text-primary">{{ cashier_queue|length }}</span>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr>
-          <th>Token</th><th>Patient</th><th>Tier</th><th>Waiting Since</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for tok in cashier_queue %}
-        <tr>
-          <td><span class="badge bg-primary fs-6">{{ tok.display_token_number }}</span></td>
-          <td class="fw-semibold">{{ tok.display_name }}</td>
-          <td>
-            <span class="badge bg-primary">{{ tok.tier_label.0 }}</span>
-          </td>
-          <td class="text-muted">{{ tok.issued_at|time:"H:i" }}</td>
-          <td>
-            {% if tok.patient %}
-            <a href="{% url 'billing:cashier_pos' tok.id %}" class="btn btn-sm btn-primary">
-              <i class="bi bi-receipt me-1"></i>Open POS
-            </a>
-            {% else %}
-            <button class="btn btn-sm btn-outline-primary"
-                    onclick="document.getElementById('cashierPatientSearch').value='{{ tok.patient_name|escapejs }}';document.getElementById('cashierPatientSearch').dispatchEvent(new Event('input'));document.getElementById('cashierPatientSearch').focus();"
-                    title="Patient not registered — search below to link them">
-              <i class="bi bi-search me-1"></i>Find Patient
-            </button>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
+  </div>{# /left #}
 
-{# ── My Invoices Today ── #}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-calendar-check me-2 text-success"></i>My Invoices Today</h6>
-    <span class="badge bg-success">{{ invoices_today }}</span>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr><th>Invoice No.</th><th>Time</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for inv in invoices_today_list %}
-        <tr>
-          <td><code>{{ inv.invoice_number }}</code></td>
-          <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">{{ inv.created_at|date:"H:i" }}</td>
-          <td class="fw-semibold">{{ inv.patient.full_name }}</td>
-          <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
-          <td class="{% if inv.balance_due > 0 %}text-primary fw-semibold{% else %}text-success{% endif %}">
-            {{ inv.balance_due|floatformat:0|intcomma }} FCFA
-          </td>
-          <td>
-            <span class="badge bg-{% if inv.status == 'PAID' %}success{% elif inv.status == 'PARTIAL' %}warning text-dark{% elif inv.status == 'VOID' %}danger{% else %}secondary{% endif %}">
-              {{ inv.get_status_display }}
-            </span>
-          </td>
-          <td>
-            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-primary">
-              View
-            </a>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="7" class="text-center text-muted py-4">No invoices issued yet today.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+  {# RIGHT — Search panel #}
+  <div>
+    <div class="cw-card">
+      <div class="cw-card-hdr">
+        <span class="cw-card-hdr-title"><i class="bi bi-search text-primary"></i>Find Patient</span>
+      </div>
+      <div class="cw-search-wrap">
+        <div style="position:relative;">
+          <input type="text" class="cw-search-input" id="cashierPatientSearch"
+                 placeholder="Name, ID or phone…" autocomplete="off" autofocus>
+          <div id="cashierSearchResults" class="list-group shadow"
+               style="display:none;max-height:240px;overflow-y:auto;position:absolute;z-index:1050;width:100%;top:calc(100% + 4px);left:0;border-radius:8px;border:1px solid #dee2e6;"></div>
+        </div>
+        <div id="cashierSelectedPatient" class="d-none mt-2 p-2 rounded" style="background:#eff6ff;border:1px solid #bfdbfe;">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-person-check-fill text-primary"></i>
+            <div class="flex-grow-1" style="min-width:0;">
+              <div class="fw-bold" style="font-size:.82rem;" id="cashierSelName"></div>
+              <div style="font-size:.72rem;color:#64748b;" id="cashierSelMeta"></div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary p-0 px-1" id="cashierClearSel" style="font-size:.72rem;line-height:1.4;"><i class="bi bi-x"></i></button>
+          </div>
+          <a id="cashierOpenPosBtn" href="#" class="cw-btn-pos d-block text-center mt-2" style="padding:.45rem;">
+            <i class="bi bi-receipt me-1"></i>Open POS
+          </a>
+        </div>
+        <a href="{% url 'billing:invoice_create' %}" class="cw-btn-outline d-block text-center mt-2" style="padding:.45rem;">
+          <i class="bi bi-file-earmark-plus me-1"></i>New Manual Invoice
+        </a>
+      </div>
+    </div>
+  </div>{# /right #}
 
-{# ── Unpaid invoices ── #}
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-receipt me-2 text-warning"></i>Unpaid Invoices (Pending Collection)</h6>
-    <span class="badge bg-warning text-dark">{{ unpaid_count }}</span>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr><th>Invoice No.</th><th>Time</th><th>Patient</th><th>Total</th><th>Balance</th><th>Status</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for inv in unpaid_invoices %}
-        <tr>
-          <td><code>{{ inv.invoice_number }}</code></td>
-          <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">{{ inv.created_at|date:"H:i" }}</td>
-          <td class="fw-semibold">{{ inv.patient.full_name }}</td>
-          <td>{{ inv.total|floatformat:0|intcomma }} FCFA</td>
-          <td class="text-primary fw-semibold">{{ inv.balance_due|floatformat:0|intcomma }} FCFA</td>
-          <td>
-            <span class="badge bg-{% if inv.status == 'PARTIAL' %}primary{% else %}secondary{% endif %}">
-              {{ inv.get_status_display }}
-            </span>
-          </td>
-          <td>
-            <a href="{% url 'billing:invoice_detail' invoice_id=inv.pk %}" class="btn btn-sm btn-outline-primary">
-              Collect
-            </a>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="7" class="text-center text-muted py-4">No unpaid invoices.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+</div>{# /cw-grid #}
+</div>{# /cw-root #}
 </div>{# /cashier-dash-live #}
 {% endblock %}
 
 {% block extra_js %}
+<script>
+function showInvTab(tab) {
+  document.getElementById('invPaneToday').style.display  = tab === 'today'  ? '' : 'none';
+  document.getElementById('invPaneUnpaid').style.display = tab === 'unpaid' ? '' : 'none';
+  document.getElementById('tabToday').classList.toggle('active',  tab === 'today');
+  document.getElementById('tabUnpaid').classList.toggle('active', tab === 'unpaid');
+}
+</script>
 <script>
 (function(){
   var QID='cashier-dash-live',ROOMS=['cashier','opd'],_busy=false,_pend=false,_fb;
