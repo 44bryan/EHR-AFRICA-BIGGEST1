@@ -615,7 +615,7 @@
                         onchange="onDeptChange(this.value, this.options[this.selectedIndex].text)">
                   <option value="">— Select Department / Clinic —</option>
                   {% for dept in departments %}
-                  <option value="{{ dept.pk }}" {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
+                  <option value="{{ dept.pk }}" data-code="{{ dept.code }}" {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
                   {% endfor %}
                 </select>
 
@@ -1062,6 +1062,23 @@ function _buildRoomOption(room) {
   return opt;
 }
 
+// Map dept code → QMS service types for room board filtering
+var _DEPT_CODE_TO_SVC = {
+  'GEN_OPH':    'GENERAL,VIP_CONSULT,EXP_CONSULT,INSUR_CONSULT',
+  'REFRAC':     'REFRACTION',
+  'RETINA':     'RETINA',
+  'GLAUC':      'GLAUCOMA',
+  'PEDS_OPH':   'PEDIATRIC',
+  'CORNEA':     'CORNEA',
+  'OCULOPLASTY':'OCULOPLASTY',
+  'NEURO_OPH':  'NEURO',
+  'LOW_VIS':    'LOW_VISION',
+  'CATARACT':   'CATARACT',
+  'UVEITIS':    'UVEITIS',
+  'GEN_PHYS':   'GEN_PHYS',
+  'INVEST':     'IMAGING',
+};
+
 function fetchRooms(deptId, deptLabel) {
   const roomPanel  = document.getElementById('roomPickPanel');
   const deptNameEl = document.getElementById('roomPickDeptName');
@@ -1073,8 +1090,13 @@ function fetchRooms(deptId, deptLabel) {
   roomSel.innerHTML = '<option value="">Loading rooms\u2026</option>';
   roomSel.disabled = true;
 
+  // Resolve dept code from the selected option's data-code attribute
+  var _deptSel = document.getElementById('dispatch_department');
+  var _deptCode = _deptSel ? (_deptSel.options[_deptSel.selectedIndex] || {}).dataset.code || '' : '';
+  var _svcTypes = _DEPT_CODE_TO_SVC[_deptCode] || '';
   var _slot = new URLSearchParams(window.location.search).get('s') || '1';
-  fetch('/qms/room-board/?s=' + _slot)
+  var _url = '/qms/room-board/?s=' + _slot + (_svcTypes ? '&service_types=' + _svcTypes : '');
+  fetch(_url)
     .then(function(r) {
       if (r.status === 401) {
         roomSel.innerHTML = '<option value="">Session expired \u2014 please reload and log in again.</option>';

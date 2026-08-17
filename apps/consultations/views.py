@@ -2278,6 +2278,10 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
                         if not already_waiting:
                             tier = visit.service_tier
                             token_number = DailyTokenSequence.next_dept_token(qms_service)
+                            # Assign doctor from counter so only that doctor's workstation shows this token
+                            _token_doctor = None
+                            if _assigned_counter and _assigned_counter.staff_assigned:
+                                _token_doctor = _assigned_counter.staff_assigned
                             QueueToken.objects.create(
                                 token_number=token_number,
                                 patient=visit.patient,
@@ -2288,6 +2292,7 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
                                 issuance_point=IssuancePoint.SYSTEM,
                                 priority=TIER_PRIORITY.get(tier, 0),
                                 counter=_assigned_counter,
+                                assigned_doctor=_token_doctor,
                                 notes=f'Routed by {routed_by.get_full_name()} to {label}{_room_note}',
                                 issued_by=routed_by,
                             )
