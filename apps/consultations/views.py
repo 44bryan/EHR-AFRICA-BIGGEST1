@@ -2182,6 +2182,13 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
         visit.status = new_status
         _save_fields = ['status', 'updated_at']
 
+        # When routing without a specific room/counter, clear attending_doctor so
+        # the destination department's staff can see the patient on their dashboard.
+        # (If a specific counter/room is given below, it will be set again there.)
+        if not counter_id and not room_id:
+            visit.attending_doctor = None
+            _save_fields.append('attending_doctor')
+
         # Update department if routing to a clinical dept
         if qms_service and qms_service not in ('PHARMACY', 'CASHIER', 'COUNSEL'):
             _svc_to_dept = {

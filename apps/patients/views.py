@@ -1290,12 +1290,14 @@ def triage_view(request, visit_number):
 
             # If routing to a specific doctor's room, stamp attending_doctor on the visit
             # so the dashboard queue only shows the visit to that doctor (not the whole dept).
+            # If no specific room chosen, clear attending_doctor so destination dept staff
+            # can see the patient — prevents stale attending_doctor from hiding the visit.
             if _assigned_doctor:
                 visit.attending_doctor = _assigned_doctor
+            else:
+                visit.attending_doctor = None
             _save_fields = ['vital_signs', 'status', 'triage_nurse', 'department',
-                            'nursing_notes', 'pre_auth_status', 'updated_at']
-            if _assigned_doctor:
-                _save_fields.append('attending_doctor')
+                            'nursing_notes', 'pre_auth_status', 'attending_doctor', 'updated_at']
             if _ct_change_tier:
                 _save_fields.append('service_tier')
             visit.save(update_fields=_save_fields)
