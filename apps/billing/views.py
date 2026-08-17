@@ -982,11 +982,7 @@ def cashier_pos(request, token_id):
         else (token.service_tier if token else 'STANDARD')
     )
     from django.urls import reverse as _rev
-    _queue_url = (
-        _rev('billing:desk_queue', kwargs={'desk_id': str(_pos_session.cash_desk.pk)})
-        if _pos_session and _pos_session.cash_desk.desk_type == 'TIER' and _pos_session.cash_desk.tier
-        else _rev('billing:cashier_queue')
-    )
+    _queue_url = _rev('dashboard:home')  # always return cashier to their dashboard after payment
     # ── Tier change history for this visit ────────────────────────────────────
     _visit = token.visit if token else None
     _tier_changes = []
@@ -1392,11 +1388,7 @@ def patient_pos(request, patient_id):
         else (_today_visit.service_tier if _today_visit else 'STANDARD')
     )
     from django.urls import reverse as _rev
-    _pqueue_url = (
-        _rev('billing:desk_queue', kwargs={'desk_id': str(_ppos_session.cash_desk.pk)})
-        if _ppos_session and _ppos_session.cash_desk.desk_type == 'TIER' and _ppos_session.cash_desk.tier
-        else _rev('billing:cashier_queue')
-    )
+    _pqueue_url = _rev('dashboard:home')  # always return cashier to their dashboard after payment
     return render(request, 'billing/cashier_pos.html', {
         'token': None,
         'patient': patient,
