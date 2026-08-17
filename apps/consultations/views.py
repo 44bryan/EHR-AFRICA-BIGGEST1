@@ -1234,10 +1234,9 @@ def workstation_view(request):
                 if dept_code == 'GEN_OPH':
                     pass  # already narrowed above via service_types
                 elif dept_code in ('REFRAC', 'PEDS_REFRAC'):
-                    # Optometrist/Refractionist: auto-filter by assigned counter's tier.
-                    # Priority: (1) assigned ServiceCounter's serves_tiers
-                    #           (2) patient_tier on account
-                    #           (3) show all
+                    # Refractionist: only filter by tier when the counter EXPLICITLY
+                    # restricts to specific tiers. Blank serves_tiers = all tiers,
+                    # so both VIP and Standard patients are visible.
                     _refrac_counter = None
                     try:
                         from apps.qms.models import ServiceCounter as _SC
@@ -1247,6 +1246,7 @@ def workstation_view(request):
                     except Exception:
                         pass
                     if _refrac_counter and _refrac_counter.serves_tiers:
+                        # Counter has an explicit tier restriction — honour it
                         _ctiers = _refrac_counter.get_serves_tiers()
                         if len(_ctiers) == 1 and _ctiers[0] == 'VIP':
                             _token_qs = _token_qs.filter(service_tier='VIP')
@@ -1258,15 +1258,7 @@ def workstation_view(request):
                             _token_qs = _token_qs.exclude(service_tier='VIP')
                         elif 'STANDARD' not in _ctiers:
                             _token_qs = _token_qs.exclude(service_tier='STANDARD')
-                    else:
-                        _pt = getattr(user, 'patient_tier', '') or ''
-                        if _pt == 'VIP':
-                            _token_qs = _token_qs.filter(service_tier='VIP')
-                        elif _pt in ('EXPRESS', 'FAST_TRACK'):
-                            _token_qs = _token_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
-                        else:
-                            # Default (STANDARD or unset): never show VIP patients
-                            _token_qs = _token_qs.filter(service_tier='STANDARD')
+                    # else: no explicit tier restriction → show all refraction tokens
                 else:
                     # All other departments: respect patient_tier on account
                     _pt = getattr(user, 'patient_tier', '') or ''
