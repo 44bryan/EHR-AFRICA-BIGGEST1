@@ -1288,8 +1288,14 @@ def triage_view(request, visit_number):
                     if _dispatched_counter.service_type not in _skip_svc:
                         service_type = _dispatched_counter.service_type
 
+            # If routing to a specific doctor's room, stamp attending_doctor on the visit
+            # so the dashboard queue only shows the visit to that doctor (not the whole dept).
+            if _assigned_doctor:
+                visit.attending_doctor = _assigned_doctor
             _save_fields = ['vital_signs', 'status', 'triage_nurse', 'department',
                             'nursing_notes', 'pre_auth_status', 'updated_at']
+            if _assigned_doctor:
+                _save_fields.append('attending_doctor')
             if _ct_change_tier:
                 _save_fields.append('service_tier')
             visit.save(update_fields=_save_fields)

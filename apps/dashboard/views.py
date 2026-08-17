@@ -566,6 +566,9 @@ def home_view(request):
             ],
         ).order_by('visit_date')
 
+        # Resolve consultation_unit first — used by both department and tier filters below.
+        _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
+
         # Filter queue by department. VIP doctors also see visits with no department
         # (VIP patients bypass triage → visit has department=NULL until consulted).
         dept_obj = user.department
@@ -584,7 +587,6 @@ def home_view(request):
         # Tier isolation: GEN_OPH doctors with a specific consultation_unit only
         # see visits for their tier — prevents VIP doctors seeing Express patients
         # and vice versa on the home dashboard, matching the workstation behaviour.
-        _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
         _CU_TIER_MAP = {
             'VIP_CONSULT':   ['VIP'],
             'VIP':           ['VIP'],
@@ -596,6 +598,14 @@ def home_view(request):
         }
         if _cu in _CU_TIER_MAP:
             queue_qs = queue_qs.filter(service_tier__in=_CU_TIER_MAP[_cu])
+
+        # Doctor isolation: only show this doctor's assigned visits + unassigned pool.
+        # Prevents patients routed to a specific doctor's room from appearing on
+        # every other doctor's dashboard in the same department.
+        from django.db.models import Q as _DQ2
+        queue_qs = queue_qs.filter(
+            _DQ2(attending_doctor=user) | _DQ2(attending_doctor__isnull=True)
+        )
 
         # Annotate each queued visit with AI triage priority
         queue_list = list(queue_qs)
