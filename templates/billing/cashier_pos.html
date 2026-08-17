@@ -322,6 +322,30 @@
 /* AI button */
 .ai-tab { background: linear-gradient(135deg,#4c1d95,#6d28d9) !important; border-color: #6d28d9 !important; color: #fff !important; }
 .ai-tab:hover { background: linear-gradient(135deg,#5b21b6,#7c3aed) !important; }
+
+/* ── Step Progress Bar ──────────────────────────────── */
+.pos-steps { display:flex; align-items:center; background:#fff; border:1px solid #dee2e6; border-radius:10px; padding:0.5rem 1.2rem; margin-bottom:0.75rem; box-shadow:0 1px 3px rgba(0,0,0,.07); gap:0; }
+.pos-step { display:flex; align-items:center; gap:0.45rem; flex:1; min-width:0; }
+.pos-step-num { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:800; flex-shrink:0; }
+.pos-step-num.done   { background:#16a34a; color:#fff; }
+.pos-step-num.active { background:#0d6efd; color:#fff; box-shadow:0 0 0 3px rgba(13,110,253,.2); }
+.pos-step-num.pend   { background:#e9ecef; color:#9ca3af; }
+.pos-step-lbl { font-size:0.73rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pos-step-lbl.done   { color:#16a34a; }
+.pos-step-lbl.active { color:#0d6efd; }
+.pos-step-lbl.pend   { color:#9ca3af; }
+.pos-step-sep { color:#dee2e6; font-size:0.8rem; margin:0 0.6rem; flex-shrink:0; }
+
+/* ── Add All Orders button ──────────────────────────── */
+.btn-add-all { width:100%; background:linear-gradient(135deg,#15803d,#16a34a); border:none; color:#fff; border-radius:7px; padding:0.5rem 0.75rem; font-size:0.82rem; font-weight:700; cursor:pointer; margin-bottom:0.5rem; transition:all .15s; letter-spacing:.01em; }
+.btn-add-all:hover:not(:disabled) { background:linear-gradient(135deg,#16a34a,#22c55e); transform:translateY(-1px); }
+.btn-add-all:disabled { background:#e9ecef !important; color:#adb5bd !important; cursor:not-allowed; transform:none !important; }
+
+/* ── Auto-advance countdown bar ─────────────────────── */
+.adv-bar-wrap { margin-top:0.75rem; }
+.adv-bar-lbl { font-size:0.72rem; color:rgba(255,255,255,.6); margin-bottom:4px; }
+.adv-bar { height:5px; background:rgba(255,255,255,.15); border-radius:3px; overflow:hidden; }
+.adv-bar-fill { height:100%; background:#4ade80; border-radius:3px; width:100%; transition:width 1s linear; }
 </style>
 <form id="csrf-holder">{% csrf_token %}</form>
 <div class="pos-root">
@@ -512,6 +536,32 @@
 </div>
 {% endif %}
 
+{# ── Step Progress Bar ────────────────────────────────────────────────────── #}
+{% if invoice %}
+<div class="pos-steps">
+  <div class="pos-step">
+    <div class="pos-step-num {% if items|length > 0 %}done{% else %}active{% endif %}">
+      {% if items|length > 0 %}<i class="bi bi-check-lg"></i>{% else %}1{% endif %}
+    </div>
+    <span class="pos-step-lbl {% if items|length > 0 %}done{% else %}active{% endif %}">Add Services</span>
+  </div>
+  <span class="pos-step-sep"><i class="bi bi-chevron-right"></i></span>
+  <div class="pos-step">
+    <div class="pos-step-num {% if invoice.status == 'PAID' %}done{% elif items|length > 0 %}active{% else %}pend{% endif %}">
+      {% if invoice.status == 'PAID' %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}
+    </div>
+    <span class="pos-step-lbl {% if invoice.status == 'PAID' %}done{% elif items|length > 0 %}active{% else %}pend{% endif %}">Set Payment</span>
+  </div>
+  <span class="pos-step-sep"><i class="bi bi-chevron-right"></i></span>
+  <div class="pos-step">
+    <div class="pos-step-num {% if invoice.status == 'PAID' %}done{% else %}pend{% endif %}">
+      {% if invoice.status == 'PAID' %}<i class="bi bi-check-lg"></i>{% else %}3{% endif %}
+    </div>
+    <span class="pos-step-lbl {% if invoice.status == 'PAID' %}done{% else %}pend{% endif %}">Collect &amp; Print</span>
+  </div>
+</div>
+{% endif %}
+
 {# ── Main POS Grid ────────────────────────────────────────────────────────── #}
 <div class="pos-grid">
 
@@ -544,6 +594,11 @@
       {# Doctor Orders #}
       {% if doctor_orders %}
       <div class="cat-pane active" data-cat="ORDERS">
+        {% if doctor_orders|length > 1 %}
+        <button class="btn-add-all" id="addAllBtn" onclick="addAllOrders(this)">
+          <i class="bi bi-lightning-charge-fill me-1"></i>Add All {{ doctor_orders|length }} Orders to Bill
+        </button>
+        {% endif %}
         {% for wo in doctor_orders %}
         <button class="svc-btn orders-btn" onclick="addItem('{{ wo.description|escapejs }}','{{ wo.category }}',0)">
           <span>{{ wo.description }}</span>
@@ -892,19 +947,23 @@
 
 {# Payment-complete overlay — receipt opens in popup window (no iframe needed) #}
 <div id="paySuccessOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.97);z-index:9999;flex-direction:column;align-items:center;justify-content:center;">
-  <div class="text-center text-white p-4">
+  <div class="text-center text-white p-4" style="max-width:420px;width:100%;">
     <div style="font-size:4.5rem;line-height:1;margin-bottom:1rem;">
       <i class="bi bi-check-circle-fill text-success"></i>
     </div>
     <h2 class="fw-bold text-success mb-1">Payment Complete</h2>
-    <p class="text-secondary mb-4" style="font-size:.95rem;">Receipt printed in new window — check your printer.</p>
-    <div class="d-flex gap-3 justify-content-center flex-wrap">
+    <p class="text-secondary mb-3" style="font-size:.95rem;">Receipt printed in new window — check your printer.</p>
+    <div class="d-flex gap-3 justify-content-center flex-wrap mb-3">
       <button class="btn btn-outline-light btn-sm" id="reprintBtn">
         <i class="bi bi-printer me-1"></i>Reprint Receipt
       </button>
-      <button class="btn btn-success btn-lg fw-semibold px-5" onclick="window.location.href=QUEUE_URL">
+      <button class="btn btn-success btn-lg fw-semibold px-5" id="nextPatientBtn" onclick="window.location.href=QUEUE_URL">
         <i class="bi bi-arrow-right-circle me-2"></i>Next Patient
       </button>
+    </div>
+    <div class="adv-bar-wrap">
+      <div class="adv-bar-lbl">Auto-advancing in <span id="advCountdown">8</span>s — click Next Patient to go now</div>
+      <div class="adv-bar"><div class="adv-bar-fill" id="advBarFill"></div></div>
     </div>
   </div>
 </div>
@@ -1121,43 +1180,36 @@ function _doAdd(desc, cat, qty, unitPrice) {
     .catch(err => toast('Network error: ' + err.message, 'danger'));
 }
 
-// ── Remove item — double-tap to confirm ──────────────────────────────────────
-var _pendRm = null;
+// ── Remove item — single tap with fade animation ──────────────────────────────
 function removeItem(itemId, btn) {
-  if (_pendRm === itemId) {
-    _pendRm = null;
-    if (btn) { btn.innerHTML = '<i class="bi bi-hourglass-split"></i>'; btn.disabled = true; }
-  } else {
-    _pendRm = itemId;
-    if (btn) {
-      const orig = btn.innerHTML;
-      btn.style.background = '#ef4444'; btn.style.color = '#fff';
-      btn.title = 'Tap again to confirm';
-      setTimeout(() => {
-        if (_pendRm === itemId) {
-          _pendRm = null; btn.style.background = ''; btn.style.color = ''; btn.innerHTML = orig;
-        }
-      }, 3000);
-    }
-    return;
-  }
+  if (btn) { btn.innerHTML = '<i class="bi bi-hourglass-split"></i>'; btn.disabled = true; }
   const fd = new FormData(); fd.append('csrfmiddlewaretoken', CSRF);
   fetch(`/billing/item/${itemId}/remove/`, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
-      if (!data.success) { toast(data.error || 'Could not remove item.', 'danger'); return; }
+      if (!data.success) {
+        toast(data.error || 'Could not remove item.', 'danger');
+        if (btn) { btn.innerHTML = '<i class="bi bi-trash3"></i>'; btn.disabled = false; }
+        return;
+      }
       const row = document.getElementById(`ir-${itemId}`);
-      if (row) row.remove();
-      const rows = document.querySelectorAll('#itemsBody tr');
-      rows.forEach((r, i) => { const td = r.querySelector('td:first-child'); if (td) td.textContent = i + 1; });
-      rowCount = rows.length;
-      if (rowCount === 0) {
-        document.getElementById('itemsBody').innerHTML =
-          '<tr id="emptyRow"><td colspan="6" class="empty-bill"><i class="bi bi-receipt me-1"></i>No items — select from catalog</td></tr>';
+      if (row) {
+        row.style.transition = 'opacity .18s ease, transform .18s ease';
+        row.style.opacity = '0'; row.style.transform = 'translateX(12px)';
+        setTimeout(() => {
+          row.remove();
+          const rows = document.querySelectorAll('#itemsBody tr[id^="ir-"]');
+          rows.forEach((r, i) => { const td = r.querySelector('td:first-child'); if (td) td.textContent = i + 1; });
+          rowCount = rows.length;
+          if (rowCount === 0) {
+            document.getElementById('itemsBody').innerHTML =
+              '<tr id="emptyRow"><td colspan="6" class="empty-bill"><i class="bi bi-receipt me-1"></i>No items — select from catalog</td></tr>';
+          }
+        }, 200);
       }
       updateTotals(data);
     })
-    .catch(() => toast('Network error.', 'danger'));
+    .catch(() => { toast('Network error.', 'danger'); if (btn) { btn.innerHTML = '<i class="bi bi-trash3"></i>'; btn.disabled = false; } });
 }
 
 // ── Discount ──────────────────────────────────────────────────────────────────
@@ -1284,8 +1336,12 @@ function openReceiptPopup(url) {
   var ov = document.getElementById('paySuccessOverlay');
   ov.style.display = 'flex';
   document.getElementById('reprintBtn').onclick = function() {
+    clearInterval(_advTimer);
+    var cd = document.getElementById('advCountdown');
+    if (cd) cd.closest('.adv-bar-wrap').style.display = 'none';
     window.open(receiptUrl, 'ehr_receipt_' + Date.now(), 'width=460,height=760,toolbar=no,menubar=no,scrollbars=yes,resizable=yes');
   };
+  startAutoAdvance();
 }
 
 function _recordPayment(method, amount, ref, finalize) {
@@ -1389,6 +1445,63 @@ function renderAi(suggestions) {
     b.onclick = () => addItem(svc.name, svc.category, svc.price, false);
     list.appendChild(b);
   });
+}
+
+// ── Add All Doctor Orders ─────────────────────────────────────────────────────
+var ALL_ORDERS = [
+{% if doctor_orders %}{% for wo in doctor_orders %}
+  { name: '{{ wo.description|escapejs }}', cat: '{{ wo.category }}' }{% if not forloop.last %},{% endif %}
+{% endfor %}{% endif %}
+];
+
+function addAllOrders(btn) {
+  if (!INV_ID) { toast('No invoice. Please refresh.', 'danger'); return; }
+  if (!ALL_ORDERS.length) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Adding…'; }
+  var chain = Promise.resolve();
+  ALL_ORDERS.forEach(function(o) {
+    var price = CATALOG_PRICE_MAP[o.name] || 0;
+    if (price === 0) {
+      var stripped = o.name.replace(/^(Investigation|Lab|Laboratory|Pharmacy|Optical):\s*/i, '');
+      if (stripped !== o.name) price = CATALOG_PRICE_MAP[stripped] || 0;
+    }
+    chain = chain.then(function() { return _doAdd(o.name, o.cat, 1, price); });
+  });
+  chain.then(function() {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>All ' + ALL_ORDERS.length + ' Orders Added'; btn.style.background = '#15803d'; }
+    toast('<i class="bi bi-check-circle me-1"></i>' + ALL_ORDERS.length + ' orders added to bill', 'success');
+  });
+}
+
+// ── Enter key to collect / confirm price ──────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  var active = document.activeElement;
+  if (active && (active.id === 'payAmt' || active.id === 'splitCash' || active.id === 'splitMomo')) {
+    e.preventDefault(); collectPay();
+  } else if (active && active.id === 'pendPrice') {
+    e.preventDefault(); confirmPrice();
+  }
+});
+
+// ── Auto-advance after payment (8-second countdown) ───────────────────────────
+var _advTimer = null;
+function startAutoAdvance() {
+  var secs = 8;
+  var fill = document.getElementById('advBarFill');
+  var countdown = document.getElementById('advCountdown');
+  if (fill) fill.style.width = '100%';
+  if (countdown) countdown.textContent = secs;
+  clearInterval(_advTimer);
+  _advTimer = setInterval(function() {
+    secs--;
+    if (countdown) countdown.textContent = secs;
+    if (fill) fill.style.width = Math.round((secs / 8) * 100) + '%';
+    if (secs <= 0) {
+      clearInterval(_advTimer);
+      window.location.href = QUEUE_URL;
+    }
+  }, 1000);
 }
 
 // ── Floating cart ─────────────────────────────────────────────────────────────
