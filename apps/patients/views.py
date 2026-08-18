@@ -2931,9 +2931,11 @@ def record_release_update_view(request, pk):
 def chart_deficiency_view(request):
     from apps.consultations.models import Consultation, ConsultationStatus
     from django.utils import timezone as _tz
+    from django.db.models import Q as _Q
+    import datetime as _dt
     if not _is_medical_records(request.user):
         return redirect('dashboard:home')
-    cutoff = _tz.now() - timezone.timedelta(hours=24)
+    cutoff = _tz.now() - _dt.timedelta(hours=24)
     # IN_PROGRESS consultations older than 24h = deficient (doctor hasn't completed them)
     deficient = (
         Consultation.objects
@@ -2951,10 +2953,10 @@ def chart_deficiency_view(request):
         .filter(
             is_deleted=False,
             status=ConsultationStatus.COMPLETED,
-            created_at__gte=_tz.now() - timezone.timedelta(days=30),
+            created_at__gte=_tz.now() - _dt.timedelta(days=30),
         )
         .filter(
-            models.Q(diagnosis__isnull=True) | models.Q(diagnosis='')
+            _Q(diagnosis__isnull=True) | _Q(diagnosis='')
         )
         .select_related('patient', 'doctor', 'department')
         .order_by('-created_at')[:100]

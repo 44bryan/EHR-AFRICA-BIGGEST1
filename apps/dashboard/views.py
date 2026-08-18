@@ -1207,8 +1207,9 @@ def home_view(request):
             from apps.patients.models import Patient, RecordReleaseRequest
             from apps.appointments.models import Appointment
             from apps.consultations.models import Consultation
+            import datetime as _dt
             today = timezone.now().date()
-            cutoff = timezone.now() - timezone.timedelta(hours=24)
+            cutoff = timezone.now() - _dt.timedelta(hours=24)
             pending_releases = _cached(
                 'mro_pending_releases',
                 lambda: RecordReleaseRequest.objects.filter(
