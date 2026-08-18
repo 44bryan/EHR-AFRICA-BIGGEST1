@@ -1,0 +1,237 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+{% block title %}Machine Revenue Report {{ year }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-currency-exchange text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Machine Revenue Report</h5>
+      <div class="text-muted small">Financial performance per imaging machine / investigation type — {{ year }}</div>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    {# Year selector #}
+    <form method="get" class="d-flex gap-1 align-items-center">
+      <select name="year" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+        <option value="{{ year }}">{{ year }} (current)</option>
+        {% for y in prev_years %}
+        <option value="{{ y }}">{{ y }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <a href="{% url 'investigations:stats' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Stats
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Summary KPIs ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ grand_count }}</div>
+        <div class="small text-muted">Total Completed</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ grand_revenue|floatformat:0 }}</div>
+        <div class="small text-muted">Total Revenue (FCFA)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info">{{ categories|length }}</div>
+        <div class="small text-muted">Investigation Categories</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ modality_table|length }}</div>
+        <div class="small text-muted">Imaging Machines Used</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── 12-Month Revenue Trend ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-graph-up-arrow text-success me-2"></i>Monthly Revenue Trend (Last 12 Months)
+  </div>
+  <div class="card-body">
+    <canvas id="revenueTrendChart" height="90"></canvas>
+  </div>
+</div>
+
+{# ── Revenue by Category + Test ── #}
+{% for cat_name, cat_data in categories.items %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <i class="bi bi-folder2 me-2 text-primary"></i>{{ cat_name }}
+    </h6>
+    <div class="d-flex gap-3 small">
+      <span class="text-muted">Orders: <strong>{{ cat_data.subtotal_count }}</strong></span>
+      <span class="text-success fw-semibold">Revenue: {{ cat_data.subtotal_rev|floatformat:0 }} FCFA</span>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Investigation</th>
+          <th class="text-end">Unit Price (FCFA)</th>
+          <th class="text-center">Clinic</th>
+          <th class="text-center">Outreach</th>
+          <th class="text-end">Total Done</th>
+          <th class="text-end fw-semibold">Revenue (FCFA)</th>
+          <th style="min-width:120px;">Volume</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in cat_data.tests %}
+        <tr>
+          <td class="fw-semibold">{{ t.name }}</td>
+          <td class="text-end text-muted">{{ t.price|floatformat:0 }}</td>
+          <td class="text-center">{{ t.clinic }}</td>
+          <td class="text-center text-success">{{ t.outreach }}</td>
+          <td class="text-end fw-bold">{{ t.count }}</td>
+          <td class="text-end fw-bold text-success">{{ t.revenue|floatformat:0 }}</td>
+          <td>
+            {% if cat_data.subtotal_count %}
+            <div class="progress" style="height:6px;margin-top:6px;">
+              <div class="progress-bar bg-primary"
+                   style="width:{% widthratio t.count cat_data.subtotal_count 100 %}%;"></div>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light fw-bold">
+        <tr>
+          <td colspan="4">Subtotal</td>
+          <td class="text-end">{{ cat_data.subtotal_count }}</td>
+          <td class="text-end text-success">{{ cat_data.subtotal_rev|floatformat:0 }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% empty %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-currency-exchange fs-2 d-block mb-3 opacity-25"></i>
+    <p>No completed investigations recorded for {{ year }}.</p>
+    <div class="small">Set unit prices on Investigation Types in the admin panel to see revenue figures.</div>
+  </div>
+</div>
+{% endfor %}
+
+{# ── Imaging Machine (Modality) Breakdown ── #}
+{% if modality_table %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-display me-2 text-primary"></i>Studies by Imaging Machine (DICOM)
+    <span class="text-muted small fw-normal ms-2">— Use this table to justify new equipment purchases</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Machine / Modality</th>
+          <th class="text-end">Studies Done</th>
+          <th style="min-width:200px;">Volume</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% with total_modality=modality_table.0.count %}
+        {% for row in modality_table %}
+        <tr>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ row.label }}</td>
+          <td class="text-end fw-bold">{{ row.count }}</td>
+          <td>
+            {% if modality_table %}
+            <div class="progress" style="height:8px;margin-top:4px;">
+              <div class="progress-bar bg-info"
+                   style="width:{% widthratio row.count modality_table.0.count 100 %}%;"></div>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% endwith %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer bg-white text-muted small py-2">
+    <i class="bi bi-info-circle me-1"></i>
+    This report shows how much each machine is being utilised.
+    High utilisation = strong financial justification for upgrading or adding a second unit.
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+(function(){
+  const td = {{ trend_json|safe }};
+  if (!td.length) return;
+  new Chart(document.getElementById('revenueTrendChart'), {
+    type: 'line',
+    data: {
+      labels: td.map(function(d){ return d.label; }),
+      datasets: [
+        {
+          label: 'Orders',
+          data: td.map(function(d){ return d.count; }),
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2, pointRadius: 4, fill: true, tension: 0.35,
+          yAxisID: 'yCount'
+        },
+        {
+          label: 'Revenue (FCFA)',
+          data: td.map(function(d){ return d.revenue; }),
+          borderColor: '#198754',
+          backgroundColor: 'rgba(25,135,84,0.08)',
+          borderWidth: 2, pointRadius: 4, fill: true, tension: 0.35,
+          yAxisID: 'yRev'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } } },
+      scales: {
+        yCount: { type: 'linear', position: 'left', beginAtZero: true,
+                   title: { display: true, text: 'Orders' } },
+        yRev:   { type: 'linear', position: 'right', beginAtZero: true,
+                   title: { display: true, text: 'Revenue (FCFA)' },
+                   grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+}());
+</script>
+{% endblock %}

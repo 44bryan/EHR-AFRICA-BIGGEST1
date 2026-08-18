@@ -726,6 +726,39 @@ def investigation_stats_view(request):
     adult_count = sum(v for k, v in age_counts.items() if k not in ('0–4', '5–14'))
     age_json = json.dumps([{'label': k, 'count': v} for k, v in age_counts.items()])
 
+    # ── 12-month rolling trend ────────────────────────────────────────────────
+    trend_months = []
+    for i in range(11, -1, -1):
+        import datetime as _dt
+        # Go back i months from the current month
+        ref_month = (today.replace(day=1) - _dt.timedelta(days=1)) if i else today.replace(day=1)
+        # simpler: compute directly
+    # Build last 12 months list
+    trend_12m = []
+    for i in range(11, -1, -1):
+        import datetime as _dt
+        # Subtract i months
+        y = today.year
+        m = today.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        import calendar as _cal
+        last = _cal.monthrange(y, m)[1]
+        ms = _dt.date(y, m, 1)
+        me = _dt.date(y, m, last)
+        cnt = InvestigationOrder.objects.filter(
+            is_deleted=False,
+            created_at__date__gte=ms,
+            created_at__date__lte=me,
+        ).count()
+        trend_12m.append({'label': ms.strftime('%b %Y'), 'count': cnt})
+    trend_12m_json = json.dumps(trend_12m)
+
+    # ── Outreach vs Clinic breakdown ───────────────────────────────────────────
+    clinic_count   = base.filter(location='CLINIC').count()
+    outreach_count = base.filter(location='OUTREACH').count()
+
     # ── M/F split by investigation category ──────────────────────────────────
     cat_gender_raw = (
         base.values('investigation_type__category', 'patient__gender')
@@ -836,6 +869,11 @@ def investigation_stats_view(request):
         'dept_json': dept_json, 'tier_json': tier_json,
         'is_current_month': (year == today.year and month == today.month),
         'today': today,
+        # 12-month trend
+        'trend_12m_json': trend_12m_json,
+        # Outreach
+        'clinic_count': clinic_count,
+        'outreach_count': outreach_count,
     }
     cache.set(_cache_key, ctx, _cache_ttl)
     if request.GET.get('pdf'):
@@ -843,3 +881,146 @@ def investigation_stats_view(request):
         ctx['config'] = HospitalConfig.get()
         return render(request, 'investigations/stats_pdf.html', ctx)
     return render(request, 'investigations/stats.html', ctx)
+
+
+# ── Machine Revenue Report ────────────────────────────────────────────────────
+
+@login_required
+def machine_revenue_view(request):
+    """Financial performance per imaging machine/modality (JCI AOP.5.4 / asset justification)."""
+    from django.db.models import Count, Sum, F, ExpressionWrapper, DecimalField as _Dec
+    from django.utils import timezone as _tz
+    import datetime as _dt, calendar as _cal
+
+    u = request.user
+    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo or u.is_finance_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = _tz.localdate()
+    try:
+        year = int(request.GET.get('year', today.year))
+    except (ValueError, TypeError):
+        year = today.year
+
+    year_start = _dt.date(year, 1, 1)
+    year_end   = _dt.date(year, 12, 31)
+
+    # ── Per InvestigationType: orders completed + revenue ─────────────────────
+    rows = list(
+        InvestigationOrder.objects.filter(
+            is_deleted=False,
+            status='COMPLETED',
+            created_at__date__gte=year_start,
+            created_at__date__lte=year_end,
+        )
+        .values(
+            'investigation_type__name',
+            'investigation_type__category',
+            'investigation_type__unit_price',
+            'location',
+        )
+        .annotate(count=Count('id'))
+        .order_by('investigation_type__category', 'investigation_type__name')
+    )
+
+    # Group by category
+    from decimal import Decimal
+    categories = {}
+    grand_count = 0
+    grand_revenue = Decimal('0')
+    for r in rows:
+        cat   = (r['investigation_type__category'] or '').replace('_', ' ').title()
+        price = r['investigation_type__unit_price'] or Decimal('0')
+        count = r['count']
+        rev   = price * count
+        grand_count   += count
+        grand_revenue += rev
+        if cat not in categories:
+            categories[cat] = {'tests': [], 'subtotal_count': 0, 'subtotal_rev': Decimal('0')}
+        # find existing test row
+        existing = next((t for t in categories[cat]['tests'] if t['name'] == r['investigation_type__name']), None)
+        if existing:
+            existing['count'] += count
+            existing['revenue'] += rev
+            if r['location'] == 'OUTREACH':
+                existing['outreach'] += count
+            else:
+                existing['clinic'] += count
+        else:
+            categories[cat]['tests'].append({
+                'name':     r['investigation_type__name'],
+                'price':    price,
+                'count':    count,
+                'revenue':  rev,
+                'clinic':   count if r['location'] == 'CLINIC' else 0,
+                'outreach': count if r['location'] == 'OUTREACH' else 0,
+            })
+        categories[cat]['subtotal_count'] += count
+        categories[cat]['subtotal_rev']   += rev
+
+    # ── By imaging modality (from ImagingStudy) ───────────────────────────────
+    from .models import ImagingStudy, ImagingModality
+    modality_rows = list(
+        ImagingStudy.objects.filter(
+            is_deleted=False,
+            created_at__date__gte=year_start,
+            created_at__date__lte=year_end,
+        )
+        .values('modality')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    modality_table = [
+        {'modality': r['modality'], 'label': r['modality'], 'count': r['count']}
+        for r in modality_rows
+    ]
+    # Resolve labels
+    modality_map = dict(ImagingModality.choices)
+    for row in modality_table:
+        row['label'] = modality_map.get(row['modality'], row['modality'])
+
+    # ── 12-month monthly revenue trend ────────────────────────────────────────
+    import json
+    monthly_trend = []
+    for i in range(11, -1, -1):
+        y = today.year
+        m = today.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        last = _cal.monthrange(y, m)[1]
+        ms = _dt.date(y, m, 1)
+        me = _dt.date(y, m, last)
+        cnt = InvestigationOrder.objects.filter(
+            is_deleted=False, status='COMPLETED',
+            created_at__date__gte=ms, created_at__date__lte=me,
+        ).count()
+        # Revenue = sum of (unit_price × count) — approximated via annotation
+        rev_q = InvestigationOrder.objects.filter(
+            is_deleted=False, status='COMPLETED',
+            created_at__date__gte=ms, created_at__date__lte=me,
+        ).aggregate(
+            rev=Sum(
+                ExpressionWrapper(F('investigation_type__unit_price'), output_field=_Dec(max_digits=14, decimal_places=2))
+            )
+        )
+        rev = float(rev_q['rev'] or 0)
+        monthly_trend.append({'label': ms.strftime('%b %Y'), 'count': cnt, 'revenue': rev})
+    trend_json = json.dumps(monthly_trend)
+
+    prev_years = [year - i for i in range(1, 4)]
+
+    return render(request, 'investigations/machine_revenue.html', {
+        'year': year,
+        'year_start': year_start,
+        'year_end': year_end,
+        'categories': categories,
+        'grand_count': grand_count,
+        'grand_revenue': grand_revenue,
+        'modality_table': modality_table,
+        'trend_json': trend_json,
+        'prev_years': prev_years,
+        'today': today,
+    })

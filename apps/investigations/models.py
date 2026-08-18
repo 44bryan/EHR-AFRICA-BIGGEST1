@@ -29,6 +29,10 @@ class InvestigationType(TimeStampedModel):
     preparation_instructions = models.TextField(blank=True)
     # Template for structured result entry (JSON schema-like)
     result_template = models.JSONField(default=dict, blank=True)
+    unit_price = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text='Price charged per investigation (FCFA)'
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -51,6 +55,10 @@ class InvestigationOrder(AuditModel):
         IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
         COMPLETED = 'COMPLETED', _('Completed')
         CANCELLED = 'CANCELLED', _('Cancelled')
+
+    class Location(models.TextChoices):
+        CLINIC   = 'CLINIC',   _('Clinic')
+        OUTREACH = 'OUTREACH', _('Outreach / Field')
 
     class Eye(models.TextChoices):
         RIGHT = 'RE', _('Right Eye')
@@ -86,6 +94,10 @@ class InvestigationOrder(AuditModel):
     clinical_indication = models.TextField()
     eye = models.CharField(max_length=5, choices=Eye.choices, default=Eye.BOTH)
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.ORDERED)
+    location = models.CharField(
+        max_length=10, choices=Location.choices, default=Location.CLINIC,
+        db_index=True, help_text='Where the investigation was performed'
+    )
     notes = models.TextField(blank=True)
     scheduled_time = models.DateTimeField(null=True, blank=True)
 
