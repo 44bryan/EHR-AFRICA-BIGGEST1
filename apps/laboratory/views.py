@@ -191,9 +191,9 @@ def lab_stats_view(request):
     _cached = cache.get(_cache_key)
     if _cached:
         if request.GET.get('pdf'):
-            from apps.accounts.models import HospitalConfig
-            _cached['config'] = HospitalConfig.get()
-            return render(request, 'laboratory/stats_pdf.html', _cached)
+            from apps.reports.views import render_pdf
+            _cached['pdf_filename'] = 'laboratory-stats.pdf'
+            return render_pdf('laboratory/stats_pdf.html', _cached)
         return render(request, 'laboratory/stats.html', _cached)
     _cache_ttl = 600 if (year == today.year and month == today.month) else 86400
 
@@ -485,9 +485,9 @@ def lab_stats_view(request):
     }
     cache.set(_cache_key, context, _cache_ttl)
     if request.GET.get('pdf'):
-        from apps.accounts.models import HospitalConfig
-        context['config'] = HospitalConfig.get()
-        return render(request, 'laboratory/stats_pdf.html', context)
+        from apps.reports.views import render_pdf
+        context['pdf_filename'] = 'laboratory-stats.pdf'
+        return render_pdf('laboratory/stats_pdf.html', context)
     return render(request, 'laboratory/stats.html', context)
 
 

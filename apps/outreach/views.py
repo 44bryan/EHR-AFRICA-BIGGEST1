@@ -766,9 +766,9 @@ def stats_view(request):
         'erec': erec, 'erec_num': glasses_given, 'erec_den': refractive_need,
     }
     if request.GET.get('pdf'):
-        from apps.accounts.models import HospitalConfig
-        _out_ctx['config'] = HospitalConfig.get()
-        return render(request, 'outreach/stats_pdf.html', _out_ctx)
+        from apps.reports.views import render_pdf
+        _out_ctx['pdf_filename'] = 'outreach-stats.pdf'
+        return render_pdf('outreach/stats_pdf.html', _out_ctx)
     return render(request, 'outreach/stats.html', _out_ctx)
 
 

@@ -964,9 +964,9 @@ def ipd_nursing_stats(request):
         'today': today,
     }
     if request.GET.get('pdf'):
-        from apps.accounts.models import HospitalConfig
-        context['config'] = HospitalConfig.get()
-        return render(request, 'ipd/nursing_stats_pdf.html', context)
+        from apps.reports.views import render_pdf
+        context['pdf_filename'] = 'surgical-bookings-register.pdf'
+        return render_pdf('ipd/nursing_stats_pdf.html', context)
     return render(request, 'ipd/nursing_stats.html', context)
 
 
@@ -2029,9 +2029,9 @@ def admission_stats(request):
         'today': timezone.localdate(),
     }
     if request.GET.get('pdf'):
-        from apps.accounts.models import HospitalConfig
-        _ipd_ctx['config'] = HospitalConfig.get()
-        return render(request, 'ipd/admission_stats_pdf.html', _ipd_ctx)
+        from apps.reports.views import render_pdf
+        _ipd_ctx['pdf_filename'] = 'admission-surgical-stats.pdf'
+        return render_pdf('ipd/admission_stats_pdf.html', _ipd_ctx)
     return render(request, 'ipd/admission_stats.html', _ipd_ctx)
 
 

@@ -611,9 +611,9 @@ def investigation_stats_view(request):
     if _cached:
         _cached['today'] = timezone.now()  # always a datetime for H:i format compatibility
         if request.GET.get('pdf'):
-            from apps.accounts.models import HospitalConfig
-            _cached['config'] = HospitalConfig.get()
-            return render(request, 'investigations/stats_pdf.html', _cached)
+            from apps.reports.views import render_pdf
+            _cached['pdf_filename'] = 'investigation-stats.pdf'
+            return render_pdf('investigations/stats_pdf.html', _cached)
         return render(request, 'investigations/stats.html', _cached)
     _cache_ttl = 300 if (year == today.year and month == today.month) else 86400
 
@@ -926,9 +926,9 @@ def investigation_stats_view(request):
     }
     cache.set(_cache_key, ctx, _cache_ttl)
     if request.GET.get('pdf'):
-        from apps.accounts.models import HospitalConfig
-        ctx['config'] = HospitalConfig.get()
-        return render(request, 'investigations/stats_pdf.html', ctx)
+        from apps.reports.views import render_pdf
+        ctx['pdf_filename'] = 'investigation-stats.pdf'
+        return render_pdf('investigations/stats_pdf.html', ctx)
     return render(request, 'investigations/stats.html', ctx)
 
 
