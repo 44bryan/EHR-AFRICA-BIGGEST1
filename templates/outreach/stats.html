@@ -5,10 +5,17 @@
 {% block content %}
 
 <!-- Print header -->
-<div class="print-header text-center mb-3">
-  <h4 class="fw-bold mb-0">{{ HOSPITAL_NAME }}</h4>
-  <p class="mb-0 small">Outreach Department — Annual Statistics Report {{ year }}</p>
-  <p class="mb-0 small text-muted">Printed: {{ today }}</p><hr>
+<div class="print-only" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #198754;">
+    <div>
+      <div style="font-size:18px;font-weight:800;color:#198754;">Outreach Annual Statistics Dashboard</div>
+      <div style="font-size:11px;color:#555;margin-top:3px;">Year: {{ year }} &bull; Ref: OUT-{{ year }} &bull; Generated: {% now "d M Y H:i" %}</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#6c757d;">CONFIDENTIAL — INTERNAL USE ONLY<br><em>For management review only. Not for patient distribution.</em></div>
+  </div>
+  <div style="background:#198754;color:#fff;padding:5px 12px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;letter-spacing:.5px;">
+    EHR Africa — Outreach Department Report
+  </div>
 </div>
 
 <div class="d-flex align-items-center justify-content-between mb-4 no-print">
@@ -22,10 +29,10 @@
       <button type="submit" class="btn btn-sm btn-primary">Go</button>
     </form>
     <button onclick="window.open('{{ request.path }}?year={{ year }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger no-print">
-      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export Data PDF
     </button>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">
-      <i class="bi bi-printer me-1"></i>Print
+    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary no-print">
+      <i class="bi bi-printer-fill me-1"></i>Print with Charts
     </button>
   </div>
 </div>
@@ -525,6 +532,49 @@
     });
   }
 })();
+</script>
+
+<style>
+@media print {
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+  .print-only { display: block !important; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  .row.g-3, .row.g-4 { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-md-8 { width: 64% !important; flex: none; }
+  .col-md-4 { width: 33% !important; flex: none; }
+  .col-md-6 { width: 48% !important; flex: none; }
+  .print-chart-img { width: 100% !important; height: auto !important; display: block; }
+  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+
+<script>
+function printWithCharts() {
+  var pairs = [];
+  document.querySelectorAll('canvas').forEach(function(canvas) {
+    var chart = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+    if (!chart) return;
+    var img = new Image();
+    img.src = chart.toBase64Image('image/png', 1.0);
+    img.className = 'print-chart-img';
+    img.style.maxWidth = canvas.offsetWidth + 'px';
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = 'none';
+    pairs.push({ canvas: canvas, img: img });
+  });
+  window.print();
+  setTimeout(function() {
+    pairs.forEach(function(p) {
+      p.canvas.style.display = '';
+      if (p.img.parentNode) p.img.parentNode.removeChild(p.img);
+    });
+  }, 2000);
+}
 </script>
 
 <script>
