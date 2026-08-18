@@ -1,41 +1,180 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Investigation Workstation{% endblock %}
 {% block content %}
+
 <div id="invtech-dash-live">
-<div class="d-flex justify-content-between align-items-start mb-4">
+
+{# ── Header ── #}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
-    <h1 class="h3 mb-1">Investigation Workstation</h1>
-    <div class="text-muted">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-display me-2 text-primary"></i>Investigation Workstation</h5>
+    <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'investigations:stats' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-graph-up-arrow me-1"></i>Stats
+    </a>
+    <a href="{% url 'investigations:staff_throughput' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-people-fill me-1"></i>Throughput
+    </a>
+    <a href="{% url 'investigations:machine_revenue' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-currency-exchange me-1"></i>Revenue
+    </a>
+    <a href="{% url 'investigations:workstation' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-play-circle me-1"></i>Full Workstation
+    </a>
   </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header bg-white py-3 d-flex justify-content-between">
-    <h6 class="mb-0 fw-semibold"><i class="bi bi-search-heart me-2 text-info"></i>Pending Investigations</h6>
-    <span class="badge bg-info">{{ pending_count }}</span>
+{# ── KPI Cards ── #}
+<div class="row g-2 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100
+      {% if urgent_count > 0 %}border-danger border{% endif %}">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold {% if urgent_count > 0 %}text-danger{% else %}text-warning{% endif %}">
+          {{ pending_count }}
+        </div>
+        <div class="small text-muted">Pending Orders</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100
+      {% if urgent_count > 0 %}border-danger border{% endif %}">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-danger">{{ urgent_count }}</div>
+        <div class="small text-muted">Urgent / Emergency</div>
+        {% if urgent_count > 0 %}
+        <div class="badge bg-danger-subtle text-danger small">Action Required</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ completed_today }}</div>
+        <div class="small text-muted">Completed Today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ my_today }}</div>
+        <div class="small text-muted">My Exams Today</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Urgent / Emergency Orders ── #}
+{% if urgent_orders %}
+<div class="card border-danger border shadow-sm mb-3">
+  <div class="card-header bg-danger text-white py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>URGENT &amp; EMERGENCY — Action Required Now
+    </span>
+    <span class="badge bg-white text-danger">{{ urgent_count }}</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Patient</th><th>Investigation</th><th>Ordered By</th><th>Ordered At</th><th>Status</th><th></th></tr>
+        <tr>
+          <th>Patient</th><th>Investigation</th><th>Urgency</th>
+          <th>Ordered</th><th>Location</th><th></th>
+        </tr>
       </thead>
       <tbody>
-        {% for inv in pending %}
-        <tr>
-          <td class="fw-semibold">{{ inv.patient.full_name }}<br><span class="text-muted">{{ inv.patient.patient_id }}</span></td>
-          <td>{{ inv.investigation_type }}</td>
-          <td class="text-muted">{{ inv.consultation.department.name|default:"—" }}</td>
-          <td class="text-muted">{{ inv.created_at|date:"d M, H:i" }}</td>
-          <td><span class="badge bg-{% if inv.status == 'IN_PROGRESS' %}warning text-dark{% else %}secondary{% endif %}">{{ inv.get_status_display }}</span></td>
-          <td><a href="{% url 'investigations:add_result' pk=inv.pk %}" class="btn btn-sm btn-primary">Enter Result</a></td>
+        {% for inv in urgent_orders %}
+        <tr class="table-danger">
+          <td>
+            <div class="fw-semibold">{{ inv.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ inv.patient.patient_id }}</div>
+          </td>
+          <td class="fw-semibold">{{ inv.investigation_type.name }}</td>
+          <td>
+            <span class="badge bg-danger">{{ inv.get_urgency_display }}</span>
+          </td>
+          <td class="text-muted">{{ inv.created_at|date:"H:i" }}</td>
+          <td>
+            {% if inv.location == 'OUTREACH' %}
+            <span class="badge bg-success">Outreach</span>
+            {% else %}
+            <span class="badge bg-light text-dark border">Clinic</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'investigations:add_result' pk=inv.pk %}"
+               class="btn btn-sm btn-danger">
+              <i class="bi bi-play-fill me-1"></i>Start Now
+            </a>
+          </td>
         </tr>
-        {% empty %}
-        <tr><td colspan="6" class="text-center text-muted py-4">No pending investigations.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% endif %}
+
+{# ── Routine Pending Orders ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">
+      <i class="bi bi-list-check me-2"></i>Routine Pending Orders
+    </h6>
+    <span class="badge bg-secondary">{{ routine_orders|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th><th>Investigation</th><th>Department</th>
+          <th>Ordered</th><th>Status</th><th>Location</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in routine_orders %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ inv.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ inv.patient.patient_id }}</div>
+          </td>
+          <td>{{ inv.investigation_type.name }}</td>
+          <td class="text-muted">{{ inv.consultation.department.name|default:"—" }}</td>
+          <td class="text-muted">{{ inv.created_at|date:"d M, H:i" }}</td>
+          <td>
+            <span class="badge bg-{% if inv.status == 'IN_PROGRESS' %}warning text-dark{% else %}light text-dark border{% endif %}">
+              {{ inv.get_status_display }}
+            </span>
+          </td>
+          <td>
+            {% if inv.location == 'OUTREACH' %}
+            <span class="badge bg-success-subtle text-success border border-success">Outreach</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'investigations:add_result' pk=inv.pk %}"
+               class="btn btn-sm btn-outline-primary py-0 px-2">
+              Enter Result
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
+            All routine orders are up to date.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 </div>{# /invtech-dash-live #}
 {% endblock %}
 
@@ -44,7 +183,7 @@
 (function(){
   var QID='invtech-dash-live',ROOMS=['invest'],_busy=false,_pend=false,_fb;
   function isModal(){return !!document.querySelector('.modal.show');}
-  function toast(){var w=document.getElementById('_ehr_n');if(!w){w=document.createElement('div');w.id='_ehr_n';w.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;';document.body.appendChild(w);}clearTimeout(w._t);w.innerHTML='<div style="background:#198754;color:#fff;padding:10px 16px;border-radius:8px;font-size:.82rem;box-shadow:0 4px 16px rgba(0,0,0,.18);display:flex;align-items:center;gap:8px"><i class="bi bi-bell-fill"></i>&nbsp;New order arrived</div>';w._t=setTimeout(function(){w.innerHTML='';},3500);}
+  function toast(){var w=document.getElementById('_ehr_n');if(!w){w=document.createElement('div');w.id='_ehr_n';w.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;';document.body.appendChild(w);}clearTimeout(w._t);w.innerHTML='<div style="background:#dc3545;color:#fff;padding:10px 16px;border-radius:8px;font-size:.82rem;box-shadow:0 4px 16px rgba(0,0,0,.18);display:flex;align-items:center;gap:8px"><i class="bi bi-bell-fill"></i>&nbsp;New investigation order arrived</div>';w._t=setTimeout(function(){w.innerHTML='';},4000);}
   function beep(){try{var c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.setValueAtTime(.2,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.start();o.stop(c.currentTime+.2);}catch(e){}}
   function swap(){
     if(_busy){_pend=true;return;}

@@ -834,13 +834,37 @@ def home_view(request):
 
     # ── Investigation Technician ─────────────────────────────────────────
     if user.is_investigation_tech:
-        from apps.investigations.models import InvestigationOrder
-        pending = InvestigationOrder.objects.select_related(
+        from apps.investigations.models import InvestigationOrder, InvestigationResult
+        today_local = timezone.localdate()
+        base_pending = InvestigationOrder.objects.select_related(
             'patient', 'investigation_type', 'consultation__department'
-        ).filter(status__in=['ORDERED', 'IN_PROGRESS']).order_by('-created_at')
+        ).filter(is_deleted=False, status__in=['ORDERED', 'IN_PROGRESS'])
+
+        urgent_orders  = base_pending.filter(urgency__in=['URGENT', 'EMERGENCY']).order_by('-created_at')
+        routine_orders = base_pending.filter(urgency='ROUTINE').order_by('created_at')
+        pending_count  = base_pending.count()
+        urgent_count   = urgent_orders.count()
+
+        # Today's completed (all staff)
+        completed_today = InvestigationOrder.objects.filter(
+            is_deleted=False, status='COMPLETED',
+            updated_at__date=today_local,
+        ).count()
+
+        # My exams today (this tech)
+        my_today = InvestigationResult.objects.filter(
+            is_deleted=False,
+            performed_by=user,
+            result_date__date=today_local,
+        ).count()
+
         ctx.update({
-            'pending': pending,
-            'pending_count': pending.count(),
+            'urgent_orders':   urgent_orders,
+            'routine_orders':  routine_orders,
+            'pending_count':   pending_count,
+            'urgent_count':    urgent_count,
+            'completed_today': completed_today,
+            'my_today':        my_today,
         })
         return render(request, 'dashboard/investigation_tech.html', ctx)
 
