@@ -931,6 +931,85 @@ def investigation_stats_view(request):
     return render(request, 'investigations/stats.html', ctx)
 
 
+# ── Stats CSV Export ──────────────────────────────────────────────────────────
+
+@login_required
+def stats_csv_export_view(request):
+    """Download investigation stats breakdown as CSV."""
+    import csv
+    from django.http import HttpResponse
+    import datetime as _dt, calendar as _cal
+
+    u = request.user
+    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = _dt.date(year, month, 1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = month_start.year, month_start.month
+    last_day  = _cal.monthrange(year, month)[1]
+    month_end = _dt.date(year, month, last_day)
+
+    base = InvestigationOrder.objects.filter(
+        is_deleted=False,
+        created_at__date__gte=month_start,
+        created_at__date__lte=month_end,
+    )
+
+    # Per-type × sex × age
+    type_rows = list(base.values_list(
+        'investigation_type__name', 'investigation_type__category',
+        'patient__gender', 'patient__date_of_birth',
+    ))
+    bd = {}
+    for name, category, gender, dob in type_rows:
+        cat = (category or '').replace('_', ' ').title()
+        if name not in bd:
+            bd[name] = {'cat': cat, 'M': 0, 'F': 0, 'CM': 0, 'CF': 0, 'tot': 0}
+        is_child = bool(dob) and (today - dob).days // 365 <= 14
+        bd[name]['tot'] += 1
+        if gender == 'M':
+            bd[name]['M'] += 1
+            if is_child: bd[name]['CM'] += 1
+        elif gender == 'F':
+            bd[name]['F'] += 1
+            if is_child: bd[name]['CF'] += 1
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    fname = f"investigation_stats_{year}_{month:02d}.csv"
+    response['Content-Disposition'] = f'attachment; filename="{fname}"'
+    w = csv.writer(response)
+    w.writerow([f'Eye Investigation Statistics — {month_start.strftime("%B %Y")}'])
+    w.writerow(['Generated:', today.strftime('%d/%m/%Y')])
+    w.writerow([])
+    w.writerow(['Investigation Type', 'Category',
+                'Male Adult (15+)', 'Male Child (0-14)',
+                'Female Adult (15+)', 'Female Child (0-14)',
+                'Total Male', 'Total Female', 'Grand Total'])
+    for name, v in sorted(bd.items(), key=lambda x: -x[1]['tot']):
+        w.writerow([name, v['cat'],
+                    v['M'] - v['CM'], v['CM'],
+                    v['F'] - v['CF'], v['CF'],
+                    v['M'], v['F'], v['tot']])
+    total = base.count()
+    w.writerow([])
+    w.writerow(['', '', '', '', '', '', '', 'TOTAL', total])
+    w.writerow([])
+    w.writerow(['Summary'])
+    w.writerow(['Completed', base.filter(status='COMPLETED').count()])
+    w.writerow(['Completion Rate %', f"{round(base.filter(status='COMPLETED').count() / total * 100, 1) if total else 0}%"])
+    w.writerow(['Urgent / Emergency', base.filter(urgency__in=['URGENT','EMERGENCY']).count()])
+    w.writerow(['Clinic', base.filter(location='CLINIC').count()])
+    w.writerow(['Outreach', base.filter(location='OUTREACH').count()])
+    return response
+
+
 # ── Machine Revenue Report ────────────────────────────────────────────────────
 
 @login_required

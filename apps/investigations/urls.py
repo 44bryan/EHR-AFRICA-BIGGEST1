@@ -21,6 +21,7 @@ urlpatterns = [
     path('imaging/<uuid:study_id>/report/', views.imaging_study_report, name='imaging_report'),
     path('patient/<str:patient_id>/imaging/', views.patient_imaging_list, name='patient_imaging'),
     path('stats/', views.investigation_stats_view, name='stats'),
+    path('stats/export-csv/', views.stats_csv_export_view, name='stats_csv'),
     path('machine-revenue/', views.machine_revenue_view, name='machine_revenue'),
     path('staff-throughput/', views.staff_throughput_view, name='staff_throughput'),
 ]
