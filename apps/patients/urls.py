@@ -66,5 +66,10 @@ urlpatterns = [
     path('records/deficiency/', views.chart_deficiency_view, name='chart_deficiency'),
     path('records/access-log/', views.access_audit_view, name='access_audit'),
     path('records/duplicates/', views.duplicate_detection_view, name='duplicate_detection'),
+    path('records/consents/', views.consent_review_view, name='consent_review'),
+    path('records/amendments/', views.amendment_list_view, name='amendment_list'),
+    path('records/amendments/new/', views.amendment_create_view, name='amendment_create'),
+    path('records/amendments/<int:pk>/update/', views.amendment_update_view, name='amendment_update'),
+    path('records/documents/', views.document_review_view, name='document_review'),
     path('prereg/manage/', views.prereg_management_view, name='prereg_management'),
 ]

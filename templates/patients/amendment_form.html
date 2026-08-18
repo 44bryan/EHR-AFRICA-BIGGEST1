@@ -1,0 +1,150 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{% if is_edit %}Review Amendment Request{% else %}New Amendment Request{% endif %}{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <h5 class="fw-bold mb-0">
+    <i class="bi bi-pencil-square me-2"></i>
+    {% if is_edit %}Review Amendment Request{% else %}New Amendment Request{% endif %}
+  </h5>
+  <div class="text-muted small">
+    {% if is_edit %}Update status and add decision notes{% else %}Log a patient record correction request — HIPAA §164.526{% endif %}
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:800px;">
+  <div class="card-body p-4">
+
+    {% if is_edit %}
+    {# ── Edit / Review mode ── #}
+    <div class="mb-4 p-3 bg-light rounded">
+      <div class="row g-2 small">
+        <div class="col-md-6">
+          <span class="text-muted">Patient:</span>
+          <strong class="ms-1">{{ amendment.patient.full_name }} ({{ amendment.patient.patient_id }})</strong>
+        </div>
+        <div class="col-md-6">
+          <span class="text-muted">Requestor:</span>
+          <strong class="ms-1">{{ amendment.requestor_name }} — {{ amendment.get_requestor_type_display }}</strong>
+        </div>
+        <div class="col-md-6">
+          <span class="text-muted">Field to Amend:</span>
+          <strong class="ms-1">{{ amendment.field_to_amend }}</strong>
+        </div>
+        <div class="col-md-6">
+          <span class="text-muted">Submitted:</span>
+          <strong class="ms-1">{{ amendment.created_at|date:"d M Y H:i" }}</strong>
+        </div>
+        <div class="col-12">
+          <span class="text-muted">Current Value:</span>
+          <div class="mt-1 p-2 bg-white border rounded small">{{ amendment.current_value|default:"—" }}</div>
+        </div>
+        <div class="col-12">
+          <span class="text-muted">Requested Correction:</span>
+          <div class="mt-1 p-2 bg-white border rounded small fw-semibold">{{ amendment.requested_value }}</div>
+        </div>
+        <div class="col-12">
+          <span class="text-muted">Reason:</span>
+          <div class="mt-1 p-2 bg-white border rounded small">{{ amendment.reason }}</div>
+        </div>
+        {% if amendment.supporting_evidence %}
+        <div class="col-12">
+          <span class="text-muted">Supporting Evidence:</span>
+          <div class="mt-1 p-2 bg-white border rounded small">{{ amendment.supporting_evidence }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">Update Status</label>
+        <select name="status" class="form-select form-select-sm">
+          {% for code, label in status_choices %}
+          <option value="{{ code }}" {% if amendment.status == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">Decision Notes</label>
+        <textarea name="decision_notes" rows="3" class="form-control form-control-sm"
+                  placeholder="Add notes about your decision…">{{ amendment.decision_notes }}</textarea>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary px-4">
+          <i class="bi bi-check-lg me-1"></i>Save Decision
+        </button>
+        <a href="{% url 'patients:amendment_list' %}" class="btn btn-sm btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+
+    {% else %}
+    {# ── Create mode ── #}
+    <form method="post">
+      {% csrf_token %}
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Patient ID *</label>
+          <input type="text" name="patient_id" required class="form-control form-control-sm"
+                 value="{% if pre_patient %}{{ pre_patient.patient_id }}{% endif %}"
+                 placeholder="e.g. EHR-2026-001">
+          {% if pre_patient %}
+          <div class="form-text text-success">{{ pre_patient.full_name }}</div>
+          {% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Requestor Name *</label>
+          <input type="text" name="requestor_name" required class="form-control form-control-sm"
+                 placeholder="Full name of person requesting amendment">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Requestor Type *</label>
+          <select name="requestor_type" class="form-select form-select-sm">
+            {% for code, label in requestor_type_choices %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Requestor Contact</label>
+          <input type="text" name="requestor_contact" class="form-control form-control-sm"
+                 placeholder="Phone or email">
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Field / Section to Amend *</label>
+          <input type="text" name="field_to_amend" required class="form-control form-control-sm"
+                 placeholder="e.g. Date of Birth, Address, Allergy record">
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Current Value (what the record says)</label>
+          <textarea name="current_value" rows="2" class="form-control form-control-sm"
+                    placeholder="What is currently recorded in the system…"></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Requested Correction *</label>
+          <textarea name="requested_value" required rows="2" class="form-control form-control-sm"
+                    placeholder="What the correct information should be…"></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Reason for Amendment *</label>
+          <textarea name="reason" required rows="2" class="form-control form-control-sm"
+                    placeholder="Why is this correction needed?"></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Supporting Evidence / Documents</label>
+          <textarea name="supporting_evidence" rows="2" class="form-control form-control-sm"
+                    placeholder="Documents or proof provided (e.g. national ID, birth certificate)…"></textarea>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-4">
+        <button type="submit" class="btn btn-sm btn-primary px-4">
+          <i class="bi bi-check-lg me-1"></i>Submit Request
+        </button>
+        <a href="{% url 'patients:amendment_list' %}" class="btn btn-sm btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

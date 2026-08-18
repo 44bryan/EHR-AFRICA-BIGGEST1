@@ -2937,7 +2937,7 @@ def chart_deficiency_view(request):
         return redirect('dashboard:home')
     cutoff = _tz.now() - _dt.timedelta(hours=24)
     # IN_PROGRESS consultations older than 24h = deficient (doctor hasn't completed them)
-    deficient = (
+    _deficient_qs = (
         Consultation.objects
         .filter(
             is_deleted=False,
@@ -2945,10 +2945,12 @@ def chart_deficiency_view(request):
             created_at__lt=cutoff,
         )
         .select_related('patient', 'consulting_doctor', 'department')
-        .order_by('created_at')[:200]
+        .order_by('created_at')
     )
+    deficient_count = _deficient_qs.count()
+    deficient = _deficient_qs[:200]
     # Also flag completed consultations with no management plan (diagnosis/plan missing)
-    no_diagnosis = (
+    _no_dx_qs = (
         Consultation.objects
         .filter(
             is_deleted=False,
@@ -2959,13 +2961,15 @@ def chart_deficiency_view(request):
             _Q(management_plan__isnull=True) | _Q(management_plan='')
         )
         .select_related('patient', 'consulting_doctor', 'department')
-        .order_by('-created_at')[:100]
+        .order_by('-created_at')
     )
+    no_diagnosis_count = _no_dx_qs.count()
+    no_diagnosis = _no_dx_qs[:100]
     return render(request, 'patients/chart_deficiency.html', {
         'deficient': deficient,
         'no_diagnosis': no_diagnosis,
-        'deficient_count': deficient.count(),
-        'no_diagnosis_count': no_diagnosis.count(),
+        'deficient_count': deficient_count,
+        'no_diagnosis_count': no_diagnosis_count,
         'cutoff_hours': 24,
     })
 
@@ -3109,4 +3113,180 @@ def prereg_management_view(request):
         'counts':       counts,
         'status_choices': PreRegistration.Status.choices,
         'today': timezone.localdate(),
+    })
+
+
+# ── 6. Global Consent Review (JCI PFR.5) ─────────────────────────────────────
+
+@login_required
+def consent_review_view(request):
+    from .models import PatientConsent
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    q = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')  # 'valid', 'revoked', 'pending'
+    qs = (
+        PatientConsent.objects
+        .filter(is_deleted=False)
+        .select_related('patient', 'obtained_by', 'consultation')
+        .order_by('-created_at')
+    )
+    if q:
+        from django.db.models import Q as _Q
+        qs = qs.filter(
+            _Q(patient__first_name__icontains=q) |
+            _Q(patient__last_name__icontains=q) |
+            _Q(patient__patient_id__icontains=q) |
+            _Q(procedure_name__icontains=q)
+        )
+    if status_filter == 'valid':
+        qs = qs.filter(is_valid=True, signed_at__isnull=False)
+    elif status_filter == 'revoked':
+        qs = qs.filter(is_valid=False)
+    elif status_filter == 'pending':
+        qs = qs.filter(signed_at__isnull=True)
+    total = qs.count()
+    return render(request, 'patients/consent_review.html', {
+        'consents': qs[:200],
+        'total': total,
+        'q': q,
+        'status_filter': status_filter,
+    })
+
+
+# ── 7. Amendment Requests (HIPAA §164.526) ────────────────────────────────────
+
+@login_required
+def amendment_list_view(request):
+    from .models import PatientAmendmentRequest
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    status_filter = request.GET.get('status', '')
+    q = request.GET.get('q', '').strip()
+    qs = (
+        PatientAmendmentRequest.objects
+        .filter(is_deleted=False)
+        .select_related('patient', 'reviewed_by')
+        .order_by('-created_at')
+    )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if q:
+        from django.db.models import Q as _Q
+        qs = qs.filter(
+            _Q(patient__first_name__icontains=q) |
+            _Q(patient__last_name__icontains=q) |
+            _Q(patient__patient_id__icontains=q) |
+            _Q(requestor_name__icontains=q)
+        )
+    counts = {}
+    for code, _ in PatientAmendmentRequest.Status.choices:
+        counts[code] = PatientAmendmentRequest.objects.filter(is_deleted=False, status=code).count()
+    return render(request, 'patients/amendment_list.html', {
+        'amendments': qs[:300],
+        'status_filter': status_filter,
+        'q': q,
+        'counts': counts,
+        'status_choices': PatientAmendmentRequest.Status.choices,
+    })
+
+
+@login_required
+def amendment_create_view(request):
+    from .models import PatientAmendmentRequest
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    if request.method == 'POST':
+        patient_id = request.POST.get('patient_id', '').strip()
+        try:
+            patient = Patient.objects.get(patient_id=patient_id, is_deleted=False)
+        except Patient.DoesNotExist:
+            messages.error(request, f'Patient "{patient_id}" not found.')
+            return redirect('patients:amendment_create')
+        PatientAmendmentRequest.objects.create(
+            patient=patient,
+            requestor_name=request.POST.get('requestor_name', '').strip(),
+            requestor_type=request.POST.get('requestor_type', 'PATIENT'),
+            requestor_contact=request.POST.get('requestor_contact', '').strip(),
+            field_to_amend=request.POST.get('field_to_amend', '').strip(),
+            current_value=request.POST.get('current_value', '').strip(),
+            requested_value=request.POST.get('requested_value', '').strip(),
+            reason=request.POST.get('reason', '').strip(),
+            supporting_evidence=request.POST.get('supporting_evidence', '').strip(),
+            created_by=request.user,
+        )
+        messages.success(request, 'Amendment request submitted successfully.')
+        return redirect('patients:amendment_list')
+    # GET — render blank form
+    patient_id = request.GET.get('patient_id', '')
+    pre_patient = None
+    if patient_id:
+        try:
+            pre_patient = Patient.objects.get(patient_id=patient_id, is_deleted=False)
+        except Patient.DoesNotExist:
+            pass
+    return render(request, 'patients/amendment_form.html', {
+        'pre_patient': pre_patient,
+        'requestor_type_choices': PatientAmendmentRequest.RequestorType.choices,
+    })
+
+
+@login_required
+def amendment_update_view(request, pk):
+    from .models import PatientAmendmentRequest
+    from django.utils import timezone as _tz
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    amendment = get_object_or_404(PatientAmendmentRequest, pk=pk, is_deleted=False)
+    if request.method == 'POST':
+        new_status = request.POST.get('status', amendment.status)
+        amendment.status = new_status
+        amendment.decision_notes = request.POST.get('decision_notes', '').strip()
+        if new_status in ('APPROVED', 'REJECTED') and not amendment.reviewed_by:
+            amendment.reviewed_by = request.user
+            amendment.reviewed_at = _tz.now()
+        amendment.updated_by = request.user
+        amendment.save()
+        messages.success(request, 'Amendment request updated.')
+        return redirect('patients:amendment_list')
+    return render(request, 'patients/amendment_form.html', {
+        'amendment': amendment,
+        'requestor_type_choices': PatientAmendmentRequest.RequestorType.choices,
+        'status_choices': PatientAmendmentRequest.Status.choices,
+        'is_edit': True,
+    })
+
+
+# ── 8. Global Document Review ─────────────────────────────────────────────────
+
+@login_required
+def document_review_view(request):
+    from .models import PatientDocument
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    q = request.GET.get('q', '').strip()
+    doc_type = request.GET.get('doc_type', '')
+    qs = (
+        PatientDocument.objects
+        .filter(is_deleted=False)
+        .select_related('patient')
+        .order_by('-created_at')
+    )
+    if q:
+        from django.db.models import Q as _Q
+        qs = qs.filter(
+            _Q(patient__first_name__icontains=q) |
+            _Q(patient__last_name__icontains=q) |
+            _Q(patient__patient_id__icontains=q) |
+            _Q(title__icontains=q)
+        )
+    if doc_type:
+        qs = qs.filter(document_type=doc_type)
+    total = qs.count()
+    return render(request, 'patients/document_review.html', {
+        'documents': qs[:300],
+        'total': total,
+        'q': q,
+        'doc_type': doc_type,
+        'doc_type_choices': PatientDocument.DocType.choices,
     })

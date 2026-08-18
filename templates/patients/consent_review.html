@@ -1,0 +1,81 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Consent Review{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-file-check me-2"></i>Patient Consent Review</h5>
+    <div class="text-muted small">All informed consent records — JCI PFR.5 / HIPAA §164.524</div>
+  </div>
+  <span class="badge bg-secondary fs-6">{{ total }} records</span>
+</div>
+
+{# Search & filter #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body p-3">
+    <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+      <input type="text" name="q" value="{{ q }}" placeholder="Search patient or procedure…"
+             class="form-control form-control-sm" style="width:250px;">
+      <select name="status" class="form-select form-select-sm" style="width:auto;">
+        <option value="">All statuses</option>
+        <option value="valid"   {% if status_filter == 'valid' %}selected{% endif %}>Valid</option>
+        <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+        <option value="revoked" {% if status_filter == 'revoked' %}selected{% endif %}>Revoked</option>
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary px-3">
+        <i class="bi bi-search me-1"></i>Search
+      </button>
+      <a href="?" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Type</th>
+          <th>Obtained By</th>
+          <th>Signed</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in consents %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ c.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ c.patient.patient_id }}</div>
+          </td>
+          <td>{{ c.procedure_name }}</td>
+          <td class="text-muted">{{ c.get_consent_type_display }}</td>
+          <td class="text-muted">
+            {% if c.obtained_by %}{{ c.obtained_by.get_full_name }}{% else %}—{% endif %}
+          </td>
+          <td class="text-muted">
+            {% if c.signed_at %}{{ c.signed_at|date:"d M Y H:i" }}{% else %}<span class="text-warning">Pending</span>{% endif %}
+          </td>
+          <td>
+            <span class="badge {{ c.status_badge }}">{{ c.status_label }}</span>
+          </td>
+          <td>
+            <a href="{% url 'patients:consent_detail' patient_id=c.patient.patient_id consent_id=c.id %}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-file-check fs-2 d-block mb-2 opacity-25"></i>
+            No consent records found{% if q or status_filter %} matching your filter{% endif %}.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

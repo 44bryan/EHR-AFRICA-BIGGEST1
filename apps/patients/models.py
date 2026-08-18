@@ -993,3 +993,42 @@ class RecordReleaseRequest(AuditModel):
 
     def __str__(self):
         return f'Release #{self.pk} — {self.patient.full_name} ({self.get_status_display()})'
+
+
+class PatientAmendmentRequest(AuditModel):
+    """
+    Patient's right to request correction of their medical record.
+    HIPAA §164.526 / JCI PFR standard.
+    """
+
+    class RequestorType(models.TextChoices):
+        PATIENT = 'PATIENT', 'Patient'
+        NOK     = 'NOK',     'Next of Kin'
+        LEGAL   = 'LEGAL',   'Legal Representative'
+
+    class Status(models.TextChoices):
+        PENDING      = 'PENDING',      'Pending Review'
+        UNDER_REVIEW = 'UNDER_REVIEW', 'Under Review'
+        APPROVED     = 'APPROVED',     'Approved & Applied'
+        REJECTED     = 'REJECTED',     'Rejected'
+
+    patient           = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='amendment_requests')
+    requestor_name    = models.CharField(max_length=200)
+    requestor_type    = models.CharField(max_length=20, choices=RequestorType.choices, default=RequestorType.PATIENT)
+    requestor_contact = models.CharField(max_length=100, blank=True)
+    field_to_amend    = models.CharField(max_length=200, help_text='Which field / section needs correction')
+    current_value     = models.TextField(blank=True, help_text='What the record currently says')
+    requested_value   = models.TextField(help_text='What the correct information should be')
+    reason            = models.TextField(help_text='Why the correction is needed')
+    supporting_evidence = models.TextField(blank=True, help_text='Documents or proof provided')
+    status            = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    reviewed_by       = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_amendments')
+    reviewed_at       = models.DateTimeField(null=True, blank=True)
+    decision_notes    = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Patient Amendment Request'
+
+    def __str__(self):
+        return f'Amendment #{self.pk} — {self.patient.full_name} ({self.get_status_display()})'
