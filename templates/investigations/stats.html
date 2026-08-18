@@ -27,15 +27,13 @@
       <i class="bi bi-arrow-clockwise"></i> <span id="statsCountdown">60s</span>
     </span>
     {% endif %}
-    <a href="?year={{ month_start|date:'Y' }}&month={{ month_start|date:'n' }}&pdf=1"
-       class="btn btn-sm btn-danger" target="_blank" hx-boost="false">
+    <button onclick="exportStatsPDF()" class="btn btn-sm btn-danger">
       <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-    </a>
-    <a href="{% url 'investigations:stats_csv' %}?year={{ month_start|date:'Y' }}&month={{ month_start|date:'n' }}"
-       class="btn btn-sm btn-success" hx-boost="false">
+    </button>
+    <button onclick="downloadStatsCSV()" class="btn btn-sm btn-success">
       <i class="bi bi-filetype-csv me-1"></i>CSV
-    </a>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+    </button>
+    <button onclick="printStatsPage()" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-printer me-1"></i>Print
     </button>
     <a href="{% url 'investigations:workstation' %}" class="btn btn-sm btn-outline-secondary">
@@ -676,6 +674,26 @@ new Chart(document.getElementById('locationChart'), {
   .card { break-inside:avoid; }
 }
 </style>
+<script>
+function exportStatsPDF() {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '?year={{ month_start|date:"Y" }}&month={{ month_start|date:"n" }}&pdf=1';
+  form.target = '_blank';
+  var csrf = document.createElement('input');
+  csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken'; csrf.value = '{{ csrf_token }}';
+  form.appendChild(csrf);
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(function(){ form.remove(); }, 1500);
+}
+function downloadStatsCSV() {
+  window.location.href = '{% url "investigations:stats_csv" %}?year={{ month_start|date:"Y" }}&month={{ month_start|date:"n" }}';
+}
+function printStatsPage() {
+  window.print();
+}
+</script>
 
 <script>
 window._AI_STATS = {
