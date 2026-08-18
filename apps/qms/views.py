@@ -532,9 +532,11 @@ def vip_reception_issue(request):
         patient_uuid = request.POST.get('patient_uuid', '').strip()
         patient_name = request.POST.get('patient_name', '').strip()
         visit_id     = request.POST.get('visit_id', '').strip()
+        assigned_doctor_id = request.POST.get('assigned_doctor_id', '').strip()
 
         patient = None
         visit = None
+        assigned_doctor = None
 
         if patient_uuid:
             try:
@@ -548,6 +550,13 @@ def vip_reception_issue(request):
 
         if visit_id:
             visit = Visit.objects.filter(id=visit_id).first()
+
+        if assigned_doctor_id:
+            from apps.accounts.models import User as _User
+            try:
+                assigned_doctor = _User.objects.filter(id=assigned_doctor_id, is_active=True).first()
+            except Exception:
+                assigned_doctor = None
 
         if not patient and not patient_name:
             messages.error(request, 'Please search for the patient or enter a name.')
@@ -574,9 +583,15 @@ def vip_reception_issue(request):
 
         is_insured = request.POST.get('is_insured') == '1'
         insurance_company = request.POST.get('insurance_company', '').strip()
+        via_refraction = request.POST.get('via_refraction') == '1'
         ins_note = ''
         if is_insured:
             ins_note = f'Insured: {insurance_company}' if insurance_company else 'Insured patient'
+        if via_refraction:
+            ins_note = f'{ins_note} | REFRAC_FIRST'.strip(' |') if ins_note else 'REFRAC_FIRST'
+        if assigned_doctor:
+            doc_note = f'Assigned Dr: {assigned_doctor.get_full_name()}'
+            ins_note = f'{ins_note} | {doc_note}'.strip(' |') if ins_note else doc_note
 
         with transaction.atomic():
             token_number = DailyTokenSequence.next_entry_token(ServiceTier.VIP)
@@ -595,17 +610,48 @@ def vip_reception_issue(request):
                 notes=ins_note,
                 zone=_resolve_zone(ServiceTier.VIP),
                 origin_zone=_resolve_zone(ServiceTier.VIP),
+                assigned_doctor=assigned_doctor,
             )
 
-        messages.success(request, f'VIP ticket {token_number} issued. Directing to VIP Cashier.')
+            # GAP 4 FIX: ensure the patient's Visit for today is flagged as VIP
+            # so that lab, pharmacy, and the tracker all show the correct tier.
+            if patient and not visit:
+                visit = Visit.objects.filter(
+                    patient=patient, visit_date__date=today, is_deleted=False,
+                ).order_by('-visit_date').first()
+            if visit and visit.service_tier != ServiceTier.VIP:
+                visit.service_tier = ServiceTier.VIP
+                update_fields = ['service_tier']
+                if is_insured and not visit.is_insured:
+                    visit.is_insured = True
+                    update_fields.append('is_insured')
+                if insurance_company and not visit.insurance_company:
+                    visit.insurance_company = insurance_company
+                    update_fields.append('insurance_company')
+                visit.save(update_fields=update_fields)
+            if visit:
+                token.visit = visit
+                token.save(update_fields=['visit'])
+
+        doc_label = f' — Dr. {assigned_doctor.get_full_name()}' if assigned_doctor else ''
+        messages.success(request, f'VIP ticket {token_number} issued{doc_label}. Directing to VIP Cashier.')
         return render(request, 'qms/ticket_slip.html', {
             'token': token, 'printed': True,
             'base_layout': _slip_layout(request.user),
             'today_count': _active_tokens_today().count(),
         })
 
+    from apps.accounts.models import User as _User
+    vip_doctors = list(
+        _User.objects.filter(
+            role='OPHTHALMOLOGIST',
+            consultation_unit__in=['VIP_CONSULT', 'ALL'],
+            is_active=True,
+        ).order_by('last_name', 'first_name').values('id', 'first_name', 'last_name')
+    )
     return render(request, 'qms/vip_reception.html', {
         'today_count': _active_tokens_today().count(),
+        'vip_doctors': vip_doctors,
     })
 
 
@@ -1000,7 +1046,10 @@ def route_to_dept(request):
         entry_token = QueueToken.objects.filter(
             patient=visit.patient,
             token_date=today,
-            issuance_point__in=[IssuancePoint.GATE, IssuancePoint.CASHIER],
+            issuance_point__in=[
+                IssuancePoint.GATE, IssuancePoint.CASHIER,
+                IssuancePoint.VIP_RECEPTION, IssuancePoint.EXPRESS_DESK,
+            ],
             is_deleted=False,
         ).first()
 
@@ -1069,6 +1118,29 @@ def route_to_dept(request):
             vip_note = 'VIP CALL \u2014 Patient is in VIP Room. Please attend the VIP Consultation Room.'
             token_notes = f'{vip_note} | {notes}'.strip(' |') if notes else vip_note
 
+        # Resolve assigned_doctor: prefer explicitly passed POST value, then
+        # inherit from the current patient's active token (so Dr. A stays assigned
+        # even after hopping: CASHIER → REFRACTION → VIP_CONSULT).
+        _assigned_doctor_id = request.POST.get('assigned_doctor_id', '').strip()
+        _assigned_doctor = None
+        if _assigned_doctor_id:
+            from apps.accounts.models import User as _UModel
+            _assigned_doctor = _UModel.objects.filter(
+                id=_assigned_doctor_id, is_active=True
+            ).first()
+        if not _assigned_doctor and entry_token and entry_token.assigned_doctor_id:
+            _assigned_doctor = entry_token.assigned_doctor
+        if not _assigned_doctor and visit.patient:
+            # Last resort: inherit from any active token with an assigned_doctor today
+            _src_token = QueueToken.objects.filter(
+                patient=visit.patient,
+                token_date=timezone.localdate(),
+                assigned_doctor__isnull=False,
+                is_deleted=False,
+            ).order_by('-issued_at').first()
+            if _src_token:
+                _assigned_doctor = _src_token.assigned_doctor
+
         create_kwargs = dict(
             token_number=token_number,
             patient=visit.patient,
@@ -1085,6 +1157,7 @@ def route_to_dept(request):
             # origin_zone: inherit from entry_token if available, otherwise resolve from tier
             origin_zone=(entry_token.origin_zone if entry_token and entry_token.origin_zone_id
                          else _resolve_zone(tier)),
+            assigned_doctor=_assigned_doctor,
         )
         if issued_at_override:
             create_kwargs['issued_at'] = issued_at_override
@@ -1124,11 +1197,20 @@ def route_to_dept(request):
             'low_vision_specialist':     'LOW_VISION',
             'general_physician':         'GEN_PHYS',
         }
-        _user_svc = _ROLE_TO_QMS_SVC.get(getattr(request.user, 'role', ''))
-        if _user_svc and _user_svc != service_type and visit.patient:
+        # Complete ALL active clinical/consultation tokens for this patient
+        # (not just the routing user's own service type) to prevent a patient
+        # appearing in multiple queues simultaneously.
+        _CONSULT_TYPES = frozenset({
+            'GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT',
+            'RETINA', 'GLAUCOMA', 'CATARACT', 'NEURO', 'OCULOPLASTY',
+            'CORNEA', 'PEDIATRIC', 'UVEITIS', 'LOW_VISION', 'GEN_PHYS',
+            'REFRACTION', 'PARAMETERS', 'PARAMS_VIP',
+        })
+        if visit.patient:
+            _types_to_close = _CONSULT_TYPES - {service_type}
             QueueToken.objects.filter(
                 patient=visit.patient,
-                service_type=_user_svc,
+                service_type__in=_types_to_close,
                 token_date=timezone.localdate(),
                 status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
                 is_deleted=False,
@@ -1547,12 +1629,19 @@ def cashier_complete(request, token_id):
             except Exception:
                 pass
 
-        # 3 — Create triage token (tier-aware)
-        triage_stype = (
-            ServiceType.PARAMETERS
-            if token.service_tier == ServiceTier.STANDARD
-            else ServiceType.PARAMETERS_VIP
-        )
+        # 3 — Create next token (tier-aware routing)
+        # VIP → directly to VIP doctor workstation (no nurse triage step needed)
+        # Express/FastTrack → VIP/Express triage nurse (PARAMETERS_VIP)
+        # Standard → standard triage (PARAMETERS)
+        if token.service_tier == ServiceTier.VIP:
+            triage_stype = ServiceType.VIP_CONSULT
+            visit.status = 'WAITING'
+            visit.save(update_fields=['status', 'updated_at'])
+        elif token.service_tier == ServiceTier.STANDARD:
+            triage_stype = ServiceType.PARAMETERS
+        else:
+            triage_stype = ServiceType.PARAMETERS_VIP
+
         triage_num = DailyTokenSequence.next_dept_token(triage_stype)
         QueueToken.objects.create(
             token_number=triage_num,
@@ -1569,12 +1658,19 @@ def cashier_complete(request, token_id):
             notes='Auto-routed after payment confirmation at cashier',
             zone=_resolve_zone(token.service_tier),
             origin_zone=token.origin_zone or _resolve_zone(token.service_tier),
+            assigned_doctor=token.assigned_doctor,
         )
 
-    messages.success(
-        request,
-        f'Payment confirmed. {token.patient.full_name} added to Triage queue.'
-    )
+    if token.service_tier == ServiceTier.VIP:
+        messages.success(
+            request,
+            f'Payment confirmed. {token.patient.full_name} → VIP Doctor queue.'
+        )
+    else:
+        messages.success(
+            request,
+            f'Payment confirmed. {token.patient.full_name} added to Triage queue.'
+        )
     if counter_id:
         return redirect('qms:counter', counter_id=counter_id)
     return redirect('qms:dashboard')

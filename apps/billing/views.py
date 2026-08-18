@@ -578,17 +578,30 @@ def _route_patient_after_payment(invoice, request):
                     if cashier_token.counter:
                         cashier_token.counter.current_serving = None
                         cashier_token.counter.save(update_fields=['current_serving', 'updated_at'])
-                    # VIP patients skip triage and go directly to the VIP doctor workstation.
-                    # Express/FastTrack still go through VIP/Express triage (PARAMETERS_VIP).
-                    if cashier_token.service_tier == ServiceTier.STANDARD:
-                        triage_stype = ServiceType.PARAMETERS
-                    elif cashier_token.service_tier == ServiceTier.VIP:
+
+                    _tier = cashier_token.service_tier
+                    _notes = cashier_token.notes or ''
+                    _via_refraction = 'REFRAC_FIRST' in _notes
+                    _assigned_doc = cashier_token.assigned_doctor
+
+                    # Routing decision:
+                    # VIP + REFRAC_FIRST flag → optometrist does refraction first, then doctor
+                    # VIP (direct)            → straight to VIP doctor workstation
+                    # Express/FastTrack       → VIP/Express triage (PARAMETERS_VIP)
+                    # Standard               → standard triage (PARAMETERS)
+                    if _tier == ServiceTier.VIP and _via_refraction:
+                        triage_stype = ServiceType.REFRACTION
+                        visit.status = 'REFRACTION'
+                        visit.save(update_fields=['status', 'updated_at'])
+                    elif _tier == ServiceTier.VIP:
                         triage_stype = ServiceType.VIP_CONSULT
-                        # Promote visit status: VIP patients are waiting for doctor, not triage
                         visit.status = VisitStatus.WAITING
                         visit.save(update_fields=['status', 'updated_at'])
+                    elif _tier == ServiceTier.STANDARD:
+                        triage_stype = ServiceType.PARAMETERS
                     else:
                         triage_stype = ServiceType.PARAMETERS_VIP
+
                     triage_num = DailyTokenSequence.next_dept_token(triage_stype)
                     QueueToken.objects.create(
                         token_number=triage_num,
@@ -597,12 +610,13 @@ def _route_patient_after_payment(invoice, request):
                         visit=visit,
                         patient_name=patient.full_name,
                         service_type=triage_stype,
-                        service_tier=cashier_token.service_tier,
+                        service_tier=_tier,
                         issuance_point=IssuancePoint.SYSTEM,
-                        priority=TIER_PRIORITY.get(cashier_token.service_tier, 0),
+                        priority=TIER_PRIORITY.get(_tier, 0),
                         entry_token=cashier_token.entry_token or cashier_token,
                         issued_by=request.user,
                         notes='Auto-routed after payment',
+                        assigned_doctor=_assigned_doc,
                     )
     except Exception:
         pass  # never block payment over routing errors

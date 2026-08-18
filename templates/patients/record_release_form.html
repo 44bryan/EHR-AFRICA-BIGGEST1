@@ -1,0 +1,110 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Record Release Request{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{% url 'patients:record_release_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Release Requests
+  </a>
+</div>
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-up-right me-2 text-primary"></i>Log Record Release Request</h5>
+        <div class="text-muted small">All releases are logged for compliance and audit purposes.</div>
+      </div>
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <div class="input-group mb-1">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="text" class="form-control" id="rrPatientSearch" placeholder="Search by name or ID..." autocomplete="off">
+            </div>
+            <div id="rrResults" class="list-group shadow-sm" style="display:none;max-height:200px;overflow-y:auto;position:absolute;z-index:1050;width:calc(100% - 2rem);"></div>
+            <input type="hidden" name="patient_id" id="rrPatientId">
+            <div id="rrPatientCard" class="alert alert-primary py-2 d-none mt-1">
+              <i class="bi bi-person-check me-1"></i><span id="rrPatientName"></span>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Requestor Name <span class="text-danger">*</span></label>
+              <input type="text" name="requestor_name" class="form-control" required placeholder="Full name of requestor">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Requestor Type <span class="text-danger">*</span></label>
+              <select name="requestor_type" class="form-select" required>
+                {% for val, label in requestor_types %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Contact (Phone / Email)</label>
+              <input type="text" name="requestor_contact" class="form-control" placeholder="Phone or email of requestor">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Authorization Reference</label>
+              <input type="text" name="authorization_reference" class="form-control" placeholder="Auth letter #, court order, insurance ref">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Purpose <span class="text-danger">*</span></label>
+              <input type="text" name="purpose" class="form-control" required placeholder="e.g. Insurance claim, court case, referral to another hospital">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Records Requested <span class="text-danger">*</span></label>
+              <textarea name="records_requested" class="form-control" rows="3" required
+                        placeholder="Specify: which visits, dates, types (lab results, consultation notes, discharge summary, etc.)"></textarea>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Log Request</button>
+            <a href="{% url 'patients:record_release_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let _rrTimeout;
+const rrSearch = document.getElementById('rrPatientSearch');
+const rrResults = document.getElementById('rrResults');
+rrSearch.addEventListener('input', () => {
+  clearTimeout(_rrTimeout);
+  const q = rrSearch.value.trim();
+  if (q.length < 2) { rrResults.style.display = 'none'; return; }
+  _rrTimeout = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json()).then(data => {
+        rrResults.innerHTML = '';
+        const list = data.results || [];
+        if (!list.length) { rrResults.innerHTML = '<div class="list-group-item text-muted small">No patients found</div>'; }
+        else { list.forEach(p => {
+          const a = document.createElement('a'); a.href = '#';
+          a.className = 'list-group-item list-group-item-action py-2 small';
+          a.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted ms-2">${p.patient_id}</span>`;
+          a.addEventListener('click', e => {
+            e.preventDefault();
+            document.getElementById('rrPatientId').value = p.patient_id;
+            document.getElementById('rrPatientName').textContent = `${p.full_name} (${p.patient_id})`;
+            document.getElementById('rrPatientCard').classList.remove('d-none');
+            rrSearch.value = p.full_name;
+            rrResults.style.display = 'none';
+          });
+          rrResults.appendChild(a);
+        }); }
+        rrResults.style.display = 'block';
+      });
+  }, 300);
+});
+document.addEventListener('click', e => { if (!rrSearch.contains(e.target) && !rrResults.contains(e.target)) rrResults.style.display = 'none'; });
+</script>
+{% endblock %}

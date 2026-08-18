@@ -1,0 +1,54 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Update Release Request #{{ rr.pk }}{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{% url 'patients:record_release_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-3">
+        <h5 class="fw-bold mb-0">Release Request #{{ rr.pk }}</h5>
+        <div class="text-muted small">{{ rr.patient.full_name }} — {{ rr.patient.patient_id }}</div>
+      </div>
+      <div class="card-body p-4">
+        <div class="mb-3 p-3 bg-light rounded small">
+          <div><strong>Requestor:</strong> {{ rr.requestor_name }} ({{ rr.get_requestor_type_display }})</div>
+          {% if rr.requestor_contact %}<div><strong>Contact:</strong> {{ rr.requestor_contact }}</div>{% endif %}
+          <div><strong>Purpose:</strong> {{ rr.purpose }}</div>
+          <div class="mt-1"><strong>Records:</strong> {{ rr.records_requested }}</div>
+          {% if rr.authorization_reference %}<div><strong>Auth Ref:</strong> {{ rr.authorization_reference }}</div>{% endif %}
+          <div class="mt-1 text-muted">Logged: {{ rr.created_at|date:"d M Y H:i" }}</div>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Update Status</label>
+            <select name="status" class="form-select">
+              {% for val, label in status_choices %}
+              <option value="{{ val }}" {% if val == rr.status %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Processing Notes</label>
+            <textarea name="processing_notes" class="form-control" rows="3"
+                      placeholder="e.g. Records sent via email on 18/08/2026. Copies of visits 2024-2026 provided.">{{ rr.processing_notes }}</textarea>
+          </div>
+          {% if rr.processed_by %}
+          <div class="text-muted small mb-3">
+            Last processed by {{ rr.processed_by.get_full_name }} on {{ rr.processed_at|date:"d M Y H:i" }}
+          </div>
+          {% endif %}
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save</button>
+            <a href="{% url 'patients:record_release_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

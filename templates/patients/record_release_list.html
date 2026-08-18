@@ -1,0 +1,93 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Record Release Requests{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-up-right me-2"></i>Record Release Requests</h5>
+    <div class="text-muted small">Log and track all external record release / copy requests</div>
+  </div>
+  <a href="{% url 'patients:record_release_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-circle me-1"></i>New Request
+  </a>
+</div>
+
+{# ── Status counts ── #}
+<div class="row g-2 mb-3">
+  {% for key, label, cls in "pending,Pending Review,warning|approved,Approved,info|dispatched,Dispatched,success|rejected,Rejected,danger"|split_pipe %}
+  {% endfor %}
+  <div class="col-6 col-md-3">
+    <a href="?status=PENDING" class="card border-0 shadow-sm text-center py-3 text-decoration-none {% if status_filter == 'PENDING' %}border-warning border{% endif %}">
+      <div class="h3 fw-bold text-warning mb-0">{{ counts.pending }}</div>
+      <div class="text-muted small">Pending</div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="?status=APPROVED" class="card border-0 shadow-sm text-center py-3 text-decoration-none {% if status_filter == 'APPROVED' %}border-info border{% endif %}">
+      <div class="h3 fw-bold text-info mb-0">{{ counts.approved }}</div>
+      <div class="text-muted small">Approved</div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="?status=DISPATCHED" class="card border-0 shadow-sm text-center py-3 text-decoration-none {% if status_filter == 'DISPATCHED' %}border-success border{% endif %}">
+      <div class="h3 fw-bold text-success mb-0">{{ counts.dispatched }}</div>
+      <div class="text-muted small">Dispatched</div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="?status=REJECTED" class="card border-0 shadow-sm text-center py-3 text-decoration-none {% if status_filter == 'REJECTED' %}border-danger border{% endif %}">
+      <div class="h3 fw-bold text-danger mb-0">{{ counts.rejected }}</div>
+      <div class="text-muted small">Rejected</div>
+    </a>
+  </div>
+</div>
+{% if status_filter %}<div class="mb-2"><a href="?" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x me-1"></i>Clear filter</a></div>{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Patient</th>
+          <th>Requestor</th>
+          <th>Type</th>
+          <th>Purpose</th>
+          <th>Status</th>
+          <th>Logged</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td class="text-muted">{{ r.pk }}</td>
+          <td>
+            <div class="fw-semibold">{{ r.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ r.patient.patient_id }}</div>
+          </td>
+          <td>
+            <div>{{ r.requestor_name }}</div>
+            {% if r.requestor_contact %}<div class="text-muted" style="font-size:.7rem;">{{ r.requestor_contact }}</div>{% endif %}
+          </td>
+          <td><span class="badge bg-secondary">{{ r.get_requestor_type_display }}</span></td>
+          <td class="text-muted">{{ r.purpose|truncatechars:50 }}</td>
+          <td>
+            {% if r.status == 'PENDING' %}<span class="badge bg-warning text-dark">Pending</span>
+            {% elif r.status == 'APPROVED' %}<span class="badge bg-info text-dark">Approved</span>
+            {% elif r.status == 'DISPATCHED' %}<span class="badge bg-success">Dispatched</span>
+            {% else %}<span class="badge bg-danger">Rejected</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ r.created_at|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'patients:record_release_update' pk=r.pk %}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2">Update</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-5">No release requests found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

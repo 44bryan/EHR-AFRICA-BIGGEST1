@@ -947,3 +947,49 @@ class PatientDocument(AuditModel):
     @property
     def is_pdf(self):
         return self.filename.lower().endswith('.pdf')
+
+
+class RecordReleaseRequest(AuditModel):
+    """
+    Tracks every request to release / copy a patient's medical records
+    to external parties — patient, insurer, lawyer, referring hospital, etc.
+    JCI MOI.2 / HIPAA §164.524 compliant.
+    """
+
+    class RequestorType(models.TextChoices):
+        PATIENT   = 'PATIENT',   'Patient / Next of Kin'
+        INSURANCE = 'INSURANCE', 'Insurance Company'
+        LEGAL     = 'LEGAL',     'Legal / Attorney'
+        HOSPITAL  = 'HOSPITAL',  'Another Hospital / Referral'
+        EMPLOYER  = 'EMPLOYER',  'Employer'
+        OTHER     = 'OTHER',     'Other'
+
+    class Status(models.TextChoices):
+        PENDING    = 'PENDING',    'Pending Review'
+        APPROVED   = 'APPROVED',   'Approved — Preparing'
+        DISPATCHED = 'DISPATCHED', 'Dispatched / Released'
+        REJECTED   = 'REJECTED',   'Rejected'
+
+    patient                = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='release_requests')
+    requestor_name         = models.CharField(max_length=200)
+    requestor_type         = models.CharField(max_length=20, choices=RequestorType.choices)
+    requestor_contact      = models.CharField(max_length=200, blank=True, help_text='Phone / email / address')
+    purpose                = models.TextField()
+    records_requested      = models.TextField(help_text='Which records: dates, visit types, specific docs')
+    authorization_reference = models.CharField(max_length=200, blank=True,
+                                               help_text='Auth letter ref, court order #, insurance ref')
+    status                 = models.CharField(max_length=15, choices=Status.choices,
+                                              default=Status.PENDING, db_index=True)
+    processed_by           = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='processed_releases',
+    )
+    processed_at           = models.DateTimeField(null=True, blank=True)
+    processing_notes       = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Record Release Request'
+
+    def __str__(self):
+        return f'Release #{self.pk} — {self.patient.full_name} ({self.get_status_display()})'

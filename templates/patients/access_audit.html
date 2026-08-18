@@ -1,0 +1,74 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Record Access Audit Trail{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <h5 class="fw-bold mb-0"><i class="bi bi-shield-lock me-2 text-primary"></i>Record Access Audit Trail</h5>
+  <div class="text-muted small">Who accessed a patient's chart and when — HIPAA §164.312 / JCI MOI.2</div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body p-3">
+    <form method="get" class="d-flex gap-2">
+      <input type="text" name="q" value="{{ q }}" class="form-control"
+             placeholder="Search by Patient ID (e.g. EYE-00123) or name...">
+      <button type="submit" class="btn btn-primary px-4"><i class="bi bi-search me-1"></i>Search</button>
+    </form>
+  </div>
+</div>
+
+{% if searched_patient %}
+<div class="alert alert-primary py-2 mb-3 small">
+  <i class="bi bi-person-check me-1"></i>
+  Showing access log for <strong>{{ searched_patient.full_name }}</strong> ({{ searched_patient.patient_id }})
+  — {{ logs|length }} records found
+</div>
+{% endif %}
+
+{% if q and not searched_patient %}
+<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>No patient found for "{{ q }}".</div>
+{% endif %}
+
+{% if logs %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Date / Time</th><th>Staff</th><th>Action</th><th>Role</th><th>IP Address</th></tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="text-muted">{{ log.timestamp|date:"d M Y H:i:s" }}</td>
+          <td>
+            {% if log.user %}
+            <div class="fw-semibold">{{ log.user.get_full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ log.user.username }}</div>
+            {% else %}<span class="text-muted">Deleted user</span>{% endif %}
+          </td>
+          <td>
+            <span class="badge
+              {% if log.action == 'VIEW_RECORD' %}bg-info text-dark
+              {% elif log.action == 'CREATE_RECORD' %}bg-success
+              {% elif log.action == 'UPDATE_RECORD' %}bg-warning text-dark
+              {% elif log.action == 'DELETE_RECORD' %}bg-danger
+              {% else %}bg-secondary{% endif %}">
+              {{ log.get_action_display }}
+            </span>
+          </td>
+          <td class="text-muted small">{% if log.user %}{{ log.user.get_role_display }}{% endif %}</td>
+          <td class="text-muted" style="font-size:.72rem;">{{ log.ip_address|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% elif not q %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-shield-lock fs-1 d-block mb-3 opacity-25"></i>
+    <p>Enter a patient ID or name above to view their access log.</p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

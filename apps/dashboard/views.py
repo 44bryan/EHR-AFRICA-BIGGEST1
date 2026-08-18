@@ -1204,9 +1204,25 @@ def home_view(request):
     # ── Medical Records Officer ───────────────────────────────────────────
     if user.role == 'medical_records':
         try:
-            from apps.patients.models import Patient
+            from apps.patients.models import Patient, RecordReleaseRequest
             from apps.appointments.models import Appointment
+            from apps.consultations.models import Consultation
             today = timezone.now().date()
+            cutoff = timezone.now() - timezone.timedelta(hours=24)
+            pending_releases = _cached(
+                'mro_pending_releases',
+                lambda: RecordReleaseRequest.objects.filter(
+                    is_deleted=False, status='PENDING'
+                ).count()
+            )
+            deficiency_count = _cached(
+                'mro_deficiency_count',
+                lambda: Consultation.objects.filter(
+                    is_deleted=False,
+                    status='IN_PROGRESS',
+                    created_at__lt=cutoff,
+                ).count()
+            )
             ctx = {
                 'today_registrations': _cached(
                     'mro_reg_today',
@@ -1223,6 +1239,8 @@ def home_view(request):
                 'recent_registrations': Patient.objects.filter(
                     is_deleted=False
                 ).order_by('-created_at')[:10],
+                'pending_releases': pending_releases,
+                'deficiency_count': deficiency_count,
             }
         except Exception:
             ctx = {}

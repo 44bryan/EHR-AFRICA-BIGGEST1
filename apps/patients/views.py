@@ -2836,3 +2836,275 @@ def document_delete_view(request, patient_id, doc_id):
         document.save()
         messages.success(request, 'Document removed.')
     return redirect('patients:detail', patient_id=patient_id)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Medical Records Officer — dedicated management views
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _is_medical_records(user):
+    return user.role == 'medical_records' or user.is_super_admin or user.is_admin_director
+
+
+# ── 1. Record Release Requests ────────────────────────────────────────────────
+
+@login_required
+def record_release_list_view(request):
+    from .models import RecordReleaseRequest
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    status_filter = request.GET.get('status', '')
+    qs = RecordReleaseRequest.objects.filter(is_deleted=False).select_related('patient', 'processed_by')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    counts = {
+        'pending':    RecordReleaseRequest.objects.filter(is_deleted=False, status='PENDING').count(),
+        'approved':   RecordReleaseRequest.objects.filter(is_deleted=False, status='APPROVED').count(),
+        'dispatched': RecordReleaseRequest.objects.filter(is_deleted=False, status='DISPATCHED').count(),
+        'rejected':   RecordReleaseRequest.objects.filter(is_deleted=False, status='REJECTED').count(),
+    }
+    return render(request, 'patients/record_release_list.html', {
+        'requests': qs[:100],
+        'status_filter': status_filter,
+        'status_choices': RecordReleaseRequest.Status.choices,
+        'counts': counts,
+    })
+
+
+@login_required
+def record_release_create_view(request):
+    from .models import RecordReleaseRequest
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    if request.method == 'POST':
+        patient_id = request.POST.get('patient_id', '').strip()
+        patient = Patient.objects.filter(patient_id=patient_id, is_deleted=False).first()
+        if not patient:
+            messages.error(request, 'Patient not found. Search and select before submitting.')
+            return redirect('patients:record_release_create')
+        from django.utils import timezone as _tz
+        rr = RecordReleaseRequest.objects.create(
+            patient=patient,
+            requestor_name=request.POST.get('requestor_name', '').strip(),
+            requestor_type=request.POST.get('requestor_type', 'OTHER'),
+            requestor_contact=request.POST.get('requestor_contact', '').strip(),
+            purpose=request.POST.get('purpose', '').strip(),
+            records_requested=request.POST.get('records_requested', '').strip(),
+            authorization_reference=request.POST.get('authorization_reference', '').strip(),
+            created_by=request.user,
+        )
+        messages.success(request, f'Release request #{rr.pk} logged for {patient.full_name}.')
+        return redirect('patients:record_release_list')
+    from .models import RecordReleaseRequest as _RRR
+    return render(request, 'patients/record_release_form.html', {
+        'requestor_types': _RRR.RequestorType.choices,
+    })
+
+
+@login_required
+def record_release_update_view(request, pk):
+    from .models import RecordReleaseRequest
+    from django.utils import timezone as _tz
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    rr = get_object_or_404(RecordReleaseRequest, pk=pk, is_deleted=False)
+    if request.method == 'POST':
+        new_status = request.POST.get('status', rr.status)
+        rr.status = new_status
+        rr.processing_notes = request.POST.get('processing_notes', rr.processing_notes)
+        if new_status in ('APPROVED', 'DISPATCHED', 'REJECTED') and not rr.processed_by:
+            rr.processed_by = request.user
+            rr.processed_at = _tz.now()
+        rr.save()
+        messages.success(request, f'Request #{pk} updated to {rr.get_status_display()}.')
+        return redirect('patients:record_release_list')
+    from .models import RecordReleaseRequest as _RRR
+    return render(request, 'patients/record_release_update.html', {
+        'rr': rr,
+        'status_choices': _RRR.Status.choices,
+    })
+
+
+# ── 2. Chart Deficiency Queue ─────────────────────────────────────────────────
+
+@login_required
+def chart_deficiency_view(request):
+    from apps.consultations.models import Consultation, ConsultationStatus
+    from django.utils import timezone as _tz
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    cutoff = _tz.now() - timezone.timedelta(hours=24)
+    # IN_PROGRESS consultations older than 24h = deficient (doctor hasn't completed them)
+    deficient = (
+        Consultation.objects
+        .filter(
+            is_deleted=False,
+            status=ConsultationStatus.IN_PROGRESS,
+            created_at__lt=cutoff,
+        )
+        .select_related('patient', 'doctor', 'department')
+        .order_by('created_at')[:200]
+    )
+    # Also flag completed consultations with no diagnosis entered
+    no_diagnosis = (
+        Consultation.objects
+        .filter(
+            is_deleted=False,
+            status=ConsultationStatus.COMPLETED,
+            created_at__gte=_tz.now() - timezone.timedelta(days=30),
+        )
+        .filter(
+            models.Q(diagnosis__isnull=True) | models.Q(diagnosis='')
+        )
+        .select_related('patient', 'doctor', 'department')
+        .order_by('-created_at')[:100]
+    )
+    return render(request, 'patients/chart_deficiency.html', {
+        'deficient': deficient,
+        'no_diagnosis': no_diagnosis,
+        'deficient_count': deficient.count(),
+        'no_diagnosis_count': no_diagnosis.count(),
+        'cutoff_hours': 24,
+    })
+
+
+# ── 3. Record Access Audit Trail ──────────────────────────────────────────────
+
+@login_required
+def access_audit_view(request):
+    from apps.accounts.models import UserAuditLog
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    q = request.GET.get('q', '').strip()
+    logs = []
+    searched_patient = None
+    if q:
+        # Try patient ID first, then name
+        p = Patient.objects.filter(patient_id__iexact=q, is_deleted=False).first()
+        if not p:
+            p = Patient.objects.filter(full_name__icontains=q, is_deleted=False).first()
+        if p:
+            searched_patient = p
+            logs = (
+                UserAuditLog.objects
+                .filter(
+                    models.Q(target_id=str(p.pk)) | models.Q(extra_data__patient_id=p.patient_id)
+                )
+                .select_related('user')
+                .order_by('-timestamp')[:200]
+            )
+    return render(request, 'patients/access_audit.html', {
+        'q': q,
+        'logs': logs,
+        'searched_patient': searched_patient,
+    })
+
+
+# ── 4. Duplicate Patient Detection ───────────────────────────────────────────
+
+@login_required
+def duplicate_detection_view(request):
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+    q = request.GET.get('q', '').strip()
+    candidates = []
+    if q:
+        candidates = (
+            Patient.objects
+            .filter(is_deleted=False)
+            .filter(
+                models.Q(first_name__icontains=q) |
+                models.Q(last_name__icontains=q) |
+                models.Q(phone_number__icontains=q) |
+                models.Q(patient_id__icontains=q)
+            )
+            .order_by('last_name', 'first_name')[:50]
+        )
+    # Auto-detect: patients sharing the same phone number (strong duplicate signal)
+    from django.db.models import Count
+    phone_dupes = (
+        Patient.objects
+        .filter(is_deleted=False)
+        .exclude(phone_number='')
+        .values('phone_number')
+        .annotate(cnt=Count('id'))
+        .filter(cnt__gt=1)
+        .order_by('-cnt')[:20]
+    )
+    phone_dupe_patients = []
+    for pd in phone_dupes:
+        phone_dupe_patients.append({
+            'phone': pd['phone_number'],
+            'count': pd['cnt'],
+            'patients': Patient.objects.filter(phone_number=pd['phone_number'], is_deleted=False),
+        })
+    return render(request, 'patients/duplicate_detection.html', {
+        'q': q,
+        'candidates': candidates,
+        'phone_dupe_patients': phone_dupe_patients,
+    })
+
+
+# ── 5. Pre-Registration Management ───────────────────────────────────────────
+
+@login_required
+def prereg_management_view(request):
+    from .models import PreRegistration
+    from django.utils import timezone as _tz
+    if not _is_medical_records(request.user):
+        return redirect('dashboard:home')
+
+    # Handle staff-created pre-registration
+    if request.method == 'POST':
+        import uuid, datetime
+        data = {
+            'first_name':      request.POST.get('first_name', '').strip(),
+            'last_name':       request.POST.get('last_name', '').strip(),
+            'phone_number':    request.POST.get('phone_number', '').strip(),
+            'date_of_birth':   request.POST.get('date_of_birth', ''),
+            'gender':          request.POST.get('gender', ''),
+            'service_tier':    request.POST.get('service_tier', 'STANDARD'),
+            'chief_complaint': request.POST.get('chief_complaint', '').strip(),
+            'visit_date':      request.POST.get('visit_date', ''),
+            'preferred_doctor': request.POST.get('preferred_doctor', '').strip(),
+        }
+        if not data['first_name'] or not data['last_name']:
+            messages.error(request, 'First and last name are required.')
+        else:
+            visit_date_str = data.get('visit_date') or str(_tz.localdate())
+            try:
+                visit_date = datetime.date.fromisoformat(visit_date_str)
+            except ValueError:
+                visit_date = _tz.localdate()
+            code = uuid.uuid4().hex[:8].upper()
+            expires_at = _tz.now() + datetime.timedelta(days=7)
+            PreRegistration.objects.create(
+                code=code,
+                data=data,
+                visit_date=visit_date,
+                expires_at=expires_at,
+            )
+            messages.success(request, f'Pre-registration created — code: {code}')
+            return redirect('patients:prereg_management')
+
+    date_filter = request.GET.get('date', str(timezone.localdate()))
+    try:
+        import datetime
+        filter_date = datetime.date.fromisoformat(date_filter)
+    except Exception:
+        filter_date = timezone.localdate()
+
+    prereg_qs = (
+        PreRegistration.objects
+        .filter(visit_date=filter_date)
+        .order_by('status', '-created_at')
+    )
+    counts = {s: prereg_qs.filter(status=s).count() for s, _ in PreRegistration.Status.choices}
+    return render(request, 'patients/prereg_management.html', {
+        'prereg_list':  prereg_qs,
+        'filter_date':  filter_date,
+        'date_filter':  date_filter,
+        'counts':       counts,
+        'status_choices': PreRegistration.Status.choices,
+        'today': timezone.localdate(),
+    })

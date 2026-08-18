@@ -2183,7 +2183,7 @@ def clinic_call_patient_view(request, visit_pk):
 
 
 # ── Shared routing helper — used by complete_consultation_view AND nurse_route_patient_view ──
-def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=None):
+def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=None, routing_note=None):
     """
     Route a visit to its next destination.
     Returns (success: bool, label: str).
@@ -2317,7 +2317,10 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
                                 priority=TIER_PRIORITY.get(tier, 0),
                                 counter=_assigned_counter,
                                 assigned_doctor=_token_doctor,
-                                notes=f'Routed by {routed_by.get_full_name()} to {label}{_room_note}',
+                                notes=(
+                                    f'Routed by {routed_by.get_full_name()} to {label}{_room_note}'
+                                    + (f' | Note: {routing_note}' if routing_note else '')
+                                ),
                                 issued_by=routed_by,
                             )
             except Exception:
@@ -2682,6 +2685,7 @@ def smart_route_view(request):
     room_id = request.POST.get('room_id', '').strip() or None
     counter_id = request.POST.get('counter_id', '').strip() or None
     complete_pk = request.POST.get('complete_pk', '').strip() or None
+    routing_note = request.POST.get('routing_note', '').strip() or None
 
     if not visit_pk or not destination:
         return JsonResponse({'error': 'Missing visit_pk or destination'}, status=400)
@@ -2708,7 +2712,7 @@ def smart_route_view(request):
         except Exception:
             pass
 
-    routed, label = _inline_route_visit(visit, destination, user, room_id=room_id, counter_id=counter_id)
+    routed, label = _inline_route_visit(visit, destination, user, room_id=room_id, counter_id=counter_id, routing_note=routing_note)
     if not routed:
         return JsonResponse({'error': f'Unknown destination: {destination}'}, status=400)
 

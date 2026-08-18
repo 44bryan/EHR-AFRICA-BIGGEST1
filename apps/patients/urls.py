@@ -58,4 +58,13 @@ urlpatterns = [
     # ── Documents / Scanned Records ─────────────────────────────────────────
     path('<str:patient_id>/documents/upload/', views.document_upload_view, name='document_upload'),
     path('<str:patient_id>/documents/<uuid:doc_id>/delete/', views.document_delete_view, name='document_delete'),
+
+    # ── Medical Records Officer tools ────────────────────────────────────────
+    path('records/releases/', views.record_release_list_view, name='record_release_list'),
+    path('records/releases/new/', views.record_release_create_view, name='record_release_create'),
+    path('records/releases/<int:pk>/update/', views.record_release_update_view, name='record_release_update'),
+    path('records/deficiency/', views.chart_deficiency_view, name='chart_deficiency'),
+    path('records/access-log/', views.access_audit_view, name='access_audit'),
+    path('records/duplicates/', views.duplicate_detection_view, name='duplicate_detection'),
+    path('prereg/manage/', views.prereg_management_view, name='prereg_management'),
 ]

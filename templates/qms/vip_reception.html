@@ -38,11 +38,12 @@
       <div class="card-body p-3 small text-muted">
         <div class="fw-semibold text-dark mb-2"><i class="bi bi-info-circle me-1"></i>VIP Pathway</div>
         <ol class="mb-0 ps-3">
-          <li>Issue ticket here (optional)</li>
-          <li>Proceed directly to <strong>VIP Cashier</strong></li>
-          <li>Escorted to <strong>Parameters</strong></li>
-          <li>Routed to specialist of choice</li>
-          <li>Dedicated waiting lounge</li>
+          <li>Issue ticket &amp; assign doctor here</li>
+          <li>Proceed to <strong>VIP Cashier</strong></li>
+          <li>Nurse comes to patient — <strong>bedside vitals</strong></li>
+          <li>Optometrist comes to patient — <strong>bedside refraction</strong></li>
+          <li>Doctor consults in <strong>VIP Room</strong></li>
+          <li>Pharmacy delivered to lounge</li>
         </ol>
       </div>
     </div>
@@ -61,6 +62,7 @@
           <input type="hidden" name="visit_id" id="selectedVisitId">
           <input type="hidden" name="is_insured" id="vipIsInsuredHidden" value="0">
           <input type="hidden" name="insurance_company" id="vipInsuranceCompanyHidden" value="">
+          <input type="hidden" name="assigned_doctor_id" id="assignedDoctorId" value="">
 
           <div class="mb-3">
             <label class="form-label fw-semibold">Patient Search</label>
@@ -86,9 +88,44 @@
             </div>
           </div>
 
-          <div class="mb-3" id="walkinSection">
-            <label class="form-label text-muted">Walk-in name <span class="text-muted fw-normal">(if not yet registered)</span></label>
-            <input type="text" name="patient_name" class="form-control" placeholder="VIP patient full name">
+          {# ── Quick Register panel — appears when search finds no patient ── #}
+          <div id="quickRegSection" class="d-none mb-3">
+            <div class="card border-warning shadow-sm">
+              <div class="card-header bg-warning bg-opacity-10 border-bottom border-warning py-2 d-flex align-items-center justify-content-between">
+                <span class="fw-semibold small"><i class="bi bi-person-plus me-1 text-warning"></i>New VIP Patient — Register Here</span>
+                <button type="button" class="btn-close btn-sm" id="closeQuickReg"></button>
+              </div>
+              <div class="card-body p-3">
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <input type="text" class="form-control form-control-sm" id="qrFirstName" placeholder="First name *">
+                  </div>
+                  <div class="col-6">
+                    <input type="text" class="form-control form-control-sm" id="qrLastName" placeholder="Last name *">
+                  </div>
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <input type="date" class="form-control form-control-sm" id="qrDob" placeholder="Date of birth *">
+                  </div>
+                  <div class="col-6">
+                    <select class="form-select form-select-sm" id="qrGender">
+                      <option value="">Gender *</option>
+                      <option value="M">Male</option>
+                      <option value="F">Female</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="mb-2">
+                  <input type="tel" class="form-control form-control-sm" id="qrPhone" placeholder="Phone number *">
+                </div>
+                <div id="qrError" class="text-danger small mb-2 d-none"></div>
+                <button type="button" class="btn btn-warning btn-sm w-100 fw-semibold" id="qrSubmitBtn"
+                        onclick="submitQuickRegister()">
+                  <i class="bi bi-person-check-fill me-1"></i>Register &amp; Select Patient
+                </button>
+              </div>
+            </div>
           </div>
 
           <div class="mb-3">
@@ -96,6 +133,49 @@
             <div class="p-2 rounded border bg-light d-flex align-items-center gap-2">
               <span class="badge bg-primary px-3 py-2">VIP — Priority 30 (Highest)</span>
               <small class="text-muted">Served before all other tiers</small>
+            </div>
+          </div>
+
+          <!-- Doctor Pre-Assignment -->
+          {% if vip_doctors %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold"><i class="bi bi-person-badge me-1"></i>Assign Doctor <span class="text-muted fw-normal small">(optional)</span></label>
+            <div id="doctorPickerWrap" class="d-flex gap-2 flex-wrap">
+              <button type="button" class="btn btn-sm btn-outline-secondary active" id="docBtnNone"
+                      onclick="selectDoctor('', this)">
+                <i class="bi bi-shuffle me-1"></i>Auto-assign
+              </button>
+              {% for doc in vip_doctors %}
+              <button type="button" class="btn btn-sm btn-outline-primary" id="docBtn{{ doc.id }}"
+                      onclick="selectDoctor('{{ doc.id }}', this)">
+                Dr. {{ doc.last_name }}{% if doc.first_name %} {{ doc.first_name|slice:":1" }}.{% endif %}
+              </button>
+              {% endfor %}
+            </div>
+            <div id="doctorAssignedBadge" class="mt-2 d-none">
+              <span class="badge bg-success px-3 py-2">
+                <i class="bi bi-check-circle me-1"></i><span id="doctorAssignedName"></span>
+              </span>
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Workflow Mode -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold"><i class="bi bi-diagram-3 me-1"></i>Workflow</label>
+            <div class="d-flex gap-2">
+              <input type="hidden" name="via_refraction" id="viaRefractionHidden" value="0">
+              <button type="button" class="btn btn-sm btn-primary active" id="wfDirect"
+                      onclick="setWorkflow('direct', this)">
+                <i class="bi bi-arrow-right-circle me-1"></i>Direct to Doctor
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-warning" id="wfRefrac"
+                      onclick="setWorkflow('refrac', this)">
+                <i class="bi bi-eyeglasses me-1"></i>Refraction First
+              </button>
+            </div>
+            <div id="wfRefracNote" class="mt-1 small text-muted d-none">
+              <i class="bi bi-info-circle me-1"></i>Optometrist will do refraction, then route to doctor.
             </div>
           </div>
 
@@ -160,7 +240,13 @@ searchInput.addEventListener('input', () => {
         resultsDiv.innerHTML = '';
         const list = data.results || data.patients || [];
         if (!list.length) {
-          resultsDiv.innerHTML = '<div class="list-group-item text-muted small">No patients found</div>';
+          resultsDiv.innerHTML = `
+            <div class="list-group-item text-muted small d-flex align-items-center justify-content-between">
+              <span>No patient found for "<strong>${q}</strong>"</span>
+              <button type="button" class="btn btn-sm btn-warning ms-2" onclick="showQuickReg('${q.replace(/'/g,"\\'")}')">
+                <i class="bi bi-person-plus me-1"></i>Register New
+              </button>
+            </div>`;
         } else {
           list.forEach(p => {
             const item = document.createElement('a');
@@ -200,6 +286,115 @@ document.addEventListener('click', e => {
     resultsDiv.style.display = 'none';
   }
 });
+
+// ── Quick VIP Registration ────────────────────────────────────────────────────
+function showQuickReg(prefill) {
+  resultsDiv.style.display = 'none';
+  const sec = document.getElementById('quickRegSection');
+  sec.classList.remove('d-none');
+  // Pre-fill first/last from search term
+  const parts = (prefill || '').trim().split(/\s+/);
+  if (parts.length >= 2) {
+    document.getElementById('qrFirstName').value = parts[0];
+    document.getElementById('qrLastName').value = parts.slice(1).join(' ');
+  } else if (parts.length === 1) {
+    document.getElementById('qrFirstName').value = parts[0];
+  }
+  document.getElementById('qrFirstName').focus();
+}
+
+document.getElementById('closeQuickReg').addEventListener('click', () => {
+  document.getElementById('quickRegSection').classList.add('d-none');
+});
+
+function submitQuickRegister() {
+  const fn   = document.getElementById('qrFirstName').value.trim();
+  const ln   = document.getElementById('qrLastName').value.trim();
+  const dob  = document.getElementById('qrDob').value.trim();
+  const gen  = document.getElementById('qrGender').value;
+  const ph   = document.getElementById('qrPhone').value.trim();
+  const errEl = document.getElementById('qrError');
+
+  if (!fn || !ln || !dob || !gen || !ph) {
+    errEl.textContent = 'All fields are required.';
+    errEl.classList.remove('d-none');
+    return;
+  }
+  errEl.classList.add('d-none');
+
+  const btn = document.getElementById('qrSubmitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Registering…';
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+  fd.append('first_name', fn);
+  fd.append('last_name', ln);
+  fd.append('date_of_birth', dob);
+  fd.append('gender', gen);
+  fd.append('phone_number', ph);
+
+  fetch('/patients/register/ajax/', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-person-check-fill me-1"></i>Register & Select Patient';
+      if (data.success) {
+        // Auto-select the newly registered patient
+        selectPatient({
+          id: data.patient_uuid || '',
+          patient_id: data.patient_id,
+          full_name: data.patient_name || (fn + ' ' + ln),
+          phone: ph,
+        });
+        document.getElementById('quickRegSection').classList.add('d-none');
+      } else {
+        errEl.textContent = data.message || 'Registration failed.';
+        errEl.classList.remove('d-none');
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-person-check-fill me-1"></i>Register & Select Patient';
+      errEl.textContent = 'Network error — please try again.';
+      errEl.classList.remove('d-none');
+    });
+}
+
+// Workflow mode toggle (Direct / Refraction First)
+function setWorkflow(mode, btn) {
+  // Reset both buttons to inactive state
+  const wfDirect = document.getElementById('wfDirect');
+  const wfRefrac = document.getElementById('wfRefrac');
+  wfDirect.className = 'btn btn-sm btn-outline-primary';
+  wfRefrac.className = 'btn btn-sm btn-outline-warning';
+  // Activate selected button
+  if (mode === 'direct') {
+    wfDirect.className = 'btn btn-sm btn-primary active';
+  } else {
+    wfRefrac.className = 'btn btn-sm btn-warning active';
+  }
+  const isRefrac = mode === 'refrac';
+  document.getElementById('viaRefractionHidden').value = isRefrac ? '1' : '0';
+  document.getElementById('wfRefracNote').classList.toggle('d-none', !isRefrac);
+}
+
+// Doctor assignment picker
+function selectDoctor(docId, btn) {
+  document.querySelectorAll('#doctorPickerWrap .btn').forEach(b => b.classList.remove('active', 'btn-primary', 'btn-outline-secondary'));
+  btn.classList.add('active');
+  document.getElementById('assignedDoctorId').value = docId;
+  const badge = document.getElementById('doctorAssignedBadge');
+  const nameEl = document.getElementById('doctorAssignedName');
+  if (docId) {
+    btn.classList.add('btn-primary');
+    nameEl.textContent = btn.textContent.trim();
+    badge.classList.remove('d-none');
+  } else {
+    btn.classList.add('btn-outline-secondary');
+    badge.classList.add('d-none');
+  }
+}
 
 // Insurance toggle
 const vipInsuredToggle = document.getElementById('vipInsuredToggle');
