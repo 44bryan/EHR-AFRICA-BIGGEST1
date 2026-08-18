@@ -18,6 +18,20 @@ urlpatterns = [
     path('prereg/<str:code>/slip/', views.preregistration_slip_view, name='prereg_slip'),
     path('prereg/lookup/', views.preregistration_lookup_view, name='prereg_lookup'),
 
+    # ── Medical Records Officer tools (must come BEFORE <str:patient_id>/ to avoid conflict) ──
+    path('records/releases/', views.record_release_list_view, name='record_release_list'),
+    path('records/releases/new/', views.record_release_create_view, name='record_release_create'),
+    path('records/releases/<int:pk>/update/', views.record_release_update_view, name='record_release_update'),
+    path('records/deficiency/', views.chart_deficiency_view, name='chart_deficiency'),
+    path('records/access-log/', views.access_audit_view, name='access_audit'),
+    path('records/duplicates/', views.duplicate_detection_view, name='duplicate_detection'),
+    path('records/consents/', views.consent_review_view, name='consent_review'),
+    path('records/amendments/', views.amendment_list_view, name='amendment_list'),
+    path('records/amendments/new/', views.amendment_create_view, name='amendment_create'),
+    path('records/amendments/<int:pk>/update/', views.amendment_update_view, name='amendment_update'),
+    path('records/documents/', views.document_review_view, name='document_review'),
+    path('prereg/manage/', views.prereg_management_view, name='prereg_management'),
+
     # ── Patient-specific routes ─────────────────────────────────────────────
     path('visit/<str:visit_number>/', views.visit_detail_view, name='visit_detail'),
     path('visit/<str:visit_number>/triage/', views.triage_view, name='triage'),
@@ -59,17 +73,4 @@ urlpatterns = [
     path('<str:patient_id>/documents/upload/', views.document_upload_view, name='document_upload'),
     path('<str:patient_id>/documents/<uuid:doc_id>/delete/', views.document_delete_view, name='document_delete'),
 
-    # ── Medical Records Officer tools ────────────────────────────────────────
-    path('records/releases/', views.record_release_list_view, name='record_release_list'),
-    path('records/releases/new/', views.record_release_create_view, name='record_release_create'),
-    path('records/releases/<int:pk>/update/', views.record_release_update_view, name='record_release_update'),
-    path('records/deficiency/', views.chart_deficiency_view, name='chart_deficiency'),
-    path('records/access-log/', views.access_audit_view, name='access_audit'),
-    path('records/duplicates/', views.duplicate_detection_view, name='duplicate_detection'),
-    path('records/consents/', views.consent_review_view, name='consent_review'),
-    path('records/amendments/', views.amendment_list_view, name='amendment_list'),
-    path('records/amendments/new/', views.amendment_create_view, name='amendment_create'),
-    path('records/amendments/<int:pk>/update/', views.amendment_update_view, name='amendment_update'),
-    path('records/documents/', views.document_review_view, name='document_review'),
-    path('prereg/manage/', views.prereg_management_view, name='prereg_management'),
 ]

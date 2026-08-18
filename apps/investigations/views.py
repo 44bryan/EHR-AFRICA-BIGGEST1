@@ -1153,6 +1153,65 @@ def machine_revenue_view(request):
     })
 
 
+# ── Machine Revenue CSV Export ────────────────────────────────────────────────
+
+@login_required
+def machine_revenue_csv_view(request):
+    """CSV download of machine revenue report."""
+    import csv
+    from django.http import HttpResponse
+    from django.db.models import Count, Sum, F, ExpressionWrapper, DecimalField as _Dec
+    import datetime as _dt
+    from decimal import Decimal
+
+    u = request.user
+    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo or u.is_finance_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        year = int(request.GET.get('year', today.year))
+    except (ValueError, TypeError):
+        year = today.year
+
+    year_start = _dt.date(year, 1, 1)
+    year_end   = _dt.date(year, 12, 31)
+
+    rows = list(
+        InvestigationOrder.objects.filter(
+            is_deleted=False, status='COMPLETED',
+            created_at__date__gte=year_start, created_at__date__lte=year_end,
+        )
+        .values('investigation_type__name', 'investigation_type__category',
+                'investigation_type__unit_price', 'location')
+        .annotate(count=Count('id'))
+        .order_by('investigation_type__category', 'investigation_type__name')
+    )
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    response['Content-Disposition'] = f'attachment; filename="machine_revenue_{year}.csv"'
+    w = csv.writer(response)
+    w.writerow([f'Machine Revenue Report — {year}'])
+    w.writerow(['Generated:', today.strftime('%d/%m/%Y')])
+    w.writerow([])
+    w.writerow(['Category', 'Investigation Type', 'Unit Price (FCFA)', 'Location', 'Count', 'Revenue (FCFA)'])
+    grand_count = 0
+    grand_rev = Decimal('0')
+    for r in rows:
+        cat   = (r['investigation_type__category'] or '').replace('_', ' ').title()
+        price = r['investigation_type__unit_price'] or Decimal('0')
+        cnt   = r['count']
+        rev   = price * cnt
+        grand_count += cnt
+        grand_rev += rev
+        w.writerow([cat, r['investigation_type__name'], float(price), r['location'], cnt, float(rev)])
+    w.writerow([])
+    w.writerow(['', '', '', 'TOTAL', grand_count, float(grand_rev)])
+    return response
+
+
 # ── Staff Throughput Report ───────────────────────────────────────────────────
 
 @login_required
@@ -1276,3 +1335,66 @@ def staff_throughput_view(request):
         'staff_chart_json': staff_chart_json,
         'date_labels': date_labels,
     })
+
+
+# ── Staff Throughput CSV Export ───────────────────────────────────────────────
+
+@login_required
+def staff_throughput_csv_view(request):
+    """CSV download of staff throughput report."""
+    import csv
+    from django.http import HttpResponse
+    import datetime as _dt
+
+    u = request.user
+    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        days = int(request.GET.get('days', 30))
+        if days not in (7, 14, 30, 60, 90):
+            days = 30
+    except (ValueError, TypeError):
+        days = 30
+
+    since = today - _dt.timedelta(days=days - 1)
+
+    results = (
+        InvestigationResult.objects.filter(
+            is_deleted=False,
+            result_date__date__gte=since,
+        )
+        .select_related('performed_by')
+    )
+
+    staff_data = {}
+    for r in results:
+        if not r.performed_by:
+            continue
+        name = r.performed_by.get_full_name() or r.performed_by.username
+        day  = r.result_date.date() if r.result_date else None
+        if name not in staff_data:
+            staff_data[name] = {'total': 0, 'verified': 0}
+        staff_data[name]['total'] += 1
+        if r.is_verified:
+            staff_data[name]['verified'] += 1
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    response['Content-Disposition'] = f'attachment; filename="staff_throughput_{days}d_{today}.csv"'
+    w = csv.writer(response)
+    w.writerow([f'Staff Throughput Report — Last {days} Days'])
+    w.writerow(['Period:', f'{since.strftime("%d/%m/%Y")} to {today.strftime("%d/%m/%Y")}'])
+    w.writerow(['Generated:', today.strftime('%d/%m/%Y')])
+    w.writerow([])
+    w.writerow(['Technician', 'Total Exams', 'Avg / Day', 'Verified'])
+    grand = 0
+    for name, d in sorted(staff_data.items(), key=lambda x: -x[1]['total']):
+        avg = round(d['total'] / days, 1)
+        w.writerow([name, d['total'], avg, d['verified']])
+        grand += d['total']
+    w.writerow([])
+    w.writerow(['TOTAL', grand, '', ''])
+    return response
