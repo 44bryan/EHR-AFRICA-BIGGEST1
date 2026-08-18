@@ -609,6 +609,7 @@ def investigation_stats_view(request):
     _cache_key = f'inv_stats_{year}_{month}'
     _cached = cache.get(_cache_key)
     if _cached:
+        _cached['today'] = timezone.now()  # always a datetime for H:i format compatibility
         if request.GET.get('pdf'):
             from apps.accounts.models import HospitalConfig
             _cached['config'] = HospitalConfig.get()
@@ -914,7 +915,7 @@ def investigation_stats_view(request):
         'gender_json': gender_json, 'age_json': age_json,
         'dept_json': dept_json, 'tier_json': tier_json,
         'is_current_month': (year == today.year and month == today.month),
-        'today': today,
+        'today': timezone.now(),
         # 12-month trend
         'trend_12m_json': trend_12m_json,
         # Outreach
