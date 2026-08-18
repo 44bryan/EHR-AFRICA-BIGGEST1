@@ -306,6 +306,69 @@
 
 {# Room Board modal is now global — EhrRoute in base_authenticated.html #}
 
+{# ── Fix Routing Error — Recent Dispatches ─────────────────────────────────── #}
+{% if recent_dispatches %}
+<div class="card border-0 shadow-sm mb-4" style="border-left:3px solid #f59e0b !important;">
+  <div class="card-header border-bottom py-2 d-flex align-items-center justify-content-between"
+       style="background:#fffbeb;cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#fixRouteBody">
+    <h6 class="mb-0 fw-bold" style="color:#92400e;">
+      <i class="bi bi-arrow-repeat me-2"></i>Fix Routing Error — Recent Dispatches
+    </h6>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge" style="background:#f59e0b;color:#fff;">{{ recent_dispatches|length }}</span>
+      <i class="bi bi-chevron-down" style="color:#92400e;font-size:.75rem;"></i>
+    </div>
+  </div>
+  <div class="collapse show" id="fixRouteBody">
+    <div class="px-3 py-2 border-bottom">
+      <small class="text-muted">Dispatched to the wrong place? Cancel and re-route. Only works if patient hasn't been called yet.</small>
+    </div>
+    {% for tok in recent_dispatches %}
+    <div class="px-3 py-2 border-bottom d-flex align-items-center gap-3 flex-wrap" id="fix-row-{{ tok.id }}">
+      <div class="flex-grow-1">
+        <div class="fw-semibold" style="font-size:.88rem;">{{ tok.patient_name }}</div>
+        <div class="text-muted" style="font-size:.75rem;">
+          Sent to: <strong>{{ tok.get_service_type_display }}</strong>
+          &bull; Token <strong>{{ tok.display_token_number }}</strong>
+          &bull; <span class="badge {% if tok.status == 'WAITING' %}bg-warning text-dark{% else %}bg-primary{% endif %}" style="font-size:.65rem;">{{ tok.get_status_display }}</span>
+          &bull; {{ tok.created_at|timesince }} ago
+        </div>
+      </div>
+      <button class="btn btn-sm btn-outline-danger cancel-dispatch-btn"
+              data-token="{{ tok.id }}"
+              data-visit="{{ tok.visit_id|default:'' }}"
+              data-patient="{{ tok.patient_name|escapejs }}"
+              data-dest-label="{{ tok.get_service_type_display|escapejs }}">
+        <i class="bi bi-x-circle me-1"></i>Cancel &amp; Re-route
+      </button>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Re-route modal (shown after cancelling a wrong dispatch) ── #}
+<div class="modal fade" id="rerouteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-arrow-repeat me-2 text-primary"></i>Re-route Patient
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-2">
+        <div class="alert alert-success py-2 mb-3" style="font-size:.82rem;">
+          <i class="bi bi-check-circle me-1"></i>Wrong dispatch cancelled.
+          Now select where <strong id="reroutePatientName"></strong> should go:
+        </div>
+        <input type="hidden" id="rerouteVisitId">
+        <div class="d-flex flex-wrap gap-2" id="rerouteButtons"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# ── Call toast only (route toast is handled by EhrRoute globally) ── #}
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:1100;">
   <div id="callToast" class="toast align-items-center text-bg-success border-0 mb-2" role="alert" aria-live="polite">
@@ -411,6 +474,74 @@ document.addEventListener('DOMContentLoaded', function () {
       if (row) row.querySelectorAll('.route-btn').forEach(function(b){ b.disabled = true; });
       this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
       executeNurseRoute(visitPk, this.dataset.dest, row);
+    });
+  });
+
+  // ── Cancel wrong dispatch + Re-route ────────────────────────────────
+  var REROUTE_DESTS = [
+    {dest:'PHARMACY',   label:'Pharmacy',        icon:'bi-capsule',           cls:'btn-outline-danger'},
+    {dest:'CASHIER',    label:'Cashier',          icon:'bi-cash',              cls:'btn-outline-success'},
+    {dest:'LAB',        label:'Lab',              icon:'bi-eyedropper',        cls:'btn-outline-warning'},
+    {dest:'IMAGING',    label:'Eye Tests',         icon:'bi-activity',          cls:'btn-outline-primary'},
+    {dest:'OPTICAL',    label:'Optical',           icon:'bi-eyeglasses',        cls:'btn-outline-info'},
+    {dest:'REFRACTION', label:'Refraction',        icon:'bi-eyeglasses',        cls:'btn-outline-primary'},
+    {dest:'GLAUCOMA',   label:'Glaucoma',          icon:'bi-eye',               cls:'btn-outline-dark'},
+    {dest:'RETINA',     label:'Retina',            icon:'bi-eye-fill',          cls:'btn-outline-dark'},
+    {dest:'COUNSELING', label:'Counseling',        icon:'bi-chat-square-heart', cls:'btn-outline-secondary'},
+    {dest:'DISCHARGE',  label:'Done / Discharge',  icon:'bi-door-open',         cls:'btn-secondary'},
+  ];
+
+  document.querySelectorAll('.cancel-dispatch-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tokenId   = btn.dataset.token;
+      var visitId   = btn.dataset.visit;
+      var patName   = btn.dataset.patient;
+      var origLabel = btn.dataset.destLabel;
+      var row = document.getElementById('fix-row-' + tokenId);
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+      var fd = new FormData();
+      fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+      fetch('{% url "qms:cancel_token" token_id="00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', tokenId), {
+        method: 'POST', body: fd,
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.success) {
+          alert(data.error || 'Could not cancel token.');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Cancel &amp; Re-route';
+          return;
+        }
+        // Mark row as cancelled
+        btn.outerHTML = '<span class="badge bg-danger" style="font-size:.72rem;"><i class="bi bi-x-circle me-1"></i>Cancelled</span>';
+        // Show re-route modal
+        document.getElementById('reroutePatientName').textContent = patName;
+        document.getElementById('rerouteVisitId').value = visitId;
+        var html = '';
+        REROUTE_DESTS.forEach(function(d) {
+          html += '<button class="btn btn-sm ' + d.cls + ' reroute-dest-btn" data-dest="' + d.dest + '">' +
+                  '<i class="bi ' + d.icon + ' me-1"></i>' + d.label + '</button>';
+        });
+        document.getElementById('rerouteButtons').innerHTML = html;
+        document.querySelectorAll('.reroute-dest-btn').forEach(function(rb) {
+          rb.addEventListener('click', function() {
+            var dest  = rb.dataset.dest;
+            var vId   = document.getElementById('rerouteVisitId').value;
+            document.querySelectorAll('.reroute-dest-btn').forEach(function(b) { b.disabled = true; });
+            rb.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            executeNurseRoute(vId, dest, null);
+            bootstrap.Modal.getInstance(document.getElementById('rerouteModal')).hide();
+            showRouteToast('Re-routed ' + patName + ' to ' + rb.textContent.trim(), false);
+          });
+        });
+        new bootstrap.Modal(document.getElementById('rerouteModal')).show();
+      })
+      .catch(function() {
+        alert('Network error. Please refresh.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Cancel &amp; Re-route';
+      });
     });
   });
 

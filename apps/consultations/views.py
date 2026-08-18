@@ -2076,6 +2076,30 @@ def clinic_nurse_view(request):
         .order_by('department__name', 'room_number')
     )
 
+    # ── Recent dispatches — nurse can fix routing errors within 2 hours ─────
+    from apps.qms.models import QueueToken as _QT, TokenStatus as _TS, IssuancePoint as _IP
+    from datetime import timedelta as _td
+    _two_hours_ago = timezone.now() - _td(hours=2)
+    # Find patients who had consultations in this dept today
+    _dept_patient_ids = set(
+        Consultation.objects.filter(
+            consultation_date__date=today,
+            department=dept,
+            is_deleted=False,
+        ).values_list('visit__patient_id', flat=True)
+    ) if dept else set()
+    recent_dispatches = list(
+        _QT.objects.filter(
+            patient_id__in=_dept_patient_ids,
+            token_date=today,
+            issuance_point=_IP.SYSTEM,
+            status__in=[_TS.WAITING, _TS.CALLED],
+            created_at__gte=_two_hours_ago,
+            is_deleted=False,
+        ).select_related('patient', 'visit')
+        .order_by('-created_at')[:15]
+    ) if _dept_patient_ids else []
+
     return render(request, 'consultations/clinic_nurse.html', {
         'qms_on': qms_on,
         'dept': dept,
@@ -2091,6 +2115,7 @@ def clinic_nurse_view(request):
         'nurse_tier': _nurse_tier,
         'today': today,
         'active_rooms': active_rooms,
+        'recent_dispatches': recent_dispatches,
     })
 
 

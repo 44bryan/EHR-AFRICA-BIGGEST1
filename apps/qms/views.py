@@ -939,6 +939,32 @@ def receptionist_complete_registration(request, token_id):
 
 # ── Department routing (doctor/nurse action) ──────────────────────────────────
 
+@login_required
+@require_POST
+def cancel_token(request, token_id):
+    """
+    Cancel a single QueueToken (mark as CANCELLED).
+    Used by clinic nurses to fix wrong dispatches within 2 hours.
+    Only WAITING or CALLED tokens can be cancelled — not SERVING/COMPLETED.
+    """
+    if not (request.user.can_do_triage() or request.user.is_medical_director or request.user.is_super_admin):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+    token = get_object_or_404(QueueToken, id=token_id, is_deleted=False)
+    if token.status not in [TokenStatus.WAITING, TokenStatus.CALLED]:
+        return JsonResponse({
+            'success': False,
+            'error': f'Cannot cancel — patient is already {token.get_status_display()}. Ask an administrator.',
+        })
+    token.status = TokenStatus.CANCELLED
+    token.save(update_fields=['status', 'updated_at'])
+    return JsonResponse({
+        'success': True,
+        'token_id': str(token.id),
+        'service_type': token.service_type,
+        'patient_name': token.patient_name,
+    })
+
+
 @json_error_handler
 @login_required
 @require_POST

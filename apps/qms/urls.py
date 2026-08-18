@@ -60,6 +60,7 @@ urlpatterns = [
     path('token/<uuid:token_id>/cashier-done/', views.cashier_complete, name='cashier_complete'),
     path('token/<uuid:token_id>/skip/', views.skip_token, name='skip_token'),
     path('token/<uuid:token_id>/no-show/', views.no_show, name='no_show'),
+    path('token/<uuid:token_id>/cancel/', views.cancel_token, name='cancel_token'),
 
     # Today's Roster — admin assigns doctors to rooms
     path('roster/', views.roster_view, name='roster'),
