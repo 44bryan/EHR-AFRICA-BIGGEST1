@@ -774,6 +774,52 @@ def investigation_stats_view(request):
         if gdr in ('M', 'F'):
             cat_gender[cat][gdr] += count
 
+    # ── Per exam type × sex × age group breakdown ────────────────────────────
+    # Fetch raw rows: one row per order (investigation_type, gender, dob)
+    type_rows = list(
+        base.values_list(
+            'investigation_type__name',
+            'investigation_type__category',
+            'patient__gender',
+            'patient__date_of_birth',
+        )
+    )
+    type_breakdown = {}
+    for name, category, gender, dob in type_rows:
+        cat_label = (category or '').replace('_', ' ').title()
+        if name not in type_breakdown:
+            type_breakdown[name] = {
+                'category': cat_label,
+                'male': 0, 'female': 0,
+                'child_male': 0, 'child_female': 0,
+                'total': 0,
+            }
+        is_child = False
+        if dob:
+            try:
+                is_child = (today - dob).days // 365 <= 14
+            except Exception:
+                pass
+        type_breakdown[name]['total'] += 1
+        if gender == 'M':
+            type_breakdown[name]['male'] += 1
+            if is_child:
+                type_breakdown[name]['child_male'] += 1
+        elif gender == 'F':
+            type_breakdown[name]['female'] += 1
+            if is_child:
+                type_breakdown[name]['child_female'] += 1
+    # Sort by total desc, compute adult counts, convert to list
+    type_breakdown_list = sorted(
+        [{
+            'name': k,
+            **v,
+            'male_adult':   v['male']   - v['child_male'],
+            'female_adult': v['female'] - v['child_female'],
+        } for k, v in type_breakdown.items()],
+        key=lambda x: x['total'], reverse=True
+    )
+
     # ── Orders by requesting department ──────────────────────────────────────
     dept_raw = list(
         base.values('consultation__department__name')
@@ -874,6 +920,8 @@ def investigation_stats_view(request):
         # Outreach
         'clinic_count': clinic_count,
         'outreach_count': outreach_count,
+        # Per exam type × sex × age
+        'type_breakdown_list': type_breakdown_list,
     }
     cache.set(_cache_key, ctx, _cache_ttl)
     if request.GET.get('pdf'):
