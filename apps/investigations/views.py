@@ -1024,3 +1024,128 @@ def machine_revenue_view(request):
         'prev_years': prev_years,
         'today': today,
     })
+
+
+# ── Staff Throughput Report ───────────────────────────────────────────────────
+
+@login_required
+def staff_throughput_view(request):
+    """Per-staff daily throughput — how many exams each technician completed."""
+    from django.db.models import Count, Avg, Max, F, ExpressionWrapper, DurationField
+    from django.utils import timezone as _tz
+    import datetime as _dt, json
+
+    u = request.user
+    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        return HttpResponseForbidden()
+
+    today = _tz.localdate()
+    try:
+        days = int(request.GET.get('days', 30))
+        if days not in (7, 14, 30, 60, 90):
+            days = 30
+    except (ValueError, TypeError):
+        days = 30
+
+    since = today - _dt.timedelta(days=days - 1)
+
+    # ── Today's leaderboard ────────────────────────────────────────────────────
+    today_results = (
+        InvestigationResult.objects
+        .filter(is_deleted=False, result_date__date=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    today_board = [
+        {
+            'name': f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'count': r['count'],
+        }
+        for r in today_results if r['performed_by__id']
+    ]
+
+    # ── Per-staff monthly summary ──────────────────────────────────────────────
+    staff_summary_raw = (
+        InvestigationResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(
+            total=Count('id'),
+            verified=Count('id', filter=Q(is_verified=True)),
+        )
+        .order_by('-total')
+    )
+    staff_summary = []
+    for r in staff_summary_raw:
+        if not r['performed_by__id']:
+            continue
+        total = r['total']
+        avg_per_day = round(total / days, 1) if days else 0
+        staff_summary.append({
+            'name':        f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'total':       total,
+            'verified':    r['verified'],
+            'avg_per_day': avg_per_day,
+        })
+
+    # ── Daily totals chart (all staff combined, last N days) ──────────────────
+    daily_raw = (
+        InvestigationResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+        .extra(select={'day': 'DATE(result_date)'})
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+    daily_json = json.dumps([{'day': str(r['day']), 'count': r['count']} for r in daily_raw])
+
+    # ── Per-staff daily breakdown (for the chart — top 5 staff) ───────────────
+    top5 = [s['name'] for s in staff_summary[:5]]
+    staff_daily = {}
+    if top5:
+        per_staff_daily = (
+            InvestigationResult.objects
+            .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+            .extra(select={'day': 'DATE(result_date)'})
+            .values('day', 'performed_by__first_name', 'performed_by__last_name')
+            .annotate(count=Count('id'))
+            .order_by('day')
+        )
+        for r in per_staff_daily:
+            name = f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown'
+            if name not in top5:
+                continue
+            day = str(r['day'])
+            if name not in staff_daily:
+                staff_daily[name] = {}
+            staff_daily[name][day] = r['count']
+
+    # Build date labels
+    date_labels = [(since + _dt.timedelta(days=i)).strftime('%d %b') for i in range(days)]
+    date_keys   = [(since + _dt.timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days)]
+
+    CHART_COLORS = ['#6366f1', '#0d6efd', '#198754', '#ffc107', '#dc3545']
+    staff_datasets = []
+    for i, name in enumerate(top5):
+        data = [staff_daily.get(name, {}).get(dk, 0) for dk in date_keys]
+        staff_datasets.append({'label': name, 'data': data, 'borderColor': CHART_COLORS[i % len(CHART_COLORS)],
+                               'backgroundColor': 'transparent', 'borderWidth': 2, 'pointRadius': 3, 'tension': 0.3})
+    staff_chart_json = json.dumps({'labels': date_labels, 'datasets': staff_datasets})
+
+    grand_total = sum(s['total'] for s in staff_summary)
+    today_total = sum(t['count'] for t in today_board)
+
+    return render(request, 'investigations/staff_throughput.html', {
+        'today': today,
+        'days': days,
+        'since': since,
+        'today_board': today_board,
+        'today_total': today_total,
+        'staff_summary': staff_summary,
+        'grand_total': grand_total,
+        'daily_json': daily_json,
+        'staff_chart_json': staff_chart_json,
+        'date_labels': date_labels,
+    })
