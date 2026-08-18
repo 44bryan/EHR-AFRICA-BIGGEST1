@@ -2944,10 +2944,10 @@ def chart_deficiency_view(request):
             status=ConsultationStatus.IN_PROGRESS,
             created_at__lt=cutoff,
         )
-        .select_related('patient', 'doctor', 'department')
+        .select_related('patient', 'consulting_doctor', 'department')
         .order_by('created_at')[:200]
     )
-    # Also flag completed consultations with no diagnosis entered
+    # Also flag completed consultations with no management plan (diagnosis/plan missing)
     no_diagnosis = (
         Consultation.objects
         .filter(
@@ -2956,9 +2956,9 @@ def chart_deficiency_view(request):
             created_at__gte=_tz.now() - _dt.timedelta(days=30),
         )
         .filter(
-            _Q(diagnosis__isnull=True) | _Q(diagnosis='')
+            _Q(management_plan__isnull=True) | _Q(management_plan='')
         )
-        .select_related('patient', 'doctor', 'department')
+        .select_related('patient', 'consulting_doctor', 'department')
         .order_by('-created_at')[:100]
     )
     return render(request, 'patients/chart_deficiency.html', {
