@@ -290,6 +290,85 @@ def pharmacy_stats_view(request):
         tier_stats = []
         tier_json  = json.dumps({'labels': [], 'data': [], 'colors': []})
 
+    # ── WHO/JCI Pharmacy Indicators ──────────────────────────────────────────
+    # WHO Core Drug Use Indicators (Management Sciences for Health / WHO 1993)
+    avg_items_per_rx = round(total_items / total_dispensings, 2) if total_dispensings else 0
+
+    # % antibiotic dispensings (WHO target: < 30%)
+    antibiotic_items = base_items.filter(drug__category='ANTIBIOTIC').count()
+    antibiotic_rate = round(antibiotic_items / total_items * 100, 1) if total_items else 0
+
+    # % controlled drug dispensings (JCI MMU.3.1)
+    controlled_items = base_items.filter(drug__is_controlled=True).count()
+    controlled_rate = round(controlled_items / total_items * 100, 1) if total_items else 0
+
+    # Rx rejection/decline rate (JCI quality indicator)
+    try:
+        from apps.prescriptions.models import DrugPrescription
+        total_rx = DrugPrescription.objects.filter(
+            is_deleted=False,
+            prescription_date__date__gte=month_start,
+            prescription_date__date__lte=month_end,
+        ).count()
+        declined_rx = DrugPrescription.objects.filter(
+            is_deleted=False,
+            prescription_date__date__gte=month_start,
+            prescription_date__date__lte=month_end,
+            notes__icontains='Bought elsewhere',
+        ).count()
+        rx_decline_rate = round(declined_rx / total_rx * 100, 1) if total_rx else 0
+    except Exception:
+        total_rx = declined_rx = rx_decline_rate = 0
+
+    # Verified dispensings rate (JCI MMU.6.1 pharmacist sign-off)
+    verified_count = base.filter(verified_by_pharmacist__isnull=False).count()
+    verification_rate = round(verified_count / dispensed_count * 100, 1) if dispensed_count else 0
+
+    # Counseled patients rate (JCI MMU.6.1)
+    counseled_count = base.filter(counseling_given=True).count()
+    counseling_rate = round(counseled_count / dispensed_count * 100, 1) if dispensed_count else 0
+
+    # Revenue by tier
+    try:
+        from apps.patients.models import Visit
+        from django.db.models import OuterRef, Subquery, CharField
+        tier_rev_subq = Visit.objects.filter(
+            patient=OuterRef('patient'),
+            visit_date__date=OuterRef('dispensed_at__date'),
+            is_deleted=False,
+        ).order_by('-visit_date').values('service_tier')[:1]
+        tier_revenue_raw = (
+            base.filter(status=DispensingStatus.DISPENSED)
+            .annotate(tier=Subquery(tier_rev_subq, output_field=CharField()))
+            .values('tier')
+            .annotate(rev=Sum('total_amount'))
+        )
+        tier_revenue_map = {r['tier'] or 'STANDARD': int(r['rev'] or 0) for r in tier_revenue_raw}
+    except Exception:
+        tier_revenue_map = {}
+
+    for ts in tier_stats:
+        ts['revenue'] = tier_revenue_map.get(ts['key'], 0)
+
+    # Category breakdown (top 5 categories by qty)
+    category_raw = list(
+        base_items.filter(drug__isnull=False)
+        .values('drug__category')
+        .annotate(qty=Sum('quantity_dispensed'))
+        .order_by('-qty')[:8]
+    )
+    from apps.pharmacy.models import DrugCategory
+    _cat_labels = dict(DrugCategory.choices)
+    category_stats = [
+        {'label': _cat_labels.get(r['drug__category'], r['drug__category'] or 'Other'),
+         'qty': r['qty'] or 0}
+        for r in category_raw
+    ] if category_raw else []
+    category_json = json.dumps({
+        'labels': [c['label'] for c in category_stats],
+        'data':   [c['qty']   for c in category_stats],
+    })
+
     # Low stock snapshot
     low_stock_drugs = [d for d in Drug.objects.filter(is_active=True, is_deleted=False) if d.needs_reorder]
 
@@ -319,6 +398,20 @@ def pharmacy_stats_view(request):
         'tier_stats': tier_stats,
         'tier_json': tier_json,
         'today': today,
+        # WHO/JCI indicators
+        'avg_items_per_rx': avg_items_per_rx,
+        'antibiotic_rate': antibiotic_rate,
+        'antibiotic_items': antibiotic_items,
+        'controlled_rate': controlled_rate,
+        'controlled_items': controlled_items,
+        'total_rx': total_rx,
+        'rx_decline_rate': rx_decline_rate,
+        'verified_count': verified_count,
+        'verification_rate': verification_rate,
+        'counseled_count': counseled_count,
+        'counseling_rate': counseling_rate,
+        'category_stats': category_stats,
+        'category_json': category_json,
     }
     if request.GET.get('pdf'):
         from apps.reports.views import render_pdf

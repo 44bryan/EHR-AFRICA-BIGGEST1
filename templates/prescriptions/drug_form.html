@@ -81,13 +81,22 @@
             var other = row.querySelector('.drug-name-other');
             var hidden= row.querySelector('input[name$="-drug_name"]');
 
-            // Populate select
+            // Populate select with stock indicator
             PHARMACY_DRUGS.forEach(function(d) {
               var opt = document.createElement('option');
               opt.value = d.name;
-              opt.text  = d.name + (d.strength ? ' (' + d.strength + ')' : '');
+              var stockLabel = d.stock !== undefined
+                ? (d.stock <= 5 ? ' ⚠ ' + d.stock + ' left' : ' — ' + d.stock + ' in stock')
+                : '';
+              opt.text = d.name + (d.strength ? ' (' + d.strength + ')' : '') + stockLabel;
               opt.dataset.strength = d.strength || '';
               opt.dataset.form     = d.form     || '';
+              opt.dataset.stock    = d.stock    || 0;
+              // Highlight low-stock options
+              if (d.stock !== undefined && d.stock <= 5) {
+                opt.style.color = '#c05621';
+                opt.style.fontWeight = 'bold';
+              }
               sel.appendChild(opt);
             });
             // Move "Other" to end — create fresh if it was cleared during clone cleanup

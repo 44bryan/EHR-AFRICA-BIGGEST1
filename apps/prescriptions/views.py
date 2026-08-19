@@ -123,6 +123,7 @@ def drug_prescription_new(request, consultation_pk):
         'name': str(d),
         'strength': d.strength,
         'form': d.form,
+        'stock': d.current_stock,
     } for d in stocked_drugs])
 
     return render(request, 'prescriptions/drug_form.html', {
@@ -235,7 +236,8 @@ def optical_prescription_new(request, consultation_pk):
                                          or d.get('final_cyl_od', '')),
                         're_axis':      (d.get('pg_axis_dist_od') or d.get('sub_axis_dist_od')
                                          or d.get('final_axis_od', '')),
-                        're_add':       d.get('pg_add_od') or d.get('add_od', ''),
+                        're_add':       (d.get('sub_add_od') or d.get('pg_add_od')
+                                         or d.get('add_od', '')),
                         're_visual_acuity': (d.get('pg_va_dist_od') or d.get('sub_va_dist_od')
                                              or d.get('bcva_od')
                                              or d.get('va_corrected_od', '')),
@@ -253,7 +255,8 @@ def optical_prescription_new(request, consultation_pk):
                                          or d.get('final_cyl_os', '')),
                         'le_axis':      (d.get('pg_axis_dist_os') or d.get('sub_axis_dist_os')
                                          or d.get('final_axis_os', '')),
-                        'le_add':       d.get('pg_add_os') or d.get('add_os', ''),
+                        'le_add':       (d.get('sub_add_os') or d.get('pg_add_os')
+                                         or d.get('add_os', '')),
                         'le_visual_acuity': (d.get('pg_va_dist_os') or d.get('sub_va_dist_os')
                                              or d.get('bcva_os')
                                              or d.get('va_corrected_os', '')),
