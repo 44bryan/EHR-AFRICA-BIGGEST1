@@ -28,13 +28,13 @@
     </span>
     {% endif %}
     <button onclick="exportStatsPDF()" class="btn btn-sm btn-danger">
-      <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export Data PDF
     </button>
     <button onclick="downloadStatsCSV()" class="btn btn-sm btn-success">
       <i class="bi bi-filetype-csv me-1"></i>CSV
     </button>
-    <button onclick="printStatsPage()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Print
+    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-printer-fill me-1"></i>Print with Charts
     </button>
     <a href="{% url 'investigations:workstation' %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Workstation
@@ -44,6 +44,26 @@
 {% endblock %}
 
 {% block content %}
+
+{# ── Print-only letterhead (hidden in browser, shown when printing with charts) ── #}
+<div class="print-only" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0d6efd;padding-bottom:10px;margin-bottom:14px;">
+    <div>
+      <div style="font-size:18px;font-weight:800;color:#0d6efd;">Eye Investigation Statistics Dashboard</div>
+      <div style="font-size:11px;color:#555;margin-top:4px;">
+        Period: {{ month_start|date:"F Y" }} &nbsp;&bull;&nbsp; Ref: INV-{{ month_start|date:"Y-m" }} &nbsp;&bull;&nbsp; Generated: {% now "d M Y H:i" %}
+      </div>
+    </div>
+    <div style="text-align:right;font-size:9px;color:#888;line-height:1.6;">
+      CONFIDENTIAL &mdash; INTERNAL USE ONLY<br>
+      <em>For management review only. Contains aggregated data.</em>
+    </div>
+  </div>
+  <div style="background:#0d6efd;color:#fff;padding:5px 12px;font-size:8px;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;margin-bottom:14px;display:flex;justify-content:space-between;">
+    <span>EHR Africa &mdash; Investigation Department Report</span>
+    <span>WHO-Standard Monthly Statistics &nbsp;&bull;&nbsp; {% now "Y" %}</span>
+  </div>
+</div>
 
 {# ── KPI Cards ── #}
 <div class="row g-3 mb-4">
@@ -670,8 +690,48 @@ new Chart(document.getElementById('locationChart'), {
 
 <style>
 @media print {
-  .btn, .btn-group { display:none !important; }
-  .card { break-inside:avoid; }
+  /* ── Hide UI chrome ── */
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print,
+  #statsCountdown, .badge.bg-light.border { display: none !important; }
+
+  /* ── Full-width content ── */
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+
+  /* ── Show print-only header ── */
+  .print-only { display: block !important; }
+
+  /* ── Page orientation & margins ── */
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+
+  /* ── Cards ── */
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important;
+          box-shadow: none !important; margin-bottom: 8px !important; }
+  .card-header { background: #f8f9fa !important; color: #1a1a1a !important; }
+  .card-body { padding: 8px 10px !important; }
+
+  /* ── Row layout for landscape 2-col charts ── */
+  .row.g-3 { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-md-8 { width: 64% !important; flex: none; }
+  .col-md-4 { width: 33% !important; flex: none; }
+  .col-md-6 { width: 48% !important; flex: none; }
+  .col-6.col-md.col-lg { flex: 1 1 100px; max-width: 160px; }
+
+  /* ── Chart images (from printWithCharts conversion) ── */
+  .print-chart-img { width: 100% !important; height: auto !important; display: block; }
+
+  /* ── Tables ── */
+  table { font-size: 9pt !important; }
+  .table-responsive { overflow: visible !important; }
+
+  /* ── Progress bars (preserve color) ── */
+  .progress { border: 1px solid #dee2e6; height: 6px !important; }
+  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* ── Badges ── */
+  .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: 1px solid #dee2e6; }
 }
 </style>
 <script>
@@ -681,8 +741,27 @@ function exportStatsPDF() {
 function downloadStatsCSV() {
   window.location.href = '{% url "investigations:stats_csv" %}?year={{ month_start|date:"Y" }}&month={{ month_start|date:"n" }}';
 }
-function printStatsPage() {
+function printWithCharts() {
+  // Convert all Chart.js canvases to PNG images so they print perfectly
+  var pairs = [];
+  document.querySelectorAll('canvas').forEach(function(canvas) {
+    var chart = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+    if (!chart) return;
+    var img = new Image();
+    img.src = chart.toBase64Image('image/png', 1.0);
+    img.className = 'print-chart-img';
+    img.style.maxWidth = canvas.offsetWidth + 'px';
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = 'none';
+    pairs.push({ canvas: canvas, img: img });
+  });
   window.print();
+  setTimeout(function() {
+    pairs.forEach(function(p) {
+      p.canvas.style.display = '';
+      if (p.img.parentNode) p.img.parentNode.removeChild(p.img);
+    });
+  }, 2000);
 }
 </script>
 

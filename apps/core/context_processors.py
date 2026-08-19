@@ -23,15 +23,19 @@ def hospital_settings(request):
 def hospital_modules(request):
     """Inject active-module flags into every template as `modules`.
     Cached for 60 s — HospitalConfig rarely changes mid-session.
+    Caches only the PK (safe primitive) to avoid pickle issues with ORM objects.
     """
-    cfg = cache.get('hospital_config_obj')
-    if cfg is None:
-        try:
-            from apps.accounts.models import HospitalConfig
+    cfg = None
+    try:
+        from apps.accounts.models import HospitalConfig
+        pk = cache.get('hospital_config_pk')
+        if pk is None:
             cfg = HospitalConfig.get()
-            cache.set('hospital_config_obj', cfg, 60)
-        except Exception:
-            cfg = None
+            cache.set('hospital_config_pk', cfg.pk, 60)
+        else:
+            cfg = HospitalConfig.objects.get(pk=pk)
+    except Exception:
+        cache.delete('hospital_config_pk')
     return {'modules': cfg}
 
 
@@ -102,17 +106,20 @@ def doctor_assigned_room(request):
         ]
         if request.user.role not in clinical_roles:
             return {'my_room': None}
-        cache_key = f'doctor_room_{request.user.pk}'
-        room = cache.get(cache_key)
-        if room is None:
+        cache_key = f'doctor_room_id_{request.user.pk}'
+        room_id = cache.get(cache_key)
+        if room_id is None:
             from apps.departments.models import ConsultationRoom
-            room = ConsultationRoom.objects.filter(
+            room_obj = ConsultationRoom.objects.filter(
                 assigned_doctor=request.user, is_active=True
-            ).select_related('department').first()
-            # Cache None as a sentinel so we don't re-query for unassigned doctors
-            cache.set(cache_key, room or 'NONE', 60)
-        if room == 'NONE':
-            room = None
+            ).values_list('pk', flat=True).first()
+            # Cache -1 as sentinel for "no room" to avoid re-querying unassigned doctors
+            cache.set(cache_key, room_obj if room_obj is not None else -1, 60)
+            room_id = room_obj if room_obj is not None else -1
+        if room_id == -1:
+            return {'my_room': None}
+        from apps.departments.models import ConsultationRoom
+        room = ConsultationRoom.objects.filter(pk=room_id).select_related('department').first()
         return {'my_room': room}
     except Exception:
         return {'my_room': None}

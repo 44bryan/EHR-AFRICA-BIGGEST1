@@ -17,7 +17,7 @@ sftp.put(LOCAL, REMOTE)
 sftp.close()
 print('Uploaded base_authenticated.html')
 
-_, stdout, stderr = ssh.exec_command('pkill -f gunicorn; sleep 2; cd /opt/ehr-africa && /opt/ehr-africa/venv/bin/gunicorn ehr_project.wsgi:application --workers 3 --worker-class gevent --bind 127.0.0.1:8000 --daemon --pid /tmp/gunicorn.pid')
+_, stdout, stderr = ssh.exec_command('pkill -f gunicorn || true')
 stdout.channel.recv_exit_status()
 err = stderr.read().decode('utf-8', errors='replace')
 if err: sys.stdout.buffer.write(('STDERR: ' + err + '\n').encode('utf-8', errors='replace'))

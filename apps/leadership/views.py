@@ -95,13 +95,20 @@ def leadership_dashboard(request):
             payment_date__date__gte=year_start, is_deleted=False
         ).aggregate(total=Sum('amount'))['total'] or 0
 
-        # Outstanding (unpaid invoices)
-        outstanding = InvoiceItem.objects.filter(
-            invoice__status__in=['UNPAID', 'PARTIAL'],
-            invoice__is_deleted=False,
-        ).aggregate(
-            total=Sum(F('unit_price') * F('quantity'))
-        )['total'] or 0
+        # Outstanding (unpaid/partially paid invoices — correct status values)
+        from apps.billing.models import InvoiceStatus as _IS
+        _outstanding_qs = Invoice.objects.filter(
+            status__in=[_IS.ISSUED, _IS.PARTIALLY_PAID],
+            is_deleted=False,
+        )
+        _outstanding_items = InvoiceItem.objects.filter(
+            invoice__in=_outstanding_qs, is_deleted=False,
+        ).aggregate(total=Sum(F('unit_price') * F('quantity')))['total'] or 0
+        _outstanding_paid = Payment.objects.filter(
+            invoice__in=_outstanding_qs, is_deleted=False,
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        _outstanding_disc = _outstanding_qs.aggregate(d=Sum('discount_amount'))['d'] or 0
+        outstanding = max(0, _outstanding_items - _outstanding_disc - _outstanding_paid)
 
         # Revenue by payment method (this month)
         revenue_by_method = list(
@@ -110,14 +117,22 @@ def leadership_dashboard(request):
             ).values('payment_method').annotate(total=Sum('amount')).order_by('-total')
         )
 
-        # Revenue 7-day trend
-        revenue_trend = []
-        for i in range(6, -1, -1):
-            d = today - timedelta(days=i)
-            amt = Payment.objects.filter(
-                payment_date__date=d, is_deleted=False
-            ).aggregate(total=Sum('amount'))['total'] or 0
-            revenue_trend.append({'date': d.strftime('%d %b'), 'amount': float(amt)})
+        # Revenue 7-day trend — single aggregate query (was 7 individual queries)
+        from django.db.models.functions import TruncDate as _TD
+        _week_start = today - timedelta(days=6)
+        _trend_raw = {
+            row['day']: row['total']
+            for row in Payment.objects.filter(
+                payment_date__date__gte=_week_start,
+                payment_date__date__lte=today,
+                is_deleted=False,
+            ).annotate(day=_TD('payment_date')).values('day').annotate(total=Sum('amount'))
+        }
+        revenue_trend = [
+            {'date': (today - timedelta(days=i)).strftime('%d %b'),
+             'amount': float(_trend_raw.get(today - timedelta(days=i), 0) or 0)}
+            for i in range(6, -1, -1)
+        ]
 
         # Pharmacy revenue (month)
         pharmacy_rev = Dispensing.objects.filter(

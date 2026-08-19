@@ -189,7 +189,7 @@ def billing_dashboard(request):
         payment_date__date=today, is_deleted=False
     ).values('payment_method').annotate(total=Sum('amount')).order_by('-total')
 
-    # Outstanding — total is a Python property so aggregate via items
+    # Outstanding — what patients still owe (invoice total - discounts - payments already made)
     outstanding_qs = Invoice.objects.filter(
         status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
         is_deleted=False
@@ -203,7 +203,12 @@ def billing_dashboard(request):
         s=Sum(ExpressionWrapper(F('unit_price') * F('quantity'), output_field=DField(max_digits=14, decimal_places=2)))
     )['s'] or 0
     discount_total = outstanding_qs.aggregate(d=Sum('discount_amount'))['d'] or 0
-    outstanding_amount = max(0, outstanding_items_total - discount_total)
+    # Subtract payments already collected on these invoices (covers PARTIALLY_PAID)
+    paid_on_outstanding = Payment.objects.filter(
+        invoice__in=outstanding_qs,
+        is_deleted=False,
+    ).aggregate(s=Sum('amount'))['s'] or 0
+    outstanding_amount = max(0, outstanding_items_total - discount_total - paid_on_outstanding)
 
     # Invoice stats today
     invoices_today = Invoice.objects.filter(
@@ -220,16 +225,23 @@ def billing_dashboard(request):
         _Pf('refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
     ).order_by('-created_at')[:15]
 
-    # Revenue last 7 days for sparkline
+    # Revenue last 7 days for sparkline — single aggregate query (replaces 7 individual queries)
     from datetime import timedelta
+    from django.db.models.functions import TruncDate
+    week_start = today - timedelta(days=6)
+    _seven_raw = {
+        row['day']: row['t']
+        for row in Payment.objects.filter(
+            payment_date__date__gte=week_start,
+            payment_date__date__lte=today,
+            is_deleted=False,
+        ).annotate(day=TruncDate('payment_date')).values('day').annotate(t=Sum('amount'))
+    }
     seven_days = []
     seven_labels = []
     for i in range(6, -1, -1):
         d = today - timedelta(days=i)
-        rev = Payment.objects.filter(
-            payment_date__date=d, is_deleted=False
-        ).aggregate(t=Sum('amount'))['t'] or 0
-        seven_days.append(float(rev))
+        seven_days.append(float(_seven_raw.get(d, 0) or 0))
         seven_labels.append(d.strftime('%d %b'))
 
     # Revenue by service category this month
@@ -249,24 +261,41 @@ def billing_dashboard(request):
     status_labels = [s['status'] for s in status_counts]
     status_values = [s['count'] for s in status_counts]
 
-    # 12-month revenue trend
+    # 12-month revenue trend — single TruncMonth aggregate (replaces 12 individual queries)
+    import calendar
+    from django.db.models.functions import TruncMonth
+    from datetime import date as _date
+    twelve_start = today.replace(day=1)
+    for _ in range(11):
+        if twelve_start.month == 1:
+            twelve_start = twelve_start.replace(year=twelve_start.year - 1, month=12)
+        else:
+            twelve_start = twelve_start.replace(month=twelve_start.month - 1)
+    _twelve_raw = {
+        row['mo']: row['t']
+        for row in Payment.objects.filter(
+            payment_date__date__gte=twelve_start,
+            is_deleted=False,
+        ).annotate(mo=TruncMonth('payment_date')).values('mo').annotate(t=Sum('amount'))
+    }
     twelve_labels = []
     twelve_values = []
-    for i in range(11, -1, -1):
-        mo = today.month - i
-        yr = today.year
-        while mo <= 0:
-            mo += 12
-            yr -= 1
-        import calendar
-        _, last_day = calendar.monthrange(yr, mo)
-        mo_start = today.replace(year=yr, month=mo, day=1)
-        mo_end = today.replace(year=yr, month=mo, day=last_day)
-        rev = Payment.objects.filter(
-            payment_date__date__gte=mo_start, payment_date__date__lte=mo_end, is_deleted=False
-        ).aggregate(t=Sum('amount'))['t'] or 0
-        twelve_labels.append(mo_start.strftime('%b %Y'))
-        twelve_values.append(float(rev))
+    cur = twelve_start
+    for _ in range(12):
+        # TruncMonth returns datetime; key might be datetime or date depending on DB
+        _key = cur
+        val = _twelve_raw.get(_key, 0) or 0
+        # Also try datetime key if date key misses
+        if not val:
+            import datetime
+            _dtkey = datetime.datetime(cur.year, cur.month, 1)
+            val = _twelve_raw.get(_dtkey, 0) or 0
+        twelve_labels.append(cur.strftime('%b %Y'))
+        twelve_values.append(float(val))
+        if cur.month == 12:
+            cur = cur.replace(year=cur.year + 1, month=1)
+        else:
+            cur = cur.replace(month=cur.month + 1)
 
     context = {
         'today': today,

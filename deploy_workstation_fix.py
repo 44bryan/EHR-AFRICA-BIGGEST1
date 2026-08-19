@@ -18,8 +18,8 @@ sftp.put(LOCAL, REMOTE)
 sftp.close()
 print('Uploaded workstation.html')
 
-# Restart gunicorn
-_, stdout, stderr = ssh.exec_command('pkill -f gunicorn; sleep 2; cd /opt/ehr-africa && /opt/ehr-africa/venv/bin/gunicorn ehr_project.wsgi:application --workers 3 --worker-class gevent --bind 127.0.0.1:8000 --daemon --pid /tmp/gunicorn.pid')
+# Restart gunicorn — pkill lets systemd restart it with the correct unit config
+_, stdout, stderr = ssh.exec_command('pkill -f gunicorn || true')
 stdout.channel.recv_exit_status()
 out = stdout.read().decode('utf-8', errors='replace')
 err = stderr.read().decode('utf-8', errors='replace')

@@ -41,23 +41,30 @@ _SHARED_SERVICE_TYPES = frozenset({
     'COUNSEL', 'BILLING', 'PRE_OP', 'ADMISSION',
 })
 
-_zone_cache = {}   # simple in-process cache; cleared by seed_zones / zone edits
-
-
 def _resolve_zone(tier: str):
     """
     Return the Zone for a given ServiceTier code, or None if not configured.
-    Uses a lightweight per-process cache — safe for tests and single-worker setups.
+    Uses Django cache (Redis) — consistent across all Gunicorn workers.
     """
-    if tier in _zone_cache:
-        return _zone_cache[tier]
+    from django.core.cache import cache
+    cache_key = f'qms_zone_{tier}'
+    zone_id = cache.get(cache_key)
+    if zone_id is None:
+        try:
+            mapping = TierZoneMapping.objects.select_related('zone').get(tier=tier)
+            zone = mapping.zone if mapping.zone.is_active else None
+        except Exception:
+            zone = None
+        cache.set(cache_key, zone.pk if zone else -1, 120)
+        return zone
+    if zone_id == -1:
+        return None
     try:
-        mapping = TierZoneMapping.objects.select_related('zone').get(tier=tier)
-        zone = mapping.zone if mapping.zone.is_active else None
+        from .models import Zone as _Zone
+        return _Zone.objects.get(pk=zone_id)
     except Exception:
-        zone = None
-    _zone_cache[tier] = zone
-    return zone
+        cache.delete(cache_key)
+        return None
 
 
 def _get_zone(code: str):
@@ -80,8 +87,11 @@ def _zone_for_service(tier: str, service_type: str):
 
 
 def _clear_zone_cache():
-    """Call after any TierZoneMapping update to flush the in-process cache."""
-    _zone_cache.clear()
+    """Call after any TierZoneMapping update to flush the Redis zone cache."""
+    from django.core.cache import cache
+    from .models import ServiceTier
+    for tier_val, _ in ServiceTier.choices:
+        cache.delete(f'qms_zone_{tier_val}')
 
 
 def _check_zone_scope(request, token):

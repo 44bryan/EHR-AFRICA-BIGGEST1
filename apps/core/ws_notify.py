@@ -17,20 +17,28 @@ def notify_queue(room: str, action: str = 'refresh', data: dict | None = None) -
     """
     Broadcast a queue_update event to every WebSocket client connected to
     the given room.  Safe to call from any synchronous view or signal.
+
+    Runs in a daemon thread with a 2-second timeout so a slow/unavailable
+    Redis never blocks the calling HTTP request.
     """
-    try:
-        from channels.layers import get_channel_layer
-        from asgiref.sync import async_to_sync
+    import threading
 
-        layer = get_channel_layer()
-        if layer is None:
-            return
+    def _send():
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            layer = get_channel_layer()
+            if layer is None:
+                return
+            group = f"ehr_queue_{room.replace('-', '_')}"
+            async_to_sync(layer.group_send)(group, {
+                'type': 'queue.update',
+                'action': action,
+                'data': data or {},
+            })
+        except Exception:
+            pass
 
-        group = f"ehr_queue_{room.replace('-', '_')}"
-        async_to_sync(layer.group_send)(group, {
-            'type': 'queue.update',   # maps to QueueConsumer.queue_update()
-            'action': action,
-            'data': data or {},
-        })
-    except Exception:
-        pass  # never crash an HTTP request because of a WS notification failure
+    t = threading.Thread(target=_send, daemon=True)
+    t.start()
+    t.join(timeout=2.0)  # Never block the view for more than 2 seconds

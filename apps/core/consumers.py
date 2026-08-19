@@ -22,10 +22,12 @@ class QueueConsumer(AsyncWebsocketConsumer):
         return f"ehr_queue_{room.replace('-', '_')}"
 
     async def connect(self):
+        user = self.scope.get('user')
+        if user is None or not user.is_authenticated:
+            await self.close(code=4003)
+            return
         self.room = self.scope['url_route']['kwargs']['room']
         self.group_name = self._make_group(self.room)
-        # Accept all connections — this WS only pushes generic {action:'refresh'}
-        # signals, never patient data.  HTTP views remain fully auth-protected.
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
