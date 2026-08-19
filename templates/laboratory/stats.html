@@ -48,13 +48,18 @@
 <div class="print-only" style="display:none;">
   <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #0d6efd;">
     <div>
-      <div style="font-size:18px;font-weight:800;color:#0d6efd;">Laboratory Statistics Dashboard</div>
-      <div style="font-size:11px;color:#555;margin-top:3px;">Period: {{ month_start|date:"F Y" }} &bull; Ref: LAB-{{ month_start|date:"Y-m" }} &bull; Generated: {% now "d M Y H:i" %}</div>
+      <div style="font-size:20px;font-weight:800;color:#0d6efd;">{{ HOSPITAL_NAME }}</div>
+      <div style="font-size:13px;font-weight:700;color:#333;margin-top:2px;">Laboratory Statistics Dashboard</div>
+      <div style="font-size:10px;color:#555;margin-top:2px;">Period: {{ month_start|date:"F Y" }} &bull; Ref: LAB-STATS-{{ month_start|date:"Y-m" }} &bull; Generated: {% now "d M Y H:i" %}</div>
+      <div style="font-size:9px;color:#888;margin-top:1px;">ISO 15189:2022 — Monthly WHO-Standard Laboratory Statistics Report</div>
     </div>
-    <div style="text-align:right;font-size:10px;color:#6c757d;">CONFIDENTIAL — INTERNAL USE ONLY<br><em>For management review only. Not for patient distribution.</em></div>
+    <div style="text-align:right;font-size:10px;color:#6c757d;">
+      CONFIDENTIAL — INTERNAL USE ONLY<br>
+      <em>For management review. Not for patient distribution.</em>
+    </div>
   </div>
   <div style="background:#0d6efd;color:#fff;padding:5px 12px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;letter-spacing:.5px;">
-    EHR Africa — Laboratory Department Report
+    {{ HOSPITAL_NAME }} — Laboratory Department Monthly Report
   </div>
 </div>
 
@@ -736,5 +741,64 @@ window._AI_STATS = {
   }
 };
 </script>
+{# ── Lab Tests by Sex & Age Group (WHO Standard) ── #}
+{% if type_breakdown_list %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span>Lab Tests by Sex &amp; Age Group — {{ month_start|date:"F Y" }}</span>
+    <span class="ms-auto badge bg-primary-subtle text-primary small fw-normal">WHO Standard</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th rowspan="2" class="align-middle">Test Name</th>
+          <th rowspan="2" class="align-middle text-center">Category</th>
+          <th colspan="2" class="text-center border-start border-end" style="background:#e8f0fe;">Male</th>
+          <th colspan="2" class="text-center border-end" style="background:#fce4f0;">Female</th>
+          <th rowspan="2" class="align-middle text-center fw-bold">Total</th>
+        </tr>
+        <tr>
+          <th class="text-center border-start" style="background:#e8f0fe;">Adult<br><small class="fw-normal text-muted">15+</small></th>
+          <th class="text-center border-end" style="background:#dce9fd;">Child<br><small class="fw-normal text-muted">0–14</small></th>
+          <th class="text-center" style="background:#fce4f0;">Adult<br><small class="fw-normal text-muted">15+</small></th>
+          <th class="text-center border-end" style="background:#fad6ec;">Child<br><small class="fw-normal text-muted">0–14</small></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in type_breakdown_list %}
+        <tr>
+          <td class="fw-semibold">{{ t.name }}</td>
+          <td class="text-center">
+            <span class="badge bg-light text-dark fw-normal border">{{ t.category|default:"—" }}</span>
+          </td>
+          <td class="text-center text-primary fw-semibold" style="background:#f4f7fe;">{{ t.male_adult }}</td>
+          <td class="text-center text-primary" style="background:#eef3fe;">{{ t.child_male }}</td>
+          <td class="text-center fw-semibold" style="background:#fdf0f7;color:#c2185b;">{{ t.female_adult }}</td>
+          <td class="text-center" style="background:#fce8f3;color:#880e4f;">{{ t.child_female }}</td>
+          <td class="text-center fw-bold">{{ t.total }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light fw-bold border-top">
+        <tr>
+          <td colspan="2">Total</td>
+          <td class="text-center text-primary">—</td>
+          <td class="text-center text-primary">—</td>
+          <td class="text-center" style="color:#c2185b;">—</td>
+          <td class="text-center" style="color:#880e4f;">—</td>
+          <td class="text-center">{{ total_orders }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <div class="card-footer bg-white text-muted small py-2">
+    <i class="bi bi-info-circle me-1"></i>
+    Children = 0–14 yrs. Male/Female from patient registration. Includes all order statuses for this month.
+  </div>
+</div>
+{% endif %}
+
 {% include "components/ai_stats_insights.html" %}
 {% endblock %}

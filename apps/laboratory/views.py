@@ -435,6 +435,44 @@ def lab_stats_view(request):
         for c in category_totals
     ])
 
+    # ── Lab tests by sex × age group (WHO standard) ─────────────────────────
+    type_rows = list(
+        base_items.values_list(
+            'test_type__name',
+            'test_type__category',
+            'order__patient__gender',
+            'order__patient__date_of_birth',
+        )
+    )
+    type_breakdown = {}
+    for _name, _cat, _gender, _dob in type_rows:
+        cat_label = (_cat or '').replace('_', ' ').title()
+        if _name not in type_breakdown:
+            type_breakdown[_name] = {'category': cat_label, 'male': 0, 'female': 0,
+                                     'child_male': 0, 'child_female': 0, 'total': 0}
+        _is_child = False
+        if _dob:
+            try:
+                _is_child = (today - _dob).days // 365 <= 14
+            except Exception:
+                pass
+        type_breakdown[_name]['total'] += 1
+        if _gender == 'M':
+            type_breakdown[_name]['male'] += 1
+            if _is_child:
+                type_breakdown[_name]['child_male'] += 1
+        elif _gender == 'F':
+            type_breakdown[_name]['female'] += 1
+            if _is_child:
+                type_breakdown[_name]['child_female'] += 1
+    type_breakdown_list = sorted(
+        [{'name': k, **v,
+          'male_adult':   v['male']   - v['child_male'],
+          'female_adult': v['female'] - v['child_female']}
+         for k, v in type_breakdown.items()],
+        key=lambda x: x['total'], reverse=True,
+    )
+
     # Previous / next month navigation
     if month == 1:
         prev_year, prev_month = year - 1, 12
@@ -483,6 +521,7 @@ def lab_stats_view(request):
         'tier_lab_json': tier_lab_json,
         'total_completed_items': total_completed_items,
         'urgency_json': urgency_json,
+        'type_breakdown_list': type_breakdown_list,
     }
     cache.set(_cache_key, context, _cache_ttl)
     if request.GET.get('pdf'):
@@ -911,10 +950,10 @@ def lab_stats_csv_view(request):
 
 @login_required
 def lab_staff_throughput_view(request):
-    """Per-staff daily throughput — how many results each lab tech entered/verified."""
+    """Per-staff ISO 15189 §5.1 competence monitoring — throughput + quality metrics."""
     import datetime as _dt
     import json
-    from django.db.models import Count
+    from django.db.models import Count, Avg, ExpressionWrapper, F, DurationField
 
     u = request.user
     if not (u.is_lab_tech or u.is_medical_director or u.is_super_admin
@@ -947,7 +986,7 @@ def lab_staff_throughput_view(request):
         for r in today_results if r['performed_by__id']
     ]
 
-    # ── Per-staff period summary ──────────────────────────────────────────────
+    # ── Per-staff summary with full quality metrics ────────────────────────────
     staff_summary_raw = (
         LabResult.objects
         .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
@@ -955,82 +994,137 @@ def lab_staff_throughput_view(request):
         .annotate(
             total=Count('id'),
             verified=Count('id', filter=Q(is_verified=True)),
+            critical=Count('id', filter=Q(is_critical=True)),
+            abnormal=Count('id', filter=Q(is_abnormal=True)),
         )
         .order_by('-total')
     )
+
+    # ── Average TAT: sample collection → result entry ─────────────────────────
+    tat_map = {}
+    for r in (
+        LabResult.objects
+        .filter(
+            is_deleted=False,
+            result_date__date__gte=since,
+            result_date__date__lte=today,
+            order_item__order__sample_collection__isnull=False,
+        )
+        .values('performed_by__id')
+        .annotate(avg_tat=Avg(ExpressionWrapper(
+            F('result_date') - F('order_item__order__sample_collection__collection_date'),
+            output_field=DurationField(),
+        )))
+    ):
+        if r['performed_by__id'] and r['avg_tat']:
+            tat_map[r['performed_by__id']] = max(0, int(r['avg_tat'].total_seconds() / 60))
+
+    # ── Amendment counts (ISO 15189 §5.8.3 — result correction audit) ────────
+    amendment_map = {
+        r['amended_by__id']: r['count']
+        for r in LabResultAmendment.objects
+        .filter(created_at__date__gte=since, created_at__date__lte=today)
+        .values('amended_by__id').annotate(count=Count('id'))
+        if r['amended_by__id']
+    }
+
+    # ── Sample rejection counts (ISO 15189 §5.4.5) ───────────────────────────
+    rejection_map = {
+        r['rejected_by__id']: r['count']
+        for r in SampleRejection.objects
+        .filter(is_deleted=False, created_at__date__gte=since, created_at__date__lte=today)
+        .values('rejected_by__id').annotate(count=Count('id'))
+        if r['rejected_by__id']
+    }
+
     staff_summary = []
     for r in staff_summary_raw:
         if not r['performed_by__id']:
             continue
-        total = r['total']
+        uid      = r['performed_by__id']
+        total    = r['total']
+        verified = r['verified']
+        critical = r['critical']
+        abnormal = r['abnormal']
+        tat_mins = tat_map.get(uid)
+        if tat_mins is not None:
+            tat_str   = f"{tat_mins // 60}h {tat_mins % 60}m" if tat_mins >= 60 else f"{tat_mins}m"
+            tat_class = 'text-success' if tat_mins < 120 else ('text-warning' if tat_mins < 240 else 'text-danger fw-bold')
+        else:
+            tat_str, tat_class = '—', 'text-muted'
         staff_summary.append({
-            'name':        f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
-            'total':       total,
-            'verified':    r['verified'],
-            'avg_per_day': round(total / days, 1) if days else 0,
+            'name':         f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'uid':          uid,
+            'total':        total,
+            'verified':     verified,
+            'verified_pct': round(verified / total * 100) if total else 0,
+            'critical':     critical,
+            'critical_pct': round(critical / total * 100, 1) if total else 0,
+            'abnormal':     abnormal,
+            'abnormal_pct': round(abnormal / total * 100, 1) if total else 0,
+            'avg_per_day':  round(total / days, 1) if days else 0,
+            'amendments':   amendment_map.get(uid, 0),
+            'rejections':   rejection_map.get(uid, 0),
+            'tat_str':      tat_str,
+            'tat_class':    tat_class,
+            'tat_mins':     tat_mins or 0,
         })
 
-    # ── Daily totals chart (all staff combined) ───────────────────────────────
+    # ── Daily totals chart ───────────────────────────────────────────────────
     daily_raw = (
         LabResult.objects
         .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
         .extra(select={'day': 'DATE(result_date)'})
-        .values('day')
-        .annotate(count=Count('id'))
-        .order_by('day')
+        .values('day').annotate(count=Count('id')).order_by('day')
     )
     daily_json = json.dumps([{'day': str(r['day']), 'count': r['count']} for r in daily_raw])
 
-    # ── Top 5 staff per-day breakdown for chart ───────────────────────────────
+    # ── Top 5 staff per-day trend ─────────────────────────────────────────────
     top5 = [s['name'] for s in staff_summary[:5]]
     staff_daily = {}
     if top5:
-        per_staff_daily = (
+        for r in (
             LabResult.objects
             .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
             .extra(select={'day': 'DATE(result_date)'})
             .values('day', 'performed_by__first_name', 'performed_by__last_name')
-            .annotate(count=Count('id'))
-            .order_by('day')
-        )
-        for r in per_staff_daily:
+            .annotate(count=Count('id')).order_by('day')
+        ):
             name = f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown'
-            if name not in top5:
-                continue
-            day = str(r['day'])
-            if name not in staff_daily:
-                staff_daily[name] = {}
-            staff_daily[name][day] = r['count']
+            if name in top5:
+                staff_daily.setdefault(name, {})[str(r['day'])] = r['count']
 
     date_labels = [(since + _dt.timedelta(days=i)).strftime('%d %b') for i in range(days)]
     date_keys   = [(since + _dt.timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days)]
-
     CHART_COLORS = ['#6366f1', '#0d6efd', '#198754', '#ffc107', '#dc3545']
-    staff_datasets = []
-    for i, name in enumerate(top5):
-        data = [staff_daily.get(name, {}).get(dk, 0) for dk in date_keys]
-        staff_datasets.append({
-            'label': name, 'data': data,
-            'borderColor': CHART_COLORS[i % len(CHART_COLORS)],
-            'backgroundColor': 'transparent',
-            'borderWidth': 2, 'pointRadius': 3, 'tension': 0.3,
-        })
-    staff_chart_json = json.dumps({'labels': date_labels, 'datasets': staff_datasets})
+    staff_chart_json = json.dumps({
+        'labels': date_labels,
+        'datasets': [
+            {
+                'label': name,
+                'data': [staff_daily.get(name, {}).get(dk, 0) for dk in date_keys],
+                'borderColor': CHART_COLORS[i % len(CHART_COLORS)],
+                'backgroundColor': 'transparent',
+                'borderWidth': 2, 'pointRadius': 3, 'tension': 0.3,
+            }
+            for i, name in enumerate(top5)
+        ],
+    })
 
     grand_total = sum(s['total'] for s in staff_summary)
     today_total = sum(t['count'] for t in today_board)
 
     return render(request, 'laboratory/staff_throughput.html', {
-        'today': today,
-        'days': days,
-        'since': since,
-        'today_board': today_board,
-        'today_total': today_total,
-        'staff_summary': staff_summary,
-        'grand_total': grand_total,
-        'daily_json': daily_json,
+        'today':            today,
+        'days':             days,
+        'since':            since,
+        'today_board':      today_board,
+        'today_total':      today_total,
+        'staff_summary':    staff_summary,
+        'grand_total':      grand_total,
+        'daily_json':       daily_json,
         'staff_chart_json': staff_chart_json,
-        'date_labels': date_labels,
+        'date_labels':      date_labels,
     })
 
 
@@ -1038,9 +1132,10 @@ def lab_staff_throughput_view(request):
 
 @login_required
 def lab_staff_throughput_csv_view(request):
-    """CSV download of lab staff throughput."""
+    """CSV — full ISO 15189 §5.1 staff competence metrics."""
     import csv
     import datetime as _dt
+    from django.db.models import Count, Avg, ExpressionWrapper, F, DurationField
     from django.http import HttpResponse
 
     u = request.user
@@ -1058,38 +1153,82 @@ def lab_staff_throughput_csv_view(request):
 
     since = today - _dt.timedelta(days=days - 1)
 
-    results = (
+    staff_raw = (
         LabResult.objects
-        .filter(is_deleted=False, result_date__date__gte=since)
-        .select_related('performed_by')
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(
+            total=Count('id'),
+            verified=Count('id', filter=Q(is_verified=True)),
+            critical=Count('id', filter=Q(is_critical=True)),
+            abnormal=Count('id', filter=Q(is_abnormal=True)),
+        )
+        .order_by('-total')
     )
-
-    staff_data = {}
-    for r in results:
-        if not r.performed_by:
-            continue
-        name = r.performed_by.get_full_name() or r.performed_by.username
-        if name not in staff_data:
-            staff_data[name] = {'total': 0, 'verified': 0}
-        staff_data[name]['total'] += 1
-        if r.is_verified:
-            staff_data[name]['verified'] += 1
+    tat_map = {
+        r['performed_by__id']: max(0, int(r['avg_tat'].total_seconds() / 60))
+        for r in LabResult.objects
+        .filter(
+            is_deleted=False, result_date__date__gte=since, result_date__date__lte=today,
+            order_item__order__sample_collection__isnull=False,
+        )
+        .values('performed_by__id')
+        .annotate(avg_tat=Avg(ExpressionWrapper(
+            F('result_date') - F('order_item__order__sample_collection__collection_date'),
+            output_field=DurationField(),
+        )))
+        if r['performed_by__id'] and r['avg_tat']
+    }
+    amendment_map = {
+        r['amended_by__id']: r['count']
+        for r in LabResultAmendment.objects
+        .filter(created_at__date__gte=since, created_at__date__lte=today)
+        .values('amended_by__id').annotate(count=Count('id'))
+        if r['amended_by__id']
+    }
+    rejection_map = {
+        r['rejected_by__id']: r['count']
+        for r in SampleRejection.objects
+        .filter(is_deleted=False, created_at__date__gte=since, created_at__date__lte=today)
+        .values('rejected_by__id').annotate(count=Count('id'))
+        if r['rejected_by__id']
+    }
 
     response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="lab_staff_throughput_{days}d_{today}.csv"'
     w = csv.writer(response)
-    w.writerow([f'Lab Staff Throughput Report — Last {days} Days'])
+    w.writerow([f'Lab Staff Throughput — ISO 15189 §5.1 Competence Report — Last {days} Days'])
     w.writerow(['Period:', f'{since.strftime("%d/%m/%Y")} to {today.strftime("%d/%m/%Y")}'])
     w.writerow(['Generated:', today.strftime('%d/%m/%Y')])
     w.writerow([])
-    w.writerow(['Technician', 'Total Results Entered', 'Avg / Day', 'Verified'])
+    w.writerow([
+        'Rank', 'Technician',
+        'Total Results', 'Avg / Day',
+        'Verified', 'Verified %',
+        'Critical', 'Critical %',
+        'Abnormal', 'Abnormal %',
+        'Avg TAT (min)', 'Amendments', 'Rejections',
+    ])
     grand = 0
-    for name, d in sorted(staff_data.items(), key=lambda x: -x[1]['total']):
-        avg = round(d['total'] / days, 1)
-        w.writerow([name, d['total'], avg, d['verified']])
-        grand += d['total']
+    for rank, r in enumerate(staff_raw, 1):
+        if not r['performed_by__id']:
+            continue
+        uid = r['performed_by__id']
+        total, ver, crit, abn = r['total'], r['verified'], r['critical'], r['abnormal']
+        grand += total
+        w.writerow([
+            rank,
+            f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            total, round(total / days, 1),
+            ver, f"{round(ver / total * 100) if total else 0}%",
+            crit, f"{round(crit / total * 100, 1) if total else 0}%",
+            abn, f"{round(abn / total * 100, 1) if total else 0}%",
+            tat_map.get(uid, ''),
+            amendment_map.get(uid, 0),
+            rejection_map.get(uid, 0),
+        ])
     w.writerow([])
-    w.writerow(['TOTAL', grand, '', ''])
+    w.writerow(['', 'TOTAL', grand, round(grand / days, 1), '', '', '', '', '', '', '', '', ''])
     return response
 
 

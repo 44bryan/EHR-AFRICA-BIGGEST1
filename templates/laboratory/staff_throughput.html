@@ -1,14 +1,14 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load static %}
-{% block title %}Lab Staff Throughput Report{% endblock %}
+{% block title %}Lab Staff Throughput — ISO 15189 §5.1{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
   <div class="d-flex align-items-center gap-2">
     <i class="bi bi-people-fill text-primary fs-4"></i>
     <div>
-      <h5 class="mb-0 fw-bold">Lab Staff Throughput Report</h5>
-      <div class="text-muted small">Results entered per technician — ISO 15189 §5.1 / JCI AOP.5.3</div>
+      <h5 class="mb-0 fw-bold">Lab Staff Throughput &amp; Quality Report</h5>
+      <div class="text-muted small">ISO 15189:2022 §5.1 — Personnel Competence Monitoring</div>
     </div>
   </div>
   <div class="d-flex gap-2 align-items-center flex-wrap">
@@ -20,10 +20,10 @@
       <a href="?days=90" class="btn btn-outline-secondary {% if days == 90 %}active{% endif %}">90d</a>
     </div>
     <a href="{% url 'laboratory:staff_throughput_csv' %}?days={{ days }}" class="btn btn-sm btn-success">
-      <i class="bi bi-filetype-csv me-1"></i>CSV
+      <i class="bi bi-filetype-csv me-1"></i>CSV Export
     </a>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Print
+    <button onclick="printWithLetterhead()" class="btn btn-sm btn-danger">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Print / PDF
     </button>
     <a href="{% url 'laboratory:stats' %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Stats
@@ -33,6 +33,25 @@
 {% endblock %}
 
 {% block content %}
+
+{# ── Print-only letterhead ── #}
+<div class="print-only" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #0d6efd;">
+    <div>
+      <div style="font-size:18px;font-weight:800;color:#0d6efd;">{{ HOSPITAL_NAME }}</div>
+      <div style="font-size:11px;color:#555;margin-top:2px;">Laboratory Staff Throughput &amp; Quality Report</div>
+      <div style="font-size:10px;color:#888;margin-top:1px;">ISO 15189:2022 §5.1 — Personnel Competence Monitoring</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#6c757d;">
+      Period: {{ since|date:"d M Y" }} → {{ today|date:"d M Y" }} ({{ days }} days)<br>
+      Generated: {% now "d M Y H:i" %}<br>
+      <em>CONFIDENTIAL — MANAGEMENT USE ONLY</em>
+    </div>
+  </div>
+  <div style="background:#0d6efd;color:#fff;padding:4px 12px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;letter-spacing:.5px;">
+    Laboratory Department — Staff Performance Summary
+  </div>
+</div>
 
 {# ── KPI Cards ── #}
 <div class="row g-3 mb-4">
@@ -48,7 +67,7 @@
     <div class="card border-0 shadow-sm text-center">
       <div class="card-body py-3">
         <div class="h2 fw-bold text-success">{{ grand_total }}</div>
-        <div class="small text-muted">Total (last {{ days }} days)</div>
+        <div class="small text-muted">Total ({{ days }}d)</div>
       </div>
     </div>
   </div>
@@ -86,7 +105,9 @@
           {% for s in today_board %}
           <div class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
             <div class="d-flex align-items-center gap-2">
-              <span class="fw-bold text-muted" style="min-width:20px;">{{ forloop.counter }}</span>
+              <span class="fw-bold text-muted" style="min-width:20px;">
+                {% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% elif forloop.counter == 3 %}🥉{% else %}{{ forloop.counter }}{% endif %}
+              </span>
               <span class="fw-semibold small">{{ s.name }}</span>
             </div>
             <span class="badge {% if forloop.first %}bg-warning text-dark{% else %}bg-primary{% endif %} rounded-pill">
@@ -130,42 +151,98 @@
 </div>
 {% endif %}
 
-{# ── Staff Summary Table ── #}
+{# ── ISO 15189 §5.1 Staff Quality Performance Table ── #}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-table text-primary me-2"></i>Staff Performance Summary — Last {{ days }} Days</span>
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span>
+      <i class="bi bi-table text-primary me-2"></i>Staff Quality Performance — Last {{ days }} Days
+      <span class="badge bg-primary-subtle text-primary small fw-normal ms-2">ISO 15189 §5.1</span>
+    </span>
     <span class="text-muted small fw-normal">{{ since|date:"d M Y" }} → {{ today|date:"d M Y" }}</span>
   </div>
+
+  {# ── TAT legend ── #}
+  <div class="px-3 pt-2 pb-1 d-flex gap-3 small flex-wrap no-print">
+    <span><span class="badge bg-success-subtle text-success border">&#60;2h</span> Target TAT</span>
+    <span><span class="badge bg-warning-subtle text-warning border">2–4h</span> Monitor</span>
+    <span><span class="badge bg-danger-subtle text-danger border">&gt;4h</span> Action required</span>
+    <span class="ms-2 text-muted"><i class="bi bi-info-circle me-1"></i>TAT = Sample collection → Result entry</span>
+  </div>
+
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
+    <table class="table table-hover align-middle mb-0 small" id="qualityTable">
       <thead class="table-light">
         <tr>
-          <th>#</th>
+          <th class="text-center" style="width:40px;">#</th>
           <th>Technician</th>
-          <th class="text-end">Total Results</th>
-          <th class="text-end">Avg / Day</th>
+          <th class="text-end">Total</th>
+          <th class="text-end">Avg/Day</th>
           <th class="text-end">Verified</th>
-          <th style="min-width:160px;">Volume</th>
+          <th class="text-end">Ver %</th>
+          <th class="text-end text-danger">Critical</th>
+          <th class="text-end text-warning">Abnormal</th>
+          <th class="text-end">Avg TAT</th>
+          <th class="text-end" title="Result corrections (ISO 15189 §5.8.3)">Amendments</th>
+          <th class="text-end" title="Samples rejected (ISO 15189 §5.4.5)">Rejections</th>
+          <th style="min-width:120px;" class="no-print">Volume</th>
         </tr>
       </thead>
       <tbody>
         {% for s in staff_summary %}
         <tr>
-          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
-          <td class="fw-semibold">{{ s.name }}</td>
+          <td class="text-center text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ s.name }}</div>
+          </td>
           <td class="text-end fw-bold">{{ s.total }}</td>
           <td class="text-end text-muted">{{ s.avg_per_day }}</td>
-          <td class="text-end text-success">{{ s.verified }}</td>
-          <td>
+          <td class="text-end text-success fw-semibold">{{ s.verified }}</td>
+          <td class="text-end">
+            <span class="badge {% if s.verified_pct >= 90 %}bg-success{% elif s.verified_pct >= 70 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+              {{ s.verified_pct }}%
+            </span>
+          </td>
+          <td class="text-end">
+            {% if s.critical %}
+            <span class="text-danger fw-bold">{{ s.critical }}</span>
+            <span class="text-muted small">({{ s.critical_pct }}%)</span>
+            {% else %}
+            <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if s.abnormal %}
+            <span class="text-warning fw-semibold">{{ s.abnormal }}</span>
+            <span class="text-muted small">({{ s.abnormal_pct }}%)</span>
+            {% else %}
+            <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td class="text-end {{ s.tat_class }}">{{ s.tat_str }}</td>
+          <td class="text-end">
+            {% if s.amendments %}
+            <span class="badge bg-warning-subtle text-warning border">{{ s.amendments }}</span>
+            {% else %}
+            <span class="text-success">0</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if s.rejections %}
+            <span class="badge bg-danger-subtle text-danger border">{{ s.rejections }}</span>
+            {% else %}
+            <span class="text-success">0</span>
+            {% endif %}
+          </td>
+          <td class="no-print">
             {% if grand_total %}
             <div class="d-flex align-items-center gap-2">
               <div class="flex-grow-1">
-                <div class="progress" style="height:8px;">
+                <div class="progress" style="height:7px;">
                   <div class="progress-bar bg-primary"
                        style="width:{% widthratio s.total grand_total 100 %}%;"></div>
                 </div>
               </div>
-              <span class="text-muted small" style="min-width:35px;text-align:right;">
+              <span class="text-muted small" style="min-width:30px;text-align:right;">
                 {% widthratio s.total grand_total 100 %}%
               </span>
             </div>
@@ -174,7 +251,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="6" class="text-center text-muted py-5">
+          <td colspan="12" class="text-center text-muted py-5">
             <i class="bi bi-people fs-2 d-block mb-2 opacity-25"></i>
             No lab results recorded in the last {{ days }} days.
           </td>
@@ -186,19 +263,51 @@
         <tr>
           <td colspan="2">Total</td>
           <td class="text-end">{{ grand_total }}</td>
-          <td class="text-end text-muted">—</td>
+          <td class="text-end text-muted">{{ grand_total|default:0 }}</td>
           <td class="text-end text-success">—</td>
-          <td></td>
+          <td class="text-end">—</td>
+          <td class="text-end">—</td>
+          <td class="text-end">—</td>
+          <td class="text-end">—</td>
+          <td class="text-end">—</td>
+          <td class="text-end">—</td>
+          <td class="no-print"></td>
         </tr>
       </tfoot>
       {% endif %}
     </table>
   </div>
-  <div class="card-footer bg-white text-muted small py-2">
+  <div class="card-footer bg-white small text-muted py-2">
     <i class="bi bi-info-circle me-1"></i>
-    <strong>Avg/Day</strong> = total results ÷ {{ days }} days.
-    <strong>Verified</strong> = results signed off by the technician.
-    ISO 15189 §5.1 requires competence monitoring of all laboratory personnel.
+    <strong>Ver %</strong>: % of results verified by the technician.
+    <strong>Amendments</strong>: result corrections after saving (ISO 15189 §5.8.3).
+    <strong>Rejections</strong>: samples rejected by technician (ISO 15189 §5.4.5).
+    <strong>TAT</strong>: average turnaround time, sample collection to result entry.
+  </div>
+</div>
+
+{# ── Print-only signature block ── #}
+<div class="print-only" style="display:none;margin-top:30px;border-top:1px solid #dee2e6;padding-top:16px;">
+  <div style="display:flex;justify-content:space-between;">
+    <div style="text-align:center;width:200px;">
+      <div style="border-top:1px solid #333;margin-top:40px;padding-top:4px;font-size:10px;">
+        Laboratory Manager<br>Signature &amp; Date
+      </div>
+    </div>
+    <div style="text-align:center;width:200px;">
+      <div style="border-top:1px solid #333;margin-top:40px;padding-top:4px;font-size:10px;">
+        Quality Officer<br>Signature &amp; Date
+      </div>
+    </div>
+    <div style="text-align:center;width:200px;">
+      <div style="border-top:1px solid #333;margin-top:40px;padding-top:4px;font-size:10px;">
+        Medical Director<br>Signature &amp; Date
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:12px;font-size:8px;color:#888;text-align:center;">
+    This report is generated by {{ HOSPITAL_NAME }} Laboratory Information System (LIS) — ISO 15189:2022 compliant.
+    Unauthorised alteration is a criminal offence. Ref: LAB-STFF-{{ today|date:"Ymd" }}-{{ days }}D
   </div>
 </div>
 
@@ -208,7 +317,6 @@
 <script src="{% static 'vendor/chart.min.js' %}"></script>
 <script>
 (function(){
-  // Daily bar chart
   const dv = {{ daily_json|safe }};
   if (dv.length && document.getElementById('dailyChart')) {
     new Chart(document.getElementById('dailyChart'), {
@@ -220,8 +328,7 @@
           data: dv.map(function(d){ return d.count; }),
           backgroundColor: 'rgba(13,110,253,0.65)',
           borderColor: '#0d6efd',
-          borderWidth: 1,
-          borderRadius: 4
+          borderWidth: 1, borderRadius: 4
         }]
       },
       options: {
@@ -232,7 +339,6 @@
     });
   }
 
-  // Per-staff line chart
   const sc = {{ staff_chart_json|safe }};
   if (sc.datasets && sc.datasets.length && document.getElementById('staffChart')) {
     new Chart(document.getElementById('staffChart'), {
@@ -241,9 +347,7 @@
       options: {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
-        },
+        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
         scales: {
           y: { beginAtZero: true, ticks: { stepSize: 1 } },
           x: { ticks: { font: { size: 10 }, maxRotation: 45 } }
@@ -252,12 +356,46 @@
     });
   }
 }());
+
+function printWithLetterhead() {
+  // Convert charts to static images for print
+  var pairs = [];
+  document.querySelectorAll('canvas').forEach(function(canvas) {
+    var chart = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+    if (!chart) return;
+    var img = new Image();
+    img.src = chart.toBase64Image('image/png', 1.0);
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
+    img.style.display = 'block';
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = 'none';
+    pairs.push({ canvas: canvas, img: img });
+  });
+  window.print();
+  setTimeout(function() {
+    pairs.forEach(function(p) {
+      p.canvas.style.display = '';
+      if (p.img.parentNode) p.img.parentNode.removeChild(p.img);
+    });
+  }, 2000);
+}
 </script>
 
 <style>
 @media print {
-  .btn, .btn-group { display: none !important; }
-  .card { break-inside: avoid; }
+  #sidebar, nav.navbar, .no-print, .btn, .btn-group, .breadcrumb { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; font-size: 9pt; }
+  .print-only { display: block !important; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; margin-bottom: 8px !important; }
+  .card-header { background: #f8f9fa !important; padding: 4px 8px !important; font-size: 9pt; }
+  .table th, .table td { padding: 3px 6px !important; font-size: 8pt; }
+  .progress { display: none; }
+  .badge { border: 1px solid #ccc !important; }
+  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
 {% endblock %}
