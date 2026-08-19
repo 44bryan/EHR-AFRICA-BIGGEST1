@@ -14,4 +14,7 @@ urlpatterns = [
     path('<uuid:pk>/results/', views.enter_results_view, name='enter_results'),
     path('result/<uuid:result_id>/verify/', views.verify_result, name='verify_result'),
     path('<uuid:pk>/cancel/', views.cancel_lab_order, name='cancel'),
+    path('stats/export-csv/', views.lab_stats_csv_view, name='stats_csv'),
+    path('staff-throughput/', views.lab_staff_throughput_view, name='staff_throughput'),
+    path('staff-throughput/export-csv/', views.lab_staff_throughput_csv_view, name='staff_throughput_csv'),
 ]

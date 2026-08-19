@@ -4,7 +4,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseForbidden
 from django.utils import timezone
 from django.core.cache import cache
-from django.db.models import Count, Avg, Q
+from django.db.models import Count, Avg, Q, Sum
 from datetime import timedelta
 from .models import LabOrder, LabOrderItem, LabResult, LabTestType, SampleCollection
 from .forms import LabOrderForm, LabResultFormSet, SampleCollectionForm
@@ -805,3 +805,279 @@ def cancel_lab_order(request, pk):
     if order.consultation_id:
         return redirect('consultations:workstation')
     return redirect('laboratory:list')
+
+
+# ── Stats CSV Export ──────────────────────────────────────────────────────────
+
+@login_required
+def lab_stats_csv_view(request):
+    """Download monthly lab stats breakdown as CSV (test × sex × age)."""
+    import csv
+    import datetime as _dt
+    import calendar as _cal
+    from django.http import HttpResponse
+
+    u = request.user
+    if not (u.is_lab_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+        month_start = _dt.date(year, month, 1)
+    except (ValueError, TypeError):
+        month_start = today.replace(day=1)
+        year, month = month_start.year, month_start.month
+    last_day  = _cal.monthrange(year, month)[1]
+    month_end = _dt.date(year, month, last_day)
+
+    base_items = LabOrderItem.objects.filter(
+        order__is_deleted=False,
+        order__created_at__date__gte=month_start,
+        order__created_at__date__lte=month_end,
+    )
+
+    rows = list(base_items.values_list(
+        'test_type__name', 'test_type__category',
+        'order__patient__gender', 'order__patient__date_of_birth',
+    ))
+
+    bd = {}
+    for name, category, gender, dob in rows:
+        cat = (category or '').replace('_', ' ').title()
+        if name not in bd:
+            bd[name] = {'cat': cat, 'M': 0, 'F': 0, 'CM': 0, 'CF': 0, 'tot': 0}
+        is_child = bool(dob) and (today - dob).days // 365 <= 14
+        bd[name]['tot'] += 1
+        if gender == 'M':
+            bd[name]['M'] += 1
+            if is_child:
+                bd[name]['CM'] += 1
+        elif gender == 'F':
+            bd[name]['F'] += 1
+            if is_child:
+                bd[name]['CF'] += 1
+
+    base_orders = LabOrder.objects.filter(
+        is_deleted=False,
+        created_at__date__gte=month_start,
+        created_at__date__lte=month_end,
+    )
+    total_orders = base_orders.count()
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    fname = f"lab_stats_{year}_{month:02d}.csv"
+    response['Content-Disposition'] = f'attachment; filename="{fname}"'
+    w = csv.writer(response)
+    w.writerow([f'Laboratory Statistics — {month_start.strftime("%B %Y")}'])
+    w.writerow(['Generated:', today.strftime('%d/%m/%Y')])
+    w.writerow([])
+    w.writerow(['Test Name', 'Category',
+                'Male Adult (15+)', 'Male Child (0–14)',
+                'Female Adult (15+)', 'Female Child (0–14)',
+                'Total Male', 'Total Female', 'Grand Total'])
+    for name, v in sorted(bd.items(), key=lambda x: -x[1]['tot']):
+        w.writerow([name, v['cat'],
+                    v['M'] - v['CM'], v['CM'],
+                    v['F'] - v['CF'], v['CF'],
+                    v['M'], v['F'], v['tot']])
+    w.writerow([])
+    w.writerow(['', '', '', '', '', '', '', 'TOTAL', sum(v['tot'] for v in bd.values())])
+    w.writerow([])
+    w.writerow(['Summary'])
+    w.writerow(['Total Orders', total_orders])
+    w.writerow(['Completed', base_orders.filter(status='COMPLETED').count()])
+    completion = base_orders.filter(status='COMPLETED').count()
+    w.writerow(['Completion Rate %',
+                f"{round(completion / total_orders * 100, 1) if total_orders else 0}%"])
+    w.writerow(['Urgent / Emergency',
+                base_orders.filter(urgency__in=['URGENT', 'EMERGENCY']).count()])
+    return response
+
+
+# ── Staff Throughput Report ───────────────────────────────────────────────────
+
+@login_required
+def lab_staff_throughput_view(request):
+    """Per-staff daily throughput — how many results each lab tech entered/verified."""
+    import datetime as _dt
+    import json
+    from django.db.models import Count
+
+    u = request.user
+    if not (u.is_lab_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        days = int(request.GET.get('days', 30))
+        if days not in (7, 14, 30, 60, 90):
+            days = 30
+    except (ValueError, TypeError):
+        days = 30
+
+    since = today - _dt.timedelta(days=days - 1)
+
+    # ── Today's leaderboard ───────────────────────────────────────────────────
+    today_results = (
+        LabResult.objects
+        .filter(is_deleted=False, result_date__date=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    today_board = [
+        {
+            'name': f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'count': r['count'],
+        }
+        for r in today_results if r['performed_by__id']
+    ]
+
+    # ── Per-staff period summary ──────────────────────────────────────────────
+    staff_summary_raw = (
+        LabResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(
+            total=Count('id'),
+            verified=Count('id', filter=Q(is_verified=True)),
+        )
+        .order_by('-total')
+    )
+    staff_summary = []
+    for r in staff_summary_raw:
+        if not r['performed_by__id']:
+            continue
+        total = r['total']
+        staff_summary.append({
+            'name':        f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'total':       total,
+            'verified':    r['verified'],
+            'avg_per_day': round(total / days, 1) if days else 0,
+        })
+
+    # ── Daily totals chart (all staff combined) ───────────────────────────────
+    daily_raw = (
+        LabResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+        .extra(select={'day': 'DATE(result_date)'})
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+    daily_json = json.dumps([{'day': str(r['day']), 'count': r['count']} for r in daily_raw])
+
+    # ── Top 5 staff per-day breakdown for chart ───────────────────────────────
+    top5 = [s['name'] for s in staff_summary[:5]]
+    staff_daily = {}
+    if top5:
+        per_staff_daily = (
+            LabResult.objects
+            .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+            .extra(select={'day': 'DATE(result_date)'})
+            .values('day', 'performed_by__first_name', 'performed_by__last_name')
+            .annotate(count=Count('id'))
+            .order_by('day')
+        )
+        for r in per_staff_daily:
+            name = f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown'
+            if name not in top5:
+                continue
+            day = str(r['day'])
+            if name not in staff_daily:
+                staff_daily[name] = {}
+            staff_daily[name][day] = r['count']
+
+    date_labels = [(since + _dt.timedelta(days=i)).strftime('%d %b') for i in range(days)]
+    date_keys   = [(since + _dt.timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days)]
+
+    CHART_COLORS = ['#6366f1', '#0d6efd', '#198754', '#ffc107', '#dc3545']
+    staff_datasets = []
+    for i, name in enumerate(top5):
+        data = [staff_daily.get(name, {}).get(dk, 0) for dk in date_keys]
+        staff_datasets.append({
+            'label': name, 'data': data,
+            'borderColor': CHART_COLORS[i % len(CHART_COLORS)],
+            'backgroundColor': 'transparent',
+            'borderWidth': 2, 'pointRadius': 3, 'tension': 0.3,
+        })
+    staff_chart_json = json.dumps({'labels': date_labels, 'datasets': staff_datasets})
+
+    grand_total = sum(s['total'] for s in staff_summary)
+    today_total = sum(t['count'] for t in today_board)
+
+    return render(request, 'laboratory/staff_throughput.html', {
+        'today': today,
+        'days': days,
+        'since': since,
+        'today_board': today_board,
+        'today_total': today_total,
+        'staff_summary': staff_summary,
+        'grand_total': grand_total,
+        'daily_json': daily_json,
+        'staff_chart_json': staff_chart_json,
+        'date_labels': date_labels,
+    })
+
+
+# ── Staff Throughput CSV Export ───────────────────────────────────────────────
+
+@login_required
+def lab_staff_throughput_csv_view(request):
+    """CSV download of lab staff throughput."""
+    import csv
+    import datetime as _dt
+    from django.http import HttpResponse
+
+    u = request.user
+    if not (u.is_lab_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        days = int(request.GET.get('days', 30))
+        if days not in (7, 14, 30, 60, 90):
+            days = 30
+    except (ValueError, TypeError):
+        days = 30
+
+    since = today - _dt.timedelta(days=days - 1)
+
+    results = (
+        LabResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since)
+        .select_related('performed_by')
+    )
+
+    staff_data = {}
+    for r in results:
+        if not r.performed_by:
+            continue
+        name = r.performed_by.get_full_name() or r.performed_by.username
+        if name not in staff_data:
+            staff_data[name] = {'total': 0, 'verified': 0}
+        staff_data[name]['total'] += 1
+        if r.is_verified:
+            staff_data[name]['verified'] += 1
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    response['Content-Disposition'] = f'attachment; filename="lab_staff_throughput_{days}d_{today}.csv"'
+    w = csv.writer(response)
+    w.writerow([f'Lab Staff Throughput Report — Last {days} Days'])
+    w.writerow(['Period:', f'{since.strftime("%d/%m/%Y")} to {today.strftime("%d/%m/%Y")}'])
+    w.writerow(['Generated:', today.strftime('%d/%m/%Y')])
+    w.writerow([])
+    w.writerow(['Technician', 'Total Results Entered', 'Avg / Day', 'Verified'])
+    grand = 0
+    for name, d in sorted(staff_data.items(), key=lambda x: -x[1]['total']):
+        avg = round(d['total'] / days, 1)
+        w.writerow([name, d['total'], avg, d['verified']])
+        grand += d['total']
+    w.writerow([])
+    w.writerow(['TOTAL', grand, '', ''])
+    return response
