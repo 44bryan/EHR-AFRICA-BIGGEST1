@@ -20,4 +20,5 @@ urlpatterns = [
     path('<uuid:pk>/reject-sample/', views.reject_sample_view, name='reject_sample'),
     path('<uuid:pk>/result-pdf/', views.result_pdf_view, name='result_pdf'),
     path('result/<uuid:result_id>/acknowledge-critical/', views.acknowledge_critical_view, name='acknowledge_critical'),
+    path('staff-throughput/pdf/', views.lab_staff_throughput_pdf_view, name='staff_throughput_pdf'),
 ]

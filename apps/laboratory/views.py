@@ -1232,6 +1232,122 @@ def lab_staff_throughput_csv_view(request):
     return response
 
 
+# ── Staff Throughput PDF (WeasyPrint) ─────────────────────────────────────────
+
+@login_required
+def lab_staff_throughput_pdf_view(request):
+    """WeasyPrint PDF — ISO 15189 §5.1 staff competence report with hospital letterhead."""
+    import datetime as _dt
+    from django.db.models import Count, Avg, ExpressionWrapper, F, DurationField
+
+    u = request.user
+    if not (u.is_lab_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    try:
+        days = int(request.GET.get('days', 30))
+        if days not in (7, 14, 30, 60, 90):
+            days = 30
+    except (ValueError, TypeError):
+        days = 30
+
+    since = today - _dt.timedelta(days=days - 1)
+
+    today_results = (
+        LabResult.objects
+        .filter(is_deleted=False, result_date__date=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(count=Count('id')).order_by('-count')
+    )
+    today_board = [
+        {'name': f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+         'count': r['count']}
+        for r in today_results if r['performed_by__id']
+    ]
+
+    staff_summary_raw = (
+        LabResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(
+            total=Count('id'),
+            verified=Count('id', filter=Q(is_verified=True)),
+            critical=Count('id', filter=Q(is_critical=True)),
+            abnormal=Count('id', filter=Q(is_abnormal=True)),
+        )
+        .order_by('-total')
+    )
+    tat_map = {}
+    for r in (
+        LabResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today,
+                order_item__order__sample_collection__isnull=False)
+        .values('performed_by__id')
+        .annotate(avg_tat=Avg(ExpressionWrapper(
+            F('result_date') - F('order_item__order__sample_collection__collection_date'),
+            output_field=DurationField(),
+        )))
+    ):
+        if r['performed_by__id'] and r['avg_tat']:
+            tat_map[r['performed_by__id']] = max(0, int(r['avg_tat'].total_seconds() / 60))
+
+    amendment_map = {
+        r['amended_by__id']: r['count']
+        for r in LabResultAmendment.objects
+        .filter(created_at__date__gte=since, created_at__date__lte=today)
+        .values('amended_by__id').annotate(count=Count('id'))
+        if r['amended_by__id']
+    }
+    rejection_map = {
+        r['rejected_by__id']: r['count']
+        for r in SampleRejection.objects
+        .filter(is_deleted=False, created_at__date__gte=since, created_at__date__lte=today)
+        .values('rejected_by__id').annotate(count=Count('id'))
+        if r['rejected_by__id']
+    }
+
+    staff_summary = []
+    for r in staff_summary_raw:
+        if not r['performed_by__id']:
+            continue
+        uid = r['performed_by__id']
+        total, verified, critical, abnormal = r['total'], r['verified'], r['critical'], r['abnormal']
+        tat_mins = tat_map.get(uid)
+        tat_str = (f"{tat_mins // 60}h {tat_mins % 60}m" if tat_mins and tat_mins >= 60
+                   else (f"{tat_mins}m" if tat_mins else '—'))
+        staff_summary.append({
+            'name':         f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'total':        total,
+            'verified':     verified,
+            'verified_pct': round(verified / total * 100) if total else 0,
+            'critical':     critical,
+            'critical_pct': round(critical / total * 100, 1) if total else 0,
+            'abnormal':     abnormal,
+            'abnormal_pct': round(abnormal / total * 100, 1) if total else 0,
+            'avg_per_day':  round(total / days, 1) if days else 0,
+            'amendments':   amendment_map.get(uid, 0),
+            'rejections':   rejection_map.get(uid, 0),
+            'tat_str':      tat_str,
+            'tat_mins':     tat_mins or 0,
+        })
+
+    from apps.reports.views import render_pdf
+    ctx = {
+        'today':          today,
+        'days':           days,
+        'since':          since,
+        'today_board':    today_board,
+        'today_total':    sum(t['count'] for t in today_board),
+        'staff_summary':  staff_summary,
+        'grand_total':    sum(s['total'] for s in staff_summary),
+        'pdf_filename':   f'lab-staff-throughput-{days}d-{today}.pdf',
+        'pdf_seal_label': 'INTERNAL USE ONLY',
+    }
+    return render_pdf('laboratory/staff_throughput_pdf.html', ctx)
+
+
 # ── Sample Rejection ──────────────────────────────────────────────────────────
 
 @login_required
