@@ -147,9 +147,47 @@ class SampleCollection(AuditModel):
 
     def save(self, *args, **kwargs):
         if not self.sample_id:
-            import random, string
-            self.sample_id = 'LAB-' + ''.join(random.choices(string.digits, k=8))
+            # ISO 15189 §5.4.2 — sequential, traceable sample ID (LAB-YYYYMMDD-NNNN)
+            from django.utils import timezone as _tz
+            today = _tz.localdate()
+            prefix = f'LAB-{today.strftime("%Y%m%d")}-'
+            last = (SampleCollection.objects
+                    .filter(sample_id__startswith=prefix)
+                    .order_by('-sample_id')
+                    .values_list('sample_id', flat=True)
+                    .first())
+            try:
+                seq = int(last.split('-')[-1]) + 1 if last else 1
+            except (ValueError, AttributeError, IndexError):
+                seq = 1
+            self.sample_id = f'{prefix}{seq:04d}'
         super().save(*args, **kwargs)
+
+
+class SampleRejection(AuditModel):
+    """ISO 15189 §5.4.5 — Record when a sample cannot be processed."""
+
+    class Reason(models.TextChoices):
+        HAEMOLYSED      = 'HAEMOLYSED',      _('Haemolysed sample')
+        INSUFFICIENT    = 'INSUFFICIENT',     _('Insufficient volume')
+        WRONG_CONTAINER = 'WRONG_CONTAINER',  _('Wrong container / tube')
+        UNLABELLED      = 'UNLABELLED',       _('Unlabelled / mislabelled')
+        CLOTTED         = 'CLOTTED',          _('Clotted sample')
+        CONTAMINATED    = 'CONTAMINATED',     _('Contaminated')
+        DELAYED         = 'DELAYED',          _('Excessive transport delay')
+        OTHER           = 'OTHER',            _('Other — see notes')
+
+    order = models.ForeignKey(LabOrder, on_delete=models.CASCADE, related_name='rejections')
+    rejected_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True)
+    reason = models.CharField(max_length=20, choices=Reason.choices)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Sample Rejection'
+
+    def __str__(self):
+        return f"Rejection — {self.order.patient.full_name} [{self.get_reason_display()}]"
 
 
 class LabResult(AuditModel):
@@ -171,6 +209,12 @@ class LabResult(AuditModel):
     is_verified = models.BooleanField(default=False)
     verified_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField(blank=True)
+    # JCI IPSG.2 — Critical value read-back acknowledgement
+    critical_acknowledged_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='acknowledged_critical_results',
+    )
+    critical_acknowledged_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Lab Result'
@@ -178,3 +222,18 @@ class LabResult(AuditModel):
     def __str__(self):
         flag = ' [CRITICAL]' if self.is_critical else (' [ABNORMAL]' if self.is_abnormal else '')
         return f"{self.order_item.test_type.name}: {self.result_value} {self.result_unit}{flag}"
+
+
+class LabResultAmendment(TimeStampedModel):
+    """ISO 15189 §5.8.3 — Audit trail whenever a result value is corrected after saving."""
+    result = models.ForeignKey(LabResult, on_delete=models.CASCADE, related_name='amendments')
+    original_value = models.CharField(max_length=200)
+    amended_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True)
+    reason = models.TextField()
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Lab Result Amendment'
+
+    def __str__(self):
+        return f"Amendment — {self.result} (was: {self.original_value})"

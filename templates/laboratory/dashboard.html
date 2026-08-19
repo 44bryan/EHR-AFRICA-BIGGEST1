@@ -178,15 +178,15 @@
                 <th>Patient</th>
                 <th>Tests</th>
                 <th>Urgency</th>
-                <th>Payment</th>
+                <th>Auth</th>
                 <th>Status</th>
-                <th>Ordered</th>
+                <th>TAT</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {% for order in pending_orders %}
-              <tr class="{% if order.urgency == 'EMERGENCY' %}table-danger{% elif order.urgency == 'URGENT' %}table-warning{% elif order.is_paid == False %}table-warning{% endif %}">
+              <tr class="{% if order.urgency == 'EMERGENCY' %}table-danger{% elif order.urgency == 'URGENT' %}table-warning{% elif order.elapsed_mins > 120 %}table-warning{% endif %}">
                 <td>
                   {% if order.status == 'ORDERED' %}
                   <input type="checkbox" name="order_ids" value="{{ order.pk }}" class="lab-row-chk">
@@ -207,23 +207,43 @@
                   {% else %}<span class="badge bg-secondary">Routine</span>{% endif %}
                 </td>
                 <td>
+                  {# ISO 15189 §4.1.2 — lab sees authorisation status, not billing details #}
                   {% if order.is_paid == True %}
-                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.65rem;">
+                      <i class="bi bi-shield-check me-1"></i>Authorised
+                    </span>
                   {% elif order.is_paid == False %}
-                    <span class="badge bg-danger"><i class="bi bi-exclamation-circle me-1"></i>Unpaid</span>
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:.65rem;">
+                      <i class="bi bi-shield-exclamation me-1"></i>Pending Auth
+                    </span>
                   {% else %}
-                    <span class="badge bg-secondary">—</span>
+                    <span class="badge bg-light text-muted" style="font-size:.65rem;">—</span>
                   {% endif %}
                 </td>
                 <td>
                   {% if order.status == 'ORDERED' %}<span class="badge bg-primary">Ordered</span>
-                  {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info">Sample ✓</span>
+                  {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info text-dark">Sample ✓</span>
                   {% elif order.status == 'PROCESSING' %}<span class="badge bg-warning text-dark">Processing</span>
                   {% endif %}
+                  {# Sample rejection indicator #}
+                  {% if order.rejections.exists %}
+                  <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" style="font-size:.6rem;" title="Sample was previously rejected">
+                    <i class="bi bi-exclamation-triangle"></i> Rejected ×{{ order.rejections.count }}
+                  </span>
+                  {% endif %}
                 </td>
-                <td class="text-muted" style="font-size:.7rem;">{{ order.created_at|timesince }} ago</td>
                 <td>
-                  <div class="d-flex gap-1">
+                  {# ISO 15189 §5.5 — TAT display with overdue alert #}
+                  {% if order.elapsed %}
+                  <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning fw-semibold{% else %}text-muted{% endif %}"
+                        style="font-size:.72rem;" title="Time since order was placed">
+                    {% if order.elapsed_mins > 240 %}<i class="bi bi-exclamation-triangle-fill me-1"></i>{% endif %}
+                    {{ order.elapsed }}
+                  </span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="d-flex gap-1 flex-wrap">
                     {% if order.status == 'ORDERED' %}
                     <a href="{% url 'laboratory:collect_sample' order.pk %}"
                        class="btn btn-xs btn-outline-info" style="font-size:.7rem;padding:2px 6px;">Collect</a>
@@ -231,9 +251,22 @@
                     {% if order.status == 'SAMPLE_COLLECTED' or order.status == 'PROCESSING' %}
                     <a href="{% url 'laboratory:enter_results' order.pk %}"
                        class="btn btn-xs btn-outline-success" style="font-size:.7rem;padding:2px 6px;">Results</a>
+                    {# Sample rejection — ISO 15189 §5.4.5 #}
+                    <button type="button" class="btn btn-xs btn-outline-danger"
+                            style="font-size:.7rem;padding:2px 6px;"
+                            data-bs-toggle="modal"
+                            data-bs-target="#rejectSampleModal"
+                            data-order-id="{{ order.pk }}"
+                            data-patient="{{ order.patient.full_name }}">
+                      <i class="bi bi-x-circle"></i> Reject
+                    </button>
                     {% elif order.status == 'COMPLETED' %}
                     <a href="{% url 'laboratory:enter_results' order.pk %}"
                        class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 6px;">Edit</a>
+                    <a href="{% url 'laboratory:result_pdf' order.pk %}"
+                       class="btn btn-xs btn-outline-danger" target="_blank" style="font-size:.7rem;padding:2px 6px;">
+                      <i class="bi bi-printer"></i> Print
+                    </a>
                     {% endif %}
                     <a href="{% url 'laboratory:detail' order.pk %}"
                        class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:2px 6px;">View</a>
@@ -305,10 +338,66 @@
 </div>
 </div>{# /lab-queue-live #}
 
+{# ── Sample Rejection Modal — ISO 15189 §5.4.5 ─────────────────────────── #}
+<div class="modal fade" id="rejectSampleModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white py-2">
+        <h6 class="modal-title"><i class="bi bi-x-circle me-2"></i>Reject Sample — <span id="rejectPatientName"></span></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" id="rejectSampleForm" action="">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="small text-muted mb-3">ISO 15189 §5.4.5 — This will reset the order to <strong>ORDERED</strong> status and notify the requesting doctor.</p>
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Rejection Reason <span class="text-danger">*</span></label>
+            <select name="rejection_reason" class="form-select form-select-sm" required>
+              <option value="">— Select reason —</option>
+              <option value="HAEMOLYSED">Haemolysed sample</option>
+              <option value="INSUFFICIENT">Insufficient volume</option>
+              <option value="WRONG_CONTAINER">Wrong container / tube</option>
+              <option value="UNLABELLED">Unlabelled / mislabelled</option>
+              <option value="CLOTTED">Clotted sample</option>
+              <option value="CONTAMINATED">Contaminated</option>
+              <option value="DELAYED">Excessive transport delay</option>
+              <option value="OTHER">Other — see notes</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Notes (optional)</label>
+            <textarea name="rejection_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Additional details for the requesting doctor…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-danger">
+            <i class="bi bi-x-circle me-1"></i>Reject Sample
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
+/* ── Sample rejection modal — wire up order ID ──────────────────────── */
+(function(){
+  var modal = document.getElementById('rejectSampleModal');
+  if (!modal) return;
+  modal.addEventListener('show.bs.modal', function(e) {
+    var btn = e.relatedTarget;
+    var orderId = btn.getAttribute('data-order-id');
+    var patient = btn.getAttribute('data-patient');
+    modal.querySelector('#rejectPatientName').textContent = patient;
+    modal.querySelector('#rejectSampleForm').action = '/laboratory/' + orderId + '/reject-sample/';
+  });
+})();
+
 /* ── WebSocket live refresh — partial DOM swap ──────────────────────── */
 (function(){
   var QID='lab-queue-live',ROOMS=['lab'],_busy=false,_pend=false,_fb;

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Laboratory Report — {{ order.patient.full_name }}</title>
+{% include "reports/pdf/_base_styles.html" %}
+<style>
+  @page { size: A4 portrait; margin: 1.4cm 1.8cm; }
+  .result-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-top: 6px; }
+  .result-table th { background: #e9ecef; padding: 5px 8px; text-align: left; font-weight: 700; border: 1px solid #dee2e6; font-size: 8pt; text-transform: uppercase; letter-spacing: .03em; }
+  .result-table td { padding: 5px 8px; border: 1px solid #dee2e6; vertical-align: middle; }
+  .result-table tr:nth-child(even) td { background: #f8f9fa; }
+  .flag-critical { color: #dc3545; font-weight: 800; }
+  .flag-abnormal { color: #fd7e14; font-weight: 700; }
+  .flag-normal   { color: #198754; }
+  .cat-header td { background: #0d6efd; color: #fff; font-weight: 700; font-size: 8pt; padding: 3px 8px; }
+  .verified-stamp { border: 2px solid #198754; color: #198754; font-size: 7.5pt; font-weight: 700;
+                    padding: 2px 8px; border-radius: 4px; display: inline-block; }
+  .unverified-stamp { border: 2px solid #ffc107; color: #856404; font-size: 7.5pt; font-weight: 700;
+                      padding: 2px 8px; border-radius: 4px; display: inline-block; }
+</style>
+</head>
+<body>
+{% include "reports/pdf/_letterhead.html" %}
+
+<div class="accred-bar">
+  <span>LABORATORY REPORT &mdash; ISO 15189:2022</span>
+  <span>Report Date: {{ order.updated_at|date:"d M Y H:i" }}</span>
+</div>
+
+<div class="report-title">Laboratory Test Results</div>
+
+{# ── Patient bar ── #}
+<div class="patient-bar">
+  <strong>Patient:</strong> {{ order.patient.full_name }} &nbsp;|&nbsp;
+  <strong>ID:</strong> {{ order.patient.patient_id }} &nbsp;|&nbsp;
+  <strong>DOB:</strong> {{ order.patient.date_of_birth|date:"d M Y"|default:"—" }} &nbsp;|&nbsp;
+  <strong>Sex:</strong> {{ order.patient.get_gender_display|default:"—" }}
+  {% if order.patient.phone %}&nbsp;|&nbsp;<strong>Tel:</strong> {{ order.patient.phone }}{% endif %}
+</div>
+
+{# ── Order info ── #}
+<div class="section">
+  <div class="section-title">Order Information</div>
+  <div class="field-row"><span class="field-label">Order Date</span><span class="field-value">{{ order.created_at|date:"d M Y H:i" }}</span></div>
+  <div class="field-row"><span class="field-label">Requested By</span><span class="field-value">{{ order.ordered_by.get_full_name|default:"—" }}</span></div>
+  <div class="field-row"><span class="field-label">Clinical Indication</span><span class="field-value">{{ order.clinical_indication|default:"—" }}</span></div>
+  <div class="field-row"><span class="field-label">Priority</span><span class="field-value">{{ order.get_urgency_display }}</span></div>
+  {% if order.sample_collection %}
+  <div class="field-row"><span class="field-label">Sample ID</span><span class="field-value">{{ order.sample_collection.sample_id }}</span></div>
+  <div class="field-row"><span class="field-label">Sample Type</span><span class="field-value">{{ order.sample_collection.get_sample_type_display }}</span></div>
+  <div class="field-row"><span class="field-label">Collected</span><span class="field-value">{{ order.sample_collection.collection_date|date:"d M Y H:i" }} by {{ order.sample_collection.collected_by.get_full_name|default:"—" }}</span></div>
+  {% endif %}
+</div>
+
+{# ── Results ── #}
+<div class="section">
+  <div class="section-title">Results</div>
+
+  {# Group by category #}
+  {% regroup completed_items by test_type.category as categories %}
+  {% for cat_group in categories %}
+  <table class="result-table" style="margin-bottom:8px;">
+    <thead>
+      <tr class="cat-header">
+        <td colspan="6">{{ cat_group.grouper|title }}</td>
+      </tr>
+      <tr>
+        <th style="width:28%;">Test</th>
+        <th style="width:18%;">Result</th>
+        <th style="width:12%;">Unit</th>
+        <th style="width:22%;">Reference Range</th>
+        <th style="width:10%;">Flag</th>
+        <th style="width:10%;">Verified</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in cat_group.list %}
+      {% with r=item.result %}
+      <tr>
+        <td class="fw-semibold">{{ item.test_type.name }}</td>
+        {% if r %}
+        <td class="{% if r.is_critical %}flag-critical{% elif r.is_abnormal %}flag-abnormal{% else %}flag-normal{% endif %}">
+          {{ r.result_value }}
+        </td>
+        <td>{{ r.result_unit|default:"—" }}</td>
+        <td style="font-size:8pt;color:#555;">{{ r.reference_range|default:"—" }}</td>
+        <td>
+          {% if r.is_critical %}<strong class="flag-critical">CRITICAL</strong>
+          {% elif r.is_abnormal %}<strong class="flag-abnormal">ABNORMAL</strong>
+          {% else %}<span class="flag-normal">Normal</span>{% endif %}
+        </td>
+        <td>
+          {% if r.is_verified %}
+          <span class="verified-stamp">VERIFIED</span>
+          {% else %}
+          <span class="unverified-stamp">PENDING</span>
+          {% endif %}
+        </td>
+        {% else %}
+        <td colspan="5" style="color:#aaa;font-style:italic;">Awaiting result</td>
+        {% endif %}
+      </tr>
+      {% if r and r.comment %}
+      <tr>
+        <td colspan="6" style="font-size:7.5pt;color:#555;padding:2px 8px 4px 8px;font-style:italic;">
+          <i>Remark:</i> {{ r.comment }}
+        </td>
+      </tr>
+      {% endif %}
+      {% endwith %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+
+  {% if not completed_items %}
+  <div class="info-box" style="text-align:center;color:#888;">No results available yet.</div>
+  {% endif %}
+</div>
+
+{# ── Critical values note ── #}
+{% for item in completed_items %}{% if item.result.is_critical %}
+{% if forloop.first %}
+<div class="warning-box" style="margin-bottom:10px;">
+  <strong>CRITICAL VALUE NOTIFICATION (JCI IPSG.2)</strong><br>
+  The following results are outside critical limits and require immediate clinical action:
+  <ul style="margin:6px 0 0 16px;font-size:8.5pt;">
+{% endif %}
+  <li>{{ item.test_type.name }}: <strong>{{ item.result.result_value }} {{ item.result.result_unit }}</strong>
+    {% if item.result.critical_acknowledged_at %}
+    — Acknowledged by {{ item.result.critical_acknowledged_by.get_full_name }} on {{ item.result.critical_acknowledged_at|date:"d M Y H:i" }}
+    {% else %}
+    — <strong style="color:#dc3545;">AWAITING ACKNOWLEDGEMENT</strong>
+    {% endif %}
+  </li>
+{% if forloop.last %}
+  </ul>
+</div>
+{% endif %}
+{% endif %}{% endfor %}
+
+{# ── Signature block ── #}
+<div class="auth-block">
+  <div class="auth-row">
+    <div class="auth-col">
+      <div class="auth-role">Laboratory Technician</div>
+      {% for item in completed_items %}{% if item.result and item.result.performed_by %}
+      <div class="auth-title">{{ item.result.performed_by.get_full_name }}</div>{% endif %}{% if forloop.first %}{% endif %}{% endfor %}
+      <div class="auth-sig">Signature: ________________________</div>
+      <div class="auth-date">Date: {{ order.updated_at|date:"d M Y" }}</div>
+    </div>
+    <div class="auth-col">
+      <div class="auth-role">Verified By</div>
+      {% for item in completed_items %}{% if item.result and item.result.verified_by %}
+      <div class="auth-title">{{ item.result.verified_by.get_full_name }}</div>{% if forloop.first %}{% endif %}{% endif %}{% endfor %}
+      <div class="auth-sig">Signature: ________________________</div>
+      <div class="auth-date">Date: ________________</div>
+    </div>
+    <div class="auth-col">
+      <div class="auth-role">Requesting Doctor</div>
+      <div class="auth-title">{{ order.ordered_by.get_full_name|default:"—" }}</div>
+      <div class="auth-sig">Signature: ________________________</div>
+      <div class="auth-date">Date: ________________</div>
+    </div>
+  </div>
+</div>
+
+<div class="data-note">
+  This report is generated by {{ HOSPITAL_NAME }} Laboratory Information System. Reference ranges are provided for guidance only and must be interpreted in clinical context.
+  Any unauthorised alteration of this document is a criminal offence. ISO 15189:2022 compliant.
+</div>
+
+<div class="pdf-footer">
+  <span>{{ HOSPITAL_NAME }} — Confidential Laboratory Report</span>
+  <span>Sample ID: {{ order.sample_collection.sample_id|default:"N/A" }} &nbsp;|&nbsp; Patient: {{ order.patient.patient_id }}</span>
+</div>
+</body>
+</html>

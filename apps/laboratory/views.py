@@ -2,11 +2,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseForbidden
+from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.core.cache import cache
 from django.db.models import Count, Avg, Q, Sum
 from datetime import timedelta
-from .models import LabOrder, LabOrderItem, LabResult, LabTestType, SampleCollection
+from .models import LabOrder, LabOrderItem, LabResult, LabTestType, SampleCollection, SampleRejection, LabResultAmendment
 from .forms import LabOrderForm, LabResultFormSet, SampleCollectionForm
 from apps.consultations.models import Consultation
 
@@ -661,7 +662,7 @@ def enter_results_view(request, pk):
         for item in items:
             value = request.POST.get(f'result_value_{item.pk}', '').strip()
             if value:
-                result, _ = LabResult.objects.get_or_create(
+                result, created = LabResult.objects.get_or_create(
                     order_item=item,
                     defaults={
                         'performed_by': request.user,
@@ -671,6 +672,15 @@ def enter_results_view(request, pk):
                 # Skip verified results — they are locked
                 if result.is_verified:
                     continue
+                # ISO 15189 §5.8.3 — log amendment if value is being changed
+                amendment_reason = request.POST.get(f'amendment_reason_{item.pk}', '').strip()
+                if not created and result.result_value and result.result_value != value:
+                    LabResultAmendment.objects.create(
+                        result=result,
+                        original_value=result.result_value,
+                        amended_by=request.user,
+                        reason=amendment_reason or 'Corrected by technician',
+                    )
                 result.result_value = value
                 result.result_unit = request.POST.get(f'result_unit_{item.pk}', '')
                 result.reference_range = request.POST.get(f'ref_range_{item.pk}', '')
@@ -770,7 +780,7 @@ def cancel_lab_order(request, pk):
         messages.error(
             request,
             f'Cannot cancel — order is already {order.get_status_display()}. '
-            'Contact the lab technician.'
+            'Contact the requesting doctor to discuss further action.'
         )
         return redirect('laboratory:detail', pk=pk)
 
@@ -1081,3 +1091,126 @@ def lab_staff_throughput_csv_view(request):
     w.writerow([])
     w.writerow(['TOTAL', grand, '', ''])
     return response
+
+
+# ── Sample Rejection ──────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def reject_sample_view(request, pk):
+    """ISO 15189 §5.4.5 — Record sample rejection and reset order to ORDERED."""
+    order = get_object_or_404(LabOrder, pk=pk, is_deleted=False)
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    reason = request.POST.get('rejection_reason', '').strip()
+    notes  = request.POST.get('rejection_notes', '').strip()
+    if not reason:
+        messages.error(request, 'Please select a rejection reason.')
+        return redirect('laboratory:detail', pk=pk)
+
+    SampleRejection.objects.create(
+        order=order,
+        rejected_by=request.user,
+        reason=reason,
+        notes=notes,
+        created_by=request.user,
+    )
+
+    # Reset order back to ORDERED so a new sample can be recollected
+    order.status = LabOrder.Status.ORDERED
+    order.notes = (order.notes + '\n' if order.notes else '') + \
+                  f'SAMPLE REJECTED [{reason}]: {notes}'
+    order.save(update_fields=['status', 'notes', 'updated_at'])
+    order.items.update(status=LabOrder.Status.ORDERED)
+
+    # If there was a SampleCollection, remove it so a new one can be created
+    try:
+        order.sample_collection.delete()
+    except Exception:
+        pass
+
+    # Notify the requesting doctor
+    try:
+        from apps.notifications.utils import notify
+        from apps.notifications.models import NotificationType, NotificationPriority
+        if order.ordered_by:
+            rejection_obj = SampleRejection.Reason(reason)
+            notify(
+                recipient=order.ordered_by,
+                title=f'Sample Rejected — {order.patient.full_name}',
+                message=(
+                    f'The lab sample for {order.patient.full_name} was rejected: '
+                    f'{rejection_obj.label}. {notes} '
+                    f'Please arrange a new sample collection.'
+                ),
+                link=f'/laboratory/{order.id}/',
+                notification_type=NotificationType.LAB_RESULT,
+                priority=NotificationPriority.HIGH,
+            )
+    except Exception:
+        pass
+
+    messages.warning(
+        request,
+        f'Sample rejected ({SampleRejection.Reason(reason).label}). '
+        'Order reset to ORDERED — requesting doctor notified to arrange a new sample.'
+    )
+    return redirect('laboratory:detail', pk=pk)
+
+
+# ── Critical Value Acknowledgement ────────────────────────────────────────────
+
+@login_required
+@require_POST
+def acknowledge_critical_view(request, result_id):
+    """JCI IPSG.2 — Doctor acknowledges a critical lab result (read-back confirmation)."""
+    result = get_object_or_404(LabResult, pk=result_id, is_critical=True)
+    # Only the ordering doctor or medical director can acknowledge
+    if not (request.user == result.order_item.order.ordered_by
+            or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    if result.critical_acknowledged_at:
+        messages.info(request, 'Already acknowledged.')
+        return redirect('laboratory:detail', pk=result.order_item.order.pk)
+
+    result.critical_acknowledged_by = request.user
+    result.critical_acknowledged_at = timezone.now()
+    result.save(update_fields=['critical_acknowledged_by', 'critical_acknowledged_at', 'updated_at'])
+
+    messages.success(
+        request,
+        f'Critical result for {result.order_item.test_type.name} acknowledged. '
+        'This has been recorded in the audit log (JCI IPSG.2).'
+    )
+    return redirect('laboratory:detail', pk=result.order_item.order.pk)
+
+
+# ── Printable Result PDF ──────────────────────────────────────────────────────
+
+@login_required
+def result_pdf_view(request, pk):
+    """ISO 15189 §5.8.2 — Generate a printed lab report for the patient."""
+    from apps.reports.views import render_pdf
+    order = get_object_or_404(
+        LabOrder.objects
+        .select_related('patient', 'ordered_by')
+        .prefetch_related('items__test_type', 'items__result', 'sample_collection'),
+        pk=pk, is_deleted=False,
+    )
+    if not (request.user.is_lab_tech or request.user.is_medical_director
+            or request.user.is_super_admin or request.user == order.ordered_by
+            or request.user.is_admin_staff):
+        return HttpResponseForbidden()
+
+    completed_items = [
+        item for item in order.items.all()
+        if hasattr(item, 'result') and item.result
+    ]
+    return render_pdf('laboratory/result_pdf.html', {
+        'order': order,
+        'completed_items': completed_items,
+        'pdf_filename': f'lab-result-{order.patient.patient_id}-{order.created_at:%Y%m%d}.pdf',
+        'pdf_seal_label': 'LABORATORY REPORT',
+    })
