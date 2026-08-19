@@ -1,272 +1,493 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}{{ invoice.invoice_number }}{% endblock %}
+{% block title %}{{ invoice.invoice_number }} — Patient Account{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ═══════════════════════════════════════════════════════════
+   EHR Africa · Epic Resolute–style Invoice / Account View
+   Primary navy: #1a3a5c  |  Blue accent: #2e6da4
+   Light bg: #eef3f9       |  Border: #c8daea
+═══════════════════════════════════════════════════════════ */
+
+/* ── Patient Account Header ─────────────────────────── */
+.acct-header {
+  background: #1a3a5c;
+  color: #fff;
+  border-radius: 8px 8px 0 0;
+  padding: 14px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 0;
+}
+.acct-name { font-size: 1.15rem; font-weight: 800; letter-spacing: .3px; }
+.acct-meta { font-size: .78rem; opacity: .82; margin-top: 3px; line-height: 1.6; }
+.acct-badge {
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.acct-badge.paid    { background: #28a745; border-color: #28a745; }
+.acct-badge.partial { background: #e6a817; border-color: #e6a817; color: #1a1a1a; }
+.acct-badge.void    { background: #6c757d; border-color: #6c757d; }
+.acct-badge.waived  { background: #17a2b8; border-color: #17a2b8; }
+
+/* ── Toolbar ────────────────────────────────────────── */
+.acct-toolbar {
+  background: #eef3f9;
+  border: 1px solid #c8daea;
+  border-top: none;
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-radius: 0 0 8px 8px;
+  margin-bottom: 16px;
+}
+.acct-toolbar .btn { font-size: .8rem; padding: 5px 12px; font-weight: 600; }
+.toolbar-sep { width: 1px; height: 24px; background: #c8daea; margin: 0 4px; }
+
+/* ── Charge Table ───────────────────────────────────── */
+.charge-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.charge-table thead th {
+  background: #1a3a5c;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: .78rem;
+  font-weight: 700;
+  border: none;
+  text-align: left;
+}
+.charge-table thead th.right { text-align: right; }
+.charge-table thead th.center { text-align: center; }
+.charge-table tbody tr { border-bottom: 1px solid #e4ecf4; }
+.charge-table tbody tr:nth-child(even) { background: #f5f8fc; }
+.charge-table tbody td { padding: 8px 12px; vertical-align: middle; }
+.charge-table tbody td.right { text-align: right; font-weight: 600; }
+.charge-table tbody td.center { text-align: center; }
+.charge-table tfoot td {
+  padding: 8px 12px;
+  font-weight: 700;
+  border-top: 2px solid #1a3a5c;
+  font-size: .88rem;
+}
+.charge-table tfoot td.right { text-align: right; }
+
+.cat-tag {
+  font-size: .7rem;
+  background: #e8eef5;
+  color: #2e6da4;
+  border-radius: 3px;
+  padding: 1px 7px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── Account Summary Panel ──────────────────────────── */
+.acct-summary { border: 1px solid #c8daea; border-radius: 6px; overflow: hidden; }
+.acct-summary .s-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  font-size: .84rem;
+  border-bottom: 1px solid #edf2f7;
+}
+.acct-summary .s-row:last-child { border-bottom: none; }
+.acct-summary .s-row.discount { color: #856404; background: #fffbeb; }
+.acct-summary .s-row.insurance { color: #0c5460; background: #f0fbff; }
+.acct-summary .s-row.patient-share { color: #1a3a5c; font-weight: 700; background: #eef3f9; }
+.acct-summary .s-row.paid { color: #155724; background: #f0fdf4; }
+.acct-summary .s-row.refund { color: #721c24; background: #fef2f2; }
+.acct-summary .s-row.total-row { font-weight: 700; border-top: 2px solid #c8daea; }
+
+.balance-panel {
+  background: #1a3a5c;
+  color: #fff;
+  border-radius: 6px;
+  padding: 14px 16px;
+  text-align: center;
+  margin-top: 10px;
+}
+.balance-panel .bl-label { font-size: .72rem; text-transform: uppercase; letter-spacing: 1.5px; opacity: .8; }
+.balance-panel .bl-amount { font-size: 1.6rem; font-weight: 900; margin-top: 2px; }
+.balance-panel.zero { background: #155724; }
+
+/* ── Payment Timeline ───────────────────────────────── */
+.pay-timeline { list-style: none; padding: 0; margin: 0; }
+.pay-timeline li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf2f7;
+  font-size: .84rem;
+}
+.pay-timeline li:last-child { border-bottom: none; }
+.pay-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #1a3a5c;
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem; font-weight: 800; flex-shrink: 0;
+}
+.pay-dot.refund { background: #dc3545; }
+.pay-info { flex: 1; }
+.pay-title { font-weight: 700; color: #1a3a5c; }
+.pay-sub { color: #666; font-size: .76rem; margin-top: 1px; }
+.pay-amt { font-weight: 800; font-size: .95rem; color: #155724; white-space: nowrap; }
+.pay-amt.refund { color: #dc3545; }
+
+/* ── Section heading ───────────────────────────────── */
+.section-hd {
+  font-size: .78rem;
+  font-weight: 800;
+  color: #1a3a5c;
+  text-transform: uppercase;
+  letter-spacing: .9px;
+  border-bottom: 2px solid #1a3a5c;
+  padding-bottom: 5px;
+  margin-bottom: 10px;
+  margin-top: 18px;
+}
+.section-hd:first-child { margin-top: 0; }
+
+/* ── Patient Info card ─────────────────────────────── */
+.pt-info-card { font-size: .84rem; }
+.pt-row { display: flex; padding: 5px 0; border-bottom: 1px solid #f0f4f9; }
+.pt-row:last-child { border-bottom: none; }
+.pt-label { width: 110px; color: #6c757d; flex-shrink: 0; font-size: .78rem; }
+.pt-val { font-weight: 600; color: #1a1a1a; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<!-- ══════ PATIENT ACCOUNT HEADER ══════ -->
+<div class="acct-header">
   <div>
-    <h1 class="h3 mb-0">{{ invoice.invoice_number }}</h1>
-    <span class="badge fs-6
-      {% if invoice.status == 'PAID' %}bg-success
-      {% elif invoice.status == 'PARTIAL' %}bg-warning text-dark
-      {% elif invoice.status == 'CANCELLED' %}bg-secondary
-      {% elif invoice.status == 'WAIVED' %}bg-info text-dark
-      {% else %}bg-primary{% endif %}">
-      {{ invoice.get_status_display }}
-    </span>
+    <div class="acct-name">{{ invoice.patient.full_name|upper }}</div>
+    <div class="acct-meta">
+      Patient ID: <strong>{{ invoice.patient.patient_id }}</strong>
+      {% if invoice.patient.date_of_birth %}&nbsp;·&nbsp; DOB: {{ invoice.patient.date_of_birth|date:"d/m/Y" }}{% endif %}
+      {% if invoice.patient.phone_number %}&nbsp;·&nbsp; {{ invoice.patient.phone_number }}{% endif %}
+      {% if invoice.service_tier %}&nbsp;·&nbsp; Tier: {{ invoice.service_tier|title }}{% endif %}
+      {% if invoice.cash_desk %}&nbsp;·&nbsp; Desk: {{ invoice.cash_desk.name }}{% endif %}
+    </div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
-    {% if invoice.status != 'PAID' and invoice.status != 'CANCELLED' and invoice.status != 'WAIVED' %}
-    {% if request.user.is_cashier or request.user.is_medical_director or request.user.is_super_admin %}
-    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#payModal">
-      <i class="bi bi-cash-coin me-1"></i>Record Payment
-    </button>
-    {% endif %}
-    {% if request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
-    <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#waiveModal"
-            title="Finance Director / Super Admin only">
-      <i class="bi bi-x-circle me-1"></i>Waive
-    </button>
-    {% endif %}
-    {% if request.user.role == 'billing_officer' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
-    <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelModal">
-      <i class="bi bi-x-circle me-1"></i>Cancel Invoice
-    </button>
-    {% endif %}
-    {% endif %}
-    {% if invoice.amount_paid > 0 %}
-    {% if request.user.role == 'billing_officer' or request.user.role == 'accountant' or request.user.role == 'senior_accountant' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
-    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#refundModal"
-            title="Accountant / Finance Director only">
-      <i class="bi bi-arrow-counterclockwise me-1"></i>Refund
-    </button>
-    {% endif %}
-    {% endif %}
-    <a href="{% url 'billing:receipt' invoice.id %}" class="btn btn-outline-primary" target="_blank">
-      <i class="bi bi-printer me-1"></i>Receipt
-    </a>
-    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Back
-    </a>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:.72rem;opacity:.7;text-align:right;">Invoice</div>
+      <div style="font-size:1rem;font-weight:900;letter-spacing:.5px;">{{ invoice.invoice_number }}</div>
+      <div style="font-size:.72rem;opacity:.7;text-align:right;">{{ invoice.issue_date|date:"d/m/Y" }}</div>
+    </div>
+    <div class="acct-badge
+      {% if invoice.status == 'PAID' %}paid
+      {% elif invoice.status == 'PARTIAL' %}partial
+      {% elif invoice.status == 'CANCELLED' or invoice.status == 'WAIVED' %}void
+      {% endif %}">
+      {% if invoice.status == 'PAID' %}&#10003; Paid
+      {% elif invoice.status == 'PARTIAL' %}Partially Paid
+      {% elif invoice.status == 'CANCELLED' %}Cancelled
+      {% elif invoice.status == 'WAIVED' %}Waived
+      {% else %}Outstanding{% endif %}
+    </div>
   </div>
 </div>
 
+<!-- ══════ ACTION TOOLBAR ══════ -->
+<div class="acct-toolbar">
+  {# ── Post Payment ── #}
+  {% if invoice.status != 'PAID' and invoice.status != 'CANCELLED' and invoice.status != 'WAIVED' %}
+    {% if request.user.is_cashier or request.user.is_medical_director or request.user.is_super_admin %}
+    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#payModal">
+      <i class="bi bi-cash-coin me-1"></i>Post Payment
+    </button>
+    {% endif %}
+    {% if request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
+    <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#waiveModal">
+      <i class="bi bi-shield-x me-1"></i>Write Off / Waive
+    </button>
+    {% endif %}
+    {% if request.user.role == 'billing_officer' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
+    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#cancelModal">
+      <i class="bi bi-x-circle me-1"></i>Void Invoice
+    </button>
+    {% endif %}
+  {% endif %}
+
+  {# ── Refund ── #}
+  {% if invoice.amount_paid > 0 %}
+    {% if request.user.role == 'billing_officer' or request.user.role == 'accountant' or request.user.role == 'senior_accountant' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
+    <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#refundModal">
+      <i class="bi bi-arrow-counterclockwise me-1"></i>Issue Refund
+    </button>
+    {% endif %}
+  {% endif %}
+
+  <div class="toolbar-sep"></div>
+
+  <a href="{% url 'billing:receipt' invoice.id %}" class="btn btn-primary btn-sm" target="_blank">
+    <i class="bi bi-printer me-1"></i>Print Receipt
+  </a>
+  {% if invoice.consultation %}
+  <a href="{% url 'consultations:detail' pk=invoice.consultation.pk %}" class="btn btn-outline-info btn-sm">
+    <i class="bi bi-clipboard2-pulse me-1"></i>View Consultation
+  </a>
+  {% endif %}
+  <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm ms-auto">
+    <i class="bi bi-arrow-left me-1"></i>Back to Invoices
+  </a>
+</div>
+
+<!-- ══════ MAIN LAYOUT ══════ -->
 <div class="row g-3">
-  <!-- Summary sidebar -->
-  <div class="col-md-4">
+
+  <!-- LEFT: Account Summary + Patient Info -->
+  <div class="col-xl-3 col-lg-4">
+
+    <!-- Account Summary -->
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Patient</h6></div>
-      <div class="card-body">
-        <div class="fw-bold">{{ invoice.patient.full_name }}</div>
-        <div class="text-muted small">{{ invoice.patient.patient_id }}</div>
-        <div class="text-muted small">{{ invoice.patient.phone_number|default:"" }}</div>
-        {% if invoice.consultation %}
-        <div class="mt-2">
-          <a href="{% url 'consultations:detail' pk=invoice.consultation.pk %}" class="small">
-            View Consultation
-          </a>
+      <div class="card-body pb-2">
+        <div class="section-hd">Account Summary</div>
+        <div class="acct-summary">
+          <div class="s-row">
+            <span class="text-muted">Subtotal</span>
+            <span>{{ invoice.subtotal|floatformat:0|intcomma }}</span>
+          </div>
+          {% if invoice.discount_amount > 0 %}
+          <div class="s-row discount">
+            <span>Discount{% if invoice.discount_reason %} <small>({{ invoice.discount_reason }})</small>{% endif %}</span>
+            <span>&#8722; {{ invoice.discount_amount|floatformat:0|intcomma }}</span>
+          </div>
+          {% endif %}
+          <div class="s-row total-row">
+            <span>Invoice Total</span>
+            <span>{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% if invoice.insurance_amount > 0 %}
+          <div class="s-row insurance">
+            <span>Insurance Covers</span>
+            <span>&#8722; {{ invoice.insurance_amount|floatformat:0|intcomma }}</span>
+          </div>
+          <div class="s-row patient-share">
+            <span>Patient Amount</span>
+            <span>{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% endif %}
+          {% if invoice.amount_paid > 0 %}
+          <div class="s-row paid">
+            <span>Payments Posted</span>
+            <span>&#8722; {{ invoice.amount_paid|floatformat:0|intcomma }}</span>
+          </div>
+          {% endif %}
+          {% if invoice.refund_total > 0 %}
+          <div class="s-row refund">
+            <span>Refunds Issued</span>
+            <span>+ {{ invoice.refund_total|floatformat:0|intcomma }}</span>
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
+
+        <!-- Balance Due panel -->
+        <div class="balance-panel {% if invoice.balance_due <= 0 %}zero{% endif %}">
+          <div class="bl-label">Balance Due</div>
+          <div class="bl-amount">
+            {% if invoice.balance_due <= 0 %}NIL
+            {% else %}{{ invoice.balance_due|floatformat:0|intcomma }} <small>FCFA</small>
+            {% endif %}
+          </div>
+        </div>
       </div>
     </div>
 
+    <!-- Patient Info -->
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Financial Summary</h6></div>
-      <div class="card-body small">
-        <div class="d-flex justify-content-between mb-2">
-          <span class="text-muted">Subtotal</span>
-          <span>{{ invoice.subtotal|floatformat:0|intcomma }} FCFA</span>
-        </div>
-        {% if invoice.discount_amount %}
-        <div class="d-flex justify-content-between mb-2 text-warning">
-          <span>Discount{% if invoice.discount_reason %} ({{ invoice.discount_reason }}){% endif %}</span>
-          <span>- {{ invoice.discount_amount|floatformat:0|intcomma }} FCFA</span>
-        </div>
-        {% endif %}
-        <hr class="my-2">
-        <div class="d-flex justify-content-between fw-bold mb-2">
-          <span>Invoice Total</span>
-          <span>{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
-        </div>
-        <div class="d-flex justify-content-between text-success mb-2">
-          <span>Payments Received</span>
-          <span>{{ invoice.amount_paid|floatformat:0|intcomma }} FCFA</span>
-        </div>
-        {% if invoice.refund_total > 0 %}
-        <div class="d-flex justify-content-between text-danger mb-2">
-          <span>Refunds Issued</span>
-          <span>- {{ invoice.refund_total|floatformat:0|intcomma }} FCFA</span>
-        </div>
-        <div class="d-flex justify-content-between fw-semibold mb-2">
-          <span>Net Paid</span>
-          <span>{{ invoice.net_paid|floatformat:0|intcomma }} FCFA</span>
-        </div>
-        {% endif %}
-        <hr class="my-2">
-        <div class="d-flex justify-content-between fw-bold
-          {% if invoice.balance_due > 0 %}text-danger{% else %}text-success{% endif %}">
-          <span>Balance Due</span>
-          <span>{{ invoice.balance_due|floatformat:0|intcomma }} FCFA</span>
-        </div>
-        <div class="mt-3 text-muted" style="font-size:0.75rem;">
-          <div>Issue date: {{ invoice.issue_date|date:"d M Y" }}</div>
+      <div class="card-body">
+        <div class="section-hd">Patient Details</div>
+        <div class="pt-info-card">
+          <div class="pt-row">
+            <span class="pt-label">Full Name</span>
+            <span class="pt-val">{{ invoice.patient.full_name }}</span>
+          </div>
+          <div class="pt-row">
+            <span class="pt-label">Patient ID</span>
+            <span class="pt-val">{{ invoice.patient.patient_id }}</span>
+          </div>
+          {% if invoice.patient.date_of_birth %}
+          <div class="pt-row">
+            <span class="pt-label">Date of Birth</span>
+            <span class="pt-val">{{ invoice.patient.date_of_birth|date:"d/m/Y" }}</span>
+          </div>
+          {% endif %}
+          {% if invoice.patient.phone_number %}
+          <div class="pt-row">
+            <span class="pt-label">Phone</span>
+            <span class="pt-val">{{ invoice.patient.phone_number }}</span>
+          </div>
+          {% endif %}
+          {% if invoice.corporate_account %}
+          <div class="pt-row">
+            <span class="pt-label">Corporate</span>
+            <span class="pt-val">{{ invoice.corporate_account.name }}</span>
+          </div>
+          {% endif %}
+          <div class="pt-row">
+            <span class="pt-label">Issue Date</span>
+            <span class="pt-val">{{ invoice.issue_date|date:"d M Y" }}</span>
+          </div>
           {% if invoice.due_date %}
-          <div>Due date:
-            <span class="{% if invoice.due_date < today %}text-danger fw-semibold{% endif %}">
-              {{ invoice.due_date|date:"d M Y" }}
+          <div class="pt-row">
+            <span class="pt-label">Due Date</span>
+            <span class="pt-val {% if invoice.due_date < today %}text-danger fw-bold{% endif %}">
+              {{ invoice.due_date|date:"d M Y" }}{% if invoice.due_date < today %} &#9888;{% endif %}
             </span>
           </div>
           {% endif %}
-          <div>Created by: {{ invoice.created_by.get_full_name|default:invoice.created_by.username }}</div>
+          <div class="pt-row">
+            <span class="pt-label">Posted By</span>
+            <span class="pt-val">{{ invoice.created_by.get_full_name|default:invoice.created_by.username }}</span>
+          </div>
         </div>
       </div>
     </div>
+
   </div>
 
-  <!-- Main content -->
-  <div class="col-md-8">
-    <!-- Services Billed -->
+  <!-- RIGHT: Charges + Payment History -->
+  <div class="col-xl-9 col-lg-8">
+
+    <!-- Itemized Charges -->
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h6 class="mb-0 fw-semibold">Services Billed</h6>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 small">
-          <thead class="table-light">
-            <tr>
-              <th>Description</th>
-              <th>Category</th>
-              <th class="text-center">Qty</th>
-              <th class="text-end">Unit Price</th>
-              <th class="text-end">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in invoice.items.all %}{% if not item.is_deleted %}
-            <tr>
-              <td>{{ item.description }}</td>
-              <td><span class="badge bg-light text-dark">{{ item.get_category_display }}</span></td>
-              <td class="text-center">{{ item.quantity }}</td>
-              <td class="text-end">{{ item.unit_price|floatformat:0|intcomma }}</td>
-              <td class="text-end fw-semibold">{{ item.line_total|floatformat:0|intcomma }}</td>
-            </tr>
-            {% endif %}{% empty %}
-            <tr><td colspan="5" class="text-center text-muted py-3">No items</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="card-body">
+        <div class="section-hd" style="margin-top:0;">Itemized Charges</div>
+        <div class="table-responsive">
+          <table class="charge-table">
+            <thead>
+              <tr>
+                <th style="width:40%;">Service / Description</th>
+                <th>Category</th>
+                <th class="center" style="width:8%;">Qty</th>
+                <th class="right" style="width:18%;">Unit Price (FCFA)</th>
+                <th class="right" style="width:18%;">Line Total (FCFA)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in invoice.items.all %}{% if not item.is_deleted %}
+              <tr>
+                <td>{{ item.description }}</td>
+                <td><span class="cat-tag">{{ item.get_category_display }}</span></td>
+                <td class="center">{{ item.quantity }}</td>
+                <td class="right">{{ item.unit_price|floatformat:0|intcomma }}</td>
+                <td class="right">{{ item.line_total|floatformat:0|intcomma }}</td>
+              </tr>
+              {% endif %}{% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3" style="font-size:.82rem;">No line items on this invoice.</td></tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4" class="right">Subtotal</td>
+                <td class="right">{{ invoice.subtotal|floatformat:0|intcomma }} FCFA</td>
+              </tr>
+              {% if invoice.discount_amount > 0 %}
+              <tr style="color:#856404;">
+                <td colspan="4" class="right">
+                  Discount{% if invoice.discount_reason %} — {{ invoice.discount_reason }}{% endif %}
+                </td>
+                <td class="right">&#8722; {{ invoice.discount_amount|floatformat:0|intcomma }}</td>
+              </tr>
+              {% endif %}
+              <tr style="background:#eef3f9;">
+                <td colspan="4" class="right" style="font-size:.9rem;">Invoice Total</td>
+                <td class="right" style="font-size:.9rem;">{{ invoice.total|floatformat:0|intcomma }} FCFA</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
 
     <!-- Payment History -->
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Payment History</h6></div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 small">
-          <thead class="table-light">
-            <tr>
-              <th>Date &amp; Time</th>
-              <th>Method</th>
-              <th>Reference</th>
-              <th class="text-end">Amount</th>
-              <th>Cashier</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for pmt in invoice.payments.all %}{% if not pmt.is_deleted %}
-            <tr>
-              <td>{{ pmt.payment_date|date:"d M Y H:i" }}</td>
-              <td>{{ pmt.get_payment_method_display }}</td>
-              <td class="text-muted">{{ pmt.reference|default:"—" }}</td>
-              <td class="text-end text-success fw-semibold">{{ pmt.amount|floatformat:0|intcomma }}</td>
-              <td>{{ pmt.received_by.get_full_name|default:pmt.received_by.username }}</td>
-            </tr>
-            {% endif %}{% empty %}
-            <tr><td colspan="5" class="text-center text-muted py-3">No payments recorded</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <div class="card border-0 shadow-sm {% if invoice.refunds.exists %}mb-3{% endif %}">
+      <div class="card-body">
+        <div class="section-hd" style="margin-top:0;">Payment History</div>
+        <ul class="pay-timeline">
+          {% for pmt in invoice.payments.all %}{% if not pmt.is_deleted %}
+          <li>
+            <div class="pay-dot">{{ forloop.counter }}</div>
+            <div class="pay-info">
+              <div class="pay-title">{{ pmt.get_payment_method_display }}</div>
+              <div class="pay-sub">
+                {{ pmt.payment_date|date:"d M Y H:i" }}
+                &nbsp;·&nbsp; Cashier: {{ pmt.received_by.get_full_name|default:pmt.received_by.username }}
+                {% if pmt.reference %}&nbsp;·&nbsp; Ref: {{ pmt.reference }}{% endif %}
+                <br><span style="color:#888;font-size:.72rem;">Receipt: {{ pmt.receipt_number }}</span>
+              </div>
+            </div>
+            <div class="pay-amt">+ {{ pmt.amount|floatformat:0|intcomma }} FCFA</div>
+          </li>
+          {% endif %}{% empty %}
+          <li><span class="text-muted" style="font-size:.82rem;">No payments recorded on this invoice.</span></li>
+          {% endfor %}
+
+          {# Refunds in timeline #}
+          {% for r in invoice.refunds.all %}{% if not r.is_deleted %}
+          <li>
+            <div class="pay-dot refund"><i class="bi bi-arrow-counterclockwise" style="font-size:.65rem;"></i></div>
+            <div class="pay-info">
+              <div class="pay-title" style="color:#dc3545;">Refund — {{ r.get_payment_method_display }}</div>
+              <div class="pay-sub">
+                {{ r.refund_date|date:"d M Y H:i" }}
+                &nbsp;·&nbsp; By: {{ r.processed_by.get_full_name|default:r.processed_by.username }}
+                {% if r.reason %}&nbsp;·&nbsp; {{ r.reason }}{% endif %}
+              </div>
+            </div>
+            <div class="pay-amt refund">&#8722; {{ r.amount|floatformat:0|intcomma }} FCFA</div>
+          </li>
+          {% endif %}{% endfor %}
+        </ul>
       </div>
     </div>
 
-    <!-- Refunds -->
-    {% if invoice.refunds.exists %}
-    <div class="card border-0 shadow-sm border-start border-3 border-danger">
-      <div class="card-header bg-white"><h6 class="mb-0 fw-semibold text-danger">
-        <i class="bi bi-arrow-counterclockwise me-1"></i>Refunds Issued
-      </h6></div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 small">
-          <thead class="table-light">
-            <tr>
-              <th>Date</th>
-              <th>Method</th>
-              <th>Reason</th>
-              <th>Reference</th>
-              <th class="text-end">Amount</th>
-              <th>Processed By</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in invoice.refunds.all %}{% if not r.is_deleted %}
-            <tr>
-              <td>{{ r.refund_date|date:"d M Y H:i" }}</td>
-              <td>{{ r.get_payment_method_display }}</td>
-              <td>{{ r.reason }}</td>
-              <td class="text-muted">{{ r.reference|default:"—" }}</td>
-              <td class="text-end text-danger fw-semibold">- {{ r.amount|floatformat:0|intcomma }}</td>
-              <td>{{ r.processed_by.get_full_name|default:r.processed_by.username }}</td>
-            </tr>
-            {% endif %}{% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
-  </div>
-</div>
+  </div>{# /col #}
+</div>{# /row #}
 
-<!-- Waive Modal -->
-<div class="modal fade" id="waiveModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form method="post" action="{% url 'billing:waive_invoice' invoice.id %}">
-        {% csrf_token %}
-        <div class="modal-header">
-          <h5 class="modal-title text-warning"><i class="bi bi-x-circle me-2"></i>Waive Invoice</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="alert alert-warning py-2 small">
-            This will mark <strong>{{ invoice.invoice_number }}</strong> as <strong>WAIVED</strong>
-            and write off the balance of <strong>{{ invoice.balance_due|floatformat:0|intcomma }} FCFA</strong>.
-            This action is audited and cannot be undone.
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Waiver Reason <span class="text-danger">*</span></label>
-            <input type="text" name="waiver_reason" class="form-control" required
-                   placeholder="e.g. Staff discount, Hardship case, Management directive…">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-warning fw-bold">Confirm Waiver</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+<!-- ══════════════════ MODALS ══════════════════ -->
 
-<!-- Record Payment Modal -->
+<!-- Post Payment Modal -->
+{% if invoice.status != 'PAID' and invoice.status != 'CANCELLED' and invoice.status != 'WAIVED' %}
+{% if request.user.is_cashier or request.user.is_medical_director or request.user.is_super_admin %}
 <div class="modal fade" id="payModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
       <form method="post" action="{% url 'billing:add_payment' invoice.id %}">
         {% csrf_token %}
-        <div class="modal-header">
-          <h5 class="modal-title">Record Payment</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-header" style="background:#1a3a5c;color:#fff;border-radius:8px 8px 0 0;">
+          <h5 class="modal-title fw-bold"><i class="bi bi-cash-coin me-2"></i>Post Payment</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
+          <div class="mb-3 p-3 rounded" style="background:#eef3f9;border:1px solid #c8daea;">
+            <div class="d-flex justify-content-between small fw-semibold">
+              <span>Invoice Total</span><span>{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
+            </div>
+            <div class="d-flex justify-content-between small text-success">
+              <span>Already Paid</span><span>{{ invoice.amount_paid|floatformat:0|intcomma }} FCFA</span>
+            </div>
+            <div class="d-flex justify-content-between fw-bold mt-1" style="color:#1a3a5c;">
+              <span>Balance Due</span><span>{{ invoice.balance_due|floatformat:0|intcomma }} FCFA</span>
+            </div>
+          </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Amount (FCFA) <span class="text-danger">*</span></label>
             <input type="number" name="amount" class="form-control" step="1" min="1"
@@ -282,38 +503,114 @@
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Transaction Reference</label>
-            <input type="text" name="reference" class="form-control" placeholder="Optional">
+            <input type="text" name="reference" class="form-control" placeholder="Mobile money TXN, cheque no., etc.">
           </div>
-          <div class="mb-3">
+          <div class="mb-0">
             <label class="form-label fw-semibold">Notes</label>
             <input type="text" name="notes" class="form-control">
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-success">Confirm Payment</button>
+          <button type="submit" class="btn btn-success fw-bold px-4">
+            <i class="bi bi-check-circle me-1"></i>Confirm Payment
+          </button>
         </div>
       </form>
     </div>
   </div>
 </div>
+{% endif %}
+
+<!-- Write Off / Waive Modal -->
+{% if request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
+<div class="modal fade" id="waiveModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <form method="post" action="{% url 'billing:waive_invoice' invoice.id %}">
+        {% csrf_token %}
+        <div class="modal-header bg-warning border-0">
+          <h5 class="modal-title fw-bold"><i class="bi bi-shield-x me-2"></i>Write Off / Waive Invoice</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning py-2 small">
+            This will mark <strong>{{ invoice.invoice_number }}</strong> as <strong>WAIVED</strong>
+            and write off the balance of <strong>{{ invoice.balance_due|floatformat:0|intcomma }} FCFA</strong>.
+            This action is permanently audited.
+          </div>
+          <div class="mb-0">
+            <label class="form-label fw-semibold">Waiver Reason <span class="text-danger">*</span></label>
+            <input type="text" name="waiver_reason" class="form-control" required
+                   placeholder="e.g. Staff benefit, Financial hardship, Management directive…">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning fw-bold">Confirm Write-Off</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Void Invoice Modal -->
+{% if request.user.role == 'billing_officer' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
+<div class="modal fade" id="cancelModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-danger text-white border-0">
+        <h5 class="modal-title fw-bold"><i class="bi bi-x-circle me-2"></i>Void / Cancel Invoice</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{% url 'billing:cancel_invoice' invoice.id %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="text-muted small mb-3">
+            You are voiding <strong>{{ invoice.invoice_number }}</strong> for
+            <strong>{{ invoice.patient.full_name }}</strong>.
+            This action is permanently audited and cannot be undone.
+          </p>
+          <div class="mb-0">
+            <label class="form-label fw-semibold">Void Reason <span class="text-danger">*</span></label>
+            <select name="void_reason_id" class="form-select" required>
+              <option value="">— Select reason code —</option>
+              {% for reason in void_reasons %}
+              <option value="{{ reason.id }}">{{ reason.code }}: {{ reason.label }}
+                {% if reason.requires_supervisor %} (Supervisor required){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger fw-bold">Void Invoice</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}{# /status guard #}
 
 <!-- Refund Modal -->
 {% if invoice.amount_paid > 0 %}
 {% if request.user.role == 'billing_officer' or request.user.role == 'accountant' or request.user.role == 'senior_accountant' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
 <div class="modal fade" id="refundModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
       <form method="post" action="{% url 'billing:process_refund' invoice.id %}">
         {% csrf_token %}
-        <div class="modal-header">
-          <h5 class="modal-title text-danger"><i class="bi bi-arrow-counterclockwise me-2"></i>Issue Refund</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-header bg-danger text-white border-0">
+          <h5 class="modal-title fw-bold"><i class="bi bi-arrow-counterclockwise me-2"></i>Issue Refund</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <div class="alert alert-danger py-2 small mb-3">
-            Total payments: <strong>{{ invoice.amount_paid|floatformat:0|intcomma }} FCFA</strong>.
-            Refund may not exceed this amount.
+            Total payments on this invoice: <strong>{{ invoice.amount_paid|floatformat:0|intcomma }} FCFA</strong>.
+            Refund amount may not exceed this.
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Refund Amount (FCFA) <span class="text-danger">*</span></label>
@@ -332,7 +629,7 @@
             <label class="form-label fw-semibold">Reference</label>
             <input type="text" name="refund_reference" class="form-control" placeholder="Optional">
           </div>
-          <div class="mb-3">
+          <div class="mb-0">
             <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
             <input type="text" name="refund_reason" class="form-control" required
                    placeholder="e.g. Overpayment, Service cancelled, Billing error…">
@@ -346,47 +643,7 @@
     </div>
   </div>
 </div>
-{% endif %}{# role guard #}
-{% endif %}{# amount_paid #}
-
-{# ── Cancel Invoice Modal with mandatory void reason ── #}
-{% if request.user.role == 'billing_officer' or request.user.role == 'finance_director' or request.user.role == 'medical_director' or request.user.is_superuser %}
-<div class="modal fade" id="cancelModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header border-0">
-        <h5 class="modal-title text-danger"><i class="bi bi-x-circle me-2"></i>Cancel Invoice</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <form method="post" action="{% url 'billing:cancel_invoice' invoice.id %}">
-        {% csrf_token %}
-        <div class="modal-body">
-          <p class="text-muted small mb-3">
-            You are cancelling <strong>{{ invoice.invoice_number }}</strong> for
-            <strong>{{ invoice.patient.full_name }}</strong>.
-            This action is permanently audited.
-          </p>
-          <label class="form-label fw-semibold">Cancellation Reason <span class="text-danger">*</span></label>
-          <select name="void_reason_id" class="form-select mb-3" required>
-            <option value="">— Select a reason —</option>
-            {% for reason in void_reasons %}
-            <option value="{{ reason.id }}">{{ reason.code }}: {{ reason.label }}
-              {% if reason.requires_supervisor %}(Supervisor required){% endif %}
-            </option>
-            {% endfor %}
-          </select>
-          <div class="alert alert-warning py-2 small">
-            <i class="bi bi-exclamation-triangle me-1"></i>
-            Cancelling an invoice is irreversible. Ensure you have the correct reason.
-          </div>
-        </div>
-        <div class="modal-footer border-0">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Back</button>
-          <button type="submit" class="btn btn-danger">Confirm Cancellation</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
 {% endif %}
+{% endif %}
+
 {% endblock %}

@@ -1,331 +1,540 @@
-{% load static %}
+{% load static humanize %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Receipt — {{ invoice.invoice_number }}</title>
+  <title>Patient Receipt — {{ invoice.invoice_number }}</title>
   <style>
-    /* ── Print-clean styles ── */
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* ═══════════════════════════════════════════════════
+       EHR Africa · Epic Resolute–style Patient Receipt
+       A4 professional document — not a thermal tape
+    ═══════════════════════════════════════════════════ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 13px;
-      background: #f5f5f5;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10.5pt;
+      color: #1a1a1a;
+      background: #e8e8e8;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 20px;
+      padding: 24px;
+      min-height: 100vh;
     }
 
-    /* Screen wrapper */
-    .receipt-wrapper {
-      background: #fff;
-      width: 340px;
-      padding: 24px 20px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
-      border-radius: 4px;
+    /* A4 Document shell */
+    .document {
+      width: 210mm;
+      min-height: 270mm;
+      background: #ffffff;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+      position: relative;
+      overflow: hidden;
     }
 
-    .header { text-align: center; margin-bottom: 12px; }
-    .header .hospital-name {
-      font-size: 15px;
-      font-weight: bold;
-      letter-spacing: 1px;
+    /* ── HEADER — Navy blue Epic banner ────────────────── */
+    .doc-header {
+      background: #1a3a5c;
+      color: #ffffff;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .hospital-logo {
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.35);
+      margin-right: 12px; flex-shrink: 0;
+    }
+    .hospital-name { font-size: 16pt; font-weight: 800; letter-spacing: 0.3px; }
+    .hospital-sub { font-size: 8.5pt; opacity: 0.82; margin-top: 2px; line-height: 1.5; }
+    .doc-type {
+      background: #ffffff;
+      color: #1a3a5c;
+      font-weight: 800;
+      font-size: 9.5pt;
+      padding: 5px 14px;
+      border-radius: 3px;
+      letter-spacing: 1.5px;
       text-transform: uppercase;
-    }
-    .header .hospital-sub {
-      font-size: 11px;
-      color: #555;
-      margin-top: 2px;
+      align-self: flex-start;
+      white-space: nowrap;
     }
 
-    .divider {
-      border: none;
-      border-top: 1px dashed #aaa;
-      margin: 10px 0;
+    /* ── PATIENT BAR ────────────────────────────────────── */
+    .patient-bar {
+      background: #eef3f9;
+      border-top: 3px solid #2e6da4;
+      border-bottom: 1px solid #c8daea;
+      padding: 10px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
     }
-    .divider-solid {
-      border: none;
-      border-top: 2px solid #333;
-      margin: 10px 0;
-    }
+    .patient-name { font-size: 13pt; font-weight: 800; color: #1a3a5c; }
+    .patient-meta { font-size: 8.5pt; color: #455; margin-top: 3px; line-height: 1.6; }
+    .doc-meta { text-align: right; font-size: 8.5pt; color: #455; line-height: 1.7; }
+    .doc-meta strong { color: #1a3a5c; font-size: 9.5pt; }
 
-    .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-    .meta-row .label { color: #555; }
-    .meta-row .value { font-weight: bold; }
-
-    .section-title {
+    /* ── STATUS RIBBON ──────────────────────────────────── */
+    .status-ribbon {
       text-align: center;
-      font-weight: bold;
-      letter-spacing: 1px;
-      font-size: 12px;
-      margin: 8px 0 4px;
-      text-transform: uppercase;
-    }
-
-    .item-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-    .item-row .item-name { flex: 1; padding-right: 8px; }
-    .item-row .item-amount { white-space: nowrap; text-align: right; min-width: 70px; }
-
-    .totals-section { margin-top: 4px; }
-    .totals-section .total-row {
-      display: flex; justify-content: space-between;
-      margin-bottom: 2px; font-size: 12px;
-    }
-    .grand-total-row {
-      display: flex; justify-content: space-between;
-      font-size: 14px; font-weight: bold;
-      border-top: 1px solid #333;
-      padding-top: 4px; margin-top: 4px;
-    }
-
-    .status-badge {
-      text-align: center;
-      font-size: 14px;
-      font-weight: bold;
+      font-size: 9pt;
+      font-weight: 800;
       letter-spacing: 2px;
-      padding: 6px;
-      margin: 8px 0;
+      text-transform: uppercase;
+      padding: 5px 0;
     }
-    .status-paid    { color: #155724; background: #d4edda; border: 1px solid #c3e6cb; }
-    .status-partial { color: #856404; background: #fff3cd; border: 1px solid #ffc107; }
-    .status-unpaid  { color: #721c24; background: #f8d7da; border: 1px solid #f5c6cb; }
+    .ribbon-paid    { background: #d4edda; color: #155724; border-bottom: 2px solid #28a745; }
+    .ribbon-partial { background: #fff3cd; color: #7a5800; border-bottom: 2px solid #ffc107; }
+    .ribbon-unpaid  { background: #f8d7da; color: #721c24; border-bottom: 2px solid #dc3545; }
+    .ribbon-waived  { background: #d1ecf1; color: #0c5460; border-bottom: 2px solid #17a2b8; }
+    .ribbon-cancelled { background: #e2e3e5; color: #383d41; border-bottom: 2px solid #6c757d; }
 
-    .footer { text-align: center; margin-top: 12px; font-size: 11px; color: #555; }
-    .footer .thank-you { font-size: 12px; font-weight: bold; color: #333; margin-bottom: 4px; }
+    /* ── CONTENT BODY ───────────────────────────────────── */
+    .doc-body { padding: 18px 24px; }
 
-    .cashier-line { text-align: center; font-size: 11px; color: #666; margin-top: 8px; }
+    /* Section title */
+    .section-title {
+      font-size: 8.5pt;
+      font-weight: 800;
+      color: #1a3a5c;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 2px solid #1a3a5c;
+      padding-bottom: 4px;
+      margin-bottom: 8px;
+      margin-top: 16px;
+    }
+    .section-title:first-child { margin-top: 0; }
 
-    /* Action buttons — screen only */
+    /* ── CHARGES TABLE ─────────────────────────────────── */
+    .charges-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+    }
+    .charges-table thead th {
+      background: #1a3a5c;
+      color: #ffffff;
+      padding: 7px 10px;
+      font-size: 8.5pt;
+      font-weight: 700;
+      text-align: left;
+      border: none;
+    }
+    .charges-table thead th:last-child,
+    .charges-table thead th.right { text-align: right; }
+    .charges-table thead th.center { text-align: center; }
+
+    .charges-table tbody tr:nth-child(even) td { background: #f5f8fc; }
+    .charges-table tbody td {
+      padding: 7px 10px;
+      border-bottom: 1px solid #e4ecf4;
+      vertical-align: middle;
+    }
+    .charges-table tbody td.right { text-align: right; font-weight: 600; }
+    .charges-table tbody td.center { text-align: center; }
+    .charges-table tbody td.cat-badge span {
+      font-size: 7.5pt;
+      background: #e8eef5;
+      color: #2e6da4;
+      border-radius: 2px;
+      padding: 1px 6px;
+      font-weight: 600;
+    }
+
+    /* ── TWO-COLUMN SUMMARY ─────────────────────────────── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 16px;
+    }
+
+    /* Payment history */
+    .pay-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9pt;
+    }
+    .pay-table th {
+      background: #f0f4f9;
+      color: #1a3a5c;
+      font-size: 8pt;
+      font-weight: 700;
+      padding: 5px 8px;
+      text-align: left;
+      border-bottom: 1.5px solid #c8daea;
+    }
+    .pay-table td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #edf2f7;
+      font-size: 8.5pt;
+    }
+    .pay-table td:last-child { text-align: right; font-weight: 600; }
+
+    /* Account summary totals */
+    .totals-box { border: 1px solid #c8daea; border-radius: 3px; overflow: hidden; }
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 12px;
+      font-size: 9.5pt;
+      border-bottom: 1px solid #edf2f7;
+    }
+    .totals-row:last-child { border-bottom: none; }
+    .totals-row.discount { color: #856404; }
+    .totals-row.insurance { color: #0c5460; background: #f0fbff; }
+    .totals-row.patient-share { color: #1a3a5c; font-weight: 700; background: #f0f4f9; }
+    .totals-row.paid-row { color: #155724; background: #f0fdf4; }
+    .totals-row.refund-row { color: #721c24; }
+
+    .balance-box {
+      background: #1a3a5c;
+      color: #ffffff;
+      text-align: center;
+      padding: 12px 16px;
+      margin-top: 10px;
+      border-radius: 3px;
+    }
+    .balance-label { font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.85; }
+    .balance-amount { font-size: 18pt; font-weight: 900; margin-top: 2px; }
+    .balance-zero { background: #155724; }
+
+    /* ── INSURANCE BLOCK ────────────────────────────────── */
+    .insurance-block {
+      background: #f0fbff;
+      border: 1px solid #b6e0f5;
+      border-radius: 3px;
+      padding: 10px 14px;
+      font-size: 9pt;
+      margin-top: 12px;
+    }
+    .insurance-block .ins-title {
+      font-weight: 700;
+      color: #0c5460;
+      font-size: 8.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+    .ins-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .ins-row span:last-child { font-weight: 600; }
+
+    /* ── FOOTER ─────────────────────────────────────────── */
+    .doc-footer {
+      border-top: 2px solid #e4ecf4;
+      margin-top: 20px;
+      padding-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .sig-block { text-align: center; }
+    .sig-line { border-top: 1px solid #888; margin: 28px 8px 4px; font-size: 8pt; color: #666; }
+    .footer-note { font-size: 8pt; color: #555; text-align: right; line-height: 1.6; }
+
+    /* Ticket number */
+    .ticket-tag {
+      display: inline-block;
+      background: #1a3a5c;
+      color: #fff;
+      font-size: 8pt;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── PRINT STYLES ───────────────────────────────────── */
+    @media print {
+      body { background: white; padding: 0; }
+      .document { box-shadow: none; width: 100%; min-height: auto; }
+      .action-bar { display: none !important; }
+      .countdown-bar { display: none !important; }
+    }
+    @page { size: A4; margin: 0; }
+
+    /* ── ACTION BAR (screen only) ───────────────────────── */
     .action-bar {
-      width: 340px;
+      width: 210mm;
       margin-top: 16px;
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
     }
-    .btn-print-receipt {
+    .btn-act {
       flex: 1;
-      background: #0d6efd;
-      color: white;
+      min-width: 120px;
       border: none;
-      border-radius: 6px;
-      padding: 10px;
-      font-size: 13px;
+      border-radius: 5px;
+      padding: 10px 16px;
+      font-size: 10.5pt;
+      font-family: Arial, sans-serif;
+      font-weight: 600;
       cursor: pointer;
-      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.15s;
     }
-    .btn-print-receipt:hover { background: #0b5ed7; }
+    .btn-act:hover { opacity: 0.88; }
+    .btn-print  { background: #1a3a5c; color: #fff; }
+    .btn-pdf    { background: #dc3545; color: #fff; }
+    .btn-back   { background: #6c757d; color: #fff; }
 
-    .btn-triage {
-      flex: 1;
-      background: #16a34a;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      padding: 10px;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
-      font-family: inherit;
-      letter-spacing: .5px;
-    }
-    .btn-triage:hover { background: #15803d; }
-    .btn-triage:disabled { background: #6b7280; cursor: default; }
-
-    /* ── Print styles ── */
-    @media print {
-      body { background: white; padding: 0; }
-      .receipt-wrapper {
-        box-shadow: none;
-        border-radius: 0;
-        width: 100%;
-        padding: 4mm 4mm;
-      }
-      .action-bar { display: none !important; }
+    .countdown-bar {
+      width: 210mm; margin-top: 8px;
+      text-align: center; font-size: 9pt;
+      color: #555; font-family: Arial, sans-serif;
     }
   </style>
 </head>
 <body>
-
 {% load humanize %}
 
-<div class="receipt-wrapper" id="receiptBody">
+<!-- ═══════════════════════ DOCUMENT ═══════════════════════ -->
+<div class="document" id="receiptBody">
 
-  <!-- Header -->
-  <div class="header">
-    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo"
-         style="width:56px;height:56px;border-radius:50%;margin-bottom:6px;" />
-    <div class="hospital-name">{{ HOSPITAL_NAME }}</div>
-    <div class="hospital-sub">Specialist Eye Hospital</div>
-    <div class="hospital-sub">Tel: +237 000 000 000</div>
-  </div>
-
-  <div class="divider-solid"></div>
-
-  <!-- Receipt meta -->
-  {% for payment in payments %}
-  {% if forloop.first %}
-  <div class="meta-row">
-    <span class="label">RECEIPT #:</span>
-    <span class="value" style="font-size:14px;letter-spacing:1px;">{{ payment.receipt_number }}</span>
-  </div>
-  {% endif %}
-  {% empty %}
-  <div class="meta-row">
-    <span class="label">RECEIPT #:</span>
-    <span class="value">{{ invoice.invoice_number }}</span>
-  </div>
-  {% endfor %}
-  <div class="meta-row">
-    <span class="label">Invoice #:</span>
-    <span class="value">{{ invoice.invoice_number }}</span>
-  </div>
-  <div class="meta-row">
-    <span class="label">Date:</span>
-    <span class="value">{{ invoice.issue_date|date:"d/m/Y" }}</span>
-  </div>
-  <div class="meta-row">
-    <span class="label">Time:</span>
-    <span class="value">{{ invoice.created_at|time:"H:i" }}</span>
-  </div>
-
-  <div class="divider"></div>
-
-  <!-- Patient info -->
-  <div class="meta-row">
-    <span class="label">Patient:</span>
-    <span class="value">{{ invoice.patient.full_name|upper }}</span>
-  </div>
-  <div class="meta-row">
-    <span class="label">Patient ID:</span>
-    <span class="value">{{ invoice.patient.patient_id }}</span>
-  </div>
-  {% if today_token %}
-  <div class="meta-row">
-    <span class="label">Ticket #:</span>
-    <span class="value">{{ today_token.display_token_number }}</span>
-  </div>
-  {% endif %}
-
-  <div class="divider"></div>
-
-  <!-- Services -->
-  <div class="section-title">Services Rendered</div>
-
-  {% for item in items %}
-  <div class="item-row">
-    <span class="item-name">{{ item.description }}{% if item.quantity > 1 %} x{{ item.quantity }}{% endif %}</span>
-    <span class="item-amount">{{ item.line_total|floatformat:0|intcomma }}</span>
-  </div>
-  {% empty %}
-  <div style="text-align:center;color:#999;font-size:11px;margin:4px 0;">No items</div>
-  {% endfor %}
-
-  <div class="divider"></div>
-
-  <!-- Totals -->
-  <div class="totals-section">
-    <div class="total-row">
-      <span>Subtotal</span>
-      <span>{{ invoice.subtotal|floatformat:0|intcomma }}</span>
+  <!-- HEADER -->
+  <div class="doc-header">
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+      <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" class="hospital-logo" />
+      <div>
+        <div class="hospital-name">{{ HOSPITAL_NAME }}</div>
+        <div class="hospital-sub">
+          Specialist Eye Hospital &nbsp;·&nbsp; Cameroon<br>
+          Tel: +237 000 000 000 &nbsp;·&nbsp; BP xxxxxxx
+        </div>
+      </div>
     </div>
-    {% if invoice.discount_amount > 0 %}
-    <div class="total-row">
-      <span>Discount{% if invoice.discount_reason %} ({{ invoice.discount_reason }}){% endif %}</span>
-      <span>-{{ invoice.discount_amount|floatformat:0|intcomma }}</span>
+    <div style="text-align:right;">
+      <div class="doc-type">Patient Receipt</div>
+      <div style="font-size:8pt;opacity:.75;margin-top:8px;">
+        Issued: {{ invoice.issue_date|date:"d/m/Y" }}<br>
+        Printed: {% now "d/m/Y H:i" %}
+      </div>
+    </div>
+  </div>
+
+  <!-- PATIENT BAR -->
+  <div class="patient-bar">
+    <div>
+      <div class="patient-name">{{ invoice.patient.full_name|upper }}</div>
+      <div class="patient-meta">
+        Patient ID: <strong>{{ invoice.patient.patient_id }}</strong>
+        {% if invoice.patient.date_of_birth %}
+          &nbsp;·&nbsp; DOB: {{ invoice.patient.date_of_birth|date:"d/m/Y" }}
+        {% endif %}
+        {% if invoice.patient.phone_number %}
+          &nbsp;·&nbsp; Tel: {{ invoice.patient.phone_number }}
+        {% endif %}
+        {% if today_token %}
+          <br><span class="ticket-tag">Ticket {{ today_token.display_token_number }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="doc-meta">
+      <strong>{{ invoice.invoice_number }}</strong><br>
+      {% for payment in payments %}{% if forloop.first %}Receipt: {{ payment.receipt_number }}<br>{% endif %}{% endfor %}
+      {% if invoice.service_tier %}Tier: {{ invoice.service_tier|title }}<br>{% endif %}
+      {% if invoice.cash_desk %}Desk: {{ invoice.cash_desk.name }}<br>{% endif %}
+      Cashier: {{ invoice.created_by.get_full_name|default:invoice.created_by.username|default:"—" }}
+    </div>
+  </div>
+
+  <!-- STATUS RIBBON -->
+  <div class="status-ribbon
+    {% if invoice.status == 'PAID' %}ribbon-paid
+    {% elif invoice.status == 'PARTIAL' %}ribbon-partial
+    {% elif invoice.status == 'WAIVED' %}ribbon-waived
+    {% elif invoice.status == 'CANCELLED' %}ribbon-cancelled
+    {% else %}ribbon-unpaid{% endif %}">
+    {% if invoice.status == 'PAID' %}&#10003; Fully Paid
+    {% elif invoice.status == 'PARTIAL' %}&#9888; Partially Paid — Balance Remaining
+    {% elif invoice.status == 'WAIVED' %}&#10003; Waived
+    {% elif invoice.status == 'CANCELLED' %}Cancelled / Void
+    {% else %}Outstanding — Payment Required{% endif %}
+  </div>
+
+  <!-- BODY -->
+  <div class="doc-body">
+
+    <!-- ITEMIZED CHARGES -->
+    <div class="section-title">Itemized Charges</div>
+    <table class="charges-table">
+      <thead>
+        <tr>
+          <th style="width:40%;">Service / Description</th>
+          <th>Category</th>
+          <th class="center" style="width:8%;">Qty</th>
+          <th class="right" style="width:18%;">Unit Price (FCFA)</th>
+          <th class="right" style="width:18%;">Amount (FCFA)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ item.description }}</td>
+          <td class="cat-badge"><span>{{ item.get_category_display }}</span></td>
+          <td class="center">{{ item.quantity }}</td>
+          <td class="right">{{ item.unit_price|floatformat:0|intcomma }}</td>
+          <td class="right">{{ item.line_total|floatformat:0|intcomma }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" style="text-align:center;color:#888;font-size:9pt;padding:12px;">No line items recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if invoice.corporate_account %}
+    <!-- INSURANCE / CORPORATE BLOCK -->
+    <div class="insurance-block">
+      <div class="ins-title">&#128717; Insurance / Corporate Coverage</div>
+      <div class="ins-row">
+        <span>Payer / Account</span>
+        <span>{{ invoice.corporate_account.name }}</span>
+      </div>
+      <div class="ins-row">
+        <span>Insurance Covers</span>
+        <span>{{ invoice.insurance_amount|floatformat:0|intcomma }} FCFA</span>
+      </div>
+      <div class="ins-row">
+        <span>Patient Co-payment</span>
+        <span style="color:#1a3a5c;font-weight:800;">{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>
+      </div>
     </div>
     {% endif %}
-    <div class="grand-total-row">
-      <span>TOTAL (FCFA)</span>
-      <span>{{ invoice.total|floatformat:0|intcomma }}</span>
+
+    <!-- TWO-COLUMN: PAYMENT HISTORY + ACCOUNT SUMMARY -->
+    <div class="summary-grid">
+
+      <!-- Payment history -->
+      <div>
+        <div class="section-title">Payment History</div>
+        {% if payments %}
+        <table class="pay-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Method</th>
+              <th>Reference</th>
+              <th style="text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in payments %}
+            <tr>
+              <td style="white-space:nowrap;">{{ payment.payment_date|date:"d/m/Y" }}</td>
+              <td>{{ payment.get_payment_method_display }}</td>
+              <td style="color:#666;font-size:8pt;">{{ payment.reference|default:"—" }}</td>
+              <td>{{ payment.amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if change_given > 0 %}
+        <div style="margin-top:6px;font-size:8.5pt;color:#155724;font-weight:600;text-align:right;">
+          Change Given: {{ change_given|floatformat:0|intcomma }} FCFA
+        </div>
+        {% endif %}
+        {% else %}
+        <div style="font-size:9pt;color:#888;padding:10px 0;">No payments recorded yet.</div>
+        {% endif %}
+      </div>
+
+      <!-- Account summary -->
+      <div>
+        <div class="section-title">Account Summary</div>
+        <div class="totals-box">
+          <div class="totals-row">
+            <span>Subtotal</span>
+            <span>{{ invoice.subtotal|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% if invoice.discount_amount > 0 %}
+          <div class="totals-row discount">
+            <span>Discount{% if invoice.discount_reason %} ({{ invoice.discount_reason }}){% endif %}</span>
+            <span>&#8722; {{ invoice.discount_amount|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% endif %}
+          <div class="totals-row" style="font-weight:700;border-top:1.5px solid #c8daea;">
+            <span>Invoice Total</span>
+            <span>{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% if invoice.insurance_amount > 0 %}
+          <div class="totals-row insurance">
+            <span>Insurance Covers</span>
+            <span>&#8722; {{ invoice.insurance_amount|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          <div class="totals-row patient-share">
+            <span>Patient Amount</span>
+            <span>{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% endif %}
+          {% if invoice.amount_paid > 0 %}
+          <div class="totals-row paid-row">
+            <span>Total Paid</span>
+            <span>&#8722; {{ invoice.amount_paid|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% endif %}
+          {% if invoice.refund_total > 0 %}
+          <div class="totals-row refund-row">
+            <span>Refunds Issued</span>
+            <span>+ {{ invoice.refund_total|floatformat:0|intcomma }} FCFA</span>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Balance due box -->
+        <div class="balance-box {% if invoice.balance_due <= 0 %}balance-zero{% endif %}">
+          <div class="balance-label">Balance Due</div>
+          <div class="balance-amount">
+            {% if invoice.balance_due <= 0 %}NIL{% else %}{{ invoice.balance_due|floatformat:0|intcomma }} FCFA{% endif %}
+          </div>
+        </div>
+      </div>
     </div>
-    {% if invoice.insurance_amount > 0 %}
-    <div class="total-row" style="color:#0891b2;">
-      <span>Insurance covers</span>
-      <span>{{ invoice.insurance_amount|floatformat:0|intcomma }}</span>
+
+    <!-- FOOTER -->
+    <div class="doc-footer">
+      <div class="sig-block">
+        <div class="sig-line">Cashier Signature / Stamp</div>
+      </div>
+      <div class="footer-note">
+        <strong>{{ HOSPITAL_NAME }}</strong><br>
+        Thank you for choosing our services. Your vision is our priority.<br>
+        Please retain this receipt for your records.<br>
+        For billing inquiries call: +237 000 000 000
+      </div>
     </div>
-    <div class="total-row" style="font-weight:bold;color:#155724;">
-      <span>Patient amount</span>
-      <span>{{ invoice.patient_amount|floatformat:0|intcomma }}</span>
-    </div>
-    {% endif %}
-  </div>
 
-  <div class="divider"></div>
+  </div>{# /doc-body #}
 
-  <!-- Payments -->
-  {% if payments %}
-  <div class="section-title">Payment</div>
-  {% for payment in payments %}
-  <div class="item-row">
-    <span class="item-name">{{ payment.get_payment_method_display }}{% if payment.reference %} · {{ payment.reference }}{% endif %}</span>
-    <span class="item-amount">{{ payment.amount|floatformat:0|intcomma }}</span>
-  </div>
-  {% endfor %}
-  <div class="divider"></div>
-  {% endif %}
+</div>{# /document #}
 
-  <!-- Balance -->
-  <div class="item-row" style="font-weight:bold;">
-    <span>Balance Due</span>
-    <span>{{ invoice.balance_due|floatformat:0|intcomma }}</span>
-  </div>
-  {% if change_given > 0 %}
-  <div class="item-row" style="font-weight:bold;color:#155724;margin-top:4px;">
-    <span>Change Given</span>
-    <span>{{ change_given|floatformat:0|intcomma }} FCFA</span>
-  </div>
-  {% endif %}
-
-  <!-- Status badge -->
-  <div class="status-badge
-    {% if invoice.status == 'PAID' %}status-paid
-    {% elif invoice.status == 'PARTIAL' %}status-partial
-    {% else %}status-unpaid{% endif %}">
-    {% if invoice.status == 'PAID' %}PAID ✓
-    {% elif invoice.status == 'PARTIAL' %}PARTIALLY PAID
-    {% elif invoice.status == 'WAIVED' %}WAIVED ✓
-    {% else %}OUTSTANDING{% endif %}
-  </div>
-
-  <div class="divider"></div>
-
-  <!-- Cashier -->
-  <div class="cashier-line">
-    Cashier: {{ invoice.created_by.get_full_name|default:invoice.created_by.username|default:"—" }}
-  </div>
-
-  <!-- Footer -->
-  <div class="footer">
-    <div class="thank-you">Thank you for choosing {{ HOSPITAL_NAME }}!</div>
-    <div>Please keep this receipt for your records.</div>
-    <div style="margin-top:6px;">Your vision is our priority.</div>
-  </div>
-
-</div>
-
-<!-- Action bar (screen only) -->
+<!-- ACTION BAR (screen only) -->
 <div class="action-bar" id="actionBar">
-  <button class="btn-print-receipt" onclick="window.print()">
-    &#128438; Print Thermal
+  <button class="btn-act btn-print" onclick="window.print()">
+    &#128438; Print Receipt (A4)
   </button>
-  <button class="btn-print-receipt" style="background:#dc3545;"
-          onclick="window.open('?format=pdf','_blank')">
-    &#128196; Download PDF Invoice
+  <button class="btn-act btn-pdf" onclick="window.open('?format=pdf','_blank')">
+    &#128196; Download PDF
   </button>
-  <button class="btn-triage" id="nextPatientBtn"
+  <button class="btn-act btn-back" id="nextPatientBtn"
           onclick="window.location.href='/billing/pos/'">
-    &#8594; Back to Counter
+    &#8592; Back to Counter
   </button>
 </div>
 
-<!-- Auto-return countdown (screen only) -->
-<div id="countdownBar" style="width:340px;margin-top:8px;text-align:center;font-size:12px;color:#555;font-family:'Courier New',monospace;">
-  Returning to counter in <strong id="countNum">5</strong>s…
+<div class="countdown-bar" id="countdownBar">
+  Returning to counter in <strong id="countNum">8</strong>s &nbsp;
   <button onclick="clearInterval(cdTimer);document.getElementById('countdownBar').style.display='none';"
-          style="border:none;background:none;color:#888;font-size:11px;cursor:pointer;text-decoration:underline;margin-left:4px;">
+          style="border:none;background:none;color:#0d6efd;font-size:9pt;cursor:pointer;text-decoration:underline;">
     stay
   </button>
 </div>
@@ -335,19 +544,17 @@
 
   // Auto-print on load
   window.addEventListener('load', function () {
-    setTimeout(function () { window.print(); }, 400);
+    setTimeout(function () { window.print(); }, 500);
   });
 
   if (isPopup) {
-    // Opened as receipt popup from POS — close tab after printing
     const bar = document.getElementById('countdownBar');
-    if (bar) bar.innerHTML = 'Receipt printed. <button onclick="window.close()" style="border:none;background:none;color:#0d6efd;font-size:12px;cursor:pointer;text-decoration:underline;">Close tab</button>';
+    if (bar) bar.innerHTML = 'Receipt printed. <button onclick="window.close()" style="border:none;background:none;color:#0d6efd;font-size:9pt;cursor:pointer;text-decoration:underline;">Close tab</button>';
     window.addEventListener('afterprint', function () {
       setTimeout(function () { window.close(); }, 1200);
     });
   } else {
-    // Regular flow: countdown → back to cashier POS landing
-    let cdCount = 5;
+    let cdCount = 8;
     const cdTimer = setInterval(function () {
       cdCount--;
       const el = document.getElementById('countNum');

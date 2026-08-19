@@ -1,254 +1,404 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load static humanize %}
-{% block title %}Billing Dashboard{% endblock %}
+{% block title %}Billing & Revenue Dashboard{% endblock %}
 
 {% block extra_css %}
 <style>
-.kpi-card { border-radius: 12px; padding: 18px 20px; background: #fff; border: 1px solid #e9ecef; }
-.kpi-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; opacity: .85; }
-.kpi-value { font-size: 1.8rem; font-weight: 800; line-height: 1.1; }
-.kpi-sub { font-size: .75rem; opacity: .8; margin-top: 3px; }
-.method-bar { height: 8px; border-radius: 4px; background: #e5e7eb; overflow: hidden; }
-.method-fill { height: 100%; border-radius: 4px; transition: width .4s; }
+/* ═══════════════════════════════════════════════════════════
+   EHR Africa · Epic Resolute–style Billing Dashboard
+═══════════════════════════════════════════════════════════ */
+
+/* ── Stat tiles ────────────────────────────────────────── */
+.stat-tile {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-left: 4px solid #1a3a5c;
+  border-radius: 6px;
+  padding: 14px 16px;
+  height: 100%;
+}
+.stat-tile.green  { border-left-color: #28a745; }
+.stat-tile.blue   { border-left-color: #1a3a5c; }
+.stat-tile.amber  { border-left-color: #e6a817; }
+.stat-tile.red    { border-left-color: #dc3545; }
+.stat-tile.teal   { border-left-color: #17a2b8; }
+
+.stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; margin-bottom: 4px; }
+.stat-value { font-size: 1.55rem; font-weight: 900; line-height: 1.1; color: #1a3a5c; }
+.stat-value.green { color: #28a745; }
+.stat-value.red   { color: #dc3545; }
+.stat-value.amber { color: #7a5800; }
+.stat-sub   { font-size: .72rem; color: #6c757d; margin-top: 3px; }
+
+/* ── AR Aging summary ──────────────────────────────────── */
+.ar-bucket {
+  text-align: center;
+  padding: 10px 6px;
+  border-radius: 5px;
+  border: 1px solid #dee2e6;
+}
+.ar-bucket .ar-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: #6c757d; }
+.ar-bucket .ar-val   { font-size: 1.1rem; font-weight: 800; margin-top: 3px; }
+.ar-bucket .ar-amt   { font-size: .72rem; color: #6c757d; margin-top: 1px; }
+.ar-current { background: #f0fdf4; border-color: #86efac; }
+.ar-current .ar-val { color: #155724; }
+.ar-30  { background: #fffbeb; border-color: #fcd34d; }
+.ar-30 .ar-val { color: #7a5800; }
+.ar-60  { background: #fff7ed; border-color: #fed7aa; }
+.ar-60 .ar-val { color: #9a3412; }
+.ar-90  { background: #fef2f2; border-color: #fca5a5; }
+.ar-90 .ar-val { color: #7f1d1d; }
+
+/* ── Work Queue rows ────────────────────────────────────── */
+.wq-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.wq-table thead th {
+  background: #1a3a5c;
+  color: #fff;
+  padding: 7px 12px;
+  font-size: .75rem;
+  font-weight: 700;
+  border: none;
+  text-align: left;
+}
+.wq-table tbody tr { border-bottom: 1px solid #edf2f7; }
+.wq-table tbody tr:hover { background: #f5f8fc; }
+.wq-table tbody td { padding: 7px 12px; vertical-align: middle; }
+.wq-table .right { text-align: right; }
+.wq-table .inv-num { font-family: 'Courier New', monospace; font-size: .78rem; color: #2e6da4; font-weight: 700; }
+
+.status-chip {
+  display: inline-block;
+  font-size: .68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.chip-issued   { background: #dbeafe; color: #1d4ed8; }
+.chip-partial  { background: #fff3cd; color: #7a5800; }
+.chip-paid     { background: #d1fae5; color: #065f46; }
+.chip-cancelled{ background: #e5e7eb; color: #374151; }
+.chip-draft    { background: #f3f4f6; color: #6b7280; }
+
+/* ── Quick bill search ────────────────────────────────── */
+.qb-bar {
+  background: #1a3a5c;
+  border-radius: 8px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.qb-bar label { color: #fff; font-size: .82rem; font-weight: 700; white-space: nowrap; }
+
+/* ── Nav tabs ───────────────────────────────────────────── */
+.dash-nav {
+  border-bottom: 2px solid #c8daea;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.dash-nav a {
+  padding: 6px 14px;
+  font-size: .8rem;
+  font-weight: 600;
+  color: #2e6da4;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  text-decoration: none;
+}
+.dash-nav a:hover { background: #eef3f9; }
+.dash-nav .active {
+  background: #fff;
+  border-color: #c8daea;
+  border-bottom-color: #fff;
+  color: #1a3a5c;
+  margin-bottom: -2px;
+}
+
+/* ── Section head ───────────────────────────────────────── */
+.section-hd {
+  font-size: .75rem;
+  font-weight: 800;
+  color: #1a3a5c;
+  text-transform: uppercase;
+  letter-spacing: .9px;
+  border-bottom: 2px solid #1a3a5c;
+  padding-bottom: 5px;
+  margin-bottom: 12px;
+}
+
+/* chart containers */
+.chart-wrap { position: relative; height: 180px; }
 </style>
 {% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-cash-stack text-success fs-4"></i>
-    <div>
-      <h5 class="mb-0 fw-bold">Billing & Revenue</h5>
-      <div class="text-muted small">{{ today|date:"l, d F Y" }}</div>
-    </div>
+  <div>
+    <h5 class="mb-0 fw-bold" style="color:#1a3a5c;"><i class="bi bi-cash-stack me-2"></i>Billing &amp; Revenue</h5>
+    <div class="text-muted small">{{ today|date:"l, d F Y" }}</div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
-    <a href="{% url 'billing:pos_landing' %}" class="btn btn-success btn-sm"><i class="bi bi-cash-register me-1"></i>POS / Cashier</a>
-    <a href="{% url 'billing:invoice_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>New Invoice</a>
-    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list-ul me-1"></i>All Invoices</a>
-    <div class="vr d-none d-md-block"></div>
-    <a href="{% url 'billing:ar_aging' %}" class="btn btn-outline-warning btn-sm"><i class="bi bi-hourglass-split me-1"></i>AR Aging</a>
-    <a href="{% url 'billing:reconciliation' %}" class="btn btn-outline-info btn-sm"><i class="bi bi-calculator me-1"></i>Reconciliation</a>
-    <a href="{% url 'billing:shift_list' %}" class="btn btn-outline-dark btn-sm"><i class="bi bi-person-badge me-1"></i>Shifts</a>
-    <div class="vr d-none d-md-block"></div>
-    <a href="{% url 'billing:expense_list' %}" class="btn btn-outline-danger btn-sm"><i class="bi bi-receipt-cutoff me-1"></i>Expenses</a>
-    <a href="{% url 'billing:corporate_list' %}" class="btn btn-outline-info btn-sm"><i class="bi bi-building me-1"></i>Corporate</a>
-    <a href="{% url 'billing:report_pl' %}" class="btn btn-outline-success btn-sm"><i class="bi bi-bar-chart-line me-1"></i>P&L</a>
-    <a href="{% url 'billing:report_daily_summary' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-calendar-check me-1"></i>Daily</a>
-    <a href="{% url 'billing:service_price_list' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-tags me-1"></i>Prices</a>
+    <a href="{% url 'billing:pos_landing' %}" class="btn btn-success btn-sm fw-semibold">
+      <i class="bi bi-cash-register me-1"></i>Open POS
+    </a>
+    <a href="{% url 'billing:invoice_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus me-1"></i>New Invoice
+    </a>
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list-ul me-1"></i>All Invoices
+    </a>
+    <a href="{% url 'billing:ar_aging' %}" class="btn btn-outline-warning btn-sm">
+      <i class="bi bi-hourglass-split me-1"></i>AR Aging
+    </a>
+    <a href="{% url 'billing:reconciliation' %}" class="btn btn-outline-info btn-sm">
+      <i class="bi bi-calculator me-1"></i>Reconciliation
+    </a>
+    <a href="{% url 'billing:shift_list' %}" class="btn btn-outline-dark btn-sm">
+      <i class="bi bi-person-badge me-1"></i>Shifts
+    </a>
+    <a href="{% url 'billing:report_pl' %}" class="btn btn-outline-success btn-sm">
+      <i class="bi bi-bar-chart-line me-1"></i>P&amp;L
+    </a>
+    <a href="{% url 'billing:service_price_list' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-tags me-1"></i>Price Catalog
+    </a>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
 
-<!-- Quick Bill a Patient (no QMS needed) -->
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body py-3">
-    <div class="row align-items-center g-2">
-      <div class="col-auto">
-        <span class="fw-semibold text-success"><i class="bi bi-person-cash me-1"></i>Quick Bill a Patient</span>
-        <small class="text-muted ms-2">Search by name, ID or phone</small>
-      </div>
-      <div class="col position-relative">
-        <div class="input-group input-group-sm">
-          <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-          <input type="text" id="quickBillSearch" class="form-control"
-                 placeholder="Type name, patient ID or phone…" autocomplete="off">
-        </div>
-        <div id="quickBillDrop" class="list-group position-absolute shadow"
-             style="display:none;z-index:1050;min-width:320px;max-height:220px;overflow-y:auto;top:34px;left:0;"></div>
-      </div>
+<!-- ═══════ QUICK BILL BAR ═══════ -->
+<div class="qb-bar">
+  <label><i class="bi bi-person-cash me-1"></i>Quick Bill Patient</label>
+  <div class="flex-grow-1 position-relative" style="min-width:260px;max-width:420px;">
+    <div class="input-group input-group-sm">
+      <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+      <input type="text" id="quickBillSearch" class="form-control"
+             placeholder="Search name, patient ID or phone…" autocomplete="off">
     </div>
+    <div id="quickBillDrop" class="list-group position-absolute shadow"
+         style="display:none;z-index:1050;min-width:320px;max-height:220px;overflow-y:auto;top:34px;left:0;"></div>
   </div>
+  <a href="{% url 'billing:expense_list' %}" class="btn btn-outline-light btn-sm ms-auto">
+    <i class="bi bi-receipt-cutoff me-1"></i>Expenses
+  </a>
+  <a href="{% url 'billing:corporate_list' %}" class="btn btn-outline-light btn-sm">
+    <i class="bi bi-building me-1"></i>Corporate
+  </a>
 </div>
 
-<!-- KPI Row -->
+<!-- ═══════ KPI TILES — Row 1 ═══════ -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-lg-3">
-    <div class="kpi-card">
-      <div class="kpi-label text-muted">Revenue Today</div>
-      <div class="kpi-value text-success">{{ paid_today|floatformat:0|intcomma }}</div>
-      <div class="kpi-sub text-muted">FCFA collected</div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-tile green">
+      <div class="stat-label">Revenue Today</div>
+      <div class="stat-value green">{{ paid_today|floatformat:0|intcomma }}</div>
+      <div class="stat-sub">FCFA collected</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
-    <div class="kpi-card">
-      <div class="kpi-label text-muted">Revenue This Month</div>
-      <div class="kpi-value text-primary">{{ paid_month|floatformat:0|intcomma }}</div>
-      <div class="kpi-sub text-muted">FCFA this month</div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-tile blue">
+      <div class="stat-label">This Month</div>
+      <div class="stat-value">{{ paid_month|floatformat:0|intcomma }}</div>
+      <div class="stat-sub">FCFA</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
-    <div class="kpi-card">
-      <div class="kpi-label text-muted">Outstanding</div>
-      <div class="kpi-value text-danger">{{ outstanding_count }}</div>
-      <div class="kpi-sub text-muted">{{ outstanding_amount|floatformat:0|intcomma }} FCFA unpaid</div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-tile red">
+      <div class="stat-label">Outstanding</div>
+      <div class="stat-value red">{{ outstanding_count }}</div>
+      <div class="stat-sub">{{ outstanding_amount|floatformat:0|intcomma }} FCFA</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
-    <div class="kpi-card">
-      <div class="kpi-label text-muted">Invoices Today</div>
-      <div class="kpi-value text-secondary">{{ invoices_today }}</div>
-      <div class="kpi-sub text-muted">invoices created</div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-tile">
+      <div class="stat-label">Invoices Today</div>
+      <div class="stat-value">{{ invoices_today }}</div>
+      <div class="stat-sub">created</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-tile teal">
+      <div class="stat-label">Invoices Month</div>
+      <div class="stat-value" style="color:#0c5460;">{{ invoices_month|default:0 }}</div>
+      <div class="stat-sub">this month</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-tile amber">
+      <div class="stat-label">Avg Invoice</div>
+      <div class="stat-value amber">{{ avg_invoice|default:0|floatformat:0|intcomma }}</div>
+      <div class="stat-sub">FCFA avg</div>
     </div>
   </div>
 </div>
 
-<!-- Row 1: 12-month trend + payment method donut -->
-<div class="row g-3 mb-3">
+<!-- ═══════ AR AGING QUICK VIEW ═══════ -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold" style="color:#1a3a5c;font-size:.85rem;">
+      <i class="bi bi-hourglass-split me-2 text-warning"></i>Accounts Receivable Aging
+    </span>
+    <a href="{% url 'billing:ar_aging' %}" class="btn btn-outline-warning btn-sm" style="font-size:.75rem;padding:2px 10px;">
+      Full AR Report &rarr;
+    </a>
+  </div>
+  <div class="card-body py-3">
+    <div class="row g-3">
+      <div class="col-6 col-lg-3">
+        <div class="ar-bucket ar-current">
+          <div class="ar-label">Current (0–30 days)</div>
+          <div class="ar-val">{{ ar_current_count|default:0 }}</div>
+          <div class="ar-amt">{{ ar_current_amount|default:0|floatformat:0|intcomma }} FCFA</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="ar-bucket ar-30">
+          <div class="ar-label">31–60 days</div>
+          <div class="ar-val">{{ ar_30_count|default:0 }}</div>
+          <div class="ar-amt">{{ ar_30_amount|default:0|floatformat:0|intcomma }} FCFA</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="ar-bucket ar-60">
+          <div class="ar-label">61–90 days</div>
+          <div class="ar-val">{{ ar_60_count|default:0 }}</div>
+          <div class="ar-amt">{{ ar_60_amount|default:0|floatformat:0|intcomma }} FCFA</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="ar-bucket ar-90">
+          <div class="ar-label">91+ days (Overdue)</div>
+          <div class="ar-val">{{ ar_90_count|default:0 }}</div>
+          <div class="ar-amt">{{ ar_90_amount|default:0|floatformat:0|intcomma }} FCFA</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ MAIN LAYOUT: Charts + Work Queue ═══════ -->
+<div class="row g-3 mb-4">
+
+  <!-- Revenue trend -->
   <div class="col-lg-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
-        <span class="fw-semibold"><i class="bi bi-graph-up-arrow me-2 text-success"></i>12-Month Revenue Trend</span>
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+          <i class="bi bi-graph-up-arrow me-2 text-success"></i>12-Month Revenue Trend
+        </span>
       </div>
       <div class="card-body">
-        <canvas id="revChart" height="90"></canvas>
+        <div class="chart-wrap"><canvas id="revChart"></canvas></div>
       </div>
     </div>
   </div>
+
+  <!-- Payment methods donut -->
   <div class="col-lg-4">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white border-bottom fw-semibold">
-        <i class="bi bi-pie-chart me-2 text-primary"></i>Payment Methods (This Month)
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+          <i class="bi bi-pie-chart me-2 text-primary"></i>Payment Methods — This Month
+        </span>
       </div>
       <div class="card-body d-flex align-items-center justify-content-center">
         {% if cat_values %}
-        <canvas id="methodChart" height="200"></canvas>
+        <div class="chart-wrap w-100"><canvas id="methodChart"></canvas></div>
         {% else %}
-        <div class="text-center text-muted py-4 small">No data this month</div>
+        <div class="text-center text-muted small py-3">No data this month</div>
         {% endif %}
       </div>
     </div>
   </div>
+
 </div>
 
-<!-- Row 2: Service category breakdown + invoice status -->
-<div class="row g-3 mb-3">
-  <div class="col-lg-7">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom fw-semibold">
-        <i class="bi bi-bar-chart-fill me-2 text-info"></i>Revenue by Service Category (This Month)
-      </div>
-      <div class="card-body">
-        {% if cat_values %}
-        <canvas id="catChart" height="140"></canvas>
-        {% else %}
-        <div class="text-center text-muted py-4 small">No billing data this month.</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-  <div class="col-lg-5">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom fw-semibold">
-        <i class="bi bi-donut me-2 text-warning"></i>Invoice Status Breakdown
-      </div>
-      <div class="card-body d-flex align-items-center justify-content-center">
-        {% if status_values %}
-        <canvas id="statusChart" height="200"></canvas>
-        {% else %}
-        <div class="text-center text-muted py-4 small">No invoices.</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Outstanding Invoices Quick View -->
-{% if outstanding_count > 0 %}
-<div class="alert alert-warning border-0 d-flex align-items-center gap-2 mb-3">
-  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
-  <div>
-    <strong>{{ outstanding_count }} outstanding invoice{{ outstanding_count|pluralize }}</strong> totalling
-    <strong>{{ outstanding_amount|floatformat:0|intcomma }} FCFA</strong> awaiting payment.
-    <a href="{% url 'billing:invoice_list' %}?status=ISSUED" class="ms-2 alert-link">View all →</a>
-  </div>
-</div>
-{% endif %}
-
-<!-- Financial Reports Quick Access -->
-<div class="row g-3 mb-3">
-  <div class="col-md-6">
-    <a href="{% url 'billing:ar_aging' %}" class="text-decoration-none">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:48px;height:48px;background:#fef3c7;">
-            <i class="bi bi-hourglass-split text-warning fs-4"></i>
-          </div>
-          <div>
-            <div class="fw-semibold">AR Aging Report</div>
-            <div class="text-muted small">View outstanding receivables bucketed by age (0–30, 31–60, 61–90, 91+ days)</div>
-          </div>
-          <i class="bi bi-chevron-right ms-auto text-muted"></i>
-        </div>
-      </div>
-    </a>
-  </div>
-  <div class="col-md-6">
-    <a href="{% url 'billing:reconciliation' %}" class="text-decoration-none">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:48px;height:48px;background:#e0f2fe;">
-            <i class="bi bi-calculator text-info fs-4"></i>
-          </div>
-          <div>
-            <div class="fw-semibold">Daily Cashier Reconciliation</div>
-            <div class="text-muted small">End-of-day shift report — collections by cashier, payment method & refunds</div>
-          </div>
-          <i class="bi bi-chevron-right ms-auto text-muted"></i>
-        </div>
-      </div>
-    </a>
-  </div>
-</div>
-
-<!-- Recent Invoices Table -->
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
-    <span class="fw-semibold"><i class="bi bi-receipt me-2"></i>Recent Invoices</span>
+<!-- ═══════ WORK QUEUE — Outstanding Invoices ═══════ -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold" style="color:#1a3a5c;font-size:.85rem;">
+      <i class="bi bi-inbox me-2 text-danger"></i>
+      Work Queue — Outstanding &amp; Recent Invoices
+    </span>
     <div class="d-flex gap-2">
-      <a href="{% url 'billing:invoice_list' %}?status=ISSUED" class="btn btn-xs btn-outline-warning" style="font-size:.75rem;padding:2px 10px;">Unpaid</a>
-      <a href="{% url 'billing:invoice_list' %}" class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:2px 10px;">All</a>
+      <a href="{% url 'billing:invoice_list' %}?status=ISSUED" class="btn btn-outline-danger btn-sm" style="font-size:.75rem;padding:2px 10px;">
+        Unpaid Only
+      </a>
+      <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm" style="font-size:.75rem;padding:2px 10px;">
+        All Invoices
+      </a>
     </div>
   </div>
   <div class="card-body p-0">
+    {% if outstanding_count > 0 %}
+    <div class="px-3 py-2" style="background:#fef2f2;border-bottom:1px solid #fca5a5;font-size:.8rem;">
+      <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>
+      <strong>{{ outstanding_count }} invoice{{ outstanding_count|pluralize }}</strong> outstanding,
+      totalling <strong>{{ outstanding_amount|floatformat:0|intcomma }} FCFA</strong> — action required.
+    </div>
+    {% endif %}
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0 small">
-        <thead class="table-light">
+      <table class="wq-table">
+        <thead>
           <tr>
             <th>Invoice #</th>
             <th>Patient</th>
-            <th class="text-end">Total</th>
-            <th class="text-end">Paid</th>
-            <th class="text-end">Balance</th>
-            <th>Status</th>
             <th>Date</th>
+            <th>Tier</th>
+            <th class="right">Total (FCFA)</th>
+            <th class="right">Paid (FCFA)</th>
+            <th class="right">Balance (FCFA)</th>
+            <th>Status</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for inv in recent_invoices %}
           <tr>
-            <td><code class="small">{{ inv.invoice_number }}</code></td>
+            <td><span class="inv-num">{{ inv.invoice_number }}</span></td>
             <td class="fw-semibold">{{ inv.patient.full_name }}</td>
-            <td class="text-end">{{ inv.total|floatformat:0|intcomma }}</td>
-            <td class="text-end text-success">{{ inv.amount_paid|floatformat:0|intcomma }}</td>
-            <td class="text-end {% if inv.balance_due > 0 %}text-danger fw-bold{% endif %}">{{ inv.balance_due|floatformat:0|intcomma }}</td>
+            <td class="text-muted" style="white-space:nowrap;font-size:.78rem;">{{ inv.created_at|date:"d M H:i" }}</td>
             <td>
-              <span class="badge {% if inv.status == 'PAID' %}bg-success{% elif inv.status == 'PARTIAL' %}bg-warning text-dark{% elif inv.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %}">
+              {% if inv.service_tier %}
+              <span style="font-size:.68rem;background:#e8eef5;color:#2e6da4;border-radius:3px;padding:1px 6px;font-weight:700;">
+                {{ inv.service_tier|title }}
+              </span>
+              {% else %}&mdash;{% endif %}
+            </td>
+            <td class="right">{{ inv.total|floatformat:0|intcomma }}</td>
+            <td class="right" style="color:#155724;">{{ inv.amount_paid|floatformat:0|intcomma }}</td>
+            <td class="right {% if inv.balance_due > 0 %}fw-bold{% endif %}"
+                style="{% if inv.balance_due > 0 %}color:#dc3545;{% else %}color:#155724;{% endif %}">
+              {% if inv.balance_due <= 0 %}NIL{% else %}{{ inv.balance_due|floatformat:0|intcomma }}{% endif %}
+            </td>
+            <td>
+              <span class="status-chip
+                {% if inv.status == 'PAID' %}chip-paid
+                {% elif inv.status == 'PARTIAL' %}chip-partial
+                {% elif inv.status == 'CANCELLED' %}chip-cancelled
+                {% elif inv.status == 'DRAFT' %}chip-draft
+                {% else %}chip-issued{% endif %}">
                 {{ inv.get_status_display }}
               </span>
             </td>
-            <td class="text-muted">{{ inv.created_at|date:"d M H:i" }}</td>
             <td>
-              <a href="{% url 'billing:invoice_detail' inv.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+              <a href="{% url 'billing:invoice_detail' inv.id %}"
+                 class="btn btn-sm btn-outline-primary" style="font-size:.72rem;padding:2px 8px;">
+                View
+              </a>
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="8" class="text-center text-muted py-4">No invoices yet</td></tr>
+          <tr><td colspan="9" class="text-center text-muted py-4" style="font-size:.83rem;">No invoices yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -256,12 +406,74 @@
   </div>
 </div>
 
+<!-- ═══════ QUICK LINKS ═══════ -->
+<div class="row g-3">
+  <div class="col-md-3 col-sm-6">
+    <a href="{% url 'billing:ar_aging' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100 border-start border-4 border-warning">
+        <div class="card-body py-3 d-flex align-items-center gap-3">
+          <i class="bi bi-hourglass-split text-warning fs-4"></i>
+          <div>
+            <div class="fw-semibold" style="font-size:.85rem;">AR Aging</div>
+            <div class="text-muted" style="font-size:.75rem;">Outstanding by age</div>
+          </div>
+          <i class="bi bi-chevron-right ms-auto text-muted"></i>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <a href="{% url 'billing:reconciliation' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100 border-start border-4" style="border-color:#17a2b8!important;">
+        <div class="card-body py-3 d-flex align-items-center gap-3">
+          <i class="bi bi-calculator text-info fs-4"></i>
+          <div>
+            <div class="fw-semibold" style="font-size:.85rem;">Reconciliation</div>
+            <div class="text-muted" style="font-size:.75rem;">Cashier end-of-day</div>
+          </div>
+          <i class="bi bi-chevron-right ms-auto text-muted"></i>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <a href="{% url 'billing:report_daily_summary' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100 border-start border-4 border-success">
+        <div class="card-body py-3 d-flex align-items-center gap-3">
+          <i class="bi bi-calendar-check text-success fs-4"></i>
+          <div>
+            <div class="fw-semibold" style="font-size:.85rem;">Daily Summary</div>
+            <div class="text-muted" style="font-size:.75rem;">Today's financial report</div>
+          </div>
+          <i class="bi bi-chevron-right ms-auto text-muted"></i>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <a href="{% url 'billing:report_pl' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100 border-start border-4" style="border-color:#1a3a5c!important;">
+        <div class="card-body py-3 d-flex align-items-center gap-3">
+          <i class="bi bi-bar-chart-line fs-4" style="color:#1a3a5c;"></i>
+          <div>
+            <div class="fw-semibold" style="font-size:.85rem;">P&amp;L Report</div>
+            <div class="text-muted" style="font-size:.75rem;">Profit &amp; loss analysis</div>
+          </div>
+          <i class="bi bi-chevron-right ms-auto text-muted"></i>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
-function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[id]")){return;}window.__ehrChartInit=null;
-// ── 12-Month Revenue Trend ──────────────────────────────────────────────────
+function _c(){
+if(!document.getElementById('revChart')){return;}
+
+// ── 12-Month Revenue Trend ───────────────────────────────────────────────────
 new Chart(document.getElementById('revChart'), {
   type: 'bar',
   data: {
@@ -269,79 +481,48 @@ new Chart(document.getElementById('revChart'), {
     datasets: [{
       label: 'Revenue (FCFA)',
       data: {{ twelve_values|safe }},
-      backgroundColor: 'rgba(5,150,105,0.7)',
-      borderColor: '#059669',
+      backgroundColor: 'rgba(26,58,92,0.75)',
+      borderColor: '#1a3a5c',
       borderWidth: 1,
-      borderRadius: 5,
+      borderRadius: 4,
     }]
   },
   options: {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-      y: { beginAtZero: true, ticks: { callback: v => (v/1000).toFixed(0)+'k', font: { size: 10 } } },
-      x: { ticks: { font: { size: 9 } } }
+      y: { beginAtZero: true, ticks: { callback: v => (v/1000).toFixed(0)+'k', font: { size: 10 } }, grid: { color: '#edf2f7' } },
+      x: { ticks: { font: { size: 9 } }, grid: { display: false } }
     }
   }
 });
 
-// ── Payment Methods (month) ─────────────────────────────────────────────────
+// ── Payment Methods ────────────────────────────────────────────────────────
 {% if cat_values %}
 const mLabels = {{ cat_labels|safe }};
 const mValues = {{ cat_values|safe }};
-const mColors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316'];
+const mColors = ['#1a3a5c','#2e6da4','#28a745','#e6a817','#dc3545','#17a2b8','#6f42c1'];
 new Chart(document.getElementById('methodChart'), {
   type: 'doughnut',
   data: {
     labels: mLabels,
-    datasets: [{ data: mValues, backgroundColor: mColors, borderWidth: 2 }]
+    datasets: [{ data: mValues, backgroundColor: mColors, borderWidth: 2, borderColor: '#fff' }]
   },
   options: {
     responsive: true,
-    plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } }
-  }
-});
-
-// ── Service Category Bar ────────────────────────────────────────────────────
-new Chart(document.getElementById('catChart'), {
-  type: 'bar',
-  data: {
-    labels: mLabels,
-    datasets: [{ label: 'FCFA', data: mValues, backgroundColor: mColors, borderRadius: 4 }]
-  },
-  options: {
-    indexAxis: 'y',
-    responsive: true,
-    plugins: { legend: { display: false } },
-    scales: { x: { beginAtZero: true, ticks: { callback: v => (v/1000).toFixed(0)+'k', font: { size: 10 } } } }
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { font: { size: 9 }, padding: 8, boxWidth: 10 } } }
   }
 });
 {% endif %}
 
-// ── Invoice Status Donut ────────────────────────────────────────────────────
-{% if status_values %}
-const sLabels = {{ status_labels|safe }};
-const sValues = {{ status_values|safe }};
-const sColors = {'PAID':'#10b981','ISSUED':'#3b82f6','PARTIALLY_PAID':'#f59e0b','CANCELLED':'#6b7280','DRAFT':'#9ca3af'};
-new Chart(document.getElementById('statusChart'), {
-  type: 'doughnut',
-  data: {
-    labels: sLabels,
-    datasets: [{ data: sValues, backgroundColor: sLabels.map(l => sColors[l] || '#94a3b8'), borderWidth: 2 }]
-  },
-  options: {
-    responsive: true,
-    plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } }
-  }
-});
-{% endif %}
-
-// ── Quick Bill patient search ────────────────────────────────────────────────
+// ── Quick Bill patient search ─────────────────────────────────────────────
 (function () {
   const inp  = document.getElementById('quickBillSearch');
   const drop = document.getElementById('quickBillDrop');
+  if(!inp) return;
   let timer;
-
   inp.addEventListener('input', function () {
     clearTimeout(timer);
     const q = this.value.trim();
@@ -371,11 +552,11 @@ new Chart(document.getElementById('statusChart'), {
         });
     }, 300);
   });
-
   inp.addEventListener('blur', function () {
     setTimeout(function () { drop.style.display = 'none'; }, 150);
   });
 })();
+
 }window.__ehrChartInit=_c;_c();
 </script>
 {% endblock %}

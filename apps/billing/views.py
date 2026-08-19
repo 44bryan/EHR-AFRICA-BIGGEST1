@@ -297,6 +297,42 @@ def billing_dashboard(request):
         else:
             cur = cur.replace(month=cur.month + 1)
 
+    # ── AR Aging buckets ────────────────────────────────────────────────────────
+    from datetime import timedelta as _td
+    _outs = Invoice.objects.filter(
+        status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+        is_deleted=False
+    ).select_related('patient')
+    ar_current_count = ar_current_amount = 0
+    ar_30_count = ar_30_amount = 0
+    ar_60_count = ar_60_amount = 0
+    ar_90_count = ar_90_amount = 0
+    for _inv in _outs:
+        _age = (today - _inv.issue_date).days
+        _bal = float(_inv.balance_due)
+        if _age <= 30:
+            ar_current_count += 1; ar_current_amount += _bal
+        elif _age <= 60:
+            ar_30_count += 1; ar_30_amount += _bal
+        elif _age <= 90:
+            ar_60_count += 1; ar_60_amount += _bal
+        else:
+            ar_90_count += 1; ar_90_amount += _bal
+
+    # ── Extra stats ─────────────────────────────────────────────────────────────
+    invoices_month = Invoice.objects.filter(
+        created_at__date__gte=month_start, is_deleted=False
+    ).count()
+    avg_invoice = 0
+    if invoices_month:
+        from django.db.models import ExpressionWrapper as _EW, F as _F, DecimalField as _DF
+        _month_total = InvoiceItem.objects.filter(
+            is_deleted=False,
+            invoice__is_deleted=False,
+            invoice__created_at__date__gte=month_start,
+        ).aggregate(s=Sum(_EW(_F('unit_price') * _F('quantity'), output_field=_DF(max_digits=14, decimal_places=2))))['s'] or 0
+        avg_invoice = round(float(_month_total) / invoices_month, 0)
+
     context = {
         'today': today,
         'paid_today': paid_today,
@@ -304,6 +340,8 @@ def billing_dashboard(request):
         'outstanding_count': outstanding_count,
         'outstanding_amount': outstanding_amount,
         'invoices_today': invoices_today,
+        'invoices_month': invoices_month,
+        'avg_invoice': avg_invoice,
         'by_method': list(by_method),
         'recent_invoices': recent_invoices,
         'seven_days': seven_days,
@@ -316,6 +354,15 @@ def billing_dashboard(request):
         'twelve_values': twelve_values,
         'payment_methods': PaymentMethod.choices,
         'statuses': InvoiceStatus.choices,
+        # AR aging
+        'ar_current_count': ar_current_count,
+        'ar_current_amount': ar_current_amount,
+        'ar_30_count': ar_30_count,
+        'ar_30_amount': ar_30_amount,
+        'ar_60_count': ar_60_count,
+        'ar_60_amount': ar_60_amount,
+        'ar_90_count': ar_90_count,
+        'ar_90_amount': ar_90_amount,
     }
     return render(request, 'billing/dashboard.html', context)
 
