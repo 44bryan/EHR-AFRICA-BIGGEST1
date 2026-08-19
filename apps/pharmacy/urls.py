@@ -69,4 +69,8 @@ urlpatterns = [
 
     # Controlled drug register PDF
     path('controlled/pdf/', views.controlled_register_pdf, name='controlled_register_pdf'),
+
+    # Bulk drug/stock import
+    path('drugs/import/', views.drug_bulk_import, name='drug_bulk_import'),
+    path('drugs/import/template/', views.drug_import_template, name='drug_import_template'),
 ]

@@ -1863,3 +1863,302 @@ def controlled_register_pdf(request):
         return response
     except ImportError:
         return HttpResponse('WeasyPrint not installed.', status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Bulk Drug / Stock Import  (Excel .xlsx  or  CSV)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _parse_date(val):
+    """Parse date from Excel date, string DD/MM/YYYY, YYYY-MM-DD, or DD-MM-YYYY."""
+    import datetime
+    if val is None:
+        return None
+    if isinstance(val, (datetime.date, datetime.datetime)):
+        return val.date() if isinstance(val, datetime.datetime) else val
+    s = str(val).strip()
+    for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+        try:
+            return datetime.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _str(val):
+    return str(val).strip() if val is not None else ''
+
+
+def _int(val, default=0):
+    try:
+        return max(0, int(str(val).strip()))
+    except (ValueError, TypeError):
+        return default
+
+
+def _dec(val, default='0'):
+    from decimal import Decimal, InvalidOperation
+    try:
+        return Decimal(str(val).strip())
+    except (InvalidOperation, TypeError):
+        return Decimal(default)
+
+
+_FORM_MAP = {
+    'eye drop': 'EYE_DROP', 'eyedrop': 'EYE_DROP', 'drops': 'EYE_DROP',
+    'eye ointment': 'EYE_OINT', 'ointment': 'EYE_OINT',
+    'tablet': 'TABLET', 'tab': 'TABLET',
+    'capsule': 'CAPSULE', 'cap': 'CAPSULE',
+    'injection': 'INJECTION', 'inj': 'INJECTION', 'ampoule': 'INJECTION',
+    'syrup': 'SYRUP', 'suspension': 'SYRUP', 'liquid': 'SYRUP',
+    'cream': 'CREAM',
+    'nasal': 'NASAL', 'nasal drop': 'NASAL',
+    'other': 'OTHER',
+}
+
+_CATEGORY_MAP = {
+    'antibiotic': 'ANTIBIOTIC', 'antifungal': 'ANTIFUNGAL', 'antiviral': 'ANTIVIRAL',
+    'glaucoma': 'GLAUCOMA', 'steroid': 'STEROID', 'nsaid': 'NSAID',
+    'mydriatic': 'MYDRIATIC', 'lubricant': 'LUBRICANT',
+    'anaesthetic': 'ANAESTHETIC', 'anesthetic': 'ANAESTHETIC',
+    'vitamin': 'VITAMIN', 'analgesic': 'ANALGESIC',
+    'antihypertensive': 'ANTIHTN', 'antidiabetic': 'ANTIDIAB', 'other': 'OTHER',
+}
+
+_STORAGE_MAP = {
+    'room temp': 'ROOM', 'ambient': 'ROOM', 'room': 'ROOM',
+    'refrigerated': 'FRIDGE', 'fridge': 'FRIDGE', 'cold': 'FRIDGE',
+    'frozen': 'FROZEN', 'freeze': 'FROZEN',
+    'controlled': 'CONTROLLED',
+    'light': 'LIGHT', 'protect from light': 'LIGHT',
+    'flammable': 'FLAME',
+}
+
+
+@login_required
+def drug_import_template(request):
+    """Download a blank Excel import template."""
+    if not _can_manage_pharmacy(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('pharmacy:drug_list')
+
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Drug Inventory'
+
+    headers = [
+        'drug_name', 'generic_name', 'brand_name', 'form', 'strength', 'unit',
+        'category', 'reorder_level', 'selling_price', 'cost_price',
+        'is_controlled', 'controlled_schedule', 'storage_condition',
+        'batch_number', 'expiry_date', 'quantity', 'purchase_price',
+        'supplier_name', 'manufacture_date',
+    ]
+    hints = [
+        'REQUIRED', 'Optional', 'Optional',
+        'tablet/capsule/eye drop/injection/syrup/cream/other',
+        'e.g. 5mg, 0.5%', 'e.g. bottle, tube, tablet',
+        'antibiotic/antifungal/glaucoma/analgesic/vitamin/other',
+        'Default: 10', 'FCFA', 'FCFA',
+        'Yes / No', 'S2/S3/S4/S5 (only if controlled)',
+        'room temp / refrigerated / frozen / controlled / light',
+        'REQUIRED for stock entry', 'REQUIRED — DD/MM/YYYY', 'REQUIRED — whole number',
+        'FCFA per unit', 'Optional', 'Optional — DD/MM/YYYY',
+    ]
+
+    thin = Side(border_style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for col, (h, hint) in enumerate(zip(headers, hints), 1):
+        hc = ws.cell(row=1, column=col, value=h)
+        hc.font = Font(bold=True, color='FFFFFF', size=10)
+        hc.fill = PatternFill(fill_type='solid', fgColor='1E3A5F')
+        hc.alignment = Alignment(horizontal='center', wrap_text=True)
+        hc.border = border
+
+        hintc = ws.cell(row=2, column=col, value=hint)
+        hintc.font = Font(italic=True, color='555555', size=9)
+        hintc.fill = PatternFill(fill_type='solid', fgColor='E8F0FE')
+        hintc.alignment = Alignment(wrap_text=True)
+        hintc.border = border
+
+    sample = [
+        'Ciprofloxacin', 'Ciprofloxacin', 'Cipro', 'tablet', '500mg', 'tablet',
+        'antibiotic', 20, 2500, 1500, 'No', '', 'room temp',
+        'BATCH-2024-001', '31/12/2026', 100, 1400, 'PharmaCo Ltd', '',
+    ]
+    for col, val in enumerate(sample, 1):
+        c = ws.cell(row=3, column=col, value=val)
+        c.fill = PatternFill(fill_type='solid', fgColor='F0FFF0')
+        c.border = border
+
+    for i, w in enumerate([22,20,16,14,12,10,16,12,12,12,12,16,18,18,14,10,14,18,16], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[2].height = 36
+    ws.freeze_panes = 'A4'
+
+    ws2 = wb.create_sheet('Instructions')
+    lines = [
+        ('EHR Africa — Pharmacy Bulk Import Template', True),
+        ('', False),
+        ('REQUIRED COLUMNS:', True),
+        ('  drug_name — exact drug name as it should appear in the formulary', False),
+        ('  batch_number — unique batch/lot number from the supplier', False),
+        ('  expiry_date — format DD/MM/YYYY  (e.g. 31/12/2026)', False),
+        ('  quantity — number of units in this batch', False),
+        ('', False),
+        ('FORM values: tablet, capsule, eye drop, eye ointment, injection, syrup, cream, nasal drop, other', False),
+        ('CATEGORY values: antibiotic, antifungal, antiviral, glaucoma, steroid, nsaid, mydriatic,', False),
+        ('  lubricant, anaesthetic, vitamin, analgesic, antihypertensive, antidiabetic, other', False),
+        ('STORAGE values: room temp, refrigerated, frozen, controlled, light, flammable', False),
+        ('', False),
+        ('RULES:', True),
+        ('  • If the drug already exists in the formulary, its stock batch is added (not duplicated)', False),
+        ('  • If the drug does NOT exist, it is created automatically', False),
+        ('  • Row 3 is a sample — delete it before uploading real data', False),
+        ('  • Accepted file formats: .xlsx (Excel) or .csv', False),
+        ('  • Expired batches are rejected automatically', False),
+    ]
+    for r, (txt, bold) in enumerate(lines, 1):
+        c = ws2.cell(row=r, column=1, value=txt)
+        if bold:
+            c.font = Font(bold=True, size=11)
+    ws2.column_dimensions['A'].width = 90
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="EHR_Drug_Import_Template.xlsx"'
+    wb.save(response)
+    return response
+
+
+@login_required
+def drug_bulk_import(request):
+    """Upload Excel (.xlsx) or CSV to bulk-create/update drugs and stock batches."""
+    if not _can_manage_pharmacy(request.user):
+        messages.error(request, 'Only pharmacists and admins can import drugs.')
+        return redirect('pharmacy:drug_list')
+
+    if request.method != 'POST':
+        return render(request, 'pharmacy/drug_bulk_import.html')
+
+    uploaded = request.FILES.get('import_file')
+    if not uploaded:
+        messages.error(request, 'No file selected.')
+        return render(request, 'pharmacy/drug_bulk_import.html')
+
+    filename = uploaded.name.lower()
+    rows = []
+
+    try:
+        if filename.endswith('.xlsx') or filename.endswith('.xls'):
+            import openpyxl
+            wb = openpyxl.load_workbook(uploaded, data_only=True)
+            ws = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            if len(all_rows) < 3:
+                messages.error(request, 'File has no data rows (need at least 3 rows).')
+                return render(request, 'pharmacy/drug_bulk_import.html')
+            headers = [str(h).strip().lower().replace(' ', '_') if h else '' for h in all_rows[0]]
+            for raw in all_rows[2:]:
+                if all(v is None for v in raw):
+                    continue
+                rows.append(dict(zip(headers, raw)))
+        elif filename.endswith('.csv'):
+            import csv, io
+            content = uploaded.read().decode('utf-8-sig')
+            reader = csv.DictReader(io.StringIO(content))
+            reader.fieldnames = [f.strip().lower().replace(' ', '_') for f in (reader.fieldnames or [])]
+            for row in reader:
+                rows.append({k.strip().lower().replace(' ', '_'): v for k, v in row.items()})
+        else:
+            messages.error(request, 'Unsupported format — upload .xlsx or .csv only.')
+            return render(request, 'pharmacy/drug_bulk_import.html')
+    except Exception as e:
+        messages.error(request, f'Could not read file: {e}')
+        return render(request, 'pharmacy/drug_bulk_import.html')
+
+    drugs_created = drugs_updated = batches_created = skipped = 0
+    errors = []
+    today = timezone.localdate()
+
+    for i, row in enumerate(rows, start=3):
+        drug_name = _str(row.get('drug_name') or row.get('name', ''))
+        if not drug_name:
+            skipped += 1
+            continue
+
+        form = _FORM_MAP.get(_str(row.get('form', 'other')).lower(), 'OTHER')
+        category = _CATEGORY_MAP.get(_str(row.get('category', 'other')).lower(), 'OTHER')
+        storage = _STORAGE_MAP.get(_str(row.get('storage_condition', 'room temp')).lower(), 'ROOM')
+        is_controlled = _str(row.get('is_controlled', 'no')).lower() in ('yes', 'y', 'true', '1')
+        controlled_schedule = _str(row.get('controlled_schedule', '')).upper()
+
+        drug, created = Drug.objects.get_or_create(
+            name__iexact=drug_name,
+            is_deleted=False,
+            defaults={
+                'name': drug_name,
+                'generic_name': _str(row.get('generic_name', '')) or drug_name,
+                'brand_name': _str(row.get('brand_name', '')),
+                'form': form,
+                'category': category,
+                'strength': _str(row.get('strength', '')),
+                'unit': _str(row.get('unit', 'unit')) or 'unit',
+                'reorder_level': _int(row.get('reorder_level'), 10),
+                'selling_price': _dec(row.get('selling_price', '0')),
+                'cost_price': _dec(row.get('cost_price', '0')),
+                'is_controlled': is_controlled,
+                'controlled_schedule': controlled_schedule if is_controlled else '',
+                'storage_condition': storage,
+                'is_active': True,
+            }
+        )
+        if created:
+            drugs_created += 1
+        else:
+            drugs_updated += 1
+
+        batch_number = _str(row.get('batch_number', ''))
+        expiry_date = _parse_date(row.get('expiry_date'))
+        quantity = _int(row.get('quantity') or row.get('qty'), 0)
+
+        if not batch_number or not expiry_date:
+            continue
+        if expiry_date < today:
+            errors.append(f'Row {i} ({drug_name}): batch {batch_number} is expired ({expiry_date}) — skipped.')
+            continue
+        if DrugStock.objects.filter(drug=drug, batch_number=batch_number, is_deleted=False).exists():
+            errors.append(f'Row {i} ({drug_name}): batch {batch_number} already exists — skipped.')
+            skipped += 1
+            continue
+        if quantity <= 0:
+            errors.append(f'Row {i} ({drug_name}): quantity must be > 0 — skipped.')
+            continue
+
+        DrugStock.objects.create(
+            drug=drug,
+            batch_number=batch_number,
+            expiry_date=expiry_date,
+            quantity_received=quantity,
+            quantity_remaining=quantity,
+            purchase_price=_dec(row.get('purchase_price') or row.get('unit_cost', '0')),
+            supplier=_str(row.get('supplier_name', '')),
+            manufacture_date=_parse_date(row.get('manufacture_date')),
+            received_date=today,
+        )
+        batches_created += 1
+
+    return render(request, 'pharmacy/drug_bulk_import.html', {
+        'done': True,
+        'drugs_created': drugs_created,
+        'drugs_updated': drugs_updated,
+        'batches_created': batches_created,
+        'skipped': skipped,
+        'errors': errors,
+        'total_rows': len(rows),
+    })
