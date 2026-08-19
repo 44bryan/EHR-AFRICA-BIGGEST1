@@ -1,101 +1,102 @@
-{% load static %}<!DOCTYPE html>
+{% load humanize %}<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Pharmacy Statistics Report &mdash; {{ month_name }}</title>
+<title>Pharmacy Statistics — {{ month_name }}</title>
 {% include 'reports/pdf/_base_styles.html' %}
 <style>
-  body { padding: 20px 28px; }
-  .report-band { background:#0d6efd; color:#fff; padding:9px 14px; margin-bottom:14px;
-                 border-radius:3px; display:flex; justify-content:space-between; align-items:center; }
-  .report-band-title { font-size:13px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
-  .report-band-meta  { font-size:10px; opacity:.85; text-align:right; line-height:1.5; }
-  .kpi-grid { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
-  .kpi-card { flex:1; min-width:100px; border:1px solid #dee2e6; border-radius:6px; padding:10px 12px; text-align:center; }
-  .kpi-val  { font-size:22px; font-weight:700; color:#0d6efd; }
+  .kpi-grid { display:flex; gap:8pt; flex-wrap:wrap; margin-bottom:6pt; }
+  .kpi-card {
+    flex:1; min-width:78pt;
+    border:1pt solid #dee2e6; border-radius:4pt;
+    padding:8pt 10pt; text-align:center;
+  }
+  .kpi-val { font-size:19pt; font-weight:700; color:#0d6efd; }
   .kpi-val.green  { color:#198754; }
   .kpi-val.orange { color:#fd7e14; }
   .kpi-val.grey   { color:#6c757d; }
-  .kpi-val.teal   { color:#0dcaf0; }
-  .kpi-label { font-size:10px; color:#6c757d; margin-top:2px; }
-  table { width:100%; border-collapse:collapse; font-size:11px; }
-  th { background:#0d6efd; color:#fff; padding:6px 8px; text-align:left; font-size:10px; }
-  td { padding:5px 8px; border-bottom:1px solid #f0f0f0; vertical-align:top; }
-  tr:nth-child(even) td { background:#f8f9fa; }
-  .bar-wrap { background:#e9ecef; border-radius:3px; height:6px; margin-top:3px; }
-  .bar-fill { background:#0d6efd; border-radius:3px; height:6px; }
-  .stat-row { display:flex; justify-content:space-between; align-items:center;
-              padding:5px 0; border-bottom:1px solid #f0f0f0; font-size:11px; }
+  .kpi-val.red    { color:#dc3545; }
+  .kpi-label { font-size:8pt; color:#6c757d; margin-top:2pt; }
+  .stat-row { display:flex; justify-content:space-between; padding:3pt 0;
+              border-bottom:0.5pt solid #f0f0f0; font-size:9pt; }
   .stat-row:last-child { border-bottom:none; }
-  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
-  .alert-box { background:#fff3cd; border:1px solid #ffc107; border-radius:5px; padding:8px 12px; font-size:11px; }
-  @media print {
-    body { padding:0; }
-    button { display:none !important; }
-    @page { margin:15mm 12mm; size:A4 portrait; }
-  }
+  .dot { display:inline-block; width:8pt; height:8pt; border-radius:50%; margin-right:4pt; }
+  table { width:100%; border-collapse:collapse; font-size:9pt; }
+  th { background:#0d6efd; color:#fff; padding:5pt 7pt; text-align:left; font-size:8.5pt; }
+  td { padding:4pt 7pt; border-bottom:0.5pt solid #f0f0f0; vertical-align:top; }
+  tr:nth-child(even) td { background:#f8f9fa; }
+  .bar-wrap { background:#e9ecef; border-radius:2pt; height:5pt; margin-top:2pt; }
+  .bar-fill { background:#0d6efd; border-radius:2pt; height:5pt; }
+  .perf-th { background:#1e3a5f !important; }
+  .badge-good { background:#d1fae5; color:#065f46; border-radius:3pt; padding:1pt 4pt; font-size:8pt; }
+  .badge-warn { background:#fef9c3; color:#78350f; border-radius:3pt; padding:1pt 4pt; font-size:8pt; }
+  .badge-poor { background:#fee2e2; color:#991b1b; border-radius:3pt; padding:1pt 4pt; font-size:8pt; }
 </style>
 </head>
 <body>
 
-{% with pdf_seal_label="INTERNAL USE ONLY" %}{% include 'reports/pdf/_letterhead.html' %}{% endwith %}
+{% with pdf_seal_label="PHARMACY DEPARTMENT — RESTRICTED" %}
+{% include 'reports/pdf/_letterhead.html' %}
+{% endwith %}
 
-<div class="accred-bar">
-  <span>Pharmacy Department</span>
-  <span>Ref: PHARM-{% now "Y-m" %} &nbsp;&bull;&nbsp; EHR Africa &nbsp;&bull;&nbsp; {% now "d M Y" %}</span>
+<div class="accred-bar" style="background:#0d6efd;">
+  <span>Pharmacy Department &nbsp;&bull;&nbsp; Dispensing &amp; Stock Performance</span>
+  <span>Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }} &nbsp;&bull;&nbsp; {% now "d M Y" %}</span>
 </div>
 
-<div class="report-band">
-  <div class="report-band-title">Pharmacy Statistics Report</div>
-  <div class="report-band-meta">Period: {{ month_name }}<br>Generated: {% now "d M Y" %}</div>
+<div class="report-band" style="background:#1e3a5f;">
+  <div class="report-band-title">Monthly Pharmacy Statistics Report</div>
+  <div class="report-band-meta">Period: {{ month_name }}<br>Generated: {% now "d M Y, H:i" %}</div>
 </div>
 
-<!-- KPI Summary -->
-<div class="section-title">Summary</div>
+{# ── 1. KPI Summary ── #}
+<div class="section-title">1. Key Performance Indicators</div>
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-val">{{ total_dispensings }}</div><div class="kpi-label">Total Dispensings</div></div>
   <div class="kpi-card"><div class="kpi-val green">{{ dispensed_count }}</div><div class="kpi-label">Fully Dispensed</div></div>
   <div class="kpi-card"><div class="kpi-val orange">{{ partial_count }}</div><div class="kpi-label">Partial</div></div>
   <div class="kpi-card"><div class="kpi-val grey">{{ cancelled_count }}</div><div class="kpi-label">Cancelled</div></div>
-  <div class="kpi-card"><div class="kpi-val teal">{{ completion_rate }}%</div><div class="kpi-label">Completion Rate</div></div>
-  <div class="kpi-card"><div class="kpi-val green">{{ revenue|floatformat:0 }}</div><div class="kpi-label">Revenue (FCFA)</div></div>
+  <div class="kpi-card"><div class="kpi-val {% if completion_rate >= 90 %}green{% elif completion_rate >= 70 %}orange{% else %}red{% endif %}">{{ completion_rate }}%</div><div class="kpi-label">Completion Rate</div></div>
+  <div class="kpi-card"><div class="kpi-val green">{{ revenue|floatformat:0|intcomma }}</div><div class="kpi-label">Revenue (FCFA)</div></div>
   <div class="kpi-card"><div class="kpi-val">{{ male_count|add:female_count }}</div><div class="kpi-label">Patients Served</div></div>
-  <div class="kpi-card"><div class="kpi-val{% if low_stock_count %} orange{% else %} green{% endif %}">{{ low_stock_count }}</div><div class="kpi-label">Low / Out of Stock</div></div>
+  <div class="kpi-card"><div class="kpi-val {% if low_stock_count %}orange{% else %}green{% endif %}">{{ low_stock_count }}</div><div class="kpi-label">Low / Out of Stock</div></div>
 </div>
 
-<!-- Breakdown -->
-<div class="two-col" style="margin-top:16px;">
+{# ── 2. Demographics + Tier + Quality ── #}
+<div class="section-title">2. Patient Demographics &amp; Status</div>
+<div class="two-col">
   <div>
-    <div class="section-title">Patient Gender</div>
+    <div style="font-weight:700;font-size:8.5pt;text-transform:uppercase;color:#6c757d;margin-bottom:3pt;">Gender</div>
     <div class="stat-row"><span><span class="dot" style="background:#0d6efd;"></span>Male</span><strong>{{ male_count }}</strong></div>
     <div class="stat-row"><span><span class="dot" style="background:#dc3545;"></span>Female</span><strong>{{ female_count }}</strong></div>
-  </div>
-  <div>
-    <div class="section-title">Dispensings by Tier</div>
-    {% for t in tier_stats %}
-    <div class="stat-row">
-      <span><span class="dot" style="background:{{ t.color }};"></span>{{ t.label }}</span>
-      <strong>{{ t.count }}</strong>
-    </div>
-    {% empty %}
-    <div class="stat-row" style="color:#6c757d;">No tier data available</div>
-    {% endfor %}
-  </div>
-  <div>
-    <div class="section-title">Dispensing Status</div>
+    <div style="margin-top:8pt;font-weight:700;font-size:8.5pt;text-transform:uppercase;color:#6c757d;margin-bottom:3pt;">Dispensing Status</div>
     <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Dispensed</span><strong>{{ dispensed_count }}</strong></div>
     <div class="stat-row"><span><span class="dot" style="background:#ffc107;"></span>Partial</span><strong>{{ partial_count }}</strong></div>
     <div class="stat-row"><span><span class="dot" style="background:#6c757d;"></span>Cancelled</span><strong>{{ cancelled_count }}</strong></div>
   </div>
+  <div>
+    <div style="font-weight:700;font-size:8.5pt;text-transform:uppercase;color:#6c757d;margin-bottom:3pt;">By Service Tier</div>
+    {% for t in tier_stats %}
+    <div class="stat-row"><span><span class="dot" style="background:{{ t.color }};"></span>{{ t.label }}</span><strong>{{ t.count }}</strong></div>
+    {% empty %}<div class="stat-row" style="color:#6c757d;">No tier data</div>{% endfor %}
+  </div>
+  <div>
+    <div style="font-weight:700;font-size:8.5pt;text-transform:uppercase;color:#6c757d;margin-bottom:3pt;">Quality Snapshot</div>
+    <div class="stat-row"><span>Completion Rate</span>
+      <span class="{% if completion_rate >= 90 %}badge-good{% elif completion_rate >= 70 %}badge-warn{% else %}badge-poor{% endif %}">{{ completion_rate }}%</span>
+    </div>
+    <div class="stat-row"><span>Low Stock Items</span>
+      <span class="{% if low_stock_count == 0 %}badge-good{% elif low_stock_count <= 5 %}badge-warn{% else %}badge-poor{% endif %}">{{ low_stock_count }}</span>
+    </div>
+    <div class="stat-row"><span>Revenue (FCFA)</span><strong>{{ revenue|floatformat:0|intcomma }}</strong></div>
+  </div>
 </div>
 
-<!-- Top Drugs -->
-<div class="section-title">Top 15 Drugs Dispensed &mdash; {{ month_name }}</div>
+{# ── 3. Top 15 Drugs ── #}
+<div class="section-title">3. Top 15 Drugs Dispensed — {{ month_name }}</div>
 {% if top_drugs %}
 <table>
-  <thead>
-    <tr><th>#</th><th>Drug Name</th><th style="text-align:center;">Dispensings</th><th style="text-align:center;">Qty Dispensed</th><th style="width:120px;">Volume</th></tr>
-  </thead>
+  <thead><tr><th>#</th><th>Drug Name</th><th style="text-align:center;">Dispensings</th><th style="text-align:center;">Qty</th><th style="width:90pt;">Volume</th></tr></thead>
   <tbody>
     {% for d in top_drugs %}
     <tr>
@@ -109,31 +110,100 @@
   </tbody>
 </table>
 {% else %}
-<p style="color:#6c757d;font-style:italic;padding:8px 0;">No dispensing data recorded for this period.</p>
+<p style="color:#6c757d;font-style:italic;padding:6pt 0;">No dispensing data for this period.</p>
 {% endif %}
 
 {% if low_stock_count %}
-<div class="section-title" style="color:#dc3545;border-color:#dc3545;">Stock Alert</div>
-<div class="alert-box">
-  <strong>{{ low_stock_count }} drug(s)</strong> are currently at or below reorder level.
-  Please review the stock register and place orders promptly.
+<div style="background:#fff3cd;border:0.8pt solid #ffc107;border-radius:4pt;padding:5pt 9pt;margin-top:8pt;font-size:9pt;">
+  <strong>&#9888; Stock Alert:</strong> {{ low_stock_count }} drug(s) currently at or below reorder level — place orders promptly.
 </div>
 {% endif %}
 
-<div class="data-note">
-  <strong>Data Source:</strong> EHR Africa Hospital Information System &nbsp;&bull;&nbsp;
-  <strong>Report Ref:</strong> PHARM-{% now "Y-m" %} &nbsp;&bull;&nbsp;
-  <strong>Period:</strong> {{ month_name }} &nbsp;&bull;&nbsp;
-  This report contains aggregated statistical data only. No individual patient identifiers are included.
-  All figures reflect records entered in the EHR system as at time of generation and are subject to data completeness.
+{# ═══════════════════ PAGE 2 ═══════════════════ #}
+<div style="page-break-before:always;"></div>
+
+{% with pdf_seal_label="PHARMACY DEPARTMENT — RESTRICTED" %}
+{% include 'reports/pdf/_letterhead.html' %}
+{% endwith %}
+
+<div class="accred-bar" style="background:#0d6efd;">
+  <span>Pharmacy Performance Statement — Page 2</span>
+  <span>Period: {{ month_name }}</span>
 </div>
 
+{# ── 4. Monthly Performance Statement ── #}
+<div class="section-title">4. Monthly Performance Statement</div>
+<table>
+  <thead>
+    <tr>
+      <th class="perf-th" style="width:28%;">Indicator</th>
+      <th class="perf-th" style="width:13%;text-align:center;">Value</th>
+      <th class="perf-th" style="width:14%;text-align:center;">Standard / Target</th>
+      <th class="perf-th" style="width:12%;text-align:center;">Status</th>
+      <th class="perf-th" style="width:33%;">Interpretation</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Dispensing Completion Rate</td>
+      <td style="text-align:center;font-weight:700;">{{ completion_rate }}%</td>
+      <td style="text-align:center;">≥ 95%</td>
+      <td style="text-align:center;">{% if completion_rate >= 95 %}<span class="badge-good">MET</span>{% elif completion_rate >= 80 %}<span class="badge-warn">NEAR</span>{% else %}<span class="badge-poor">BELOW</span>{% endif %}</td>
+      <td style="font-size:8pt;">Fully dispensed ÷ total initiated. JCI MMU.5 — right drug, right dose, right patient.</td>
+    </tr>
+    <tr>
+      <td>Partial Dispensings</td>
+      <td style="text-align:center;font-weight:700;">{{ partial_count }}</td>
+      <td style="text-align:center;">&lt; 5%</td>
+      <td style="text-align:center;">
+        {% if total_dispensings > 0 %}{% widthratio partial_count total_dispensings 100 as ppct %}
+          {% if ppct <= 5 %}<span class="badge-good">MET</span>{% elif ppct <= 10 %}<span class="badge-warn">NEAR</span>{% else %}<span class="badge-poor">BELOW</span>{% endif %}
+        {% else %}<span class="badge-good">MET</span>{% endif %}
+      </td>
+      <td style="font-size:8pt;">Stock-outs or patient refusals causing incomplete dispensing. WHO essential medicines indicator.</td>
+    </tr>
+    <tr>
+      <td>Cancelled Dispensings</td>
+      <td style="text-align:center;font-weight:700;">{{ cancelled_count }}</td>
+      <td style="text-align:center;">&lt; 3%</td>
+      <td style="text-align:center;">
+        {% if total_dispensings > 0 %}{% widthratio cancelled_count total_dispensings 100 as cpct %}
+          {% if cpct <= 3 %}<span class="badge-good">MET</span>{% elif cpct <= 7 %}<span class="badge-warn">NEAR</span>{% else %}<span class="badge-poor">BELOW</span>{% endif %}
+        {% else %}<span class="badge-good">MET</span>{% endif %}
+      </td>
+      <td style="font-size:8pt;">Voided before completion. High rates indicate prescription or workflow issues.</td>
+    </tr>
+    <tr>
+      <td>Patients Served</td>
+      <td style="text-align:center;font-weight:700;">{{ male_count|add:female_count }}</td>
+      <td style="text-align:center;">—</td>
+      <td style="text-align:center;"><span class="badge-good">INFO</span></td>
+      <td style="font-size:8pt;">Total unique patients receiving at least one dispensed drug (M: {{ male_count }}, F: {{ female_count }}).</td>
+    </tr>
+    <tr>
+      <td>Pharmacy Revenue</td>
+      <td style="text-align:center;font-weight:700;">{{ revenue|floatformat:0|intcomma }} FCFA</td>
+      <td style="text-align:center;">—</td>
+      <td style="text-align:center;"><span class="badge-good">INFO</span></td>
+      <td style="font-size:8pt;">Gross revenue collected for dispensed drugs, all service tiers combined.</td>
+    </tr>
+    <tr>
+      <td>Low / Out-of-Stock Drugs</td>
+      <td style="text-align:center;font-weight:700;">{{ low_stock_count }}</td>
+      <td style="text-align:center;">0 items</td>
+      <td style="text-align:center;">{% if low_stock_count == 0 %}<span class="badge-good">MET</span>{% elif low_stock_count <= 3 %}<span class="badge-warn">NEAR</span>{% else %}<span class="badge-poor">BELOW</span>{% endif %}</td>
+      <td style="font-size:8pt;">Formulary drugs at or below reorder level. JCI MMU.3 — medication availability and procurement.</td>
+    </tr>
+  </tbody>
+</table>
+
+{# ── 5. Authorization ── #}
 <div class="auth-block">
-  <div class="section-title">Authorization &amp; Approval</div>
+  <div class="section-title">5. Authorization &amp; Approval</div>
   <div class="auth-row">
     <div class="auth-col">
       <div class="auth-role">Prepared by</div>
-      <div class="auth-title">Head of Pharmacy Department</div>
+      <div class="auth-title">Head of Pharmacy</div>
       <div class="auth-sig">Signature: _______________________</div>
       <div class="auth-date">Date: ____________________________</div>
     </div>
@@ -153,9 +223,9 @@
 </div>
 
 <div class="pdf-footer">
-  <span>{{ hospital_name }} &mdash; Pharmacy Department</span>
-  <span>Report generated by EHR Africa &nbsp;|&nbsp; {% now "d M Y" %}</span>
-  <span>Confidential &mdash; Internal Use Only</span>
+  <span>{{ hospital_name|default:"EHR Africa" }} — Pharmacy Department</span>
+  <span>Report Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }} &nbsp;|&nbsp; {% now "d M Y" %}</span>
+  <span>CONFIDENTIAL — Internal Use Only</span>
 </div>
 
 </body>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Controlled Drug Register — {{ report_date|date:"d M Y" }}</title>
+{% include "reports/_base_styles.html" %}
+<style>
+  .ctrl-header { background: #4a148c; color: white; }
+  .ctrl-accent { color: #4a148c; }
+  .reg-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  .reg-table th {
+    background: #4a148c; color: white;
+    padding: 4pt 6pt; text-align: left;
+    border: 0.5pt solid #6a1b9a;
+    font-size: 7.5pt;
+  }
+  .reg-table td {
+    padding: 4pt 6pt;
+    border: 0.5pt solid #e0e0e0;
+    vertical-align: top;
+  }
+  .reg-table tr:nth-child(even) td { background: #f9f4ff; }
+  .drug-section-header td {
+    background: #ede7f6;
+    font-weight: bold;
+    color: #4a148c;
+    font-size: 8pt;
+    padding: 4pt 6pt;
+  }
+  .type-in { color: #2e7d32; font-weight: bold; }
+  .type-out { color: #c62828; font-weight: bold; }
+  .balance-cell { font-weight: bold; color: #1a237e; }
+  .witness-ok { color: #2e7d32; }
+  .witness-no { color: #e53935; font-style: italic; }
+</style>
+</head>
+<body>
+
+{% include "reports/_letterhead.html" %}
+
+<div class="report-band ctrl-header">
+  <div class="report-band-title">CONTROLLED DRUG REGISTER — DAILY BALANCE SHEET</div>
+  <div class="report-band-sub">
+    Date: {{ report_date|date:"l, d F Y" }} &nbsp;&bull;&nbsp;
+    JCI MMU.3.1 — Narcotics &amp; Scheduled Substances Register
+  </div>
+</div>
+
+{% if entries %}
+{% regroup entries by drug as drug_groups %}
+{% for group in drug_groups %}
+<table class="reg-table" style="margin-bottom: 8pt;">
+  <!-- Drug header row -->
+  <tr class="drug-section-header">
+    <td colspan="8">
+      &#9670; {{ group.grouper.name }}
+      {% if group.grouper.strength %} {{ group.grouper.strength }}{% endif %}
+      &nbsp;&mdash;&nbsp;{{ group.grouper.get_controlled_schedule_display }}
+    </td>
+  </tr>
+  <tr>
+    <th style="width:14%">Time</th>
+    <th style="width:13%">Type</th>
+    <th style="width:8%" class="text-center">Qty</th>
+    <th style="width:9%" class="text-center">Balance Before</th>
+    <th style="width:9%" class="text-center">Balance After</th>
+    <th style="width:16%">Patient</th>
+    <th style="width:16%">Performed By</th>
+    <th style="width:15%">Witness</th>
+  </tr>
+  {% for e in group.list %}
+  <tr>
+    <td>{{ e.entry_date|date:"H:i" }}</td>
+    <td>
+      {% if e.entry_type == 'STOCK_IN' or e.entry_type == 'RETURN' %}
+      <span class="type-in">▲ {{ e.get_entry_type_display }}</span>
+      {% else %}
+      <span class="type-out">▼ {{ e.get_entry_type_display }}</span>
+      {% endif %}
+    </td>
+    <td class="text-center">{{ e.quantity }}</td>
+    <td class="text-center balance-cell">{{ e.balance_before }}</td>
+    <td class="text-center balance-cell">{{ e.balance_after }}</td>
+    <td>{% if e.patient %}{{ e.patient.full_name }}<br><span style="font-size:6.5pt;color:#666">{{ e.patient.patient_id }}</span>{% else %}—{% endif %}</td>
+    <td style="font-size:7.5pt">{{ e.performed_by.get_full_name }}</td>
+    <td style="font-size:7.5pt">
+      {% if e.witness %}
+      {% if e.witness_confirmed %}
+      <span class="witness-ok">✔ {{ e.witness.get_full_name }}</span>
+      {% else %}
+      <span class="witness-no">{{ e.witness.get_full_name }} (pending)</span>
+      {% endif %}
+      {% else %}—{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+{% endfor %}
+
+{% else %}
+<div style="text-align:center; padding: 24pt; color: #999; font-style: italic;">
+  No controlled drug entries recorded for {{ report_date|date:"d F Y" }}.
+</div>
+{% endif %}
+
+<!-- Declaration block -->
+<div style="margin-top: 18pt; border: 1pt solid #4a148c; border-radius: 3pt; padding: 10pt;">
+  <div style="font-weight: bold; color: #4a148c; font-size: 9pt; margin-bottom: 6pt;">
+    REGISTER DECLARATION
+  </div>
+  <div style="font-size: 8pt; line-height: 1.6; color: #333;">
+    I, the undersigned, certify that the above entries are a true and accurate record of all movements
+    of controlled/scheduled substances for the date stated, in accordance with the national
+    Pharmacy Act and JCI Standard MMU.3.1.
+  </div>
+  <div style="margin-top: 16pt; display: flex; justify-content: space-between;">
+    <div style="flex:1; border-top: 0.5pt solid #333; margin-right: 20pt; padding-top: 4pt; font-size: 7.5pt;">
+      Chief Pharmacist Signature &amp; Stamp
+    </div>
+    <div style="flex:1; border-top: 0.5pt solid #333; padding-top: 4pt; font-size: 7.5pt;">
+      Supervising Officer / Head of Department
+    </div>
+  </div>
+</div>
+
+<div class="auth-block" style="margin-top:12pt;">
+  <div style="font-size:7pt; color:#999; text-align:center;">
+    Generated {{ report_date|date:"d M Y" }} &bull; {{ config.hospital_name|default:"EHR Africa" }} Pharmacy &bull; CONFIDENTIAL — Controlled Substance Record
+  </div>
+</div>
+
+</body>
+</html>

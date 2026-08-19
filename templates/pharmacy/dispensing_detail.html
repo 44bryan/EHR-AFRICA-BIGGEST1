@@ -28,6 +28,21 @@
        class="btn btn-sm btn-outline-success">
       <i class="bi bi-printer me-1"></i>Print Receipt
     </a>
+    <a href="{% url 'pharmacy:dispensing_label_pdf' dispensing_id=dispensing.id %}" target="_blank"
+       class="btn btn-sm btn-outline-info">
+      <i class="bi bi-tag me-1"></i>Drug Labels
+    </a>
+    {% if not dispensing.verified_by_pharmacist %}
+    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#verifyModal">
+      <i class="bi bi-shield-check me-1"></i>Pharmacist Verify
+    </button>
+    {% else %}
+    <span class="badge bg-success py-2 px-3"><i class="bi bi-shield-check me-1"></i>Verified by {{ dispensing.verified_by_pharmacist.get_full_name }}</span>
+    {% endif %}
+    <a href="{% url 'pharmacy:dispensing_return_create' dispensing_id=dispensing.id %}"
+       class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-return-left me-1"></i>Drug Return
+    </a>
     {% endif %}
     {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
     <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelModal">
@@ -1148,6 +1163,36 @@ document.querySelectorAll('.rx-quick-add').forEach(function (btn) {
         <div class="modal-footer py-2">
           <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Keep Open</button>
           <button type="submit" class="btn btn-sm btn-danger fw-bold">Confirm Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if dispensing.status == 'DISPENSED' and not dispensing.verified_by_pharmacist %}
+<!-- Pharmacist Verification Modal -->
+<div class="modal fade" id="verifyModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shield-check me-2"></i>Pharmacist Verification</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form method="post" action="{% url 'pharmacy:dispensing_verify' dispensing_id=dispensing.id %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="small mb-3">Verify that all drugs dispensed are correct, appropriate, and the patient has been counseled (JCI MMU.6.1).</p>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="counseling_given" id="counselingCheck">
+            <label class="form-check-label fw-semibold" for="counselingCheck">
+              Patient / caregiver counseled on drug use, storage, and side effects
+            </label>
+          </div>
+          <label class="form-label small fw-semibold mt-2">Counseling Notes (optional)</label>
+          <textarea name="counseling_notes" class="form-control form-control-sm" rows="2" placeholder="Any special instructions given…"></textarea>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-success fw-bold"><i class="bi bi-shield-check me-1"></i>Confirm &amp; Verify</button>
         </div>
       </form>
     </div>

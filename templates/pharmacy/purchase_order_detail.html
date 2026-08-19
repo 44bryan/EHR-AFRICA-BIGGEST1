@@ -1,0 +1,183 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}PO {{ po.order_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-cart3 me-2 text-success"></i>Purchase Order — {{ po.order_number }}</h4>
+    <p class="text-muted small mb-0">{{ po.supplier.name }} &bull; {{ po.order_date|date:"d M Y" }}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if po.status == 'DRAFT' or po.status == 'SUBMITTED' %}
+    <form method="post" action="{% url 'pharmacy:purchase_order_approve' po_id=po.id %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check-circle me-1"></i>Approve &amp; Send</button>
+    </form>
+    {% endif %}
+    {% if po.status == 'APPROVED' or po.status == 'PARTIAL' %}
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#receiveModal">
+      <i class="bi bi-box-arrow-in-down me-1"></i>Receive Goods
+    </button>
+    {% endif %}
+    <a href="{% url 'pharmacy:purchase_order_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Status banner -->
+<div class="row g-3 mb-4">
+  <div class="col-md-2">
+    <div class="card border-0 bg-light text-center py-3">
+      <div class="small text-muted mb-1">Status</div>
+      <div class="fw-bold">
+        {% if po.status == 'RECEIVED' %}<span class="text-success">{{ po.get_status_display }}</span>
+        {% elif po.status == 'PARTIAL' %}<span class="text-warning">{{ po.get_status_display }}</span>
+        {% elif po.status == 'APPROVED' %}<span class="text-info">{{ po.get_status_display }}</span>
+        {% elif po.status == 'CANCELLED' %}<span class="text-danger">{{ po.get_status_display }}</span>
+        {% else %}<span class="text-secondary">{{ po.get_status_display }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 bg-light text-center py-3">
+      <div class="small text-muted mb-1">Total (FCFA)</div>
+      <div class="fw-bold">{{ po.total_amount|floatformat:0|intcomma }}</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 bg-light text-center py-3">
+      <div class="small text-muted mb-1">Expected Delivery</div>
+      <div class="fw-bold">{{ po.expected_delivery|date:"d M Y"|default:"—" }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 bg-light text-center py-3">
+      <div class="small text-muted mb-1">Approved By</div>
+      <div class="fw-bold">{{ po.approved_by.get_full_name|default:"Pending" }}</div>
+      {% if po.approved_at %}<div class="small text-muted">{{ po.approved_at|date:"d M Y H:i" }}</div>{% endif %}
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 bg-light text-center py-3">
+      <div class="small text-muted mb-1">Created By</div>
+      <div class="fw-bold">{{ po.created_by.get_full_name|default:"—" }}</div>
+      <div class="small text-muted">{{ po.created_at|date:"d M Y" }}</div>
+    </div>
+  </div>
+</div>
+
+{% if po.notes %}
+<div class="alert alert-info py-2 small mb-3"><i class="bi bi-info-circle me-1"></i>{{ po.notes }}</div>
+{% endif %}
+
+<!-- Order lines -->
+<div class="card shadow-sm border-0">
+  <div class="card-header py-2"><strong>Order Lines</strong></div>
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Drug</th>
+          <th class="text-center">Ordered</th>
+          <th class="text-center">Received</th>
+          <th class="text-end">Unit Cost</th>
+          <th class="text-end">Line Total</th>
+          <th>Batch / Expiry</th>
+          <th>Stock Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="fw-semibold">{{ item.drug.name }}<div class="small text-muted">{{ item.drug.strength }}</div></td>
+          <td class="text-center">{{ item.quantity_ordered }}</td>
+          <td class="text-center">
+            {% if item.quantity_received >= item.quantity_ordered %}
+            <span class="text-success fw-bold">{{ item.quantity_received }}</span>
+            {% elif item.quantity_received > 0 %}
+            <span class="text-warning fw-bold">{{ item.quantity_received }}</span>
+            {% else %}
+            <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ item.unit_cost|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ item.line_total|floatformat:0|intcomma }}</td>
+          <td class="small">
+            {% if item.batch_number %}{{ item.batch_number }}{% endif %}
+            {% if item.expiry_date %}<br><span class="text-muted">Exp: {{ item.expiry_date|date:"M Y" }}</span>{% endif %}
+          </td>
+          <td class="small">
+            {% if item.stock_created %}
+            <a href="{% url 'pharmacy:drug_detail' drug_id=item.drug.id %}">Batch created</a>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light">
+        <tr>
+          <th colspan="4" class="text-end">Total:</th>
+          <th class="text-end">{{ po.total_amount|floatformat:0|intcomma }} FCFA</th>
+          <th colspan="2"></th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+{% if po.status == 'APPROVED' or po.status == 'PARTIAL' %}
+<!-- Receive Goods Modal -->
+<div class="modal fade" id="receiveModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white py-2">
+        <h5 class="modal-title"><i class="bi bi-box-arrow-in-down me-2"></i>Receive Goods — {{ po.order_number }}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{% url 'pharmacy:receive_purchase_order' po_id=po.id %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="small text-muted mb-3">Enter received quantities and batch details. A new stock batch is created for each item received.</p>
+          <table class="table table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Drug</th>
+                <th>Ordered</th>
+                <th>Receive Qty</th>
+                <th>Batch No.</th>
+                <th>Expiry Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in items %}
+              {% if item.quantity_received < item.quantity_ordered %}
+              <tr>
+                <input type="hidden" name="item_id" value="{{ item.id }}">
+                <td>{{ item.drug.name }}</td>
+                <td>{{ item.quantity_ordered }}</td>
+                <td><input type="number" name="qty_received" class="form-control form-control-sm" min="0" value="{{ item.quantity_ordered|add:item.quantity_received|add:'-'|add:item.quantity_received }}" placeholder="0"></td>
+                <td><input type="text" name="batch_number" class="form-control form-control-sm" placeholder="Batch #"></td>
+                <td><input type="date" name="expiry_date" class="form-control form-control-sm" required></td>
+              </tr>
+              {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary fw-bold">
+            <i class="bi bi-box-arrow-in-down me-1"></i>Confirm Receipt &amp; Create Stock
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

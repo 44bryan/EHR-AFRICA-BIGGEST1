@@ -1,10 +1,20 @@
 """
 Pharmacy Module
 Drug formulary, stock management, dispensing, reorder alerts.
+Hospital-integrated pharmacy — JCI MMU standards.
 """
 from django.db import models
 from django.utils import timezone
 from apps.core.models import TimeStampedModel, AuditModel
+
+
+class StorageCondition(models.TextChoices):
+    ROOM_TEMP  = 'ROOM',   'Room Temperature (15–25 °C)'
+    COOL       = 'COOL',   'Cool (8–15 °C)'
+    REFRIGERATED = 'FRIDGE', 'Refrigerated (2–8 °C)'
+    FROZEN     = 'FROZEN', 'Frozen (−20 °C or below)'
+    PROTECT_LIGHT = 'LIGHT', 'Protect from Light'
+    FLAMMABLE  = 'FLAME',  'Flammable — separate storage'
 
 
 class DrugCategory(models.TextChoices):
@@ -60,6 +70,11 @@ class Drug(AuditModel):
     # Pricing
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Storage
+    storage_condition = models.CharField(
+        max_length=10, choices=StorageCondition.choices,
+        default=StorageCondition.ROOM_TEMP,
+    )
     # Controlled drug classification
     is_controlled = models.BooleanField(
         default=False,
@@ -96,7 +111,7 @@ class DrugStock(AuditModel):
     quantity_remaining = models.PositiveIntegerField()
     supplier = models.CharField(max_length=200, blank=True)
     purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    received_date = models.DateField(default=timezone.now)
+    received_date = models.DateField(default=timezone.localdate)
     manufacture_date = models.DateField(null=True, blank=True, help_text='Manufacturing / production date on the package')
     notes = models.TextField(blank=True)
 
@@ -142,6 +157,17 @@ class Dispensing(AuditModel):
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.TextField(blank=True)
+    # JCI MMU.6.1 — pharmacist verification and patient counseling
+    verified_by_pharmacist = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pharmacy_verified_dispensings',
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    counseling_given = models.BooleanField(
+        default=False,
+        help_text='Patient/caregiver counseled on use, storage and side effects'
+    )
+    counseling_notes = models.TextField(blank=True)
 
     class Meta:
         ordering = ['-dispensed_at']
@@ -166,10 +192,23 @@ class DispensingItem(TimeStampedModel):
     custom_drug_name = models.CharField(max_length=200, blank=True,
                                         help_text='Used when drug is not in the formulary (Others)')
     stock_batch = models.ForeignKey(DrugStock, null=True, blank=True, on_delete=models.SET_NULL)
+    quantity_prescribed = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Quantity originally prescribed (for partial-fill tracking)'
+    )
     quantity_dispensed = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     subtotal = models.DecimalField(max_digits=12, decimal_places=2)
     instructions = models.TextField(blank=True)
+    # Generic substitution tracking (JCI MMU.4)
+    substituted_for = models.CharField(
+        max_length=200, blank=True,
+        help_text='Original brand/drug name if a generic substitution was made'
+    )
+    substitution_approved_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='substitution_approvals',
+    )
 
     @property
     def display_name(self):
@@ -330,7 +369,6 @@ class ChronicPrescription(AuditModel):
 
     class Meta:
         ordering = ['next_refill_date']
-        unique_together = ('patient', 'drug')
 
     def __str__(self):
         return f"{self.patient.full_name} — {self.drug.name} (every {self.refill_interval_days}d)"
@@ -359,3 +397,149 @@ class ChronicPrescription(AuditModel):
         self.last_refill_date = today
         self.next_refill_date = today + datetime.timedelta(days=self.refill_interval_days)
         self.save(update_fields=['refill_count', 'last_refill_date', 'next_refill_date'])
+
+
+# ── Supplier / Procurement ────────────────────────────────────────────────────
+
+class Supplier(AuditModel):
+    """
+    Drug supplier / manufacturer / distributor.
+    JCI MMU.3 — procurement from licensed sources only.
+    """
+    name = models.CharField(max_length=200)
+    contact_person = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.TextField(blank=True)
+    registration_number = models.CharField(
+        max_length=100, blank=True,
+        help_text='Pharmacy Board / MINSANTE registration number'
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class PurchaseOrderStatus(models.TextChoices):
+    DRAFT     = 'DRAFT',     'Draft'
+    SUBMITTED = 'SUBMITTED', 'Submitted to Supplier'
+    APPROVED  = 'APPROVED',  'Approved'
+    PARTIAL   = 'PARTIAL',   'Partially Received'
+    RECEIVED  = 'RECEIVED',  'Fully Received'
+    CANCELLED = 'CANCELLED', 'Cancelled'
+
+
+class PurchaseOrder(AuditModel):
+    """
+    Formal purchase order to a supplier.
+    Supports partial receipts — each batch received creates a DrugStock.
+    """
+    order_number = models.CharField(max_length=30, unique=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='purchase_orders')
+    status = models.CharField(max_length=15, choices=PurchaseOrderStatus.choices, default=PurchaseOrderStatus.DRAFT)
+    order_date = models.DateField(default=timezone.localdate)
+    expected_delivery = models.DateField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_purchase_orders',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-order_date']
+
+    def __str__(self):
+        return f"PO-{self.order_number} — {self.supplier.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.order_number:
+            today = timezone.localdate()
+            count = PurchaseOrder.objects.filter(order_date__year=today.year).count() + 1
+            self.order_number = f"{today.year}-{count:05d}"
+        super().save(*args, **kwargs)
+
+
+class PurchaseOrderItem(TimeStampedModel):
+    """Line item on a purchase order."""
+    order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items')
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='purchase_items')
+    quantity_ordered = models.PositiveIntegerField()
+    quantity_received = models.PositiveIntegerField(default=0)
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Filled in when goods are actually received
+    batch_number = models.CharField(max_length=100, blank=True)
+    manufacture_date = models.DateField(null=True, blank=True)
+    expiry_date = models.DateField(null=True, blank=True)
+    stock_created = models.ForeignKey(
+        DrugStock, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='purchase_order_items',
+        help_text='DrugStock batch created when this item was received'
+    )
+
+    @property
+    def line_total(self):
+        return self.quantity_ordered * self.unit_cost
+
+    def __str__(self):
+        return f"{self.drug.name} × {self.quantity_ordered} (PO {self.order.order_number})"
+
+
+# ── Dispensing Return (patient/ward brings back dispensed drugs) ───────────────
+
+class DispensingReturnReason(models.TextChoices):
+    PATIENT_REFUSED   = 'REFUSED',   'Patient Refused Medication'
+    DUPLICATE         = 'DUPLICATE', 'Duplicate Dispensing'
+    WRONG_DRUG        = 'WRONG',     'Wrong Drug Dispensed'
+    WRONG_QUANTITY    = 'WRONG_QTY', 'Wrong Quantity'
+    PATIENT_DECEASED  = 'DECEASED',  'Patient Deceased'
+    DISCHARGE         = 'DISCHARGE', 'Patient Discharged — Unused Drugs'
+    OTHER             = 'OTHER',     'Other'
+
+
+class DispensingReturn(AuditModel):
+    """
+    Return of already-dispensed drugs back to pharmacy stock.
+    Stock is restored on save if the batch is still valid.
+    JCI MMU.5 — medication return and restocking policy.
+    """
+    dispensing = models.ForeignKey(
+        Dispensing, on_delete=models.PROTECT, related_name='returns'
+    )
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='dispensing_returns')
+    stock_batch = models.ForeignKey(
+        DrugStock, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='dispensing_returns',
+    )
+    quantity_returned = models.PositiveIntegerField()
+    reason = models.CharField(max_length=15, choices=DispensingReturnReason.choices)
+    notes = models.TextField(blank=True)
+    stock_restored = models.BooleanField(
+        default=False,
+        help_text='True when quantity_returned was added back to the stock batch'
+    )
+    returned_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='dispensing_returns_processed',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Return {self.quantity_returned}× {self.drug.name} from {self.dispensing.dispensing_number}"
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        # Restore stock once on first save (non-expired batch only)
+        if is_new and not self.stock_restored and self.stock_batch:
+            if not self.stock_batch.is_expired:
+                self.stock_batch.quantity_remaining += self.quantity_returned
+                self.stock_batch.save(update_fields=['quantity_remaining'])
+                self.stock_restored = True
+                DispensingReturn.objects.filter(pk=self.pk).update(stock_restored=True)

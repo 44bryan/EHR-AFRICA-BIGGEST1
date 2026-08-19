@@ -12,8 +12,13 @@ from .models import (
     ControlledDrugEntry, ControlledDrugEntryType,
     WardDrugReturn, WardDrugReturnStatus,
     ChronicPrescription,
+    Supplier, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus,
+    DispensingReturn, DispensingReturnReason,
 )
-from .forms import DrugCreateForm, AddStockForm, DispensingItemForm
+from .forms import (
+    DrugCreateForm, AddStockForm, DispensingItemForm,
+    SupplierForm, PurchaseOrderForm, DispensingReturnForm,
+)
 from apps.patients.models import Patient
 from apps.prescriptions.models import DrugPrescription
 
@@ -839,11 +844,18 @@ def cancel_dispensing(request, dispensing_id):
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
     reason = request.POST.get('reason', '').strip() or 'Cancelled by pharmacist'
+
+    # Restore stock for each dispensed item (FEFO — restore to original batch)
+    for item in dispensing.items.select_related('stock_batch').all():
+        if item.stock_batch:
+            item.stock_batch.quantity_remaining += item.quantity_dispensed
+            item.stock_batch.save(update_fields=['quantity_remaining'])
+
     dispensing.status = DispensingStatus.CANCELLED
     dispensing.notes = f'[CANCELLED] {reason}\n{dispensing.notes or ""}'.strip()
     dispensing.save(update_fields=['status', 'notes'])
 
-    messages.warning(request, f'Dispensing {dispensing.dispensing_number} has been cancelled.')
+    messages.warning(request, f'Dispensing {dispensing.dispensing_number} has been cancelled and stock restored.')
     return redirect('pharmacy:dashboard')
 
 
@@ -1533,3 +1545,321 @@ def drug_expiry_alerts(request):
         'low_stock': low_stock,
         'today': today,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUPPLIER MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _can_manage_pharmacy(user):
+    return (user.is_pharmacist or user.is_super_admin or user.is_admin_director
+            or user.is_finance_director or user.is_senior_accountant)
+
+
+@login_required
+def supplier_list(request):
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    suppliers = Supplier.objects.filter(is_deleted=False).order_by('name')
+    return render(request, 'pharmacy/supplier_list.html', {'suppliers': suppliers})
+
+
+@login_required
+def supplier_create(request):
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        form = SupplierForm(request.POST)
+        if form.is_valid():
+            s = form.save(commit=False)
+            s.created_by = request.user
+            s.save()
+            messages.success(request, f'Supplier "{s.name}" added.')
+            return redirect('pharmacy:supplier_list')
+    else:
+        form = SupplierForm()
+    return render(request, 'pharmacy/supplier_form.html', {'form': form, 'is_edit': False})
+
+
+@login_required
+def supplier_edit(request, supplier_id):
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    supplier = get_object_or_404(Supplier, id=supplier_id, is_deleted=False)
+    if request.method == 'POST':
+        form = SupplierForm(request.POST, instance=supplier)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Supplier "{supplier.name}" updated.')
+            return redirect('pharmacy:supplier_list')
+    else:
+        form = SupplierForm(instance=supplier)
+    return render(request, 'pharmacy/supplier_form.html', {'form': form, 'supplier': supplier, 'is_edit': True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PURCHASE ORDER MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def purchase_order_list(request):
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    orders = PurchaseOrder.objects.filter(is_deleted=False).select_related('supplier', 'created_by').order_by('-order_date')[:100]
+    return render(request, 'pharmacy/purchase_order_list.html', {'orders': orders, 'statuses': PurchaseOrderStatus})
+
+
+@login_required
+def purchase_order_create(request):
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        form = PurchaseOrderForm(request.POST)
+        if form.is_valid():
+            po = form.save(commit=False)
+            po.created_by = request.user
+            po.save()
+            # Create line items from POST arrays
+            drug_ids   = request.POST.getlist('drug_id')
+            qtys       = request.POST.getlist('quantity_ordered')
+            unit_costs = request.POST.getlist('unit_cost')
+            total = 0
+            for drug_id, qty, uc in zip(drug_ids, qtys, unit_costs):
+                try:
+                    drug = Drug.objects.get(id=drug_id, is_deleted=False)
+                    qty_int = int(qty)
+                    cost = float(uc)
+                    PurchaseOrderItem.objects.create(order=po, drug=drug, quantity_ordered=qty_int, unit_cost=cost)
+                    total += qty_int * cost
+                except Exception:
+                    pass
+            po.total_amount = total
+            po.save(update_fields=['total_amount'])
+            messages.success(request, f'Purchase Order {po.order_number} created.')
+            return redirect('pharmacy:purchase_order_detail', po_id=po.id)
+    else:
+        form = PurchaseOrderForm()
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    return render(request, 'pharmacy/purchase_order_form.html', {'form': form, 'drugs': drugs})
+
+
+@login_required
+def purchase_order_detail(request, po_id):
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+    items = po.items.select_related('drug', 'stock_created').all()
+    return render(request, 'pharmacy/purchase_order_detail.html', {
+        'po': po, 'items': items, 'statuses': PurchaseOrderStatus,
+    })
+
+
+@login_required
+@require_POST
+def purchase_order_approve(request, po_id):
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+    if po.status not in (PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SUBMITTED):
+        messages.error(request, 'Only DRAFT or SUBMITTED orders can be approved.')
+        return redirect('pharmacy:purchase_order_detail', po_id=po.id)
+    po.status = PurchaseOrderStatus.APPROVED
+    po.approved_by = request.user
+    po.approved_at = timezone.now()
+    po.save(update_fields=['status', 'approved_by', 'approved_at'])
+    messages.success(request, f'PO {po.order_number} approved and sent to supplier.')
+    return redirect('pharmacy:purchase_order_detail', po_id=po.id)
+
+
+@login_required
+@require_POST
+def receive_purchase_order(request, po_id):
+    """Record goods receipt for one or more items. Creates DrugStock batches."""
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+    if po.status not in (PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.PARTIAL):
+        messages.error(request, 'Order must be APPROVED or PARTIAL to receive goods.')
+        return redirect('pharmacy:purchase_order_detail', po_id=po.id)
+
+    item_ids  = request.POST.getlist('item_id')
+    rcv_qtys  = request.POST.getlist('qty_received')
+    batches   = request.POST.getlist('batch_number')
+    exp_dates = request.POST.getlist('expiry_date')
+
+    from datetime import date
+    received_any = False
+    for item_id, qty_s, batch_no, exp_s in zip(item_ids, rcv_qtys, batches, exp_dates):
+        try:
+            item = PurchaseOrderItem.objects.get(id=item_id, order=po)
+            qty = int(qty_s)
+            if qty <= 0:
+                continue
+            exp = date.fromisoformat(exp_s)
+            stock = DrugStock.objects.create(
+                drug=item.drug,
+                batch_number=batch_no or f'PO{po.order_number}',
+                expiry_date=exp,
+                quantity_received=qty,
+                quantity_remaining=qty,
+                purchase_price=item.unit_cost,
+                created_by=request.user,
+            )
+            item.quantity_received += qty
+            item.batch_number = batch_no or item.batch_number
+            item.expiry_date = exp
+            item.stock_created = stock
+            item.save(update_fields=['quantity_received', 'batch_number', 'expiry_date', 'stock_created'])
+            received_any = True
+        except Exception:
+            continue
+
+    if received_any:
+        # Update PO status
+        items = po.items.all()
+        fully_received = all(i.quantity_received >= i.quantity_ordered for i in items)
+        po.status = PurchaseOrderStatus.RECEIVED if fully_received else PurchaseOrderStatus.PARTIAL
+        po.save(update_fields=['status'])
+        messages.success(request, 'Goods received and stock batches created.')
+    else:
+        messages.error(request, 'No valid receipt data submitted.')
+    return redirect('pharmacy:purchase_order_detail', po_id=po.id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISPENSING RETURN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def dispensing_return_create(request, dispensing_id):
+    """Record a return of dispensed drugs back to pharmacy stock."""
+    if not (request.user.can_dispense_pharmacy() or request.user.is_super_admin):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if request.method == 'POST':
+        form = DispensingReturnForm(request.POST, dispensing=dispensing)
+        if form.is_valid():
+            ret = form.save(commit=False)
+            ret.dispensing = dispensing
+            ret.returned_by = request.user
+            ret.created_by = request.user
+            ret.save()
+            messages.success(
+                request,
+                f'{ret.quantity_returned}× {ret.drug.name} returned'
+                + (' — stock restored.' if ret.stock_restored else ' — stock NOT restored (batch expired).')
+            )
+            return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+    else:
+        form = DispensingReturnForm(dispensing=dispensing)
+    return render(request, 'pharmacy/dispensing_return_form.html', {
+        'form': form, 'dispensing': dispensing,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHARMACIST VERIFICATION (JCI MMU.6.1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def dispensing_verify(request, dispensing_id):
+    """Pharmacist final verification + counseling confirmation before handout."""
+    if not request.user.can_dispense_pharmacy():
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if dispensing.verified_by_pharmacist_id:
+        messages.info(request, 'Already verified.')
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+    counseling = request.POST.get('counseling_given') == 'on'
+    counseling_notes = request.POST.get('counseling_notes', '').strip()
+    dispensing.verified_by_pharmacist = request.user
+    dispensing.verified_at = timezone.now()
+    dispensing.counseling_given = counseling
+    dispensing.counseling_notes = counseling_notes
+    dispensing.save(update_fields=['verified_by_pharmacist', 'verified_at', 'counseling_given', 'counseling_notes'])
+    messages.success(request, 'Dispensing verified. Patient counseling recorded.')
+    return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISPENSING LABEL PDF (JCI MMU.6)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def dispensing_label_pdf(request, dispensing_id):
+    """Generate a printed dispensing label for each item in the dispensing."""
+    if not (request.user.can_dispense_pharmacy() or request.user.is_super_admin):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    from apps.accounts.models import HospitalConfig
+    config = HospitalConfig.get()
+    from django.template.loader import render_to_string
+    from django.http import HttpResponse
+    try:
+        import weasyprint
+        html = render_to_string('pharmacy/dispensing_label.html', {
+            'dispensing': dispensing,
+            'items': dispensing.items.select_related('drug', 'stock_batch').all(),
+            'config': config,
+        }, request=request)
+        pdf = weasyprint.HTML(string=html).write_pdf()
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="label_{dispensing.dispensing_number}.pdf"'
+        return response
+    except ImportError:
+        return HttpResponse('WeasyPrint not installed.', status=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTROLLED DRUG REGISTER PDF (JCI MMU.3.1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def controlled_register_pdf(request):
+    """Daily/period controlled drug balance sheet as PDF."""
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    from datetime import date as date_cls
+    date_str = request.GET.get('date', timezone.localdate().isoformat())
+    try:
+        report_date = date_cls.fromisoformat(date_str)
+    except ValueError:
+        report_date = timezone.localdate()
+
+    entries = (
+        ControlledDrugEntry.objects
+        .filter(is_deleted=False, entry_date__date=report_date)
+        .select_related('drug', 'patient', 'performed_by', 'witness')
+        .order_by('drug__name', 'entry_date')
+    )
+    from apps.accounts.models import HospitalConfig
+    config = HospitalConfig.get()
+    from django.template.loader import render_to_string
+    from django.http import HttpResponse
+    try:
+        import weasyprint
+        html = render_to_string('pharmacy/controlled_register_pdf.html', {
+            'entries': entries,
+            'report_date': report_date,
+            'config': config,
+        }, request=request)
+        pdf = weasyprint.HTML(string=html).write_pdf()
+        response = HttpResponse(pdf, content_type='application/pdf')
+        fname = f'controlled_register_{report_date}.pdf'
+        response['Content-Disposition'] = f'inline; filename="{fname}"'
+        return response
+    except ImportError:
+        return HttpResponse('WeasyPrint not installed.', status=500)

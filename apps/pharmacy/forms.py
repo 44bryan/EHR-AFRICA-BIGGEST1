@@ -1,5 +1,10 @@
 from django import forms
-from .models import Drug, DrugStock, Dispensing, DispensingItem, DrugCategory, DrugForm
+from .models import (
+    Drug, DrugStock, Dispensing, DispensingItem,
+    DrugCategory, DrugForm, StorageCondition,
+    Supplier, PurchaseOrder, PurchaseOrderItem,
+    DispensingReturn, DispensingReturnReason,
+)
 
 
 class DrugCreateForm(forms.ModelForm):
@@ -10,6 +15,7 @@ class DrugCreateForm(forms.ModelForm):
             'strength', 'unit', 'barcode', 'description',
             'is_active', 'requires_prescription',
             'reorder_level', 'cost_price', 'selling_price',
+            'storage_condition', 'is_controlled', 'controlled_schedule',
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -24,6 +30,8 @@ class DrugCreateForm(forms.ModelForm):
             'reorder_level': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
             'cost_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
             'selling_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
+            'storage_condition': forms.Select(attrs={'class': 'form-select'}),
+            'controlled_schedule': forms.Select(attrs={'class': 'form-select'}),
         }
 
 
@@ -32,14 +40,13 @@ class AddStockForm(forms.ModelForm):
         model = DrugStock
         fields = [
             'batch_number', 'manufacture_date', 'expiry_date',
-            'quantity_received', 'supplier', 'purchase_price', 'notes',
+            'quantity_received', 'purchase_price', 'notes',
         ]
         widgets = {
             'batch_number': forms.TextInput(attrs={'class': 'form-control'}),
             'manufacture_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'quantity_received': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
-            'supplier': forms.TextInput(attrs={'class': 'form-control'}),
             'purchase_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
         }
@@ -69,6 +76,10 @@ class DispensingItemForm(forms.Form):
         required=False,
         empty_label='— Auto (FEFO) —',
         help_text='Leave blank to use the nearest-expiry batch automatically.',
+    )
+    quantity_prescribed = forms.IntegerField(
+        min_value=1, required=False,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'placeholder': 'Prescribed qty'}),
     )
     quantity_dispensed = forms.IntegerField(
         min_value=1,
@@ -119,3 +130,55 @@ class DispensingItemForm(forms.Form):
                         f'Insufficient stock. Only {total} units available for {drug.name}.'
                     )
         return cleaned
+
+
+class SupplierForm(forms.ModelForm):
+    class Meta:
+        model = Supplier
+        fields = ['name', 'contact_person', 'phone', 'email', 'address', 'registration_number', 'is_active']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'contact_person': forms.TextInput(attrs={'class': 'form-control'}),
+            'phone': forms.TextInput(attrs={'class': 'form-control'}),
+            'email': forms.EmailInput(attrs={'class': 'form-control'}),
+            'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'registration_number': forms.TextInput(attrs={'class': 'form-control'}),
+        }
+
+
+class PurchaseOrderForm(forms.ModelForm):
+    class Meta:
+        model = PurchaseOrder
+        fields = ['supplier', 'expected_delivery', 'notes']
+        widgets = {
+            'supplier': forms.Select(attrs={'class': 'form-select'}),
+            'expected_delivery': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        }
+
+
+class DispensingReturnForm(forms.ModelForm):
+    class Meta:
+        model = DispensingReturn
+        fields = ['drug', 'stock_batch', 'quantity_returned', 'reason', 'notes']
+        widgets = {
+            'drug': forms.Select(attrs={'class': 'form-select'}),
+            'stock_batch': forms.Select(attrs={'class': 'form-select'}),
+            'quantity_returned': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
+            'reason': forms.Select(attrs={'class': 'form-select'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        }
+
+    def __init__(self, *args, dispensing=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if dispensing:
+            drug_ids = dispensing.items.values_list('drug_id', flat=True)
+            self.fields['drug'].queryset = Drug.objects.filter(id__in=drug_ids)
+            self.fields['stock_batch'].queryset = DrugStock.objects.filter(
+                drug__id__in=drug_ids, is_deleted=False
+            ).order_by('expiry_date')
+        else:
+            self.fields['drug'].queryset = Drug.objects.filter(is_active=True, is_deleted=False)
+            self.fields['stock_batch'].queryset = DrugStock.objects.none()
+        self.fields['stock_batch'].required = False
+        self.fields['stock_batch'].empty_label = '— Select batch (optional) —'

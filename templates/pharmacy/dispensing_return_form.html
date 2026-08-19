@@ -1,0 +1,64 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Drug Return — {{ dispensing.dispensing_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-arrow-return-left me-2 text-warning"></i>Drug Return</h4>
+    <p class="text-muted small mb-0">
+      {{ dispensing.dispensing_number }} &bull; {{ dispensing.patient.full_name }} &bull; {{ dispensing.dispensed_at|date:"d M Y" }}
+    </p>
+  </div>
+  <a href="{% url 'pharmacy:dispensing_detail' dispensing_id=dispensing.id %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-warning py-2"><strong>Record Drug Return — JCI MMU.5</strong></div>
+      <div class="card-body">
+        <div class="alert alert-info small py-2 mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Stock will be restored automatically if the original batch is not expired.
+        </div>
+
+        <!-- Items in this dispensing -->
+        <div class="mb-3">
+          <p class="fw-semibold small text-muted">Items in this dispensing:</p>
+          <ul class="list-group list-group-sm mb-3">
+            {% for item in dispensing.items.all %}
+            <li class="list-group-item py-1 small d-flex justify-content-between">
+              <span>{{ item.display_name }}</span>
+              <span class="badge bg-secondary">× {{ item.quantity_dispensed }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <form method="post" novalidate>
+          {% csrf_token %}
+          {% for field in form %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">{{ field.label }} {% if field.field.required %}<span class="text-danger">*</span>{% endif %}</label>
+            {{ field }}
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+            {% for e in field.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+          </div>
+          {% endfor %}
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-warning fw-bold">
+              <i class="bi bi-arrow-return-left me-1"></i>Process Return
+            </button>
+            <a href="{% url 'pharmacy:dispensing_detail' dispensing_id=dispensing.id %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

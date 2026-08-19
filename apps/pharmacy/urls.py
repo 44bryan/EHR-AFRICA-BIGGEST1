@@ -45,4 +45,28 @@ urlpatterns = [
     path('chronic-rx/', views.chronic_rx_list, name='chronic_rx_list'),
     path('chronic-rx/new/', views.chronic_rx_create, name='chronic_rx_create'),
     path('chronic-rx/<uuid:rx_id>/refill/', views.chronic_rx_refill, name='chronic_rx_refill'),
+
+    # Supplier management
+    path('suppliers/', views.supplier_list, name='supplier_list'),
+    path('suppliers/new/', views.supplier_create, name='supplier_create'),
+    path('suppliers/<uuid:supplier_id>/edit/', views.supplier_edit, name='supplier_edit'),
+
+    # Purchase orders
+    path('purchase-orders/', views.purchase_order_list, name='purchase_order_list'),
+    path('purchase-orders/new/', views.purchase_order_create, name='purchase_order_create'),
+    path('purchase-orders/<uuid:po_id>/', views.purchase_order_detail, name='purchase_order_detail'),
+    path('purchase-orders/<uuid:po_id>/approve/', views.purchase_order_approve, name='purchase_order_approve'),
+    path('purchase-orders/<uuid:po_id>/receive/', views.receive_purchase_order, name='receive_purchase_order'),
+
+    # Dispensing return
+    path('dispensing/<uuid:dispensing_id>/return/', views.dispensing_return_create, name='dispensing_return_create'),
+
+    # Dispensing verification (pharmacist sign-off)
+    path('dispensing/<uuid:dispensing_id>/verify/', views.dispensing_verify, name='dispensing_verify'),
+
+    # Dispensing label PDF
+    path('dispensing/<uuid:dispensing_id>/label/', views.dispensing_label_pdf, name='dispensing_label_pdf'),
+
+    # Controlled drug register PDF
+    path('controlled/pdf/', views.controlled_register_pdf, name='controlled_register_pdf'),
 ]

@@ -322,25 +322,98 @@ new Chart(document.getElementById('topDrugsChart'), {
 
 <script>
 function printWithCharts() {
-  var pairs = [];
-  document.querySelectorAll('canvas').forEach(function(canvas) {
-    var chart = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
-    if (!chart) return;
-    var img = new Image();
-    img.src = chart.toBase64Image('image/png', 1.0);
-    img.className = 'print-chart-img';
-    img.style.maxWidth = canvas.offsetWidth + 'px';
-    canvas.parentNode.insertBefore(img, canvas);
-    canvas.style.display = 'none';
-    pairs.push({ canvas: canvas, img: img });
+  /* Capture all Chart.js canvases as PNG data URLs */
+  var imgs = {};
+  document.querySelectorAll('canvas').forEach(function(c) {
+    if (c.id && typeof Chart !== 'undefined' && Chart.getChart && Chart.getChart(c)) {
+      imgs[c.id] = c.toDataURL('image/png');
+    }
   });
-  window.print();
-  setTimeout(function() {
-    pairs.forEach(function(p) {
-      p.canvas.style.display = '';
-      if (p.img.parentNode) p.img.parentNode.removeChild(p.img);
-    });
-  }, 2000);
+
+  var logoEl = document.querySelector('.lh-logo, img[alt*="logo"], img[alt*="Logo"]');
+  var logoHtml = logoEl ? '<img src="' + logoEl.src + '" style="height:50px;object-fit:contain;" alt="Logo">' : '';
+
+  function chartImg(id, label) {
+    if (!imgs[id]) return '<div style="background:#f8f9fa;border:1px dashed #dee2e6;border-radius:6px;padding:20px;text-align:center;color:#aaa;font-size:11px;">'+label+' — no data</div>';
+    return '<div style="font-size:10px;font-weight:600;color:#444;margin-bottom:4px;">'+label+'</div>'
+           +'<img src="'+imgs[id]+'" style="width:100%;border-radius:4px;">';
+  }
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pharmacy Statistics — {{ month_name|escapejs }}</title>'
+    + '<style>'
+    + '@page{size:A4 portrait;margin:1.4cm 1.8cm;@bottom-right{content:"Page " counter(page) " of " counter(pages);font-size:8pt;color:#999;}}'
+    + 'body{font-family:Arial,sans-serif;font-size:10pt;color:#1a1a1a;margin:0;}'
+    + '.lh{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #0d6efd;padding-bottom:8px;margin-bottom:10px;}'
+    + '.lh-right{text-align:right;font-size:8pt;color:#666;}'
+    + '.band{background:#1e3a5f;color:#fff;padding:6px 12px;border-radius:3px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;font-size:10pt;font-weight:700;}'
+    + '.kpi-row{display:flex;gap:8px;margin-bottom:12px;}'
+    + '.kpi{flex:1;border:1px solid #dee2e6;border-radius:6px;padding:8px;text-align:center;}'
+    + '.kpi-v{font-size:18pt;font-weight:700;color:#0d6efd;}'
+    + '.kpi-l{font-size:8pt;color:#6c757d;margin-top:2px;}'
+    + '.green{color:#198754!important;} .orange{color:#fd7e14!important;} .grey{color:#6c757d!important;}'
+    + '.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}'
+    + '.chart-box{border:1px solid #dee2e6;border-radius:6px;padding:10px;}'
+    + '.auth{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px;border-top:2px solid #dee2e6;padding-top:14px;}'
+    + '.auth-col{} .auth-role{font-size:8pt;color:#888;margin-bottom:2px;} .auth-title{font-weight:700;font-size:9pt;margin-bottom:8px;}'
+    + '.auth-sig{border-bottom:1px solid #333;margin-bottom:4px;height:22px;} .auth-date{font-size:8pt;color:#888;}'
+    + '.footer{margin-top:16px;padding-top:8px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:8pt;color:#999;}'
+    + '</style></head><body>'
+
+    /* Letterhead */
+    + '<div class="lh">'
+    + '<div style="display:flex;align-items:center;gap:12px;">'+logoHtml+'<div>'
+    + '<div style="font-size:15pt;font-weight:800;color:#0d6efd;">{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }}</div>'
+    + '<div style="font-size:8pt;color:#555;">{{ hospital_address|default:""|escapejs }}</div>'
+    + '</div></div>'
+    + '<div class="lh-right">Pharmacy Statistics<br><strong>{{ month_name|escapejs }}</strong><br>Generated: ' + new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) + '</div>'
+    + '</div>'
+
+    /* Report band */
+    + '<div class="band"><span>Monthly Pharmacy Statistics Report</span><span style="font-size:9pt;opacity:.85;">Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span></div>'
+
+    /* KPIs */
+    + '<div class="kpi-row">'
+    + '<div class="kpi"><div class="kpi-v">{{ total_dispensings }}</div><div class="kpi-l">Total Dispensings</div></div>'
+    + '<div class="kpi"><div class="kpi-v green">{{ dispensed_count }}</div><div class="kpi-l">Dispensed</div></div>'
+    + '<div class="kpi"><div class="kpi-v orange">{{ partial_count }}</div><div class="kpi-l">Partial</div></div>'
+    + '<div class="kpi"><div class="kpi-v grey">{{ cancelled_count }}</div><div class="kpi-l">Cancelled</div></div>'
+    + '<div class="kpi"><div class="kpi-v {% if completion_rate >= 90 %}green{% elif completion_rate >= 70 %}orange{% else %}red{% endif %}">{{ completion_rate }}%</div><div class="kpi-l">Completion</div></div>'
+    + '<div class="kpi"><div class="kpi-v green">{{ revenue|floatformat:0|intcomma }}</div><div class="kpi-l">Revenue (FCFA)</div></div>'
+    + '<div class="kpi"><div class="kpi-v">{{ male_count|add:female_count }}</div><div class="kpi-l">Patients</div></div>'
+    + '<div class="kpi"><div class="kpi-v {% if low_stock_count %}orange{% else %}green{% endif %}">{{ low_stock_count }}</div><div class="kpi-l">Low Stock</div></div>'
+    + '</div>'
+
+    /* Charts — 2 column grid */
+    + '<div class="chart-grid">'
+    + '<div class="chart-box">'+chartImg('dailyChart','Daily Dispensings (14 Days)')+'</div>'
+    + '<div class="chart-box">'+chartImg('statusChart','Dispensing Status')+'</div>'
+    + '<div class="chart-box">'+chartImg('genderChart','Patient Gender')+'</div>'
+    + '<div class="chart-box">'+chartImg('tierChart','By Service Tier')+'</div>'
+    + '<div class="chart-box" style="grid-column:1/-1;">'+chartImg('topDrugsChart','Top Drugs by Volume')+'</div>'
+    + '</div>'
+
+    /* Auth block */
+    + '<div class="auth">'
+    + '<div class="auth-col"><div class="auth-role">Prepared by</div><div class="auth-title">Head of Pharmacy</div><div class="auth-sig"></div><div class="auth-date">Date: _______________</div></div>'
+    + '<div class="auth-col"><div class="auth-role">Reviewed by</div><div class="auth-title">Medical Director</div><div class="auth-sig"></div><div class="auth-date">Date: _______________</div></div>'
+    + '<div class="auth-col"><div class="auth-role">Approved by</div><div class="auth-title">Hospital Administrator</div><div class="auth-sig"></div><div class="auth-date">Date: _______________</div></div>'
+    + '</div>'
+
+    /* Footer */
+    + '<div class="footer">'
+    + '<span>{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }} — Pharmacy Department</span>'
+    + '<span>PHARM-{{ year }}-{{ month|stringformat:"02d" }} &nbsp;|&nbsp; {{ month_name|escapejs }}</span>'
+    + '<span>CONFIDENTIAL — Internal Use Only</span>'
+    + '</div>'
+
+    + '</body></html>';
+
+  var w = window.open('', '_blank');
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(function() { w.print(); }, 800);
 }
 </script>
 
