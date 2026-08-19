@@ -5,7 +5,7 @@
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
   <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-eyeglasses text-info fs-4"></i>
+    <i class="bi bi-graph-up text-info fs-4"></i>
     <div>
       <h5 class="mb-0 fw-bold">Optical Statistics</h5>
       <div class="text-muted small">{{ month_name }} — orders, delivery &amp; revenue</div>
@@ -25,167 +25,149 @@
       <i class="bi bi-arrow-left me-1"></i>Dashboard
     </a>
     <button onclick="window.open('{{ request.path }}?year={{ year }}&amp;month={{ month }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger">
-      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export Data PDF
     </button>
     <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
-      <i class="bi bi-printer-fill me-1"></i>Print
+      <i class="bi bi-printer-fill me-1"></i>Print with Charts
     </button>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
-<style>
-.who-rpt-hdr { background:#1a3a5c; color:#fff; padding:8px 14px; border-radius:4px; display:flex; justify-content:space-between; align-items:center; font-size:9pt; font-weight:600; }
-.who-ref { font-size:7.5pt; font-weight:400; opacity:.85; }
-.who-card-hdr { background:#fff !important; color:#1a3a5c !important; font-size:9pt; font-weight:600; border-bottom:2px solid #e9ecef !important; border-left:4px solid #0dcaf0 !important; }
-.kpi-strip { width:100%; border-collapse:collapse; }
-.kpi-strip td { border:1px solid #dee2e6; text-align:center; padding:7px 10px; background:#fff; vertical-align:top; }
-.kpi-strip .kv { font-size:14pt; font-weight:700; color:#1a3a5c; line-height:1.1; }
-.kpi-strip .kl { font-size:7pt; color:#6c757d; margin-top:2px; }
-.kv-ok { color:#198754 !important; }
-.kv-warn { color:#fd7e14 !important; }
-.kv-bad { color:#dc3545 !important; }
-.who-table { width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:0; }
-.who-table thead th { background:#ecfeff !important; color:#0e7490 !important; font-size:8.5pt; padding:6px 8px; border:none; font-weight:600; border-bottom:2px solid #a5f3fc; }
-.who-table tbody tr:nth-child(even) { background:#f8f9fa; }
-.who-table td { padding:5px 8px; border-bottom:1px solid #eee; vertical-align:middle; }
-@media print {
-  #sidebar, nav.navbar, .btn, .no-print { display:none !important; }
-  #page-content-wrapper { margin-left:0 !important; width:100% !important; padding:0 6px !important; }
-  body { background:#fff !important; }
-  @page { size:A4 landscape; margin:10mm 12mm; }
-  .card { break-inside:avoid; border:1px solid #dee2e6 !important; box-shadow:none !important; }
-  .who-rpt-hdr,.who-card-hdr { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .progress-bar { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-}
-</style>
 
-{# ── WHO Report Banner ─────────────────────────────────────────────────────── #}
-<div class="who-rpt-hdr mb-3">
-  <span><i class="bi bi-eyeglasses me-2"></i>Optical Department Monthly Report — JCI QPS Standards</span>
-  <span class="who-ref">Ref: OPT-{{ year }}-{{ month|stringformat:"02d" }} &bull; Period: {{ month_name }} &bull; Generated: {% now "d M Y H:i" %} &bull; CONFIDENTIAL</span>
-</div>
-
-{# ── KPI Strip ─────────────────────────────────────────────────────────────── #}
-<table class="kpi-strip mb-3 shadow-sm">
-  <tr>
-    <td><div class="kv">{{ total_orders }}</div><div class="kl">Total Orders</div></td>
-    <td><div class="kv kv-ok">{{ delivered_count }}</div><div class="kl">Delivered</div></td>
-    <td><div class="kv kv-warn">{{ ready_count }}</div><div class="kl">Ready to Collect</div></td>
-    <td><div class="kv">{{ lab_count }}</div><div class="kl">At Lab</div></td>
-    <td>
-      <div class="kv {% if delivery_rate >= 90 %}kv-ok{% elif delivery_rate >= 70 %}kv-warn{% else %}kv-bad{% endif %}">
-        {{ delivery_rate }}%
-      </div>
-      <div class="kl">Delivery Rate</div>
-    </td>
-    <td><div class="kv kv-ok">{{ male_count }}</div><div class="kl">Male Patients</div></td>
-    <td><div class="kv kv-bad">{{ female_count }}</div><div class="kl">Female Patients</div></td>
-    <td><div class="kv" style="font-size:11pt;">{{ revenue|floatformat:0|intcomma }}</div><div class="kl">Revenue (FCFA)</div></td>
-  </tr>
-</table>
-
-{# ── Section 1: JCI Quality Indicators (PRIORITY) ─────────────────────────── #}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-award me-2"></i>JCI / QPS Optical Quality Indicators
+<div class="print-only" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #0dcaf0;">
+    <div>
+      <div style="font-size:18px;font-weight:800;color:#0dcaf0;">Optical Statistics Dashboard</div>
+      <div style="font-size:11px;color:#555;margin-top:3px;">Period: {{ month_name }} &bull; Ref: OPT-{{ year }}-{{ month }} &bull; Generated: {% now "d M Y H:i" %}</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#6c757d;">CONFIDENTIAL — INTERNAL USE ONLY<br><em>For management review only. Not for patient distribution.</em></div>
   </div>
-  <table class="who-table">
-    <thead>
-      <tr>
-        <th style="width:35%">Indicator</th>
-        <th class="text-center" style="width:15%">This Month</th>
-        <th class="text-center" style="width:15%">Target</th>
-        <th class="text-center" style="width:12%">Status</th>
-        <th>Standard</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Order Delivery Rate</td>
-        <td class="text-center fw-bold">{{ delivery_rate }}%</td>
-        <td class="text-center text-muted">&ge; 90%</td>
-        <td class="text-center">
-          {% if delivery_rate >= 90 %}<span class="badge bg-success">MEET</span>
-          {% elif delivery_rate >= 75 %}<span class="badge bg-warning text-dark">NEAR</span>
-          {% else %}<span class="badge bg-danger">BELOW</span>{% endif %}
-        </td>
-        <td class="text-muted small">JCI QPS.3 — Timely service delivery</td>
-      </tr>
-      <tr>
-        <td>Orders Fully Dispensed</td>
-        <td class="text-center fw-bold">{{ delivered_count }}/{{ total_orders }}</td>
-        <td class="text-center text-muted">&ge; 85%</td>
-        <td class="text-center">
-          {% if total_orders > 0 %}
-            {% widthratio delivered_count total_orders 100 as _dr %}
-            {% if _dr >= 85 %}<span class="badge bg-success">MEET</span>
-            {% elif _dr >= 70 %}<span class="badge bg-warning text-dark">NEAR</span>
-            {% else %}<span class="badge bg-danger">BELOW</span>{% endif %}
-          {% else %}<span class="badge bg-secondary">N/A</span>{% endif %}
-        </td>
-        <td class="text-muted small">JCI MMU.5 — Dispensing completeness</td>
-      </tr>
-      <tr>
-        <td>Orders Ready / Awaiting Collection</td>
-        <td class="text-center fw-bold">{{ ready_count }}</td>
-        <td class="text-center text-muted">&le; 10% backlog</td>
-        <td class="text-center">
-          {% if total_orders > 0 %}
-            {% widthratio ready_count total_orders 100 as _rr %}
-            {% if _rr <= 10 %}<span class="badge bg-success">MEET</span>
-            {% elif _rr <= 20 %}<span class="badge bg-warning text-dark">WATCH</span>
-            {% else %}<span class="badge bg-danger">HIGH</span>{% endif %}
-          {% else %}<span class="badge bg-secondary">N/A</span>{% endif %}
-        </td>
-        <td class="text-muted small">JCI ACC.3 — Patient notification &amp; collection</td>
-      </tr>
-      <tr>
-        <td>Orders Still at Lab</td>
-        <td class="text-center fw-bold">{{ lab_count }}</td>
-        <td class="text-center text-muted">&le; 15%</td>
-        <td class="text-center">
-          {% if total_orders > 0 %}
-            {% widthratio lab_count total_orders 100 as _lr %}
-            {% if _lr <= 15 %}<span class="badge bg-success">MEET</span>
-            {% elif _lr <= 25 %}<span class="badge bg-warning text-dark">WATCH</span>
-            {% else %}<span class="badge bg-danger">HIGH</span>{% endif %}
-          {% else %}<span class="badge bg-secondary">N/A</span>{% endif %}
-        </td>
-        <td class="text-muted small">JCI QPS.3.1 — Lab turnaround monitoring</td>
-      </tr>
-      <tr>
-        <td>Gender Equity in Access (F:M ratio)</td>
-        <td class="text-center fw-bold">
-          {% if male_count > 0 %}{{ female_count }}:{{ male_count }}{% else %}—{% endif %}
-        </td>
-        <td class="text-center text-muted">&ge; 0.8</td>
-        <td class="text-center">
-          {% if male_count > 0 %}
-            {% widthratio female_count male_count 10 as _fr %}
-            {% if _fr >= 8 %}<span class="badge bg-success">MEET</span>
-            {% else %}<span class="badge bg-warning text-dark">WATCH</span>{% endif %}
-          {% else %}<span class="badge bg-secondary">N/A</span>{% endif %}
-        </td>
-        <td class="text-muted small">WHO HAC — Equitable access indicator</td>
-      </tr>
-    </tbody>
-  </table>
+  <div style="background:#0dcaf0;color:#fff;padding:5px 12px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;letter-spacing:.5px;">
+    EHR Africa — Optical Department Report
+  </div>
 </div>
 
-{# ── Section 2: Top Frames + Status & Tier Tables ──────────────────────────── #}
-<div class="row g-3 mb-3">
-  {# Top Frames #}
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-eyeglasses me-2"></i>Top Frames Ordered — {{ month_name }}
+{# ── KPI Row ─────────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_orders }}</div>
+        <div class="small text-muted">Total Orders</div>
       </div>
-      {% if top_frames %}
-      <table class="who-table">
-        <thead>
-          <tr><th>#</th><th>Frame / Model</th><th>Brand</th><th class="text-center">Orders</th><th style="width:100px">Share</th></tr>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ delivered_count }}</div>
+        <div class="small text-muted">Delivered</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info">{{ ready_count }}</div>
+        <div class="small text-muted">Ready to Collect</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ lab_count }}</div>
+        <div class="small text-muted">At Lab</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ delivery_rate }}%</div>
+        <div class="small text-muted">Delivery Rate</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h3 fw-bold text-success">{{ revenue|floatformat:0|intcomma }}</div>
+        <div class="small text-muted">Revenue (FCFA)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── Daily Volume ── #}
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold">
+        <i class="bi bi-bar-chart-fill text-info me-2"></i>Daily Orders (Last 14 Days)
+      </div>
+      <div class="card-body">
+        {% if total_orders > 0 %}
+        <canvas id="dailyChart" height="90"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-bar-chart fs-1 d-block mb-2 opacity-25"></i>
+          No order data for this period
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-pie-chart me-1 text-info"></i>Order Status
+      </div>
+      <div class="card-body pb-2 pt-2">
+        <canvas id="statusChart" height="160"></canvas>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-people me-1 text-info"></i>Gender Split
+      </div>
+      <div class="card-body pb-2 pt-2">
+        <canvas id="genderChart" height="100"></canvas>
+        <div class="d-flex justify-content-center gap-3 mt-1 small text-muted">
+          <span><i class="bi bi-circle-fill text-primary me-1"></i>Male {{ male_count }}</span>
+          <span><i class="bi bi-circle-fill text-danger me-1"></i>Female {{ female_count }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-layers me-1 text-info"></i>Orders by Tier
+      </div>
+      <div class="card-body pb-2 pt-2">
+        <canvas id="tierChart" height="110"></canvas>
+        <div class="d-flex justify-content-center gap-3 mt-2 small text-muted flex-wrap">
+          {% for t in tier_stats %}
+          <span><i class="bi bi-circle-fill me-1" style="color:{{ t.color }};"></i>{{ t.label }} {{ t.count }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Top Frames ── #}
+{% if top_frames %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2 fw-semibold">
+    <i class="bi bi-eyeglasses text-info me-2"></i>Top Frames Ordered
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 small align-middle">
+        <thead class="table-light">
+          <tr><th>#</th><th>Frame</th><th>Brand</th><th class="text-center">Orders</th><th style="width:120px;">Volume</th></tr>
         </thead>
         <tbody>
           {% for f in top_frames %}
@@ -193,145 +175,92 @@
             <td class="text-muted">{{ forloop.counter }}</td>
             <td class="fw-semibold">{{ f.frame__model|default:"—" }}</td>
             <td class="text-muted">{{ f.frame__brand|default:"—" }}</td>
-            <td class="text-center fw-bold" style="color:#1a3a5c">{{ f.count }}</td>
+            <td class="text-center fw-bold text-info">{{ f.count }}</td>
             <td>
               <div class="progress" style="height:6px;">
-                <div class="progress-bar" style="background:#1a3a5c;width:{% widthratio f.count top_frames.0.count 100 %}%"></div>
+                <div class="progress-bar bg-info" style="width:{% widthratio f.count top_frames.0.count 100 %}%"></div>
               </div>
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
-      {% else %}
-      <div class="p-4 text-center text-muted small">No frame data for this period.</div>
-      {% endif %}
     </div>
-  </div>
-
-  {# Order Status + Tier Breakdown #}
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-list-check me-2"></i>Order Status Breakdown
-      </div>
-      <table class="who-table">
-        <thead>
-          <tr><th>Status</th><th class="text-center">Count</th><th style="width:120px">Share</th></tr>
-        </thead>
-        <tbody>
-          {% for s in status_json.labels|zip:status_json.data %}
-          <tr>
-            <td>{{ s.0 }}</td>
-            <td class="text-center fw-bold">{{ s.1 }}</td>
-            <td>
-              {% if total_orders %}
-              <div class="progress" style="height:6px;">
-                <div class="progress-bar" style="background:#1a3a5c;width:{% widthratio s.1 total_orders 100 %}%"></div>
-              </div>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="card border-0 shadow-sm">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-layers me-2"></i>Orders by Service Tier
-      </div>
-      <table class="who-table">
-        <thead>
-          <tr><th>Tier</th><th class="text-center">Count</th><th style="width:120px">Share</th></tr>
-        </thead>
-        <tbody>
-          {% for t in tier_stats %}
-          <tr>
-            <td>{{ t.label }}</td>
-            <td class="text-center fw-bold">{{ t.count }}</td>
-            <td>
-              {% if total_orders %}
-              <div class="progress" style="height:6px;">
-                <div class="progress-bar" style="background:{{ t.color }};width:{% widthratio t.count total_orders 100 %}%"></div>
-              </div>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-{# ── Section 3: Daily Chart (compact) ─────────────────────────────────────── #}
-{% if total_orders > 0 %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-bar-chart-fill me-2"></i>Daily Orders — Last 14 Days
-  </div>
-  <div class="card-body py-2">
-    <canvas id="dailyChart" height="70"></canvas>
   </div>
 </div>
 {% endif %}
 
-{# ── Off-screen canvases (print capture only) ─────────────────────────────── #}
-<div style="position:absolute;left:-9999px;width:400px;height:300px;overflow:hidden;" aria-hidden="true">
-  <canvas id="statusChart" height="100"></canvas>
-  <canvas id="genderChart" height="100"></canvas>
-  <canvas id="tierChart" height="100"></canvas>
-</div>
-
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'vendor/chart.min.js' %}"></script>
 <script>
-(function(){
-  const DAILY  = {{ daily_json|safe }};
-  const STATUS = {{ status_json|safe }};
-  const GENDER = {{ gender_json|safe }};
-  const TIER   = {{ tier_json|safe }};
+function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[id]")){return;}window.__ehrChartInit=null;
+const DAILY  = {{ daily_json|safe }};
+const STATUS = {{ status_json|safe }};
+const GENDER = {{ gender_json|safe }};
+const TIER   = {{ tier_json|safe }};
 
-  if (document.getElementById('dailyChart')) {
-    new Chart(document.getElementById('dailyChart'), {
-      type: 'bar',
-      data: {
-        labels: DAILY.labels,
-        datasets: [{ label: 'Orders', data: DAILY.data,
-          backgroundColor: 'rgba(26,58,92,.75)', borderRadius: 3 }]
-      },
-      options: { responsive: true, plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } } },
-                  x: { ticks: { font: { size: 10 } } } } }
-    });
-  }
+new Chart(document.getElementById('dailyChart'), {
+  type: 'bar',
+  data: {
+    labels: DAILY.labels,
+    datasets: [{ label: 'Orders', data: DAILY.data,
+      backgroundColor: 'rgba(13,202,240,.7)', borderRadius: 4 }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+});
 
-  new Chart(document.getElementById('statusChart'), {
-    type: 'doughnut',
-    data: { labels: STATUS.labels,
-      datasets: [{ data: STATUS.data,
-        backgroundColor: ['#198754','#0dcaf0','#ffc107','#0d6efd','#6c757d'] }] },
-    options: { responsive: true, cutout: '55%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 } } } } }
-  });
+new Chart(document.getElementById('statusChart'), {
+  type: 'doughnut',
+  data: {
+    labels: STATUS.labels,
+    datasets: [{ data: STATUS.data,
+      backgroundColor: ['#198754','#0dcaf0','#ffc107','#0d6efd','#6c757d'] }]
+  },
+  options: { responsive: true, cutout: '55%',
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+});
 
-  new Chart(document.getElementById('genderChart'), {
-    type: 'doughnut',
-    data: { labels: GENDER.map(g => g.label),
-      datasets: [{ data: GENDER.map(g => g.count),
-        backgroundColor: ['#0d6efd','#dc3545'] }] },
-    options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
-  });
+new Chart(document.getElementById('genderChart'), {
+  type: 'doughnut',
+  data: {
+    labels: GENDER.map(g => g.label),
+    datasets: [{ data: GENDER.map(g => g.count),
+      backgroundColor: ['#0d6efd','#dc3545'] }]
+  },
+  options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
+});
 
-  new Chart(document.getElementById('tierChart'), {
-    type: 'doughnut',
-    data: { labels: TIER.labels,
-      datasets: [{ data: TIER.data, backgroundColor: TIER.colors }] },
-    options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
-  });
-})();
+new Chart(document.getElementById('tierChart'), {
+  type: 'doughnut',
+  data: {
+    labels: TIER.labels,
+    datasets: [{ data: TIER.data, backgroundColor: TIER.colors }]
+  },
+  options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
+});
+}window.__ehrChartInit=_c;_c();
 </script>
+
+<style>
+@media print {
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+  .print-only { display: block !important; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  .row.g-3 { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-md-8 { width: 64% !important; flex: none; }
+  .col-md-4 { width: 33% !important; flex: none; }
+  .col-md-6 { width: 48% !important; flex: none; }
+  .print-chart-img { width: 100% !important; height: auto !important; display: block; }
+  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
 
 <script>
 function printWithCharts() {

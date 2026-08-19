@@ -2,569 +2,556 @@
 {% load humanize %}
 {% load static %}
 {% block title %}Outreach Statistics {{ year }}{% endblock %}
-
 {% block content %}
-<style>
-.who-rpt-hdr { background:#1a3a5c; color:#fff; padding:8px 14px; border-radius:4px; display:flex; justify-content:space-between; align-items:center; font-size:9pt; font-weight:600; }
-.who-ref { font-size:7.5pt; font-weight:400; opacity:.85; }
-.who-card-hdr { background:#fff !important; color:#1a3a5c !important; font-size:9pt; font-weight:600; border-bottom:2px solid #e9ecef !important; border-left:4px solid #198754 !important; }
-.kpi-strip { width:100%; border-collapse:collapse; }
-.kpi-strip td { border:1px solid #dee2e6; text-align:center; padding:7px 10px; background:#fff; vertical-align:top; }
-.kpi-strip .kv { font-size:14pt; font-weight:700; color:#1a3a5c; line-height:1.1; }
-.kpi-strip .kl { font-size:7pt; color:#6c757d; margin-top:2px; }
-.kv-ok { color:#198754 !important; }
-.kv-warn { color:#fd7e14 !important; }
-.kv-bad { color:#dc3545 !important; }
-.who-table { width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:0; }
-.who-table thead th { background:#f0fdf4 !important; color:#166534 !important; font-size:8.5pt; padding:6px 8px; border:none; font-weight:600; border-bottom:2px solid #86efac; }
-.who-table tbody tr:nth-child(even) { background:#f8f9fa; }
-.who-table td { padding:5px 8px; border-bottom:1px solid #eee; vertical-align:middle; }
-@media print {
-  #sidebar, nav.navbar, .btn, .no-print { display:none !important; }
-  #page-content-wrapper { margin-left:0 !important; width:100% !important; padding:0 6px !important; }
-  body { background:#fff !important; }
-  @page { size:A4 landscape; margin:10mm 12mm; }
-  .card { break-inside:avoid; border:1px solid #dee2e6 !important; box-shadow:none !important; }
-  .who-rpt-hdr,.who-card-hdr { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .progress-bar { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-}
-</style>
 
-{# ── Toolbar ───────────────────────────────────────────────────────────────── #}
-<div class="d-flex align-items-center justify-content-between mb-3 no-print flex-wrap gap-2">
-  <div>
-    <h5 class="fw-bold mb-0"><i class="bi bi-bar-chart me-2 text-success"></i>Outreach Annual Statistics — {{ year }}</h5>
-    <p class="text-muted small mb-0">Annual summary — WHO Vision 2020 / ICD-11 indicators</p>
+<!-- Print header -->
+<div class="print-only" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #198754;">
+    <div>
+      <div style="font-size:18px;font-weight:800;color:#198754;">Outreach Annual Statistics Dashboard</div>
+      <div style="font-size:11px;color:#555;margin-top:3px;">Year: {{ year }} &bull; Ref: OUT-{{ year }} &bull; Generated: {% now "d M Y H:i" %}</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#6c757d;">CONFIDENTIAL — INTERNAL USE ONLY<br><em>For management review only. Not for patient distribution.</em></div>
   </div>
-  <div class="d-flex gap-2 align-items-center flex-wrap">
+  <div style="background:#198754;color:#fff;padding:5px 12px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;letter-spacing:.5px;">
+    EHR Africa — Outreach Department Report
+  </div>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mb-4 no-print">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-bar-chart me-2 text-success"></i>Outreach Annual Statistics</h5>
+    <p class="text-muted small mb-0">Full year summary for management reporting</p>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
     <form method="get" class="d-flex gap-2">
       <input type="number" name="year" value="{{ year }}" class="form-control form-control-sm" style="width:90px;">
       <button type="submit" class="btn btn-sm btn-primary">Go</button>
     </form>
-    <button onclick="window.open('{{ request.path }}?year={{ year }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger">
-      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+    <button onclick="window.open('{{ request.path }}?year={{ year }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger no-print">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export Data PDF
     </button>
-    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
-      <i class="bi bi-printer-fill me-1"></i>Print
+    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary no-print">
+      <i class="bi bi-printer-fill me-1"></i>Print with Charts
     </button>
   </div>
 </div>
 
-{# ── WHO Report Banner ─────────────────────────────────────────────────────── #}
-<div class="who-rpt-hdr mb-3">
-  <span><i class="bi bi-globe2 me-2"></i>Outreach Annual Report — WHO Vision 2020 / ICD-11 Standards</span>
-  <span class="who-ref">Ref: OUT-{{ year }} &bull; Generated: {% now "d M Y H:i" %} &bull; CONFIDENTIAL</span>
-</div>
-
-{# ── KPI Strip ─────────────────────────────────────────────────────────────── #}
-<table class="kpi-strip mb-3 shadow-sm">
-  <tr>
-    <td><div class="kv">{{ activities_count }}</div><div class="kl">Activities</div></td>
-    <td><div class="kv" style="color:#1a3a5c">{{ totals.screened|default:0|intcomma }}</div><div class="kl">Screened</div></td>
-    <td><div class="kv kv-ok">{{ totals.treated|default:0|intcomma }}</div><div class="kl">Treated</div></td>
-    <td><div class="kv kv-warn">{{ totals.referred|default:0|intcomma }}</div><div class="kl">Referred</div></td>
-    <td><div class="kv kv-bad">{{ totals.surgeries|default:0 }}</div><div class="kl">Surgeries</div></td>
-    <td><div class="kv kv-ok">{{ totals.glasses|default:0 }}</div><div class="kl">Glasses Dispensed</div></td>
-    <td><div class="kv">{{ totals.male|default:0|intcomma }}</div><div class="kl">Male</div></td>
-    <td><div class="kv kv-bad">{{ totals.female|default:0|intcomma }}</div><div class="kl">Female</div></td>
-  </tr>
-</table>
-
-{# ── Section 1: WHO Visual Impairment Indicators (PRIORITY — TOP) ──────────── #}
-{% if total_exams %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-eye me-2"></i>WHO Visual Impairment Indicators (ICD-11 &bull; WHO 2019) — {{ total_exams|intcomma }} Examinations
-  </div>
-  <table class="who-table">
-    <thead>
-      <tr>
-        <th style="width:30%">Indicator</th>
-        <th class="text-center" style="width:12%">Count</th>
-        <th class="text-center" style="width:12%">% Examined</th>
-        <th class="text-center" style="width:14%">Target / Benchmark</th>
-        <th class="text-center" style="width:10%">Status</th>
-        <th>ICD-11 Reference</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td class="fw-semibold">Blind (Grade 4 &mdash; VA &lt;3/60)</td>
-        <td class="text-center fw-bold kv-bad">{{ blind_total }}</td>
-        <td class="text-center">{% widthratio blind_total total_exams 100 %}%</td>
-        <td class="text-center text-muted">&lt; 0.5% population</td>
-        <td class="text-center">
-          {% widthratio blind_total total_exams 1000 as _bp %}
-          {% if _bp <= 5 %}<span class="badge bg-success">MEET</span>
-          {% else %}<span class="badge bg-danger">ALERT</span>{% endif %}
-        </td>
-        <td class="text-muted small">ICD-11 9D90.1 — WHO Grade 4 blindness</td>
-      </tr>
-      <tr>
-        <td class="fw-semibold">Visually Impaired (Grades 1–3)</td>
-        <td class="text-center fw-bold kv-warn">{{ vi_total }}</td>
-        <td class="text-center">{% widthratio vi_total total_exams 100 %}%</td>
-        <td class="text-center text-muted">Monitor trend</td>
-        <td class="text-center"><span class="badge bg-warning text-dark">WATCH</span></td>
-        <td class="text-muted small">ICD-11 9D90.0 — Moderate/severe VI</td>
-      </tr>
-      <tr>
-        <td class="fw-semibold">Avoidable Blindness</td>
-        <td class="text-center fw-bold">{{ avoidable_blind }}</td>
-        <td class="text-center">
-          {% if blind_total %}{% widthratio avoidable_blind blind_total 100 %}% of blind{% else %}—{% endif %}
-        </td>
-        <td class="text-center text-muted">&lt; 80% of blind</td>
-        <td class="text-center">
-          {% if blind_total %}
-            {% widthratio avoidable_blind blind_total 100 as _av %}
-            {% if _av < 80 %}<span class="badge bg-success">MEET</span>
-            {% else %}<span class="badge bg-danger">HIGH</span>{% endif %}
-          {% else %}<span class="badge bg-secondary">N/A</span>{% endif %}
-        </td>
-        <td class="text-muted small">WHO Vision 2020 — Avoidable blindness target</td>
-      </tr>
-      <tr>
-        <td class="fw-semibold">Cataract Surgical Coverage (CSC)</td>
-        <td class="text-center fw-bold">{% if csc is not None %}{{ csc }}%{% else %}—{% endif %}</td>
-        <td class="text-center text-muted">{{ csc_num }} operated / {{ csc_den }} need</td>
-        <td class="text-center text-muted">&ge; 90%</td>
-        <td class="text-center">
-          {% if csc is not None %}
-            {% if csc >= 90 %}<span class="badge bg-success">MEET</span>
-            {% elif csc >= 70 %}<span class="badge bg-warning text-dark">NEAR</span>
-            {% else %}<span class="badge bg-danger">BELOW</span>{% endif %}
-          {% else %}<span class="badge bg-secondary">N/A</span>{% endif %}
-        </td>
-        <td class="text-muted small">WHO CSC indicator — Vision 2020 key metric</td>
-      </tr>
-      <tr>
-        <td class="fw-semibold">Effective Refractive Error Coverage (eREC)</td>
-        <td class="text-center fw-bold">{% if erec is not None %}{{ erec }}%{% else %}—{% endif %}</td>
-        <td class="text-center text-muted">{{ erec_num }} glasses / {{ erec_den }} need</td>
-        <td class="text-center text-muted">&ge; 80%</td>
-        <td class="text-center">
-          {% if erec is not None %}
-            {% if erec >= 80 %}<span class="badge bg-success">MEET</span>
-            {% elif erec >= 60 %}<span class="badge bg-warning text-dark">NEAR</span>
-            {% else %}<span class="badge bg-danger">BELOW</span>{% endif %}
-          {% else %}<span class="badge bg-secondary">N/A</span>{% endif %}
-        </td>
-        <td class="text-muted small">WHO eREC — IAPB global reporting metric</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
-{# ── Section 2: WHO Grade Distribution + Principal Cause ──────────────────── #}
-<div class="row g-3 mb-3">
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-bar-chart-fill me-2"></i>WHO Visual Impairment Grade Distribution
-      </div>
-      <table class="who-table">
-        <thead>
-          <tr>
-            <th>Grade</th>
-            <th>Classification (ICD-11)</th>
-            <th class="text-center">Count</th>
-            <th style="width:120px">% Examined</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for g in who_grade_chart %}
-          <tr>
-            <td><span class="badge bg-{{ g.color }}">{{ g.grade }}</span></td>
-            <td>{{ g.label }}</td>
-            <td class="text-center fw-bold">{{ g.count }}</td>
-            <td>
-              {% if total_exams and g.count %}
-              <div class="d-flex align-items-center gap-1">
-                <div class="progress flex-grow-1" style="height:6px">
-                  <div class="progress-bar bg-{{ g.color }}" style="width:{% widthratio g.count total_exams 100 %}%"></div>
-                </div>
-                <small>{% widthratio g.count total_exams 100 %}%</small>
-              </div>
-              {% else %}—{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ activities_count }}</div>
+      <div class="small text-muted">Activities</div>
     </div>
   </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ totals.screened|default:0|intcomma }}</div>
+      <div class="small text-muted">Screened</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ totals.treated|default:0|intcomma }}</div>
+      <div class="small text-muted">Treated</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-warning">{{ totals.referred|default:0|intcomma }}</div>
+      <div class="small text-muted">Referred</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-danger">{{ totals.surgeries|default:0 }}</div>
+      <div class="small text-muted">Surgeries</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-secondary">{{ totals.glasses|default:0 }}</div>
+      <div class="small text-muted">Glasses</div>
+    </div>
+  </div>
+</div>
 
-  <div class="col-md-6">
+<!-- ── Row 1: Monthly Trend Chart + Demographics Doughnut ── -->
+<div class="row g-4 mb-4">
+  <div class="col-md-8">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-clipboard2-pulse me-2"></i>Principal Cause of Visual Impairment (WHO)
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between">
+        <h6 class="mb-0 fw-bold small text-primary"><i class="bi bi-bar-chart-line me-1"></i>Monthly Screening Trend — {{ year }}</h6>
       </div>
-      {% if cause_chart %}
-      <table class="who-table">
-        <thead>
-          <tr><th>Cause</th><th class="text-center">Count</th><th style="width:120px">% Examined</th></tr>
-        </thead>
-        <tbody>
-          {% for row in cause_chart %}
-          <tr>
-            <td>{{ row.label }}</td>
-            <td class="text-center fw-bold">{{ row.count }}</td>
-            <td>
-              {% if total_exams %}
-              <div class="d-flex align-items-center gap-1">
-                <div class="progress flex-grow-1" style="height:6px">
-                  <div class="progress-bar bg-danger" style="width:{% widthratio row.count total_exams 100 %}%"></div>
-                </div>
-                <small>{% widthratio row.count total_exams 100 %}%</small>
-              </div>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="p-4 text-muted small text-center">No principal cause data recorded yet.</div>
+      <div class="card-body">
+        <canvas id="monthlyChart" style="max-height:260px;"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-primary"><i class="bi bi-people me-1"></i>Demographics</h6>
+      </div>
+      <div class="card-body d-flex flex-column align-items-center justify-content-center">
+        <canvas id="demoChart" style="max-height:200px;max-width:200px;"></canvas>
+        <div class="mt-3 w-100">
+          <div class="d-flex justify-content-between small border-bottom py-1">
+            <span><span class="badge" style="background:#0d6efd;width:10px;height:10px;border-radius:50%;display:inline-block;"></span> Male</span>
+            <strong>{{ totals.male|default:0|intcomma }}</strong>
+          </div>
+          <div class="d-flex justify-content-between small border-bottom py-1">
+            <span><span class="badge" style="background:#dc3545;width:10px;height:10px;border-radius:50%;display:inline-block;"></span> Female</span>
+            <strong>{{ totals.female|default:0|intcomma }}</strong>
+          </div>
+          <div class="d-flex justify-content-between small border-bottom py-1">
+            <span><span class="badge" style="background:#6f42c1;width:10px;height:10px;border-radius:50%;display:inline-block;"></span> Children (&lt;18)</span>
+            <strong>{{ totals.children|default:0|intcomma }}</strong>
+          </div>
+          <div class="d-flex justify-content-between small py-1">
+            <span><span class="badge" style="background:#fd7e14;width:10px;height:10px;border-radius:50%;display:inline-block;"></span> Elderly (60+)</span>
+            <strong>{{ totals.elderly|default:0|intcomma }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 2: Conditions + Referrals + Activity Type ── -->
+<div class="row g-4 mb-4">
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-danger"><i class="bi bi-clipboard2-pulse me-1"></i>Conditions Found</h6>
+      </div>
+      <div class="card-body">
+        <div class="row align-items-center">
+          <div class="col-5">
+            <canvas id="conditionsChart" style="max-height:200px;"></canvas>
+          </div>
+          <div class="col-7">
+            <table class="table table-sm mb-0 small">
+              <tr><td class="text-muted">Normal Vision</td><td class="fw-bold text-end">{{ path_totals.normal|default:0|intcomma }}</td></tr>
+              <tr><td class="text-muted">Refractive Errors</td><td class="fw-bold text-end">{{ path_totals.refractive|default:0|intcomma }}</td></tr>
+              <tr><td class="text-muted">Cataract</td><td class="fw-bold text-end">{{ path_totals.cataract|default:0|intcomma }}</td></tr>
+              <tr><td class="text-muted">Glaucoma Suspect</td><td class="fw-bold text-end">{{ path_totals.glaucoma|default:0|intcomma }}</td></tr>
+              <tr><td class="text-muted">Diabetic Retinopathy</td><td class="fw-bold text-end">{{ path_totals.dr|default:0|intcomma }}</td></tr>
+              <tr><td class="text-muted">Pterygium</td><td class="fw-bold text-end">{{ path_totals.pterygium|default:0|intcomma }}</td></tr>
+              <tr><td class="text-muted">Trachoma</td><td class="fw-bold text-end">{{ path_totals.trachoma|default:0|intcomma }}</td></tr>
+              <tr><td class="text-muted">Corneal Opacity</td><td class="fw-bold text-end">{{ path_totals.corneal|default:0|intcomma }}</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-warning"><i class="bi bi-arrow-right-circle me-1"></i>Referral Breakdown</h6>
+      </div>
+      <div class="card-body d-flex flex-column align-items-center justify-content-center">
+        <canvas id="referralChart" style="max-height:180px;max-width:180px;"></canvas>
+        <div class="mt-3 w-100">
+          <div class="d-flex justify-content-between small border-bottom py-1">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#dc3545;margin-right:4px;"></span>Cataract</span>
+            <strong>{{ totals.ref_cataract|default:0 }}</strong>
+          </div>
+          <div class="d-flex justify-content-between small border-bottom py-1">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#fd7e14;margin-right:4px;"></span>Glaucoma</span>
+            <strong>{{ totals.ref_glaucoma|default:0 }}</strong>
+          </div>
+          <div class="d-flex justify-content-between small border-bottom py-1">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0d6efd;margin-right:4px;"></span>Retina</span>
+            <strong>{{ totals.ref_retina|default:0 }}</strong>
+          </div>
+          <div class="d-flex justify-content-between small py-1">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#6c757d;margin-right:4px;"></span>Other</span>
+            <strong>{{ totals.ref_other|default:0 }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small"><i class="bi bi-map me-1"></i>Screened by Activity Type</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="activityTypeChart" style="max-height:240px;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<!-- WHO / ICD-11 International Standards Section              -->
+<!-- ──────────────────────────────────────────────────────────── -->
+{% if total_exams %}
+<div class="mt-4 mb-2">
+  <h6 class="fw-bold text-primary mb-0">
+    <i class="bi bi-globe2 me-1"></i>WHO Visual Impairment Indicators
+    <span class="badge bg-primary fw-normal ms-1" style="font-size:.65rem">ICD-11 · WHO 2019</span>
+  </h6>
+  <p class="text-muted small mb-0">Based on {{ total_exams }} individual examination records with VA data</p>
+</div>
+
+<!-- WHO KPI Row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #1e1b4b !important">
+      <div class="fs-3 fw-bold" style="color:#1e1b4b">{{ blind_total }}</div>
+      <div class="small text-muted">Blind (Grade 4)</div>
+      {% if total_exams %}
+      <div class="badge bg-dark fw-normal small">
+        {% widthratio blind_total total_exams 100 %}%
+      </div>
       {% endif %}
     </div>
   </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #ef4444 !important">
+      <div class="fs-3 fw-bold text-danger">{{ vi_total }}</div>
+      <div class="small text-muted">Visually Impaired</div>
+      {% if total_exams %}
+      <div class="badge bg-danger fw-normal small">
+        {% widthratio vi_total total_exams 100 %}%
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #f59e0b !important">
+      <div class="fs-3 fw-bold text-warning">{{ avoidable_blind }}</div>
+      <div class="small text-muted">Avoidable Blind</div>
+      {% if blind_total %}
+      <div class="badge bg-warning text-dark fw-normal small">
+        {% widthratio avoidable_blind blind_total 100 %}% of blind
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #0ea5e9 !important">
+      {% if csc is not None %}
+      <div class="fs-3 fw-bold text-info">{{ csc }}%</div>
+      {% else %}
+      <div class="fs-3 fw-bold text-muted">—</div>
+      {% endif %}
+      <div class="small text-muted">Cataract Surgical Coverage</div>
+      <div class="small text-muted" style="font-size:.68rem">{{ csc_num }} operated / {{ csc_den }} need</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3" style="border-top:3px solid #22c55e !important">
+      {% if erec is not None %}
+      <div class="fs-3 fw-bold text-success">{{ erec }}%</div>
+      {% else %}
+      <div class="fs-3 fw-bold text-muted">—</div>
+      {% endif %}
+      <div class="small text-muted">Effective REC Coverage (eREC)</div>
+      <div class="small text-muted" style="font-size:.68rem">{{ erec_num }} glasses / {{ erec_den }} need</div>
+    </div>
+  </div>
 </div>
 
-{# ── Section 3: RAAB7 Age Bracket Distribution ─────────────────────────────── #}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-people me-2"></i>RAAB7 Age Bracket Distribution
-    <span class="badge fw-normal ms-2" style="background:rgba(255,255,255,.2);font-size:.65rem">WHO RAAB Protocol</span>
+<!-- WHO Grade Distribution + Cause of Blindness -->
+<div class="row g-4 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small" style="color:#0369a1">
+          <i class="bi bi-bar-chart-fill me-1"></i>WHO Visual Impairment Grade Distribution
+        </h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Grade</th>
+              <th>Classification</th>
+              <th class="text-end">Count</th>
+              <th>% of Examined</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for g in who_grade_chart %}
+            <tr>
+              <td><span class="badge bg-{{ g.color }}">{{ g.grade }}</span></td>
+              <td>{{ g.label }}</td>
+              <td class="fw-bold text-end">{{ g.count }}</td>
+              <td>
+                {% if total_exams and g.count %}
+                <div class="d-flex align-items-center gap-1">
+                  <div class="progress flex-grow-1" style="height:6px">
+                    <div class="progress-bar bg-{{ g.color }}"
+                         style="width:{% widthratio g.count total_exams 100 %}%"></div>
+                  </div>
+                  <small>{% widthratio g.count total_exams 100 %}%</small>
+                </div>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-bold small text-danger">
+          <i class="bi bi-clipboard2-pulse me-1"></i>Principal Cause of Visual Impairment (WHO)
+        </h6>
+      </div>
+      <div class="card-body p-0">
+        {% if cause_chart %}
+        <table class="table table-sm mb-0 small">
+          <tbody>
+            {% for row in cause_chart %}
+            <tr>
+              <td class="text-muted">{{ row.label }}</td>
+              <td class="fw-bold text-end">{{ row.count }}</td>
+              <td style="width:120px">
+                {% if total_exams %}
+                <div class="progress" style="height:6px">
+                  <div class="progress-bar bg-danger"
+                       style="width:{% widthratio row.count total_exams 100 %}%"></div>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-3 text-muted small text-center">No principal cause data recorded yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RAAB7 Age Brackets -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom py-2">
+    <h6 class="mb-0 fw-bold small" style="color:#7c3aed">
+      <i class="bi bi-people me-1"></i>RAAB7 Age Bracket Distribution
+      <span class="badge fw-normal ms-1" style="background:#ede9fe;color:#5b21b6;font-size:.65rem">WHO RAAB Protocol</span>
+    </h6>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Age Bracket</th>
+            {% for bracket, count in raab_brackets.items %}
+            <th class="text-center">{{ bracket }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="text-muted fw-semibold">Count</td>
+            {% for bracket, count in raab_brackets.items %}
+            <td class="text-center fw-bold">{{ count }}</td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Monthly Breakdown Table -->
+<div class="card border-0 shadow-sm mt-4 mb-4">
+  <div class="card-header bg-white border-bottom py-2">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-calendar3 me-1"></i>Monthly Breakdown — {{ year }}</h6>
   </div>
   <div class="table-responsive">
-    <table class="who-table">
-      <thead>
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
         <tr>
-          <th>Category</th>
-          {% for bracket in raab_brackets.keys %}
-          <th class="text-center">{{ bracket }}</th>
-          {% endfor %}
-          <th class="text-center">Total</th>
+          <th>Month</th>
+          <th class="text-primary">Screened</th>
+          <th class="text-success">Treated</th>
+          <th class="text-warning">Referred</th>
         </tr>
       </thead>
       <tbody>
+        {% for row in monthly %}
+        {% if row.screened %}
         <tr>
-          <td class="fw-semibold">Screened</td>
-          {% for bracket, count in raab_brackets.items %}
-          <td class="text-center fw-bold">{{ count }}</td>
-          {% endfor %}
-          <td class="text-center fw-bold" style="color:#1a3a5c">{{ total_exams|intcomma }}</td>
+          <td class="fw-semibold">
+            {% if row.month == 1 %}January{% elif row.month == 2 %}February
+            {% elif row.month == 3 %}March{% elif row.month == 4 %}April
+            {% elif row.month == 5 %}May{% elif row.month == 6 %}June
+            {% elif row.month == 7 %}July{% elif row.month == 8 %}August
+            {% elif row.month == 9 %}September{% elif row.month == 10 %}October
+            {% elif row.month == 11 %}November{% else %}December{% endif %}
+          </td>
+          <td class="text-primary fw-bold">{{ row.screened|intcomma }}</td>
+          <td class="text-success fw-bold">{{ row.treated|intcomma }}</td>
+          <td class="text-warning fw-bold">{{ row.referred|intcomma }}</td>
         </tr>
+        {% endif %}
+        {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
-{% endif %}{# end total_exams #}
 
-{# ── Section 4: Conditions Found + Referral Breakdown ─────────────────────── #}
-<div class="row g-3 mb-3">
-  <div class="col-md-7">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-clipboard2-pulse me-2"></i>Conditions Found — {{ year }}
-      </div>
-      <table class="who-table">
-        <thead>
-          <tr><th>Condition</th><th class="text-center">Count</th><th style="width:140px">Share</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Normal Vision</td>
-            <td class="text-center fw-bold kv-ok">{{ path_totals.normal|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-success" style="width:{% widthratio path_totals.normal totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Refractive Errors</td>
-            <td class="text-center fw-bold">{{ path_totals.refractive|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-primary" style="width:{% widthratio path_totals.refractive totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Cataract</td>
-            <td class="text-center fw-bold kv-bad">{{ path_totals.cataract|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-danger" style="width:{% widthratio path_totals.cataract totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Glaucoma Suspect</td>
-            <td class="text-center fw-bold kv-warn">{{ path_totals.glaucoma|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-warning" style="width:{% widthratio path_totals.glaucoma totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Diabetic Retinopathy</td>
-            <td class="text-center fw-bold">{{ path_totals.dr|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-info" style="width:{% widthratio path_totals.dr totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Pterygium</td>
-            <td class="text-center fw-bold">{{ path_totals.pterygium|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-secondary" style="width:{% widthratio path_totals.pterygium totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Trachoma</td>
-            <td class="text-center fw-bold">{{ path_totals.trachoma|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-secondary" style="width:{% widthratio path_totals.trachoma totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Corneal Opacity</td>
-            <td class="text-center fw-bold">{{ path_totals.corneal|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-secondary" style="width:{% widthratio path_totals.corneal totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <div class="col-md-5">
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-arrow-right-circle me-2"></i>Referral Breakdown
-      </div>
-      <table class="who-table">
-        <thead>
-          <tr><th>Referral Type</th><th class="text-center">Count</th><th style="width:100px">Share</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Cataract Surgery</td>
-            <td class="text-center fw-bold">{{ totals.ref_cataract|default:0 }}</td>
-            <td>{% if totals.referred %}<div class="progress" style="height:6px;"><div class="progress-bar bg-danger" style="width:{% widthratio totals.ref_cataract totals.referred 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Glaucoma</td>
-            <td class="text-center fw-bold">{{ totals.ref_glaucoma|default:0 }}</td>
-            <td>{% if totals.referred %}<div class="progress" style="height:6px;"><div class="progress-bar bg-warning" style="width:{% widthratio totals.ref_glaucoma totals.referred 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Retinal Disease</td>
-            <td class="text-center fw-bold">{{ totals.ref_retina|default:0 }}</td>
-            <td>{% if totals.referred %}<div class="progress" style="height:6px;"><div class="progress-bar bg-primary" style="width:{% widthratio totals.ref_retina totals.referred 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Other</td>
-            <td class="text-center fw-bold">{{ totals.ref_other|default:0 }}</td>
-            <td>{% if totals.referred %}<div class="progress" style="height:6px;"><div class="progress-bar bg-secondary" style="width:{% widthratio totals.ref_other totals.referred 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="card border-0 shadow-sm">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-people me-2"></i>Demographics
-      </div>
-      <table class="who-table">
-        <thead>
-          <tr><th>Group</th><th class="text-center">Count</th><th style="width:100px">Share</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Male</td>
-            <td class="text-center fw-bold">{{ totals.male|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-primary" style="width:{% widthratio totals.male totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Female</td>
-            <td class="text-center fw-bold">{{ totals.female|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-danger" style="width:{% widthratio totals.female totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Children (&lt;18)</td>
-            <td class="text-center fw-bold">{{ totals.children|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-info" style="width:{% widthratio totals.children totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-          <tr>
-            <td>Elderly (60+)</td>
-            <td class="text-center fw-bold">{{ totals.elderly|default:0|intcomma }}</td>
-            <td>{% if totals.screened %}<div class="progress" style="height:6px;"><div class="progress-bar bg-warning" style="width:{% widthratio totals.elderly totals.screened 100 %}%"></div></div>{% endif %}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-{# ── Section 5: Monthly Breakdown Table + Chart ────────────────────────────── #}
-<div class="row g-3 mb-3">
-  <div class="col-md-7">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-calendar3 me-2"></i>Monthly Breakdown — {{ year }}
-      </div>
-      <table class="who-table">
-        <thead>
-          <tr>
-            <th>Month</th>
-            <th class="text-center">Screened</th>
-            <th class="text-center">Treated</th>
-            <th class="text-center">Referred</th>
-            <th style="width:100px">Treat Rate</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in monthly %}
-          {% if row.screened %}
-          <tr>
-            <td class="fw-semibold">
-              {% if row.month == 1 %}January{% elif row.month == 2 %}February
-              {% elif row.month == 3 %}March{% elif row.month == 4 %}April
-              {% elif row.month == 5 %}May{% elif row.month == 6 %}June
-              {% elif row.month == 7 %}July{% elif row.month == 8 %}August
-              {% elif row.month == 9 %}September{% elif row.month == 10 %}October
-              {% elif row.month == 11 %}November{% else %}December{% endif %}
-            </td>
-            <td class="text-center fw-bold" style="color:#1a3a5c">{{ row.screened|intcomma }}</td>
-            <td class="text-center fw-bold kv-ok">{{ row.treated|default:0|intcomma }}</td>
-            <td class="text-center fw-bold kv-warn">{{ row.referred|default:0|intcomma }}</td>
-            <td>
-              {% if row.screened %}
-              <div class="d-flex align-items-center gap-1">
-                <div class="progress flex-grow-1" style="height:6px;">
-                  <div class="progress-bar bg-success" style="width:{% widthratio row.treated row.screened 100 %}%"></div>
-                </div>
-                <small>{% widthratio row.treated row.screened 100 %}%</small>
-              </div>
-              {% endif %}
-            </td>
-          </tr>
-          {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <div class="col-md-5">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-bar-chart-line me-2"></i>Monthly Screening Trend — {{ year }}
-      </div>
-      <div class="card-body py-2">
-        <canvas id="monthlyChart" height="160"></canvas>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ── Activity Type breakdown table ─────────────────────────────────────────── #}
-{% if by_type %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-map me-2"></i>Screened by Activity Type — {{ year }}
-  </div>
-  <table class="who-table">
-    <thead>
-      <tr><th>Activity Type</th><th class="text-center">Screened</th><th style="width:200px">Share</th></tr>
-    </thead>
-    <tbody>
-      {% for t in by_type %}
-      <tr>
-        <td>{{ t.label }}</td>
-        <td class="text-center fw-bold">{{ t.s|default:0|intcomma }}</td>
-        <td>
-          {% if totals.screened %}
-          <div class="d-flex align-items-center gap-1">
-            <div class="progress flex-grow-1" style="height:6px;">
-              <div class="progress-bar" style="background:#1a3a5c;width:{% widthratio t.s totals.screened 100 %}%"></div>
-            </div>
-            <small>{% widthratio t.s totals.screened 100 %}%</small>
-          </div>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{# ── Off-screen canvases (print capture) ──────────────────────────────────── #}
-<div style="position:absolute;left:-9999px;width:400px;height:300px;overflow:hidden;" aria-hidden="true">
-  <canvas id="demoChart" height="100"></canvas>
-  <canvas id="conditionsChart" height="100"></canvas>
-  <canvas id="referralChart" height="100"></canvas>
-  <canvas id="activityTypeChart" height="100"></canvas>
-</div>
-
-{# ── Chart.js ── #}
+<!-- ── Chart.js ── -->
 <script src="{% static 'vendor/chart.min.js' %}"></script>
 <script>
 (function(){
+  // ── Monthly data ──
   var monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var monthScreened = [0,0,0,0,0,0,0,0,0,0,0,0];
   var monthTreated  = [0,0,0,0,0,0,0,0,0,0,0,0];
   var monthReferred = [0,0,0,0,0,0,0,0,0,0,0,0];
-  {% for row in monthly %}{% if row.screened %}
-  monthScreened[{{ row.month }} - 1] = {{ row.screened }};
-  monthTreated[{{ row.month }} - 1]  = {{ row.treated|default:0 }};
-  monthReferred[{{ row.month }} - 1] = {{ row.referred|default:0 }};
-  {% endif %}{% endfor %}
+  {% for row in monthly %}
+  {% if row.screened %}
+  monthScreened[{{ row.month }}  - 1] = {{ row.screened }};
+  monthTreated[{{ row.month }}   - 1] = {{ row.treated|default:0 }};
+  monthReferred[{{ row.month }}  - 1] = {{ row.referred|default:0 }};
+  {% endif %}
+  {% endfor %}
 
   new Chart(document.getElementById('monthlyChart'), {
     type: 'bar',
     data: {
       labels: monthLabels,
       datasets: [
-        { label: 'Screened',  data: monthScreened, backgroundColor: 'rgba(26,58,92,.75)',   borderRadius: 3 },
-        { label: 'Treated',   data: monthTreated,  backgroundColor: 'rgba(25,135,84,.7)',   borderRadius: 3 },
-        { label: 'Referred',  data: monthReferred, backgroundColor: 'rgba(253,126,20,.75)', borderRadius: 3 }
+        { label: 'Screened',  data: monthScreened, backgroundColor: 'rgba(13,110,253,.75)',  borderRadius: 4 },
+        { label: 'Treated',   data: monthTreated,  backgroundColor: 'rgba(25,135,84,.7)',    borderRadius: 4 },
+        { label: 'Referred',  data: monthReferred, backgroundColor: 'rgba(255,193,7,.8)',    borderRadius: 4 }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: true,
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 } } } },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
       scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 9 } } },
-        y: { beginAtZero: true, ticks: { font: { size: 9 } }, grid: { color: '#f0f0f0' } }
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: '#f0f0f0' } }
       }
     }
   });
 
+  // ── Demographics doughnut ──
   new Chart(document.getElementById('demoChart'), {
     type: 'doughnut',
     data: {
       labels: ['Male','Female','Children (<18)','Elderly (60+)'],
-      datasets: [{ data: [{{ totals.male|default:0 }}, {{ totals.female|default:0 }}, {{ totals.children|default:0 }}, {{ totals.elderly|default:0 }}],
-        backgroundColor: ['#0d6efd','#dc3545','#6f42c1','#fd7e14'], borderWidth: 1 }]
+      datasets: [{
+        data: [{{ totals.male|default:0 }}, {{ totals.female|default:0 }}, {{ totals.children|default:0 }}, {{ totals.elderly|default:0 }}],
+        backgroundColor: ['#0d6efd','#dc3545','#6f42c1','#fd7e14'],
+        borderWidth: 1
+      }]
     },
-    options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
+    options: {
+      responsive: true, cutout: '65%',
+      plugins: { legend: { display: false } }
+    }
   });
 
+  // ── Conditions doughnut ──
   new Chart(document.getElementById('conditionsChart'), {
     type: 'doughnut',
     data: {
       labels: ['Normal','Refractive','Cataract','Glaucoma','DR','Pterygium','Trachoma','Corneal'],
-      datasets: [{ data: [{{ path_totals.normal|default:0 }},{{ path_totals.refractive|default:0 }},{{ path_totals.cataract|default:0 }},{{ path_totals.glaucoma|default:0 }},{{ path_totals.dr|default:0 }},{{ path_totals.pterygium|default:0 }},{{ path_totals.trachoma|default:0 }},{{ path_totals.corneal|default:0 }}],
-        backgroundColor: ['#198754','#0d6efd','#dc3545','#fd7e14','#6f42c1','#20c997','#0dcaf0','#6c757d'], borderWidth: 1 }]
+      datasets: [{
+        data: [
+          {{ path_totals.normal|default:0 }}, {{ path_totals.refractive|default:0 }},
+          {{ path_totals.cataract|default:0 }}, {{ path_totals.glaucoma|default:0 }},
+          {{ path_totals.dr|default:0 }}, {{ path_totals.pterygium|default:0 }},
+          {{ path_totals.trachoma|default:0 }}, {{ path_totals.corneal|default:0 }}
+        ],
+        backgroundColor: ['#198754','#0d6efd','#dc3545','#fd7e14','#6f42c1','#20c997','#0dcaf0','#6c757d'],
+        borderWidth: 1
+      }]
     },
-    options: { responsive: true, cutout: '60%', plugins: { legend: { display: false } } }
+    options: {
+      responsive: true, cutout: '60%',
+      plugins: { legend: { display: false } }
+    }
   });
 
+  // ── Referral doughnut ──
   new Chart(document.getElementById('referralChart'), {
     type: 'doughnut',
     data: {
       labels: ['Cataract','Glaucoma','Retina','Other'],
-      datasets: [{ data: [{{ totals.ref_cataract|default:0 }},{{ totals.ref_glaucoma|default:0 }},{{ totals.ref_retina|default:0 }},{{ totals.ref_other|default:0 }}],
-        backgroundColor: ['#dc3545','#fd7e14','#0d6efd','#6c757d'], borderWidth: 1 }]
+      datasets: [{
+        data: [{{ totals.ref_cataract|default:0 }}, {{ totals.ref_glaucoma|default:0 }}, {{ totals.ref_retina|default:0 }}, {{ totals.ref_other|default:0 }}],
+        backgroundColor: ['#dc3545','#fd7e14','#0d6efd','#6c757d'],
+        borderWidth: 1
+      }]
     },
-    options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
+    options: {
+      responsive: true, cutout: '65%',
+      plugins: { legend: { display: false } }
+    }
   });
 
+  // ── Activity type horizontal bar ──
   var actLabels = [], actData = [];
-  {% for t in by_type %}actLabels.push('{{ t.label }}'); actData.push({{ t.s|default:0 }});{% endfor %}
+  {% for t in by_type %}
+  actLabels.push('{{ t.label }}');
+  actData.push({{ t.s|default:0 }});
+  {% endfor %}
+
   if (actLabels.length) {
     new Chart(document.getElementById('activityTypeChart'), {
       type: 'bar',
-      data: { labels: actLabels, datasets: [{ label: 'Screened', data: actData,
-        backgroundColor: ['#0d6efd','#198754','#dc3545','#fd7e14','#6f42c1','#0dcaf0','#20c997'], borderRadius: 4 }] },
-      options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 9 } } },
-                  y: { grid: { display: false }, ticks: { font: { size: 9 } } } } }
+      data: {
+        labels: actLabels,
+        datasets: [{
+          label: 'Screened',
+          data: actData,
+          backgroundColor: ['#0d6efd','#198754','#dc3545','#fd7e14','#6f42c1','#0dcaf0','#20c997'],
+          borderRadius: 5
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } },
+          y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+        }
+      }
     });
   }
 })();
 </script>
+
+<style>
+@media print {
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+  .print-only { display: block !important; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  .row.g-3, .row.g-4 { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-md-8 { width: 64% !important; flex: none; }
+  .col-md-4 { width: 33% !important; flex: none; }
+  .col-md-6 { width: 48% !important; flex: none; }
+  .print-chart-img { width: 100% !important; height: auto !important; display: block; }
+  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
 
 <script>
 function printWithCharts() {
