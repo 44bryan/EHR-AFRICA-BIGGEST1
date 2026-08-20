@@ -50,7 +50,7 @@ class Patient(AuditModel):
     gender = models.CharField(max_length=10, choices=Gender.choices)
     blood_group = models.CharField(max_length=10, choices=BloodGroup.choices, default=BloodGroup.UNKNOWN)
     genotype = models.CharField(max_length=10, choices=Genotype.choices, default=Genotype.UNKNOWN)
-    phone_number = models.CharField(max_length=20)
+    phone_number = models.CharField(max_length=30)
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)
     state_of_origin = models.CharField(max_length=50, blank=True)
@@ -178,7 +178,7 @@ class NextOfKin(TimeStampedModel):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='next_of_kin')
     full_name = models.CharField(max_length=200)
     relationship = models.CharField(max_length=50)
-    phone_number = models.CharField(max_length=20)
+    phone_number = models.CharField(max_length=30)
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)
 
