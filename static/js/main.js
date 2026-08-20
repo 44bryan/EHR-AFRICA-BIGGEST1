@@ -123,9 +123,14 @@ function ehrInitOnce() {
   });
 
   // Prevent text selection during touch scroll on tablets.
-  // selectstart fires the moment the browser decides to start a selection —
-  // cancelling it here is the most reliable cross-browser approach.
+  // selectstart: fires when browser begins a selection — cancel for non-inputs.
   document.addEventListener('selectstart', function(e) {
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+  });
+  // contextmenu: fires on long-press on Android before text selection begins.
+  document.addEventListener('contextmenu', function(e) {
     var t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     e.preventDefault();
