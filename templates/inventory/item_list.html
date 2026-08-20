@@ -1,9 +1,147 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Inventory Items{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Inventory Items</h1>
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-boxes text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Item Catalogue</h5>
+      <div class="text-muted small">{{ items|length }} item{{ items|length|pluralize }} across all departments</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:item_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Add Item
+  </a>
 </div>
-<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form method="get" class="row g-2"><div class="col-md-5"><input type="text" name="q" value="{{ search }}" class="form-control" placeholder="Search by name or code..."></div><div class="col-md-4"><select name="category" class="form-select"><option value="">All Categories</option>{% for code, label in categories %}<option value="{{ code }}" {% if category == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Filter</button></div></form></div></div>
-<div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Code</th><th>Name</th><th>Category</th><th>Stock</th><th>Reorder</th><th></th></tr></thead><tbody>{% for item in items %}<tr><td>{{ item.item_code }}</td><td>{{ item.name }}</td><td>{{ item.get_category_display }}</td><td><span class="badge {% if item.needs_reorder %}bg-danger{% else %}bg-success{% endif %}">{{ item.current_stock }}</span></td><td>{{ item.reorder_level }}</td><td><a href="{% url 'inventory:item_detail' item.id %}" class="btn btn-sm btn-outline-primary">View</a></td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No items found</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter bar -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-5">
+        <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+               placeholder="Search by name or item code...">
+      </div>
+      <div class="col-md-4">
+        <select name="category" class="form-select form-select-sm">
+          <option value="">All Categories</option>
+          {% for code, label in categories %}
+          <option value="{{ code }}" {% if category == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm flex-fill">
+          <i class="bi bi-search me-1"></i>Filter
+        </button>
+        {% if search or category %}
+        <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Category pills (quick filter) -->
+<div class="d-flex gap-1 flex-wrap mb-3">
+  <a href="{% url 'inventory:item_list' %}" class="btn btn-sm {% if not category %}btn-primary{% else %}btn-outline-secondary{% endif %} py-0">All</a>
+  {% for code, label in categories %}
+  <a href="?category={{ code }}" class="btn btn-sm {% if category == code %}btn-primary{% else %}btn-outline-secondary{% endif %} py-0">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<!-- Item table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Code</th>
+            <th>Item Name</th>
+            <th>Category</th>
+            <th>Location</th>
+            <th class="text-center">Stock</th>
+            <th class="text-center">Reorder</th>
+            <th class="text-end">Unit Cost</th>
+            <th class="text-center">Flags</th>
+            <th>Vendor</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr class="{% if item.needs_reorder %}table-danger{% endif %}">
+            <td><code>{{ item.item_code }}</code></td>
+            <td>
+              <div class="fw-semibold">{{ item.name }}</div>
+              {% if item.storage_conditions %}
+              <div class="text-muted" style="font-size:0.72rem;">
+                <i class="bi bi-thermometer-half me-1"></i>{{ item.storage_conditions }}
+              </div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge bg-light text-dark border">{{ item.get_category_display }}</span>
+            </td>
+            <td class="text-muted">{{ item.location|default:"—" }}</td>
+            <td class="text-center">
+              <span class="badge fs-6 px-2 {% if item.current_stock == 0 %}bg-danger{% elif item.needs_reorder %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                {{ item.current_stock }}
+              </span>
+            </td>
+            <td class="text-center text-muted">{{ item.reorder_level }}</td>
+            <td class="text-end">{{ item.unit_cost|floatformat:0|intcomma }} <span class="text-muted">FCFA</span></td>
+            <td class="text-center">
+              <div class="d-flex gap-1 justify-content-center flex-wrap">
+                {% if item.requires_expiry_tracking %}
+                <span class="badge bg-info" title="Expiry tracked — JCI MMU.3"><i class="bi bi-layers"></i></span>
+                {% endif %}
+                {% if item.is_consignment %}
+                <span class="badge bg-purple" style="background:#6f42c1;" title="Consignment stock"><i class="bi bi-recycle"></i></span>
+                {% endif %}
+                {% if item.needs_reorder %}
+                <span class="badge bg-danger" title="Below reorder level"><i class="bi bi-exclamation-triangle"></i></span>
+                {% endif %}
+                {% if item.udi_code %}
+                <span class="badge bg-secondary" title="UDI tracked device"><i class="bi bi-upc-scan"></i></span>
+                {% endif %}
+              </div>
+            </td>
+            <td class="text-muted small">{{ item.preferred_vendor.name|default:"—" }}</td>
+            <td>
+              <a href="{% url 'inventory:item_detail' item.id %}" class="btn btn-sm btn-outline-primary py-0 px-2">
+                View
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10" class="text-center text-muted py-5">
+              <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+              No items found{% if search %} for "{{ search }}"{% endif %}.
+              <a href="{% url 'inventory:item_create' %}" class="d-block mt-1">Add your first item &rarr;</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if items %}
+  <div class="card-footer bg-white border-top small text-muted d-flex justify-content-between">
+    <span>{{ items|length }} item{{ items|length|pluralize }} shown</span>
+    <span>
+      <span class="badge bg-danger me-1">Red row = below reorder</span>
+      <span class="badge bg-info me-1"><i class="bi bi-layers"></i> = Expiry tracked</span>
+      <span class="badge me-1" style="background:#6f42c1;"><i class="bi bi-recycle"></i> = Consignment</span>
+    </span>
+  </div>
+  {% endif %}
+</div>
 {% endblock %}

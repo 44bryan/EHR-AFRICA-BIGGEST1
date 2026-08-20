@@ -1,8 +1,9 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, F, FloatField, ExpressionWrapper
 from django.utils import timezone
+from decimal import Decimal
 from .models import (
     InventoryItem, Vendor, PurchaseOrder, PurchaseOrderItem,
     StockMovement, ItemCategory, BatchStock,
@@ -55,13 +56,30 @@ def _trigger_auto_reorder(item, user):
 @login_required
 def dashboard(request):
     today = timezone.localdate()
-    low_stock = [i for i in InventoryItem.objects.filter(is_active=True, is_deleted=False) if i.needs_reorder]
+    all_items = list(InventoryItem.objects.filter(is_active=True, is_deleted=False))
+    low_stock = [i for i in all_items if i.needs_reorder]
 
-    # Expiry alerts (items with batch stock expiring in ≤ 90 days or already expired)
+    # Total stock value
+    stock_value = sum(
+        float(i.current_stock) * float(i.unit_cost)
+        for i in all_items if not i.is_consignment
+    )
+    consignment_value = sum(
+        float(i.current_stock) * float(i.unit_cost)
+        for i in all_items if i.is_consignment
+    )
+
+    # YTD PO spend
+    po_spend_ytd = PurchaseOrder.objects.filter(
+        status='RECEIVED', is_deleted=False, ordered_date__year=today.year
+    ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+
+    # Expiry alerts
     expiring_soon = BatchStock.objects.filter(
         is_quarantined=False,
         quantity_remaining__gt=0,
         expiry_date__lte=today + timezone.timedelta(days=90),
+        expiry_date__gte=today,
     ).select_related('item').order_by('expiry_date')
 
     expired_count = BatchStock.objects.filter(
@@ -69,22 +87,48 @@ def dashboard(request):
         expiry_date__lt=today,
     ).count()
 
+    quarantined_count = BatchStock.objects.filter(is_quarantined=True, quantity_remaining__gt=0).count()
+
     pending_reqs = DepartmentRequisition.objects.filter(
         status='PENDING', is_deleted=False
     ).count()
 
+    # Recent requisitions (last 8)
+    recent_reqs = DepartmentRequisition.objects.filter(
+        is_deleted=False
+    ).order_by('-created_at')[:8]
+
+    # Recent received POs (last 5)
+    recent_pos = PurchaseOrder.objects.filter(
+        is_deleted=False, status='RECEIVED'
+    ).select_related('vendor').order_by('-received_date')[:5]
+
+    # Vendor performance scoreboard
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False, total_orders__gt=0).order_by('-on_time_deliveries')
+
+    # Auto-generated pending POs
+    auto_pos = PurchaseOrder.objects.filter(
+        is_deleted=False, status='DRAFT', is_auto_generated=True
+    ).count()
+
     context = {
-        'total_items':      InventoryItem.objects.filter(is_active=True, is_deleted=False).count(),
-        'low_stock_count':  len(low_stock),
-        'low_stock_items':  low_stock[:10],
-        'pending_pos':      PurchaseOrder.objects.filter(
-            status__in=['SUBMITTED', 'APPROVED'], is_deleted=False
-        ).count(),
-        'vendors_count':    Vendor.objects.filter(is_active=True, is_deleted=False).count(),
-        'expiring_soon':    expiring_soon[:10],
-        'expiring_count':   expiring_soon.count(),
-        'expired_count':    expired_count,
-        'pending_reqs':     pending_reqs,
+        'total_items':        len(all_items),
+        'low_stock_count':    len(low_stock),
+        'low_stock_items':    low_stock[:15],
+        'pending_pos':        PurchaseOrder.objects.filter(status__in=['SUBMITTED', 'APPROVED'], is_deleted=False).count(),
+        'auto_pos':           auto_pos,
+        'vendors_count':      Vendor.objects.filter(is_active=True, is_deleted=False).count(),
+        'expiring_soon':      expiring_soon[:15],
+        'expiring_count':     expiring_soon.count(),
+        'expired_count':      expired_count,
+        'quarantined_count':  quarantined_count,
+        'pending_reqs':       pending_reqs,
+        'stock_value':        int(stock_value),
+        'consignment_value':  int(consignment_value),
+        'po_spend_ytd':       int(po_spend_ytd),
+        'recent_reqs':        recent_reqs,
+        'recent_pos':         recent_pos,
+        'vendors':            vendors,
     }
     return render(request, 'inventory/dashboard.html', context)
 

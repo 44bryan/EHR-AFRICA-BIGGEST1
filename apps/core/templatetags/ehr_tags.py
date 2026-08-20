@@ -40,6 +40,25 @@ def getattribute(obj, attr):
 
 
 @register.filter
+def absval(value):
+    """Return absolute value. Usage: {{ negative_number|absval }}"""
+    try:
+        v = float(value)
+        return int(v) if v >= 0 else int(-v)
+    except (ValueError, TypeError):
+        return value
+
+
+@register.filter
+def mul(value, arg):
+    """Multiply. Usage: {{ qty|mul:unit_cost }}"""
+    try:
+        return float(value) * float(arg)
+    except (ValueError, TypeError):
+        return 0
+
+
+@register.filter
 def dictfirst(dictionary, keys_str):
     """
     Return the first non-empty value from a dict for any of the comma-separated keys.
