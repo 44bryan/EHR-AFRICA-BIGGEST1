@@ -1,0 +1,183 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}REQ-{{ req.req_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-clipboard-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">REQ-{{ req.req_number }}</h5>
+      <div class="text-muted small">{{ req.department }} — {{ req.created_at|date:"d M Y H:i" }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'inventory:requisition_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    {% if req.status == 'PENDING' %}
+    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approveModal">
+      <i class="bi bi-check-lg me-1"></i>Approve / Reject
+    </button>
+    {% endif %}
+    {% if req.status == 'APPROVED' or req.status == 'PARTIAL' %}
+    <a href="{% url 'inventory:requisition_issue' req.id %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-box-arrow-up me-1"></i>Issue Items
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if messages %}
+  {% for m in messages %}
+  <div class="alert alert-{{ m.tags|default:'info' }} alert-dismissible fade show border-0 shadow-sm mb-3">
+    {{ m }} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+{% endif %}
+
+<!-- Header info -->
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-sm-4">Department</dt>
+          <dd class="col-sm-8">{{ req.department }}</dd>
+          <dt class="col-sm-4">Requested By</dt>
+          <dd class="col-sm-8">{{ req.requested_by.get_full_name }}</dd>
+          <dt class="col-sm-4">Priority</dt>
+          <dd class="col-sm-8">
+            {% if req.priority == 'EMERGENCY' %}<span class="badge bg-danger">Emergency</span>
+            {% elif req.priority == 'URGENT' %}<span class="badge bg-warning text-dark">Urgent</span>
+            {% else %}<span class="badge bg-secondary">Routine</span>{% endif %}
+          </dd>
+          <dt class="col-sm-4">Needed By</dt>
+          <dd class="col-sm-8">{{ req.needed_by|date:"d M Y"|default:"Not specified" }}</dd>
+          {% if req.notes %}
+          <dt class="col-sm-4">Notes</dt>
+          <dd class="col-sm-8">{{ req.notes }}</dd>
+          {% endif %}
+          {% if req.rejected_reason %}
+          <dt class="col-sm-4 text-danger">Rejection Reason</dt>
+          <dd class="col-sm-8 text-danger">{{ req.rejected_reason }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-4">
+        <div class="h4 fw-bold mb-1">
+          {% if req.status == 'PENDING' %}<span class="text-warning">Pending</span>
+          {% elif req.status == 'APPROVED' %}<span class="text-info">Approved</span>
+          {% elif req.status == 'ISSUED' %}<span class="text-success">Fully Issued</span>
+          {% elif req.status == 'PARTIAL' %}<span class="text-primary">Partially Issued</span>
+          {% elif req.status == 'REJECTED' %}<span class="text-danger">Rejected</span>
+          {% endif %}
+        </div>
+        <div class="text-muted small">Status</div>
+        {% if req.approved_by %}
+        <div class="mt-3 text-muted small">
+          {% if req.status == 'REJECTED' %}Rejected{% else %}Approved{% endif %}
+          by {{ req.approved_by.get_full_name }}
+        </div>
+        {% endif %}
+        {% if req.issued_at %}
+        <div class="text-muted small">Issued {{ req.issued_at|date:"d M H:i" }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Items table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom fw-semibold">
+    <i class="bi bi-boxes me-2 text-primary"></i>Requested Items
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Code</th>
+            <th>Item</th>
+            <th>Unit</th>
+            <th>Requested</th>
+            <th>Issued</th>
+            <th>Balance</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ri in req_items %}
+          <tr>
+            <td><code>{{ ri.item.item_code }}</code></td>
+            <td class="fw-semibold">{{ ri.item.name }}</td>
+            <td class="text-muted">{{ ri.item.unit }}</td>
+            <td>{{ ri.quantity_requested }}</td>
+            <td>
+              <span class="fw-semibold {% if ri.quantity_issued == ri.quantity_requested %}text-success{% elif ri.quantity_issued > 0 %}text-warning{% endif %}">
+                {{ ri.quantity_issued }}
+              </span>
+            </td>
+            <td>
+              {% with bal=ri.quantity_requested|add:"-"|add:ri.quantity_issued %}
+              <span class="{% if ri.quantity_issued >= ri.quantity_requested %}text-success{% endif %}">
+                {{ ri.quantity_requested|add:"-0" }}
+                {% comment %}balance is requested - issued{% endcomment %}
+              </span>
+              {% endwith %}
+              {% if ri.quantity_issued < ri.quantity_requested %}
+                <span class="text-danger">{{ ri.quantity_requested }} − {{ ri.quantity_issued }}</span>
+              {% else %}
+                <span class="text-success">Done</span>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ ri.notes|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Approve/Reject Modal -->
+{% if req.status == 'PENDING' %}
+<div class="modal fade" id="approveModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header">
+        <h5 class="modal-title">Approve or Reject REQ-{{ req.req_number }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{% url 'inventory:requisition_approve' req.id %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Rejection Reason (if rejecting)</label>
+            <textarea name="reason" class="form-control" rows="2"
+                      placeholder="Required only when rejecting…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer gap-2">
+          <button type="submit" name="action" value="approve" class="btn btn-success">
+            <i class="bi bi-check-lg me-1"></i>Approve
+          </button>
+          <button type="submit" name="action" value="reject" class="btn btn-danger">
+            <i class="bi bi-x-lg me-1"></i>Reject
+          </button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

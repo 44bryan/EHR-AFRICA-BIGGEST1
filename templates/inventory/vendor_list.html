@@ -1,6 +1,101 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Vendors{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-truck text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Vendor Management</h5>
+      <div class="text-muted small">ISO 9001 §8.4 Supplier Performance Scoring</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:vendor_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Add Vendor
+  </a>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4"><h1 class="h3 mb-0">Vendors</h1></div>
-<div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>Status</th></tr></thead><tbody>{% for v in vendors %}<tr><td class="fw-semibold">{{ v.name }}</td><td>{{ v.contact_person|default:"-" }}</td><td>{{ v.phone|default:"-" }}</td><td>{{ v.email|default:"-" }}</td><td>{% if v.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">No vendors added yet</td></tr>{% endfor %}</tbody></table></div></div></div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Vendor Name</th>
+            <th>Contact</th>
+            <th>Phone / Email</th>
+            <th class="text-center">Total POs</th>
+            <th class="text-center">On-Time %</th>
+            <th class="text-center">Quality Incidents</th>
+            <th class="text-center">Rating</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in vendors %}
+          <tr>
+            <td class="fw-semibold">{{ v.name }}</td>
+            <td>{{ v.contact_person|default:"—" }}</td>
+            <td>
+              {% if v.phone %}{{ v.phone }}{% endif %}
+              {% if v.email %}<br><small class="text-muted">{{ v.email }}</small>{% endif %}
+              {% if not v.phone and not v.email %}—{% endif %}
+            </td>
+            <td class="text-center">{{ v.total_orders }}</td>
+            <td class="text-center">
+              {% if v.on_time_rate is not None %}
+                <span class="fw-semibold {% if v.on_time_rate >= 95 %}text-success{% elif v.on_time_rate >= 85 %}text-info{% elif v.on_time_rate >= 70 %}text-warning{% else %}text-danger{% endif %}">
+                  {{ v.on_time_rate }}%
+                </span>
+              {% else %}
+                <span class="text-muted">N/A</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="{% if v.quality_incidents > 0 %}text-danger fw-bold{% else %}text-muted{% endif %}">
+                {{ v.quality_incidents }}
+              </span>
+            </td>
+            <td class="text-center">
+              <span class="badge bg-{{ v.performance_color }}">{{ v.performance_rating }}</span>
+            </td>
+            <td>
+              {% if v.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'inventory:vendor_edit' v.id %}" class="btn btn-sm btn-outline-secondary py-0">
+                Edit
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-5">
+              <i class="bi bi-truck fs-3 d-block mb-2"></i>
+              No vendors added yet.
+              <a href="{% url 'inventory:vendor_create' %}" class="d-block mt-1">Add your first vendor →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-secondary border-0 mt-3 small">
+  <strong>Performance Rating:</strong>
+  <span class="badge bg-success ms-1">Excellent ≥ 95%</span>
+  <span class="badge bg-info ms-1">Good ≥ 85%</span>
+  <span class="badge bg-warning text-dark ms-1">Fair ≥ 70%</span>
+  <span class="badge bg-danger ms-1">Poor &lt; 70%</span>
+  — Based on on-time delivery rate across all received purchase orders.
+</div>
 {% endblock %}

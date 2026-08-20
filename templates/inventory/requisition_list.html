@@ -1,0 +1,102 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Department Requisitions{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-clipboard-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Department Requisitions</h5>
+      <div class="text-muted small">Ward and department stock requests</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:requisition_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Requisition
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Status filter tabs -->
+<ul class="nav nav-pills mb-3 gap-1">
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if not status_filter %}active{% endif %}"
+       href="{% url 'inventory:requisition_list' %}">All</a>
+  </li>
+  {% for val, label in statuses %}
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == val %}active{% endif %}"
+       href="?status={{ val }}">{{ label }}</a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>REQ #</th>
+            <th>Department</th>
+            <th>Priority</th>
+            <th>Items</th>
+            <th>Requested By</th>
+            <th>Needed By</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in reqs %}
+          <tr>
+            <td><strong>REQ-{{ req.req_number }}</strong></td>
+            <td>{{ req.department }}</td>
+            <td>
+              {% if req.priority == 'EMERGENCY' %}
+                <span class="badge bg-danger">Emergency</span>
+              {% elif req.priority == 'URGENT' %}
+                <span class="badge bg-warning text-dark">Urgent</span>
+              {% else %}
+                <span class="badge bg-secondary">Routine</span>
+              {% endif %}
+            </td>
+            <td>{{ req.items.count }} item{{ req.items.count|pluralize }}</td>
+            <td>{{ req.requested_by.get_full_name }}</td>
+            <td>{{ req.needed_by|date:"d M Y"|default:"—" }}</td>
+            <td>
+              {% if req.status == 'PENDING' %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% elif req.status == 'APPROVED' %}
+                <span class="badge bg-info">Approved</span>
+              {% elif req.status == 'ISSUED' %}
+                <span class="badge bg-success">Issued</span>
+              {% elif req.status == 'PARTIAL' %}
+                <span class="badge bg-primary">Partial</span>
+              {% elif req.status == 'REJECTED' %}
+                <span class="badge bg-danger">Rejected</span>
+              {% endif %}
+            </td>
+            <td>{{ req.created_at|date:"d M" }}</td>
+            <td>
+              <a href="{% url 'inventory:requisition_detail' req.id %}" class="btn btn-sm btn-outline-primary py-0">
+                View
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-5">
+              <i class="bi bi-clipboard-x fs-3 d-block mb-2"></i>
+              No requisitions found.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

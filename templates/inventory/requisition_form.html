@@ -1,0 +1,120 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Requisition{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-clipboard-plus text-primary fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">New Department Requisition</h5>
+    <div class="text-muted small">Request items from central store</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" id="req-form">
+  {% csrf_token %}
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <label class="form-label fw-semibold">Department <span class="text-danger">*</span></label>
+      <select name="department" class="form-select" required>
+        <option value="">Select department…</option>
+        {% for dept in departments %}
+        <option value="{{ dept }}">{{ dept }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label fw-semibold">Priority</label>
+      <select name="priority" class="form-select">
+        <option value="ROUTINE">Routine</option>
+        <option value="URGENT">Urgent</option>
+        <option value="EMERGENCY">Emergency</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-semibold">Needed By</label>
+      <input type="date" name="needed_by" class="form-control" min="{{ today|date:'Y-m-d' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-semibold">Notes</label>
+      <input type="text" name="notes" class="form-control" placeholder="Optional notes">
+    </div>
+  </div>
+
+  <!-- Items section -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+      <span class="fw-semibold"><i class="bi bi-boxes me-2"></i>Requested Items</span>
+      <button type="button" class="btn btn-primary btn-sm" onclick="addLine()">
+        <i class="bi bi-plus-lg me-1"></i>Add Item
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-hover align-middle mb-0 small" id="lines-table">
+        <thead class="table-light">
+          <tr>
+            <th style="width:45%">Item</th>
+            <th style="width:20%">Qty</th>
+            <th style="width:25%">Note</th>
+            <th style="width:10%"></th>
+          </tr>
+        </thead>
+        <tbody id="lines-body">
+          <!-- rows added by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-send me-1"></i>Submit Requisition
+    </button>
+    <a href="{% url 'inventory:requisition_list' %}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
+
+<script>
+const ITEMS = [
+  {% for item in items %}
+  {id:"{{ item.id }}", code:"{{ item.item_code }}", name:"{{ item.name }}", unit:"{{ item.unit }}", stock:{{ item.current_stock }}},
+  {% endfor %}
+];
+
+function buildItemOptions(selectedId) {
+  let opts = '<option value="">Select item…</option>';
+  ITEMS.forEach(i => {
+    const sel = i.id === selectedId ? 'selected' : '';
+    const avail = i.stock > 0 ? `(${i.stock} ${i.unit})` : '<span class="text-danger">(Out)</span>';
+    opts += `<option value="${i.id}" ${sel}>${i.code} — ${i.name} ${i.stock > 0 ? '(' + i.stock + ' ' + i.unit + ')' : '(Out)'}</option>`;
+  });
+  return opts;
+}
+
+function addLine() {
+  const tbody = document.getElementById('lines-body');
+  const idx   = tbody.rows.length;
+  const tr    = document.createElement('tr');
+  tr.innerHTML = `
+    <td><select name="item_id[]" class="form-select form-select-sm" required>${buildItemOptions('')}</select></td>
+    <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" value="1" required></td>
+    <td><input type="text" name="item_note[]" class="form-control form-control-sm" placeholder="Optional note"></td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove()">
+      <i class="bi bi-trash"></i></button></td>`;
+  tbody.appendChild(tr);
+}
+
+// Add one blank line on load
+addLine();
+
+document.getElementById('req-form').addEventListener('submit', function(e) {
+  const rows = document.querySelectorAll('#lines-body tr');
+  if (rows.length === 0) {
+    e.preventDefault();
+    alert('Please add at least one item to the requisition.');
+  }
+});
+</script>
+{% endblock %}

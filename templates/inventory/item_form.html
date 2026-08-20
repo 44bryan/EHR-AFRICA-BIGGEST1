@@ -8,11 +8,13 @@
 </div>
 
 <div class="row justify-content-center">
-  <div class="col-lg-6">
+  <div class="col-lg-7">
     <div class="card border-0 shadow-sm">
       <div class="card-body">
         <form method="post">
           {% csrf_token %}
+
+          <!-- Basic info -->
           <div class="mb-3">
             <label class="form-label fw-semibold">Item Name <span class="text-danger">*</span></label>
             <input type="text" name="name" class="form-control" required value="{{ item.name|default:'' }}" />
@@ -36,7 +38,8 @@
             </div>
             <div class="col-sm-6">
               <label class="form-label fw-semibold">Unit</label>
-              <input type="text" name="unit" class="form-control" value="{{ item.unit|default:'unit' }}" placeholder="e.g. box, piece, kg" />
+              <input type="text" name="unit" class="form-control" value="{{ item.unit|default:'unit' }}"
+                     placeholder="e.g. box, piece, ml" />
             </div>
           </div>
           <div class="row g-3 mb-3">
@@ -66,6 +69,63 @@
             <label class="form-label fw-semibold">Description</label>
             <textarea name="description" class="form-control" rows="2">{{ item.description|default:'' }}</textarea>
           </div>
+
+          <!-- International standard fields -->
+          <hr class="my-3">
+          <div class="text-muted small fw-semibold mb-2"><i class="bi bi-shield-check me-1"></i>International Standard Controls (JCI / ISO 9001)</div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Preferred Vendor (Auto-reorder)</label>
+              <select name="preferred_vendor" class="form-select">
+                <option value="">None</option>
+                {% for vendor in vendors %}
+                <option value="{{ vendor.id }}" {% if item.preferred_vendor_id == vendor.id %}selected{% endif %}>
+                  {{ vendor.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Storage Conditions</label>
+              <input type="text" name="storage_conditions" class="form-control"
+                     value="{{ item.storage_conditions|default:'' }}"
+                     placeholder="e.g. Refrigerate 2–8 °C, Room temp" />
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">UDI Code</label>
+            <input type="text" name="udi_code" class="form-control"
+                   value="{{ item.udi_code|default:'' }}"
+                   placeholder="Unique Device Identifier (implants / reusable devices)" />
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <div class="form-check">
+                <input type="checkbox" name="requires_expiry_tracking" class="form-check-input" id="chk_expiry"
+                       {% if item.requires_expiry_tracking %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="chk_expiry">
+                  Track Lot / Batch &amp; Expiry Date
+                </label>
+                <div class="text-muted" style="font-size:0.78rem;">
+                  Enables FEFO dispensing. Required for medicines, reagents, implants.
+                </div>
+              </div>
+            </div>
+            <div class="col-sm-6">
+              <div class="form-check">
+                <input type="checkbox" name="is_consignment" class="form-check-input" id="chk_cons"
+                       {% if item.is_consignment %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="chk_cons">
+                  Consignment Stock
+                </label>
+                <div class="text-muted" style="font-size:0.78rem;">
+                  Not invoiced until used (e.g. ophthalmic lenses, prosthetics).
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="d-flex justify-content-end gap-2">
             <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary">Cancel</a>
             <button type="submit" class="btn btn-primary">

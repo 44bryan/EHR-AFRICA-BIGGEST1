@@ -7,13 +7,17 @@
     <i class="bi bi-boxes text-primary fs-4"></i>
     <div>
       <h5 class="mb-0 fw-bold">Inventory Management</h5>
-      <div class="text-muted small">Stock control, purchase orders & vendors</div>
+      <div class="text-muted small">Stock control · Purchase orders · Vendors · Requisitions</div>
     </div>
   </div>
-  <div class="d-flex gap-2">
-    <a href="{% url 'inventory:item_list' %}" class="btn btn-primary btn-sm"><i class="bi bi-list-ul me-1"></i>All Items</a>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'inventory:item_list' %}" class="btn btn-primary btn-sm"><i class="bi bi-list-ul me-1"></i>Items</a>
+    <a href="{% url 'inventory:requisition_list' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-clipboard-check me-1"></i>Requisitions
+      {% if pending_reqs > 0 %}<span class="badge bg-danger ms-1">{{ pending_reqs }}</span>{% endif %}
+    </a>
     <a href="{% url 'inventory:vendor_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-truck me-1"></i>Vendors</a>
-    <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-text me-1"></i>Purchase Orders</a>
+    <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-text me-1"></i>POs</a>
   </div>
 </div>
 {% endblock %}
@@ -22,95 +26,142 @@
 
 <!-- KPI Cards -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg-2">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="h2 fw-bold text-primary mb-0">{{ total_items }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-boxes me-1"></i>Total Item Types</div>
+      <div class="text-muted small mt-1"><i class="bi bi-boxes me-1"></i>Item Types</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg-2">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="h2 fw-bold {% if low_stock_count > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ low_stock_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Low / Out of Stock</div>
+      <div class="text-muted small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Low Stock</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold {% if expired_count > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ expired_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-calendar-x me-1"></i>Expired Batches</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h2 fw-bold {% if expiring_count > 0 %}text-warning{% else %}text-success{% endif %} mb-0">{{ expiring_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-clock-history me-1"></i>Expiring ≤ 90 days</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
     <div class="card border-0 shadow-sm text-center py-3">
       <div class="h2 fw-bold text-warning mb-0">{{ pending_pos }}</div>
       <div class="text-muted small mt-1"><i class="bi bi-file-earmark-text me-1"></i>Pending POs</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg-2">
     <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-info mb-0">{{ vendors_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-building me-1"></i>Active Vendors</div>
+      <div class="h2 fw-bold {% if pending_reqs > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ pending_reqs }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-clipboard-check me-1"></i>Pending Reqs</div>
     </div>
   </div>
 </div>
 
+<!-- Alerts row -->
 {% if low_stock_count > 0 %}
 <div class="alert alert-danger border-0 d-flex align-items-center gap-2 mb-3">
   <i class="bi bi-exclamation-triangle-fill"></i>
   <strong>{{ low_stock_count }} item{{ low_stock_count|pluralize }} below reorder level.</strong>
-  <a href="{% url 'inventory:item_list' %}" class="ms-2 alert-link">View all items →</a>
+  <a href="{% url 'inventory:item_list' %}" class="ms-2 alert-link">View all →</a>
 </div>
 {% endif %}
 
-<!-- Low Stock Items -->
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
-    <span class="fw-semibold"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Low Stock Alerts</span>
-    <a href="{% url 'inventory:item_list' %}" class="btn btn-sm btn-outline-secondary">All Items</a>
-  </div>
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0 small">
-        <thead class="table-light">
-          <tr>
-            <th>Code</th>
-            <th>Item Name</th>
-            <th>Category</th>
-            <th>Current Stock</th>
-            <th>Reorder Level</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in low_stock_items %}
-          <tr>
-            <td><code class="small">{{ item.item_code }}</code></td>
-            <td class="fw-semibold">{{ item.name }}</td>
-            <td><span class="badge bg-light text-dark border">{{ item.get_category_display }}</span></td>
-            <td>
-              <span class="badge {% if item.current_stock == 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">
-                {{ item.current_stock }}
-              </span>
-            </td>
-            <td class="text-muted">{{ item.reorder_level }}</td>
-            <td>
-              {% if item.current_stock == 0 %}
-                <span class="badge bg-danger">Out of Stock</span>
-              {% else %}
-                <span class="badge bg-warning text-dark">Low Stock</span>
-              {% endif %}
-            </td>
-            <td>
-              <a href="{% url 'inventory:item_detail' item.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
-            </td>
-          </tr>
-          {% empty %}
-          <tr>
-            <td colspan="7" class="text-center text-muted py-5">
-              <i class="bi bi-check-circle-fill text-success fs-3 d-block mb-2"></i>
-              All stock levels are adequate — no alerts.
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+{% if expired_count > 0 %}
+<div class="alert alert-danger border-0 d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-calendar-x-fill"></i>
+  <strong>{{ expired_count }} expired batch{{ expired_count|pluralize:"es" }} still have remaining stock.</strong>
+  Locate and write off immediately.
+</div>
+{% endif %}
+
+{% if pending_reqs > 0 %}
+<div class="alert alert-warning border-0 d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-clipboard-check"></i>
+  <strong>{{ pending_reqs }} requisition{{ pending_reqs|pluralize }} awaiting approval.</strong>
+  <a href="{% url 'inventory:requisition_list' %}?status=PENDING" class="ms-2 alert-link">Review now →</a>
+</div>
+{% endif %}
+
+<div class="row g-3">
+
+  <!-- Low Stock -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+        <span class="fw-semibold"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Low Stock Alerts</span>
+        <a href="{% url 'inventory:item_list' %}" class="btn btn-sm btn-outline-secondary">All Items</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr><th>Item</th><th>Stock</th><th>Reorder</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for item in low_stock_items %}
+              <tr>
+                <td class="fw-semibold">{{ item.name }}</td>
+                <td>
+                  <span class="badge {% if item.current_stock == 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                    {{ item.current_stock }}
+                  </span>
+                </td>
+                <td class="text-muted">{{ item.reorder_level }}</td>
+                <td>
+                  <a href="{% url 'inventory:item_detail' item.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-4">
+                <i class="bi bi-check-circle-fill text-success me-1"></i>All levels adequate
+              </td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
-</div>
 
+  <!-- Expiring Soon -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom fw-semibold">
+        <i class="bi bi-clock-history me-2 text-warning"></i>Expiring Soon (≤ 90 days)
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr><th>Item</th><th>Lot</th><th>Expiry</th><th>Qty</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% for batch in expiring_soon %}
+              <tr>
+                <td class="fw-semibold">{{ batch.item.name }}</td>
+                <td><code>{{ batch.lot_number }}</code></td>
+                <td>{{ batch.expiry_date|date:"d M Y" }}</td>
+                <td>{{ batch.quantity_remaining }}</td>
+                <td><span class="badge bg-{{ batch.expiry_badge_color }}">{{ batch.expiry_status }}</span></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-4">
+                <i class="bi bi-check-circle-fill text-success me-1"></i>No expiry alerts
+              </td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
 {% endblock %}

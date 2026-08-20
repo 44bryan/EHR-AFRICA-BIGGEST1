@@ -1,9 +1,174 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}{{ item.name }}{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">{{ item.name }}</h1>
-  <a href="{% url 'inventory:stock_adjustment' item.id %}" class="btn btn-primary">Adjust Stock</a>
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-box-seam text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ item.name }}</h5>
+      <div class="text-muted small">{{ item.item_code }} · {{ item.get_category_display }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'inventory:stock_adjustment' item.id %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>Adjust Stock
+    </a>
+    <a href="{% url 'inventory:item_edit' item.id %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    {% if item.requires_expiry_tracking %}
+    <a href="{% url 'inventory:item_batches' item.id %}" class="btn btn-outline-info btn-sm">
+      <i class="bi bi-layers me-1"></i>Batches / FEFO
+    </a>
+    {% endif %}
+  </div>
 </div>
-<div class="row g-3"><div class="col-md-4"><div class="card border-0 shadow-sm"><div class="card-body"><dl class="mb-0"><dt>Item Code</dt><dd>{{ item.item_code }}</dd><dt>Category</dt><dd>{{ item.get_category_display }}</dd><dt>Unit</dt><dd>{{ item.unit }}</dd><dt>Current Stock</dt><dd><span class="badge {% if item.needs_reorder %}bg-danger{% else %}bg-success{% endif %} fs-6">{{ item.current_stock }}</span></dd><dt>Reorder Level</dt><dd>{{ item.reorder_level }}</dd><dt>Unit Cost</dt><dd>&#8358;{{ item.unit_cost }}</dd><dt>Location</dt><dd>{{ item.location|default:"-" }}</dd></dl></div></div></div><div class="col-md-8"><div class="card border-0 shadow-sm"><div class="card-header bg-white"><h6 class="mb-0 fw-semibold">Stock Movements</h6></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0 small"><thead class="table-light"><tr><th>Type</th><th>Qty</th><th>Balance</th><th>Notes</th><th>By</th><th>Date</th></tr></thead><tbody>{% for m in movements %}<tr><td><span class="badge {% if m.movement_type == 'IN' %}bg-success{% elif m.movement_type == 'OUT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ m.movement_type }}</span></td><td>{{ m.quantity }}</td><td>{{ m.balance_after }}</td><td>{{ m.notes|default:"-" }}</td><td>{{ m.performed_by.get_full_name|default:"-" }}</td><td>{{ m.created_at|date:"d M H:i" }}</td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-3">No movements</td></tr>{% endfor %}</tbody></table></div></div></div></div></div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Item info cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom fw-semibold small">Item Details</div>
+      <div class="card-body">
+        <dl class="mb-0 small">
+          <dt>Item Code</dt><dd><code>{{ item.item_code }}</code></dd>
+          <dt>Category</dt><dd>{{ item.get_category_display }}</dd>
+          <dt>Unit</dt><dd>{{ item.unit }}</dd>
+          <dt>Current Stock</dt>
+          <dd>
+            <span class="badge fs-6 {% if item.needs_reorder %}bg-danger{% else %}bg-success{% endif %}">
+              {{ item.current_stock }}
+            </span>
+            {% if item.needs_reorder %}<span class="badge bg-warning text-dark ms-1">Below Reorder</span>{% endif %}
+          </dd>
+          <dt>Reorder Level</dt><dd>{{ item.reorder_level }}</dd>
+          <dt>Unit Cost</dt><dd>{{ item.unit_cost|floatformat:0 }} FCFA</dd>
+          <dt>Location</dt><dd>{{ item.location|default:"—" }}</dd>
+          {% if item.storage_conditions %}
+          <dt>Storage</dt><dd>{{ item.storage_conditions }}</dd>
+          {% endif %}
+          {% if item.udi_code %}
+          <dt>UDI Code</dt><dd><code>{{ item.udi_code }}</code></dd>
+          {% endif %}
+        </dl>
+        <div class="mt-2 d-flex gap-1 flex-wrap">
+          {% if item.requires_expiry_tracking %}
+          <span class="badge bg-info"><i class="bi bi-layers me-1"></i>Expiry Tracked</span>
+          {% endif %}
+          {% if item.is_consignment %}
+          <span class="badge bg-secondary"><i class="bi bi-recycle me-1"></i>Consignment</span>
+          {% endif %}
+        </div>
+        {% if item.preferred_vendor %}
+        <div class="mt-2 text-muted small">
+          <i class="bi bi-truck me-1"></i>Preferred vendor: <strong>{{ item.preferred_vendor.name }}</strong>
+          <span class="text-success ms-1">(auto-reorder)</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if item.requires_expiry_tracking and batches %}
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-layers me-2 text-info"></i>Active Batches (FEFO order)</span>
+        <a href="{% url 'inventory:item_batches' item.id %}" class="btn btn-sm btn-outline-info py-0">Manage</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr><th>Lot</th><th>Expiry</th><th>Days Left</th><th>Remaining</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% for batch in batches %}
+              <tr class="{% if batch.is_expired or batch.expiry_status == 'CRITICAL' %}table-danger{% elif batch.expiry_status == 'WARNING' %}table-warning{% endif %}">
+                <td><code>{{ batch.lot_number }}</code>{% if batch.is_quarantined %} <span class="badge bg-warning text-dark">Quarantined</span>{% endif %}</td>
+                <td>{{ batch.expiry_date|date:"d M Y" }}</td>
+                <td>
+                  {% if batch.days_to_expiry < 0 %}
+                    <span class="text-danger fw-bold">Expired</span>
+                  {% else %}
+                    {{ batch.days_to_expiry }} days
+                  {% endif %}
+                </td>
+                <td>{{ batch.quantity_remaining }}</td>
+                <td><span class="badge bg-{{ batch.expiry_badge_color }}">{{ batch.expiry_status }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom fw-semibold small">Stock Movements</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+              <tr><th>Type</th><th>Qty</th><th>Balance</th><th>Notes</th><th>By</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+              {% for m in movements %}
+              <tr>
+                <td><span class="badge {% if m.movement_type == 'IN' %}bg-success{% elif m.movement_type == 'ISSUE' or m.movement_type == 'OUT' %}bg-danger{% elif m.movement_type == 'EXPIRE' %}bg-dark{% else %}bg-secondary{% endif %}">{{ m.movement_type }}</span></td>
+                <td>{{ m.quantity }}</td>
+                <td>{{ m.balance_after }}</td>
+                <td>{{ m.notes|default:"—" }}</td>
+                <td>{{ m.performed_by.get_full_name|default:"—" }}</td>
+                <td>{{ m.created_at|date:"d M H:i" }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="text-center text-muted py-3">No movements yet</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if item.requires_expiry_tracking %}
+<!-- Movement history below batches -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom fw-semibold small">Stock Movement History</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 small">
+        <thead class="table-light">
+          <tr><th>Type</th><th>Qty</th><th>Balance</th><th>Batch / Lot</th><th>Notes</th><th>By</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+          {% for m in movements %}
+          <tr>
+            <td><span class="badge {% if m.movement_type == 'IN' %}bg-success{% elif m.movement_type == 'ISSUE' or m.movement_type == 'OUT' %}bg-danger{% elif m.movement_type == 'EXPIRE' %}bg-dark{% else %}bg-secondary{% endif %}">{{ m.movement_type }}</span></td>
+            <td>{{ m.quantity }}</td>
+            <td>{{ m.balance_after }}</td>
+            <td>{% if m.batch %}<code>{{ m.batch.lot_number }}</code>{% else %}—{% endif %}</td>
+            <td>{{ m.notes|default:"—" }}</td>
+            <td>{{ m.performed_by.get_full_name|default:"—" }}</td>
+            <td>{{ m.created_at|date:"d M H:i" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-3">No movements yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

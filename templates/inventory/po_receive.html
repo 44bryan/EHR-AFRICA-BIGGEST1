@@ -1,51 +1,113 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize %}
 {% block title %}Receive Goods — PO {{ po.po_number }}{% endblock %}
 
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <div>
-    <h1 class="h3 mb-0"><i class="bi bi-box-arrow-in-down me-2 text-success"></i>Receive Goods</h1>
-    <small class="text-muted">PO {{ po.po_number }} · {{ po.vendor.name }}</small>
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-box-arrow-in-down text-success fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Receive Goods</h5>
+      <div class="text-muted small">PO {{ po.po_number }} · {{ po.vendor.name }}</div>
+    </div>
   </div>
   <a href="{% url 'inventory:po_detail' po.id %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
 </div>
+{% endblock %}
 
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white">
-    <div class="small text-muted">Enter actual quantities received for each item. Leave 0 if not received.</div>
+{% block content %}
+
+<div class="alert alert-info border-0 shadow-sm mb-3 small">
+  <i class="bi bi-info-circle me-1"></i>
+  Enter quantities received. For items with <strong>Expiry Tracking</strong> enabled, enter the
+  lot number and expiry date — this creates a batch record for FEFO dispensing.
+</div>
+
+<form method="post">
+  {% csrf_token %}
+
+  <!-- Vendor delivery scoring -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+      <div class="form-check form-check-inline">
+        <input type="radio" name="on_time_delivery" value="1" class="form-check-input" id="ot_yes" checked>
+        <label class="form-check-label" for="ot_yes">
+          <i class="bi bi-check-circle text-success me-1"></i>On-time delivery
+        </label>
+      </div>
+      <div class="form-check form-check-inline">
+        <input type="radio" name="on_time_delivery" value="0" class="form-check-input" id="ot_no">
+        <label class="form-check-label" for="ot_no">
+          <i class="bi bi-clock text-danger me-1"></i>Late delivery
+        </label>
+      </div>
+      <small class="text-muted ms-3">This updates the vendor's performance score (ISO 9001 §8.4).</small>
+    </div>
   </div>
-  <form method="post">
-    {% csrf_token %}
-    <div class="table-responsive">
-      <table class="table mb-0" style="font-size:0.875rem;">
-        <thead class="table-light">
-          <tr>
-            <th>Item</th>
-            <th class="text-end">Ordered</th>
-            <th class="text-end">Current Stock</th>
-            <th style="width:150px;">Qty Received</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for line in po_items %}
-          <tr>
-            <td>
-              <div class="fw-semibold">{{ line.item.name }}</div>
-              <small class="text-muted">{{ line.item.item_code }}</small>
-            </td>
-            <td class="text-end">{{ line.quantity_ordered }} {{ line.item.unit }}</td>
-            <td class="text-end text-muted">{{ line.item.current_stock }}</td>
-            <td>
-              <input type="number" name="received_{{ line.id }}"
-                     class="form-control form-control-sm"
-                     min="0" max="{{ line.quantity_ordered }}"
-                     value="{{ line.quantity_ordered }}" />
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table mb-0 small align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Item</th>
+              <th class="text-end">Ordered</th>
+              <th class="text-end">Stock Now</th>
+              <th>Qty Received</th>
+              <th>Lot Number</th>
+              <th>Mfg Date</th>
+              <th>Expiry Date</th>
+              <th>Batch?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in po_items %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ line.item.name }}</div>
+                <small class="text-muted">{{ line.item.item_code }}</small>
+              </td>
+              <td class="text-end">{{ line.quantity_ordered }} {{ line.item.unit }}</td>
+              <td class="text-end text-muted">{{ line.item.current_stock }}</td>
+              <td>
+                <input type="number" name="received_{{ line.id }}"
+                       class="form-control form-control-sm"
+                       style="width:100px;"
+                       min="0" max="{{ line.quantity_ordered }}"
+                       value="{{ line.quantity_ordered }}" />
+              </td>
+              <td>
+                <input type="text" name="lot_{{ line.id }}"
+                       class="form-control form-control-sm"
+                       style="width:130px;"
+                       placeholder="e.g. L2026-001"
+                       value="{{ line.lot_number|default:'' }}">
+              </td>
+              <td>
+                <input type="date" name="mfg_{{ line.id }}"
+                       class="form-control form-control-sm"
+                       style="width:140px;"
+                       value="{{ line.manufactured_date|date:'Y-m-d'|default:'' }}">
+              </td>
+              <td>
+                <input type="date" name="expiry_{{ line.id }}"
+                       class="form-control form-control-sm"
+                       style="width:140px;"
+                       value="{{ line.expiry_date|date:'Y-m-d'|default:'' }}"
+                       {% if line.item.requires_expiry_tracking %}required{% endif %}>
+              </td>
+              <td class="text-center">
+                {% if line.item.requires_expiry_tracking %}
+                <span class="badge bg-info" title="Batch record will be created"><i class="bi bi-layers"></i></span>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
     <div class="card-footer bg-white d-flex justify-content-end gap-2">
       <a href="{% url 'inventory:po_detail' po.id %}" class="btn btn-outline-secondary">Cancel</a>
@@ -53,6 +115,6 @@
         <i class="bi bi-check-circle me-1"></i>Confirm Receipt &amp; Update Stock
       </button>
     </div>
-  </form>
-</div>
+  </div>
+</form>
 {% endblock %}

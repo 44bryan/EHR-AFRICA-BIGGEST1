@@ -1,0 +1,91 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Issue Items — REQ-{{ req.req_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center gap-2">
+  <i class="bi bi-box-arrow-up text-primary fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">Issue Items — REQ-{{ req.req_number }}</h5>
+    <div class="text-muted small">{{ req.department }} | FEFO dispensing</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-info border-0 shadow-sm mb-3 small">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>FEFO:</strong> For expiry-tracked items the system automatically dispenses
+  from the batch expiring soonest first. Enter the quantity to issue for each item.
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Item</th>
+              <th>Requested</th>
+              <th>Already Issued</th>
+              <th>Available Stock</th>
+              <th>Qty to Issue Now</th>
+              <th>Expiry Tracking</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ri in req_items %}
+            {% with remaining=ri.quantity_requested|add:"-0" %}
+            <tr>
+              <td>
+                <strong>{{ ri.item.name }}</strong>
+                <div class="text-muted" style="font-size:0.75rem;">{{ ri.item.item_code }}</div>
+              </td>
+              <td>{{ ri.quantity_requested }}</td>
+              <td>{{ ri.quantity_issued }}</td>
+              <td>
+                <span class="{% if ri.item.current_stock == 0 %}text-danger fw-bold{% endif %}">
+                  {{ ri.item.current_stock }} {{ ri.item.unit }}
+                </span>
+              </td>
+              <td>
+                {% if ri.quantity_issued < ri.quantity_requested %}
+                <input type="number" name="issue_{{ ri.id }}"
+                       class="form-control form-control-sm"
+                       style="width:100px;"
+                       min="0"
+                       max="{{ ri.item.current_stock }}"
+                       value="{{ ri.quantity_requested|add:"-0" }}"
+                       placeholder="0">
+                {% else %}
+                <span class="badge bg-success">Complete</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if ri.item.requires_expiry_tracking %}
+                <span class="badge bg-info"><i class="bi bi-layers me-1"></i>FEFO Active</span>
+                <a href="{% url 'inventory:item_batches' ri.item.id %}" class="ms-1 small text-muted">
+                  View batches
+                </a>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-box-arrow-up me-1"></i>Confirm Issue
+    </button>
+    <a href="{% url 'inventory:requisition_detail' req.id %}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
+{% endblock %}

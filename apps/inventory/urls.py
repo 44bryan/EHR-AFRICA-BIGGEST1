@@ -12,6 +12,7 @@ urlpatterns = [
     path('items/<uuid:item_id>/', views.item_detail, name='item_detail'),
     path('items/<uuid:item_id>/edit/', views.item_edit, name='item_edit'),
     path('items/<uuid:item_id>/adjust/', views.stock_adjustment, name='stock_adjustment'),
+    path('items/<uuid:item_id>/batches/', views.item_batches, name='item_batches'),
 
     # Vendors
     path('vendors/', views.vendor_list, name='vendor_list'),
@@ -23,4 +24,11 @@ urlpatterns = [
     path('purchase-orders/create/', views.po_create, name='po_create'),
     path('purchase-orders/<uuid:po_id>/', views.po_detail, name='po_detail'),
     path('purchase-orders/<uuid:po_id>/receive/', views.po_receive, name='po_receive'),
+
+    # Department Requisitions
+    path('requisitions/', views.requisition_list, name='requisition_list'),
+    path('requisitions/create/', views.requisition_create, name='requisition_create'),
+    path('requisitions/<uuid:req_id>/', views.requisition_detail, name='requisition_detail'),
+    path('requisitions/<uuid:req_id>/approve/', views.requisition_approve, name='requisition_approve'),
+    path('requisitions/<uuid:req_id>/issue/', views.requisition_issue, name='requisition_issue'),
 ]
