@@ -216,10 +216,18 @@ def investigation_order_view(request, consultation_pk):
     else:
         form = InvestigationOrderForm()
 
+    # Group types by category for the optgroup select
+    from itertools import groupby
+    _all_types = InvestigationType.objects.filter(is_active=True).order_by('category', 'name')
+    _grouped = []
+    for cat, items in groupby(_all_types, key=lambda t: t.category):
+        label = (cat or 'Other').replace('_', ' ').title()
+        _grouped.append((label, list(items)))
+
     return render(request, 'investigations/order_form.html', {
         'form': form,
         'consultation': consultation,
-        'investigation_types': InvestigationType.objects.filter(is_active=True).order_by('category', 'name'),
+        'grouped_types': _grouped,
     })
 
 
@@ -1217,8 +1225,8 @@ def machine_revenue_csv_view(request):
 
 @login_required
 def staff_throughput_view(request):
-    """Per-staff daily throughput — how many exams each technician completed."""
-    from django.db.models import Count, Avg, Max, F, ExpressionWrapper, DurationField
+    """Per-staff daily throughput — exams per technician with ISO 15189 §5.1 quality metrics."""
+    from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
     from django.utils import timezone as _tz
     import datetime as _dt, json
 
@@ -1253,7 +1261,7 @@ def staff_throughput_view(request):
         for r in today_results if r['performed_by__id']
     ]
 
-    # ── Per-staff monthly summary ──────────────────────────────────────────────
+    # ── Per-staff quality summary ──────────────────────────────────────────────
     staff_summary_raw = (
         InvestigationResult.objects
         .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
@@ -1261,6 +1269,11 @@ def staff_throughput_view(request):
         .annotate(
             total=Count('id'),
             verified=Count('id', filter=Q(is_verified=True)),
+            abnormal=Count('id', filter=Q(is_normal=False)),
+            avg_tat=Avg(ExpressionWrapper(
+                F('result_date') - F('order__created_at'),
+                output_field=DurationField()
+            )),
         )
         .order_by('-total')
     )
@@ -1268,13 +1281,31 @@ def staff_throughput_view(request):
     for r in staff_summary_raw:
         if not r['performed_by__id']:
             continue
-        total = r['total']
-        avg_per_day = round(total / days, 1) if days else 0
+        total    = r['total']
+        verified = r['verified']
+        abnormal = r['abnormal']
+        avg_tat  = r['avg_tat']
+
+        avg_per_day   = round(total / days, 1) if days else 0
+        verified_pct  = round(verified / total * 100) if total else 0
+        abnormal_pct  = round(abnormal / total * 100) if total else 0
+
+        tat_mins = int(avg_tat.total_seconds() / 60) if avg_tat else 0
+        if tat_mins > 0:
+            tat_str = f"{tat_mins // 60}h {tat_mins % 60}m" if tat_mins >= 60 else f"{tat_mins}m"
+        else:
+            tat_str = '—'
+
         staff_summary.append({
-            'name':        f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
-            'total':       total,
-            'verified':    r['verified'],
-            'avg_per_day': avg_per_day,
+            'name':         f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'total':        total,
+            'verified':     verified,
+            'verified_pct': verified_pct,
+            'abnormal':     abnormal,
+            'abnormal_pct': abnormal_pct,
+            'avg_per_day':  avg_per_day,
+            'tat_mins':     tat_mins,
+            'tat_str':      tat_str,
         })
 
     # ── Daily totals chart (all staff combined, last N days) ──────────────────
@@ -1376,26 +1407,127 @@ def staff_throughput_csv_view(request):
         if not r.performed_by:
             continue
         name = r.performed_by.get_full_name() or r.performed_by.username
-        day  = r.result_date.date() if r.result_date else None
         if name not in staff_data:
-            staff_data[name] = {'total': 0, 'verified': 0}
+            staff_data[name] = {'total': 0, 'verified': 0, 'abnormal': 0}
         staff_data[name]['total'] += 1
         if r.is_verified:
             staff_data[name]['verified'] += 1
+        if r.is_normal is False:
+            staff_data[name]['abnormal'] += 1
 
     response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
-    response['Content-Disposition'] = f'attachment; filename="staff_throughput_{days}d_{today}.csv"'
+    response['Content-Disposition'] = f'attachment; filename="inv_staff_throughput_{days}d_{today}.csv"'
     w = csv.writer(response)
-    w.writerow([f'Staff Throughput Report — Last {days} Days'])
+    w.writerow([f'Investigation Staff Throughput — ISO 15189 §5.1 — Last {days} Days'])
     w.writerow(['Period:', f'{since.strftime("%d/%m/%Y")} to {today.strftime("%d/%m/%Y")}'])
     w.writerow(['Generated:', today.strftime('%d/%m/%Y')])
     w.writerow([])
-    w.writerow(['Technician', 'Total Exams', 'Avg / Day', 'Verified'])
+    w.writerow(['Technician', 'Total', 'Avg/Day', 'Verified', 'Ver%', 'Abnormal', 'Abn%', 'Avg TAT'])
     grand = 0
     for name, d in sorted(staff_data.items(), key=lambda x: -x[1]['total']):
         avg = round(d['total'] / days, 1)
-        w.writerow([name, d['total'], avg, d['verified']])
+        ver_pct = round(d['verified'] / d['total'] * 100) if d['total'] else 0
+        abn_pct = round(d['abnormal'] / d['total'] * 100) if d['total'] else 0
+        w.writerow([name, d['total'], avg, d['verified'], f"{ver_pct}%",
+                    d['abnormal'], f"{abn_pct}%", d.get('tat_str', '—')])
         grand += d['total']
     w.writerow([])
-    w.writerow(['TOTAL', grand, '', ''])
+    w.writerow(['TOTAL', grand, '', '', '', '', '', ''])
     return response
+
+
+# ── Staff Throughput PDF Export ───────────────────────────────────────────────
+
+@login_required
+def staff_throughput_pdf_view(request):
+    """WeasyPrint PDF of staff throughput — ISO 15189 §5.1 competence monitoring."""
+    from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
+    from django.utils import timezone as _tz
+    import datetime as _dt
+
+    u = request.user
+    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
+            or u.is_admin_director or u.is_ceo):
+        return HttpResponseForbidden()
+
+    today = _tz.localdate()
+    try:
+        days = int(request.GET.get('days', 30))
+        if days not in (7, 14, 30, 60, 90):
+            days = 30
+    except (ValueError, TypeError):
+        days = 30
+
+    since = today - _dt.timedelta(days=days - 1)
+
+    today_results = (
+        InvestigationResult.objects
+        .filter(is_deleted=False, result_date__date=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    today_board = [
+        {'name': f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+         'count': r['count']}
+        for r in today_results if r['performed_by__id']
+    ]
+
+    staff_summary_raw = (
+        InvestigationResult.objects
+        .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
+        .values('performed_by__id', 'performed_by__first_name', 'performed_by__last_name')
+        .annotate(
+            total=Count('id'),
+            verified=Count('id', filter=Q(is_verified=True)),
+            abnormal=Count('id', filter=Q(is_normal=False)),
+            avg_tat=Avg(ExpressionWrapper(
+                F('result_date') - F('order__created_at'),
+                output_field=DurationField()
+            )),
+        )
+        .order_by('-total')
+    )
+
+    staff_summary = []
+    for r in staff_summary_raw:
+        if not r['performed_by__id']:
+            continue
+        total    = r['total']
+        verified = r['verified']
+        abnormal = r['abnormal']
+        avg_tat  = r['avg_tat']
+
+        avg_per_day   = round(total / days, 1) if days else 0
+        verified_pct  = round(verified / total * 100) if total else 0
+        abnormal_pct  = round(abnormal / total * 100) if total else 0
+        tat_mins = int(avg_tat.total_seconds() / 60) if avg_tat else 0
+        tat_str = (f"{tat_mins // 60}h {tat_mins % 60}m" if tat_mins >= 60 else f"{tat_mins}m") if tat_mins > 0 else '—'
+
+        staff_summary.append({
+            'name':         f"{r['performed_by__first_name']} {r['performed_by__last_name']}".strip() or 'Unknown',
+            'total':        total,
+            'verified':     verified,
+            'verified_pct': verified_pct,
+            'abnormal':     abnormal,
+            'abnormal_pct': abnormal_pct,
+            'avg_per_day':  avg_per_day,
+            'tat_mins':     tat_mins,
+            'tat_str':      tat_str,
+        })
+
+    grand_total  = sum(s['total'] for s in staff_summary)
+    today_total  = sum(t['count'] for t in today_board)
+
+    from apps.reports.views import render_pdf
+    ctx = {
+        'today': today,
+        'since': since,
+        'days': days,
+        'today_board': today_board,
+        'today_total': today_total,
+        'staff_summary': staff_summary,
+        'grand_total': grand_total,
+        'pdf_filename': f'investigation-staff-throughput-{days}d.pdf',
+    }
+    return render_pdf('investigations/staff_throughput_pdf.html', ctx)
