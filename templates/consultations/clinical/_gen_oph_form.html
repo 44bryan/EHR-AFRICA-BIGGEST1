@@ -780,7 +780,10 @@
           <span class="text-muted fw-normal ms-1" style="text-transform:none;font-size:.75rem;">(sketch lesions, opacities, irregularities)</span>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-          <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-sm btn-warning" id="asd_draw_toggle" onclick="toggleAsdDrawMode()" title="Click to enable drawing on the anterior segment diagram">
+            <i class="bi bi-lock-fill me-1"></i>Draw Locked
+          </button>
+          <div class="btn-group btn-group-sm" role="group" id="asd_tool_group">
             <button type="button" class="btn btn-outline-secondary asd-tool active" data-tool="pen" title="Draw"><i class="bi bi-pencil"></i></button>
             <button type="button" class="btn btn-outline-secondary asd-tool" data-tool="erase" title="Erase"><i class="bi bi-eraser"></i></button>
           </div>
@@ -808,13 +811,13 @@
           <div class="text-center">
             <div class="fw-semibold small text-primary mb-1">OD (Right Eye)</div>
             <canvas id="asd_canvas_od" width="200" height="200"
-                    style="border:2px solid #dee2e6;border-radius:50%;cursor:crosshair;background:#fff;touch-action:none;"></canvas>
+                    style="border:2px solid #dee2e6;border-radius:50%;cursor:default;background:#fff;touch-action:auto;"></canvas>
           </div>
           {# ── OS Eye ── #}
           <div class="text-center">
             <div class="fw-semibold small text-success mb-1">OS (Left Eye)</div>
             <canvas id="asd_canvas_os" width="200" height="200"
-                    style="border:2px solid #dee2e6;border-radius:50%;cursor:crosshair;background:#fff;touch-action:none;"></canvas>
+                    style="border:2px solid #dee2e6;border-radius:50%;cursor:default;background:#fff;touch-action:auto;"></canvas>
           </div>
         </div>
         {# Hidden inputs to persist drawing data #}
@@ -827,6 +830,23 @@
 <script>
 (function () {
   var _asdCurrent = { tool: 'pen', color: '#212529', size: 4 };
+  var _asdDrawMode = false;
+
+  window.toggleAsdDrawMode = function() {
+    _asdDrawMode = !_asdDrawMode;
+    var btn = document.getElementById('asd_draw_toggle');
+    var allCanvas = [document.getElementById('asd_canvas_od'), document.getElementById('asd_canvas_os')];
+    if (_asdDrawMode) {
+      btn.innerHTML = '<i class="bi bi-pencil-fill me-1"></i>Drawing ON';
+      btn.classList.remove('btn-warning'); btn.classList.add('btn-success');
+      allCanvas.forEach(function(c) { if (c) { c.style.cursor = 'crosshair'; c.style.touchAction = 'none'; } });
+    } else {
+      btn.innerHTML = '<i class="bi bi-lock-fill me-1"></i>Draw Locked';
+      btn.classList.remove('btn-success'); btn.classList.add('btn-warning');
+      allCanvas.forEach(function(c) { if (c) { c.style.cursor = 'default'; c.style.touchAction = 'auto'; } });
+    }
+  };
+
   var _canvases = [
     { el: document.getElementById('asd_canvas_od'), input: document.getElementById('asd_input_od') },
     { el: document.getElementById('asd_canvas_os'), input: document.getElementById('asd_input_os') },
@@ -870,6 +890,7 @@
                y: (touch.clientY - rect.top)  * (200 / rect.height) };
     }
     function _start(e) {
+      if (!_asdDrawMode) return;
       e.preventDefault();
       drawing = true;
       var p = _pos(e);
@@ -877,7 +898,7 @@
       ctx.moveTo(p.x, p.y);
     }
     function _move(e) {
-      if (!drawing) return;
+      if (!_asdDrawMode || !drawing) return;
       e.preventDefault();
       var p = _pos(e);
       if (_asdCurrent.tool === 'erase') {
@@ -1012,7 +1033,10 @@
       <div class="collapse mt-2" id="cfm_gen_s7">
 
       <div class="d-flex flex-wrap align-items-center gap-2 mb-2 p-2 bg-white rounded border">
-        <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-sm btn-warning" id="fundus_draw_toggle" onclick="toggleFundusDrawMode()" title="Click to enable drawing on the fundoscopy diagram">
+          <i class="bi bi-lock-fill me-1"></i>Draw Locked
+        </button>
+        <div class="btn-group btn-group-sm" id="fundus_tool_group">
           <button type="button" class="btn btn-outline-dark active" id="tool-pen" onclick="setFundusTool('pen')">
             <i class="bi bi-pencil"></i> Draw
           </button>
@@ -1065,11 +1089,11 @@
       <div class="row g-3 mb-3">
         <div class="col-md-6 text-center">
           <div class="fw-semibold text-primary small mb-1">RIGHT EYE (RE)</div>
-          <canvas id="canvas-re" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:none;cursor:crosshair;width:100%;max-width:360px;aspect-ratio:1;"></canvas>
+          <canvas id="canvas-re" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:auto;cursor:default;width:100%;max-width:360px;aspect-ratio:1;"></canvas>
         </div>
         <div class="col-md-6 text-center">
           <div class="fw-semibold text-danger small mb-1">LEFT EYE (LE)</div>
-          <canvas id="canvas-le" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:none;cursor:crosshair;width:100%;max-width:360px;aspect-ratio:1;"></canvas>
+          <canvas id="canvas-le" width="320" height="320" class="border rounded shadow-sm bg-white" style="touch-action:auto;cursor:default;width:100%;max-width:360px;aspect-ratio:1;"></canvas>
         </div>
       </div>
 
@@ -1526,6 +1550,22 @@ function addMgtOther() {
   var currentTool = 'pen';
   var drawColor = '#e60000';
   var drawSize = 3;
+  var fundusDrawMode = false;
+
+  window.toggleFundusDrawMode = function() {
+    fundusDrawMode = !fundusDrawMode;
+    var btn = document.getElementById('fundus_draw_toggle');
+    var canvases = [document.getElementById('canvas-re'), document.getElementById('canvas-le')];
+    if (fundusDrawMode) {
+      btn.innerHTML = '<i class="bi bi-pencil-fill me-1"></i>Drawing ON';
+      btn.classList.remove('btn-warning'); btn.classList.add('btn-success');
+      canvases.forEach(function(c) { if (c) { c.style.cursor = 'crosshair'; c.style.touchAction = 'none'; } });
+    } else {
+      btn.innerHTML = '<i class="bi bi-lock-fill me-1"></i>Draw Locked';
+      btn.classList.remove('btn-success'); btn.classList.add('btn-warning');
+      canvases.forEach(function(c) { if (c) { c.style.cursor = 'default'; c.style.touchAction = 'auto'; } });
+    }
+  };
   var labelFontSize = 16;
   var overlays = {};
   var labels = { re: [], le: [] };   // draggable label objects
@@ -1844,6 +1884,7 @@ function addMgtOther() {
     }
 
     function start(e) {
+      if (!fundusDrawMode) return;
       e.preventDefault();
       var p = getPos(e);
       if (currentTool === 'text') {
@@ -1873,6 +1914,7 @@ function addMgtOther() {
     }
 
     function move(e) {
+      if (!fundusDrawMode) return;
       e.preventDefault();
       var p = getPos(e);
       if (currentTool === 'text') {
@@ -1882,7 +1924,7 @@ function addMgtOther() {
           composite(id);
         } else {
           // Show move cursor when hovering an existing label
-          canvas.style.cursor = hitLabel(p.x, p.y) >= 0 ? 'move' : 'crosshair';
+          canvas.style.cursor = hitLabel(p.x, p.y) >= 0 ? 'move' : (fundusDrawMode ? 'crosshair' : 'default');
         }
         return;
       }
@@ -1900,7 +1942,7 @@ function addMgtOther() {
     function stop() {
       if (currentTool === 'text' && draggingIdx >= 0) {
         draggingIdx = -1;
-        canvas.style.cursor = 'crosshair';
+        canvas.style.cursor = fundusDrawMode ? 'crosshair' : 'default';
         document.getElementById('fundoscopy-' + id + '-data').value = canvas.toDataURL('image/png');
         return;
       }
