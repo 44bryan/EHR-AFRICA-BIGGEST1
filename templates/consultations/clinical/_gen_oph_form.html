@@ -777,204 +777,374 @@
       <div class="mt-3 pt-3 border-top">
         <div class="fw-semibold small text-uppercase text-secondary mb-2" style="letter-spacing:.04em;">
           <i class="bi bi-pencil-square me-1"></i>Anterior Segment Drawing
-          <span class="text-muted fw-normal ms-1" style="text-transform:none;font-size:.75rem;">(sketch lesions, opacities, irregularities)</span>
+          <span class="badge bg-primary ms-1" style="font-size:.6rem;font-weight:500;">Sketch lesions, label structures</span>
         </div>
-        <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-          <button type="button" class="btn btn-sm btn-warning" id="asd_draw_toggle" onclick="toggleAsdDrawMode()" title="Click to enable drawing on the anterior segment diagram">
+
+        {# Toolbar #}
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2 p-2 bg-white rounded border">
+          <button type="button" class="btn btn-sm btn-warning" id="asd_draw_toggle" onclick="toggleAsdDrawMode()">
             <i class="bi bi-lock-fill me-1"></i>Draw Locked
           </button>
-          <div class="btn-group btn-group-sm" role="group" id="asd_tool_group">
-            <button type="button" class="btn btn-outline-secondary asd-tool active" data-tool="pen" title="Draw"><i class="bi bi-pencil"></i></button>
-            <button type="button" class="btn btn-outline-secondary asd-tool" data-tool="erase" title="Erase"><i class="bi bi-eraser"></i></button>
+          <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-dark active" id="asd-tool-pen" onclick="setAsdTool('pen')"><i class="bi bi-pencil"></i> Draw</button>
+            <button type="button" class="btn btn-outline-secondary" id="asd-tool-eraser" onclick="setAsdTool('eraser')"><i class="bi bi-eraser"></i> Erase</button>
+            <button type="button" class="btn btn-outline-info" id="asd-tool-text" onclick="setAsdTool('text')"><i class="bi bi-fonts"></i> Label</button>
           </div>
-          <div class="btn-group btn-group-sm" role="group">
-            <button type="button" class="btn btn-outline-danger asd-color" data-color="#dc3545" style="width:28px;" title="Red (lesion)">●</button>
-            <button type="button" class="btn btn-outline-dark asd-color active" data-color="#212529" style="width:28px;" title="Black (normal finding)">●</button>
-            <button type="button" class="btn btn-outline-primary asd-color" data-color="#0d6efd" style="width:28px;" title="Blue (vascular)">●</button>
-            <button type="button" class="btn btn-outline-success asd-color" data-color="#198754" style="width:28px;" title="Green (other)">●</button>
+          <div class="d-flex align-items-center gap-1 flex-wrap">
+            <span class="small text-muted">Colour:</span>
+            <button type="button" onclick="setAsdColor('#dc3545')" title="Red — lesion / vascularisation" style="width:22px;height:22px;background:#dc3545;border:1px solid #999;border-radius:3px;cursor:pointer;padding:0;"></button>
+            <button type="button" onclick="setAsdColor('#f0c000')" title="Yellow — deposit / exudate" style="width:22px;height:22px;background:#f0c000;border:1px solid #999;border-radius:3px;cursor:pointer;padding:0;"></button>
+            <button type="button" onclick="setAsdColor('#f5f5f5')" title="White — opacity / scar" style="width:22px;height:22px;background:#f5f5f5;border:1px solid #aaa;border-radius:3px;cursor:pointer;padding:0;"></button>
+            <button type="button" onclick="setAsdColor('#0d6efd')" title="Blue — annotation" style="width:22px;height:22px;background:#0d6efd;border:1px solid #999;border-radius:3px;cursor:pointer;padding:0;"></button>
+            <button type="button" onclick="setAsdColor('#198754')" title="Green — other finding" style="width:22px;height:22px;background:#198754;border:1px solid #999;border-radius:3px;cursor:pointer;padding:0;"></button>
+            <button type="button" onclick="setAsdColor('#212529')" title="Black — outline" style="width:22px;height:22px;background:#212529;border:1px solid #999;border-radius:3px;cursor:pointer;padding:0;"></button>
           </div>
-          <select class="form-select form-select-sm" id="asd_size" style="width:90px;" title="Pen size">
-            <option value="2">Fine</option>
-            <option value="4" selected>Normal</option>
-            <option value="8">Thick</option>
-          </select>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="asd_clear_all">
-            <i class="bi bi-trash me-1"></i>Clear
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-info" id="asd_save_btn">
-            <i class="bi bi-floppy me-1"></i>Save Drawing
-          </button>
-          <span class="text-success small d-none" id="asd_saved_msg"><i class="bi bi-check-circle me-1"></i>Saved</span>
-        </div>
-        <div class="d-flex flex-wrap gap-4 justify-content-center">
-          {# ── OD Eye ── #}
-          <div class="text-center">
-            <div class="fw-semibold small text-primary mb-1">OD (Right Eye)</div>
-            <canvas id="asd_canvas_od" width="200" height="200"
-                    style="border:2px solid #dee2e6;border-radius:50%;cursor:default;background:#fff;touch-action:auto;"></canvas>
+          <div class="d-flex align-items-center gap-1">
+            <label class="small mb-0">Size:</label>
+            <input type="range" id="asd_size_range" min="1" max="20" value="4" style="width:80px;">
+            <span id="asd_size_label" class="small text-muted">4</span>
           </div>
-          {# ── OS Eye ── #}
-          <div class="text-center">
-            <div class="fw-semibold small text-success mb-1">OS (Left Eye)</div>
-            <canvas id="asd_canvas_os" width="200" height="200"
-                    style="border:2px solid #dee2e6;border-radius:50%;cursor:default;background:#fff;touch-action:auto;"></canvas>
+          <div class="ms-auto d-flex gap-1 flex-wrap">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="undoAsdCanvas('od')"><i class="bi bi-arrow-counterclockwise"></i> Undo OD</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="undoAsdCanvas('os')"><i class="bi bi-arrow-counterclockwise"></i> Undo OS</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearAsdCanvas('od')"><i class="bi bi-trash"></i> Clear OD</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearAsdCanvas('os')"><i class="bi bi-trash"></i> Clear OS</button>
           </div>
         </div>
-        {# Hidden inputs to persist drawing data #}
+
+        {# Label tool text input — shown only when Label mode is active #}
+        <div id="asd-label-row" class="d-none align-items-center gap-2 mt-1 mb-2 px-2 py-1 rounded flex-wrap" style="background:#e0f2fe;border:1px solid #7dd3fc;">
+          <i class="bi bi-fonts text-info"></i>
+          <input type="text" id="asd-label-text" class="form-control form-control-sm" style="max-width:190px;" placeholder="Label text…" autocomplete="off">
+          <span class="small text-muted d-none d-md-inline">Tap on diagram to place &middot; drag to move</span>
+          <div class="d-flex align-items-center gap-1">
+            <span class="small text-muted">Size:</span>
+            <button type="button" id="asd-font-dec" class="btn btn-sm btn-outline-secondary px-2 py-0" style="font-weight:700;line-height:1.5;">A-</button>
+            <span id="asd-font-size-val" class="small fw-semibold" style="min-width:32px;text-align:center;">14px</span>
+            <button type="button" id="asd-font-inc" class="btn btn-sm btn-outline-secondary px-2 py-0" style="font-weight:700;line-height:1.5;">A+</button>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="setAsdTool('pen')"><i class="bi bi-pencil"></i> Draw</button>
+        </div>
+
+        {# Canvases — OD and OS side by side #}
+        <div class="row g-3 mb-3">
+          <div class="col-md-6 text-center">
+            <div class="fw-semibold small text-primary mb-1">OD — Right Eye</div>
+            <canvas id="asd_canvas_od" width="280" height="280"
+                    style="border-radius:50%;cursor:default;background:#fff;touch-action:auto;width:100%;max-width:300px;aspect-ratio:1;border:2px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
+          </div>
+          <div class="col-md-6 text-center">
+            <div class="fw-semibold small text-danger mb-1">OS — Left Eye</div>
+            <canvas id="asd_canvas_os" width="280" height="280"
+                    style="border-radius:50%;cursor:default;background:#fff;touch-action:auto;width:100%;max-width:300px;aspect-ratio:1;border:2px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
+          </div>
+        </div>
+
+        {# Hidden data persistence #}
         <input type="hidden" name="dept_asd_od" id="asd_input_od" value="{{ d.asd_od|default:'' }}">
         <input type="hidden" name="dept_asd_os" id="asd_input_os" value="{{ d.asd_os|default:'' }}">
+
+        {# Per-eye clinical impression — OD and OS separately #}
+        <div class="row g-2 mt-1">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">OD — Anterior Segment Impression</label>
+            <textarea name="dept_asd_impression_od" class="form-control form-control-sm" rows="2"
+                      placeholder="e.g. Clear cornea, quiet AC, nuclear sclerosis grade II…">{{ d.asd_impression_od|default:'' }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">OS — Anterior Segment Impression</label>
+            <textarea name="dept_asd_impression_os" class="form-control form-control-sm" rows="2"
+                      placeholder="e.g. Corneal scar 3 o'clock, deep quiet AC, clear lens…">{{ d.asd_impression_os|default:'' }}</textarea>
+          </div>
+        </div>
       </div>
 
       </div>{# /collapse cfm_gen_s5 #}
 
 <script>
 (function () {
-  var _asdCurrent = { tool: 'pen', color: '#212529', size: 4 };
-  var _asdDrawMode = false;
+  var ASD_SZ = 280, ASD_CX = 140, ASD_CY = 140;
+  var asdTool = 'pen', asdColor = '#dc3545', asdSize = 4;
+  var asdDrawMode = false, asdLabelFontSize = 14;
 
+  // Per-eye state
+  var _overlayC = {};   // offscreen canvas per eye (stroke layer only)
+  var _overlayX = {};   // 2d context of overlay
+  var _labels   = { od: [], os: [] };
+  var _history  = { od: [], os: [] };
+  var MAX_HIST  = 20;
+
+  ['od','os'].forEach(function(eye) {
+    var oc = document.createElement('canvas');
+    oc.width = ASD_SZ; oc.height = ASD_SZ;
+    _overlayC[eye] = oc;
+    _overlayX[eye] = oc.getContext('2d');
+  });
+
+  // ── Anatomy base ──────────────────────────────────────────────────
+  function drawAsdBase(ctx, eye) {
+    ctx.clearRect(0, 0, ASD_SZ, ASD_SZ);
+    // Sclera
+    ctx.beginPath(); ctx.arc(ASD_CX, ASD_CY, 136, 0, 2*Math.PI);
+    ctx.fillStyle = '#fafafa'; ctx.fill();
+    ctx.strokeStyle = '#adb5bd'; ctx.lineWidth = 2; ctx.stroke();
+    // Limbus
+    ctx.beginPath(); ctx.arc(ASD_CX, ASD_CY, 105, 0, 2*Math.PI);
+    ctx.strokeStyle = '#7b8abf'; ctx.lineWidth = 3; ctx.stroke();
+    // Cornea tint
+    ctx.beginPath(); ctx.arc(ASD_CX, ASD_CY, 105, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(210,225,250,0.30)'; ctx.fill();
+    // Iris background
+    ctx.beginPath(); ctx.arc(ASD_CX, ASD_CY, 101, 0, 2*Math.PI);
+    ctx.fillStyle = '#b8c8e0'; ctx.fill();
+    ctx.strokeStyle = '#9ab0ce'; ctx.lineWidth = 1; ctx.stroke();
+    // Iris radial texture
+    ctx.save(); ctx.strokeStyle = 'rgba(80,100,140,0.35)'; ctx.lineWidth = 0.7;
+    for (var i = 0; i < 24; i++) {
+      var a = (i / 24) * 2 * Math.PI;
+      ctx.beginPath();
+      ctx.moveTo(ASD_CX + 38 * Math.cos(a), ASD_CY + 38 * Math.sin(a));
+      ctx.lineTo(ASD_CX + 99 * Math.cos(a), ASD_CY + 99 * Math.sin(a));
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Pupil
+    ctx.beginPath(); ctx.arc(ASD_CX, ASD_CY, 36, 0, 2*Math.PI);
+    ctx.fillStyle = '#1a1a2e'; ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+    // Pupil light reflex
+    ctx.beginPath(); ctx.arc(ASD_CX - 10, ASD_CY - 10, 5, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.fill();
+    // Clock hour dots at limbus
+    ctx.fillStyle = 'rgba(90,105,145,0.55)';
+    for (var h = 0; h < 12; h++) {
+      var ha = (h / 12) * 2 * Math.PI - Math.PI / 2;
+      ctx.beginPath();
+      ctx.arc(ASD_CX + 116 * Math.cos(ha), ASD_CY + 116 * Math.sin(ha), 2.5, 0, 2*Math.PI);
+      ctx.fill();
+    }
+    // Direction labels S / I / N / T
+    ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = '#6c757d';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('S', ASD_CX, 9);
+    ctx.fillText('I', ASD_CX, ASD_SZ - 9);
+    var nasalX = (eye === 'od') ? ASD_SZ - 9 : 9;
+    var tempX  = (eye === 'od') ? 9 : ASD_SZ - 9;
+    ctx.fillText('N', nasalX, ASD_CY);
+    ctx.fillText('T', tempX,  ASD_CY);
+  }
+
+  // ── Composite: base + overlay strokes + labels ────────────────────
+  function composite(ctx, eye) {
+    drawAsdBase(ctx, eye);
+    ctx.drawImage(_overlayC[eye], 0, 0);
+    _labels[eye].forEach(function(lb) {
+      ctx.font = 'bold ' + lb.size + 'px sans-serif';
+      ctx.fillStyle = lb.color;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(lb.text, lb.x, lb.y);
+    });
+  }
+
+  function saveToInput(eye) {
+    var cvs = document.getElementById('asd_canvas_' + eye);
+    var inp = document.getElementById('asd_input_' + eye);
+    if (cvs && inp) inp.value = cvs.toDataURL('image/png');
+  }
+
+  function pushHistory(eye) {
+    _history[eye].push({
+      overlay: _overlayC[eye].toDataURL(),
+      labels:  JSON.parse(JSON.stringify(_labels[eye]))
+    });
+    if (_history[eye].length > MAX_HIST) _history[eye].shift();
+  }
+
+  window.undoAsdCanvas = function(eye) {
+    if (!_history[eye].length) return;
+    var snap = _history[eye].pop();
+    _labels[eye] = snap.labels;
+    var img = new Image();
+    img.onload = function() {
+      _overlayX[eye].clearRect(0, 0, ASD_SZ, ASD_SZ);
+      _overlayX[eye].drawImage(img, 0, 0);
+      var cvs = document.getElementById('asd_canvas_' + eye);
+      if (cvs) { composite(cvs.getContext('2d'), eye); saveToInput(eye); }
+    };
+    img.src = snap.overlay;
+  };
+
+  window.clearAsdCanvas = function(eye) {
+    pushHistory(eye);
+    _labels[eye] = [];
+    _overlayX[eye].clearRect(0, 0, ASD_SZ, ASD_SZ);
+    var cvs = document.getElementById('asd_canvas_' + eye);
+    if (cvs) { composite(cvs.getContext('2d'), eye); saveToInput(eye); }
+  };
+
+  // ── Canvas init ───────────────────────────────────────────────────
+  function initAsdCanvas(eye) {
+    var cvs = document.getElementById('asd_canvas_' + eye); if (!cvs) return;
+    var ctx = cvs.getContext('2d');
+    // Restore saved drawing into the overlay layer first, then composite
+    var inp = document.getElementById('asd_input_' + eye);
+    if (inp && inp.value) {
+      var img = new Image();
+      img.onload = function() {
+        // saved image = full composite; use it as the overlay so we don't lose it
+        _overlayX[eye].drawImage(img, 0, 0);
+        composite(ctx, eye);
+      };
+      img.src = inp.value;
+    } else {
+      composite(ctx, eye);
+    }
+
+    var drawing = false, dragLabel = null, dragOX = 0, dragOY = 0;
+
+    function getPos(e) {
+      var rect = cvs.getBoundingClientRect();
+      var src = e.touches ? e.touches[0] : e;
+      return { x: (src.clientX - rect.left) * (ASD_SZ / rect.width),
+               y: (src.clientY - rect.top)  * (ASD_SZ / rect.height) };
+    }
+
+    function onStart(e) {
+      if (!asdDrawMode) return;
+      e.preventDefault();
+      var p = getPos(e);
+
+      if (asdTool === 'text') {
+        var txt = (document.getElementById('asd-label-text') || {}).value || '';
+        if (!txt.trim()) return;
+        pushHistory(eye);
+        _labels[eye].push({ text: txt, x: p.x, y: p.y, size: asdLabelFontSize, color: asdColor });
+        composite(ctx, eye); saveToInput(eye);
+        return;
+      }
+
+      // Check if clicking an existing label (for drag)
+      if (asdTool === 'pen' || asdTool === 'eraser') {
+        for (var i = _labels[eye].length - 1; i >= 0; i--) {
+          var lb = _labels[eye][i];
+          ctx.font = 'bold ' + lb.size + 'px sans-serif';
+          var w = ctx.measureText(lb.text).width;
+          if (p.x >= lb.x && p.x <= lb.x + w && p.y >= lb.y && p.y <= lb.y + lb.size + 2) {
+            dragLabel = i; dragOX = p.x - lb.x; dragOY = p.y - lb.y; return;
+          }
+        }
+      }
+
+      pushHistory(eye);
+      drawing = true;
+      _overlayX[eye].beginPath();
+      _overlayX[eye].moveTo(p.x, p.y);
+    }
+
+    function onMove(e) {
+      if (!asdDrawMode) return;
+      if (!drawing && dragLabel === null) return;
+      e.preventDefault();
+      var p = getPos(e);
+
+      if (dragLabel !== null) {
+        _labels[eye][dragLabel].x = p.x - dragOX;
+        _labels[eye][dragLabel].y = p.y - dragOY;
+        composite(ctx, eye); return;
+      }
+
+      if (asdTool === 'eraser') {
+        _overlayX[eye].globalCompositeOperation = 'destination-out';
+        _overlayX[eye].lineWidth = asdSize * 4; _overlayX[eye].lineCap = 'round';
+        _overlayX[eye].lineTo(p.x, p.y); _overlayX[eye].stroke();
+        _overlayX[eye].globalCompositeOperation = 'source-over';
+        _overlayX[eye].beginPath(); _overlayX[eye].moveTo(p.x, p.y);
+      } else {
+        _overlayX[eye].strokeStyle = asdColor;
+        _overlayX[eye].lineWidth = asdSize; _overlayX[eye].lineCap = 'round'; _overlayX[eye].lineJoin = 'round';
+        _overlayX[eye].lineTo(p.x, p.y); _overlayX[eye].stroke();
+        _overlayX[eye].beginPath(); _overlayX[eye].moveTo(p.x, p.y);
+      }
+      composite(ctx, eye);
+    }
+
+    function onEnd() {
+      if (drawing) { drawing = false; _overlayX[eye].beginPath(); saveToInput(eye); }
+      if (dragLabel !== null) { dragLabel = null; saveToInput(eye); }
+    }
+
+    cvs.addEventListener('mousedown', onStart);
+    cvs.addEventListener('mousemove', onMove);
+    cvs.addEventListener('mouseup', onEnd);
+    cvs.addEventListener('mouseleave', onEnd);
+    cvs.addEventListener('touchstart', onStart, { passive: false });
+    cvs.addEventListener('touchmove',  onMove,  { passive: false });
+    cvs.addEventListener('touchend',   onEnd);
+  }
+
+  initAsdCanvas('od');
+  initAsdCanvas('os');
+
+  // ── Controls wiring ───────────────────────────────────────────────
   window.toggleAsdDrawMode = function() {
-    _asdDrawMode = !_asdDrawMode;
+    asdDrawMode = !asdDrawMode;
     var btn = document.getElementById('asd_draw_toggle');
-    var allCanvas = [document.getElementById('asd_canvas_od'), document.getElementById('asd_canvas_os')];
-    if (_asdDrawMode) {
+    ['asd_canvas_od','asd_canvas_os'].forEach(function(id) {
+      var c = document.getElementById(id); if (!c) return;
+      c.style.touchAction = asdDrawMode ? 'none' : 'auto';
+      c.style.cursor = asdDrawMode ? 'crosshair' : 'default';
+    });
+    if (asdDrawMode) {
       btn.innerHTML = '<i class="bi bi-pencil-fill me-1"></i>Drawing ON';
-      btn.classList.remove('btn-warning'); btn.classList.add('btn-success');
-      allCanvas.forEach(function(c) { if (c) { c.style.cursor = 'crosshair'; c.style.touchAction = 'none'; } });
+      btn.classList.replace('btn-warning','btn-success');
     } else {
       btn.innerHTML = '<i class="bi bi-lock-fill me-1"></i>Draw Locked';
-      btn.classList.remove('btn-success'); btn.classList.add('btn-warning');
-      allCanvas.forEach(function(c) { if (c) { c.style.cursor = 'default'; c.style.touchAction = 'auto'; } });
+      btn.classList.replace('btn-success','btn-warning');
+      setAsdTool('pen');
     }
   };
 
-  var _canvases = [
-    { el: document.getElementById('asd_canvas_od'), input: document.getElementById('asd_input_od') },
-    { el: document.getElementById('asd_canvas_os'), input: document.getElementById('asd_input_os') },
-  ];
-
-  function _initCanvas(c) {
-    var el = c.el; if (!el) return;
-    var ctx = el.getContext('2d');
-    var r = 100;
-    /* Draw base anatomy */
-    function _drawBase() {
-      ctx.clearRect(0, 0, 200, 200);
-      /* Sclera */
-      ctx.beginPath(); ctx.arc(100, 100, 98, 0, 2*Math.PI);
-      ctx.fillStyle = '#fff'; ctx.fill();
-      ctx.strokeStyle = '#adb5bd'; ctx.lineWidth = 1.5; ctx.stroke();
-      /* Limbus */
-      ctx.beginPath(); ctx.arc(100, 100, 72, 0, 2*Math.PI);
-      ctx.strokeStyle = '#ced4da'; ctx.lineWidth = 1; ctx.stroke();
-      /* Iris */
-      ctx.beginPath(); ctx.arc(100, 100, 68, 0, 2*Math.PI);
-      ctx.fillStyle = '#c9d4e8'; ctx.fill();
-      ctx.strokeStyle = '#adb5bd'; ctx.lineWidth = 1; ctx.stroke();
-      /* Pupil */
-      ctx.beginPath(); ctx.arc(100, 100, 28, 0, 2*Math.PI);
-      ctx.fillStyle = '#343a40'; ctx.fill();
-    }
-    _drawBase();
-    /* Restore saved drawing on top of base */
-    if (c.input.value) {
-      var img = new Image();
-      img.onload = function () { ctx.drawImage(img, 0, 0); };
-      img.src = c.input.value;
-    }
-
-    var drawing = false;
-    function _pos(e) {
-      var rect = el.getBoundingClientRect();
-      var touch = e.touches ? e.touches[0] : e;
-      return { x: (touch.clientX - rect.left) * (200 / rect.width),
-               y: (touch.clientY - rect.top)  * (200 / rect.height) };
-    }
-    function _start(e) {
-      if (!_asdDrawMode) return;
-      e.preventDefault();
-      drawing = true;
-      var p = _pos(e);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-    }
-    function _move(e) {
-      if (!_asdDrawMode || !drawing) return;
-      e.preventDefault();
-      var p = _pos(e);
-      if (_asdCurrent.tool === 'erase') {
-        /* Erase by redrawing base then all strokes — simpler: just paint white */
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.lineWidth = _asdCurrent.size * 4;
-        ctx.lineTo(p.x, p.y);
-        ctx.stroke();
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.beginPath(); ctx.moveTo(p.x, p.y);
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.strokeStyle = _asdCurrent.color;
-        ctx.lineWidth = _asdCurrent.size;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.lineTo(p.x, p.y);
-        ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(p.x, p.y);
-      }
-    }
-    function _end(e) { drawing = false; ctx.beginPath(); }
-
-    el.addEventListener('mousedown', _start);
-    el.addEventListener('mousemove', _move);
-    el.addEventListener('mouseup', _end);
-    el.addEventListener('mouseleave', _end);
-    el.addEventListener('touchstart', _start, { passive: false });
-    el.addEventListener('touchmove', _move, { passive: false });
-    el.addEventListener('touchend', _end);
-
-    c._ctx = ctx;
-    c._drawBase = _drawBase;
-  }
-
-  _canvases.forEach(_initCanvas);
-
-  /* Tool buttons */
-  document.querySelectorAll('.asd-tool').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      document.querySelectorAll('.asd-tool').forEach(function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      _asdCurrent.tool = btn.dataset.tool;
+  window.setAsdTool = function(t) {
+    asdTool = t;
+    ['pen','eraser','text'].forEach(function(n) {
+      var el = document.getElementById('asd-tool-' + n);
+      if (el) el.classList.toggle('active', n === t);
     });
-  });
-  /* Color buttons */
-  document.querySelectorAll('.asd-color').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      document.querySelectorAll('.asd-color').forEach(function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      _asdCurrent.color = btn.dataset.color;
-      _asdCurrent.tool = 'pen';
-      document.querySelectorAll('.asd-tool[data-tool="pen"]').forEach(function(b){b.classList.add('active');});
-      document.querySelectorAll('.asd-tool[data-tool="erase"]').forEach(function(b){b.classList.remove('active');});
+    var row = document.getElementById('asd-label-row');
+    if (row) { row.classList.toggle('d-none', t !== 'text'); row.classList.toggle('d-flex', t === 'text'); }
+    if (t === 'text') { var inp = document.getElementById('asd-label-text'); if (inp) inp.focus(); }
+    ['asd_canvas_od','asd_canvas_os'].forEach(function(id) {
+      var c = document.getElementById(id);
+      if (c && asdDrawMode) c.style.cursor = t === 'text' ? 'text' : 'crosshair';
     });
+  };
+
+  window.setAsdColor = function(c) { asdColor = c; setAsdTool('pen'); };
+
+  var _asr = document.getElementById('asd_size_range');
+  if (_asr) _asr.addEventListener('input', function() {
+    asdSize = parseInt(this.value, 10);
+    var l = document.getElementById('asd_size_label'); if (l) l.textContent = this.value;
   });
-  /* Size */
-  document.getElementById('asd_size').addEventListener('change', function () {
-    _asdCurrent.size = parseInt(this.value, 10);
+  var _afd = document.getElementById('asd-font-dec');
+  if (_afd) _afd.addEventListener('click', function() {
+    asdLabelFontSize = Math.max(8, asdLabelFontSize - 2);
+    var v = document.getElementById('asd-font-size-val'); if (v) v.textContent = asdLabelFontSize + 'px';
   });
-  /* Clear */
-  document.getElementById('asd_clear_all').addEventListener('click', function () {
-    _canvases.forEach(function (c) {
-      if (c._drawBase) c._drawBase();
-      if (c.input) c.input.value = '';
+  var _afi = document.getElementById('asd-font-inc');
+  if (_afi) _afi.addEventListener('click', function() {
+    asdLabelFontSize = Math.min(48, asdLabelFontSize + 2);
+    var v = document.getElementById('asd-font-size-val'); if (v) v.textContent = asdLabelFontSize + 'px';
+  });
+
+  // Auto-save on form submit
+  document.addEventListener('submit', function() {
+    ['od','os'].forEach(function(eye) {
+      var cvs = document.getElementById('asd_canvas_' + eye);
+      var inp = document.getElementById('asd_input_' + eye);
+      if (cvs && inp) inp.value = cvs.toDataURL('image/png');
     });
-  });
-  /* Save */
-  document.getElementById('asd_save_btn').addEventListener('click', function () {
-    _canvases.forEach(function (c) {
-      if (c.el && c.input) c.input.value = c.el.toDataURL('image/png');
-    });
-    var msg = document.getElementById('asd_saved_msg');
-    msg.classList.remove('d-none');
-    setTimeout(function () { msg.classList.add('d-none'); }, 2000);
-  });
+  }, true);
 })();
 </script>
 
