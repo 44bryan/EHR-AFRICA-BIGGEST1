@@ -216,9 +216,14 @@ def investigation_order_view(request, consultation_pk):
     else:
         form = InvestigationOrderForm()
 
-    # Group types by category for the optgroup select
+    # Group types by category; optometry mode filters to relevant cats only
     from itertools import groupby
-    _all_types = InvestigationType.objects.filter(is_active=True).order_by('category', 'name')
+    OPTOMETRY_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION', 'VISUAL_FIELD'}
+    is_optometry = request.GET.get('cat') == 'optometry'
+    _qs = InvestigationType.objects.filter(is_active=True)
+    if is_optometry:
+        _qs = _qs.filter(category__in=OPTOMETRY_CATS)
+    _all_types = _qs.order_by('category', 'name')
     _grouped = []
     for cat, items in groupby(_all_types, key=lambda t: t.category):
         label = (cat or 'Other').replace('_', ' ').title()
@@ -228,6 +233,7 @@ def investigation_order_view(request, consultation_pk):
         'form': form,
         'consultation': consultation,
         'grouped_types': _grouped,
+        'is_optometry': is_optometry,
     })
 
 
