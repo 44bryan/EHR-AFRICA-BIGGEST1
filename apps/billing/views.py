@@ -5258,13 +5258,13 @@ def ap_vendor_create(request):
             vendor = APVendor.objects.create(
                 name=name,
                 contact_name=request.POST.get('contact_name', ''),
-                phone=request.POST.get('phone', ''),
+                phone=request.POST.get('contact_phone') or request.POST.get('phone', ''),
                 email=request.POST.get('email', ''),
                 address=request.POST.get('address', ''),
-                tax_id=request.POST.get('tax_id', ''),
-                payment_terms_days=int(request.POST.get('payment_terms_days') or 30),
+                tax_id=request.POST.get('tax_number') or request.POST.get('tax_id', ''),
+                payment_terms_days=int(request.POST.get('payment_terms') or request.POST.get('payment_terms_days') or 30),
                 bank_name=request.POST.get('bank_name', ''),
-                bank_account=request.POST.get('bank_account', ''),
+                bank_account=request.POST.get('bank_account_number') or request.POST.get('bank_account', ''),
                 notes=request.POST.get('notes', ''),
                 created_by=request.user,
             )
@@ -5282,13 +5282,13 @@ def ap_vendor_edit(request, vendor_id):
     if request.method == 'POST':
         vendor.name = request.POST.get('name', vendor.name).strip()
         vendor.contact_name = request.POST.get('contact_name', '')
-        vendor.phone = request.POST.get('phone', '')
+        vendor.phone = request.POST.get('contact_phone') or request.POST.get('phone', '')
         vendor.email = request.POST.get('email', '')
         vendor.address = request.POST.get('address', '')
-        vendor.tax_id = request.POST.get('tax_id', '')
-        vendor.payment_terms_days = int(request.POST.get('payment_terms_days') or 30)
+        vendor.tax_id = request.POST.get('tax_number') or request.POST.get('tax_id', '')
+        vendor.payment_terms_days = int(request.POST.get('payment_terms') or request.POST.get('payment_terms_days') or 30)
         vendor.bank_name = request.POST.get('bank_name', '')
-        vendor.bank_account = request.POST.get('bank_account', '')
+        vendor.bank_account = request.POST.get('bank_account_number') or request.POST.get('bank_account', '')
         vendor.notes = request.POST.get('notes', '')
         vendor.is_active = request.POST.get('is_active') == 'on'
         vendor.save()
@@ -5333,32 +5333,39 @@ def ap_bill_create(request):
     vendors = APVendor.objects.filter(is_deleted=False, is_active=True).order_by('name')
     gl_accounts = GLAccount.objects.filter(is_deleted=False, is_active=True, account_type='EXPENSE').order_by('code')
     if request.method == 'POST':
-        vendor = get_object_or_404(APVendor, pk=request.POST.get('vendor_id'))
-        amount_due = Decimal(request.POST.get('amount_due') or '0')
-        if amount_due <= 0:
-            messages.error(request, 'Amount must be greater than zero.')
+        vendor_pk = request.POST.get('vendor') or request.POST.get('vendor_id')
+        if not vendor_pk:
+            messages.error(request, 'Please select a vendor.')
         else:
-            from apps.billing.models import ExpenseCategory
-            bill = APBill.objects.create(
-                vendor=vendor,
-                vendor_ref=request.POST.get('vendor_ref', ''),
-                category=request.POST.get('category', 'EXP_OTHER'),
-                description=request.POST.get('description', '').strip(),
-                amount_due=amount_due,
-                tax_amount=Decimal(request.POST.get('tax_amount') or '0'),
-                bill_date=request.POST.get('bill_date') or timezone.localdate(),
-                due_date=request.POST.get('due_date') or None,
-                gl_account=GLAccount.objects.filter(pk=request.POST.get('gl_account_id')).first(),
-                attachment_ref=request.POST.get('attachment_ref', ''),
-                notes=request.POST.get('notes', ''),
-                approved_by=request.user,
-                created_by=request.user,
-            )
-            messages.success(request, f'Bill {bill.bill_number} created.')
-            return redirect('billing:ap_bill_list')
+            vendor = get_object_or_404(APVendor, pk=vendor_pk)
+            amount_due = Decimal(request.POST.get('amount_due') or '0')
+            if amount_due <= 0:
+                messages.error(request, 'Amount must be greater than zero.')
+            else:
+                from apps.billing.models import ExpenseCategory
+                bill = APBill.objects.create(
+                    vendor=vendor,
+                    vendor_ref=request.POST.get('vendor_invoice_number') or request.POST.get('vendor_ref', ''),
+                    category=request.POST.get('category', 'EXP_OTHER'),
+                    description=request.POST.get('description', '').strip(),
+                    amount_due=amount_due,
+                    tax_amount=Decimal(request.POST.get('tax_amount') or '0'),
+                    bill_date=request.POST.get('bill_date') or timezone.localdate(),
+                    due_date=request.POST.get('due_date') or None,
+                    gl_account=GLAccount.objects.filter(
+                        pk=request.POST.get('expense_account') or request.POST.get('gl_account_id')
+                    ).first(),
+                    attachment_ref=request.POST.get('attachment_ref', ''),
+                    notes=request.POST.get('notes', ''),
+                    approved_by=request.user,
+                    created_by=request.user,
+                )
+                messages.success(request, f'Bill {bill.bill_number} created.')
+                return redirect('billing:ap_bill_list')
     from apps.billing.models import ExpenseCategory
     return render(request, 'billing/ap_bill_form.html', {
         'vendors': vendors,
+        'expense_accounts': gl_accounts,
         'gl_accounts': gl_accounts,
         'expense_categories': ExpenseCategory.choices,
         'action': 'Record Vendor Bill',
