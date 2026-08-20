@@ -1631,8 +1631,16 @@ def cashier_complete(request, token_id):
                 created_by=request.user,
             )
         else:
-            visit.status = VisitStatus.PARAMETERS
-            visit.save(update_fields=['status', 'updated_at'])
+            # Only move to PARAMETERS if the visit has not yet progressed past triage.
+            # If the cashier confirms payment late (after triage/refraction/consultation is
+            # already in progress), do NOT regress the visit status backwards.
+            _pre_triage = {
+                VisitStatus.REGISTERED, VisitStatus.AT_RECEPTIONIST,
+                VisitStatus.AT_CASHIER, VisitStatus.PARAMETERS,
+            }
+            if visit.status in _pre_triage:
+                visit.status = VisitStatus.PARAMETERS
+                visit.save(update_fields=['status', 'updated_at'])
             try:
                 from apps.core.ws_notify import notify_queue as _ws_nq_qms
                 _ws_nq_qms('opd')
