@@ -134,7 +134,11 @@ function ehrInitOnce() {
   }, { passive: true });
   document.addEventListener('touchmove', function(e) {
     var t = e.touches[0];
-    if (t && Math.abs(t.clientY - _ehrTouchStartY) > 8) _ehrTouchScrolled = true;
+    if (t && Math.abs(t.clientY - _ehrTouchStartY) > 8) {
+      _ehrTouchScrolled = true;
+      // Actively clear any text selection the browser may be forming during scroll
+      if (window.getSelection) window.getSelection().removeAllRanges();
+    }
   }, { passive: true });
   document.addEventListener('touchend', function(e) {
     if (_ehrTouchScrolled) return; // finger moved — it was a scroll, not a tap
