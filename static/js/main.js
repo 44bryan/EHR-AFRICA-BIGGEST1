@@ -122,6 +122,15 @@ function ehrInitOnce() {
     });
   });
 
+  // Prevent text selection during touch scroll on tablets.
+  // selectstart fires the moment the browser decides to start a selection —
+  // cancelling it here is the most reliable cross-browser approach.
+  document.addEventListener('selectstart', function(e) {
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+  });
+
   // ehr-combo dropdown buttons — event delegation, works for desktop + touch devices (tablet/phone)
   // Scroll-safe: track touchstart Y so we can ignore touchend that ended a scroll gesture
   var _ehrLastTouchItem = null;
@@ -136,7 +145,6 @@ function ehrInitOnce() {
     var t = e.touches[0];
     if (t && Math.abs(t.clientY - _ehrTouchStartY) > 8) {
       _ehrTouchScrolled = true;
-      // Actively clear any text selection the browser may be forming during scroll
       if (window.getSelection) window.getSelection().removeAllRanges();
     }
   }, { passive: true });
