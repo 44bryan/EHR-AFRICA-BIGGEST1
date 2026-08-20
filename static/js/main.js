@@ -137,28 +137,33 @@ function ehrInitOnce() {
   });
 
   // ehr-combo dropdown buttons — event delegation, works for desktop + touch devices (tablet/phone)
-  // Scroll-safe: track touchstart Y so we can ignore touchend that ended a scroll gesture
   var _ehrLastTouchItem = null;
+  var _ehrTouchStartItem = null; // item the finger STARTED on
   var _ehrTouchStartY = 0;
   var _ehrTouchScrolled = false;
+  var _ehrScrollBlocked = false; // block the synthetic click that fires after a scroll touchend
   document.addEventListener('touchstart', function(e) {
     var t = e.touches[0];
     _ehrTouchStartY = t ? t.clientY : 0;
     _ehrTouchScrolled = false;
+    _ehrScrollBlocked = false;
+    _ehrTouchStartItem = e.target.closest('.ehr-add-menu .dropdown-item');
   }, { passive: true });
   document.addEventListener('touchmove', function(e) {
     var t = e.touches[0];
     if (t && Math.abs(t.clientY - _ehrTouchStartY) > 8) {
       _ehrTouchScrolled = true;
+      _ehrScrollBlocked = true; // block next click event — it's from a scroll, not a tap
       document.body.classList.add('ehr-scrolling');
       if (window.getSelection) window.getSelection().removeAllRanges();
     }
   }, { passive: true });
   document.addEventListener('touchend', function(e) {
     document.body.classList.remove('ehr-scrolling');
-    if (_ehrTouchScrolled) return; // finger moved — it was a scroll, not a tap
+    if (_ehrTouchScrolled) return; // was a scroll, not a tap — do nothing
     var item = e.target.closest('.ehr-add-menu .dropdown-item');
-    if (!item) return;
+    // Only add if finger started AND ended on the same item
+    if (!item || item !== _ehrTouchStartItem) return;
     _ehrLastTouchItem = item;
     var val = item.textContent.trim();
     if (!val) return;
@@ -172,6 +177,8 @@ function ehrInitOnce() {
   document.addEventListener('click', function (e) {
     var item = e.target.closest('.ehr-add-menu .dropdown-item');
     if (!item) return;
+    // Block synthetic click that fires after a scroll gesture
+    if (_ehrScrollBlocked) { _ehrScrollBlocked = false; return; }
     if (item === _ehrLastTouchItem) { _ehrLastTouchItem = null; return; } // already handled by touchend
     var val = item.textContent.trim();
     if (!val) return;
