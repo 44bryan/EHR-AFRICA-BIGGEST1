@@ -1244,7 +1244,7 @@ def triage_view(request, visit_number):
             if f:
                 flags['temperature'] = f
             if flags:
-                vitals['_flags'] = flags
+                vitals['vital_flags'] = flags
 
             visit.vital_signs = vitals
             visit.status = 'TRIAGE'
