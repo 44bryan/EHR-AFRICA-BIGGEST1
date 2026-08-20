@@ -150,10 +150,12 @@ function ehrInitOnce() {
     var t = e.touches[0];
     if (t && Math.abs(t.clientY - _ehrTouchStartY) > 8) {
       _ehrTouchScrolled = true;
+      document.body.classList.add('ehr-scrolling');
       if (window.getSelection) window.getSelection().removeAllRanges();
     }
   }, { passive: true });
   document.addEventListener('touchend', function(e) {
+    document.body.classList.remove('ehr-scrolling');
     if (_ehrTouchScrolled) return; // finger moved — it was a scroll, not a tap
     var item = e.target.closest('.ehr-add-menu .dropdown-item');
     if (!item) return;
