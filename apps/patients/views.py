@@ -1169,6 +1169,83 @@ def triage_view(request, visit_number):
                 _ct_change_tier = False
 
             vitals = {k: str(v) for k, v in cd.items() if v not in (None, '', 'None')}
+
+            # ── Compute and store vital sign flags (HIGH / LOW) ──────────────
+            def _va_is_low(va):
+                if not va:
+                    return False
+                low_vals = ('CF@1m','CF@2m','CF@3m','CF@4m','CF@5m','HM','PL','NPL',
+                            'CDM','VBLM','PL+','PL-','1/10','2/10','1/60','2/60','3/60')
+                return str(va).strip() in low_vals
+
+            def _iop_flag(iop_str):
+                try:
+                    v = float(str(iop_str).replace('>', '').replace('<', '').strip())
+                    if v > 21:
+                        return 'HIGH'
+                    if v < 6:
+                        return 'LOW'
+                except (ValueError, TypeError):
+                    pass
+                return None
+
+            def _bp_flag(bp_str):
+                try:
+                    parts = str(bp_str).split('/')
+                    sys_, dia_ = float(parts[0]), float(parts[1])
+                    if sys_ >= 140 or dia_ >= 90:
+                        return 'HIGH'
+                    if sys_ < 90 or dia_ < 60:
+                        return 'LOW'
+                except Exception:
+                    pass
+                return None
+
+            def _pulse_flag(p):
+                try:
+                    v = float(str(p))
+                    if v > 100:
+                        return 'HIGH'
+                    if v < 60:
+                        return 'LOW'
+                except Exception:
+                    pass
+                return None
+
+            def _temp_flag(t):
+                try:
+                    v = float(str(t))
+                    if v >= 38.0:
+                        return 'HIGH'
+                    if v < 36.0:
+                        return 'LOW'
+                except Exception:
+                    pass
+                return None
+
+            flags = {}
+            if _va_is_low(vitals.get('visual_acuity_right')):
+                flags['va_right'] = 'LOW'
+            if _va_is_low(vitals.get('visual_acuity_left')):
+                flags['va_left'] = 'LOW'
+            f = _iop_flag(vitals.get('intraocular_pressure_right'))
+            if f:
+                flags['iop_right'] = f
+            f = _iop_flag(vitals.get('intraocular_pressure_left'))
+            if f:
+                flags['iop_left'] = f
+            f = _bp_flag(vitals.get('blood_pressure'))
+            if f:
+                flags['bp'] = f
+            f = _pulse_flag(vitals.get('pulse'))
+            if f:
+                flags['pulse'] = f
+            f = _temp_flag(vitals.get('temperature'))
+            if f:
+                flags['temperature'] = f
+            if flags:
+                vitals['_flags'] = flags
+
             visit.vital_signs = vitals
             visit.status = 'TRIAGE'
             visit.triage_nurse = request.user

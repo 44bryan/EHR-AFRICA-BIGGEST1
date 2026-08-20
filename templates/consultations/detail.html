@@ -264,8 +264,8 @@
 
 {# ── Triage Vitals Strip — always visible at top of consultation ── #}
 {% if consultation.visit and consultation.visit.vital_signs %}
-{% with v=consultation.visit.vital_signs %}
-<div class="card border-0 shadow-sm mb-3">
+{% with v=consultation.visit.vital_signs fl=consultation.visit.vital_signs._flags %}
+<div class="card border-0 shadow-sm mb-3 {% if fl %}border-start border-4 {% if fl.iop_right == 'HIGH' or fl.iop_left == 'HIGH' or fl.bp == 'HIGH' %}border-danger{% elif fl.va_right == 'LOW' or fl.va_left == 'LOW' %}border-warning{% else %}border-info{% endif %}{% endif %}">
   <div class="card-body py-2 px-3">
     <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
       <span class="fw-bold small text-primary me-2"><i class="bi bi-heart-pulse me-1"></i>Triage Vitals</span>
@@ -274,39 +274,52 @@
         {{ v.priority }}
       </span>
       {% endif %}
-      <span class="text-muted small">Recorded by nurse before consultation</span>
+      {% if fl %}
+      {% for fkey, fval in fl.items %}
+      <span class="badge {% if fval == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.65rem;">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ fkey|upper }} {{ fval }}
+      </span>
+      {% endfor %}
+      {% endif %}
+      <span class="text-muted small ms-1">Recorded by nurse before consultation</span>
     </div>
     <div class="d-flex flex-wrap gap-3 small">
       {% if v.visual_acuity_right or v.visual_acuity_left %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.va_right == 'LOW' or fl.va_left == 'LOW' %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
         <span class="text-muted" style="font-size:.65rem;">VA (Unaided)</span>
-        <span class="fw-semibold">RE: {{ v.visual_acuity_right|default:"—" }} &nbsp; LE: {{ v.visual_acuity_left|default:"—" }}</span>
+        <span class="fw-semibold">
+          RE: {{ v.visual_acuity_right|default:"—" }}{% if fl.va_right %} <span class="badge bg-warning text-dark" style="font-size:.6rem;">{{ fl.va_right }}</span>{% endif %}
+          &nbsp;
+          LE: {{ v.visual_acuity_left|default:"—" }}{% if fl.va_left %} <span class="badge bg-warning text-dark" style="font-size:.6rem;">{{ fl.va_left }}</span>{% endif %}
+        </span>
       </div>
       {% endif %}
       {% if v.intraocular_pressure_right or v.intraocular_pressure_left %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.iop_right == 'HIGH' or fl.iop_left == 'HIGH' %}bg-danger bg-opacity-10{% else %}bg-light{% endif %}">
         <span class="text-muted" style="font-size:.65rem;">IOP (mmHg)</span>
         <span class="fw-semibold">
-          RE: {{ v.intraocular_pressure_right|default:"—" }} &nbsp; LE: {{ v.intraocular_pressure_left|default:"—" }}
+          RE: {{ v.intraocular_pressure_right|default:"—" }}{% if fl.iop_right %} <span class="badge {% if fl.iop_right == 'HIGH' %}bg-danger{% else %}bg-info{% endif %}" style="font-size:.6rem;">{{ fl.iop_right }}</span>{% endif %}
+          &nbsp;
+          LE: {{ v.intraocular_pressure_left|default:"—" }}{% if fl.iop_left %} <span class="badge {% if fl.iop_left == 'HIGH' %}bg-danger{% else %}bg-info{% endif %}" style="font-size:.6rem;">{{ fl.iop_left }}</span>{% endif %}
         </span>
       </div>
       {% endif %}
       {% if v.blood_pressure %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.bp == 'HIGH' %}bg-danger bg-opacity-10{% elif fl.bp == 'LOW' %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
         <span class="text-muted" style="font-size:.65rem;">Blood Pressure</span>
-        <span class="fw-semibold">{{ v.blood_pressure }} mmHg</span>
+        <span class="fw-semibold">{{ v.blood_pressure }} mmHg{% if fl.bp %} <span class="badge {% if fl.bp == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.6rem;">{{ fl.bp }}</span>{% endif %}</span>
       </div>
       {% endif %}
       {% if v.pulse %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.pulse %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
         <span class="text-muted" style="font-size:.65rem;">Pulse</span>
-        <span class="fw-semibold">{{ v.pulse }} bpm</span>
+        <span class="fw-semibold">{{ v.pulse }} bpm{% if fl.pulse %} <span class="badge {% if fl.pulse == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.6rem;">{{ fl.pulse }}</span>{% endif %}</span>
       </div>
       {% endif %}
       {% if v.temperature %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.temperature %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
         <span class="text-muted" style="font-size:.65rem;">Temp</span>
-        <span class="fw-semibold">{{ v.temperature }} &deg;C</span>
+        <span class="fw-semibold">{{ v.temperature }} &deg;C{% if fl.temperature %} <span class="badge {% if fl.temperature == 'HIGH' %}bg-danger{% else %}bg-info{% endif %}" style="font-size:.6rem;">{{ fl.temperature }}</span>{% endif %}</span>
       </div>
       {% endif %}
       {% if v.weight %}

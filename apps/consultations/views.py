@@ -341,6 +341,34 @@ def consultation_create_view(request, patient_id):
             visit.attending_doctor = request.user
             visit.save(update_fields=['status', 'attending_doctor'])
 
+            # ── When refraction saves VA, push it back to visit.vital_signs ──
+            # So VA is visible in the nurse strip, patient record, and everywhere.
+            _dept_code = consultation.department.code if consultation.department else ''
+            if _dept_code in ('REFRAC', 'PEDS_REFRAC'):
+                _va_r = (dept_data.get('va_unaided_od') or dept_data.get('va_re_unaided') or
+                         dept_data.get('sub_va_dist_od') or '')
+                _va_l = (dept_data.get('va_unaided_os') or dept_data.get('va_le_unaided') or
+                         dept_data.get('sub_va_dist_os') or '')
+                _bcva_r = dept_data.get('va_corrected_od') or dept_data.get('sub_va_dist_od') or ''
+                _bcva_l = dept_data.get('va_corrected_os') or dept_data.get('sub_va_dist_os') or ''
+                _iop_r  = dept_data.get('iop_re') or dept_data.get('iop_od') or ''
+                _iop_l  = dept_data.get('iop_le') or dept_data.get('iop_os') or ''
+                _vs = dict(visit.vital_signs or {})
+                if _va_r:
+                    _vs['visual_acuity_right'] = _va_r
+                if _va_l:
+                    _vs['visual_acuity_left'] = _va_l
+                if _bcva_r:
+                    _vs['va_bcva_right'] = _bcva_r
+                if _bcva_l:
+                    _vs['va_bcva_left'] = _bcva_l
+                if _iop_r:
+                    _vs['intraocular_pressure_right'] = _iop_r
+                if _iop_l:
+                    _vs['intraocular_pressure_left'] = _iop_l
+                visit.vital_signs = _vs
+                visit.save(update_fields=['vital_signs', 'updated_at'])
+
             # ── GP pre-op clearance → write back to SurgicalBooking ────────────
             preop_clearance = dept_data.get('preop_clearance_status', '')
             if preop_clearance and visit:
@@ -728,6 +756,29 @@ def consultation_edit_view(request, pk):
                     ef['intraocular_pressure'].get('left', ''))
                 c.examination_findings = ef
             c.save()
+
+            # ── Push refraction VA back to visit.vital_signs on edit too ────
+            if dept_data:
+                _dept_code2 = c.department.code if c.department else ''
+                if _dept_code2 in ('REFRAC', 'PEDS_REFRAC') and c.visit:
+                    _vst = c.visit
+                    _va_r2 = (dept_data.get('va_unaided_od') or dept_data.get('va_re_unaided') or
+                              dept_data.get('sub_va_dist_od') or '')
+                    _va_l2 = (dept_data.get('va_unaided_os') or dept_data.get('va_le_unaided') or
+                              dept_data.get('sub_va_dist_os') or '')
+                    _bcva_r2 = dept_data.get('va_corrected_od') or dept_data.get('sub_va_dist_od') or ''
+                    _bcva_l2 = dept_data.get('va_corrected_os') or dept_data.get('sub_va_dist_os') or ''
+                    _vs2 = dict(_vst.vital_signs or {})
+                    if _va_r2:
+                        _vs2['visual_acuity_right'] = _va_r2
+                    if _va_l2:
+                        _vs2['visual_acuity_left'] = _va_l2
+                    if _bcva_r2:
+                        _vs2['va_bcva_right'] = _bcva_r2
+                    if _bcva_l2:
+                        _vs2['va_bcva_left'] = _bcva_l2
+                    _vst.vital_signs = _vs2
+                    _vst.save(update_fields=['vital_signs', 'updated_at'])
 
             # Auto-create follow-up appointment if follow_up_date was set
             if c.follow_up_date:
