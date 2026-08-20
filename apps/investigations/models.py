@@ -17,6 +17,8 @@ class InvestigationCategory(models.TextChoices):
     BIOMETRY = 'BIOMETRY', _('Biometry / A-Scan')
     PACHYMETRY = 'PACHYMETRY', _('Pachymetry')
     ANTERIOR_SEGMENT = 'ANT_SEG', _('Anterior Segment')
+    ORTHOPTICS = 'ORTHOPTICS', _('Orthoptics / Binocular Vision')
+    LOW_VISION = 'LOW_VISION', _('Low Vision')
     OTHER = 'OTHER', _('Other')
 
 
