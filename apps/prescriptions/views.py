@@ -166,6 +166,8 @@ def optical_prescription_new(request, consultation_pk):
                             'COUNSELING', 'ADMITTED', 'IN_THEATRE'}
                     if visit.status not in skip:
                         from apps.departments.models import Department
+                        from apps.core.patient_flow import close_stage_token as _close_opt
+                        _close_opt(visit.patient, prev_status=visit.status)
                         opt_dept = Department.objects.filter(code='OPTICAL', is_active=True).first()
                         visit.status = 'OPTICAL'
                         update_fields = ['status', 'updated_at']

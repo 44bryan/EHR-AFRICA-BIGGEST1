@@ -6,6 +6,55 @@ from apps.core.context_processors import qms_active as _qms_active
 from apps.core.ws_notify import notify_queue as _ws_notify
 
 
+# Map visit status → QMS service_type(s) to close when leaving that stage
+_STATUS_TO_TOKEN_TYPES = {
+    'PARAMETERS':       ['PARAMETERS', 'PARAMS_VIP'],
+    'TRIAGE':           ['PARAMETERS', 'PARAMS_VIP'],
+    'WAITING':          ['GENERAL', 'EXP_CONSULT', 'VIP_CONSULT', 'GEN_PHYS'],
+    'IN_CONSULTATION':  ['GENERAL', 'EXP_CONSULT', 'VIP_CONSULT', 'GEN_PHYS'],
+    'REFRACTION':       ['REFRACTION'],
+    'AT_RETINA':        ['RETINA'],
+    'AT_GLAUCOMA':      ['GLAUCOMA'],
+    'AT_CATARACT':      ['CATARACT'],
+    'AT_PEDIATRIC':     ['PEDIATRIC'],
+    'AT_NEURO':         ['NEURO'],
+    'AT_OCULOPLASTY':   ['OCULOPLASTY'],
+    'AT_CORNEA':        ['CORNEA'],
+    'UVEITIS':          ['UVEITIS'],
+    'INVESTIGATION':    ['INVEST'],
+    'LABORATORY':       ['LAB'],
+    'PHARMACY':         ['PHARMACY'],
+    'OPTICAL':          ['OPTICAL'],
+    'BILLING':          ['CASHIER'],
+}
+
+
+def close_stage_token(patient, prev_status, today=None):
+    """
+    Close any active QMS token for the stage the patient is leaving.
+    Call this BEFORE updating visit.status so prev_status is the old value.
+    Safe to call even if QMS is off or no token exists.
+    """
+    if not _qms_active() or not patient or not prev_status:
+        return
+    service_types = _STATUS_TO_TOKEN_TYPES.get(prev_status)
+    if not service_types:
+        return
+    try:
+        from apps.qms.models import QueueToken, TokenStatus
+        from django.utils import timezone as _tz
+        _today = today or _tz.localdate()
+        QueueToken.objects.filter(
+            patient=patient,
+            token_date=_today,
+            service_type__in=service_types,
+            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+            is_deleted=False,
+        ).update(status=TokenStatus.COMPLETED)
+    except Exception:
+        pass
+
+
 # Map visit status → WebSocket room(s) to notify after routing
 _STATUS_ROOMS = {
     # ── Entry ──────────────────────────────────────────────────────────
@@ -63,6 +112,9 @@ def _auto_route_to_dept(visit, visit_status, qms_service_type, dept_code, trigge
 
     from apps.departments.models import Department
     dept = Department.objects.filter(code=dept_code, is_active=True).first()
+
+    # Close token for the stage the patient is leaving before advancing
+    close_stage_token(visit.patient, prev_status=visit.status)
 
     visit.status = visit_status
     update_fields = ['status', 'updated_at']

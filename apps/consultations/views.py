@@ -428,6 +428,8 @@ def consultation_create_view(request, patient_id):
                                 'COUNSELING', 'ADMITTED', 'IN_THEATRE'}
                     if visit.status not in skip_opt:
                         from apps.departments.models import Department as _Dept2
+                        from apps.core.patient_flow import close_stage_token as _close_opt
+                        _close_opt(visit.patient, prev_status=visit.status)
                         opt_dept = _Dept2.objects.filter(code='OPTICAL', is_active=True).first()
                         visit.status = 'OPTICAL'
                         _upd = ['status', 'updated_at']
