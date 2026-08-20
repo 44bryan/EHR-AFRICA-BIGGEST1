@@ -82,6 +82,27 @@ def consultation_list_view(request):
     })
 
 
+def _close_triage_token(patient, today):
+    """Close any open PARAMETERS/PARAMS_VIP token when a consultation starts.
+
+    Ensures FT/follow-up patients or direct-access cases don't remain stuck
+    on the triage nurse's queue after the doctor has opened a consultation.
+    """
+    if not _qms_active():
+        return
+    try:
+        from apps.qms.models import QueueToken, TokenStatus
+        QueueToken.objects.filter(
+            patient=patient,
+            token_date=today,
+            service_type__in=['PARAMETERS', 'PARAMS_VIP'],
+            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+            is_deleted=False,
+        ).update(status=TokenStatus.COMPLETED)
+    except Exception:
+        pass
+
+
 @never_cache
 @login_required
 def consultation_create_view(request, patient_id):
@@ -245,6 +266,7 @@ def consultation_create_view(request, patient_id):
             visit.status = 'IN_CONSULTATION'
             visit.attending_doctor = request.user
             visit.save(update_fields=['status', 'attending_doctor'])
+            _close_triage_token(patient, today=timezone.localdate())
             messages.success(
                 request,
                 'Consultation draft saved. Order investigations, then return here to complete the notes.'
@@ -340,6 +362,7 @@ def consultation_create_view(request, patient_id):
             visit.status = 'IN_CONSULTATION'
             visit.attending_doctor = request.user
             visit.save(update_fields=['status', 'attending_doctor'])
+            _close_triage_token(patient, today=timezone.localdate())
 
             # ── When refraction saves VA, push it back to visit.vital_signs ──
             # So VA is visible in the nurse strip, patient record, and everywhere.
@@ -1113,6 +1136,7 @@ def consultation_autosave_view(request):
                 visit.status = 'IN_CONSULTATION'
                 visit.attending_doctor = request.user
                 visit.save(update_fields=['status', 'attending_doctor', 'updated_at'])
+                _close_triage_token(patient, today=timezone.localdate())
 
         # Save history fields
         if section == 'history':
