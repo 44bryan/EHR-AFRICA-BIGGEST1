@@ -123,8 +123,21 @@ function ehrInitOnce() {
   });
 
   // ehr-combo dropdown buttons — event delegation, works for desktop + touch devices (tablet/phone)
+  // Scroll-safe: track touchstart Y so we can ignore touchend that ended a scroll gesture
   var _ehrLastTouchItem = null;
+  var _ehrTouchStartY = 0;
+  var _ehrTouchScrolled = false;
+  document.addEventListener('touchstart', function(e) {
+    var t = e.touches[0];
+    _ehrTouchStartY = t ? t.clientY : 0;
+    _ehrTouchScrolled = false;
+  }, { passive: true });
+  document.addEventListener('touchmove', function(e) {
+    var t = e.touches[0];
+    if (t && Math.abs(t.clientY - _ehrTouchStartY) > 8) _ehrTouchScrolled = true;
+  }, { passive: true });
   document.addEventListener('touchend', function(e) {
+    if (_ehrTouchScrolled) return; // finger moved — it was a scroll, not a tap
     var item = e.target.closest('.ehr-add-menu .dropdown-item');
     if (!item) return;
     _ehrLastTouchItem = item;
