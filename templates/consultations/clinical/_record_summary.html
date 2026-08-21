@@ -42,24 +42,24 @@
 
 {% elif dc == 'REFRAC' or dc == 'PEDS_REFRAC' %}
 {# ════ REFRACTION / PEDIATRIC REFRACTION — VA + Rx, no IOP ════════════════ #}
-{% if dd.va_re_unaided or dd.va_le_unaided or dd.va_unaided_od or dd.va_unaided_os or vs.visual_acuity_right or vs.visual_acuity_left %}
+{% if dd.va_re_unaided or dd.va_le_unaided or dd.va_unaided_od or dd.va_unaided_os or dd.nva_od or dd.nva_os or vs.visual_acuity_right or vs.visual_acuity_left %}
 <div class="exam-grid mb-3">
   <div class="eg-box">
     <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
     <table class="va-table">
-      <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>Corrected</th></tr></thead>
+      <thead><tr><th>Eye</th><th>Unaided</th><th>Corrected</th><th>NVA</th></tr></thead>
       <tbody>
         <tr>
           <td class="eye-re">OD</td>
           <td>{% if dd.va_re_unaided %}{{ dd.va_re_unaided }}{% elif dd.va_unaided_od %}{{ dd.va_unaided_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
-          <td>{{ dd.va_re_ph|default:"—" }}</td>
           <td>{% if dd.va_re_bcva %}{{ dd.va_re_bcva }}{% elif dd.va_corrected_od %}{{ dd.va_corrected_od }}{% else %}—{% endif %}</td>
+          <td>{{ dd.nva_od|default:"—" }}</td>
         </tr>
         <tr>
           <td class="eye-le">OS</td>
           <td>{% if dd.va_le_unaided %}{{ dd.va_le_unaided }}{% elif dd.va_unaided_os %}{{ dd.va_unaided_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
-          <td>{{ dd.va_le_ph|default:"—" }}</td>
           <td>{% if dd.va_le_bcva %}{{ dd.va_le_bcva }}{% elif dd.va_corrected_os %}{{ dd.va_corrected_os }}{% else %}—{% endif %}</td>
+          <td>{{ dd.nva_os|default:"—" }}</td>
         </tr>
       </tbody>
     </table>
@@ -151,26 +151,26 @@
 {% else %}
 {# ════ ALL EYE DEPARTMENTS: GEN_OPH · RETINA · GLAUC · UVEITIS · CATARACT · CORNEA · OCULOPLASTY · NEURO_OPH · PEDS_OPH ══ #}
 
-{# VA + IOP grid #}
-{% with va_od=dd.va_re_unaided va_os=dd.va_le_unaided iop_od=dd.iop_re iop_os=dd.iop_le %}
-{% if va_od or va_os or iop_od or iop_os or dd.va_unaided_od or dd.va_unaided_os or vs.visual_acuity_right or vs.visual_acuity_left %}
+{# VA + IOP grid — refraction_data is the refractionist's dept_specific_data for this visit (passed by view) #}
+{% with va_od=dd.va_re_unaided va_os=dd.va_le_unaided iop_od=dd.iop_re iop_os=dd.iop_le rd=refraction_data %}
+{% if va_od or va_os or iop_od or iop_os or dd.va_unaided_od or dd.va_unaided_os or vs.visual_acuity_right or vs.visual_acuity_left or rd.va_unaided_od or rd.va_unaided_os %}
 <div class="exam-grid mb-3">
   <div class="eg-box">
-    <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+    <div class="eg-label"><i class="bi bi-eye me-1"></i>Visual Acuity{% if rd.va_unaided_od or rd.va_unaided_os %} <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size:.6rem;">Refractionist</span>{% endif %}</div>
     <table class="va-table">
-      <thead><tr><th>Eye</th><th>Unaided</th><th>PH</th><th>BCVA/Corrected</th></tr></thead>
+      <thead><tr><th>Eye</th><th>Unaided</th><th>Corrected</th><th>NVA</th></tr></thead>
       <tbody>
         <tr>
           <td class="eye-re">OD</td>
-          <td>{% if va_od %}{{ va_od }}{% elif dd.va_unaided_od %}{{ dd.va_unaided_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
-          <td>{{ dd.va_re_ph|default:"—" }}</td>
-          <td>{% if dd.va_re_bcva %}{{ dd.va_re_bcva }}{% elif dd.va_corrected_od %}{{ dd.va_corrected_od }}{% else %}—{% endif %}</td>
+          <td>{% if va_od %}{{ va_od }}{% elif dd.va_unaided_od %}{{ dd.va_unaided_od }}{% elif rd.va_unaided_od %}{{ rd.va_unaided_od }}{% elif vs.visual_acuity_right %}{{ vs.visual_acuity_right }}{% else %}—{% endif %}</td>
+          <td>{% if dd.va_re_bcva %}{{ dd.va_re_bcva }}{% elif dd.va_corrected_od %}{{ dd.va_corrected_od }}{% elif rd.va_corrected_od %}{{ rd.va_corrected_od }}{% else %}—{% endif %}</td>
+          <td>{% if dd.nva_od %}{{ dd.nva_od }}{% elif rd.nva_od %}{{ rd.nva_od }}{% else %}—{% endif %}</td>
         </tr>
         <tr>
           <td class="eye-le">OS</td>
-          <td>{% if va_os %}{{ va_os }}{% elif dd.va_unaided_os %}{{ dd.va_unaided_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
-          <td>{{ dd.va_le_ph|default:"—" }}</td>
-          <td>{% if dd.va_le_bcva %}{{ dd.va_le_bcva }}{% elif dd.va_corrected_os %}{{ dd.va_corrected_os }}{% else %}—{% endif %}</td>
+          <td>{% if va_os %}{{ va_os }}{% elif dd.va_unaided_os %}{{ dd.va_unaided_os }}{% elif rd.va_unaided_os %}{{ rd.va_unaided_os }}{% elif vs.visual_acuity_left %}{{ vs.visual_acuity_left }}{% else %}—{% endif %}</td>
+          <td>{% if dd.va_le_bcva %}{{ dd.va_le_bcva }}{% elif dd.va_corrected_os %}{{ dd.va_corrected_os }}{% elif rd.va_corrected_os %}{{ rd.va_corrected_os }}{% else %}—{% endif %}</td>
+          <td>{% if dd.nva_os %}{{ dd.nva_os }}{% elif rd.nva_os %}{{ rd.nva_os }}{% else %}—{% endif %}</td>
         </tr>
       </tbody>
     </table>
@@ -334,7 +334,7 @@
         <td>{{ sph_od|default:"—" }}</td>
         <td>{{ dd|dictfirst:"rx_re_cyl,rx_cyl_od,final_cyl_od,pg_cyl_dist_od,sub_cyl_dist_od"|default:"—" }}</td>
         <td>{% with ax=dd|dictfirst:"rx_re_axis,rx_axis_od,final_axis_od,pg_axis_dist_od,sub_axis_dist_od" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
-        <td>{{ dd|dictfirst:"rx_re_add,rx_add_od,add_od,pg_add_od"|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_re_add,rx_add_od,sub_add_od,add_od,pg_add_od"|default:"—" }}</td>
         <td>{{ dd|dictfirst:"rx_re_va,rx_bcva_od,bcva_od,pg_va_dist_od,sub_va_dist_od"|default:"—" }}</td>
       </tr>
       <tr>
@@ -342,7 +342,7 @@
         <td>{{ sph_os|default:"—" }}</td>
         <td>{{ dd|dictfirst:"rx_le_cyl,rx_cyl_os,final_cyl_os,pg_cyl_dist_os,sub_cyl_dist_os"|default:"—" }}</td>
         <td>{% with ax=dd|dictfirst:"rx_le_axis,rx_axis_os,final_axis_os,pg_axis_dist_os,sub_axis_dist_os" %}{% if ax %}{{ ax }}&deg;{% else %}—{% endif %}{% endwith %}</td>
-        <td>{{ dd|dictfirst:"rx_le_add,rx_add_os,add_os,pg_add_os"|default:"—" }}</td>
+        <td>{{ dd|dictfirst:"rx_le_add,rx_add_os,sub_add_os,add_os,pg_add_os"|default:"—" }}</td>
         <td>{{ dd|dictfirst:"rx_le_va,rx_bcva_os,bcva_os,pg_va_dist_os,sub_va_dist_os"|default:"—" }}</td>
       </tr>
     </tbody>

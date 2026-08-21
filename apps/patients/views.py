@@ -639,6 +639,18 @@ def patient_detail_view(request, patient_id):
             })
     vital_signs_history_json = json.dumps(vital_signs_history, cls=DjangoJSONEncoder)
 
+    # ── Refraction VA lookup: visit_id → refractionist's dept_specific_data ──
+    from apps.consultations.models import Consultation as _RefConsult
+    _refrac_consults = _RefConsult.objects.filter(
+        patient=patient, is_deleted=False,
+        department__code__in=['REFRAC', 'PEDS_REFRAC'],
+    ).values('visit_id', 'department_specific_data').order_by('-consultation_date')
+    refraction_by_visit = {}
+    for rc in _refrac_consults:
+        vid = rc['visit_id']
+        if vid and vid not in refraction_by_visit:
+            refraction_by_visit[vid] = rc['department_specific_data'] or {}
+
     # ── Role-based permission flags for the template ─────────────────────
     is_doctor        = u.is_doctor or u.is_medical_director
     is_clinical_nurse = u.is_ward_nurse or u.is_theatre_nurse or u.is_opd_nurse or u.role == 'anaesthetist'
@@ -734,6 +746,7 @@ def patient_detail_view(request, patient_id):
         'insurance': patient.insurance.filter(is_active=True).first(),
         'consultations': consultations,
         'consultations_by_dept': consultations_by_dept,
+        'refraction_by_visit': refraction_by_visit,
         'latest_rx': latest_rx,
         'surgical_bookings': surgical_bookings,
         'theatre_procedures': theatre_procedures,
@@ -876,6 +889,14 @@ def visit_detail_view(request, visit_number):
     ]
 
     from apps.qms.models import ServiceType
+    from apps.consultations.models import Consultation as _VDRefConsult
+    _vd_refrac = _VDRefConsult.objects.filter(
+        visit=visit, is_deleted=False,
+        department__code__in=['REFRAC', 'PEDS_REFRAC'],
+    ).values('department_specific_data').order_by('-consultation_date').first()
+    _vd_refrac_data = (_vd_refrac['department_specific_data'] or {}) if _vd_refrac else {}
+    refraction_by_visit = {visit.pk: _vd_refrac_data}
+
     return render(request, 'patients/visit_detail.html', {
         'visit': visit,
         'patient': patient,
@@ -890,6 +911,7 @@ def visit_detail_view(request, visit_number):
         'has_paid': has_paid,
         'is_discharged': is_discharged,
         'service_types': ServiceType.choices,
+        'refraction_by_visit': refraction_by_visit,
     })
 
 
