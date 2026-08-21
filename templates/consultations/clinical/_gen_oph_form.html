@@ -690,27 +690,27 @@
     var SZ   = ASD_SZ;          // 280
     var ICX  = ASD_CX;          // 140 — iris centre x
     var CY   = ASD_CY + 8;      // 148 — canthus y / iris centre y
-    var IR   = 52;               // iris radius
-    var PR   = 20;               // pupil radius
+    var IR   = 55;               // iris radius — wide enough to see clearly
+    var PR   = 21;               // pupil radius
     var SKIN = '#f2d9bc';
 
-    // Canthus x positions: OD → temporal(T) on left, nasal(N) on right; OS → reversed
-    var tempCX  = (eye === 'od') ? 18       : SZ - 18;
-    var nasalCX = (eye === 'od') ? SZ - 18  : 18;
+    // Canthus x: OD → temporal left, nasal right; OS → reversed
+    var tempCX  = (eye === 'od') ? 18      : SZ - 18;
+    var nasalCX = (eye === 'od') ? SZ - 18 : 18;
 
-    // Upper lid bezier control points (arc bows upward, peak ~60% from temporal)
+    // Upper lid CPs — wide open so full iris is visible (peak ≈ CY−78)
     var ulCP1x = tempCX  + (nasalCX - tempCX) * 0.25;
-    var ulCP1y = CY - 58;
+    var ulCP1y = CY - 78;
     var ulCP2x = tempCX  + (nasalCX - tempCX) * 0.65;
-    var ulCP2y = CY - 50;
+    var ulCP2y = CY - 70;
 
-    // Lower lid bezier control points (arc bows downward, shallower)
+    // Lower lid CPs — wide open (trough ≈ CY+72)
     var llCP1x = tempCX  + (nasalCX - tempCX) * 0.30;
-    var llCP1y = CY + 36;
+    var llCP1y = CY + 74;
     var llCP2x = tempCX  + (nasalCX - tempCX) * 0.70;
-    var llCP2y = CY + 30;
+    var llCP2y = CY + 70;
 
-    // Cubic bezier helpers
+    // Cubic bezier point + tangent helpers
     function bezPt(t, x0,y0, x1,y1, x2,y2, x3,y3) {
       var u = 1 - t;
       return { x: u*u*u*x0 + 3*u*u*t*x1 + 3*u*t*t*x2 + t*t*t*x3,
@@ -721,6 +721,13 @@
       return { x: 3*(u*u*(x1-x0) + 2*u*t*(x2-x1) + t*t*(x3-x2)),
                y: 3*(u*u*(y1-y0) + 2*u*t*(y2-y1) + t*t*(y3-y2)) };
     }
+    // Helper: build the eye-opening path (upper lid forward + lower lid backward)
+    function eyeOpenPath() {
+      ctx.moveTo(tempCX, CY);
+      ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY); // upper lid
+      ctx.bezierCurveTo(llCP2x,llCP2y, llCP1x,llCP1y, tempCX,CY);  // lower (backward)
+      ctx.closePath();
+    }
 
     ctx.clearRect(0, 0, SZ, SZ);
 
@@ -728,156 +735,133 @@
     ctx.fillStyle = SKIN;
     ctx.fillRect(0, 0, SZ, SZ);
 
-    // ── 2. Clip to almond eye-opening, draw sclera + iris + pupil ────
+    // ── 2. Clip to eye opening — draw sclera, iris, pupil ────────────
     ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(tempCX, CY);
-    ctx.bezierCurveTo(ulCP1x, ulCP1y, ulCP2x, ulCP2y, nasalCX, CY); // upper lid
-    ctx.bezierCurveTo(llCP2x, llCP2y, llCP1x, llCP1y, tempCX, CY);  // lower lid (backward)
-    ctx.closePath();
-    ctx.clip();
+    ctx.beginPath(); eyeOpenPath(); ctx.clip();
 
-    // Sclera
-    ctx.fillStyle = '#fafcff';
+    // White sclera
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, SZ, SZ);
 
-    // Conjunctival vessels
-    ctx.strokeStyle = 'rgba(210,140,140,0.35)'; ctx.lineWidth = 0.8;
-    [[tempCX,CY, ICX-IR-4,CY-10],[tempCX,CY, ICX-IR-4,CY+10],
-     [nasalCX,CY,ICX+IR+4,CY-6],[nasalCX,CY,ICX+IR+4,CY+8]].forEach(function(v) {
-      ctx.beginPath();
-      ctx.moveTo(v[0],v[1]);
-      ctx.quadraticCurveTo((v[0]+v[2])/2, (v[1]+v[3])/2 - 6, v[2], v[3]);
-      ctx.stroke();
+    // Subtle conjunctival vessels
+    ctx.strokeStyle = 'rgba(200,130,130,0.32)'; ctx.lineWidth = 0.9;
+    [[tempCX,CY, ICX-IR-3,CY-8],[tempCX,CY, ICX-IR-3,CY+8],
+     [nasalCX,CY,ICX+IR+3,CY-5],[nasalCX,CY,ICX+IR+3,CY+7]].forEach(function(v) {
+      ctx.beginPath(); ctx.moveTo(v[0],v[1]);
+      ctx.quadraticCurveTo((v[0]+v[2])/2,(v[1]+v[3])/2-5, v[2],v[3]); ctx.stroke();
     });
 
-    // Limbus ring
-    ctx.beginPath(); ctx.arc(ICX, CY, IR+2, 0, 2*Math.PI);
-    ctx.strokeStyle = '#5a6880'; ctx.lineWidth = 2.5; ctx.stroke();
+    // Limbus
+    ctx.beginPath(); ctx.arc(ICX, CY, IR+2.5, 0, 2*Math.PI);
+    ctx.strokeStyle = '#3d5070'; ctx.lineWidth = 3; ctx.stroke();
 
-    // Iris
+    // Iris — medium blue so it reads clearly
     ctx.beginPath(); ctx.arc(ICX, CY, IR, 0, 2*Math.PI);
-    ctx.fillStyle = '#8dacd6'; ctx.fill();
+    var irisFill = ctx.createRadialGradient(ICX-8, CY-8, 4, ICX, CY, IR);
+    irisFill.addColorStop(0, '#a8c8e8');
+    irisFill.addColorStop(1, '#5a88b8');
+    ctx.fillStyle = irisFill; ctx.fill();
 
     // Iris radial texture
-    ctx.strokeStyle = 'rgba(45,65,110,0.28)'; ctx.lineWidth = 0.8;
+    ctx.strokeStyle = 'rgba(30,55,100,0.30)'; ctx.lineWidth = 0.8;
     for (var ri = 0; ri < 28; ri++) {
-      var ra = (ri / 28) * 2 * Math.PI;
+      var ra = (ri/28)*2*Math.PI;
       ctx.beginPath();
       ctx.moveTo(ICX + PR*Math.cos(ra), CY + PR*Math.sin(ra));
       ctx.lineTo(ICX + (IR-2)*Math.cos(ra), CY + (IR-2)*Math.sin(ra));
       ctx.stroke();
     }
 
-    // Collarette
-    ctx.beginPath(); ctx.arc(ICX, CY, PR+9, 0, 2*Math.PI);
-    ctx.strokeStyle = 'rgba(50,70,120,0.22)'; ctx.lineWidth = 1.5; ctx.stroke();
+    // Collarette ring
+    ctx.beginPath(); ctx.arc(ICX, CY, PR+10, 0, 2*Math.PI);
+    ctx.strokeStyle = 'rgba(30,60,110,0.25)'; ctx.lineWidth = 1.8; ctx.stroke();
 
-    // Pupil
+    // Pupil — jet black
     ctx.beginPath(); ctx.arc(ICX, CY, PR, 0, 2*Math.PI);
-    ctx.fillStyle = '#0f1520'; ctx.fill();
+    ctx.fillStyle = '#000000'; ctx.fill();
 
-    // Light reflex
-    ctx.beginPath(); ctx.arc(ICX-7, CY-7, 4, 0, 2*Math.PI);
-    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fill();
+    // Corneal light reflex — bright white spot
+    ctx.beginPath(); ctx.arc(ICX-8, CY-8, 5, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();
 
-    // Clock hour dots just outside limbus
-    ctx.fillStyle = 'rgba(70,90,130,0.45)';
+    // Clock hour dots just outside limbus (auto-clipped by eyelid clip)
+    ctx.fillStyle = 'rgba(60,80,120,0.50)';
     for (var hi = 0; hi < 12; hi++) {
       var ha = (hi/12)*2*Math.PI - Math.PI/2;
       ctx.beginPath();
-      ctx.arc(ICX+(IR+10)*Math.cos(ha), CY+(IR+10)*Math.sin(ha), 2, 0, 2*Math.PI);
+      ctx.arc(ICX+(IR+11)*Math.cos(ha), CY+(IR+11)*Math.sin(ha), 2.2, 0, 2*Math.PI);
       ctx.fill();
     }
-    ctx.restore(); // end eye-opening clip
+    ctx.restore(); // end clip
 
-    // ── 3. Eyelid skin polygons (cover sclera above/below lid margins) ──
+    // ── 3. Skin outside eye opening — evenodd fill (works for both OD & OS) ──
+    // Full-canvas rect + eye opening subpath; evenodd cancels inside overlap = skin
+    // outside the eye, nothing drawn inside → iris stays visible.
     ctx.fillStyle = SKIN;
-    // Upper lid: rectangle from top to CY with upper-lid arc bitten out
     ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(SZ, 0); ctx.lineTo(SZ, CY);
-    ctx.lineTo(nasalCX, CY);
-    ctx.bezierCurveTo(ulCP2x,ulCP2y, ulCP1x,ulCP1y, tempCX,CY); // backward
-    ctx.lineTo(0, CY); ctx.closePath(); ctx.fill();
-    // Lower lid: rectangle from bottom to CY with lower-lid arc bitten out
-    ctx.beginPath();
-    ctx.moveTo(0, SZ); ctx.lineTo(SZ, SZ); ctx.lineTo(SZ, CY);
-    ctx.lineTo(nasalCX, CY);
-    ctx.bezierCurveTo(llCP2x,llCP2y, llCP1x,llCP1y, tempCX,CY); // backward
-    ctx.lineTo(0, CY); ctx.closePath(); ctx.fill();
+    ctx.rect(0, 0, SZ, SZ);   // outer boundary (clockwise)
+    eyeOpenPath();              // eye opening subpath (same winding → evenodd cancels)
+    ctx.fill('evenodd');
 
-    // ── 4. Lid margins ────────────────────────────────────────────────
-    ctx.strokeStyle = '#c89080'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(tempCX,CY);
-    ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(tempCX,CY);
-    ctx.bezierCurveTo(llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY);
-    ctx.stroke();
+    // ── 4. Lid margins (pinkish edge) ────────────────────────────────
+    ctx.strokeStyle = '#c08878'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(tempCX,CY);
+    ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tempCX,CY);
+    ctx.bezierCurveTo(llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY); ctx.stroke();
 
-    // ── 5. Upper eyelashes (18, bezier-curved outward) ────────────────
-    ctx.save(); ctx.strokeStyle = '#262626'; ctx.lineWidth = 1.3;
-    var UL = 18;
+    // ── 5. Upper eyelashes (16, bezier-curved upward) ─────────────────
+    ctx.save(); ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.3;
+    var UL = 16;
     for (var li = 0; li < UL; li++) {
-      var t  = li / (UL - 1);
+      var t  = li / (UL-1);
       var bp = bezPt(t, tempCX,CY, ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY);
       var bt = bezTan(t, tempCX,CY, ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY);
       var ln = Math.sqrt(bt.x*bt.x + bt.y*bt.y) || 1;
-      // Outward normal (upward for upper lid): (bt.y, -bt.x)
       var nx2 = bt.y/ln, ny2 = -bt.x/ln;
-      if (ny2 > 0) { nx2 = -nx2; ny2 = -ny2; } // ensure pointing up
-      var ll  = 9 + 8*Math.sin(t*Math.PI);       // lash length (longer in middle)
-      var cur = 4*Math.sin(t*Math.PI);            // outward curl
-      ctx.beginPath();
-      ctx.moveTo(bp.x, bp.y);
+      if (ny2 > 0) { nx2=-nx2; ny2=-ny2; }
+      var llen = 8 + 7*Math.sin(t*Math.PI);
+      var curl = 3.5*Math.sin(t*Math.PI);
+      ctx.beginPath(); ctx.moveTo(bp.x, bp.y);
       ctx.quadraticCurveTo(
-        bp.x + nx2*ll*0.55 + (-bt.x/ln)*cur,
-        bp.y + ny2*ll*0.55 + (-bt.y/ln)*cur,
-        bp.x + nx2*ll, bp.y + ny2*ll
-      );
+        bp.x + nx2*llen*0.5 + (-bt.x/ln)*curl,
+        bp.y + ny2*llen*0.5 + (-bt.y/ln)*curl,
+        bp.x + nx2*llen, bp.y + ny2*llen);
       ctx.stroke();
     }
     ctx.restore();
 
-    // ── 6. Lower eyelashes (10, shorter, straight) ────────────────────
-    ctx.save(); ctx.strokeStyle = '#303030'; ctx.lineWidth = 1.0;
-    var LL = 10;
-    for (var li2 = 1; li2 < LL - 1; li2++) {
-      var t2  = li2 / (LL - 1);
+    // ── 6. Lower eyelashes (9, shorter) ──────────────────────────────
+    ctx.save(); ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1.0;
+    var LL = 9;
+    for (var li2 = 1; li2 < LL-1; li2++) {
+      var t2  = li2/(LL-1);
       var bp2 = bezPt(t2, tempCX,CY, llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY);
       var bt2 = bezTan(t2, tempCX,CY, llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY);
       var ln2 = Math.sqrt(bt2.x*bt2.x + bt2.y*bt2.y) || 1;
-      // Outward normal (downward for lower lid): (-bt2.y, bt2.x)
       var nx3 = -bt2.y/ln2, ny3 = bt2.x/ln2;
-      if (ny3 < 0) { nx3 = -nx3; ny3 = -ny3; } // ensure pointing down
-      var ll2 = 5 + 4*Math.sin(t2*Math.PI);
-      ctx.beginPath();
-      ctx.moveTo(bp2.x, bp2.y);
-      ctx.lineTo(bp2.x + nx3*ll2, bp2.y + ny3*ll2);
-      ctx.stroke();
+      if (ny3 < 0) { nx3=-nx3; ny3=-ny3; }
+      var ll2 = 4 + 3.5*Math.sin(t2*Math.PI);
+      ctx.beginPath(); ctx.moveTo(bp2.x,bp2.y);
+      ctx.lineTo(bp2.x+nx3*ll2, bp2.y+ny3*ll2); ctx.stroke();
     }
     ctx.restore();
 
     // ── 7. Caruncle at medial (nasal) canthus ─────────────────────────
     ctx.save();
-    var cdx = (eye === 'od') ? -1 : 1; // points inward from nasal canthus
-    ctx.beginPath();
-    ctx.ellipse(nasalCX + cdx*9, CY, 8, 6, 0, 0, 2*Math.PI);
-    ctx.fillStyle = '#f0bebb'; ctx.fill();
-    ctx.strokeStyle = '#d49898'; ctx.lineWidth = 0.7; ctx.stroke();
+    var cdx = (eye==='od') ? -1 : 1;
+    ctx.beginPath(); ctx.ellipse(nasalCX+cdx*8, CY, 7, 5, 0, 0, 2*Math.PI);
+    ctx.fillStyle='#f0bebb'; ctx.fill();
+    ctx.strokeStyle='#d49898'; ctx.lineWidth=0.7; ctx.stroke();
     ctx.restore();
 
-    // ── 8. Direction labels (12 / 6 / N / T) ─────────────────────────
-    ctx.font = 'bold 10px sans-serif'; ctx.fillStyle = '#6c757d';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('12', ICX, 10);
-    ctx.fillText('6',  ICX, SZ - 10);
-    var labelNX = (eye === 'od') ? SZ - 10 : 10;
-    var labelTX = (eye === 'od') ? 10 : SZ - 10;
-    ctx.fillText('N', labelNX, CY);
-    ctx.fillText('T', labelTX, CY);
+    // ── 8. Direction labels ───────────────────────────────────────────
+    ctx.font='bold 10px sans-serif'; ctx.fillStyle='#5a6878';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('12', ICX, 10); ctx.fillText('6', ICX, SZ-10);
+    var labelNX = (eye==='od') ? SZ-10 : 10;
+    var labelTX = (eye==='od') ? 10    : SZ-10;
+    ctx.fillText('N', labelNX, CY); ctx.fillText('T', labelTX, CY);
   }
 
   // ── Composite: base + overlay strokes + labels ────────────────────
