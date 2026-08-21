@@ -218,7 +218,7 @@ def investigation_order_view(request, consultation_pk):
 
     # Group types by category; optometry mode filters to relevant cats only
     from itertools import groupby
-    OPTOMETRY_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION', 'VISUAL_FIELD'}
+    OPTOMETRY_CATS = {'ORTHOPTICS', 'LOW_VISION'}
     is_optometry = request.GET.get('cat') == 'optometry'
     _qs = InvestigationType.objects.filter(is_active=True)
     if is_optometry:
