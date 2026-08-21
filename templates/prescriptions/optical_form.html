@@ -118,20 +118,28 @@
                       data-rftype="pd" data-rfval="{{ form.near_ipd.value|default:'' }}"></select>
             </div>
             <div class="col-12">
-              <label class="form-label fw-semibold">Lens Type <span class="text-muted fw-normal small">(select all that apply)</span></label>
+              <label class="form-label fw-semibold">Lens Type <span class="text-muted fw-normal small">(tick all that apply)</span></label>
               <input type="hidden" name="lens_type" id="lensTypeHidden" value="{{ form.lens_type.value|default:'' }}">
-              <div id="lensTypeChips" class="d-flex flex-wrap gap-1 mb-1">
+              <div class="row g-1" id="lensTypeChecks">
                 {% for lt in "Single vision distance,Single vision near,Bifocal,Progressive (PAL),Executive bifocal,Trifocal,Photochromic (transitions),Anti-reflective (AR) coating,Blue light filter,High index (1.67+),Polycarbonate,Trivex,CR-39 plastic,UV protection coating,Scratch-resistant coating"|split:"," %}
-                <button type="button"
-                        class="btn btn-sm py-0 px-2 {% if form.lens_type.value and lt in form.lens_type.value %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-                        style="font-size:.75rem;"
-                        onclick="toggleLensChip('{{ lt|escapejs }}', this)">{{ lt }}</button>
+                <div class="col-md-4 col-sm-6">
+                  <div class="form-check">
+                    <input class="form-check-input lens-type-cb" type="checkbox"
+                           id="lt_{{ forloop.counter }}" value="{{ lt }}"
+                           {% if form.lens_type.value and lt in form.lens_type.value %}checked{% endif %}
+                           onchange="syncLensTypeHidden()">
+                    <label class="form-check-label small" for="lt_{{ forloop.counter }}">{{ lt }}</label>
+                  </div>
+                </div>
                 {% endfor %}
               </div>
-              <div class="input-group input-group-sm mt-1" style="max-width:350px;">
-                <input type="text" id="lensTypeOther" class="form-control" placeholder="Other lens type — type and press Add">
-                <button type="button" class="btn btn-outline-primary" onclick="addLensOther()">Add</button>
+              <div class="input-group input-group-sm mt-2" style="max-width:380px;">
+                <span class="input-group-text small text-muted">Other</span>
+                <input type="text" id="lensTypeOther" class="form-control form-control-sm"
+                       placeholder="Type other lens type then click Add">
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="addLensOther()">Add</button>
               </div>
+              <div id="lensTypeOtherChips" class="d-flex flex-wrap gap-1 mt-1"></div>
             </div>
           </div>
           <div class="mb-3"><label class="form-label fw-semibold">Frame Advice</label>{{ form.frame_advice }}</div>
@@ -175,8 +183,8 @@
             axis:    buildAxis(),
             va_dist: ['', '6/5', '6/6', '6/7.5', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60',
                       '5/60', '4/60', '3/60', '2/60', '1/60', 'CF', 'HM', 'PL', 'NPL'],
-            va_near: ['', 'N1/10', 'N2/10', 'N3/10', 'N4/10', 'N5/10', 'N6/10', 'N7/10',
-                      'N8/10', 'N9/10', 'N10/10', 'CF', 'HM', 'PL', 'NPL'],
+            va_near: ['', 'N1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N8', 'N10', 'N12', 'N14',
+                      'N18', 'N24', 'N36', 'CF', 'HM', 'Cannot assess'],
             add:     ['', '+0.50', '+0.75', '+1.00', '+1.25', '+1.50', '+1.75', '+2.00',
                       '+2.25', '+2.50', '+2.75', '+3.00', '+3.25', '+3.50', '+3.75', '+4.00'],
             pd:      buildPD(),
@@ -213,38 +221,39 @@
           });
         })();
 
-        // ── Lens type chip multi-select ───────────────────────────────────
-        function toggleLensChip(val, btn) {
-          var hidden = document.getElementById('lensTypeHidden');
-          var parts = hidden.value ? hidden.value.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
-          var idx = parts.indexOf(val);
-          if (idx >= 0) {
-            parts.splice(idx, 1);
-            btn.className = btn.className.replace('btn-primary', 'btn-outline-secondary');
-          } else {
-            parts.push(val);
-            btn.className = btn.className.replace('btn-outline-secondary', 'btn-primary');
-          }
-          hidden.value = parts.join(', ');
+        // ── Lens type — sync checkboxes + custom "Other" items → hidden field ──
+        function syncLensTypeHidden() {
+          var parts = [];
+          document.querySelectorAll('.lens-type-cb:checked').forEach(function(cb) {
+            parts.push(cb.value);
+          });
+          document.querySelectorAll('.lens-other-item').forEach(function(span) {
+            parts.push(span.dataset.val);
+          });
+          document.getElementById('lensTypeHidden').value = parts.join(', ');
         }
         function addLensOther() {
           var inp = document.getElementById('lensTypeOther');
           var val = inp.value.trim();
           if (!val) return;
-          var hidden = document.getElementById('lensTypeHidden');
-          var parts = hidden.value ? hidden.value.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
-          if (parts.indexOf(val) < 0) {
-            parts.push(val);
-            hidden.value = parts.join(', ');
-            var chips = document.getElementById('lensTypeChips');
-            var btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'btn btn-sm btn-primary py-0 px-2';
-            btn.style.fontSize = '.75rem';
-            btn.textContent = val;
-            btn.onclick = function() { toggleLensChip(val, btn); };
-            chips.appendChild(btn);
+          var container = document.getElementById('lensTypeOtherChips');
+          // Check not already added
+          var exists = false;
+          container.querySelectorAll('.lens-other-item').forEach(function(s) {
+            if (s.dataset.val === val) exists = true;
+          });
+          if (!exists) {
+            var span = document.createElement('span');
+            span.className = 'badge bg-primary lens-other-item d-flex align-items-center gap-1';
+            span.dataset.val = val;
+            span.style.fontSize = '.8rem';
+            span.innerHTML = val + ' <button type="button" class="btn-close btn-close-white" style="font-size:.55rem;" aria-label="Remove"></button>';
+            span.querySelector('.btn-close').addEventListener('click', function() {
+              span.remove(); syncLensTypeHidden();
+            });
+            container.appendChild(span);
           }
+          syncLensTypeHidden();
           inp.value = '';
         }
         </script>
