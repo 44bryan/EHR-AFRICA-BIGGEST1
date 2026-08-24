@@ -220,6 +220,9 @@
                       <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;" title="Assigned directly to you"><i class="bi bi-person-check"></i> For You</span>
                     {% endif %}
                   {% endif %}
+                  {% if 'Returned from Refraction' in tok.notes %}
+                    <span class="badge ms-1" style="font-size:.65rem;background:#0d9488;" title="Patient came back from Refraction"><i class="bi bi-arrow-return-left me-1"></i>From Refraction</span>
+                  {% endif %}
                 </td>
                 {% if not selected_room %}
                 <td class="d-none d-lg-table-cell">
@@ -238,9 +241,34 @@
                   <div class="d-flex gap-1 flex-wrap align-items-center">
                   {% if tok.patient %}
                     {% if tok.ws_visit %}
+                      {% if tok.ws_draft %}
+                      <a href="{% url 'consultations:edit' pk=tok.ws_draft.pk %}" class="btn btn-sm btn-warning" hx-boost="false" title="Resume your in-progress consultation">
+                        <i class="bi bi-pencil-square me-1"></i>Resume
+                      </a>
+                      {% else %}
                       <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success" hx-boost="false">
                         <i class="bi bi-person-lines-fill me-1"></i>Open Visit
                       </a>
+                      {% endif %}
+                      {% if is_refrac and tok.ws_visit.referring_doctor %}
+                      <button class="btn btn-sm btn-warning ws-return-btn"
+                              data-visit="{{ tok.ws_visit.pk }}"
+                              data-doctor="{{ tok.ws_visit.referring_doctor.get_full_name }}"
+                              title="Send back to referring doctor"
+                              style="font-size:.75rem;">
+                        <i class="bi bi-arrow-return-left me-1"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.get_full_name }}
+                      </button>
+                      {% endif %}
+                      {# ── Reject & Re-route: only show if no consultation started yet ── #}
+                      {% if not tok.ws_draft %}
+                      <button class="btn btn-sm btn-outline-danger ws-reject-btn"
+                              data-visit="{{ tok.ws_visit.pk }}"
+                              data-referring-doctor="{% if tok.ws_visit.referring_doctor %}{{ tok.ws_visit.referring_doctor.get_full_name }}{% endif %}"
+                              title="Wrong department — re-route patient without consulting"
+                              style="font-size:.72rem;padding:.2rem .5rem;">
+                        <i class="bi bi-x-circle me-1"></i>Reject
+                      </button>
+                      {% endif %}
                       <button class="btn btn-sm btn-outline-info ws-iop-btn"
                               data-visit="{{ tok.ws_visit.pk }}"
                               data-patient="{{ tok.display_name }}"
@@ -972,6 +1000,46 @@ function qfPick(fieldId, sel) {
   });
 })();
 
+// ── Return to Referring Doctor ────────────────────────────────────────────────
+(function() {
+  const _returnUrl = '{% url "consultations:return_to_doctor" %}';
+  const csrfToken = document.cookie.match(/csrftoken=([^;]+)/);
+  const csrf = csrfToken ? csrfToken[1] : '';
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-return-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const visitId = btn.dataset.visit;
+    const drName = btn.dataset.doctor;
+    if (!confirm('Send patient back to Dr. ' + drName + '?')) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
+    fetch(_returnUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrf},
+      body: 'visit_id=' + encodeURIComponent(visitId),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        btn.closest('tr').style.opacity = '.4';
+        btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Sent (' + (data.token_number || '') + ')';
+        btn.classList.replace('btn-warning', 'btn-success');
+      } else {
+        alert(data.message || 'Failed to route patient.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-return-left me-1"></i>Return to Dr. ' + drName;
+      }
+    })
+    .catch(() => {
+      alert('Network error — please try again.');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-return-left me-1"></i>Return to Dr. ' + drName;
+    });
+  });
+})();
+
 // ── Quick VA Modal ────────────────────────────────────────────────────────────
 (function() {
   const _vaUrl = '{% url "consultations:workstation_quick_va" %}';
@@ -1169,5 +1237,110 @@ function qfPick(fieldId, sel) {
 })();
 
 // Live refresh now handled by WebSocket above
+
+// ── Reject & Re-route Modal ───────────────────────────────────────────────────
+(function() {
+  const _rejectUrl = '{% url "consultations:reject_reroute" %}';
+  const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  let _activeBtn = null, _visitId = null;
+
+  // Open modal when Reject button clicked
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-reject-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    _activeBtn = btn;
+    _visitId = btn.dataset.visit;
+    var drName = btn.dataset.referringDoctor;
+
+    document.getElementById('reject-referring-label').textContent =
+      drName ? 'Back to Dr. ' + drName : 'Back to Triage / OPD Nurse';
+    document.querySelector('input[name="reject-dest"][value="referring_doctor"]').disabled = !drName;
+    if (!drName) {
+      document.querySelector('input[name="reject-dest"][value="triage"]').checked = true;
+    } else {
+      document.querySelector('input[name="reject-dest"][value="referring_doctor"]').checked = true;
+    }
+    document.getElementById('reject-reason').value = '';
+    new bootstrap.Modal(document.getElementById('rejectRerouteModal')).show();
+  });
+
+  // Submit rejection
+  document.getElementById('reject-confirm-btn').addEventListener('click', function() {
+    if (!_visitId) return;
+    const destination = document.querySelector('input[name="reject-dest"]:checked').value;
+    const reason = document.getElementById('reject-reason').value.trim();
+    this.disabled = true;
+    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+    fetch(_rejectUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrf},
+      body: 'visit_id=' + encodeURIComponent(_visitId)
+           + '&destination=' + encodeURIComponent(destination)
+           + '&reason=' + encodeURIComponent(reason),
+    })
+    .then(r => r.json())
+    .then(data => {
+      bootstrap.Modal.getInstance(document.getElementById('rejectRerouteModal')).hide();
+      if (data.success) {
+        if (_activeBtn) {
+          var row = _activeBtn.closest('tr');
+          if (row) row.style.opacity = '.35';
+          _activeBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Re-routed';
+          _activeBtn.classList.replace('btn-outline-danger', 'btn-danger');
+          _activeBtn.disabled = true;
+        }
+      } else {
+        alert(data.message || 'Failed to re-route patient.');
+      }
+      document.getElementById('reject-confirm-btn').disabled = false;
+      document.getElementById('reject-confirm-btn').innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm';
+    })
+    .catch(() => {
+      alert('Network error — please try again.');
+      document.getElementById('reject-confirm-btn').disabled = false;
+      document.getElementById('reject-confirm-btn').innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm';
+    });
+  });
+})();
 </script>
+
+{# ── Reject & Re-route Modal ─────────────────────────────────────────────── #}
+<div class="modal fade" id="rejectRerouteModal" tabindex="-1" aria-labelledby="rejectRerouteLabel" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white py-2">
+        <h6 class="modal-title mb-0"><i class="bi bi-x-circle me-1"></i>Reject &amp; Re-route</h6>
+        <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">This patient will be removed from your queue without a consultation.</p>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold mb-1">Send to:</label>
+          <div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="reject-dest" id="dest-referring" value="referring_doctor" checked>
+              <label class="form-check-label small" for="dest-referring" id="reject-referring-label">Back to referring doctor</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="reject-dest" id="dest-triage" value="triage">
+              <label class="form-check-label small" for="dest-triage">Triage / OPD Nurse</label>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="form-label small fw-semibold mb-1">Reason <span class="text-muted fw-normal">(optional)</span></label>
+          <input type="text" id="reject-reason" class="form-control form-control-sm" placeholder="e.g. Not a uveitis case" maxlength="120">
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-danger" id="reject-confirm-btn">
+          <i class="bi bi-arrow-right-circle me-1"></i>Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}

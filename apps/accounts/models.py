@@ -526,7 +526,10 @@ class User(AbstractUser):
             UserRole.NURSE_DIRECTOR, UserRole.ANAESTHETIST,
             UserRole.WARD_NURSE, UserRole.THEATRE_NURSE,
             UserRole.CONSULTATION_NURSE, UserRole.NURSE,
+            UserRole.COUNSELING_NURSE,
             UserRole.INVESTIGATION_TECHNICIAN, UserRole.LAB_TECHNICIAN,
+            UserRole.PHARMACIST, UserRole.OPTICAL_DISPENSER,
+            UserRole.MEDICAL_RECORDS, UserRole.QUALITY_OFFICER,
         )
 
 

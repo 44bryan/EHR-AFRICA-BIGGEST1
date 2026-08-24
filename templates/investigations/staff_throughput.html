@@ -22,9 +22,12 @@
       <a href="?days=60" class="btn btn-outline-secondary {% if days == 60 %}active{% endif %}">60d</a>
       <a href="?days=90" class="btn btn-outline-secondary {% if days == 90 %}active{% endif %}">90d</a>
     </div>
-    <button onclick="window.location.href='{% url "investigations:staff_throughput_csv" %}?days={{ days }}'" class="btn btn-sm btn-success">
+    <a href="{% url 'investigations:staff_throughput_csv' %}?days={{ days }}" class="btn btn-sm btn-success">
       <i class="bi bi-filetype-csv me-1"></i>CSV
-    </button>
+    </a>
+    <a href="{% url 'investigations:staff_throughput_pdf' %}?days={{ days }}" target="_blank" class="btn btn-sm btn-danger">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+    </a>
     <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-printer me-1"></i>Print
     </button>
@@ -146,10 +149,14 @@
         <tr>
           <th>#</th>
           <th>Technician</th>
-          <th class="text-end">Total Exams</th>
-          <th class="text-end">Avg / Day</th>
+          <th class="text-end">Total</th>
+          <th class="text-end">Avg/Day</th>
           <th class="text-end">Verified</th>
-          <th style="min-width:160px;">Volume</th>
+          <th class="text-end">Ver%</th>
+          <th class="text-end">Abnormal</th>
+          <th class="text-end">Abn%</th>
+          <th class="text-end">Avg TAT</th>
+          <th style="min-width:140px;">Volume</th>
         </tr>
       </thead>
       <tbody>
@@ -157,9 +164,33 @@
         <tr>
           <td class="text-muted fw-bold">{{ forloop.counter }}</td>
           <td class="fw-semibold">{{ s.name }}</td>
-          <td class="text-end fw-bold">{{ s.total }}</td>
+          <td class="text-end fw-bold text-primary">{{ s.total }}</td>
           <td class="text-end text-muted">{{ s.avg_per_day }}</td>
-          <td class="text-end text-success">{{ s.verified }}</td>
+          <td class="text-end text-success fw-semibold">{{ s.verified }}</td>
+          <td class="text-end">
+            {% if s.verified_pct >= 90 %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle small">{{ s.verified_pct }}%</span>
+            {% elif s.verified_pct >= 70 %}
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle small">{{ s.verified_pct }}%</span>
+            {% else %}
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle small">{{ s.verified_pct }}%</span>
+            {% endif %}
+          </td>
+          <td class="text-end {% if s.abnormal %}text-warning fw-semibold{% else %}text-muted{% endif %}">{{ s.abnormal }}</td>
+          <td class="text-end text-muted small">{{ s.abnormal_pct }}%</td>
+          <td class="text-end">
+            {% if s.tat_mins > 0 %}
+              {% if s.tat_mins < 120 %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle small">{{ s.tat_str }}</span>
+              {% elif s.tat_mins < 240 %}
+                <span class="badge bg-warning-subtle text-warning border border-warning-subtle small">{{ s.tat_str }}</span>
+              {% else %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle small">{{ s.tat_str }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
           <td>
             {% if grand_total %}
             <div class="d-flex align-items-center gap-2">
@@ -178,7 +209,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="6" class="text-center text-muted py-5">
+          <td colspan="10" class="text-center text-muted py-5">
             <i class="bi bi-people fs-2 d-block mb-2 opacity-25"></i>
             No exam results recorded in the last {{ days }} days.
           </td>
@@ -190,9 +221,7 @@
         <tr>
           <td colspan="2">Total</td>
           <td class="text-end">{{ grand_total }}</td>
-          <td class="text-end text-muted">{% if days %}{{ grand_total|floatformat:0 }}{% endif %}</td>
-          <td class="text-end text-success">—</td>
-          <td></td>
+          <td colspan="7"></td>
         </tr>
       </tfoot>
       {% endif %}

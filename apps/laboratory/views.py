@@ -166,7 +166,8 @@ def lab_stats_view(request):
     """Monthly statistics for lab — WHO-standard demographics included."""
     if not (request.user.is_lab_tech or request.user.is_medical_director
             or request.user.is_admin_staff or request.user.is_super_admin
-            or request.user.is_ceo or request.user.is_admin_director):
+            or request.user.is_ceo or request.user.is_admin_director
+            or request.user.is_investigation_tech):
         return HttpResponseForbidden()
 
     import json

@@ -26,4 +26,5 @@ urlpatterns = [
     path('machine-revenue/export-csv/', views.machine_revenue_csv_view, name='machine_revenue_csv'),
     path('staff-throughput/', views.staff_throughput_view, name='staff_throughput'),
     path('staff-throughput/export-csv/', views.staff_throughput_csv_view, name='staff_throughput_csv'),
+    path('staff-throughput/pdf/', views.staff_throughput_pdf_view, name='staff_throughput_pdf'),
 ]

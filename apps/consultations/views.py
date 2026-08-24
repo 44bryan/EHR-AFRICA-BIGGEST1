@@ -1404,12 +1404,29 @@ def workstation_view(request):
                 is_deleted=False,
             ).exclude(
                 status__in=[VisitStatus.COMPLETED, VisitStatus.DISCHARGED]
-            ).select_related('consultation_room').order_by('-visit_date')
+            ).select_related('consultation_room', 'referring_doctor').order_by('-visit_date')
         }
         for token in waiting_tokens:
             _v = active_visits.get(token.patient_id) if token.patient_id else None
             token.ws_visit = _v
             token.ws_visit_type = getattr(_v, 'visit_type', None)
+
+        # Detect existing IN_PROGRESS drafts by THIS doctor for each visit
+        # so the workstation can show "Resume" instead of creating a new consultation.
+        _visit_ids = [t.ws_visit.pk for t in waiting_tokens if getattr(t, 'ws_visit', None)]
+        if _visit_ids:
+            _drafts = {
+                c.visit_id: c
+                for c in Consultation.objects.filter(
+                    consulting_doctor=user,
+                    visit_id__in=_visit_ids,
+                    status=ConsultationStatus.IN_PROGRESS,
+                    is_deleted=False,
+                ).only('id', 'visit_id', 'status')
+            }
+            for token in waiting_tokens:
+                if getattr(token, 'ws_visit', None):
+                    token.ws_draft = _drafts.get(token.ws_visit.pk)
 
     # ── Room filtering ────────────────────────────────────────────────────
     # Doctor can filter to their room only, or view all dept patients
@@ -1634,6 +1651,324 @@ def workstation_view(request):
         'ready_to_route_doctor': ready_to_route_doctor,
         'incoming_referrals': incoming_referrals,
         'active_counters': active_counters,
+    })
+
+
+# ── Reject & Re-route (specialist sends patient back — wrong dept) ────────────
+
+@login_required
+@require_POST
+def reject_and_reroute_view(request):
+    """
+    Specialist rejects a patient (wrong department) WITHOUT opening a consultation.
+    Routes back to:
+      destination='referring_doctor' → the doctor who originally sent the patient
+      destination='triage'           → OPD nurse / triage queue
+    POST params: visit_id, destination, reason (optional)
+    """
+    from apps.patients.models import Visit as _Visit
+    from django.utils import timezone as _tz
+
+    visit_id    = request.POST.get('visit_id', '').strip()
+    destination = request.POST.get('destination', 'referring_doctor')
+    reason      = request.POST.get('reason', '').strip()
+
+    if not visit_id:
+        return JsonResponse({'success': False, 'message': 'visit_id required'}, status=400)
+
+    visit = get_object_or_404(_Visit, id=visit_id, is_deleted=False)
+
+    rejector_name = request.user.get_full_name() or request.user.username
+    dept_name     = request.user.department.name if request.user.department else ''
+    note          = f'Rejected by Dr. {rejector_name}'
+    if dept_name:
+        note += f' ({dept_name})'
+    if reason:
+        note += f' — {reason}'
+
+    referring_doc = visit.referring_doctor if destination == 'referring_doctor' else None
+    # If no referring doctor on record, fall back to triage
+    if destination == 'referring_doctor' and not referring_doc:
+        destination = 'triage'
+
+    if not _qms_active():
+        visit.status = 'WAITING'
+        visit.referring_doctor = None
+        visit.save(update_fields=['status', 'referring_doctor', 'updated_at'])
+        return JsonResponse({'success': True, 'message': f'Patient re-routed. {note}.'})
+
+    from apps.qms.models import (
+        QueueToken, DailyTokenSequence, IssuancePoint,
+        TokenStatus, TIER_PRIORITY, ServiceTier,
+    )
+    from django.db import transaction
+
+    tier  = visit.service_tier or ServiceTier.STANDARD
+    today = _tz.localdate()
+
+    # --- Determine target service type ---
+    if referring_doc:
+        _ROLE_SVC = {
+            'ophthalmologist':           'GENERAL',
+            'intern':                    'GENERAL',
+            'retina_specialist':         'RETINA',
+            'glaucoma_specialist':       'GLAUCOMA',
+            'pediatric_ophthalmologist': 'PEDIATRIC',
+            'cataract_surgeon':          'CATARACT',
+            'cornea_specialist':         'CORNEA',
+            'oculoplastics_surgeon':     'OCULOPLASTY',
+            'neuro_ophthalmologist':     'NEURO',
+            'uveitis_specialist':        'UVEITIS',
+            'low_vision_specialist':     'LOW_VISION',
+            'medical_director':          'GENERAL',
+            'general_physician':         'GEN_PHYS',
+        }
+        target_service  = _ROLE_SVC.get(referring_doc.role, 'GENERAL')
+        assigned_doctor = referring_doc
+        if referring_doc.role in ('ophthalmologist', 'intern', 'medical_director'):
+            _cu = (getattr(referring_doc, 'consultation_unit', '') or 'GENERAL').upper()
+            _cu_svc = {
+                'VIP_CONSULT': 'VIP_CONSULT', 'VIP': 'VIP_CONSULT',
+                'EXP_CONSULT': 'EXP_CONSULT', 'EXPRESS': 'EXP_CONSULT',
+                'INSUR_CONSULT': 'INSUR_CONSULT', 'INSURANCE': 'INSUR_CONSULT',
+            }
+            target_service = _cu_svc.get(_cu, target_service)
+    else:
+        target_service  = 'PARAMETERS'  # → OPD triage nurse
+        assigned_doctor = None
+
+    # --- Close this specialist's active tokens for the patient ---
+    user_dept_code     = request.user.department.code if request.user.department else ''
+    dept_service_types = _DEPT_TO_SERVICE_TYPES.get(user_dept_code, [])
+    entry_token = QueueToken.objects.filter(
+        patient=visit.patient, token_date=today,
+        issuance_point__in=[
+            IssuancePoint.GATE, IssuancePoint.CASHIER,
+            IssuancePoint.VIP_RECEPTION, IssuancePoint.EXPRESS_DESK,
+        ],
+        is_deleted=False,
+    ).first()
+
+    with transaction.atomic():
+        if dept_service_types:
+            QueueToken.objects.filter(
+                patient=visit.patient,
+                service_type__in=dept_service_types,
+                token_date=today,
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                is_deleted=False,
+            ).update(status=TokenStatus.COMPLETED, completed_at=_tz.now())
+
+        counter = None
+        if assigned_doctor:
+            from apps.qms.models import ServiceCounter as _SC
+            counter = _SC.objects.filter(
+                staff_assigned=assigned_doctor,
+                checked_in_date=today,
+                is_active=True,
+            ).first()
+
+        token_number = DailyTokenSequence.next_dept_token(target_service)
+        new_token = QueueToken.objects.create(
+            token_number=token_number,
+            patient=visit.patient,
+            visit=visit,
+            patient_name=visit.patient.full_name if visit.patient else '',
+            service_type=target_service,
+            service_tier=tier,
+            issuance_point=IssuancePoint.SYSTEM,
+            priority=TIER_PRIORITY.get(tier, 0),
+            status=TokenStatus.WAITING,
+            counter=counter,
+            entry_token=entry_token,
+            assigned_doctor=assigned_doctor,
+            notes=note,
+            issued_by=request.user,
+        )
+
+        visit.status = 'WAITING'
+        visit.referring_doctor = None
+        visit.save(update_fields=['status', 'referring_doctor', 'updated_at'])
+
+        try:
+            from apps.core.ws_notify import notify_queue as _ws_nq
+            _ws_nq('WAITING')
+        except Exception:
+            pass
+
+    dest_label = f'Dr. {referring_doc.get_full_name()}' if referring_doc else 'Triage / OPD Nurse'
+    return JsonResponse({
+        'success': True,
+        'token_number': new_token.token_number,
+        'message': f'Patient re-routed to {dest_label}. Token {new_token.token_number}.',
+    })
+
+
+# ── Return to Referring Doctor ────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def return_to_referring_doctor_view(request):
+    """
+    Refractionist clicks "Send back to Dr. [Name]".
+    Creates a QMS token routed to the referring doctor's counter and clears
+    the referring_doctor field on the visit so it cannot be re-used.
+    """
+    from apps.patients.models import Visit as _Visit, VisitStatus as _VS
+    from django.utils import timezone as _tz
+
+    visit_id = request.POST.get('visit_id', '').strip()
+    if not visit_id:
+        return JsonResponse({'success': False, 'message': 'visit_id required'}, status=400)
+
+    visit = get_object_or_404(_Visit, id=visit_id, is_deleted=False)
+
+    if not visit.referring_doctor_id:
+        return JsonResponse({'success': False, 'message': 'No referring doctor recorded for this visit.'}, status=400)
+
+    referring_doc = visit.referring_doctor
+
+    # Map referring doctor's role → QMS service type
+    _ROLE_SVC = {
+        'ophthalmologist':           'GENERAL',
+        'intern':                    'GENERAL',
+        'retina_specialist':         'RETINA',
+        'glaucoma_specialist':       'GLAUCOMA',
+        'pediatric_ophthalmologist': 'PEDIATRIC',
+        'cataract_surgeon':          'CATARACT',
+        'cornea_specialist':         'CORNEA',
+        'oculoplastics_surgeon':     'OCULOPLASTY',
+        'neuro_ophthalmologist':     'NEURO',
+        'uveitis_specialist':        'UVEITIS',
+        'low_vision_specialist':     'LOW_VISION',
+        'medical_director':          'GENERAL',
+        'general_physician':         'GEN_PHYS',
+    }
+    service_type = _ROLE_SVC.get(referring_doc.role, 'GENERAL')
+
+    # Also check consultation_unit for GEN_OPH doctors (VIP/Express/Insurance)
+    if referring_doc.role in ('ophthalmologist', 'intern', 'medical_director'):
+        _cu = (getattr(referring_doc, 'consultation_unit', '') or 'GENERAL').upper()
+        _cu_svc_map = {
+            'VIP_CONSULT': 'VIP_CONSULT',
+            'VIP':         'VIP_CONSULT',
+            'EXP_CONSULT': 'EXP_CONSULT',
+            'EXPRESS':     'EXP_CONSULT',
+            'INSUR_CONSULT': 'INSUR_CONSULT',
+            'INSURANCE':   'INSUR_CONSULT',
+        }
+        service_type = _cu_svc_map.get(_cu, service_type)
+
+    if not _qms_active():
+        # QMS off — just update visit status and department
+        from apps.departments.models import Department as _Dept
+        gen_dept = _Dept.objects.filter(code='GEN_OPH', is_active=True).first()
+        if gen_dept:
+            visit.department = gen_dept
+        visit.status = 'WAITING'
+        visit.referring_doctor = None
+        visit.save(update_fields=['status', 'department', 'referring_doctor', 'updated_at'])
+        return JsonResponse({
+            'success': True,
+            'message': f'Patient sent back to Dr. {referring_doc.get_full_name()} (QMS is off — visit status updated).',
+        })
+
+    from apps.qms.models import (
+        QueueToken, DailyTokenSequence, IssuancePoint,
+        TokenStatus, TIER_PRIORITY, ServiceTier,
+    )
+    from django.db import transaction
+
+    tier = visit.service_tier or ServiceTier.STANDARD
+    today = _tz.localdate()
+
+    # Find the entry token for zone/origin_zone inheritance
+    entry_token = QueueToken.objects.filter(
+        patient=visit.patient,
+        token_date=today,
+        issuance_point__in=[
+            IssuancePoint.GATE, IssuancePoint.CASHIER,
+            IssuancePoint.VIP_RECEPTION, IssuancePoint.EXPRESS_DESK,
+        ],
+        is_deleted=False,
+    ).first()
+
+    with transaction.atomic():
+        token_number = DailyTokenSequence.next_dept_token(service_type)
+
+        # Close active REFRACTION tokens for this patient
+        QueueToken.objects.filter(
+            patient=visit.patient,
+            service_type='REFRACTION',
+            token_date=today,
+            status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+            is_deleted=False,
+        ).update(status=TokenStatus.COMPLETED, completed_at=_tz.now())
+
+        # Find the referring doctor's checked-in counter (so the token goes directly to them)
+        from apps.qms.models import ServiceCounter as _SC
+        dr_counter = _SC.objects.filter(
+            staff_assigned=referring_doc,
+            checked_in_date=today,
+            is_active=True,
+        ).first()
+
+        dept_token = QueueToken.objects.create(
+            token_number=token_number,
+            patient=visit.patient,
+            visit=visit,
+            patient_name=visit.patient.full_name if visit.patient else '',
+            service_type=service_type,
+            service_tier=tier,
+            issuance_point=IssuancePoint.SYSTEM,
+            priority=TIER_PRIORITY.get(tier, 0),
+            status=TokenStatus.WAITING,
+            counter=dr_counter,
+            entry_token=entry_token,
+            assigned_doctor=referring_doc,
+            notes=f'Returned from Refraction — {request.user.get_full_name()}',
+            issued_by=request.user,
+        )
+
+        # Update visit status and department back to Gen Oph / original dept
+        from apps.departments.models import Department as _Dept2
+        _SVC_DEPT = {
+            'GENERAL':      'GEN_OPH',
+            'VIP_CONSULT':  'GEN_OPH',
+            'EXP_CONSULT':  'GEN_OPH',
+            'INSUR_CONSULT':'GEN_OPH',
+            'RETINA':       'RETINA',
+            'GLAUCOMA':     'GLAUC',
+            'CATARACT':     'CATARACT',
+            'PEDIATRIC':    'PEDS_OPH',
+            'NEURO':        'NEURO_OPH',
+            'CORNEA':       'CORNEA',
+            'OCULOPLASTY':  'OCULOPLASTY',
+            'UVEITIS':      'UVEITIS',
+        }
+        _upd = ['status', 'referring_doctor', 'updated_at']
+        visit.status = 'WAITING'
+        visit.referring_doctor = None   # consumed — clear it
+        orig_dept_code = _SVC_DEPT.get(service_type)
+        if orig_dept_code:
+            orig_dept = _Dept2.objects.filter(code=orig_dept_code, is_active=True).first()
+            if orig_dept:
+                visit.department = orig_dept
+                _upd.append('department')
+        visit.save(update_fields=_upd)
+
+        # WebSocket notify the doctor's queue
+        try:
+            from apps.core.ws_notify import notify_queue as _ws_nq
+            _ws_nq('WAITING')
+        except Exception:
+            pass
+
+    return JsonResponse({
+        'success': True,
+        'token_number': dept_token.token_number,
+        'doctor': referring_doc.get_full_name(),
+        'message': f'Patient sent back to Dr. {referring_doc.get_full_name()} — token {dept_token.token_number}.',
     })
 
 

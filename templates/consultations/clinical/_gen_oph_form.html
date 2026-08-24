@@ -5,27 +5,27 @@
 {% if not can_do_refraction %}
 <div class="mb-3 rounded border-0 shadow-sm">
 
-  {# Zone header #}
+  {# Zone header — auto-expand if refraction data exists #}
   <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top cfm-hdr bg-light border-bottom"
        style="cursor:pointer;"
-       data-bs-toggle="collapse" data-bs-target="#cfm_gen_refract" aria-expanded="false">
-    <i class="bi bi-lock-fill text-secondary"></i>
+       data-bs-toggle="collapse" data-bs-target="#cfm_gen_refract" aria-expanded="{% if refraction_consult %}true{% else %}false{% endif %}">
+    <i class="bi bi-eyeglasses text-secondary"></i>
     <span class="fw-bold text-secondary text-uppercase" style="letter-spacing:.06em;font-size:.82rem;">
-      Refractionist Data — Pre-filled
+      Refractionist Data
     </span>
     <span class="small text-muted ms-1">
       {% if refraction_consult %}
         <i class="bi bi-check-circle-fill text-success me-1"></i>
-        Data from {{ refraction_consult.consulting_doctor.full_name|default:"Refractionist" }}
-        on {{ refraction_consult.consultation_date|date:"d M Y" }}
+        From {{ refraction_consult.consulting_doctor.full_name|default:"Refractionist" }}
+        · {{ refraction_consult.consultation_date|date:"d M Y" }}
       {% else %}
-        <i class="bi bi-info-circle me-1"></i>Not yet completed by Refractionist
+        <i class="bi bi-hourglass-split me-1"></i>Awaiting refractionist
       {% endif %}
     </span>
-    <i class="bi bi-chevron-up cfm-chev"></i>
+    <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
   </div>
 
-  <div class="collapse" id="cfm_gen_refract">
+  <div class="collapse {% if refraction_consult %}show{% endif %}" id="cfm_gen_refract">
   <div class="p-3">
     {% if refraction_consult %}
       {% include 'consultations/clinical/_refraction.html' with consultation=refraction_consult %}
@@ -33,27 +33,85 @@
       <div class="text-muted small fst-italic py-2">No refraction data recorded yet — awaiting refractionist.</div>
     {% endif %}
   </div>
-  </div>{# /collapse gen_refract #}
-  </div>{# /refractionist zone inner #}
-</div>{# /refractionist zone #}
+  </div>
+</div>
 {% endif %}{# /not can_do_refraction #}
 
 {% if can_do_refraction %}
 {# ══════════════════════════════════════════════════════════════════════ #}
+{# VIP All-in-One: Vitals Section (BP, Pulse, Temp, SpO2, Weight)      #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+{% with vs=consultation.visit.vital_signs %}
+<div class="mb-3 rounded border-0 shadow-sm">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top cfm-hdr bg-light border-bottom"
+       style="cursor:pointer;"
+       data-bs-toggle="collapse" data-bs-target="#cfm_vip_vitals" aria-expanded="true">
+    <i class="bi bi-heart-pulse text-secondary"></i>
+    <span class="fw-bold text-secondary text-uppercase" style="letter-spacing:.06em;font-size:.82rem;">
+      Vital Signs
+    </span>
+    {% if vs.blood_pressure or vs.pulse %}
+    <span class="small text-muted ms-1">
+      {% if vs.blood_pressure %}BP {{ vs.blood_pressure }}{% endif %}
+      {% if vs.pulse %} &middot; P {{ vs.pulse }}{% endif %}
+      {% if vs.temperature %} &middot; T {{ vs.temperature }}&deg;C{% endif %}
+    </span>
+    {% endif %}
+    <i class="bi bi-chevron-up cfm-chev ms-auto text-secondary"></i>
+  </div>
+  <div class="collapse show" id="cfm_vip_vitals">
+  <div class="p-3">
+    <div class="row g-2">
+      <div class="col-6 col-md-3">
+        <label class="form-label small fw-semibold mb-1">Blood Pressure</label>
+        <input type="text" name="dept_bp" class="form-control form-control-sm" placeholder="e.g. 120/80" value="{{ d.bp|default:'' }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small fw-semibold mb-1">Pulse (bpm)</label>
+        <input type="number" name="dept_pulse" class="form-control form-control-sm" placeholder="72" min="30" max="250" value="{{ d.pulse|default:'' }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small fw-semibold mb-1">Temp (&deg;C)</label>
+        <input type="number" name="dept_temperature" class="form-control form-control-sm" placeholder="36.5" step="0.1" min="34" max="42" value="{{ d.temperature|default:'' }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small fw-semibold mb-1">SpO2 (%)</label>
+        <input type="number" name="dept_spo2" class="form-control form-control-sm" placeholder="98" min="50" max="100" value="{{ d.spo2|default:'' }}">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small fw-semibold mb-1">BMI / Weight</label>
+        <input type="text" name="dept_bmi" class="form-control form-control-sm" placeholder="e.g. 24.5 or 72kg" value="{{ d.bmi|default:'' }}">
+      </div>
+    </div>
+    {% if vs.blood_pressure or vs.pulse or vs.temperature %}
+    <div class="mt-2 small text-muted border-top pt-2">
+      <i class="bi bi-info-circle me-1"></i>Triage vitals:
+      {% if vs.blood_pressure %}<strong>BP</strong> {{ vs.blood_pressure }}{% endif %}
+      {% if vs.pulse %} &middot; <strong>Pulse</strong> {{ vs.pulse }}{% endif %}
+      {% if vs.temperature %} &middot; <strong>Temp</strong> {{ vs.temperature }}&deg;C{% endif %}
+      {% if vs.spo2 %} &middot; <strong>SpO2</strong> {{ vs.spo2 }}%{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  </div>
+</div>
+{% endwith %}
+
+{# ══════════════════════════════════════════════════════════════════════ #}
 {# VIP All-in-One: Editable Refraction Zone (VA + AR/K + Subjective Rx) #}
 {# ══════════════════════════════════════════════════════════════════════ #}
-<div class="mb-3 rounded border border-primary border-opacity-50 shadow-sm">
-  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top cfm-hdr bg-primary bg-opacity-10 border-bottom"
+<div class="mb-3 rounded border-0 shadow-sm">
+  <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top cfm-hdr bg-light border-bottom"
        style="cursor:pointer;"
        data-bs-toggle="collapse" data-bs-target="#cfm_vip_refract" aria-expanded="true">
-    <i class="bi bi-eyeglasses text-primary"></i>
-    <span class="fw-bold text-primary text-uppercase" style="letter-spacing:.06em;font-size:.82rem;">
+    <i class="bi bi-eyeglasses text-secondary"></i>
+    <span class="fw-bold text-secondary text-uppercase" style="letter-spacing:.06em;font-size:.82rem;">
       Refraction — Enter Your Measurements
     </span>
     <span class="small text-muted ms-1">
       <i class="bi bi-info-circle me-1"></i>VA &amp; Auto-Refraction &amp; Subjective Rx
     </span>
-    <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
+    <i class="bi bi-chevron-up cfm-chev ms-auto text-secondary"></i>
   </div>
 
   <div class="collapse show" id="cfm_vip_refract">
@@ -323,7 +381,7 @@
   {# Zone header — click to collapse/expand #}
   <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top cfm-hdr bg-light border-bottom"
        style="cursor:pointer;"
-       data-bs-toggle="collapse" data-bs-target="#cfm_gen_oph_body" aria-expanded="false">
+       data-bs-toggle="collapse" data-bs-target="#cfm_gen_oph_body" aria-expanded="true">
     <i class="bi bi-pencil-square text-secondary"></i>
     <span class="fw-bold text-uppercase text-secondary" style="letter-spacing:.06em;font-size:.82rem;">
       General Ophthalmologist — Your Examination
@@ -331,7 +389,7 @@
     <i class="bi bi-chevron-up cfm-chev ms-auto text-secondary"></i>
   </div>
 
-  <div class="collapse" id="cfm_gen_oph_body">
+  <div class="collapse show" id="cfm_gen_oph_body">
   <div class="p-3">
 
     {# --- SECTION 3: COVER TEST & MOTILITY --- #}
@@ -1205,9 +1263,21 @@
           <label class="form-label small fw-semibold mb-1">RE — Optic Disc</label>
           <select name="dept_disc_re" class="form-select form-select-sm" onchange="genOphOther(this)">
 <option value="">—</option>
-{% for v in "Normal disc — C:D 0.1,Normal disc — C:D 0.2,Normal disc — C:D 0.3 NRR intact,C:D 0.4 NRR intact,C:D 0.5 borderline,C:D 0.6 inferior notching,C:D 0.7 notching,C:D 0.8 NRR thinned,C:D 0.9 pathological cupping,NRR ISNT rule violated,Disc pallor — temporal,Optic atrophy — partial,Optic atrophy — complete,RNFL thinning — superior,RNFL thinning — inferior,RNFL thinning — generalised,Peripapillary atrophy (beta-PPA),Disc haemorrhage (Drance),Papilloedema — bilateral,Pseudo-papilloedema,Disc swelling / oedema,NVD present (new vessels at disc),Drusen of disc,Small / crowded disc,Tilted disc,Myopic disc — temporal crescent"|split:"," %}
+<optgroup label="── C:D Ratio ──">
+{% for v in "C:D 0.1 (normal),C:D 0.2 (normal),C:D 0.3 (normal),C:D 0.4 (normal),C:D 0.5 (borderline),C:D 0.6 (borderline),C:D 0.7 (glaucoma suspect),C:D 0.8 (glaucomatous),C:D 0.9 (advanced),C:D 1.0 (end-stage)"|split:"," %}
 <option value="{{ v }}" {% if d.disc_re == v %}selected{% endif %}>{{ v }}</option>
 {% endfor %}
+</optgroup>
+<optgroup label="── Notching ──">
+{% for v in "No notching,Inferior notching,Superior notching,Temporal notching,Nasal notching,Circumferential notching (360°)"|split:"," %}
+<option value="{{ v }}" {% if d.disc_re == v %}selected{% endif %}>{{ v }}</option>
+{% endfor %}
+</optgroup>
+<optgroup label="── Other Findings ──">
+{% for v in "NRR intact,NRR ISNT rule violated,NRR thinned,Disc pallor — temporal,Optic atrophy — partial,Optic atrophy — complete,RNFL thinning — superior,RNFL thinning — inferior,RNFL thinning — generalised,Peripapillary atrophy (beta-PPA),Disc haemorrhage (Drance),Papilloedema — bilateral,Pseudo-papilloedema,Disc swelling / oedema,NVD present (new vessels at disc),Drusen of disc,Small / crowded disc,Tilted disc,Myopic disc — temporal crescent"|split:"," %}
+<option value="{{ v }}" {% if d.disc_re == v %}selected{% endif %}>{{ v }}</option>
+{% endfor %}
+</optgroup>
 <option value="__other__">Other (type)...</option>
 </select>
         </div>
@@ -1215,9 +1285,21 @@
           <label class="form-label small fw-semibold mb-1">LE — Optic Disc</label>
           <select name="dept_disc_le" class="form-select form-select-sm" onchange="genOphOther(this)">
 <option value="">—</option>
-{% for v in "Normal disc — C:D 0.1,Normal disc — C:D 0.2,Normal disc — C:D 0.3 NRR intact,C:D 0.4 NRR intact,C:D 0.5 borderline,C:D 0.6 inferior notching,C:D 0.7 notching,C:D 0.8 NRR thinned,C:D 0.9 pathological cupping,NRR ISNT rule violated,Disc pallor — temporal,Optic atrophy — partial,Optic atrophy — complete,RNFL thinning — superior,RNFL thinning — inferior,RNFL thinning — generalised,Peripapillary atrophy (beta-PPA),Disc haemorrhage (Drance),Papilloedema — bilateral,Pseudo-papilloedema,Disc swelling / oedema,NVD present (new vessels at disc),Drusen of disc,Small / crowded disc,Tilted disc,Myopic disc — temporal crescent"|split:"," %}
+<optgroup label="── C:D Ratio ──">
+{% for v in "C:D 0.1 (normal),C:D 0.2 (normal),C:D 0.3 (normal),C:D 0.4 (normal),C:D 0.5 (borderline),C:D 0.6 (borderline),C:D 0.7 (glaucoma suspect),C:D 0.8 (glaucomatous),C:D 0.9 (advanced),C:D 1.0 (end-stage)"|split:"," %}
 <option value="{{ v }}" {% if d.disc_le == v %}selected{% endif %}>{{ v }}</option>
 {% endfor %}
+</optgroup>
+<optgroup label="── Notching ──">
+{% for v in "No notching,Inferior notching,Superior notching,Temporal notching,Nasal notching,Circumferential notching (360°)"|split:"," %}
+<option value="{{ v }}" {% if d.disc_le == v %}selected{% endif %}>{{ v }}</option>
+{% endfor %}
+</optgroup>
+<optgroup label="── Other Findings ──">
+{% for v in "NRR intact,NRR ISNT rule violated,NRR thinned,Disc pallor — temporal,Optic atrophy — partial,Optic atrophy — complete,RNFL thinning — superior,RNFL thinning — inferior,RNFL thinning — generalised,Peripapillary atrophy (beta-PPA),Disc haemorrhage (Drance),Papilloedema — bilateral,Pseudo-papilloedema,Disc swelling / oedema,NVD present (new vessels at disc),Drusen of disc,Small / crowded disc,Tilted disc,Myopic disc — temporal crescent"|split:"," %}
+<option value="{{ v }}" {% if d.disc_le == v %}selected{% endif %}>{{ v }}</option>
+{% endfor %}
+</optgroup>
 <option value="__other__">Other (type)...</option>
 </select>
         </div>

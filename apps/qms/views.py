@@ -1266,6 +1266,41 @@ def route_to_dept(request):
                 if target_dept:
                     visit.department = target_dept
                     update_fields.append('department')
+            # When a doctor routes to a clinical specialty, record the referring doctor
+            # so the specialist can route the patient back if needed (wrong dept, etc.).
+            # Also create an IN_PROGRESS stub for REFRACTION so the doctor can resume.
+            _CLINICAL_DESTINATIONS = {
+                'REFRACTION', 'RETINA', 'GLAUCOMA', 'UVEITIS', 'CATARACT',
+                'CORNEA', 'OCULOPLASTY', 'NEURO', 'PEDIATRIC', 'LOW_VISION',
+                'GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT',
+                'GEN_PHYS', 'LASER', 'INJECTION', 'CONTACT_LENS',
+            }
+            if service_type in _CLINICAL_DESTINATIONS and request.user.can_create_consultation():
+                if not visit.referring_doctor_id:
+                    visit.referring_doctor = request.user
+                    update_fields.append('referring_doctor')
+                # For REFRACTION only: create a draft consultation stub so doctor can Resume
+                if service_type == 'REFRACTION':
+                    try:
+                        from apps.consultations.models import Consultation as _Consult, ConsultationStatus as _CS
+                        _has_draft = _Consult.objects.filter(
+                            visit=visit,
+                            consulting_doctor=request.user,
+                            status=_CS.IN_PROGRESS,
+                            is_deleted=False,
+                        ).exists()
+                        if not _has_draft:
+                            _Consult.objects.create(
+                                patient=visit.patient,
+                                visit=visit,
+                                consulting_doctor=request.user,
+                                department=request.user.department,
+                                presenting_complaint=visit.chief_complaint or '',
+                                status=_CS.IN_PROGRESS,
+                                created_by=request.user,
+                            )
+                    except Exception:
+                        pass  # Never block routing
             visit.save(update_fields=update_fields)
             if new_status:
                 try:

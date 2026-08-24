@@ -2,136 +2,171 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Eye Investigation Statistics — {{ month_start|date:"F Y" }}</title>
+<title>Eye Investigation Statistics Report &mdash; {{ month_start|date:"F Y" }}</title>
 {% include 'reports/pdf/_base_styles.html' %}
 <style>
   body { padding: 20px 28px; }
-  .report-band { background: #0d6efd; color:#fff; padding:9px 14px; margin-bottom:14px;
+  .report-band { background:#0d6efd; color:#fff; padding:9px 14px; margin-bottom:14px;
                  border-radius:3px; display:flex; justify-content:space-between; align-items:center; }
   .report-band-title { font-size:13px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
   .report-band-meta  { font-size:10px; opacity:.85; text-align:right; line-height:1.5; }
-  .kpi-grid { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
-  .kpi-card { flex:1; min-width:90px; border:1px solid #dee2e6; border-radius:6px; padding:10px; text-align:center; }
-  .kpi-val  { font-size:22px; font-weight:700; color:#0d6efd; }
+  .kpi-grid { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .kpi-card { flex:1; min-width:88px; border:1px solid #dee2e6; border-radius:6px; padding:9px 10px; text-align:center; }
+  .kpi-val  { font-size:20px; font-weight:700; color:#0d6efd; }
   .kpi-val.green  { color:#198754; }
   .kpi-val.orange { color:#fd7e14; }
-  .kpi-val.red    { color:#dc3545; }
+  .kpi-val.grey   { color:#6c757d; }
   .kpi-val.teal   { color:#0dcaf0; }
+  .kpi-val.red    { color:#dc3545; }
   .kpi-val.purple { color:#6f42c1; }
   .kpi-label { font-size:9px; color:#6c757d; margin-top:2px; }
-  .three-col { display:flex; gap:16px; }
-  .three-col > div { flex:1; }
-  table { width:100%; border-collapse:collapse; font-size:10px; margin-bottom:8px; }
-  th { background:#0d6efd; color:#fff; padding:5px 8px; text-align:left; font-size:9px; font-weight:700; }
-  td { padding:4px 8px; border-bottom:1px solid #f0f0f0; vertical-align:top; }
-  tr:nth-child(even) td { background:#f8f9fa; }
-  tfoot td { background:#e9ecef; font-weight:700; }
+  .three-col { display:flex; gap:14px; margin-bottom:12px; }
+  .three-col > div { flex:1; min-width:0; }
+  .col-head { font-size:9px; font-weight:700; color:#555; text-transform:uppercase; margin-bottom:6px; border-bottom:1px solid #dee2e6; padding-bottom:3px; }
   .stat-row { display:flex; justify-content:space-between; align-items:center;
               padding:4px 0; border-bottom:1px solid #f0f0f0; font-size:10px; }
   .stat-row:last-child { border-bottom:none; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+  .badge-green { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; padding:1px 6px; border-radius:3px; font-size:8px; font-weight:700; }
+  .badge-amber { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; padding:1px 6px; border-radius:3px; font-size:8px; font-weight:700; }
+  .badge-red   { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; padding:1px 6px; border-radius:3px; font-size:8px; font-weight:700; }
+  table { width:100%; border-collapse:collapse; font-size:10px; margin-top:4px; margin-bottom:10px; }
+  th { background:#0d6efd; color:#fff; padding:5px 8px; text-align:left; font-size:9px; font-weight:700; }
+  td { padding:5px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+  tr:nth-child(even) td { background:#f8f9fa; }
+  tfoot td { background:#e9ecef; font-weight:700; font-size:10px; }
   .bar-wrap { background:#e9ecef; border-radius:3px; height:5px; margin-top:3px; }
   .bar-fill { background:#0d6efd; border-radius:3px; height:5px; }
-  .trend-table td, .trend-table th { text-align:center; }
-  @media print {
-    body { padding:0; }
-    button { display:none !important; }
-    @page { margin:12mm 10mm; size:A4 portrait; }
-  }
 </style>
 </head>
 <body>
 
+{# ══════════════════════ PAGE 1 ══════════════════════ #}
+
 {% with pdf_seal_label="INTERNAL USE ONLY" %}{% include 'reports/pdf/_letterhead.html' %}{% endwith %}
 
 <div class="accred-bar">
-  <span>Eye Investigation Department</span>
-  <span>Ref: INV-{{ month_start|date:"Y-m" }} &nbsp;&bull;&nbsp; EHR Africa &nbsp;&bull;&nbsp; {% now "d M Y H:i" %}</span>
+  <span>Eye Investigation &amp; Radiology Department &nbsp;&bull;&nbsp; ISO 15189:2022</span>
+  <span>Ref: INV-{{ month_start|date:"Y-m" }} &nbsp;&bull;&nbsp; EHR Africa &nbsp;&bull;&nbsp; {% now "d M Y" %}</span>
 </div>
 
 <div class="report-band">
-  <div class="report-band-title">Eye Investigation Statistics</div>
-  <div class="report-band-meta">Period: {{ month_start|date:"F Y" }}<br>Generated: {% now "d M Y H:i" %}</div>
+  <div class="report-band-title">Eye Investigation Monthly Statistics Report</div>
+  <div class="report-band-meta">
+    Period: {{ month_start|date:"F Y" }}<br>
+    Generated: {% now "d M Y H:i" %}
+  </div>
 </div>
 
-<!-- KPI Summary -->
-<div class="section-title">Summary Indicators</div>
+{# ── 1. KPI Summary ── #}
+<div class="section-title">1. Key Performance Indicators</div>
 <div class="kpi-grid">
   <div class="kpi-card"><div class="kpi-val">{{ total_orders }}</div><div class="kpi-label">Total Orders</div></div>
   <div class="kpi-card"><div class="kpi-val green">{{ completed_count }}</div><div class="kpi-label">Completed</div></div>
   <div class="kpi-card"><div class="kpi-val orange">{{ pending_count }}</div><div class="kpi-label">Pending</div></div>
-  <div class="kpi-card"><div class="kpi-val red">{{ abnormal_count }}</div><div class="kpi-label">Abnormal</div></div>
-  <div class="kpi-card"><div class="kpi-val red">{{ urgent_count }}</div><div class="kpi-label">Urgent/Emergency</div></div>
   <div class="kpi-card"><div class="kpi-val teal">{{ completion_rate }}%</div><div class="kpi-label">Completion Rate</div></div>
-  <div class="kpi-card"><div class="kpi-val purple">{{ clinic_count|default:"0" }}</div><div class="kpi-label">Clinic</div></div>
-  <div class="kpi-card"><div class="kpi-val green">{{ outreach_count|default:"0" }}</div><div class="kpi-label">Outreach</div></div>
+  <div class="kpi-card"><div class="kpi-val red">{{ abnormal_count }}</div><div class="kpi-label">Abnormal Results</div></div>
+  <div class="kpi-card"><div class="kpi-val red">{{ urgent_count }}</div><div class="kpi-label">Urgent/Emergency</div></div>
+  <div class="kpi-card"><div class="kpi-val purple">{{ paed_count }}</div><div class="kpi-label">Paediatric (0–14)</div></div>
 </div>
 
-<!-- Demographics -->
-<div class="three-col" style="margin-top:16px;">
+{# ── 2. Demographics, Status & Quality ── #}
+<div class="section-title">2. Patient Demographics, Order Status &amp; Quality</div>
+<div class="three-col">
   <div>
-    <div class="section-title">Sex Distribution</div>
+    <div class="col-head">Patient Sex</div>
     <div class="stat-row"><span><span class="dot" style="background:#0d6efd;"></span>Male</span><strong>{{ male_count }}</strong></div>
     <div class="stat-row"><span><span class="dot" style="background:#e83e8c;"></span>Female</span><strong>{{ female_count }}</strong></div>
-    <div class="section-title" style="margin-top:10px;">Age Groups</div>
-    <div class="stat-row"><span><span class="dot" style="background:#6f42c1;"></span>Paediatric (0&ndash;14)</span><strong>{{ paed_count }}</strong></div>
-    <div class="stat-row"><span><span class="dot" style="background:#0d6efd;"></span>Adult (15+)</span><strong>{{ adult_count }}</strong></div>
+
+    <div class="col-head" style="margin-top:10px;">WHO Age Groups</div>
+    <div class="stat-row"><span><span class="dot" style="background:#6f42c1;"></span>Paediatric (0–14)</span><strong>{{ paed_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Adult (15+)</span><strong>{{ adult_count }}</strong></div>
+    <div class="col-head" style="margin-top:10px;">Clinic vs Outreach</div>
+    <div class="stat-row"><span>Clinic</span><strong>{{ clinic_count|default:"0" }}</strong></div>
+    <div class="stat-row"><span>Outreach</span><strong>{{ outreach_count|default:"0" }}</strong></div>
   </div>
+
   <div>
-    <div class="section-title">Order Status</div>
+    <div class="col-head">Order Status</div>
     <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Completed</span><strong>{{ completed_count }}</strong></div>
     <div class="stat-row"><span><span class="dot" style="background:#0dcaf0;"></span>In Progress</span><strong>{{ pending_count }}</strong></div>
     <div class="stat-row"><span><span class="dot" style="background:#dc3545;"></span>Urgent / Emergency</span><strong>{{ urgent_count }}</strong></div>
     <div class="stat-row"><span><span class="dot" style="background:#6c757d;"></span>Cancelled</span><strong>{{ cancelled_count }}</strong></div>
-  </div>
-  <div>
-    <div class="section-title">By Category</div>
+
+    <div class="col-head" style="margin-top:10px;">By Category</div>
     {% for c in category_data %}
     <div class="stat-row"><span>{{ c.label }}</span><strong>{{ c.count }}</strong></div>
     {% endfor %}
   </div>
+
+  <div>
+    <div class="col-head">Quality Indicators</div>
+    <div class="stat-row">
+      <span>Completion Rate</span>
+      <strong>
+        {% if completion_rate >= 85 %}<span class="badge-green">{{ completion_rate }}%</span>
+        {% elif completion_rate >= 60 %}<span class="badge-amber">{{ completion_rate }}%</span>
+        {% else %}<span class="badge-red">{{ completion_rate }}%</span>{% endif %}
+      </strong>
+    </div>
+    <div class="stat-row">
+      <span>Abnormal Rate</span>
+      <strong>{% if total_orders %}{% widthratio abnormal_count total_orders 100 %}%{% else %}0%{% endif %}</strong>
+    </div>
+    <div class="stat-row">
+      <span>Urgent Rate</span>
+      <strong style="color:#dc3545;">{% if total_orders %}{% widthratio urgent_count total_orders 100 %}%{% else %}0%{% endif %}</strong>
+    </div>
+    <div class="stat-row"><span>Paediatric Share</span>
+      <strong>{% if male_count|add:female_count %}{% widthratio paed_count male_count|add:female_count 100 %}%{% else %}0%{% endif %}</strong>
+    </div>
+    <div class="stat-row"><span>Cancelled Orders</span>
+      <strong>{{ cancelled_count }}</strong>
+    </div>
+  </div>
 </div>
 
-<!-- Exam Type × Sex × Age Breakdown -->
-{% if type_breakdown_list %}
-<div class="section-title">Exam Types by Sex &amp; Age Group &mdash; {{ month_start|date:"F Y" }}</div>
+{# ── 3. Abnormal Results by Test ── #}
+{% if abnormal_by_test %}
+<div class="section-title">3. Abnormal Results by Investigation Type</div>
 <table>
   <thead>
     <tr>
-      <th>Investigation Type</th><th>Category</th>
-      <th style="text-align:center;">M Adult</th><th style="text-align:center;">M Child</th>
-      <th style="text-align:center;">F Adult</th><th style="text-align:center;">F Child</th>
-      <th style="text-align:center;font-weight:700;">Total</th>
+      <th>Investigation</th>
+      <th style="text-align:center;">Total</th>
+      <th style="text-align:center;">Abnormal</th>
+      <th style="text-align:center;">Rate %</th>
     </tr>
   </thead>
   <tbody>
-    {% for t in type_breakdown_list %}
+    {% for t in abnormal_by_test %}
     <tr>
       <td style="font-weight:600;">{{ t.name }}</td>
-      <td style="color:#6c757d;">{{ t.category }}</td>
-      <td style="text-align:center;color:#0d6efd;">{{ t.male_adult }}</td>
-      <td style="text-align:center;color:#6f42c1;">{{ t.child_male }}</td>
-      <td style="text-align:center;color:#e83e8c;">{{ t.female_adult }}</td>
-      <td style="text-align:center;color:#c2185b;">{{ t.child_female }}</td>
-      <td style="text-align:center;font-weight:700;">{{ t.total }}</td>
+      <td style="text-align:center;">{{ t.total }}</td>
+      <td style="text-align:center;color:#dc3545;font-weight:700;">{{ t.abnormal }}</td>
+      <td style="text-align:center;">
+        {% if t.abn_rate > 30 %}<span class="badge-red">{{ t.abn_rate }}%</span>
+        {% elif t.abn_rate > 10 %}<span class="badge-amber">{{ t.abn_rate }}%</span>
+        {% else %}<span class="badge-green">{{ t.abn_rate }}%</span>{% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
-  <tfoot>
-    <tr>
-      <td colspan="6" style="font-weight:700;">Grand Total</td>
-      <td style="text-align:center;font-weight:700;">{{ total_orders }}</td>
-    </tr>
-  </tfoot>
 </table>
 {% endif %}
 
-<!-- Top 10 Tests -->
-<div class="section-title">Top 10 Investigations &mdash; {{ month_start|date:"F Y" }}</div>
+{# ── 4. Top 10 Investigations ── #}
+<div class="section-title">{% if abnormal_by_test %}4{% else %}3{% endif %}. Top 10 Investigations &mdash; {{ month_start|date:"F Y" }}</div>
 {% if top_tests %}
 <table>
   <thead>
-    <tr><th>#</th><th>Investigation</th><th>Category</th><th style="text-align:center;">Orders</th><th style="width:120px;">Volume</th></tr>
+    <tr>
+      <th>#</th>
+      <th>Investigation</th>
+      <th>Category</th>
+      <th style="text-align:center;">Orders</th>
+      <th style="width:110px;">Volume</th>
+    </tr>
   </thead>
   <tbody>
     {% for t in top_tests %}
@@ -140,23 +175,85 @@
       <td style="font-weight:600;">{{ t.name }}</td>
       <td style="color:#6c757d;">{{ t.category_display }}</td>
       <td style="text-align:center;font-weight:700;color:#0d6efd;">{{ t.count }}</td>
-      <td><div class="bar-wrap"><div class="bar-fill" style="width:{% widthratio t.count top_tests.0.count 100 %}%;"></div></div></td>
+      <td>
+        <div class="bar-wrap"><div class="bar-fill" style="width:{% widthratio t.count top_tests.0.count 100 %}%;"></div></div>
+        <span style="font-size:8px;color:#6c757d;">{% widthratio t.count top_tests.0.count 100 %}% of top</span>
+      </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% endif %}
 
-<!-- Requesting Departments -->
-{% if dept_table %}
-<div class="section-title">Orders by Requesting Department</div>
+{# ══════════════════════ PAGE 2 ══════════════════════ #}
+<div style="page-break-before:always;"></div>
+
+{% with pdf_seal_label="INTERNAL USE ONLY" %}{% include 'reports/pdf/_letterhead.html' %}{% endwith %}
+
+<div class="accred-bar">
+  <span>Eye Investigation Department &nbsp;&bull;&nbsp; Page 2 &nbsp;&bull;&nbsp; INV-{{ month_start|date:"Y-m" }}</span>
+  <span>{{ month_start|date:"F Y" }} &nbsp;&bull;&nbsp; ISO 15189:2022</span>
+</div>
+
+{# ── 5. Exam Types by Sex & Age Group ── #}
+<div class="section-title">5. Exam Types by Sex &amp; Age Group (WHO Standard) &mdash; {{ month_start|date:"F Y" }}</div>
+{% if type_breakdown_list %}
 <table>
-  <thead><tr><th>Department</th><th style="text-align:center;">Orders</th><th style="text-align:center;">%</th></tr></thead>
+  <thead>
+    <tr>
+      <th>Investigation Type</th>
+      <th>Category</th>
+      <th style="text-align:center;background:#1565c0;">M Adult</th>
+      <th style="text-align:center;background:#512da8;">M Child</th>
+      <th style="text-align:center;background:#ad1457;">F Adult</th>
+      <th style="text-align:center;background:#880e4f;">F Child</th>
+      <th style="text-align:center;background:#0a58ca;">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in type_breakdown_list %}
+    <tr>
+      <td style="font-weight:600;">{{ t.name }}</td>
+      <td style="color:#6c757d;">{{ t.category }}</td>
+      <td style="text-align:center;color:#0d6efd;font-weight:600;">{{ t.male_adult }}</td>
+      <td style="text-align:center;color:#6f42c1;">{{ t.child_male }}</td>
+      <td style="text-align:center;color:#e83e8c;font-weight:600;">{{ t.female_adult }}</td>
+      <td style="text-align:center;color:#c2185b;">{{ t.child_female }}</td>
+      <td style="text-align:center;font-weight:700;">{{ t.total }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="6">Grand Total — All Exam Types</td>
+      <td style="text-align:center;">{{ total_orders }}</td>
+    </tr>
+  </tfoot>
+</table>
+<p style="font-size:8px;color:#6c757d;margin-top:3px;margin-bottom:12px;">
+  Child = 0–14 yrs (WHO paediatric threshold) &nbsp;&bull;&nbsp; Adult = 15+ yrs &nbsp;&bull;&nbsp;
+  Counts = individual investigation orders, not unique patients.
+</p>
+{% else %}
+<p style="color:#6c757d;font-style:italic;padding:8px 0;">No exam type data available for this period.</p>
+{% endif %}
+
+{# ── 6. Requesting Departments ── #}
+{% if dept_table %}
+<div class="section-title">6. Orders by Requesting Department</div>
+<table>
+  <thead>
+    <tr>
+      <th>Department</th>
+      <th style="text-align:center;">Orders</th>
+      <th style="text-align:center;">Share %</th>
+    </tr>
+  </thead>
   <tbody>
     {% for row in dept_table %}
     <tr>
       <td style="font-weight:600;">{{ row.name }}</td>
-      <td style="text-align:center;">{{ row.count }}</td>
+      <td style="text-align:center;font-weight:700;color:#0d6efd;">{{ row.count }}</td>
       <td style="text-align:center;color:#6c757d;">{{ row.pct }}%</td>
     </tr>
     {% endfor %}
@@ -164,31 +261,49 @@
 </table>
 {% endif %}
 
-<!-- Abnormal Results -->
-{% if abnormal_by_test %}
-<div class="section-title">Abnormal Results by Test</div>
+{# ── 7. Monthly Performance Statement ── #}
+<div class="section-title">7. Monthly Performance Statement</div>
 <table>
-  <thead><tr><th>Investigation</th><th style="text-align:center;">Total</th><th style="text-align:center;">Abnormal</th><th style="text-align:center;">Rate %</th></tr></thead>
-  <tbody>
-    {% for t in abnormal_by_test %}
+  <thead>
     <tr>
-      <td style="font-weight:600;">{{ t.name }}</td>
-      <td style="text-align:center;">{{ t.total }}</td>
-      <td style="text-align:center;color:#dc3545;font-weight:700;">{{ t.abnormal }}</td>
-      <td style="text-align:center;{% if t.abn_rate > 30 %}color:#dc3545;{% elif t.abn_rate > 10 %}color:#fd7e14;{% else %}color:#198754;{% endif %}font-weight:700;">{{ t.abn_rate }}%</td>
+      <th style="width:38%;">Indicator</th>
+      <th style="text-align:center;width:14%;">Value</th>
+      <th>Interpretation / Standard</th>
     </tr>
-    {% endfor %}
+  </thead>
+  <tbody>
+    <tr>
+      <td>Total Investigation Orders</td>
+      <td style="text-align:center;font-weight:700;">{{ total_orders }}</td>
+      <td style="color:#555;">Workload volume for {{ month_start|date:"F Y" }}</td>
+    </tr>
+    <tr>
+      <td>Completion Rate</td>
+      <td style="text-align:center;font-weight:700;color:#198754;">{{ completion_rate }}%</td>
+      <td style="color:#555;">Target ≥ 85% — {{ completed_count }} of {{ total_orders }} orders completed</td>
+    </tr>
+    <tr>
+      <td>Patients Served</td>
+      <td style="text-align:center;font-weight:700;">{{ male_count|add:female_count }}</td>
+      <td style="color:#555;">Unique patients with at least one investigation order</td>
+    </tr>
+    <tr>
+      <td>Paediatric Patients (0–14 yrs)</td>
+      <td style="text-align:center;font-weight:700;color:#6f42c1;">{{ paed_count }}</td>
+      <td style="color:#555;">WHO paediatric age group — age-appropriate reference ranges required</td>
+    </tr>
+    <tr>
+      <td>Abnormal Results</td>
+      <td style="text-align:center;font-weight:700;color:#fd7e14;">{{ abnormal_count }}</td>
+      <td style="color:#555;">Results outside normal reference range — clinician review required</td>
+    </tr>
+    <tr>
+      <td>Urgent / Emergency Orders</td>
+      <td style="text-align:center;font-weight:700;color:#dc3545;">{{ urgent_count }}</td>
+      <td style="color:#555;">Prioritized same-day turnaround — ISO 15189 §7.4.1.3</td>
+    </tr>
   </tbody>
 </table>
-{% endif %}
-
-<div class="data-note">
-  <strong>Data Source:</strong> EHR Africa Hospital Information System &nbsp;&bull;&nbsp;
-  <strong>Report Ref:</strong> INV-{{ month_start|date:"Y-m" }} &nbsp;&bull;&nbsp;
-  <strong>Period:</strong> {{ month_start|date:"F Y" }} &nbsp;&bull;&nbsp;
-  This report contains aggregated statistical data only. No individual patient identifiers are included.
-  All figures reflect records entered in the EHR system as at time of generation and are subject to data completeness.
-</div>
 
 <div class="auth-block">
   <div class="section-title">Authorization &amp; Approval</div>
@@ -201,7 +316,7 @@
     </div>
     <div class="auth-col">
       <div class="auth-role">Reviewed by</div>
-      <div class="auth-title">Medical Director</div>
+      <div class="auth-title">Quality Officer / Medical Director</div>
       <div class="auth-sig">Signature: _______________________</div>
       <div class="auth-date">Date: ____________________________</div>
     </div>
@@ -216,7 +331,7 @@
 
 <div class="pdf-footer">
   <span>{{ hospital_name }} &mdash; Eye Investigation Department</span>
-  <span>EHR Africa System &nbsp;|&nbsp; {% now "d M Y H:i" %}</span>
+  <span>INV-{{ month_start|date:"Y-m" }} &nbsp;|&nbsp; ISO 15189:2022 Monthly Report</span>
   <span>Confidential &mdash; Internal Use Only</span>
 </div>
 

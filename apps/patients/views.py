@@ -648,8 +648,10 @@ def patient_detail_view(request, patient_id):
     refraction_by_visit = {}
     for rc in _refrac_consults:
         vid = rc['visit_id']
-        if vid and vid not in refraction_by_visit:
-            refraction_by_visit[vid] = rc['department_specific_data'] or {}
+        if vid:
+            key = str(vid)
+            if key not in refraction_by_visit:
+                refraction_by_visit[key] = rc['department_specific_data'] or {}
 
     # ── Role-based permission flags for the template ─────────────────────
     is_doctor        = u.is_doctor or u.is_medical_director
@@ -895,7 +897,7 @@ def visit_detail_view(request, visit_number):
         department__code__in=['REFRAC', 'PEDS_REFRAC'],
     ).values('department_specific_data').order_by('-consultation_date').first()
     _vd_refrac_data = (_vd_refrac['department_specific_data'] or {}) if _vd_refrac else {}
-    refraction_by_visit = {visit.pk: _vd_refrac_data}
+    refraction_by_visit = {str(visit.pk): _vd_refrac_data}
 
     return render(request, 'patients/visit_detail.html', {
         'visit': visit,

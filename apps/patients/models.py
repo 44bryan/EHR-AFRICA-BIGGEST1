@@ -401,6 +401,16 @@ class Visit(AuditModel):
     discharge_date = models.DateTimeField(null=True, blank=True)
     discharge_notes = models.TextField(blank=True)
 
+    # ── Internal referral tracking ────────────────────────────────────────────
+    referring_doctor = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='refraction_referrals',
+        help_text='Doctor who sent this patient to Refraction — used for return routing.',
+    )
+
     # ── Referral source ───────────────────────────────────────────────────────
     referral_hospital = models.CharField(
         max_length=150, blank=True,
