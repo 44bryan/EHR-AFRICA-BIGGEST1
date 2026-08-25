@@ -254,28 +254,27 @@ function ehrInit() {
         } else {
           div.textContent = m;
         }
-        // Desktop
-        div.addEventListener('mousedown', function(e) {
+        function _pickItem(e) {
           e.preventDefault();
-          parts[parts.length - 1] = ' ' + m;
-          ta.value = parts.join(',').replace(/^[\s,]+/, '');
+          e.stopPropagation();
+          _sugTouching = false;
+          // Build value: existing items + new pick + trailing comma for next entry
+          var existing = ta.value.split(',').slice(0, -1) // keep all previous items
+            .map(function(s) { return s.trim(); })
+            .filter(function(s) { return s; });
+          existing.push(m);
+          ta.value = existing.join(', ') + ', ';
           sugBox.style.display = 'none';
           ta.focus();
-        });
+        }
+        // Desktop
+        div.addEventListener('mousedown', _pickItem);
         // Tablet / touch
         div.addEventListener('touchstart', function(e) {
           e.stopPropagation();
           _sugTouching = true;
         }, {passive: true});
-        div.addEventListener('touchend', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          _sugTouching = false;
-          parts[parts.length - 1] = ' ' + m;
-          ta.value = parts.join(',').replace(/^[\s,]+/, '');
-          sugBox.style.display = 'none';
-          ta.focus();
-        });
+        div.addEventListener('touchend', _pickItem);
         sugBox.appendChild(div);
       });
       if (matches.length > 12) {
