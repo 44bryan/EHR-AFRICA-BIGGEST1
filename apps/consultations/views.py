@@ -1804,6 +1804,163 @@ def reject_and_reroute_view(request):
     })
 
 
+# ── Unified Route Patient — doctor routes patient mid-consultation ────────────
+
+@login_required
+@require_POST
+def route_patient_view(request):
+    """
+    Unified routing: doctor sends patient to any department mid-consultation.
+    - Auto-saves consultation as draft (IN_PROGRESS)
+    - Sets referring_doctor on the visit if 'return_to_me' is checked
+    - Stores routing_note on the visit
+    - Creates a QMS token for the destination
+    - Closes the doctor's active token for this patient
+
+    POST params:
+        visit_id        — UUID of the Visit
+        destination     — QMS service type (REFRACTION, LAB, GLAUCOMA, PARAMETERS, etc.)
+        return_to_me    — '1' if the patient should come back after
+        routing_note    — free-text note for the receiving department
+        consultation_id — (optional) UUID of the active consultation to save as draft
+    """
+    from apps.patients.models import Visit as _Visit
+    from django.utils import timezone as _tz
+
+    visit_id        = request.POST.get('visit_id', '').strip()
+    destination     = request.POST.get('destination', '').strip()
+    return_to_me    = request.POST.get('return_to_me') == '1'
+    routing_note    = request.POST.get('routing_note', '').strip()
+    consultation_id = request.POST.get('consultation_id', '').strip()
+
+    if not visit_id or not destination:
+        return JsonResponse({'success': False, 'message': 'visit_id and destination are required.'}, status=400)
+
+    visit = get_object_or_404(_Visit, id=visit_id, is_deleted=False)
+    doctor = request.user
+    today = _tz.localdate()
+
+    # ── 1. Auto-save consultation as draft if provided ────────────────────────
+    if consultation_id:
+        try:
+            consult = Consultation.objects.get(pk=consultation_id, is_deleted=False)
+            if consult.status == ConsultationStatus.IN_PROGRESS:
+                consult.save()  # touch updated_at so autosave is fresh
+        except Consultation.DoesNotExist:
+            pass
+
+    # ── 2. Set referring_doctor + routing_note on visit ───────────────────────
+    update_fields = ['updated_at']
+    if return_to_me:
+        visit.referring_doctor = doctor
+        update_fields.append('referring_doctor')
+    else:
+        visit.referring_doctor = None
+        update_fields.append('referring_doctor')
+
+    visit.routing_note = routing_note
+    update_fields.append('routing_note')
+
+    # ── 3. Build token notes ─────────────────────────────────────────────────
+    doctor_name = doctor.get_full_name() or doctor.username
+    token_notes_parts = []
+    if return_to_me:
+        token_notes_parts.append(f'Return to Dr. {doctor_name} after completion')
+    if routing_note:
+        token_notes_parts.append(routing_note)
+    token_notes = ' | '.join(token_notes_parts)
+
+    if not _qms_active():
+        # QMS off — just update visit status
+        _STATUS_MAP = {
+            'REFRACTION': 'REFRACTION', 'LAB': 'LABORATORY', 'INVEST': 'INVESTIGATION',
+            'PHARMACY': 'PHARMACY', 'CASHIER': 'AT_CASHIER', 'OPTICAL': 'OPTICAL',
+            'PARAMETERS': 'PARAMETERS', 'DISCHARGE': 'DISCHARGED',
+        }
+        visit.status = _STATUS_MAP.get(destination, 'WAITING')
+        update_fields.append('status')
+        visit.save(update_fields=update_fields)
+        dest_label = destination.replace('_', ' ').title()
+        return JsonResponse({'success': True, 'message': f'Patient routed to {dest_label}.'})
+
+    from apps.qms.models import (
+        QueueToken, DailyTokenSequence, IssuancePoint,
+        TokenStatus, TIER_PRIORITY, ServiceTier,
+    )
+    from django.db import transaction
+
+    tier = visit.service_tier or ServiceTier.STANDARD
+
+    # Find entry token
+    entry_token = QueueToken.objects.filter(
+        patient=visit.patient, token_date=today,
+        issuance_point__in=[
+            IssuancePoint.GATE, IssuancePoint.CASHIER,
+            IssuancePoint.VIP_RECEPTION, IssuancePoint.EXPRESS_DESK,
+        ],
+        is_deleted=False,
+    ).first()
+
+    with transaction.atomic():
+        # ── 4. Close doctor's active tokens for this patient ─────────────
+        dept_code = doctor.department.code if doctor.department else ''
+        dept_service_types = _DEPT_TO_SERVICE_TYPES.get(dept_code, [])
+        if dept_service_types:
+            QueueToken.objects.filter(
+                patient=visit.patient,
+                service_type__in=dept_service_types,
+                token_date=today,
+                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                is_deleted=False,
+            ).update(status=TokenStatus.COMPLETED, completed_at=_tz.now())
+
+        # ── 5. Create new token for destination ──────────────────────────
+        token_number = DailyTokenSequence.next_dept_token(destination)
+        new_token = QueueToken.objects.create(
+            token_number=token_number,
+            patient=visit.patient,
+            visit=visit,
+            patient_name=visit.patient.full_name if visit.patient else '',
+            service_type=destination,
+            service_tier=tier,
+            issuance_point=IssuancePoint.SYSTEM,
+            priority=TIER_PRIORITY.get(tier, 0),
+            status=TokenStatus.WAITING,
+            entry_token=entry_token,
+            assigned_doctor=doctor if return_to_me else None,
+            notes=token_notes,
+            issued_by=doctor,
+        )
+
+        # ── 6. Update visit ──────────────────────────────────────────────
+        visit.save(update_fields=update_fields)
+
+        try:
+            from apps.core.ws_notify import notify_queue as _ws_nq
+            _ws_nq('WAITING')
+        except Exception:
+            pass
+
+    dest_labels = {
+        'REFRACTION': 'Refraction', 'LAB': 'Laboratory', 'INVEST': 'Eye Investigations',
+        'PHARMACY': 'Pharmacy', 'CASHIER': 'Cashier', 'OPTICAL': 'Optical Shop',
+        'PARAMETERS': 'Triage', 'GENERAL': 'General Consultation',
+        'RETINA': 'Retina Clinic', 'GLAUCOMA': 'Glaucoma Clinic',
+        'CATARACT': 'Cataract Clinic', 'CORNEA': 'Cornea Clinic',
+        'NEURO': 'Neuro-Ophthalmology', 'OCULOPLASTY': 'Oculoplastics',
+        'PEDIATRIC': 'Pediatric Ophthalmology', 'UVEITIS': 'Uveitis Clinic',
+        'LOW_VISION': 'Low Vision', 'GEN_PHYS': 'General Physician',
+        'COUNSELING': 'Surgical Counseling', 'DISCHARGE': 'Discharged',
+        'LASER': 'Laser Room', 'INJECTION': 'Injection Room',
+        'CONTACT_LENS': 'Contact Lens Clinic',
+    }
+    dest_label = dest_labels.get(destination, destination.replace('_', ' ').title())
+    msg = f'Patient routed to {dest_label}. Token {new_token.token_number}.'
+    if return_to_me:
+        msg += f' Patient will return to you after.'
+    return JsonResponse({'success': True, 'token_number': new_token.token_number, 'message': msg})
+
+
 # ── Return to Referring Doctor ────────────────────────────────────────────────
 
 @login_required

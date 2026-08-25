@@ -920,7 +920,7 @@
 
     {# Reprint if paid #}
     {% if invoice.status == 'PAID' %}
-    <button class="btn-reprint" onclick="document.getElementById('receiptFrame').src='{{ receipt_url }}?popup=1';new bootstrap.Modal(document.getElementById('receiptModal')).show();">
+    <button class="btn-reprint" onclick="document.getElementById('receiptFrame').src='{{ receipt_url }}?popup=1';new bootstrap.Modal(document.getElementById('receiptViewerModal')).show();">
       <i class="bi bi-printer me-2"></i>Reprint Receipt
     </button>
     {% endif %}
@@ -945,17 +945,20 @@
   </div>{# /bill-col #}
 </div>{# /pos-grid #}
 
-{# Payment-complete overlay — receipt opens in popup window (no iframe needed) #}
+{# Payment-complete overlay — receipt in full-screen modal + auto-print #}
 <div id="paySuccessOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.97);z-index:9999;flex-direction:column;align-items:center;justify-content:center;">
-  <div class="text-center text-white p-4" style="max-width:420px;width:100%;">
+  <div class="text-center text-white p-4" style="max-width:520px;width:100%;">
     <div style="font-size:4.5rem;line-height:1;margin-bottom:1rem;">
       <i class="bi bi-check-circle-fill text-success"></i>
     </div>
     <h2 class="fw-bold text-success mb-1">Payment Complete</h2>
-    <p class="text-secondary mb-3" style="font-size:.95rem;">Receipt printed in new window — check your printer.</p>
+    <p class="text-secondary mb-3" style="font-size:.95rem;">Receipt sent to printer automatically.</p>
     <div class="d-flex gap-3 justify-content-center flex-wrap mb-3">
       <button class="btn btn-outline-light btn-sm" id="reprintBtn">
         <i class="bi bi-printer me-1"></i>Reprint Receipt
+      </button>
+      <button class="btn btn-outline-info btn-sm" id="viewReceiptBtn">
+        <i class="bi bi-receipt me-1"></i>View Receipt
       </button>
       <button class="btn btn-success btn-lg fw-semibold px-5" id="nextPatientBtn" onclick="window.location.href=QUEUE_URL">
         <i class="bi bi-arrow-right-circle me-2"></i>Next Patient
@@ -964,6 +967,26 @@
     <div class="adv-bar-wrap">
       <div class="adv-bar-lbl">Auto-advancing in <span id="advCountdown">8</span>s — click Next Patient to go now</div>
       <div class="adv-bar"><div class="adv-bar-fill" id="advBarFill"></div></div>
+    </div>
+  </div>
+</div>
+
+{# Full-screen receipt viewer modal #}
+<div class="modal fade" id="receiptViewerModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width:850px;">
+    <div class="modal-content" style="height:90vh;">
+      <div class="modal-header py-2 bg-dark text-white border-0">
+        <h6 class="modal-title"><i class="bi bi-receipt me-2"></i>Patient Receipt</h6>
+        <div class="d-flex gap-2 ms-auto">
+          <button class="btn btn-sm btn-outline-light" id="modalPrintBtn" onclick="document.getElementById('receiptFrame').contentWindow.print()">
+            <i class="bi bi-printer me-1"></i>Print
+          </button>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+      </div>
+      <div class="modal-body p-0" style="overflow:hidden;">
+        <iframe id="receiptFrame" style="width:100%;height:100%;border:none;"></iframe>
+      </div>
     </div>
   </div>
 </div>
@@ -1289,9 +1312,6 @@ function updateSplitBalance() {
 function collectPay() {
   if (!INV_ID) return;
   const btn = document.getElementById('collectBtn');
-  // Pre-open receipt window NOW (synchronous, inside click handler) so browsers
-  // don't block it as a popup when window.open is later called in a fetch callback.
-  _receiptWin = window.open('', 'ehr_receipt', 'width=460,height=760,toolbar=no,menubar=no,scrollbars=yes,resizable=yes');
 
   if (splitMode) {
     // Split payment: send two separate payment requests
@@ -1322,25 +1342,36 @@ function collectPay() {
   }
 }
 
-// ── Receipt popup — opens receipt in a small print window ─────────────────────
-var _receiptWin = null;  // pre-opened window handle (avoids popup blocker)
+// ── Receipt — auto-print via hidden iframe, view in modal on demand ──────────
+var _lastReceiptUrl = null;
 
 function openReceiptPopup(url) {
-  var receiptUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'popup=1';
-  if (_receiptWin && !_receiptWin.closed) {
-    _receiptWin.location.href = receiptUrl;
-    _receiptWin.focus();
-  } else {
-    _receiptWin = window.open(receiptUrl, 'ehr_receipt', 'width=460,height=760,toolbar=no,menubar=no,scrollbars=yes,resizable=yes');
-  }
+  _lastReceiptUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'popup=1';
+
+  // Auto-print: load receipt in the modal iframe (receipt.html auto-prints on load)
+  var frame = document.getElementById('receiptFrame');
+  frame.src = _lastReceiptUrl;
+
+  // Show success overlay
   var ov = document.getElementById('paySuccessOverlay');
   ov.style.display = 'flex';
+
+  // Reprint button — triggers print from the iframe
   document.getElementById('reprintBtn').onclick = function() {
     clearInterval(_advTimer);
     var cd = document.getElementById('advCountdown');
     if (cd) cd.closest('.adv-bar-wrap').style.display = 'none';
-    window.open(receiptUrl, 'ehr_receipt_' + Date.now(), 'width=460,height=760,toolbar=no,menubar=no,scrollbars=yes,resizable=yes');
+    try { frame.contentWindow.print(); } catch(e) { window.open(_lastReceiptUrl, '_blank'); }
   };
+
+  // View Receipt button — opens the full modal to see the receipt on screen
+  document.getElementById('viewReceiptBtn').onclick = function() {
+    clearInterval(_advTimer);
+    var cd = document.getElementById('advCountdown');
+    if (cd) cd.closest('.adv-bar-wrap').style.display = 'none';
+    new bootstrap.Modal(document.getElementById('receiptViewerModal')).show();
+  };
+
   startAutoAdvance();
 }
 
@@ -1375,17 +1406,24 @@ function _recordPayment(method, amount, ref, finalize) {
       if (finalize && data.is_paid) {
         const ffd = new FormData();
         ffd.append('csrfmiddlewaretoken', CSRF);
-        fetch(FINALIZE_URL, { method: 'POST', body: ffd })
-          .then(r => r.json())
-          .then(fdata => {
-            const url = fdata.redirect_url || RECEIPT_URL;
+        fetch(FINALIZE_URL, { method: 'POST', body: ffd, redirect: 'manual' })
+          .then(function(r) {
+            // Accept both JSON and non-JSON responses gracefully
+            if (r.type === 'opaqueredirect' || !r.ok) {
+              return { redirect_url: RECEIPT_URL };
+            }
+            return r.json().catch(function() { return { redirect_url: RECEIPT_URL }; });
+          })
+          .then(function(fdata) {
+            var url = (fdata && fdata.redirect_url) || RECEIPT_URL;
             if (url) {
               openReceiptPopup(url);
             } else {
               window.location.href = QUEUE_URL;
             }
           })
-          .catch(() => {
+          .catch(function() {
+            // Network error — still show receipt
             if (RECEIPT_URL) {
               openReceiptPopup(RECEIPT_URL);
             } else {

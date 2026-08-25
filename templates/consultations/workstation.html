@@ -220,8 +220,17 @@
                       <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;" title="Assigned directly to you"><i class="bi bi-person-check"></i> For You</span>
                     {% endif %}
                   {% endif %}
-                  {% if 'Returned from Refraction' in tok.notes %}
+                  {% if tok.ws_visit.referring_doctor %}
+                    <span class="badge ms-1" style="font-size:.65rem;background:#0d9488;" title="Return to {{ tok.ws_visit.referring_doctor.get_full_name }} after completion">
+                      <i class="bi bi-arrow-return-left me-1"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.last_name }}
+                    </span>
+                  {% elif 'Returned from Refraction' in tok.notes %}
                     <span class="badge ms-1" style="font-size:.65rem;background:#0d9488;" title="Patient came back from Refraction"><i class="bi bi-arrow-return-left me-1"></i>From Refraction</span>
+                  {% endif %}
+                  {% if tok.ws_visit.routing_note %}
+                    <div class="text-muted fst-italic d-block mt-1" style="font-size:.68rem;max-width:300px;" title="Note from referring doctor">
+                      <i class="bi bi-chat-left-text me-1"></i>{{ tok.ws_visit.routing_note|truncatewords:15 }}
+                    </div>
                   {% endif %}
                 </td>
                 {% if not selected_room %}
@@ -250,7 +259,7 @@
                         <i class="bi bi-person-lines-fill me-1"></i>Open Visit
                       </a>
                       {% endif %}
-                      {% if is_refrac and tok.ws_visit.referring_doctor %}
+                      {% if tok.ws_visit.referring_doctor %}
                       <button class="btn btn-sm btn-warning ws-return-btn"
                               data-visit="{{ tok.ws_visit.pk }}"
                               data-doctor="{{ tok.ws_visit.referring_doctor.get_full_name }}"
@@ -259,6 +268,15 @@
                         <i class="bi bi-arrow-return-left me-1"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.get_full_name }}
                       </button>
                       {% endif %}
+                      {# ── Route Patient to another department ── #}
+                      <button class="btn btn-sm btn-outline-primary ws-route-patient-btn"
+                              data-visit="{{ tok.ws_visit.pk }}"
+                              data-patient="{{ tok.display_name }}"
+                              data-draft="{% if tok.ws_draft %}{{ tok.ws_draft.pk }}{% endif %}"
+                              title="Route patient to another department"
+                              style="font-size:.72rem;padding:.2rem .5rem;">
+                        <i class="bi bi-signpost-2 me-1"></i>Route
+                      </button>
                       {# ── Reject & Re-route: only show if no consultation started yet ── #}
                       {% if not tok.ws_draft %}
                       <button class="btn btn-sm btn-outline-danger ws-reject-btn"
@@ -1342,5 +1360,160 @@ function qfPick(fieldId, sel) {
     </div>
   </div>
 </div>
+
+{# ── Route Patient Modal ──────────────────────────────────────────────────── #}
+<div class="modal fade" id="routePatientModal" tabindex="-1" aria-labelledby="routePatientLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white py-2">
+        <h6 class="modal-title mb-0"><i class="bi bi-signpost-2 me-2"></i>Route Patient</h6>
+        <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex align-items-center gap-2 mb-3 p-2 bg-light rounded">
+          <i class="bi bi-person-fill text-primary"></i>
+          <span class="fw-semibold" id="route-patient-name"></span>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold mb-1">Where to send?</label>
+          <select id="route-destination" class="form-select form-select-sm">
+            <optgroup label="Common">
+              <option value="REFRACTION">Refraction</option>
+              <option value="INVEST">Eye Investigations</option>
+              <option value="LAB">Laboratory</option>
+              <option value="CASHIER">Cashier</option>
+              <option value="PHARMACY">Pharmacy</option>
+              <option value="OPTICAL">Optical Shop</option>
+              <option value="PARAMETERS">Triage (Re-triage)</option>
+            </optgroup>
+            <optgroup label="Specialist Clinics">
+              <option value="RETINA">Retina Clinic</option>
+              <option value="GLAUCOMA">Glaucoma Clinic</option>
+              <option value="CATARACT">Cataract Clinic</option>
+              <option value="CORNEA">Cornea Clinic</option>
+              <option value="UVEITIS">Uveitis Clinic</option>
+              <option value="NEURO">Neuro-Ophthalmology</option>
+              <option value="OCULOPLASTY">Oculoplastics</option>
+              <option value="PEDIATRIC">Pediatric Ophthalmology</option>
+              <option value="LOW_VISION">Low Vision</option>
+              <option value="GEN_PHYS">General Physician</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="COUNSELING">Surgical Counseling</option>
+              <option value="LASER">Laser Room</option>
+              <option value="INJECTION">Injection Room</option>
+              <option value="CONTACT_LENS">Contact Lens Clinic</option>
+              <option value="GENERAL">General Consultation</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="route-return-to-me" checked>
+            <label class="form-check-label small fw-semibold" for="route-return-to-me">
+              <i class="bi bi-arrow-return-left me-1 text-success"></i>Return patient to me after
+            </label>
+          </div>
+          <div class="text-muted" style="font-size:.7rem;margin-left:2.5rem;">
+            The receiving department will see a banner to send the patient back to you when done.
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label small fw-semibold mb-1">
+            <i class="bi bi-chat-left-text me-1"></i>Note for receiving department
+            <span class="text-muted fw-normal">(optional)</span>
+          </label>
+          <textarea id="route-note" class="form-control form-control-sm" rows="2"
+                    placeholder="e.g. Please do full refraction — mixed astigmatism suspected" maxlength="300"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" id="route-confirm-btn">
+          <i class="bi bi-send me-1"></i>Route Patient
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var _routeVisitId = null;
+  var _routeDraftId = null;
+  var _routeBtn = null;
+  var ROUTE_URL = '{% url "consultations:route_patient" %}';
+  var CSRF = document.querySelector('[name=csrfmiddlewaretoken]')
+           ? document.querySelector('[name=csrfmiddlewaretoken]').value
+           : '{{ csrf_token }}';
+
+  // Open modal on Route button click
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-route-patient-btn');
+    if (!btn) return;
+    _routeVisitId = btn.dataset.visit;
+    _routeDraftId = btn.dataset.draft || '';
+    _routeBtn = btn;
+    document.getElementById('route-patient-name').textContent = btn.dataset.patient;
+    document.getElementById('route-destination').value = 'REFRACTION';
+    document.getElementById('route-return-to-me').checked = true;
+    document.getElementById('route-note').value = '';
+    document.getElementById('route-confirm-btn').disabled = false;
+    document.getElementById('route-confirm-btn').innerHTML = '<i class="bi bi-send me-1"></i>Route Patient';
+    new bootstrap.Modal(document.getElementById('routePatientModal')).show();
+  });
+
+  // Confirm route
+  document.getElementById('route-confirm-btn').addEventListener('click', function() {
+    if (!_routeVisitId) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Routing…';
+
+    var fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    fd.append('visit_id', _routeVisitId);
+    fd.append('destination', document.getElementById('route-destination').value);
+    fd.append('return_to_me', document.getElementById('route-return-to-me').checked ? '1' : '0');
+    fd.append('routing_note', document.getElementById('route-note').value);
+    if (_routeDraftId) fd.append('consultation_id', _routeDraftId);
+
+    fetch(ROUTE_URL, { method: 'POST', body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          bootstrap.Modal.getInstance(document.getElementById('routePatientModal')).hide();
+          // Show success toast
+          if (typeof toast === 'function') {
+            toast(data.message, 'success');
+          } else {
+            alert(data.message);
+          }
+          // Fade out the patient row
+          if (_routeBtn) {
+            var row = _routeBtn.closest('tr');
+            if (row) {
+              row.style.transition = 'opacity .4s';
+              row.style.opacity = '.2';
+              setTimeout(function() { row.remove(); }, 500);
+            }
+          }
+        } else {
+          alert(data.message || 'Failed to route patient.');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send me-1"></i>Route Patient';
+        }
+      })
+      .catch(function() {
+        alert('Network error — please try again.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send me-1"></i>Route Patient';
+      });
+  });
+})();
+</script>
 
 {% endblock %}

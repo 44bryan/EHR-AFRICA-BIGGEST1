@@ -743,178 +743,72 @@
     _overlayX[eye] = oc.getContext('2d');
   });
 
-  // ── Anatomy base — full realistic eye with lids & lashes ──────────
+  // ── Anatomy base — clean B&W clinical sketch ──────────────────────
   function drawAsdBase(ctx, eye) {
     var SZ   = ASD_SZ;          // 280
     var ICX  = ASD_CX;          // 140 — iris centre x
     var CY   = ASD_CY + 8;      // 148 — canthus y / iris centre y
-    var IR   = 55;               // iris radius — wide enough to see clearly
+    var IR   = 55;               // iris radius
     var PR   = 21;               // pupil radius
-    var SKIN = '#f2d9bc';
+    var LK   = '#333';           // line colour (dark grey)
 
     // Canthus x: OD → temporal left, nasal right; OS → reversed
     var tempCX  = (eye === 'od') ? 18      : SZ - 18;
     var nasalCX = (eye === 'od') ? SZ - 18 : 18;
 
-    // Upper lid CPs — wide open so full iris is visible (peak ≈ CY−78)
+    // Upper lid CPs
     var ulCP1x = tempCX  + (nasalCX - tempCX) * 0.25;
     var ulCP1y = CY - 78;
     var ulCP2x = tempCX  + (nasalCX - tempCX) * 0.65;
     var ulCP2y = CY - 70;
 
-    // Lower lid CPs — wide open (trough ≈ CY+72)
+    // Lower lid CPs
     var llCP1x = tempCX  + (nasalCX - tempCX) * 0.30;
     var llCP1y = CY + 74;
     var llCP2x = tempCX  + (nasalCX - tempCX) * 0.70;
     var llCP2y = CY + 70;
 
-    // Cubic bezier point + tangent helpers
-    function bezPt(t, x0,y0, x1,y1, x2,y2, x3,y3) {
-      var u = 1 - t;
-      return { x: u*u*u*x0 + 3*u*u*t*x1 + 3*u*t*t*x2 + t*t*t*x3,
-               y: u*u*u*y0 + 3*u*u*t*y1 + 3*u*t*t*y2 + t*t*t*y3 };
-    }
-    function bezTan(t, x0,y0, x1,y1, x2,y2, x3,y3) {
-      var u = 1 - t;
-      return { x: 3*(u*u*(x1-x0) + 2*u*t*(x2-x1) + t*t*(x3-x2)),
-               y: 3*(u*u*(y1-y0) + 2*u*t*(y2-y1) + t*t*(y3-y2)) };
-    }
-    // Helper: build the eye-opening path (upper lid forward + lower lid backward)
     function eyeOpenPath() {
       ctx.moveTo(tempCX, CY);
-      ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY); // upper lid
-      ctx.bezierCurveTo(llCP2x,llCP2y, llCP1x,llCP1y, tempCX,CY);  // lower (backward)
+      ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY);
+      ctx.bezierCurveTo(llCP2x,llCP2y, llCP1x,llCP1y, tempCX,CY);
       ctx.closePath();
     }
 
     ctx.clearRect(0, 0, SZ, SZ);
 
-    // ── 1. Skin background ────────────────────────────────────────────
-    ctx.fillStyle = SKIN;
-    ctx.fillRect(0, 0, SZ, SZ);
-
-    // ── 2. Clip to eye opening — draw sclera, iris, pupil ────────────
-    ctx.save();
-    ctx.beginPath(); eyeOpenPath(); ctx.clip();
-
-    // White sclera
+    // ── 1. White background ───────────────────────────────────────────
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, SZ, SZ);
 
-    // Subtle conjunctival vessels
-    ctx.strokeStyle = 'rgba(200,130,130,0.32)'; ctx.lineWidth = 0.9;
-    [[tempCX,CY, ICX-IR-3,CY-8],[tempCX,CY, ICX-IR-3,CY+8],
-     [nasalCX,CY,ICX+IR+3,CY-5],[nasalCX,CY,ICX+IR+3,CY+7]].forEach(function(v) {
-      ctx.beginPath(); ctx.moveTo(v[0],v[1]);
-      ctx.quadraticCurveTo((v[0]+v[2])/2,(v[1]+v[3])/2-5, v[2],v[3]); ctx.stroke();
-    });
+    // ── 2. Eye opening outline (upper + lower lid) ────────────────────
+    ctx.strokeStyle = LK; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(tempCX, CY);
+    ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tempCX, CY);
+    ctx.bezierCurveTo(llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY); ctx.stroke();
 
-    // Limbus
-    ctx.beginPath(); ctx.arc(ICX, CY, IR+2.5, 0, 2*Math.PI);
-    ctx.strokeStyle = '#3d5070'; ctx.lineWidth = 3; ctx.stroke();
-
-    // Iris — medium blue so it reads clearly
+    // ── 3. Limbus circle (outer cornea boundary) ──────────────────────
     ctx.beginPath(); ctx.arc(ICX, CY, IR, 0, 2*Math.PI);
-    var irisFill = ctx.createRadialGradient(ICX-8, CY-8, 4, ICX, CY, IR);
-    irisFill.addColorStop(0, '#a8c8e8');
-    irisFill.addColorStop(1, '#5a88b8');
-    ctx.fillStyle = irisFill; ctx.fill();
+    ctx.strokeStyle = LK; ctx.lineWidth = 1.5; ctx.stroke();
 
-    // Iris radial texture
-    ctx.strokeStyle = 'rgba(30,55,100,0.30)'; ctx.lineWidth = 0.8;
-    for (var ri = 0; ri < 28; ri++) {
-      var ra = (ri/28)*2*Math.PI;
-      ctx.beginPath();
-      ctx.moveTo(ICX + PR*Math.cos(ra), CY + PR*Math.sin(ra));
-      ctx.lineTo(ICX + (IR-2)*Math.cos(ra), CY + (IR-2)*Math.sin(ra));
-      ctx.stroke();
-    }
-
-    // Collarette ring
-    ctx.beginPath(); ctx.arc(ICX, CY, PR+10, 0, 2*Math.PI);
-    ctx.strokeStyle = 'rgba(30,60,110,0.25)'; ctx.lineWidth = 1.8; ctx.stroke();
-
-    // Pupil — jet black
+    // ── 4. Pupil circle ───────────────────────────────────────────────
     ctx.beginPath(); ctx.arc(ICX, CY, PR, 0, 2*Math.PI);
-    ctx.fillStyle = '#000000'; ctx.fill();
+    ctx.strokeStyle = LK; ctx.lineWidth = 1.2; ctx.stroke();
+    // Fill pupil black
+    ctx.fillStyle = '#000'; ctx.fill();
 
-    // Corneal light reflex — bright white spot
-    ctx.beginPath(); ctx.arc(ICX-8, CY-8, 5, 0, 2*Math.PI);
-    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();
-
-    // Clock hour dots just outside limbus (auto-clipped by eyelid clip)
-    ctx.fillStyle = 'rgba(60,80,120,0.50)';
+    // ── 5. Clock hour markers (12 dots around limbus) ─────────────────
+    ctx.fillStyle = '#555';
     for (var hi = 0; hi < 12; hi++) {
       var ha = (hi/12)*2*Math.PI - Math.PI/2;
       ctx.beginPath();
-      ctx.arc(ICX+(IR+11)*Math.cos(ha), CY+(IR+11)*Math.sin(ha), 2.2, 0, 2*Math.PI);
+      ctx.arc(ICX+(IR+10)*Math.cos(ha), CY+(IR+10)*Math.sin(ha), 2, 0, 2*Math.PI);
       ctx.fill();
     }
-    ctx.restore(); // end clip
 
-    // ── 3. Skin outside eye opening — evenodd fill (works for both OD & OS) ──
-    // Full-canvas rect + eye opening subpath; evenodd cancels inside overlap = skin
-    // outside the eye, nothing drawn inside → iris stays visible.
-    ctx.fillStyle = SKIN;
-    ctx.beginPath();
-    ctx.rect(0, 0, SZ, SZ);   // outer boundary (clockwise)
-    eyeOpenPath();              // eye opening subpath (same winding → evenodd cancels)
-    ctx.fill('evenodd');
-
-    // ── 4. Lid margins (pinkish edge) ────────────────────────────────
-    ctx.strokeStyle = '#c08878'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(tempCX,CY);
-    ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(tempCX,CY);
-    ctx.bezierCurveTo(llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY); ctx.stroke();
-
-    // ── 5. Upper eyelashes (16, bezier-curved upward) ─────────────────
-    ctx.save(); ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.3;
-    var UL = 16;
-    for (var li = 0; li < UL; li++) {
-      var t  = li / (UL-1);
-      var bp = bezPt(t, tempCX,CY, ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY);
-      var bt = bezTan(t, tempCX,CY, ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY);
-      var ln = Math.sqrt(bt.x*bt.x + bt.y*bt.y) || 1;
-      var nx2 = bt.y/ln, ny2 = -bt.x/ln;
-      if (ny2 > 0) { nx2=-nx2; ny2=-ny2; }
-      var llen = 8 + 7*Math.sin(t*Math.PI);
-      var curl = 3.5*Math.sin(t*Math.PI);
-      ctx.beginPath(); ctx.moveTo(bp.x, bp.y);
-      ctx.quadraticCurveTo(
-        bp.x + nx2*llen*0.5 + (-bt.x/ln)*curl,
-        bp.y + ny2*llen*0.5 + (-bt.y/ln)*curl,
-        bp.x + nx2*llen, bp.y + ny2*llen);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // ── 6. Lower eyelashes (9, shorter) ──────────────────────────────
-    ctx.save(); ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1.0;
-    var LL = 9;
-    for (var li2 = 1; li2 < LL-1; li2++) {
-      var t2  = li2/(LL-1);
-      var bp2 = bezPt(t2, tempCX,CY, llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY);
-      var bt2 = bezTan(t2, tempCX,CY, llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY);
-      var ln2 = Math.sqrt(bt2.x*bt2.x + bt2.y*bt2.y) || 1;
-      var nx3 = -bt2.y/ln2, ny3 = bt2.x/ln2;
-      if (ny3 < 0) { nx3=-nx3; ny3=-ny3; }
-      var ll2 = 4 + 3.5*Math.sin(t2*Math.PI);
-      ctx.beginPath(); ctx.moveTo(bp2.x,bp2.y);
-      ctx.lineTo(bp2.x+nx3*ll2, bp2.y+ny3*ll2); ctx.stroke();
-    }
-    ctx.restore();
-
-    // ── 7. Caruncle at medial (nasal) canthus ─────────────────────────
-    ctx.save();
-    var cdx = (eye==='od') ? -1 : 1;
-    ctx.beginPath(); ctx.ellipse(nasalCX+cdx*8, CY, 7, 5, 0, 0, 2*Math.PI);
-    ctx.fillStyle='#f0bebb'; ctx.fill();
-    ctx.strokeStyle='#d49898'; ctx.lineWidth=0.7; ctx.stroke();
-    ctx.restore();
-
-    // ── 8. Direction labels ───────────────────────────────────────────
-    ctx.font='bold 10px sans-serif'; ctx.fillStyle='#5a6878';
+    // ── 6. Direction labels ───────────────────────────────────────────
+    ctx.font='bold 10px sans-serif'; ctx.fillStyle='#555';
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('12', ICX, 10); ctx.fillText('6', ICX, SZ-10);
     var labelNX = (eye==='od') ? SZ-10 : 10;
@@ -1799,195 +1693,127 @@ function addMgtOther() {
     var sc = SIZE / 280;
     var CX = SIZE / 2, CY = SIZE / 2;
     var isRE = (id === 're');
-    var dir  = isRE ? 1 : -1;       // +1 = disc is to the right for RE
+    var dir  = isRE ? 1 : -1;
     var discX = CX + dir * Math.round(42 * sc);
     var macX  = CX - dir * Math.round(44 * sc);
+    var LK = '#333';  // line colour
 
     ctx.clearRect(0, 0, SIZE, SIZE);
 
-    // ── 1. Retinal background ────────────────────────────────────────────────
+    // ── 1. White background + outer fundus circle ────────────────────────────
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, SIZE, SIZE);
     ctx.beginPath(); ctx.arc(CX, CY, Math.round(130 * sc), 0, 2 * Math.PI);
-    ctx.fillStyle = '#f0dfc4'; ctx.fill();
-    ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = LK; ctx.lineWidth = 1.5; ctx.stroke();
 
-    // ── 2. RNFL arcuate bundles ── 3 stripes each, visible golden lines ──────
-    ctx.save();
-    ctx.lineCap = 'round';
-    var rnflOffsets = [-6, 0, 6];  // spread across the arcuate zone
-    rnflOffsets.forEach(function(off) {
-      var o = Math.round(off * sc);
-      // Superior arcuate bundle
-      ctx.beginPath();
-      ctx.moveTo(discX, CY - Math.round(20 * sc) + o);
-      ctx.bezierCurveTo(
-        CX + dir * Math.round(5 * sc), CY - Math.round(88 * sc),
-        macX - dir * Math.round(30 * sc), CY - Math.round(60 * sc),
-        macX - dir * Math.round(16 * sc), CY - Math.round(14 * sc) + o
-      );
-      ctx.strokeStyle = 'rgba(220,195,120,0.75)';
-      ctx.lineWidth = Math.round(4 * sc);
-      ctx.stroke();
-      // Inferior arcuate bundle
-      ctx.beginPath();
-      ctx.moveTo(discX, CY + Math.round(20 * sc) - o);
-      ctx.bezierCurveTo(
-        CX + dir * Math.round(5 * sc), CY + Math.round(88 * sc),
-        macX - dir * Math.round(30 * sc), CY + Math.round(60 * sc),
-        macX - dir * Math.round(16 * sc), CY + Math.round(14 * sc) - o
-      );
-      ctx.strokeStyle = 'rgba(220,195,120,0.75)';
-      ctx.lineWidth = Math.round(4 * sc);
-      ctx.stroke();
-    });
-
-    // Temporal raphe — horizontal midline nerve fibres
-    ctx.strokeStyle = 'rgba(200,175,110,0.50)'; ctx.lineWidth = Math.round(6 * sc);
-    ctx.beginPath();
-    ctx.moveTo(macX + dir * Math.round(16 * sc), CY);
-    ctx.lineTo(isRE ? Math.round(CX - 105 * sc) : Math.round(CX + 105 * sc), CY);
-    ctx.stroke();
-
-    // RNFL labels
-    ctx.font = 'bold ' + Math.round(7.5 * sc) + 'px sans-serif';
-    ctx.fillStyle = 'rgba(130,100,30,0.85)'; ctx.textAlign = 'center';
-    ctx.fillText('RNFL sup.', CX + dir * Math.round(4 * sc), CY - Math.round(76 * sc));
-    ctx.fillText('RNFL inf.', CX + dir * Math.round(4 * sc), CY + Math.round(84 * sc));
-    ctx.fillText('raphe', isRE ? Math.round(CX - 80 * sc) : Math.round(CX + 80 * sc), CY - Math.round(5 * sc));
-    ctx.restore();
-
-    // ── 3. Optic disc ────────────────────────────────────────────────────────
+    // ── 2. Optic disc (outer rim) ────────────────────────────────────────────
     var dRx = Math.round(19 * sc), dRy = Math.round(25 * sc);
-    // NRR (neuroretinal rim) — pinkish-orange rim
     ctx.beginPath(); ctx.ellipse(discX, CY, dRx, dRy, 0, 0, 2 * Math.PI);
-    ctx.fillStyle = '#e8c89a'; ctx.fill();
-    ctx.strokeStyle = '#a07828'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = LK; ctx.lineWidth = 1.5; ctx.stroke();
 
-    // Optic cup — pale yellow centre (C:D ~0.35 default)
+    // Optic cup (dashed inner ellipse)
     var cupRx = Math.round(8 * sc), cupRy = Math.round(10 * sc);
     ctx.beginPath(); ctx.ellipse(discX, CY, cupRx, cupRy, 0, 0, 2 * Math.PI);
-    ctx.fillStyle = '#fff8d8'; ctx.fill();
-    ctx.strokeStyle = '#c0983a'; ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
     ctx.setLineDash([Math.round(3*sc), Math.round(2*sc)]); ctx.stroke();
     ctx.setLineDash([]);
 
-    // NRR labels — ISNT quadrants in tiny text
-    ctx.font = Math.round(5.5 * sc) + 'px sans-serif'; ctx.fillStyle = '#806010'; ctx.textAlign = 'center';
-    ctx.fillText('I', discX, CY - dRy + Math.round(5*sc));  // Inferior NRR at top of disc (inverted fundus)
-    ctx.fillText('S', discX, CY + dRy - Math.round(3*sc));  // Superior NRR at bottom
-    ctx.fillText(isRE?'N':'T', discX + dRx - Math.round(4*sc), CY + Math.round(2*sc));  // Nasal
-    ctx.fillText(isRE?'T':'N', discX - dRx + Math.round(4*sc), CY + Math.round(2*sc));  // Temporal
-    ctx.fillText('cup', discX, CY + Math.round(2*sc));
+    // ISNT quadrant labels
+    ctx.font = Math.round(5.5 * sc) + 'px sans-serif'; ctx.fillStyle = '#555'; ctx.textAlign = 'center';
+    ctx.fillText('I', discX, CY - dRy + Math.round(5*sc));
+    ctx.fillText('S', discX, CY + dRy - Math.round(3*sc));
+    ctx.fillText(isRE?'N':'T', discX + dRx - Math.round(4*sc), CY + Math.round(2*sc));
+    ctx.fillText(isRE?'T':'N', discX - dRx + Math.round(4*sc), CY + Math.round(2*sc));
 
-    // DISC border label
+    // DISC label
     ctx.font = 'bold ' + Math.round(8 * sc) + 'px sans-serif';
-    ctx.fillStyle = '#7a5000'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#444'; ctx.textAlign = 'center';
     ctx.fillText('DISC', discX, CY - dRy - Math.round(5 * sc));
 
-    // ── 4. Central retinal vessels emerging from disc ─────────────────────────
-    ctx.strokeStyle = '#b82020'; ctx.lineWidth = Math.round(2.5 * sc);
-    // CRA superior trunk
-    ctx.beginPath();
-    ctx.moveTo(discX, CY);
-    ctx.lineTo(discX - dir * Math.round(6 * sc), CY - Math.round(dRy * 1.2));
-    ctx.stroke();
-    // CRA inferior trunk
-    ctx.beginPath();
-    ctx.moveTo(discX, CY);
-    ctx.lineTo(discX - dir * Math.round(6 * sc), CY + Math.round(dRy * 1.2));
-    ctx.stroke();
-    // CRV (vein — slightly thicker, bluish-red)
-    ctx.strokeStyle = '#8b1a1a'; ctx.lineWidth = Math.round(3 * sc);
-    ctx.beginPath();
-    ctx.moveTo(discX + dir * Math.round(2*sc), CY);
-    ctx.lineTo(discX + dir * Math.round(2*sc), CY - Math.round(dRy * 1.1));
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(discX + dir * Math.round(2*sc), CY);
-    ctx.lineTo(discX + dir * Math.round(2*sc), CY + Math.round(dRy * 1.1));
-    ctx.stroke();
+    // ── 3. Central vessels from disc ───────────────────────────────────────────
+    ctx.strokeStyle = LK; ctx.lineCap = 'round';
+    // CRA — superior temporal trunk
+    ctx.lineWidth = Math.round(1.8 * sc);
+    ctx.beginPath(); ctx.moveTo(discX, CY);
+    ctx.lineTo(discX - dir * Math.round(6 * sc), CY - Math.round(dRy * 1.2)); ctx.stroke();
+    // CRA — inferior temporal trunk
+    ctx.beginPath(); ctx.moveTo(discX, CY);
+    ctx.lineTo(discX - dir * Math.round(6 * sc), CY + Math.round(dRy * 1.2)); ctx.stroke();
+    // CRA — superior nasal trunk
+    ctx.lineWidth = Math.round(1.4 * sc);
+    ctx.beginPath(); ctx.moveTo(discX, CY - Math.round(4 * sc));
+    ctx.lineTo(discX + dir * Math.round(4 * sc), CY - Math.round(dRy * 1.1)); ctx.stroke();
+    // CRA — inferior nasal trunk
+    ctx.beginPath(); ctx.moveTo(discX, CY + Math.round(4 * sc));
+    ctx.lineTo(discX + dir * Math.round(4 * sc), CY + Math.round(dRy * 1.1)); ctx.stroke();
 
-    // ── 5. Vascular arcades ──────────────────────────────────────────────────
+    // ── 4. Vascular arcades ──────────────────────────────────────────────────
     var macInner = macX - dir * Math.round(18 * sc);
-    // Superior temporal arcade (artery)
-    ctx.strokeStyle = '#cc2222'; ctx.lineWidth = Math.round(2 * sc);
+    // Superior temporal arcade
+    ctx.strokeStyle = LK; ctx.lineWidth = Math.round(1.4 * sc);
     ctx.beginPath();
     ctx.moveTo(discX - dir * Math.round(6 * sc), CY - Math.round(dRy * 1.2));
     ctx.quadraticCurveTo(CX, CY - Math.round(72 * sc), macInner, CY - Math.round(48 * sc));
     ctx.stroke();
-    // Inferior temporal arcade (artery)
+    // Inferior temporal arcade
     ctx.beginPath();
     ctx.moveTo(discX - dir * Math.round(6 * sc), CY + Math.round(dRy * 1.2));
     ctx.quadraticCurveTo(CX, CY + Math.round(72 * sc), macInner, CY + Math.round(48 * sc));
     ctx.stroke();
-    // Superior temporal arcade (vein — slightly thicker darker)
-    ctx.strokeStyle = '#8b1a1a'; ctx.lineWidth = Math.round(2.5 * sc);
+
+    // Superior nasal arcade
+    ctx.lineWidth = Math.round(1.1 * sc);
     ctx.beginPath();
-    ctx.moveTo(discX + dir * Math.round(2*sc), CY - Math.round(dRy * 1.1));
-    ctx.quadraticCurveTo(CX + dir*Math.round(6*sc), CY - Math.round(66 * sc), macInner + dir*Math.round(4*sc), CY - Math.round(44 * sc));
+    ctx.moveTo(discX + dir * Math.round(4 * sc), CY - Math.round(dRy * 1.1));
+    ctx.quadraticCurveTo(discX + dir * Math.round(30 * sc), CY - Math.round(50 * sc),
+                         discX + dir * Math.round(45 * sc), CY - Math.round(38 * sc));
     ctx.stroke();
-    // Inferior temporal arcade (vein)
+    // Inferior nasal arcade
     ctx.beginPath();
-    ctx.moveTo(discX + dir * Math.round(2*sc), CY + Math.round(dRy * 1.1));
-    ctx.quadraticCurveTo(CX + dir*Math.round(6*sc), CY + Math.round(66 * sc), macInner + dir*Math.round(4*sc), CY + Math.round(44 * sc));
-    ctx.stroke();
-    // Superior nasal branches from disc
-    ctx.strokeStyle = '#cc2222'; ctx.lineWidth = Math.round(1.5 * sc);
-    ctx.beginPath();
-    ctx.moveTo(discX, CY - Math.round(14 * sc));
-    ctx.lineTo(discX + dir * Math.round(26 * sc), CY - Math.round(36 * sc));
-    ctx.stroke();
-    // Inferior nasal branches from disc
-    ctx.beginPath();
-    ctx.moveTo(discX, CY + Math.round(14 * sc));
-    ctx.lineTo(discX + dir * Math.round(26 * sc), CY + Math.round(36 * sc));
-    ctx.stroke();
-    // Second-order branches (superior)
-    ctx.strokeStyle = '#dd3333'; ctx.lineWidth = Math.round(1.2 * sc);
-    ctx.beginPath();
-    ctx.moveTo(macInner, CY - Math.round(48 * sc));
-    ctx.lineTo(macInner - dir * Math.round(18 * sc), CY - Math.round(70 * sc));
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(macInner, CY - Math.round(48 * sc));
-    ctx.lineTo(macInner + dir * Math.round(8 * sc), CY - Math.round(68 * sc));
-    ctx.stroke();
-    // Second-order branches (inferior)
-    ctx.beginPath();
-    ctx.moveTo(macInner, CY + Math.round(48 * sc));
-    ctx.lineTo(macInner - dir * Math.round(18 * sc), CY + Math.round(70 * sc));
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(macInner, CY + Math.round(48 * sc));
-    ctx.lineTo(macInner + dir * Math.round(8 * sc), CY + Math.round(68 * sc));
+    ctx.moveTo(discX + dir * Math.round(4 * sc), CY + Math.round(dRy * 1.1));
+    ctx.quadraticCurveTo(discX + dir * Math.round(30 * sc), CY + Math.round(50 * sc),
+                         discX + dir * Math.round(45 * sc), CY + Math.round(38 * sc));
     ctx.stroke();
 
-    // ── 6. Macula / Fovea ───────────────────────────────────────────────────
-    // Outer macula (perimacular arcade border)
+    // 2nd-order branches — superior temporal
+    ctx.lineWidth = Math.round(0.9 * sc);
+    ctx.beginPath(); ctx.moveTo(macInner, CY - Math.round(48 * sc));
+    ctx.lineTo(macInner - dir * Math.round(18 * sc), CY - Math.round(68 * sc)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(macInner, CY - Math.round(48 * sc));
+    ctx.lineTo(macInner + dir * Math.round(8 * sc), CY - Math.round(66 * sc)); ctx.stroke();
+    // 2nd-order branches — inferior temporal
+    ctx.beginPath(); ctx.moveTo(macInner, CY + Math.round(48 * sc));
+    ctx.lineTo(macInner - dir * Math.round(18 * sc), CY + Math.round(68 * sc)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(macInner, CY + Math.round(48 * sc));
+    ctx.lineTo(macInner + dir * Math.round(8 * sc), CY + Math.round(66 * sc)); ctx.stroke();
+
+    // Mid-arcade branch — superior
+    var midArcX = CX + dir * Math.round(10 * sc);
+    ctx.beginPath(); ctx.moveTo(midArcX, CY - Math.round(60 * sc));
+    ctx.lineTo(midArcX - dir * Math.round(14 * sc), CY - Math.round(80 * sc)); ctx.stroke();
+    // Mid-arcade branch — inferior
+    ctx.beginPath(); ctx.moveTo(midArcX, CY + Math.round(60 * sc));
+    ctx.lineTo(midArcX - dir * Math.round(14 * sc), CY + Math.round(80 * sc)); ctx.stroke();
+
+    // ── 5. Macula / Fovea ────────────────────────────────────────────────────
+    // Outer macula circle
     ctx.beginPath(); ctx.arc(macX, CY, Math.round(24 * sc), 0, 2 * Math.PI);
-    ctx.strokeStyle = 'rgba(150,120,70,0.40)'; ctx.lineWidth = 1.5; ctx.stroke();
-    // Parafoveal ring
-    ctx.beginPath(); ctx.arc(macX, CY, Math.round(12 * sc), 0, 2 * Math.PI);
-    ctx.strokeStyle = 'rgba(150,115,60,0.60)'; ctx.lineWidth = 1.2; ctx.stroke();
-    // Foveola
-    ctx.beginPath(); ctx.arc(macX, CY, Math.round(4 * sc), 0, 2 * Math.PI);
-    ctx.fillStyle = '#aa2020'; ctx.fill();
-    // Macular reflex glow
-    ctx.beginPath(); ctx.arc(macX, CY, Math.round(24 * sc), 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(180,120,60,0.08)'; ctx.fill();
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 1; ctx.stroke();
+    // Fovea dot
+    ctx.beginPath(); ctx.arc(macX, CY, Math.round(3 * sc), 0, 2 * Math.PI);
+    ctx.fillStyle = '#000'; ctx.fill();
     // Labels
     ctx.font = 'bold ' + Math.round(7.5 * sc) + 'px sans-serif';
-    ctx.fillStyle = '#7a4a00'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#444'; ctx.textAlign = 'center';
     ctx.fillText('MACULA', macX, CY + Math.round(36 * sc));
-    ctx.font = Math.round(6 * sc) + 'px sans-serif'; ctx.fillStyle = '#a06030';
-    ctx.fillText('fovea', macX, CY + Math.round(44 * sc));
 
-    // ── 7. Orientation labels ────────────────────────────────────────────────
+    // ── 6. Orientation labels ────────────────────────────────────────────────
     ctx.font = 'bold ' + Math.round(8 * sc) + 'px sans-serif';
-    ctx.fillStyle = 'rgba(80,60,20,0.60)'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#555'; ctx.textAlign = 'center';
     ctx.fillText(isRE ? 'RE' : 'LE', CX, Math.round(16 * sc));
-    ctx.font = Math.round(6 * sc) + 'px sans-serif'; ctx.fillStyle = 'rgba(100,80,40,0.50)';
-    ctx.fillText(isRE ? '← NASAL' : 'NASAL →', discX + dir * Math.round(35*sc), CY);
-    ctx.fillText(isRE ? 'TEMPORAL →' : '← TEMPORAL', macX - dir * Math.round(35*sc), CY);
+    ctx.font = Math.round(6 * sc) + 'px sans-serif';
+    ctx.fillText(isRE ? 'NASAL' : 'NASAL', discX + dir * Math.round(35*sc), CY);
+    ctx.fillText('TEMPORAL', macX - dir * Math.round(35*sc), CY);
     ctx.fillText('S', CX, Math.round(26 * sc));
     ctx.fillText('I', CX, SIZE - Math.round(10 * sc));
   }

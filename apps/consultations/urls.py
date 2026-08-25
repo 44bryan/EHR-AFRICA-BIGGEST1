@@ -34,6 +34,7 @@ urlpatterns = [
     path('workstation/quick-va/', views.workstation_quick_va_view, name='workstation_quick_va'),
     path('workstation/return-to-doctor/', views.return_to_referring_doctor_view, name='return_to_doctor'),
     path('workstation/reject-reroute/', views.reject_and_reroute_view, name='reject_reroute'),
+    path('workstation/route-patient/', views.route_patient_view, name='route_patient'),
     path('<uuid:pk>/surgical/add/', views.surgical_request_add_view, name='surgical_add'),
     path('<uuid:pk>/surgical/<uuid:sr_pk>/cancel/', views.surgical_request_cancel_view, name='surgical_cancel'),
     path('<uuid:pk>/discharge-summary/', views.discharge_summary_view, name='discharge_summary'),

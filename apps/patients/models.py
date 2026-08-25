@@ -408,7 +408,11 @@ class Visit(AuditModel):
         null=True,
         blank=True,
         related_name='refraction_referrals',
-        help_text='Doctor who sent this patient to Refraction — used for return routing.',
+        help_text='Doctor who sent this patient to a department — used for return routing.',
+    )
+    routing_note = models.TextField(
+        blank=True,
+        help_text='Note from the routing doctor visible to the receiving department.',
     )
 
     # ── Referral source ───────────────────────────────────────────────────────
