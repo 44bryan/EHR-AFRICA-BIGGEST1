@@ -1243,13 +1243,13 @@ def diagnosis_search_view(request):
         )
         ids = [r['diagnosis_id'] for r in top_ids]
         if ids:
-            diagnoses = Diagnosis.objects.filter(id__in=ids, is_active=True).values('id', 'icd10_code', 'description')
+            diagnoses = Diagnosis.objects.filter(id__in=ids, is_active=True).values('id', 'icd10_code', 'icd11_code', 'description')
             id_order = {pk: i for i, pk in enumerate(ids)}
             results = sorted(list(diagnoses), key=lambda d: id_order.get(d['id'], 999))
         else:
             results = list(
                 Diagnosis.objects.filter(is_active=True, is_ophthalmic=True)
-                .values('id', 'icd10_code', 'description')[:10]
+                .values('id', 'icd10_code', 'icd11_code', 'description')[:10]
             )
         return JsonResponse({'results': results})
 
@@ -1259,8 +1259,8 @@ def diagnosis_search_view(request):
     diagnoses = Diagnosis.objects.filter(
         is_active=True
     ).filter(
-        Q(icd10_code__icontains=q) | Q(description__icontains=q)
-    ).values('id', 'icd10_code', 'description')[:20]
+        Q(icd10_code__icontains=q) | Q(icd11_code__icontains=q) | Q(description__icontains=q)
+    ).values('id', 'icd10_code', 'icd11_code', 'description')[:20]
     return JsonResponse({'results': list(diagnoses)})
 
 

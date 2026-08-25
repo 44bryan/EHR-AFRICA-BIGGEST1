@@ -15,8 +15,10 @@ class ConsultationStatus(models.TextChoices):
 
 
 class Diagnosis(models.Model):
-    """ICD-10 diagnosis catalogue — pre-seeded with common ophthalmic diagnoses."""
+    """ICD-10/ICD-11 diagnosis catalogue — pre-seeded with common ophthalmic diagnoses."""
     icd10_code = models.CharField(max_length=10, unique=True)
+    icd11_code = models.CharField(max_length=20, blank=True, default='', db_index=True,
+                                  help_text='ICD-11 code (e.g. 9B10.0). Added for future-proofing.')
     description = models.CharField(max_length=255)
     is_ophthalmic = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
@@ -28,6 +30,11 @@ class Diagnosis(models.Model):
 
     def __str__(self):
         return f"{self.icd10_code} — {self.description}"
+
+    @property
+    def display_code(self):
+        """Return ICD-11 code if available, otherwise ICD-10."""
+        return self.icd11_code or self.icd10_code
 
 
 class Consultation(AuditModel):
