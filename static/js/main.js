@@ -191,103 +191,6 @@ function ehrInitOnce() {
     ta.focus();
   });
 
-  // ── Type-to-filter: typing in textarea shows filtered dropdown suggestions ──
-  (function() {
-    // Build a suggestion list for each ehr-combo from its dropdown-item buttons
-    document.querySelectorAll('.ehr-combo').forEach(function(combo) {
-      var ta = combo.querySelector('textarea');
-      var menu = combo.querySelector('.ehr-add-menu');
-      if (!ta || !menu) return;
-
-      // Collect all option texts from the dropdown
-      var allItems = [];
-      menu.querySelectorAll('.dropdown-item').forEach(function(btn) {
-        var txt = btn.textContent.trim();
-        if (txt) allItems.push(txt);
-      });
-      if (!allItems.length) return;
-
-      // Create suggestion box (positioned below textarea)
-      var sugBox = document.createElement('div');
-      sugBox.className = 'ehr-suggest-box';
-      sugBox.style.cssText = 'display:none;position:absolute;left:0;right:40px;background:#fff;border:1px solid #dee2e6;' +
-        'border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;z-index:1060;';
-      combo.style.position = 'relative';
-      combo.appendChild(sugBox);
-
-      var debounce = null;
-      ta.addEventListener('input', function() {
-        clearTimeout(debounce);
-        debounce = setTimeout(function() {
-          // Get the last segment after comma (user might be appending)
-          var raw = ta.value;
-          var parts = raw.split(',');
-          var query = (parts[parts.length - 1] || '').trim().toLowerCase();
-          if (query.length < 2) { sugBox.style.display = 'none'; return; }
-
-          var matches = allItems.filter(function(item) {
-            return item.toLowerCase().indexOf(query) >= 0;
-          });
-
-          if (!matches.length) { sugBox.style.display = 'none'; return; }
-
-          sugBox.innerHTML = '';
-          matches.slice(0, 12).forEach(function(m) {
-            var div = document.createElement('div');
-            div.style.cssText = 'padding:6px 12px;font-size:.82rem;cursor:pointer;border-bottom:1px solid #f0f0f0;transition:background .1s;';
-            // Highlight matching part
-            var idx = m.toLowerCase().indexOf(query);
-            if (idx >= 0) {
-              div.innerHTML = m.substring(0, idx) +
-                '<strong style="color:#0d6efd;">' + m.substring(idx, idx + query.length) + '</strong>' +
-                m.substring(idx + query.length);
-            } else {
-              div.textContent = m;
-            }
-            div.addEventListener('mousedown', function(e) {
-              e.preventDefault();
-              parts[parts.length - 1] = ' ' + m;
-              ta.value = parts.join(',').replace(/^[\s,]+/, '');
-              sugBox.style.display = 'none';
-              ta.focus();
-            });
-            div.addEventListener('touchstart', function() { _sugTouching = true; });
-            div.addEventListener('touchend', function(e) {
-              e.preventDefault();
-              _sugTouching = false;
-              parts[parts.length - 1] = ' ' + m;
-              ta.value = parts.join(',').replace(/^[\s,]+/, '');
-              sugBox.style.display = 'none';
-              ta.focus();
-            });
-            div.addEventListener('mouseover', function() { this.style.background = '#f0f4ff'; });
-            div.addEventListener('mouseout', function() { this.style.background = ''; });
-            sugBox.appendChild(div);
-          });
-          if (matches.length > 12) {
-            var more = document.createElement('div');
-            more.style.cssText = 'padding:4px 12px;font-size:.72rem;color:#6b7280;text-align:center;';
-            more.textContent = '+ ' + (matches.length - 12) + ' more — keep typing to narrow';
-            sugBox.appendChild(more);
-          }
-          sugBox.style.display = 'block';
-        }, 200);
-      });
-
-      // On touch devices, blur fires before touchend — flag prevents premature hide
-      var _sugTouching = false;
-      ta.addEventListener('blur', function() {
-        setTimeout(function() {
-          if (!_sugTouching) sugBox.style.display = 'none';
-        }, 300);
-      });
-
-      // Hide suggestions on Escape
-      ta.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') sugBox.style.display = 'none';
-      });
-    });
-  })();
 }
 
 function syncTooltips(collapsed) {
@@ -301,6 +204,108 @@ function syncTooltips(collapsed) {
 // ONLY contains things that may change per page (tooltips, alerts, modals etc.)
 // Sidebar init has been moved to ehrInitOnce() above.
 function ehrInit() {
+
+  /* ── Type-to-filter: typing in textarea shows filtered dropdown suggestions ── */
+  // Runs on every HTMX swap so dynamically-loaded forms get suggestions too.
+  document.querySelectorAll('.ehr-combo').forEach(function(combo) {
+    if (combo.dataset.ehrSuggest) return; // already initialized
+    combo.dataset.ehrSuggest = '1';
+
+    var ta = combo.querySelector('textarea');
+    var menu = combo.querySelector('.ehr-add-menu');
+    if (!ta || !menu) return;
+
+    var allItems = [];
+    menu.querySelectorAll('.dropdown-item').forEach(function(btn) {
+      var txt = btn.textContent.trim();
+      if (txt) allItems.push(txt);
+    });
+    if (!allItems.length) return;
+
+    var sugBox = document.createElement('div');
+    sugBox.className = 'ehr-suggest-box';
+    sugBox.style.cssText = 'display:none;position:absolute;left:0;right:40px;background:#fff;border:1px solid #dee2e6;' +
+      'border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;z-index:1060;';
+    combo.style.position = 'relative';
+    combo.appendChild(sugBox);
+
+    var _sugTouching = false;
+
+    function _doFilter() {
+      var raw = ta.value;
+      var parts = raw.split(',');
+      var query = (parts[parts.length - 1] || '').trim().toLowerCase();
+      if (query.length < 2) { sugBox.style.display = 'none'; return; }
+
+      var matches = allItems.filter(function(item) {
+        return item.toLowerCase().indexOf(query) >= 0;
+      });
+      if (!matches.length) { sugBox.style.display = 'none'; return; }
+
+      sugBox.innerHTML = '';
+      matches.slice(0, 12).forEach(function(m) {
+        var div = document.createElement('div');
+        div.style.cssText = 'padding:10px 14px;font-size:.85rem;cursor:pointer;border-bottom:1px solid #f0f0f0;';
+        var idx = m.toLowerCase().indexOf(query);
+        if (idx >= 0) {
+          div.innerHTML = m.substring(0, idx) +
+            '<strong style="color:#0d6efd;">' + m.substring(idx, idx + query.length) + '</strong>' +
+            m.substring(idx + query.length);
+        } else {
+          div.textContent = m;
+        }
+        // Desktop
+        div.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          parts[parts.length - 1] = ' ' + m;
+          ta.value = parts.join(',').replace(/^[\s,]+/, '');
+          sugBox.style.display = 'none';
+          ta.focus();
+        });
+        // Tablet / touch
+        div.addEventListener('touchstart', function(e) {
+          e.stopPropagation();
+          _sugTouching = true;
+        }, {passive: true});
+        div.addEventListener('touchend', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          _sugTouching = false;
+          parts[parts.length - 1] = ' ' + m;
+          ta.value = parts.join(',').replace(/^[\s,]+/, '');
+          sugBox.style.display = 'none';
+          ta.focus();
+        });
+        sugBox.appendChild(div);
+      });
+      if (matches.length > 12) {
+        var more = document.createElement('div');
+        more.style.cssText = 'padding:4px 12px;font-size:.72rem;color:#6b7280;text-align:center;';
+        more.textContent = '+ ' + (matches.length - 12) + ' more — keep typing';
+        sugBox.appendChild(more);
+      }
+      sugBox.style.display = 'block';
+    }
+
+    var _debounce = null;
+    // Listen to input + keyup + compositionend for maximum tablet compatibility
+    ['input', 'keyup'].forEach(function(evt) {
+      ta.addEventListener(evt, function() {
+        clearTimeout(_debounce);
+        _debounce = setTimeout(_doFilter, 180);
+      });
+    });
+
+    ta.addEventListener('blur', function() {
+      setTimeout(function() {
+        if (!_sugTouching) sugBox.style.display = 'none';
+      }, 350);
+    });
+
+    ta.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') sugBox.style.display = 'none';
+    });
+  });
 
   /* ── Auto-dismiss alerts ──────────────────────────────────── */
   document.querySelectorAll('.alert.alert-dismissible').forEach(alert => {
