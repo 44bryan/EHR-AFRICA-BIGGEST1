@@ -244,18 +244,22 @@ function ehrInitOnce() {
             } else {
               div.textContent = m;
             }
-            var _pick = function(e) {
+            div.addEventListener('mousedown', function(e) {
               e.preventDefault();
-              e.stopPropagation();
-              // Replace the last segment with the selected item
               parts[parts.length - 1] = ' ' + m;
               ta.value = parts.join(',').replace(/^[\s,]+/, '');
               sugBox.style.display = 'none';
               ta.focus();
-              ta.dispatchEvent(new Event('input'));
-            };
-            div.addEventListener('mousedown', _pick);
-            div.addEventListener('touchend', _pick);
+            });
+            div.addEventListener('touchstart', function() { _sugTouching = true; });
+            div.addEventListener('touchend', function(e) {
+              e.preventDefault();
+              _sugTouching = false;
+              parts[parts.length - 1] = ' ' + m;
+              ta.value = parts.join(',').replace(/^[\s,]+/, '');
+              sugBox.style.display = 'none';
+              ta.focus();
+            });
             div.addEventListener('mouseover', function() { this.style.background = '#f0f4ff'; });
             div.addEventListener('mouseout', function() { this.style.background = ''; });
             sugBox.appendChild(div);
@@ -270,11 +274,12 @@ function ehrInitOnce() {
         }, 200);
       });
 
-      // Prevent sugBox tap from stealing focus on touch devices
-      sugBox.addEventListener('touchstart', function(e) { e.preventDefault(); });
-
+      // On touch devices, blur fires before touchend — flag prevents premature hide
+      var _sugTouching = false;
       ta.addEventListener('blur', function() {
-        setTimeout(function() { sugBox.style.display = 'none'; }, 350);
+        setTimeout(function() {
+          if (!_sugTouching) sugBox.style.display = 'none';
+        }, 300);
       });
 
       // Hide suggestions on Escape
