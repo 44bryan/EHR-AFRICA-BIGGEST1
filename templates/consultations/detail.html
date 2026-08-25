@@ -653,15 +653,24 @@
             {% if consultation.consulting_doctor == request.user or request.user.is_medical_director %}
             <div class="px-3 py-2 border-top bg-light">
               <div class="fw-semibold small mb-2"><i class="bi bi-plus-circle me-1 text-success"></i>Add Diagnosis</div>
-              {# ICD-10 live search #}
+              {# ICD-10 live search with frequently-used shortcuts #}
               <div class="position-relative mb-2">
-                <input type="text" id="diagnosisSearch"
-                       class="form-control form-control-sm"
-                       placeholder="Search ICD-10 code or description…"
-                       autocomplete="off">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                  <input type="text" id="diagnosisSearch"
+                         class="form-control form-control-sm border-start-0"
+                         placeholder="Type to search ICD-10 code or diagnosis name…"
+                         autocomplete="off">
+                </div>
                 <div id="diagnosisResults"
                      class="position-absolute w-100 bg-white border rounded shadow-sm mt-1 d-none"
-                     style="z-index:1050; max-height:220px; overflow-y:auto;"></div>
+                     style="z-index:1050; max-height:280px; overflow-y:auto;"></div>
+              </div>
+              <div id="diagFrequentWrap" class="mb-2 d-none">
+                <div class="text-muted" style="font-size:.68rem;letter-spacing:.03em;text-transform:uppercase;margin-bottom:4px;">
+                  <i class="bi bi-clock-history me-1"></i>Frequently Used
+                </div>
+                <div id="diagFrequentChips" class="d-flex flex-wrap gap-1"></div>
               </div>
               <form method="post" action="{% url 'consultations:diagnosis_add' pk=consultation.pk %}" id="diagnosisAddForm" hx-boost="false">
                 {% csrf_token %}
@@ -1509,61 +1518,102 @@ document.querySelectorAll('[onclick*="clinicalForm"]').forEach(function(btn) {
   });
 });
 
-// ── ICD-10 Diagnosis live search ──────────────────────────────────────────────
+// ── ICD-10 Diagnosis live search with frequently-used shortcuts ───────────────
 (function () {
-  const searchInput  = document.getElementById('diagnosisSearch');
-  const resultsBox   = document.getElementById('diagnosisResults');
-  const hiddenId     = document.getElementById('selectedDiagnosisId');
-  const preview      = document.getElementById('selectedDiagnosisPreview');
-  const previewText  = document.getElementById('selectedDiagnosisText');
-  const addBtn       = document.getElementById('addDiagnosisBtn');
+  var searchInput  = document.getElementById('diagnosisSearch');
+  var resultsBox   = document.getElementById('diagnosisResults');
+  var hiddenId     = document.getElementById('selectedDiagnosisId');
+  var preview      = document.getElementById('selectedDiagnosisPreview');
+  var previewText  = document.getElementById('selectedDiagnosisText');
+  var addBtn       = document.getElementById('addDiagnosisBtn');
+  var freqWrap     = document.getElementById('diagFrequentWrap');
+  var freqChips    = document.getElementById('diagFrequentChips');
 
-  if (!searchInput) return;   // not a doctor or consultation is completed
+  if (!searchInput) return;
 
-  let debounceTimer;
+  var SEARCH_URL = '{% url "consultations:diagnosis_search" %}';
+  var debounceTimer;
+  var freqLoaded = false;
 
+  function selectDiagnosis(id, code, desc) {
+    hiddenId.value = id;
+    searchInput.value = code + ' \u2014 ' + desc;
+    previewText.textContent = code + ' \u2014 ' + desc;
+    preview.classList.remove('d-none');
+    addBtn.disabled = false;
+    resultsBox.classList.add('d-none');
+  }
+
+  function buildResultItem(d) {
+    var item = document.createElement('div');
+    item.className = 'px-3 py-2 small';
+    item.style.cssText = 'cursor:pointer;border-bottom:1px solid #f0f0f0;transition:background .1s;';
+    item.innerHTML = '<span class="badge bg-primary bg-opacity-10 text-primary me-1" style="font-size:.72rem;font-weight:600;">' +
+      d.icd10_code + '</span><span class="text-dark">' + d.description + '</span>';
+    item.addEventListener('mousedown', function(e) { e.preventDefault(); selectDiagnosis(d.id, d.icd10_code, d.description); });
+    item.addEventListener('mouseover', function() { this.style.background = '#f0f4ff'; });
+    item.addEventListener('mouseout',  function() { this.style.background = ''; });
+    return item;
+  }
+
+  // Load frequently-used on first focus
+  searchInput.addEventListener('focus', function() {
+    if (freqLoaded) return;
+    freqLoaded = true;
+    fetch(SEARCH_URL + '?frequent=1')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.results || !data.results.length) return;
+        freqChips.innerHTML = '';
+        data.results.forEach(function(d) {
+          var chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'btn btn-sm btn-outline-primary border-0 bg-primary bg-opacity-10 py-0 px-2';
+          chip.style.cssText = 'font-size:.72rem;line-height:1.7;border-radius:20px;';
+          chip.innerHTML = '<span class="fw-semibold">' + d.icd10_code + '</span> ' + d.description;
+          chip.addEventListener('click', function() { selectDiagnosis(d.id, d.icd10_code, d.description); });
+          freqChips.appendChild(chip);
+        });
+        freqWrap.classList.remove('d-none');
+      });
+  });
+
+  // Live search on input
   searchInput.addEventListener('input', function () {
-    const q = this.value.trim();
-    // Reset selection when user types again
+    var q = this.value.trim();
     hiddenId.value = '';
     addBtn.disabled = true;
     preview.classList.add('d-none');
     clearTimeout(debounceTimer);
     if (q.length < 2) { resultsBox.classList.add('d-none'); return; }
-    debounceTimer = setTimeout(() => {
-      fetch(`{% url 'consultations:diagnosis_search' %}?q=${encodeURIComponent(q)}`)
-        .then(r => r.json())
-        .then(data => {
+    debounceTimer = setTimeout(function() {
+      fetch(SEARCH_URL + '?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
           resultsBox.innerHTML = '';
           if (!data.results.length) {
-            resultsBox.innerHTML = '<div class="px-3 py-2 text-muted small">No results found.</div>';
+            resultsBox.innerHTML = '<div class="px-3 py-2 text-muted small"><i class="bi bi-search me-1"></i>No results for &ldquo;' +
+              q.replace(/</g,'&lt;') + '&rdquo;. Try a different term or ICD-10 code.</div>';
           } else {
-            data.results.forEach(d => {
-              const item = document.createElement('div');
-              item.className = 'px-3 py-2 small diagnosis-result-item';
-              item.style.cssText = 'cursor:pointer; border-bottom:1px solid #f0f0f0;';
-              item.innerHTML = `<span class="fw-semibold text-primary">${d.icd10_code}</span> <span class="text-dark">&mdash; ${d.description}</span>`;
-              item.addEventListener('mousedown', function (e) {
-                e.preventDefault();
-                hiddenId.value = d.id;
-                searchInput.value = `${d.icd10_code} — ${d.description}`;
-                previewText.textContent = `${d.icd10_code} — ${d.description}`;
-                preview.classList.remove('d-none');
-                addBtn.disabled = false;
-                resultsBox.classList.add('d-none');
-              });
-              item.addEventListener('mouseover', function() { this.style.background = '#f0f4ff'; });
-              item.addEventListener('mouseout',  function() { this.style.background = ''; });
-              resultsBox.appendChild(item);
-            });
+            var hdr = document.createElement('div');
+            hdr.className = 'px-3 py-1 text-muted bg-light border-bottom';
+            hdr.style.fontSize = '.68rem';
+            hdr.textContent = data.results.length + ' result' + (data.results.length > 1 ? 's' : '');
+            resultsBox.appendChild(hdr);
+            data.results.forEach(function(d) { resultsBox.appendChild(buildResultItem(d)); });
           }
           resultsBox.classList.remove('d-none');
         });
-    }, 300);
+    }, 250);
   });
 
   searchInput.addEventListener('blur', function () {
-    setTimeout(() => resultsBox.classList.add('d-none'), 200);
+    setTimeout(function() { resultsBox.classList.add('d-none'); }, 200);
+  });
+
+  // Keyboard navigation
+  searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { resultsBox.classList.add('d-none'); }
   });
 })();
 

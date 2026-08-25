@@ -1227,15 +1227,40 @@ def update_exam_findings_view(request, pk):
 
 @login_required
 def diagnosis_search_view(request):
-    """AJAX: search ICD-10 diagnoses."""
+    """AJAX: search ICD-10 diagnoses. Also supports ?frequent=1 for top-used."""
     q = request.GET.get('q', '').strip()
+    frequent = request.GET.get('frequent') == '1'
+
+    if frequent:
+        # Return this doctor's most-used diagnoses (top 10)
+        from django.db.models import Count
+        top_ids = (
+            ConsultationDiagnosis.objects
+            .filter(consultation__consulting_doctor=request.user)
+            .values('diagnosis_id')
+            .annotate(cnt=Count('id'))
+            .order_by('-cnt')[:10]
+        )
+        ids = [r['diagnosis_id'] for r in top_ids]
+        if ids:
+            diagnoses = Diagnosis.objects.filter(id__in=ids, is_active=True).values('id', 'icd10_code', 'description')
+            id_order = {pk: i for i, pk in enumerate(ids)}
+            results = sorted(list(diagnoses), key=lambda d: id_order.get(d['id'], 999))
+        else:
+            results = list(
+                Diagnosis.objects.filter(is_active=True, is_ophthalmic=True)
+                .values('id', 'icd10_code', 'description')[:10]
+            )
+        return JsonResponse({'results': results})
+
     if len(q) < 2:
         return JsonResponse({'results': []})
+
     diagnoses = Diagnosis.objects.filter(
         is_active=True
     ).filter(
         Q(icd10_code__icontains=q) | Q(description__icontains=q)
-    ).values('id', 'icd10_code', 'description')[:15]
+    ).values('id', 'icd10_code', 'description')[:20]
     return JsonResponse({'results': list(diagnoses)})
 
 
