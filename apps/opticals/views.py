@@ -2,12 +2,27 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
+from django.db.models import F
 from django.utils import timezone
 from .models import Frame, Lens, OpticalOrder, OpticalOrderStatus, ContactLensFitting, LowVisionAidDispensing
 
 
+def _can_access_optical(user):
+    """Optical shop, cashiers collecting optical payments, and admin roles."""
+    from apps.accounts.models import UserRole
+    return user.role in (
+        UserRole.OPTICAL_DISPENSER, UserRole.OPTOMETRIST, UserRole.ORTHOPTIST,
+        UserRole.LOW_VISION_SPECIALIST, UserRole.CASHIER, UserRole.CHIEF_CASHIER,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
+        UserRole.CEO, UserRole.ADMIN,
+    )
+
+
 @login_required
 def dashboard(request):
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Access denied — optical shop roles only.')
     def count(status):
         return OpticalOrder.objects.filter(status=status, is_deleted=False).count()
 
@@ -57,6 +72,9 @@ def dashboard(request):
 
 @login_required
 def frame_list(request):
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     frames = Frame.objects.filter(is_deleted=False).order_by('brand', 'model')
     return render(request, 'opticals/frame_list.html', {'frames': frames})
 
@@ -201,6 +219,9 @@ def lens_edit(request, lens_id):
 
 @login_required
 def create_order(request):
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     frames = Frame.objects.filter(is_active=True, is_deleted=False, quantity_in_stock__gt=0).order_by('brand', 'model')
     lenses = Lens.objects.filter(is_active=True, is_deleted=False).order_by('name')
 
@@ -378,6 +399,9 @@ def create_order(request):
 
 @login_required
 def order_list(request):
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     orders = list(OpticalOrder.objects.filter(is_deleted=False).select_related('patient', 'frame', 'lens').order_by('-ordered_date'))
     return render(request, 'opticals/order_list.html', {'orders': orders, 'show_unpaid': False})
 
@@ -385,6 +409,9 @@ def order_list(request):
 @login_required
 def order_list_unpaid(request):
     """Outstanding optical orders — dedicated URL avoids HTMX hx-boost dropping query params."""
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     all_orders = OpticalOrder.objects.filter(is_deleted=False).select_related('patient', 'frame', 'lens').order_by('-ordered_date')
     orders = [o for o in all_orders if o.balance_due > 0 and o.status != OpticalOrderStatus.CANCELLED]
     return render(request, 'opticals/order_list.html', {'orders': orders, 'show_unpaid': True})
@@ -392,6 +419,9 @@ def order_list_unpaid(request):
 
 @login_required
 def order_detail(request, order_id):
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
     from apps.billing.models import Payment
     payments = list(
@@ -445,6 +475,16 @@ def update_order_status(request, order_id):
             # Mark linked prescription as dispensed
             if order.optical_prescription:
                 order.optical_prescription.is_dispensed = True
+                order.optical_prescription.save(update_fields=['is_dispensed'])
+        # Restore frame stock on cancellation
+        if order.status == OpticalOrderStatus.CANCELLED and old_status != OpticalOrderStatus.CANCELLED:
+            if order.frame_id:
+                Frame.objects.filter(id=order.frame_id).update(
+                    quantity_in_stock=F('quantity_in_stock') + 1
+                )
+            # Un-mark Rx so it can be re-dispensed
+            if order.optical_prescription:
+                order.optical_prescription.is_dispensed = False
                 order.optical_prescription.save(update_fields=['is_dispensed'])
         order.save()
         # Notify ordering doctor when order is ready for collection
@@ -584,6 +624,9 @@ def frame_receive_stock(request, frame_id):
 @login_required
 def order_receipt(request, order_id):
     """Printable optical order receipt for patient."""
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
     return render(request, 'opticals/order_receipt.html', {'order': order})
 
@@ -591,6 +634,9 @@ def order_receipt(request, order_id):
 @login_required
 def order_quotation(request, order_id):
     """Printable price quotation slip — given to patient to take to the cashier."""
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
     from apps.accounts.models import HospitalConfig
     hospital = HospitalConfig.get()
@@ -614,6 +660,21 @@ def quick_update_status(request, order_id):
         order.delivered_date = timezone.localdate()
         order.delivered_to = request.user
     order.save(update_fields=['status', 'updated_at'] + (['delivered_date', 'delivered_to'] if new_status == OpticalOrderStatus.DELIVERED else []))
+    # On delivery: mark visit COMPLETED + Rx dispensed
+    if new_status == OpticalOrderStatus.DELIVERED:
+        try:
+            from apps.patients.models import Visit
+            visit = Visit.objects.filter(
+                patient=order.patient, status='OPTICAL', is_deleted=False,
+            ).order_by('-visit_date').first()
+            if visit:
+                visit.status = 'COMPLETED'
+                visit.save(update_fields=['status', 'updated_at'])
+        except Exception:
+            pass
+        if order.optical_prescription:
+            order.optical_prescription.is_dispensed = True
+            order.optical_prescription.save(update_fields=['is_dispensed'])
     return JsonResponse({'success': True, 'status': order.get_status_display()})
 
 
@@ -756,6 +817,9 @@ def optical_stats_view(request):
 @login_required
 def patient_search(request):
     """Optical patient search — find patient and see their optical history."""
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     from django.db.models import Q
     from apps.patients.models import Patient
     from apps.prescriptions.models import OpticalPrescription
@@ -1065,13 +1129,39 @@ def lab_job_action(request, job_id):
         job.status = LabJobStatus.COLLECTED
         job.order.status = OpticalOrderStatus.DELIVERED
         job.order.delivered_date = timezone.localdate()
-        job.order.save(update_fields=['status', 'delivered_date'])
+        job.order.delivered_to = request.user
+        job.order.save(update_fields=['status', 'delivered_date', 'delivered_to'])
         job.save()
+        # Mark visit COMPLETED + Rx dispensed
+        try:
+            from apps.patients.models import Visit
+            visit = Visit.objects.filter(
+                patient=job.order.patient, status='OPTICAL', is_deleted=False,
+            ).order_by('-visit_date').first()
+            if visit:
+                visit.status = 'COMPLETED'
+                visit.save(update_fields=['status', 'updated_at'])
+        except Exception:
+            pass
+        if job.order.optical_prescription:
+            job.order.optical_prescription.is_dispensed = True
+            job.order.optical_prescription.save(update_fields=['is_dispensed'])
         messages.success(request, f'Order {job.order.order_number} collected by patient.')
 
     elif action == 'cancel':
         job.status = LabJobStatus.CANCELLED
+        job.order.status = OpticalOrderStatus.CANCELLED
+        job.order.save(update_fields=['status'])
         job.save()
-        messages.warning(request, 'Lab job cancelled.')
+        # Restore frame stock
+        if job.order.frame_id:
+            Frame.objects.filter(id=job.order.frame_id).update(
+                quantity_in_stock=F('quantity_in_stock') + 1
+            )
+        # Un-mark Rx
+        if job.order.optical_prescription:
+            job.order.optical_prescription.is_dispensed = False
+            job.order.optical_prescription.save(update_fields=['is_dispensed'])
+        messages.warning(request, 'Lab job cancelled — frame stock restored.')
 
     return redirect('opticals:lab_job_queue')

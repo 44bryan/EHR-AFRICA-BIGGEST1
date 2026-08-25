@@ -23,8 +23,20 @@ from apps.patients.models import Patient
 from apps.prescriptions.models import DrugPrescription
 
 
+def _can_access_pharmacy(user):
+    """Pharmacy, dispensing, and admin roles."""
+    from apps.accounts.models import UserRole
+    return user.role in (
+        UserRole.PHARMACIST, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.ADMIN,
+    ) or user.can_dispense_pharmacy()
+
+
 @login_required
 def pharmacy_dashboard(request):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Access denied — pharmacy roles only.')
     from django.core.cache import cache
     today = timezone.localdate()
     # ── Stock & expiry data — cached 90s (changes infrequently, auto-refresh is 30s) ──
@@ -422,6 +434,9 @@ def pharmacy_stats_view(request):
 
 @login_required
 def drug_list(request):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     q = request.GET.get('q', '')
     category = request.GET.get('category', '')
     drugs = Drug.objects.filter(is_deleted=False)
@@ -439,6 +454,9 @@ def drug_list(request):
 
 @login_required
 def drug_detail(request, drug_id):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     drug = get_object_or_404(Drug, id=drug_id, is_deleted=False)
     stocks = drug.stock_items.filter(is_deleted=False).order_by('expiry_date')
     dispensings = DispensingItem.objects.filter(drug=drug).select_related(
@@ -451,6 +469,9 @@ def drug_detail(request, drug_id):
 
 @login_required
 def drug_create(request):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     form = DrugCreateForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         drug = form.save(commit=False)
@@ -463,6 +484,9 @@ def drug_create(request):
 
 @login_required
 def drug_edit(request, drug_id):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     drug = get_object_or_404(Drug, id=drug_id, is_deleted=False)
     form = DrugCreateForm(request.POST or None, instance=drug)
     if request.method == 'POST' and form.is_valid():
@@ -474,6 +498,9 @@ def drug_edit(request, drug_id):
 
 @login_required
 def add_stock(request, drug_id):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     drug = get_object_or_404(Drug, id=drug_id, is_deleted=False)
     form = AddStockForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
@@ -486,6 +513,9 @@ def add_stock(request, drug_id):
 @login_required
 def dispense(request):
     """Create a new dispensing record"""
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     if request.method == 'POST':
         patient_id = request.POST.get('patient_id')
         if not patient_id:
@@ -778,6 +808,9 @@ def drug_stock_ajax(request):
 
 @login_required
 def dispensing_detail(request, dispensing_id):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     dispensing = get_object_or_404(
         Dispensing.objects.prefetch_related('items__drug', 'items__stock_batch'),
         id=dispensing_id, is_deleted=False
@@ -954,6 +987,9 @@ def cancel_dispensing(request, dispensing_id):
 
 @login_required
 def dispensing_list(request):
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
     dispensings = Dispensing.objects.filter(is_deleted=False).select_related(
         'patient', 'dispensed_by'
     ).order_by('-dispensed_at')[:100]
