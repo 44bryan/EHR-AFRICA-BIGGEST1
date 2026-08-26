@@ -1,0 +1,89 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Cumulative Antibiogram{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-grid-3x3-gap text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Cumulative Antibiogram</h5>
+      <div class="text-muted small">Hospital-wide antibiotic resistance patterns — ISO 15189</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if request.user.is_medical_director or request.user.is_super_admin %}
+    <form method="post" action="{% url 'laboratory:generate_antibiogram' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm btn-warning" onclick="return confirm('Regenerate antibiogram from current year data?')">
+        <i class="bi bi-arrow-repeat me-1"></i>Regenerate
+      </button>
+    </form>
+    {% endif %}
+    <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Workstation
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if has_data %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-bordered table-hover small mb-0 align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th class="bg-dark text-white" style="min-width:180px;">Organism</th>
+            {% for abx in antibiotics %}
+            <th class="text-center text-nowrap" style="min-width:55px;font-size:.65rem;writing-mode:vertical-rl;transform:rotate(180deg);padding:8px 3px;">
+              {{ abx }}
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in matrix_rows %}
+          <tr>
+            <td class="fw-semibold text-nowrap">{{ row.name }}</td>
+            {% for cell in row.cells %}
+            <td class="text-center p-1">
+              {% if cell %}
+              <span class="badge rounded-pill {% if cell.rate >= 80 %}bg-success{% elif cell.rate >= 50 %}bg-warning text-dark{% else %}bg-danger{% endif %}"
+                    style="font-size:.65rem;min-width:32px;" title="n={{ cell.n }}">
+                {{ cell.rate|floatformat:0 }}%
+              </span>
+              {% else %}
+              <span class="text-muted" style="font-size:.6rem;">—</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="mt-3 small text-muted">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>Legend:</strong>
+  <span class="badge bg-success">&ge;80%</span> Sensitive
+  <span class="badge bg-warning text-dark ms-1">50-79%</span> Moderate
+  <span class="badge bg-danger ms-1">&lt;50%</span> Resistant
+  &bull; Hover for sample size (n). Values show % susceptibility.
+</div>
+
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-grid-3x3-gap fs-1 d-block mb-3"></i>
+    <h6>No antibiogram data available</h6>
+    <p class="small">Generate the antibiogram once you have sensitivity results from microbiology cultures.</p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

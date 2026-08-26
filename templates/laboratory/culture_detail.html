@@ -1,0 +1,320 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Culture Detail — {{ culture.specimen_source }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-bug text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Microbiology Culture</h5>
+      <div class="text-muted small">
+        {{ culture.order_item.order.patient.full_name }}
+        &bull; {{ culture.specimen_source }}
+        &bull; {{ culture.created_at|date:"d M Y" }}
+      </div>
+    </div>
+  </div>
+  <div>
+    {% if culture.growth_status == 'NO_GROWTH' %}
+    <span class="badge bg-success fs-6">No Growth</span>
+    {% elif culture.growth_status == 'GROWTH' %}
+    <span class="badge bg-danger fs-6">Growth Detected</span>
+    {% elif culture.growth_status == 'PENDING' %}
+    <span class="badge bg-warning text-dark fs-6">Pending</span>
+    {% else %}
+    <span class="badge bg-secondary fs-6">{{ culture.get_growth_status_display }}</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Gram Stain / KOH Mount ────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-droplet text-primary me-2"></i>Gram Stain
+      </div>
+      <div class="card-body small">
+        {% if culture.gram_stain_result %}
+        <div style="white-space:pre-wrap;">{{ culture.gram_stain_result }}</div>
+        <div class="text-muted mt-2" style="font-size:.72rem;">
+          By: {{ culture.gram_stain_by.get_short_name|default:"—" }}
+          &bull; {{ culture.gram_stain_at|date:"d M Y H:i"|default:"" }}
+        </div>
+        {% else %}
+        <div class="text-muted">No gram stain performed</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-droplet-half text-warning me-2"></i>KOH Mount
+      </div>
+      <div class="card-body small">
+        {% if culture.koh_mount_result %}
+        <div style="white-space:pre-wrap;">{{ culture.koh_mount_result }}</div>
+        <div class="text-muted mt-2" style="font-size:.72rem;">{{ culture.koh_mount_at|date:"d M Y H:i"|default:"" }}</div>
+        {% else %}
+        <div class="text-muted">No KOH mount performed</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Culture Readings (24h / 48h / 72h / Final) ─────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-clock-history text-primary me-1"></i> Culture Readings
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      {# 24h #}
+      <div class="col-md-3">
+        <div class="border rounded p-3 h-100">
+          <h6 class="fw-semibold small text-uppercase text-muted mb-2">24h Reading</h6>
+          {% if culture.culture_read_24h %}
+          <div class="small" style="white-space:pre-wrap;">{{ culture.culture_read_24h }}</div>
+          <div class="text-muted mt-1" style="font-size:.68rem;">{{ culture.culture_read_24h_at|date:"d/m H:i"|default:"" }}</div>
+          {% else %}
+          <form method="post" action="{% url 'laboratory:culture_update_reading' culture.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="reading_stage" value="24h">
+            <textarea name="reading_text" class="form-control form-control-sm mb-2" rows="3" placeholder="Enter 24h reading..."></textarea>
+            <select name="growth_status" class="form-select form-select-sm mb-2">
+              <option value="">-- Growth status --</option>
+              <option value="PENDING">Pending</option>
+              <option value="NO_GROWTH">No Growth</option>
+              <option value="GROWTH">Growth</option>
+            </select>
+            <button type="submit" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;">Record 24h</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
+      {# 48h #}
+      <div class="col-md-3">
+        <div class="border rounded p-3 h-100">
+          <h6 class="fw-semibold small text-uppercase text-muted mb-2">48h Reading</h6>
+          {% if culture.culture_read_48h %}
+          <div class="small" style="white-space:pre-wrap;">{{ culture.culture_read_48h }}</div>
+          <div class="text-muted mt-1" style="font-size:.68rem;">{{ culture.culture_read_48h_at|date:"d/m H:i"|default:"" }}</div>
+          {% else %}
+          <form method="post" action="{% url 'laboratory:culture_update_reading' culture.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="reading_stage" value="48h">
+            <textarea name="reading_text" class="form-control form-control-sm mb-2" rows="3" placeholder="Enter 48h reading..."></textarea>
+            <select name="growth_status" class="form-select form-select-sm mb-2">
+              <option value="">-- Growth status --</option>
+              <option value="PENDING">Pending</option>
+              <option value="NO_GROWTH">No Growth</option>
+              <option value="GROWTH">Growth</option>
+            </select>
+            <button type="submit" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;">Record 48h</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
+      {# 72h #}
+      <div class="col-md-3">
+        <div class="border rounded p-3 h-100">
+          <h6 class="fw-semibold small text-uppercase text-muted mb-2">72h Reading</h6>
+          {% if culture.culture_read_72h %}
+          <div class="small" style="white-space:pre-wrap;">{{ culture.culture_read_72h }}</div>
+          <div class="text-muted mt-1" style="font-size:.68rem;">{{ culture.culture_read_72h_at|date:"d/m H:i"|default:"" }}</div>
+          {% else %}
+          <form method="post" action="{% url 'laboratory:culture_update_reading' culture.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="reading_stage" value="72h">
+            <textarea name="reading_text" class="form-control form-control-sm mb-2" rows="3" placeholder="Enter 72h reading..."></textarea>
+            <select name="growth_status" class="form-select form-select-sm mb-2">
+              <option value="">-- Growth status --</option>
+              <option value="NO_GROWTH">No Growth</option>
+              <option value="GROWTH">Growth</option>
+            </select>
+            <button type="submit" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;">Record 72h</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Final Report #}
+      <div class="col-md-3">
+        <div class="border rounded p-3 h-100">
+          <h6 class="fw-semibold small text-uppercase text-muted mb-2">Final Report</h6>
+          {% if culture.final_report %}
+          <div class="small" style="white-space:pre-wrap;">{{ culture.final_report }}</div>
+          <div class="text-muted mt-1" style="font-size:.68rem;">{{ culture.final_report_at|date:"d/m H:i"|default:"" }}</div>
+          {% if not culture.is_preliminary %}<span class="badge bg-success mt-1">Finalized</span>{% endif %}
+          {% else %}
+          <form method="post" action="{% url 'laboratory:culture_update_reading' culture.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="reading_stage" value="final">
+            <textarea name="reading_text" class="form-control form-control-sm mb-2" rows="3" placeholder="Final culture report..."></textarea>
+            <button type="submit" class="btn btn-xs btn-outline-success" style="font-size:.7rem;">Finalize Report</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Organisms ──────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-virus text-danger me-1"></i>
+    <span>Isolated Organisms</span>
+    <span class="badge bg-primary rounded-pill ms-1">{{ culture.organisms.count }}</span>
+  </div>
+  <div class="card-body">
+    {% for org in culture.organisms.all %}
+    <div class="border rounded p-3 mb-3">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h6 class="fw-bold mb-0">
+          <i class="bi bi-virus2 text-danger me-1"></i>{{ org.organism_name }}
+          {% if org.organism_code %}<span class="text-muted small">({{ org.organism_code }})</span>{% endif %}
+        </h6>
+        <div class="small text-muted">
+          Colony count: {{ org.colony_count|default:"—" }}
+          &bull; ID method: {{ org.identification_method|default:"—" }}
+          {% if not org.is_significant %}<span class="badge bg-secondary ms-1">Not significant</span>{% endif %}
+        </div>
+      </div>
+
+      {# Sensitivity Table for this organism #}
+      {% if org.sensitivities.all %}
+      <div class="table-responsive">
+        <table class="table table-sm small mb-2 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Antibiotic</th>
+              <th class="text-center">Sensitivity</th>
+              <th class="text-end">Zone (mm)</th>
+              <th class="text-end">MIC</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in org.sensitivities.all %}
+            <tr>
+              <td>{{ s.antibiotic_name }}</td>
+              <td class="text-center">
+                {% if s.sensitivity == 'S' %}
+                <span class="badge bg-success">S</span>
+                {% elif s.sensitivity == 'I' %}
+                <span class="badge bg-warning text-dark">I</span>
+                {% elif s.sensitivity == 'R' %}
+                <span class="badge bg-danger">R</span>
+                {% else %}
+                <span class="badge bg-secondary">NT</span>
+                {% endif %}
+              </td>
+              <td class="text-end text-muted">{{ s.zone_diameter_mm|floatformat:1|default:"—" }}</td>
+              <td class="text-end text-muted">{{ s.mic_value|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# Add Sensitivities Form (bulk — parallel arrays) #}
+      <details class="mt-2">
+        <summary class="small fw-semibold text-primary" style="cursor:pointer;">
+          <i class="bi bi-plus-circle me-1"></i>Add Sensitivities
+        </summary>
+        <form method="post" action="{% url 'laboratory:sensitivity_add' org.pk %}" class="mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="method" value="DISK">
+          <div class="table-responsive">
+            <table class="table table-sm small mb-2">
+              <thead class="table-light">
+                <tr>
+                  <th>Antibiotic Name</th>
+                  <th class="text-center">Sensitivity</th>
+                  <th>Zone (mm)</th>
+                  <th>MIC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in "12345678" %}
+                <tr>
+                  <td><input type="text" name="antibiotic_name" class="form-control form-control-sm" placeholder="e.g. Amoxicillin"></td>
+                  <td>
+                    <select name="sensitivity" class="form-select form-select-sm">
+                      <option value="">--</option>
+                      <option value="S">S - Sensitive</option>
+                      <option value="I">I - Intermediate</option>
+                      <option value="R">R - Resistant</option>
+                      <option value="NT">NT - Not Tested</option>
+                    </select>
+                  </td>
+                  <td><input type="number" step="0.1" name="zone_diameter_mm" class="form-control form-control-sm" placeholder="mm"></td>
+                  <td><input type="text" name="mic_value" class="form-control form-control-sm" placeholder="ug/mL"></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Save Sensitivities
+          </button>
+        </form>
+      </details>
+    </div>
+    {% empty %}
+    <div class="text-muted text-center py-3">
+      <i class="bi bi-virus fs-3 d-block mb-2"></i>
+      No organisms isolated yet.
+    </div>
+    {% endfor %}
+
+    {# Add Organism Form #}
+    <div class="border-top pt-3 mt-3">
+      <h6 class="fw-semibold small"><i class="bi bi-plus-circle text-primary me-1"></i>Add Organism</h6>
+      <form method="post" action="{% url 'laboratory:organism_add' culture.pk %}" class="row g-2 align-items-end">
+        {% csrf_token %}
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold mb-1">Organism Name <span class="text-danger">*</span></label>
+          <input type="text" name="organism_name" class="form-control form-control-sm" required
+                 placeholder="e.g. Staphylococcus aureus">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold mb-1">Code</label>
+          <input type="text" name="organism_code" class="form-control form-control-sm" placeholder="Optional code">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold mb-1">Colony Count</label>
+          <input type="text" name="colony_count" class="form-control form-control-sm" placeholder="e.g. >10^5 CFU/mL">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold mb-1">ID Method</label>
+          <input type="text" name="identification_method" class="form-control form-control-sm" placeholder="e.g. VITEK 2">
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-plus-lg me-1"></i>Add
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex justify-content-between">
+  <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Workstation
+  </a>
+  <a href="{% url 'laboratory:detail' culture.order_item.order.pk %}" class="btn btn-sm btn-outline-primary">
+    <i class="bi bi-clipboard2-pulse me-1"></i>View Lab Order
+  </a>
+</div>
+
+{% endblock %}

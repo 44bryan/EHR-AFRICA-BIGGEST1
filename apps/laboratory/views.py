@@ -1,15 +1,27 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.core.cache import cache
 from django.db.models import Count, Avg, Q, Sum
 from datetime import timedelta
-from .models import LabOrder, LabOrderItem, LabResult, LabTestType, SampleCollection, SampleRejection, LabResultAmendment
+from .models import (
+    LabOrder, LabOrderItem, LabResult, LabTestType, SampleCollection,
+    SampleRejection, LabResultAmendment, OrderSet, PaymentStatus,
+    SpecimenStatus, ResultStatus, ResultAcknowledgment, QCRecord,
+    AutoverificationRule, SendOutTest, CultureResult, OrganismIdentification,
+    AntibioticSensitivity, CumulativeAntibiogram, HistopathologySpecimen,
+    TATTimestamp,
+)
 from .forms import LabOrderForm, LabResultFormSet, SampleCollectionForm
 from apps.consultations.models import Consultation
+
+
+def _log_tat(order, event, user=None, notes=''):
+    """Record a TAT timestamp for audit trail."""
+    TATTimestamp.objects.create(order=order, event=event, user=user, notes=notes)
 
 
 @login_required
@@ -576,17 +588,60 @@ def lab_order_view(request, consultation_pk):
 
     consultation = get_object_or_404(Consultation, pk=consultation_pk)
     test_types = LabTestType.objects.filter(is_active=True).order_by('category', 'name')
+    order_sets = OrderSet.objects.filter(is_active=True).prefetch_related('tests')
+
+    # Duplicate order warning — check for same tests in last 24h
+    recent_test_ids = set(
+        LabOrderItem.objects.filter(
+            order__patient=consultation.patient,
+            order__is_deleted=False,
+            order__created_at__gte=timezone.now() - timedelta(hours=24),
+        ).exclude(
+            order__status=LabOrder.Status.CANCELLED,
+        ).values_list('test_type_id', flat=True)
+    )
 
     if request.method == 'POST':
         form = LabOrderForm(request.POST)
         selected_tests = request.POST.getlist('test_types')
         if form.is_valid() and selected_tests:
+            # Check for duplicates unless acknowledged
+            dup_acknowledged = request.POST.get('duplicate_warning_acknowledged') == '1'
+            dup_test_ids = set(selected_tests) & {str(tid) for tid in recent_test_ids}
+            if dup_test_ids and not dup_acknowledged:
+                dup_names = list(LabTestType.objects.filter(id__in=dup_test_ids).values_list('name', flat=True))
+                messages.warning(
+                    request,
+                    f'Duplicate order warning: {", ".join(dup_names)} were ordered for this '
+                    f'patient in the last 24 hours. Re-submit to confirm.'
+                )
+                return render(request, 'laboratory/order_form.html', {
+                    'form': form, 'consultation': consultation,
+                    'test_types': test_types, 'order_sets': order_sets,
+                    'categories': LabTestType.objects.values_list('category', flat=True).distinct(),
+                    'duplicate_tests': dup_test_ids, 'selected_tests': selected_tests,
+                    'recent_test_ids': recent_test_ids,
+                })
+
             order = form.save(commit=False)
             order.consultation = consultation
             order.patient = consultation.patient
             order.ordered_by = request.user
             order.created_by = request.user
+            order.icd10_code = request.POST.get('icd10_code', '').strip()
+            order.duplicate_warning_acknowledged = bool(dup_test_ids)
+            # Payment bypass for STAT/Emergency
+            if order.urgency in (LabOrder.Urgency.STAT, LabOrder.Urgency.EMERGENCY):
+                order.payment_status = PaymentStatus.STAT_OVERRIDE
+                order.payment_authorized_by = request.user
+                order.payment_authorized_at = timezone.now()
+                order.payment_authorization_reason = f'Auto-authorized: {order.get_urgency_display()} order'
+            # Order set if selected
+            order_set_id = request.POST.get('order_set')
+            if order_set_id:
+                order.order_set_id = order_set_id
             order.save()
+            _log_tat(order, TATTimestamp.Event.ORDERED, request.user)
             items_created = []
             for test_id in selected_tests:
                 item = LabOrderItem.objects.create(order=order, test_type_id=test_id)
@@ -627,7 +682,9 @@ def lab_order_view(request, consultation_pk):
         'form': form,
         'consultation': consultation,
         'test_types': test_types,
+        'order_sets': order_sets,
         'categories': LabTestType.objects.values_list('category', flat=True).distinct(),
+        'recent_test_ids': recent_test_ids,
     })
 
 
@@ -1386,10 +1443,12 @@ def reject_sample_view(request, pk):
 
     # Reset order back to ORDERED so a new sample can be recollected
     order.status = LabOrder.Status.ORDERED
+    order.specimen_status = SpecimenStatus.RE_COLLECT
     order.notes = (order.notes + '\n' if order.notes else '') + \
                   f'SAMPLE REJECTED [{reason}]: {notes}'
-    order.save(update_fields=['status', 'notes', 'updated_at'])
+    order.save(update_fields=['status', 'specimen_status', 'notes', 'updated_at'])
     order.items.update(status=LabOrder.Status.ORDERED)
+    _log_tat(order, TATTimestamp.Event.REJECTED, request.user, notes=reason)
 
     # If there was a SampleCollection, remove it so a new one can be created
     try:
@@ -1444,7 +1503,15 @@ def acknowledge_critical_view(request, result_id):
 
     result.critical_acknowledged_by = request.user
     result.critical_acknowledged_at = timezone.now()
-    result.save(update_fields=['critical_acknowledged_by', 'critical_acknowledged_at', 'updated_at'])
+    result.critical_notified_to = request.POST.get('notified_to', request.user.get_full_name())
+    result.critical_read_back_confirmed = request.POST.get('read_back_confirmed') == '1'
+    if result.critical_read_back_confirmed:
+        result.critical_read_back_at = timezone.now()
+    result.save(update_fields=[
+        'critical_acknowledged_by', 'critical_acknowledged_at',
+        'critical_notified_to', 'critical_read_back_confirmed',
+        'critical_read_back_at', 'updated_at',
+    ])
 
     messages.success(
         request,
@@ -1480,4 +1547,833 @@ def result_pdf_view(request, pk):
         'completed_items': completed_items,
         'pdf_filename': f'lab-result-{order.patient.patient_id}-{order.created_at:%Y%m%d}.pdf',
         'pdf_seal_label': 'LABORATORY REPORT',
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAYMENT AUTHORIZATION (bypass paths)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def payment_authorize_view(request, pk):
+    """Authorize lab work without upfront payment (insurance, waiver, STAT override)."""
+    order = get_object_or_404(LabOrder, pk=pk, is_deleted=False)
+    u = request.user
+    if not (u.is_lab_tech or u.is_medical_director or u.is_super_admin
+            or u.is_cashier or u.is_chief_cashier or u.is_finance_director):
+        return HttpResponseForbidden()
+
+    bypass_type = request.POST.get('bypass_type', '').strip()
+    reason = request.POST.get('reason', '').strip()
+    if bypass_type not in dict(PaymentStatus.choices):
+        messages.error(request, 'Invalid payment bypass type.')
+        return redirect('laboratory:detail', pk=pk)
+
+    order.payment_status = bypass_type
+    order.payment_authorized_by = u
+    order.payment_authorized_at = timezone.now()
+    order.payment_authorization_reason = reason
+    order.save(update_fields=[
+        'payment_status', 'payment_authorized_by',
+        'payment_authorized_at', 'payment_authorization_reason', 'updated_at',
+    ])
+    _log_tat(order, TATTimestamp.Event.PAYMENT_CLEARED, u, notes=bypass_type)
+    messages.success(request, f'Payment authorized: {order.get_payment_status_display()}')
+    return redirect('laboratory:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SPECIMEN RECEIPT (separate from collection)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def specimen_receive_view(request, pk):
+    """Lab receives specimen — records condition, updates specimen_status."""
+    order = get_object_or_404(LabOrder, pk=pk, is_deleted=False)
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    try:
+        sample = order.sample_collection
+    except SampleCollection.DoesNotExist:
+        messages.error(request, 'No sample has been collected for this order yet.')
+        return redirect('laboratory:detail', pk=pk)
+
+    condition = request.POST.get('condition_on_arrival', 'GOOD')
+    sample.received_by = request.user
+    sample.received_at = timezone.now()
+    sample.condition_on_arrival = condition
+    sample.save(update_fields=['received_by', 'received_at', 'condition_on_arrival', 'updated_at'])
+
+    order.specimen_status = SpecimenStatus.RECEIVED
+    order.save(update_fields=['specimen_status', 'updated_at'])
+    _log_tat(order, TATTimestamp.Event.RECEIVED_AT_LAB, request.user)
+
+    messages.success(request, f'Specimen received (condition: {condition}).')
+    return redirect('laboratory:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESULT AUTHORIZATION (biologist / pathologist sign-off)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def authorize_result_view(request, result_id):
+    """Biologist / pathologist authorizes result for release to clinician."""
+    result = get_object_or_404(LabResult, pk=result_id)
+    if not (request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    if not result.is_verified:
+        messages.error(request, 'Result must be technically validated before authorization.')
+        return redirect('laboratory:detail', pk=result.order_item.order.pk)
+
+    result.authorized_by = request.user
+    result.authorized_at = timezone.now()
+    result.result_status = ResultStatus.AUTHORIZED
+    result.save(update_fields=[
+        'authorized_by', 'authorized_at', 'result_status', 'updated_at',
+    ])
+    _log_tat(result.order_item.order, TATTimestamp.Event.AUTHORIZED, request.user)
+    messages.success(request, f'{result.order_item.test_type.name} authorized for release.')
+    return redirect('laboratory:detail', pk=result.order_item.order.pk)
+
+
+@login_required
+@require_POST
+def release_result_view(request, result_id):
+    """Release authorized result to clinician dashboard."""
+    result = get_object_or_404(LabResult, pk=result_id)
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    if result.result_status not in (ResultStatus.AUTHORIZED, ResultStatus.TECH_VALID):
+        messages.error(request, 'Result must be authorized before release.')
+        return redirect('laboratory:detail', pk=result.order_item.order.pk)
+
+    result.result_status = ResultStatus.RELEASED
+    result.released_at = timezone.now()
+    result.save(update_fields=['result_status', 'released_at', 'updated_at'])
+    _log_tat(result.order_item.order, TATTimestamp.Event.RELEASED, request.user)
+
+    # Notify ordering doctor
+    try:
+        from apps.notifications.utils import notify
+        from apps.notifications.models import NotificationType, NotificationPriority
+        order = result.order_item.order
+        if order.ordered_by:
+            notify(
+                recipient=order.ordered_by,
+                title=f'Lab Result Ready — {order.patient.full_name}',
+                message=f'{result.order_item.test_type.name}: {result.result_value} {result.result_unit}',
+                link=f'/laboratory/{order.id}/',
+                notification_type=NotificationType.LAB_RESULT,
+                priority=NotificationPriority.HIGH if result.is_critical else NotificationPriority.NORMAL,
+            )
+    except Exception:
+        pass
+
+    messages.success(request, 'Result released to clinician.')
+    return redirect('laboratory:detail', pk=result.order_item.order.pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESULT ACKNOWLEDGMENT (doctor seen / unseen)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def acknowledge_result_view(request, result_id):
+    """Doctor marks a result as seen/acknowledged."""
+    result = get_object_or_404(LabResult, pk=result_id)
+    ack, created = ResultAcknowledgment.objects.get_or_create(
+        result=result,
+        acknowledged_by=request.user,
+    )
+    if created:
+        _log_tat(result.order_item.order, TATTimestamp.Event.DOCTOR_VIEWED, request.user)
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': True, 'created': created})
+    messages.success(request, 'Result acknowledged.')
+    return redirect('laboratory:detail', pk=result.order_item.order.pk)
+
+
+@login_required
+def unacknowledged_results_view(request):
+    """Doctor's dashboard — results pending acknowledgment."""
+    results = (
+        LabResult.objects.filter(
+            result_status=ResultStatus.RELEASED,
+            order_item__order__ordered_by=request.user,
+            order_item__order__is_deleted=False,
+            is_deleted=False,
+        )
+        .exclude(acknowledgments__acknowledged_by=request.user)
+        .select_related('order_item__test_type', 'order_item__order__patient')
+        .order_by('-released_at')[:100]
+    )
+    return render(request, 'laboratory/unacknowledged_results.html', {
+        'results': results,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# QUALITY CONTROL — QC Records + Levey-Jennings
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def qc_dashboard_view(request):
+    """QC overview with recent records and Levey-Jennings data."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    import json
+    today = timezone.localdate()
+    last_30 = today - timedelta(days=30)
+
+    records = QCRecord.objects.filter(
+        is_deleted=False, run_date__date__gte=last_30,
+    ).select_related('test_type', 'performed_by').order_by('-run_date')[:200]
+
+    # Failed QC count
+    failed_count = QCRecord.objects.filter(
+        is_deleted=False, is_acceptable=False, run_date__date__gte=last_30,
+    ).count()
+
+    # Levey-Jennings data for selected test (AJAX param)
+    lj_test_id = request.GET.get('lj_test')
+    lj_data = []
+    if lj_test_id:
+        lj_records = QCRecord.objects.filter(
+            test_type_id=lj_test_id, is_deleted=False,
+            run_date__date__gte=last_30,
+        ).order_by('run_date').values('run_date', 'observed_value', 'target_value', 'target_sd', 'calculated_z_score')
+        lj_data = [
+            {
+                'date': r['run_date'].strftime('%d/%m'),
+                'z': float(r['calculated_z_score']) if r['calculated_z_score'] else 0,
+                'observed': float(r['observed_value']),
+                'target': float(r['target_value']),
+            }
+            for r in lj_records
+        ]
+
+    # Tests with QC records
+    qc_tests = LabTestType.objects.filter(
+        qc_records__isnull=False
+    ).distinct().order_by('name')
+
+    return render(request, 'laboratory/qc_dashboard.html', {
+        'records': records,
+        'failed_count': failed_count,
+        'qc_tests': qc_tests,
+        'lj_data_json': json.dumps(lj_data),
+        'lj_test_id': lj_test_id,
+    })
+
+
+@login_required
+def qc_record_create_view(request):
+    """Create a new QC record."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+        try:
+            test_type_id = request.POST['test_type']
+            record = QCRecord(
+                test_type_id=test_type_id,
+                run_date=timezone.now(),
+                qc_material=request.POST.get('qc_material', '').strip(),
+                lot_number=request.POST.get('lot_number', '').strip(),
+                level=request.POST.get('level', 'NORMAL'),
+                target_value=Decimal(request.POST['target_value']),
+                observed_value=Decimal(request.POST['observed_value']),
+                target_sd=Decimal(request.POST['target_sd']),
+                reagent_lot=request.POST.get('reagent_lot', '').strip(),
+                notes=request.POST.get('notes', '').strip(),
+                corrective_action=request.POST.get('corrective_action', '').strip(),
+                performed_by=request.user,
+                created_by=request.user,
+            )
+            # Reagent expiry
+            exp = request.POST.get('reagent_expiry', '').strip()
+            if exp:
+                from datetime import date as _date
+                record.reagent_expiry = _date.fromisoformat(exp)
+            cal = request.POST.get('calibration_date', '').strip()
+            if cal:
+                from datetime import date as _date
+                record.calibration_date = _date.fromisoformat(cal)
+            record.save()  # auto z-score + westgard check in model save()
+
+            if not record.is_acceptable:
+                messages.warning(
+                    request,
+                    f'QC FAILED — Westgard rule {record.get_westgard_rule_display()} violated! '
+                    f'Results for {record.test_type.name} should NOT be released until corrective action is taken.'
+                )
+            else:
+                messages.success(request, f'QC record saved (z={record.calculated_z_score}).')
+            return redirect('laboratory:qc_dashboard')
+        except (KeyError, InvalidOperation, ValueError) as e:
+            messages.error(request, f'Invalid data: {e}')
+
+    test_types = LabTestType.objects.filter(is_active=True).order_by('name')
+    return render(request, 'laboratory/qc_record_form.html', {
+        'test_types': test_types,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEND-OUT / REFERRAL TESTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def sendout_list_view(request):
+    """List all send-out tests with status tracking."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    tests = (
+        SendOutTest.objects.filter(is_deleted=False)
+        .select_related('order_item__test_type', 'order_item__order__patient', 'dispatched_by')
+        .order_by('-created_at')[:200]
+    )
+    overdue = [t for t in tests if t.is_overdue]
+    return render(request, 'laboratory/sendout_list.html', {
+        'tests': tests,
+        'overdue_count': len(overdue),
+    })
+
+
+@login_required
+def sendout_create_view(request, item_pk):
+    """Create a send-out record for a lab order item."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    item = get_object_or_404(LabOrderItem, pk=item_pk)
+    if hasattr(item, 'send_out'):
+        messages.info(request, 'This test already has a send-out record.')
+        return redirect('laboratory:sendout_list')
+
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+        try:
+            sendout = SendOutTest(
+                order_item=item,
+                referral_lab_name=request.POST.get('referral_lab_name', '').strip(),
+                referral_lab_address=request.POST.get('referral_lab_address', '').strip(),
+                referral_lab_phone=request.POST.get('referral_lab_phone', '').strip(),
+                courier=request.POST.get('courier', '').strip(),
+                tracking_number=request.POST.get('tracking_number', '').strip(),
+                external_cost=Decimal(request.POST.get('external_cost', '0') or '0'),
+                markup_percentage=Decimal(request.POST.get('markup_percentage', '0') or '0'),
+                created_by=request.user,
+            )
+            exp_return = request.POST.get('expected_return_date', '').strip()
+            if exp_return:
+                from datetime import date as _date
+                sendout.expected_return_date = _date.fromisoformat(exp_return)
+            # Auto-dispatch if courier is filled
+            if sendout.courier:
+                sendout.status = SendOutTest.Status.DISPATCHED
+                sendout.dispatch_date = timezone.now()
+                sendout.dispatched_by = request.user
+            sendout.save()
+            messages.success(request, f'Send-out created: {item.test_type.name} → {sendout.referral_lab_name}')
+            return redirect('laboratory:sendout_list')
+        except (InvalidOperation, ValueError) as e:
+            messages.error(request, f'Invalid data: {e}')
+
+    return render(request, 'laboratory/sendout_form.html', {
+        'item': item,
+        'default_lab': item.test_type.default_referral_lab,
+    })
+
+
+@login_required
+@require_POST
+def sendout_update_status_view(request, pk):
+    """Update send-out test status (dispatched, received, resulted)."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    sendout = get_object_or_404(SendOutTest, pk=pk, is_deleted=False)
+    new_status = request.POST.get('status', '')
+    if new_status not in dict(SendOutTest.Status.choices):
+        messages.error(request, 'Invalid status.')
+        return redirect('laboratory:sendout_list')
+
+    sendout.status = new_status
+    if new_status == SendOutTest.Status.DISPATCHED and not sendout.dispatch_date:
+        sendout.dispatch_date = timezone.now()
+        sendout.dispatched_by = request.user
+    elif new_status == SendOutTest.Status.RESULTED:
+        from datetime import date as _date
+        sendout.actual_return_date = _date.today()
+        # Handle uploaded report file
+        if 'external_report_file' in request.FILES:
+            sendout.external_report_file = request.FILES['external_report_file']
+        sendout.external_accession_number = request.POST.get('external_accession_number', '').strip()
+    sendout.save()
+    messages.success(request, f'Send-out status updated to {sendout.get_status_display()}.')
+    return redirect('laboratory:sendout_list')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MICROBIOLOGY — Culture, Organisms, Sensitivity
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def culture_create_view(request, item_pk):
+    """Create a microbiology culture record for a lab order item."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    item = get_object_or_404(LabOrderItem, pk=item_pk)
+    if hasattr(item, 'culture'):
+        return redirect('laboratory:culture_detail', pk=item.culture.pk)
+
+    if request.method == 'POST':
+        culture = CultureResult(
+            order_item=item,
+            specimen_source=request.POST.get('specimen_source', '').strip(),
+            gram_stain_result=request.POST.get('gram_stain_result', '').strip(),
+            koh_mount_result=request.POST.get('koh_mount_result', '').strip(),
+            culture_media=request.POST.get('culture_media', '').strip(),
+            incubation_temp=request.POST.get('incubation_temp', '').strip(),
+            incubation_atmosphere=request.POST.get('incubation_atmosphere', '').strip(),
+            created_by=request.user,
+        )
+        if culture.gram_stain_result:
+            culture.gram_stain_by = request.user
+            culture.gram_stain_at = timezone.now()
+        if culture.koh_mount_result:
+            culture.koh_mount_at = timezone.now()
+        culture.save()
+        messages.success(request, 'Culture record created. Gram stain / KOH results saved.')
+        return redirect('laboratory:culture_detail', pk=culture.pk)
+
+    return render(request, 'laboratory/culture_form.html', {'item': item})
+
+
+@login_required
+def culture_detail_view(request, pk):
+    """View and update a microbiology culture result (staged readings)."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    culture = get_object_or_404(
+        CultureResult.objects.select_related('order_item__test_type', 'order_item__order__patient')
+        .prefetch_related('organisms__sensitivities'),
+        pk=pk, is_deleted=False,
+    )
+    return render(request, 'laboratory/culture_detail.html', {'culture': culture})
+
+
+@login_required
+@require_POST
+def culture_update_reading_view(request, pk):
+    """Update staged culture reading (24h / 48h / 72h)."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    culture = get_object_or_404(CultureResult, pk=pk, is_deleted=False)
+    reading = request.POST.get('reading_stage', '')  # '24h', '48h', '72h'
+    text = request.POST.get('reading_text', '').strip()
+    growth = request.POST.get('growth_status', '')
+
+    now = timezone.now()
+    if reading == '24h':
+        culture.culture_read_24h = text
+        culture.culture_read_24h_at = now
+    elif reading == '48h':
+        culture.culture_read_48h = text
+        culture.culture_read_48h_at = now
+    elif reading == '72h':
+        culture.culture_read_72h = text
+        culture.culture_read_72h_at = now
+    elif reading == 'final':
+        culture.final_report = text
+        culture.final_report_at = now
+        culture.is_preliminary = False
+
+    if growth and growth in dict(CultureResult.GrowthStatus.choices):
+        culture.growth_status = growth
+
+    culture.save()
+    messages.success(request, f'Culture {reading} reading saved.')
+    return redirect('laboratory:culture_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def organism_add_view(request, culture_pk):
+    """Add an identified organism to a culture result."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    culture = get_object_or_404(CultureResult, pk=culture_pk, is_deleted=False)
+    organism = OrganismIdentification.objects.create(
+        culture=culture,
+        organism_name=request.POST.get('organism_name', '').strip(),
+        organism_code=request.POST.get('organism_code', '').strip(),
+        colony_count=request.POST.get('colony_count', '').strip(),
+        identification_method=request.POST.get('identification_method', '').strip(),
+        is_significant=request.POST.get('is_significant') != '0',
+    )
+    messages.success(request, f'Organism added: {organism.organism_name}')
+    return redirect('laboratory:culture_detail', pk=culture_pk)
+
+
+@login_required
+@require_POST
+def sensitivity_add_view(request, organism_pk):
+    """Add antibiotic sensitivity results for an organism."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    organism = get_object_or_404(OrganismIdentification, pk=organism_pk)
+    # Bulk add — expects parallel arrays
+    names = request.POST.getlist('antibiotic_name')
+    sensitivities = request.POST.getlist('sensitivity')
+    zones = request.POST.getlist('zone_diameter_mm')
+    mics = request.POST.getlist('mic_value')
+
+    created = 0
+    for i, name in enumerate(names):
+        if not name.strip():
+            continue
+        from decimal import Decimal, InvalidOperation
+        zone = None
+        try:
+            zone = Decimal(zones[i]) if i < len(zones) and zones[i].strip() else None
+        except (InvalidOperation, ValueError, IndexError):
+            pass
+        AntibioticSensitivity.objects.create(
+            organism=organism,
+            antibiotic_name=name.strip(),
+            sensitivity=sensitivities[i] if i < len(sensitivities) else 'NT',
+            zone_diameter_mm=zone,
+            mic_value=mics[i].strip() if i < len(mics) else '',
+            method=request.POST.get('method', 'DISK'),
+        )
+        created += 1
+
+    messages.success(request, f'{created} sensitivity result(s) added.')
+    return redirect('laboratory:culture_detail', pk=organism.culture_id)
+
+
+@login_required
+def antibiogram_view(request):
+    """View cumulative antibiogram — hospital-wide resistance patterns."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    antibiogram = CumulativeAntibiogram.objects.order_by(
+        'organism_name', 'antibiotic_name'
+    )
+    # Build matrix: rows = organisms, cols = antibiotics
+    org_data = {}
+    antibiotics = set()
+    for row in antibiogram:
+        antibiotics.add(row.antibiotic_name)
+        if row.organism_name not in org_data:
+            org_data[row.organism_name] = {}
+        org_data[row.organism_name][row.antibiotic_name] = {
+            'rate': row.sensitivity_rate,
+            'n': row.total_isolates,
+        }
+    antibiotics = sorted(antibiotics)
+
+    # Pre-build rows for template iteration (avoids dict key lookup issues)
+    matrix_rows = []
+    for org_name in sorted(org_data.keys()):
+        cells = []
+        for abx in antibiotics:
+            cell = org_data[org_name].get(abx)
+            cells.append(cell)  # None if no data
+        matrix_rows.append({'name': org_name, 'cells': cells})
+
+    return render(request, 'laboratory/antibiogram.html', {
+        'matrix_rows': matrix_rows,
+        'antibiotics': antibiotics,
+        'has_data': bool(matrix_rows),
+    })
+
+
+@login_required
+@require_POST
+def generate_antibiogram_view(request):
+    """Regenerate cumulative antibiogram from current sensitivity data."""
+    if not (request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    from django.db.models import Count
+    today = timezone.localdate()
+    period_start = today.replace(month=1, day=1)  # current year
+
+    # Clear existing for this period
+    CumulativeAntibiogram.objects.filter(period_start=period_start, period_end=today).delete()
+
+    # Aggregate from AntibioticSensitivity
+    raw = (
+        AntibioticSensitivity.objects.filter(
+            organism__culture__created_at__date__gte=period_start,
+        )
+        .values('organism__organism_name', 'antibiotic_name', 'sensitivity')
+        .annotate(count=Count('id'))
+    )
+
+    # Build aggregates
+    agg = {}
+    for r in raw:
+        key = (r['organism__organism_name'], r['antibiotic_name'])
+        if key not in agg:
+            agg[key] = {'S': 0, 'I': 0, 'R': 0, 'total': 0}
+        s = r['sensitivity']
+        if s in ('S', 'I', 'R'):
+            agg[key][s] += r['count']
+            agg[key]['total'] += r['count']
+
+    created = 0
+    for (org, abx), counts in agg.items():
+        if counts['total'] > 0:
+            CumulativeAntibiogram.objects.create(
+                organism_name=org,
+                antibiotic_name=abx,
+                period_start=period_start,
+                period_end=today,
+                total_isolates=counts['total'],
+                sensitive_count=counts['S'],
+                intermediate_count=counts['I'],
+                resistant_count=counts['R'],
+            )
+            created += 1
+
+    messages.success(request, f'Antibiogram regenerated: {created} entries for {today.year}.')
+    return redirect('laboratory:antibiogram')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HISTOPATHOLOGY
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def histopath_list_view(request):
+    """List all histopathology specimens."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    specimens = (
+        HistopathologySpecimen.objects.filter(is_deleted=False)
+        .select_related('order_item__order__patient', 'pathologist')
+        .order_by('-created_at')[:200]
+    )
+    return render(request, 'laboratory/histopath_list.html', {'specimens': specimens})
+
+
+@login_required
+def histopath_create_view(request, item_pk):
+    """Create a histopathology specimen record."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    item = get_object_or_404(LabOrderItem, pk=item_pk)
+    if hasattr(item, 'histopath'):
+        return redirect('laboratory:histopath_detail', pk=item.histopath.pk)
+
+    if request.method == 'POST':
+        specimen = HistopathologySpecimen(
+            order_item=item,
+            specimen_site=request.POST.get('specimen_site', '').strip(),
+            specimen_type=request.POST.get('specimen_type', '').strip(),
+            laterality=request.POST.get('laterality', '').strip(),
+            clinical_history=request.POST.get('clinical_history', '').strip(),
+            created_by=request.user,
+        )
+        specimen.save()  # auto accession number
+        messages.success(request, f'Histopathology specimen {specimen.accession_number} created.')
+        return redirect('laboratory:histopath_detail', pk=specimen.pk)
+
+    return render(request, 'laboratory/histopath_form.html', {'item': item})
+
+
+@login_required
+def histopath_detail_view(request, pk):
+    """View and update histopathology specimen."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    specimen = get_object_or_404(
+        HistopathologySpecimen.objects.select_related(
+            'order_item__order__patient', 'pathologist', 'gross_by'
+        ),
+        pk=pk, is_deleted=False,
+    )
+    return render(request, 'laboratory/histopath_detail.html', {'specimen': specimen})
+
+
+@login_required
+@require_POST
+def histopath_update_view(request, pk):
+    """Update histopathology specimen status / fields."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    specimen = get_object_or_404(HistopathologySpecimen, pk=pk, is_deleted=False)
+    section = request.POST.get('section', '')
+
+    if section == 'grossing':
+        specimen.gross_description = request.POST.get('gross_description', '').strip()
+        specimen.cassette_count = int(request.POST.get('cassette_count', 0) or 0)
+        specimen.block_count = int(request.POST.get('block_count', 0) or 0)
+        specimen.gross_by = request.user
+        specimen.gross_at = timezone.now()
+        specimen.status = HistopathologySpecimen.Status.PROCESSING
+        specimen.save()
+        messages.success(request, 'Gross description saved.')
+
+    elif section == 'microscopy':
+        specimen.microscopic_description = request.POST.get('microscopic_description', '').strip()
+        specimen.diagnosis = request.POST.get('diagnosis', '').strip()
+        specimen.snomed_code = request.POST.get('snomed_code', '').strip()
+        specimen.icd_o_code = request.POST.get('icd_o_code', '').strip()
+        import json
+        special = request.POST.get('special_stains', '').strip()
+        ihc = request.POST.get('ihc_stains', '').strip()
+        if special:
+            specimen.special_stains = [s.strip() for s in special.split(',') if s.strip()]
+        if ihc:
+            specimen.ihc_stains = [s.strip() for s in ihc.split(',') if s.strip()]
+        specimen.status = HistopathologySpecimen.Status.REPORTING
+        specimen.save()
+        messages.success(request, 'Microscopy description saved.')
+
+    elif section == 'finalize':
+        specimen.pathologist = request.user
+        specimen.reported_at = timezone.now()
+        specimen.storage_location = request.POST.get('storage_location', '').strip()
+        specimen.status = HistopathologySpecimen.Status.FINALIZED
+        specimen.save()
+        messages.success(request, f'Report finalized by {request.user.get_full_name()}.')
+
+    elif section == 'addendum':
+        specimen.addendum_text = request.POST.get('addendum_text', '').strip()
+        specimen.addendum_by = request.user
+        specimen.addendum_at = timezone.now()
+        specimen.status = HistopathologySpecimen.Status.ADDENDUM
+        specimen.save()
+        messages.success(request, 'Addendum added.')
+
+    return redirect('laboratory:histopath_detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAT REPORT
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def tat_report_view(request):
+    """Turnaround time report — every transition timestamped."""
+    if not (request.user.is_lab_tech or request.user.is_medical_director
+            or request.user.is_super_admin or request.user.is_admin_director
+            or request.user.is_ceo):
+        return HttpResponseForbidden()
+
+    import json
+    today = timezone.localdate()
+    days = int(request.GET.get('days', 30))
+    since = today - timedelta(days=days)
+
+    # Average TAT by segment
+    from django.db.models import Min, Max, F, ExpressionWrapper, DurationField
+
+    orders = LabOrder.objects.filter(
+        is_deleted=False, created_at__date__gte=since,
+        status=LabOrder.Status.COMPLETED,
+    )
+
+    # Collect timestamps per order
+    tat_data = []
+    for order in orders.select_related('patient')[:500]:
+        ts = dict(
+            order.tat_timestamps.values_list('event', 'timestamp')
+        )
+        if 'ORDERED' in ts and 'RELEASED' in ts:
+            total = (ts['RELEASED'] - ts['ORDERED']).total_seconds() / 60
+            segments = {
+                'order_to_collect': _mins_between(ts, 'ORDERED', 'COLLECTED'),
+                'collect_to_receive': _mins_between(ts, 'COLLECTED', 'RECEIVED_AT_LAB'),
+                'receive_to_result': _mins_between(ts, 'RECEIVED_AT_LAB', 'RESULT_ENTERED'),
+                'result_to_authorize': _mins_between(ts, 'RESULT_ENTERED', 'AUTHORIZED'),
+                'authorize_to_release': _mins_between(ts, 'AUTHORIZED', 'RELEASED'),
+                'total_mins': round(total, 1),
+            }
+            tat_data.append(segments)
+
+    # Averages
+    if tat_data:
+        avg_tat = {
+            k: round(sum(d.get(k, 0) or 0 for d in tat_data) / len(tat_data), 1)
+            for k in ['order_to_collect', 'collect_to_receive', 'receive_to_result',
+                       'result_to_authorize', 'authorize_to_release', 'total_mins']
+        }
+    else:
+        avg_tat = {}
+
+    return render(request, 'laboratory/tat_report.html', {
+        'avg_tat': avg_tat,
+        'total_orders': len(tat_data),
+        'days': days,
+        'tat_json': json.dumps(tat_data[:200]),
+    })
+
+
+def _mins_between(ts_dict, event_a, event_b):
+    a = ts_dict.get(event_a)
+    b = ts_dict.get(event_b)
+    if a and b:
+        return round((b - a).total_seconds() / 60, 1)
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DUPLICATE ORDER CHECK (AJAX)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def check_duplicate_order_ajax(request):
+    """AJAX — check if patient already has recent orders for selected tests."""
+    patient_id = request.GET.get('patient_id', '')
+    test_ids = request.GET.getlist('test_ids')
+    if not patient_id or not test_ids:
+        return JsonResponse({'duplicates': []})
+
+    recent = (
+        LabOrderItem.objects.filter(
+            order__patient_id=patient_id,
+            order__is_deleted=False,
+            order__created_at__gte=timezone.now() - timedelta(hours=24),
+            test_type_id__in=test_ids,
+        )
+        .exclude(order__status=LabOrder.Status.CANCELLED)
+        .select_related('test_type', 'order')
+        .values('test_type__name', 'test_type_id', 'order__created_at')
+    )
+    return JsonResponse({
+        'duplicates': [
+            {
+                'name': r['test_type__name'],
+                'test_id': str(r['test_type_id']),
+                'ordered_at': r['order__created_at'].strftime('%d/%m/%Y %H:%M'),
+            }
+            for r in recent
+        ]
     })

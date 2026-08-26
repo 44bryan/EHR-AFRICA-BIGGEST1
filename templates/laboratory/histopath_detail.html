@@ -1,0 +1,233 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Histopathology — {{ specimen.accession_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-eyedropper text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ specimen.accession_number }}</h5>
+      <div class="text-muted small">
+        {{ specimen.order_item.order.patient.full_name }}
+        &bull; {{ specimen.specimen_site }}
+        &bull; {{ specimen.created_at|date:"d M Y" }}
+      </div>
+    </div>
+  </div>
+  <div>
+    {% if specimen.status == 'ACCESSIONED' %}
+    <span class="badge bg-info text-dark fs-6">Accessioned</span>
+    {% elif specimen.status == 'PROCESSING' %}
+    <span class="badge bg-primary fs-6">Processing</span>
+    {% elif specimen.status == 'REPORTING' %}
+    <span class="badge bg-warning text-dark fs-6">Reporting</span>
+    {% elif specimen.status == 'FINALIZED' %}
+    <span class="badge bg-success fs-6">Finalized</span>
+    {% elif specimen.status == 'ADDENDUM' %}
+    <span class="badge bg-dark fs-6">Addendum</span>
+    {% else %}
+    <span class="badge bg-secondary fs-6">{{ specimen.get_status_display }}</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Specimen Info ────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-info-circle text-primary me-2"></i>Specimen Information
+  </div>
+  <div class="card-body small">
+    <div class="row g-2">
+      <div class="col-md-3"><strong>Site:</strong> {{ specimen.specimen_site|default:"—" }}</div>
+      <div class="col-md-3"><strong>Type:</strong> {{ specimen.specimen_type|default:"—" }}</div>
+      <div class="col-md-3"><strong>Laterality:</strong> {{ specimen.laterality|default:"—" }}</div>
+      <div class="col-md-3"><strong>Test:</strong> {{ specimen.order_item.test_type.name }}</div>
+    </div>
+    {% if specimen.clinical_history %}
+    <div class="mt-2"><strong>Clinical History:</strong><br>{{ specimen.clinical_history }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Grossing ─────────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-scissors text-primary me-2"></i>Gross Description
+  </div>
+  <div class="card-body">
+    {% if specimen.gross_description %}
+    <div class="small" style="white-space:pre-wrap;">{{ specimen.gross_description }}</div>
+    <div class="text-muted mt-2 small">
+      Cassettes: {{ specimen.cassette_count }} &bull; Blocks: {{ specimen.block_count }}
+      &bull; By: {{ specimen.gross_by.get_short_name|default:"—" }}
+      &bull; {{ specimen.gross_at|date:"d M Y H:i"|default:"" }}
+    </div>
+    {% else %}
+    <form method="post" action="{% url 'laboratory:histopath_update' specimen.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="grossing">
+      <div class="row g-3">
+        <div class="col-12">
+          <textarea name="gross_description" class="form-control form-control-sm" rows="4"
+                    placeholder="Describe gross specimen: dimensions, weight, color, texture, margins..."></textarea>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold mb-1">Cassette Count</label>
+          <input type="number" name="cassette_count" class="form-control form-control-sm" min="0" value="0">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold mb-1">Block Count</label>
+          <input type="number" name="block_count" class="form-control form-control-sm" min="0" value="0">
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <button type="submit" class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-check-lg me-1"></i>Save Grossing
+          </button>
+        </div>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Microscopy & Diagnosis ──────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-search text-primary me-2"></i>Microscopy &amp; Diagnosis
+  </div>
+  <div class="card-body">
+    {% if specimen.microscopic_description or specimen.diagnosis %}
+    <div class="mb-3">
+      <strong class="small">Microscopic Description:</strong>
+      <div class="small" style="white-space:pre-wrap;">{{ specimen.microscopic_description|default:"—" }}</div>
+    </div>
+    <div class="mb-3">
+      <strong class="small">Diagnosis:</strong>
+      <div class="small fw-semibold" style="white-space:pre-wrap;">{{ specimen.diagnosis|default:"—" }}</div>
+    </div>
+    <div class="row small text-muted">
+      <div class="col-auto">SNOMED: {{ specimen.snomed_code|default:"—" }}</div>
+      <div class="col-auto">ICD-O: {{ specimen.icd_o_code|default:"—" }}</div>
+      {% if specimen.special_stains %}<div class="col-auto">Special stains: {{ specimen.special_stains|join:", " }}</div>{% endif %}
+      {% if specimen.ihc_stains %}<div class="col-auto">IHC: {{ specimen.ihc_stains|join:", " }}</div>{% endif %}
+    </div>
+    {% elif specimen.gross_description %}
+    <form method="post" action="{% url 'laboratory:histopath_update' specimen.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="microscopy">
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Microscopic Description</label>
+          <textarea name="microscopic_description" class="form-control form-control-sm" rows="4"
+                    placeholder="Microscopic findings..."></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Diagnosis <span class="text-danger">*</span></label>
+          <textarea name="diagnosis" class="form-control form-control-sm" rows="2" required
+                    placeholder="Final pathological diagnosis"></textarea>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold mb-1">SNOMED Code</label>
+          <input type="text" name="snomed_code" class="form-control form-control-sm" placeholder="e.g. M80103">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold mb-1">ICD-O Code</label>
+          <input type="text" name="icd_o_code" class="form-control form-control-sm" placeholder="e.g. C50.9">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold mb-1">Special Stains</label>
+          <input type="text" name="special_stains" class="form-control form-control-sm" placeholder="PAS, Masson, Congo Red">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold mb-1">IHC Stains</label>
+          <input type="text" name="ihc_stains" class="form-control form-control-sm" placeholder="ER, PR, HER2, Ki-67">
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Save Microscopy
+          </button>
+        </div>
+      </div>
+    </form>
+    {% else %}
+    <div class="text-muted small">Complete grossing first.</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Finalize / Sign-out ─────────────────────────────────────────────── #}
+{% if specimen.status == 'REPORTING' and not specimen.reported_at %}
+<div class="card border-0 shadow-sm border-success mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-pen text-success me-2"></i>Finalize Report
+  </div>
+  <div class="card-body">
+    <form method="post" action="{% url 'laboratory:histopath_update' specimen.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="finalize">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold mb-1">Storage Location</label>
+          <input type="text" name="storage_location" class="form-control form-control-sm" placeholder="e.g. Block cabinet B, Shelf 3">
+        </div>
+        <div class="col-md-6 d-flex align-items-end">
+          <button type="submit" class="btn btn-sm btn-success w-100" onclick="return confirm('Sign out this report? This action cannot be undone.')">
+            <i class="bi bi-check-circle me-1"></i>Sign Out &amp; Finalize
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ── Finalized Info ───────────────────────────────────────────────────── #}
+{% if specimen.reported_at %}
+<div class="alert alert-success py-2 small">
+  <i class="bi bi-check-circle-fill me-1"></i>
+  <strong>Report finalized</strong> by {{ specimen.pathologist.get_full_name|default:"—" }}
+  on {{ specimen.reported_at|date:"d M Y H:i" }}
+  {% if specimen.storage_location %}&bull; Storage: {{ specimen.storage_location }}{% endif %}
+</div>
+{% endif %}
+
+{# ── Addendum ─────────────────────────────────────────────────────────── #}
+{% if specimen.reported_at %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-pencil-square text-warning me-2"></i>Addendum
+  </div>
+  <div class="card-body">
+    {% if specimen.addendum_text %}
+    <div class="small" style="white-space:pre-wrap;">{{ specimen.addendum_text }}</div>
+    <div class="text-muted mt-2 small">
+      By: {{ specimen.addendum_by.get_full_name|default:"—" }}
+      &bull; {{ specimen.addendum_at|date:"d M Y H:i"|default:"" }}
+    </div>
+    {% endif %}
+    <form method="post" action="{% url 'laboratory:histopath_update' specimen.pk %}" class="mt-2">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="addendum">
+      <textarea name="addendum_text" class="form-control form-control-sm mb-2" rows="3"
+                placeholder="Add or update addendum...">{{ specimen.addendum_text|default:"" }}</textarea>
+      <button type="submit" class="btn btn-sm btn-warning">
+        <i class="bi bi-pencil me-1"></i>Save Addendum
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between">
+  <a href="{% url 'laboratory:histopath_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to List
+  </a>
+  <a href="{% url 'laboratory:detail' specimen.order_item.order.pk %}" class="btn btn-sm btn-outline-primary">
+    <i class="bi bi-clipboard2-pulse me-1"></i>View Lab Order
+  </a>
+</div>
+
+{% endblock %}

@@ -1,0 +1,245 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+{% block title %}Quality Control Dashboard{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-shield-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Quality Control Dashboard</h5>
+      <div class="text-muted small">ISO 15189 — Internal QC monitoring &amp; Levey-Jennings charts</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <a href="{% url 'laboratory:qc_record_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New QC Record
+    </a>
+    <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Workstation
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPI Cards ──────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ records|length }}</div>
+        <div class="small text-muted">Total QC Records (30 days)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold {% if failed_count %}text-danger{% else %}text-success{% endif %}">{{ failed_count }}</div>
+        <div class="small text-muted">Failed Runs</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success" id="passRate">—</div>
+        <div class="small text-muted">Pass Rate</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Levey-Jennings Chart ───────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2 flex-wrap">
+    <i class="bi bi-graph-up text-primary me-1"></i>
+    <span>Levey-Jennings Chart</span>
+    <form method="get" class="ms-auto d-flex align-items-center gap-2">
+      <select name="lj_test" class="form-select form-select-sm" style="min-width:200px;" onchange="this.form.submit()">
+        <option value="">-- Select test --</option>
+        {% for t in qc_tests %}
+        <option value="{{ t.id }}" {% if lj_test_id|slugify == t.id|slugify %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  <div class="card-body">
+    {% if lj_data_json != "[]" %}
+    <canvas id="ljChart" height="100"></canvas>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-graph-up fs-2 d-block mb-2"></i>
+      Select a test above to view its Levey-Jennings chart.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Recent QC Records Table ────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-table text-primary me-2"></i>Recent QC Records
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Test</th>
+            <th>Material</th>
+            <th>Level</th>
+            <th class="text-end">Target</th>
+            <th class="text-end">Observed</th>
+            <th class="text-end">SD</th>
+            <th class="text-end">Z-Score</th>
+            <th>Westgard</th>
+            <th>Status</th>
+            <th>By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in records %}
+          <tr class="{% if not r.is_acceptable %}table-danger{% endif %}">
+            <td class="text-muted">{{ r.run_date|date:"d M Y H:i" }}</td>
+            <td class="fw-semibold">{{ r.test_type.name }}</td>
+            <td class="text-muted">{{ r.qc_material|default:"—" }}</td>
+            <td>
+              <span class="badge {% if r.level == 'LOW' %}bg-info{% elif r.level == 'HIGH' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                {{ r.get_level_display }}
+              </span>
+            </td>
+            <td class="text-end">{{ r.target_value|floatformat:2 }}</td>
+            <td class="text-end">{{ r.observed_value|floatformat:2 }}</td>
+            <td class="text-end text-muted">{{ r.target_sd|floatformat:2 }}</td>
+            <td class="text-end fw-bold {% if r.calculated_z_score > 3 or r.calculated_z_score < -3 %}text-danger{% elif r.calculated_z_score > 2 or r.calculated_z_score < -2 %}text-warning{% endif %}">
+              {{ r.calculated_z_score|floatformat:2 }}
+            </td>
+            <td>
+              {% if r.westgard_rule and r.westgard_rule != 'NONE' %}
+              <span class="badge bg-danger">{{ r.get_westgard_rule_display }}</span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.is_acceptable %}
+              <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Pass</span>
+              {% else %}
+              <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Fail</span>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ r.performed_by.get_short_name|default:r.performed_by.username }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="11" class="text-center text-muted py-4">
+              <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+              No QC records yet. Click "New QC Record" to get started.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Pass rate calculation
+(function(){
+  var total = {{ records|length }};
+  var failed = {{ failed_count }};
+  var el = document.getElementById('passRate');
+  if (total > 0 && el) {
+    el.textContent = Math.round(((total - failed) / total) * 100) + '%';
+  }
+})();
+</script>
+{% if lj_data_json != "[]" %}
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+(function(){
+  var raw = {{ lj_data_json|safe }};
+  if (!raw || !raw.length) return;
+  var labels = raw.map(function(r){ return r.date; });
+  var zScores = raw.map(function(r){ return r.z; });
+
+  var ctx = document.getElementById('ljChart');
+  if (!ctx) return;
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Z-Score',
+        data: zScores,
+        borderColor: '#0d6efd',
+        backgroundColor: 'rgba(13,110,253,0.08)',
+        pointBackgroundColor: zScores.map(function(z){
+          return Math.abs(z)>3?'#dc3545':Math.abs(z)>2?'#ffc107':'#0d6efd';
+        }),
+        pointRadius: 4,
+        tension: 0.2,
+        fill: false,
+      }]
+    },
+    plugins: [{
+      id: 'sdLines',
+      afterDraw: function(chart) {
+        var yAxis = chart.scales.y;
+        var ctx2 = chart.ctx;
+        var left = chart.chartArea.left;
+        var right = chart.chartArea.right;
+        [
+          { val:  3, color: '#dc3545', dash: [4,4], label: '+3SD' },
+          { val:  2, color: '#ffc107', dash: [6,3], label: '+2SD' },
+          { val:  1, color: '#adb5bd', dash: [2,2], label: '+1SD' },
+          { val:  0, color: '#198754', dash: [],     label: 'Mean' },
+          { val: -1, color: '#adb5bd', dash: [2,2], label: '-1SD' },
+          { val: -2, color: '#ffc107', dash: [6,3], label: '-2SD' },
+          { val: -3, color: '#dc3545', dash: [4,4], label: '-3SD' },
+        ].forEach(function(line) {
+          var y = yAxis.getPixelForValue(line.val);
+          if (y < chart.chartArea.top || y > chart.chartArea.bottom) return;
+          ctx2.save();
+          ctx2.strokeStyle = line.color;
+          ctx2.lineWidth = 1;
+          ctx2.setLineDash(line.dash);
+          ctx2.beginPath();
+          ctx2.moveTo(left, y);
+          ctx2.lineTo(right, y);
+          ctx2.stroke();
+          ctx2.fillStyle = line.color;
+          ctx2.font = '10px sans-serif';
+          ctx2.fillText(line.label, right + 4, y + 3);
+          ctx2.restore();
+        });
+      }
+    }],
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          min: -4, max: 4,
+          ticks: { stepSize: 1 },
+          title: { display: true, text: 'Z-Score' }
+        },
+        x: {
+          ticks: { maxRotation: 45, font: { size: 10 } }
+        }
+      }
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

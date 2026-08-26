@@ -14,6 +14,12 @@
     {% if order.status == 'ORDERED' and not sample %}
     <a href="{% url 'laboratory:collect_sample' order.pk %}" class="btn btn-warning"><i class="bi bi-droplet me-1"></i>Collect Sample</a>
     {% endif %}
+    {% if order.specimen_status == 'COLLECTED' %}
+    <form method="post" action="{% url 'laboratory:receive_specimen' order.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-info"><i class="bi bi-box-arrow-in-down me-1"></i>Receive at Lab</button>
+    </form>
+    {% endif %}
     {% if order.status == 'SAMPLE_COLLECTED' or order.status == 'PROCESSING' or order.status == 'ORDERED' %}
     <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i>Enter Results</a>
     {% elif order.status == 'COMPLETED' and not all_verified %}
@@ -83,8 +89,46 @@
   </div>
 </div>
 {% endif %}
+
+{# ── Payment Bypass Modal ── #}
+{% if order.payment_status == 'UNPAID' %}
+{% if request.user.is_lab_tech or request.user.is_medical_director %}
+<div class="modal fade" id="paymentBypassModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold text-dark"><i class="bi bi-shield-check me-2 text-warning"></i>Authorize Without Payment</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{% url 'laboratory:authorize_payment' order.pk %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <label class="form-label fw-semibold small">Authorization Reason <span class="text-danger">*</span></label>
+          <select name="reason" class="form-select form-select-sm mb-2" required>
+            <option value="">— Select —</option>
+            <option value="Insurance pre-authorized">Insurance pre-authorized</option>
+            <option value="Emergency / STAT order">Emergency / STAT order</option>
+            <option value="Waiver by management">Waiver by management</option>
+            <option value="Bill-later (corporate)">Bill-later (corporate)</option>
+            <option value="Prepaid package">Prepaid package</option>
+          </select>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-warning fw-bold">
+            <i class="bi bi-shield-check me-1"></i>Authorize
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
 <div class="row g-3">
   <div class="col-md-4">
+    {# ── Order Info ── #}
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Order Info</h6></div>
       <div class="card-body">
@@ -92,25 +136,90 @@
           <dt class="col-5 text-muted">Patient</dt><dd class="col-7 fw-semibold">{{ order.patient.full_name }}</dd>
           <dt class="col-5 text-muted">Ordered By</dt><dd class="col-7">{{ order.ordered_by.full_name }}</dd>
           <dt class="col-5 text-muted">Date</dt><dd class="col-7">{{ order.created_at|date:"d M Y, H:i" }}</dd>
-          <dt class="col-5 text-muted">Urgency</dt><dd class="col-7"><span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span></dd>
-          <dt class="col-5 text-muted">Status</dt><dd class="col-7"><span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'CANCELLED' %}bg-danger{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ order.get_status_display }}</span></dd>
+          <dt class="col-5 text-muted">Urgency</dt>
+          <dd class="col-7">
+            <span class="badge {% if order.urgency == 'URGENT' or order.urgency == 'STAT' %}bg-danger{% elif order.urgency == 'EMERGENCY' %}bg-dark{% else %}bg-secondary{% endif %}">{{ order.get_urgency_display }}</span>
+          </dd>
+          <dt class="col-5 text-muted">Status</dt>
+          <dd class="col-7">
+            <span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'CANCELLED' %}bg-danger{% elif order.status == 'ORDERED' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ order.get_status_display }}</span>
+          </dd>
+          {% if order.icd10_code %}<dt class="col-5 text-muted">ICD-10</dt><dd class="col-7 font-monospace">{{ order.icd10_code }}</dd>{% endif %}
           {% if order.clinical_indication %}<dt class="col-5 text-muted">Indication</dt><dd class="col-7">{{ order.clinical_indication }}</dd>{% endif %}
         </dl>
       </div>
     </div>
-    {% if sample %}
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Sample Collection</h6></div>
+
+    {# ── Payment Status ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Payment Status</h6></div>
       <div class="card-body small">
-        <div>Collected by: <strong>{{ sample.collected_by.full_name }}</strong></div>
-        <div class="text-muted">{{ sample.collection_date|date:"d M Y H:i" }}</div>
-        {% if sample.notes %}<div class="mt-1 text-muted">{{ sample.notes }}</div>{% endif %}
+        {% if order.payment_status == 'PAID' %}
+        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
+        {% elif order.payment_status == 'INSURED' %}
+        <span class="badge bg-info text-dark"><i class="bi bi-shield me-1"></i>Insurance</span>
+        {% elif order.payment_status == 'WAIVED' %}
+        <span class="badge bg-warning text-dark"><i class="bi bi-dash-circle me-1"></i>Waived</span>
+        {% elif order.payment_status == 'STAT_OVERRIDE' %}
+        <span class="badge bg-dark"><i class="bi bi-lightning me-1"></i>STAT Override</span>
+        {% elif order.payment_status == 'BILL_LATER' %}
+        <span class="badge bg-secondary"><i class="bi bi-clock me-1"></i>Bill Later</span>
+        {% else %}
+        <span class="badge bg-danger"><i class="bi bi-exclamation-circle me-1"></i>Unpaid</span>
+        {% if request.user.is_lab_tech or request.user.is_medical_director %}
+        <button type="button" class="btn btn-xs btn-outline-warning ms-2" style="font-size:.7rem;" data-bs-toggle="modal" data-bs-target="#paymentBypassModal">
+          <i class="bi bi-shield-check me-1"></i>Bypass
+        </button>
+        {% endif %}
+        {% endif %}
+        {% if order.payment_authorized_by %}
+        <div class="text-muted mt-1" style="font-size:.72rem;">
+          Auth by: {{ order.payment_authorized_by.get_short_name }}
+          {% if order.payment_authorization_reason %}&bull; {{ order.payment_authorization_reason }}{% endif %}
+        </div>
+        {% endif %}
       </div>
     </div>
-    {% endif %}
+
+    {# ── Specimen Status ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Specimen</h6></div>
+      <div class="card-body small">
+        <div class="mb-2">
+          {% if order.specimen_status == 'PENDING' %}
+          <span class="badge bg-warning text-dark">Pending Collection</span>
+          {% elif order.specimen_status == 'COLLECTED' %}
+          <span class="badge bg-info text-dark">Collected</span>
+          {% elif order.specimen_status == 'IN_TRANSIT' %}
+          <span class="badge bg-primary">In Transit</span>
+          {% elif order.specimen_status == 'RECEIVED' %}
+          <span class="badge bg-success">Received at Lab</span>
+          {% elif order.specimen_status == 'REJECTED' %}
+          <span class="badge bg-danger">Rejected</span>
+          {% elif order.specimen_status == 'RE_COLLECT' %}
+          <span class="badge bg-danger">Re-collect Required</span>
+          {% else %}
+          <span class="badge bg-secondary">{{ order.get_specimen_status_display|default:order.specimen_status }}</span>
+          {% endif %}
+        </div>
+        {% if sample %}
+        <div>Collected by: <strong>{{ sample.collected_by.full_name }}</strong></div>
+        <div class="text-muted">{{ sample.collection_date|date:"d M Y H:i" }}</div>
+        {% if sample.identity_verified %}<div class="text-success"><i class="bi bi-person-check me-1"></i>Identity verified ({{ sample.identity_method|default:"visual" }})</div>{% endif %}
+        {% if sample.container_used %}<div>Container: {{ sample.container_used }}</div>{% endif %}
+        {% if sample.volume_ml %}<div>Volume: {{ sample.volume_ml }} mL</div>{% endif %}
+        {% if sample.notes %}<div class="text-muted mt-1">{{ sample.notes }}</div>{% endif %}
+        {% if sample.received_by %}
+        <div class="mt-2 text-success"><i class="bi bi-box-arrow-in-down me-1"></i>Received by: {{ sample.received_by.get_short_name }} on {{ sample.received_at|date:"d M Y H:i" }}</div>
+        {% if sample.condition_on_arrival %}<div class="text-muted">Condition: {{ sample.get_condition_on_arrival_display }}</div>{% endif %}
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
   </div>
+
   <div class="col-md-8">
-    {% if order.status == 'COMPLETED' and not all_verified and request.user.is_lab_tech or request.user.is_medical_director and order.status == 'COMPLETED' and not all_verified %}
+    {% if order.status == 'COMPLETED' and not all_verified %}
     <div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3">
       <i class="bi bi-exclamation-triangle-fill"></i>
       <div class="flex-grow-1 small">
@@ -124,12 +233,22 @@
       <div class="small"><strong>All results verified.</strong> Report is ready to print.</div>
     </div>
     {% endif %}
+
+    {# ── Tests & Results ── #}
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Tests & Results</h6></div>
       <div class="table-responsive">
         <table class="table table-sm mb-0">
           <thead class="table-light">
-            <tr><th>Test</th><th>Category</th><th>Result</th><th>Unit / Range</th><th>Flag</th><th>Verified</th></tr>
+            <tr>
+              <th>Test</th>
+              <th>Category</th>
+              <th>Result</th>
+              <th>Unit / Range</th>
+              <th>Flag</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
           </thead>
           <tbody>
             {% for item in order.items.all %}
@@ -150,11 +269,14 @@
                     <span class="badge bg-success fs-6">{{ item.result.result_value }}</span>
                   {% endif %}
                 {% elif item.test_type.result_type == 'TEXT' or item.test_type.result_type == 'PANEL' %}
-                  <div class="small text-wrap" style="max-width:240px;white-space:pre-line;">{{ item.result.result_value|truncatechars:120 }}</div>
+                  <div class="small text-wrap" style="max-width:200px;white-space:pre-line;">{{ item.result.result_value|truncatechars:120 }}</div>
                 {% else %}
-                  <span class="{% if item.result.is_critical %}text-danger{% elif item.result.is_abnormal %}text-warning{% endif %}">
+                  <span class="{% if item.result.is_critical %}text-danger fw-bold{% elif item.result.is_abnormal %}text-warning{% endif %}">
                     {{ item.result.result_value }}
                   </span>
+                {% endif %}
+                {% if item.result.delta_check_flagged %}
+                <span class="badge bg-info ms-1" title="Delta check: {{ item.result.delta_check_percent }}% change">Delta</span>
                 {% endif %}
               </td>
               <td class="small text-muted">
@@ -167,33 +289,82 @@
                 {% else %}<span class="badge bg-success">Normal</span>{% endif %}
               </td>
               <td class="small">
-                {% if item.result.is_verified %}
-                  <span class="text-success fw-semibold">
-                    <i class="bi bi-patch-check-fill me-1"></i>{{ item.result.verified_by.get_full_name }}
-                  </span>
-                  {% if item.result.verified_at %}
-                  <div class="text-muted" style="font-size:.7rem;">{{ item.result.verified_at|date:"d/m/Y H:i" }}</div>
-                  {% endif %}
+                {% if item.result.result_status == 'RELEASED' %}
+                <span class="badge bg-success"><i class="bi bi-check-all me-1"></i>Released</span>
+                {% elif item.result.result_status == 'AUTHORIZED' %}
+                <span class="badge bg-primary"><i class="bi bi-shield-check me-1"></i>Authorized</span>
+                {% elif item.result.result_status == 'TECH_VALIDATED' %}
+                <span class="badge bg-info text-dark"><i class="bi bi-patch-check me-1"></i>Tech Validated</span>
+                {% elif item.result.result_status == 'PRELIMINARY' %}
+                <span class="badge bg-warning text-dark"><i class="bi bi-pencil me-1"></i>Preliminary</span>
                 {% else %}
+                <span class="badge bg-secondary">{{ item.result.get_result_status_display|default:"Pending" }}</span>
+                {% endif %}
+                {% if item.result.auto_verified %}<div class="text-muted" style="font-size:.68rem;">Auto-verified</div>{% endif %}
+                {% if item.result.is_verified %}
+                <div class="text-success" style="font-size:.72rem;">
+                  <i class="bi bi-patch-check-fill me-1"></i>{{ item.result.verified_by.get_short_name }}
+                </div>
+                {% endif %}
+                {% if item.result.authorized_by %}
+                <div class="text-primary" style="font-size:.72rem;">
+                  Auth: {{ item.result.authorized_by.get_short_name }}
+                </div>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex flex-column gap-1">
+                  {# Verify button #}
+                  {% if not item.result.is_verified %}
                   {% if request.user.is_lab_tech or request.user.is_medical_director %}
                   <form method="post" action="{% url 'laboratory:verify_result' result_id=item.result.pk %}" class="d-inline">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-sm btn-outline-success py-0">
+                    <button type="submit" class="btn btn-xs btn-outline-success" style="font-size:.68rem;padding:1px 6px;">
                       <i class="bi bi-check-circle me-1"></i>Verify
                     </button>
                   </form>
-                  {% else %}
-                  <span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>Pending Verification</span>
                   {% endif %}
-                {% endif %}
+                  {% endif %}
+                  {# Authorize button #}
+                  {% if item.result.is_verified and item.result.result_status != 'AUTHORIZED' and item.result.result_status != 'RELEASED' %}
+                  {% if request.user.is_medical_director or request.user.is_super_admin %}
+                  <form method="post" action="{% url 'laboratory:authorize_result' result_id=item.result.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-xs btn-outline-primary" style="font-size:.68rem;padding:1px 6px;">
+                      <i class="bi bi-shield-check me-1"></i>Authorize
+                    </button>
+                  </form>
+                  {% endif %}
+                  {% endif %}
+                  {# Release button #}
+                  {% if item.result.result_status == 'AUTHORIZED' %}
+                  {% if request.user.is_lab_tech or request.user.is_medical_director %}
+                  <form method="post" action="{% url 'laboratory:release_result' result_id=item.result.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-xs btn-outline-dark" style="font-size:.68rem;padding:1px 6px;">
+                      <i class="bi bi-send me-1"></i>Release
+                    </button>
+                  </form>
+                  {% endif %}
+                  {% endif %}
+                  {# Critical acknowledgment status #}
+                  {% if item.result.is_critical and item.result.critical_notified_to %}
+                  <div class="small text-danger" style="font-size:.68rem;">
+                    <i class="bi bi-telephone me-1"></i>Notified: {{ item.result.critical_notified_to }}
+                    {% if item.result.critical_read_back_confirmed %}
+                    <i class="bi bi-check-circle-fill text-success ms-1"></i>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                </div>
               </td>
               {% else %}
-              <td colspan="4" class="text-muted small"><span class="badge bg-light text-muted border">Pending</span></td>
+              <td colspan="5" class="text-muted small"><span class="badge bg-light text-muted border">Pending</span></td>
               {% endif %}
             </tr>
             {% if item.result and item.result.comment %}
             <tr class="table-light">
-              <td colspan="6" class="small text-muted fst-italic py-1 ps-3">
+              <td colspan="7" class="small text-muted fst-italic py-1 ps-3">
                 <i class="bi bi-chat-left-text me-1"></i>{{ item.result.comment }}
               </td>
             </tr>

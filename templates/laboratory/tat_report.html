@@ -1,0 +1,157 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+{% block title %}TAT Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-stopwatch text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Turnaround Time Report</h5>
+      <div class="text-muted small">ISO 15189 — Laboratory TAT analysis (last {{ days }} days)</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <select name="days" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+        <option value="7" {% if days == 7 %}selected{% endif %}>7 days</option>
+        <option value="14" {% if days == 14 %}selected{% endif %}>14 days</option>
+        <option value="30" {% if days == 30 %}selected{% endif %}>30 days</option>
+        <option value="90" {% if days == 90 %}selected{% endif %}>90 days</option>
+      </select>
+    </form>
+    <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Workstation
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPI Cards — average TAT segments ─────────────────────────────────── #}
+{% if avg_tat %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h4 fw-bold text-primary">{{ avg_tat.total_mins|default:"—" }}</div>
+        <div class="small text-muted">Total TAT (min)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h4 fw-bold text-info">{{ avg_tat.order_to_collect|default:"—" }}</div>
+        <div class="small text-muted">Order → Collect</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h4 fw-bold text-info">{{ avg_tat.collect_to_receive|default:"—" }}</div>
+        <div class="small text-muted">Collect → Receive</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h4 fw-bold text-info">{{ avg_tat.receive_to_result|default:"—" }}</div>
+        <div class="small text-muted">Receive → Result</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h4 fw-bold text-info">{{ avg_tat.result_to_authorize|default:"—" }}</div>
+        <div class="small text-muted">Result → Auth</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h4 fw-bold text-info">{{ avg_tat.authorize_to_release|default:"—" }}</div>
+        <div class="small text-muted">Auth → Release</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-info py-2 small mb-4">
+  <i class="bi bi-info-circle me-1"></i>
+  Based on <strong>{{ total_orders }}</strong> completed orders in the last {{ days }} days. All values in minutes.
+</div>
+
+{# ── TAT Distribution Chart ──────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-bar-chart text-primary me-2"></i>TAT Segment Breakdown (Averages)
+  </div>
+  <div class="card-body">
+    <canvas id="tatChart" height="80"></canvas>
+  </div>
+</div>
+
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-stopwatch fs-1 d-block mb-3"></i>
+    <h6>No completed orders with TAT data</h6>
+    <p class="small">TAT tracking requires orders that have completed the full workflow (ordered → released).</p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+{% if avg_tat %}
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+(function(){
+  var avg = {
+    'Order → Collect': {{ avg_tat.order_to_collect|default:"0" }},
+    'Collect → Receive': {{ avg_tat.collect_to_receive|default:"0" }},
+    'Receive → Result': {{ avg_tat.receive_to_result|default:"0" }},
+    'Result → Authorize': {{ avg_tat.result_to_authorize|default:"0" }},
+    'Authorize → Release': {{ avg_tat.authorize_to_release|default:"0" }},
+  };
+  var labels = Object.keys(avg);
+  var data = Object.values(avg);
+  var colors = ['#0dcaf0', '#6610f2', '#0d6efd', '#198754', '#ffc107'];
+
+  var ctx = document.getElementById('tatChart');
+  if (!ctx) return;
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Average Minutes',
+        data: data,
+        backgroundColor: colors,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: { title: { display: true, text: 'Minutes' }, beginAtZero: true },
+        y: { ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

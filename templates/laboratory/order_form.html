@@ -2,23 +2,63 @@
 {% block title %}Order Lab Tests{% endblock %}
 {% block content %}
 <div class="row justify-content-center">
-  <div class="col-lg-8">
+  <div class="col-lg-9">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white py-3">
         <h5 class="mb-0 fw-semibold"><i class="bi bi-droplet me-2 text-danger"></i>Order Lab Tests</h5>
-        <div class="text-muted small">Patient: <strong>{{ consultation.patient.full_name }}</strong></div>
+        <div class="text-muted small">Patient: <strong>{{ consultation.patient.full_name }}</strong>
+          <span class="badge bg-light text-dark border ms-1" style="font-size:.65rem;">{{ consultation.patient.patient_id }}</span>
+        </div>
       </div>
       <div class="card-body">
+
+        {# ── Duplicate Warning Banner ── #}
+        {% if duplicate_tests %}
+        <div class="alert alert-warning d-flex align-items-start gap-2 py-2 mb-3">
+          <i class="bi bi-exclamation-triangle-fill text-warning fs-5 mt-1"></i>
+          <div>
+            <strong>Duplicate Order Warning</strong>
+            <div class="small">The highlighted tests below were already ordered for this patient within the last 24 hours. Re-submit to confirm if clinically necessary.</div>
+          </div>
+        </div>
+        {% endif %}
+
         <form method="post">
           {% csrf_token %}
+          {% if duplicate_tests %}
+          <input type="hidden" name="duplicate_warning_acknowledged" value="1">
+          {% endif %}
+
           <div class="row g-3 mb-3">
-            <div class="col-md-6"><label class="form-label fw-semibold">Urgency</label>{{ form.urgency }}</div>
-            <div class="col-md-6"><label class="form-label fw-semibold">Notes <span class="text-muted fw-normal">(optional)</span></label>{{ form.notes }}</div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Urgency</label>
+              {{ form.urgency }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">ICD-10 Code <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="text" name="icd10_code" class="form-control form-control-sm" placeholder="e.g. D64.9" value="{{ request.POST.icd10_code|default:'' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Order Set <span class="text-muted fw-normal">(optional)</span></label>
+              <select name="order_set" class="form-select form-select-sm" id="orderSetSelect">
+                <option value="">-- Individual tests --</option>
+                {% for os in order_sets %}
+                <option value="{{ os.id }}" data-tests="{{ os.tests.all|join:',' }}">{{ os.name }} ({{ os.tests.count }} tests)</option>
+                {% endfor %}
+              </select>
+            </div>
           </div>
-          <div class="mb-4">
-            <label class="form-label fw-semibold">Clinical Indication <span class="text-danger">*</span></label>
-            {{ form.clinical_indication }}
-            {% if form.clinical_indication.errors %}<div class="text-danger small mt-1">{{ form.clinical_indication.errors }}</div>{% endif %}
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Clinical Indication <span class="text-danger">*</span></label>
+              {{ form.clinical_indication }}
+              {% if form.clinical_indication.errors %}<div class="text-danger small mt-1">{{ form.clinical_indication.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Notes <span class="text-muted fw-normal">(optional)</span></label>
+              {{ form.notes }}
+            </div>
           </div>
 
           <h6 class="fw-bold mb-3">Select Tests <span class="text-danger">*</span></h6>
@@ -28,9 +68,13 @@
             <div class="col-md-6 mb-3">
               <div class="fw-semibold small text-muted text-uppercase mb-2">{{ group.grouper }}</div>
               {% for test in group.list %}
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="test_types" value="{{ test.id }}" id="test_{{ test.id }}">
-                <label class="form-check-label small" for="test_{{ test.id }}">{{ test.name }} <span class="text-muted">({{ test.code }})</span></label>
+              <div class="form-check {% if test.id|slugify in duplicate_tests %}border-start border-warning border-3 ps-3 bg-warning bg-opacity-10{% endif %}">
+                <input class="form-check-input test-checkbox" type="checkbox" name="test_types" value="{{ test.id }}" id="test_{{ test.id }}"
+                       {% if selected_tests %}{% for sid in selected_tests %}{% if sid == test.id|slugify %}checked{% endif %}{% endfor %}{% endif %}>
+                <label class="form-check-label small" for="test_{{ test.id }}">
+                  {{ test.name }} <span class="text-muted">({{ test.code }})</span>
+                  {% if test.id in recent_test_ids %}<i class="bi bi-exclamation-triangle text-warning ms-1" title="Ordered in last 24h"></i>{% endif %}
+                </label>
               </div>
               {% endfor %}
             </div>
@@ -39,7 +83,9 @@
 
           <div class="d-flex gap-2 justify-content-end mt-3">
             <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Submit Lab Order</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-send me-1"></i>{% if duplicate_tests %}Confirm & Submit{% else %}Submit Lab Order{% endif %}
+            </button>
           </div>
         </form>
       </div>

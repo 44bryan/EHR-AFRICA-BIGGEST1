@@ -1,0 +1,123 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Send-Out Tests{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-box-arrow-up-right text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Send-Out Tests</h5>
+      <div class="text-muted small">Tests referred to external laboratories</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    {% if overdue_count %}
+    <span class="badge bg-danger d-flex align-items-center gap-1">
+      <i class="bi bi-exclamation-triangle-fill"></i>{{ overdue_count }} overdue
+    </span>
+    {% endif %}
+    <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Workstation
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-list-ul text-primary me-1"></i>
+    {{ tests|length }} send-out record{{ tests|length|pluralize }}
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Test</th>
+            <th>Patient</th>
+            <th>Referral Lab</th>
+            <th>Status</th>
+            <th>Dispatched</th>
+            <th>Expected Return</th>
+            <th>Actual Return</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tests %}
+          <tr class="{% if t.is_overdue %}table-danger{% endif %}">
+            <td class="fw-semibold">{{ t.order_item.test_type.name }}</td>
+            <td>
+              <div>{{ t.order_item.order.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:.72rem;">{{ t.order_item.order.patient.patient_id }}</div>
+            </td>
+            <td>{{ t.referral_lab_name }}</td>
+            <td>
+              {% if t.status == 'PENDING' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+              {% elif t.status == 'DISPATCHED' %}
+              <span class="badge bg-info text-dark">Dispatched</span>
+              {% elif t.status == 'RECEIVED' %}
+              <span class="badge bg-primary">Received</span>
+              {% elif t.status == 'RESULTED' %}
+              <span class="badge bg-success">Resulted</span>
+              {% elif t.status == 'CANCELLED' %}
+              <span class="badge bg-danger">Cancelled</span>
+              {% else %}
+              <span class="badge bg-secondary">{{ t.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ t.dispatch_date|date:"d M Y"|default:"—" }}</td>
+            <td class="text-muted {% if t.is_overdue %}text-danger fw-bold{% endif %}">
+              {{ t.expected_return_date|date:"d M Y"|default:"—" }}
+              {% if t.is_overdue %}<i class="bi bi-exclamation-triangle-fill text-danger ms-1"></i>{% endif %}
+            </td>
+            <td class="text-muted">{{ t.actual_return_date|date:"d M Y"|default:"—" }}</td>
+            <td>
+              <div class="d-flex gap-1 flex-wrap">
+                {% if t.status == 'PENDING' %}
+                <form method="post" action="{% url 'laboratory:sendout_update_status' t.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="status" value="DISPATCHED">
+                  <button type="submit" class="btn btn-xs btn-outline-info" style="font-size:.7rem;padding:2px 6px;">
+                    <i class="bi bi-truck me-1"></i>Dispatch
+                  </button>
+                </form>
+                {% elif t.status == 'DISPATCHED' %}
+                <form method="post" action="{% url 'laboratory:sendout_update_status' t.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="status" value="RECEIVED">
+                  <button type="submit" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 6px;">
+                    <i class="bi bi-box-arrow-in-down me-1"></i>Received
+                  </button>
+                </form>
+                {% elif t.status == 'RECEIVED' %}
+                <form method="post" action="{% url 'laboratory:sendout_update_status' t.pk %}" enctype="multipart/form-data">
+                  {% csrf_token %}
+                  <input type="hidden" name="status" value="RESULTED">
+                  <div class="d-flex gap-1 align-items-center">
+                    <input type="text" name="external_accession_number" class="form-control form-control-sm" style="width:100px;font-size:.7rem;" placeholder="Ext. accession #">
+                    <button type="submit" class="btn btn-xs btn-outline-success" style="font-size:.7rem;padding:2px 6px;">
+                      <i class="bi bi-check-circle me-1"></i>Resulted
+                    </button>
+                  </div>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">
+              <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+              No send-out tests recorded.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Unacknowledged Lab Results{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-bell text-warning fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Unacknowledged Results</h5>
+      <div class="text-muted small">Lab results released but not yet reviewed by you</div>
+    </div>
+  </div>
+  <span class="badge bg-warning text-dark fs-6">{{ results|length }} pending</span>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Test</th>
+            <th>Patient</th>
+            <th>Result</th>
+            <th>Unit</th>
+            <th>Reference</th>
+            <th>Flag</th>
+            <th>Released</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr class="{% if r.is_critical %}table-danger{% elif r.is_abnormal %}table-warning{% endif %}">
+            <td class="fw-semibold">{{ r.order_item.test_type.name }}</td>
+            <td>
+              <div>{{ r.order_item.order.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:.72rem;">{{ r.order_item.order.patient.patient_id }}</div>
+            </td>
+            <td class="fw-bold">{{ r.value|default:"—" }}</td>
+            <td class="text-muted">{{ r.unit|default:"" }}</td>
+            <td class="text-muted">{{ r.reference_range|default:"" }}</td>
+            <td>
+              {% if r.is_critical %}
+              <span class="badge bg-danger">CRITICAL</span>
+              {% elif r.is_abnormal %}
+              <span class="badge bg-warning text-dark">Abnormal</span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ r.released_at|date:"d M Y H:i"|default:"—" }}</td>
+            <td>
+              <form method="post" action="{% url 'laboratory:acknowledge_result' r.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-xs btn-outline-success" style="font-size:.7rem;padding:2px 8px;">
+                  <i class="bi bi-check-lg me-1"></i>Acknowledge
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">
+              <i class="bi bi-check-circle fs-2 d-block mb-2 text-success"></i>
+              All results have been acknowledged.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
