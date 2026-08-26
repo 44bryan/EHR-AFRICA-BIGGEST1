@@ -1,0 +1,249 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Device — {{ device.name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-3">
+    <i class="bi bi-cpu text-info fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ device.name }}</h5>
+      <div class="text-muted small">{{ device.code }}{% if device.manufacturer %} &bull; {{ device.manufacturer }}{% endif %}</div>
+    </div>
+    {% if device.is_active %}
+    <span class="badge bg-success">Active</span>
+    {% else %}
+    <span class="badge bg-danger">Inactive</span>
+    {% endif %}
+  </div>
+  <div class="d-flex gap-2">
+    {% if request.user.is_super_admin or request.user.is_admin_director %}
+    <a href="{% url 'investigations:device_edit' device.pk %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    {% endif %}
+    <a href="{% url 'investigations:device_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  {# ── Left column ── #}
+  <div class="col-md-4">
+
+    {# ── Device Info ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Device Information</h6></div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Name</dt>
+          <dd class="col-7 fw-semibold">{{ device.name }}</dd>
+
+          <dt class="col-5 text-muted">Code</dt>
+          <dd class="col-7 font-monospace">{{ device.code }}</dd>
+
+          <dt class="col-5 text-muted">Category</dt>
+          <dd class="col-7">{{ device.get_category_display|default:device.category }}</dd>
+
+          <dt class="col-5 text-muted">Manufacturer</dt>
+          <dd class="col-7">{{ device.manufacturer|default:"—" }}</dd>
+
+          <dt class="col-5 text-muted">Model</dt>
+          <dd class="col-7">{{ device.model_number|default:"—" }}</dd>
+
+          <dt class="col-5 text-muted">Serial No.</dt>
+          <dd class="col-7 font-monospace">{{ device.serial_number|default:"—" }}</dd>
+
+          <dt class="col-5 text-muted">Room</dt>
+          <dd class="col-7">{{ device.room|default:"—" }}</dd>
+
+          <dt class="col-5 text-muted">Slot Duration</dt>
+          <dd class="col-7">{{ device.slot_duration_minutes|default:"—" }} min</dd>
+
+          {% if device.is_dicom_capable %}
+          <dt class="col-5 text-muted">DICOM</dt>
+          <dd class="col-7"><span class="badge bg-primary">Enabled</span></dd>
+
+          <dt class="col-5 text-muted">AE Title</dt>
+          <dd class="col-7 font-monospace">{{ device.dicom_ae_title|default:"—" }}</dd>
+          {% endif %}
+
+          {% if device.notes %}
+          <dt class="col-12 text-muted mt-2">Notes</dt>
+          <dd class="col-12">{{ device.notes }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    {# ── Calibration ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Calibration</h6></div>
+      <div class="card-body small">
+        <dl class="row mb-0">
+          <dt class="col-6 text-muted">Last Calibration</dt>
+          <dd class="col-6">{{ device.last_calibration_date|date:"d M Y"|default:"—" }}</dd>
+
+          <dt class="col-6 text-muted">Next Due</dt>
+          <dd class="col-6">
+            {% if device.next_calibration_due %}
+              {% now "Y-m-d" as today_str %}
+              {% if device.next_calibration_due|date:"Y-m-d" < today_str %}
+                <span class="text-danger fw-bold">{{ device.next_calibration_due|date:"d M Y" }}</span>
+              {% else %}
+                {{ device.next_calibration_due|date:"d M Y" }}
+              {% endif %}
+            {% else %}
+              —
+            {% endif %}
+          </dd>
+        </dl>
+        {% if device.next_calibration_due %}
+          {% now "Y-m-d" as today_str %}
+          {% if device.next_calibration_due|date:"Y-m-d" < today_str %}
+          <div class="alert alert-danger py-2 mb-0 mt-2 small">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            Calibration is <strong>overdue</strong>. Schedule maintenance immediately.
+          </div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── Default Investigation Types ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold">Default Investigation Types</h6></div>
+      <div class="card-body small">
+        {% for inv_type in default_types %}
+        <span class="badge bg-light text-dark border me-1 mb-1">{{ inv_type.name }}</span>
+        {% empty %}
+        <span class="text-muted">No investigation types assigned to this device.</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Right column ── #}
+  <div class="col-md-8">
+
+    {# ── Downtime Log ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-clock-history text-warning me-2"></i>Downtime Log</h6>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 align-middle small">
+            <thead class="table-light">
+              <tr>
+                <th>Start</th>
+                <th>End</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for dt in downtimes %}
+              <tr>
+                <td>{{ dt.start|date:"d M Y H:i" }}</td>
+                <td>{{ dt.end|date:"d M Y H:i"|default:"Ongoing" }}</td>
+                <td>{{ dt.reason|default:"—" }}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="3" class="text-center text-muted py-3">No downtime records.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# ── Add Downtime form ── #}
+      {% if request.user.is_super_admin or request.user.is_admin_director or request.user.is_investigation_tech %}
+      <div class="card-footer bg-white border-top">
+        <form method="post" action="{% url 'investigations:device_downtime' device.pk %}" class="row g-2 align-items-end">
+          {% csrf_token %}
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold mb-1">Start</label>
+            <input type="datetime-local" name="start" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold mb-1">End</label>
+            <input type="datetime-local" name="end" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold mb-1">Reason</label>
+            <input type="text" name="reason" class="form-control form-control-sm" placeholder="e.g. Scheduled maintenance" required>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-outline-warning">
+              <i class="bi bi-plus-lg me-1"></i>Add Downtime
+            </button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── Recent Orders ── #}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2">
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-journal-text text-primary me-2"></i>Recent Orders</h6>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 align-middle small">
+            <thead class="table-light">
+              <tr>
+                <th>Patient</th>
+                <th>Test</th>
+                <th>Eye</th>
+                <th>Status</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in recent_orders %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ order.patient.full_name }}</div>
+                  <div class="text-muted" style="font-size:.72rem;">{{ order.patient.patient_id }}</div>
+                </td>
+                <td>{{ order.investigation_type.name|default:order.investigation_type }}</td>
+                <td>{{ order.eye|default:"—" }}</td>
+                <td>
+                  {% if order.status == 'COMPLETED' %}
+                    <span class="badge bg-success">Completed</span>
+                  {% elif order.status == 'ORDERED' %}
+                    <span class="badge bg-warning text-dark">Ordered</span>
+                  {% elif order.status == 'IN_PROGRESS' %}
+                    <span class="badge bg-primary">In Progress</span>
+                  {% elif order.status == 'CANCELLED' %}
+                    <span class="badge bg-danger">Cancelled</span>
+                  {% else %}
+                    <span class="badge bg-secondary">{{ order.get_status_display|default:order.status }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted">
+                  {{ order.created_at|date:"d M Y" }}
+                  <div style="font-size:.72rem;">{{ order.created_at|time:"H:i" }}</div>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="5" class="text-center text-muted py-3">No orders recorded for this device.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

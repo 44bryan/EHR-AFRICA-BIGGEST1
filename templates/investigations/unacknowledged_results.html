@@ -1,0 +1,84 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Unacknowledged Results{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <i class="bi bi-bell text-primary fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">
+      Unacknowledged Investigation Results
+      {% if results %}
+      <span class="badge bg-danger ms-2">{{ results|length }}</span>
+      {% endif %}
+    </h5>
+    <div class="text-muted small">Results awaiting your review</div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    {% if results %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle small">
+        <thead class="table-light">
+          <tr>
+            <th>Test</th>
+            <th>Patient</th>
+            <th>Eye</th>
+            <th>Result</th>
+            <th>Normal/Abnormal</th>
+            <th>Reported By</th>
+            <th>Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for result in results %}
+          <tr>
+            <td class="fw-semibold">
+              {{ result.order.investigation_type.name }}
+              {% if result.order.investigation_type.category == 'BIOMETRY' %}
+              <span class="badge bg-info ms-1">Biometry</span>
+              {% endif %}
+            </td>
+            <td>
+              <div>{{ result.order.patient.full_name }}</div>
+              <div class="text-muted" style="font-size:.75rem">{{ result.order.patient.patient_id }}</div>
+            </td>
+            <td>{{ result.order.get_eye_display }}</td>
+            <td style="max-width:14rem">
+              <span class="text-truncate d-inline-block" style="max-width:14rem" title="{{ result.interpretation }}">
+                {{ result.interpretation|truncatewords:10 }}
+              </span>
+            </td>
+            <td>
+              {% if result.is_normal %}
+              <span class="badge bg-success">Normal</span>
+              {% else %}
+              <span class="badge bg-danger">Abnormal</span>
+              {% endif %}
+            </td>
+            <td>{{ result.performed_by.full_name }}</td>
+            <td>{{ result.result_date|date:"d M Y" }}</td>
+            <td>
+              <form method="post" action="{% url 'investigations:acknowledge' result.order.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary">
+                  <i class="bi bi-check2-square me-1"></i>Acknowledge
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+      <i class="bi bi-check-circle text-success fs-1 d-block mb-2"></i>
+      <div class="text-muted">All investigation results have been acknowledged.</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

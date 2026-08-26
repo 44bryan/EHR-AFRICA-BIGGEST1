@@ -1,0 +1,152 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}{% if device %}Edit Device{% else %}New Device{% endif %}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-3">
+    <i class="bi bi-cpu text-info fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{% if device %}Edit Device{% else %}New Device{% endif %}</h5>
+      <div class="text-muted small">{% if device %}Update {{ device.name }}{% else %}Register a new investigation device{% endif %}</div>
+    </div>
+  </div>
+  <a href="{% url 'investigations:device_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2">
+        <h6 class="mb-0 fw-semibold">Device Details</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% if device %}{% url 'investigations:device_edit' device.pk %}{% else %}{% url 'investigations:device_create' %}{% endif %}">
+          {% csrf_token %}
+
+          <div class="row g-3">
+            {# ── Name ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control form-control-sm"
+                     value="{{ device.name|default:'' }}" required placeholder="e.g. OCT Spectralis">
+            </div>
+
+            {# ── Code ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Code <span class="text-danger">*</span></label>
+              <input type="text" name="code" class="form-control form-control-sm"
+                     value="{{ device.code|default:'' }}" required placeholder="e.g. OCT-01">
+            </div>
+
+            {# ── Manufacturer ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Manufacturer</label>
+              <input type="text" name="manufacturer" class="form-control form-control-sm"
+                     value="{{ device.manufacturer|default:'' }}" placeholder="e.g. Heidelberg Engineering">
+            </div>
+
+            {# ── Model Number ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Model Number</label>
+              <input type="text" name="model_number" class="form-control form-control-sm"
+                     value="{{ device.model_number|default:'' }}" placeholder="e.g. HRA2">
+            </div>
+
+            {# ── Serial Number ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Serial Number</label>
+              <input type="text" name="serial_number" class="form-control form-control-sm"
+                     value="{{ device.serial_number|default:'' }}" placeholder="e.g. SN-20240001">
+            </div>
+
+            {# ── Room ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Room</label>
+              <input type="text" name="room" class="form-control form-control-sm"
+                     value="{{ device.room|default:'' }}" placeholder="e.g. Investigation Room 2">
+            </div>
+
+            {# ── Category ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Category <span class="text-danger">*</span></label>
+              <select name="category" class="form-select form-select-sm" required>
+                <option value="">-- Select category --</option>
+                {% for val, label in categories %}
+                <option value="{{ val }}" {% if device and device.category == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            {# ── Slot Duration ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Slot Duration (minutes)</label>
+              <input type="number" name="slot_duration_minutes" class="form-control form-control-sm"
+                     value="{{ device.slot_duration_minutes|default:'' }}" min="1" placeholder="e.g. 15">
+            </div>
+
+            {# ── DICOM ── #}
+            <div class="col-md-6">
+              <div class="form-check mt-4">
+                <input type="checkbox" name="is_dicom_capable" id="id_is_dicom_capable" class="form-check-input"
+                       {% if device.is_dicom_capable %}checked{% endif %}>
+                <label class="form-check-label small fw-semibold" for="id_is_dicom_capable">DICOM Capable</label>
+              </div>
+            </div>
+
+            {# ── DICOM AE Title ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">DICOM AE Title</label>
+              <input type="text" name="dicom_ae_title" class="form-control form-control-sm"
+                     value="{{ device.dicom_ae_title|default:'' }}" placeholder="e.g. SPECTRALIS_AE">
+            </div>
+
+            {# ── Calibration Dates ── #}
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Last Calibration Date</label>
+              <input type="date" name="last_calibration_date" class="form-control form-control-sm"
+                     value="{{ device.last_calibration_date|date:'Y-m-d'|default:'' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold mb-1">Next Calibration Due</label>
+              <input type="date" name="next_calibration_due" class="form-control form-control-sm"
+                     value="{{ device.next_calibration_due|date:'Y-m-d'|default:'' }}">
+            </div>
+
+            {# ── Active (edit only) ── #}
+            {% if device %}
+            <div class="col-md-6">
+              <div class="form-check mt-2">
+                <input type="checkbox" name="is_active" id="id_is_active" class="form-check-input"
+                       {% if device.is_active %}checked{% endif %}>
+                <label class="form-check-label small fw-semibold" for="id_is_active">Active</label>
+              </div>
+            </div>
+            {% endif %}
+
+            {# ── Notes ── #}
+            <div class="col-12">
+              <label class="form-label small fw-semibold mb-1">Notes</label>
+              <textarea name="notes" class="form-control form-control-sm" rows="3"
+                        placeholder="Any additional notes about this device...">{{ device.notes|default:'' }}</textarea>
+            </div>
+          </div>
+
+          {# ── Submit ── #}
+          <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+            <a href="{% url 'investigations:device_list' %}" class="btn btn-sm btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-sm btn-primary">
+              <i class="bi bi-check-lg me-1"></i>{% if device %}Save Changes{% else %}Create Device{% endif %}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

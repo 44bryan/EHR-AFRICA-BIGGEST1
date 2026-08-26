@@ -1,0 +1,111 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Visit Plan — {{ patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <i class="bi bi-list-check text-primary fs-4"></i>
+  <div>
+    <h5 class="mb-0 fw-bold">Dilation-Aware Visit Plan</h5>
+    <div class="text-muted small">{{ patient.full_name }} &bull; {{ patient.patient_id }}</div>
+  </div>
+</div>
+
+{% if existing_plans %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold small">Existing Plans</div>
+  <div class="card-body p-0">
+    <ul class="list-group list-group-flush">
+      {% for p in existing_plans %}
+      <li class="list-group-item d-flex justify-content-between align-items-center small">
+        <a href="{% url 'investigations:visit_plan_detail' p.pk %}">
+          Plan #{{ p.pk }} &mdash; {{ p.created_at|date:"d M Y, H:i" }}
+        </a>
+        {% if p.is_completed %}
+        <span class="badge bg-success">Completed</span>
+        {% else %}
+        <span class="badge bg-warning text-dark">In Progress</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" action="{% url 'investigations:visit_plan' patient_id=patient.patient_id %}">
+  {% csrf_token %}
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-semibold small">Pending Investigation Orders</div>
+    <div class="card-body p-0">
+      {% if pending_orders %}
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle small">
+          <thead class="table-light">
+            <tr>
+              <th style="width:3rem"><input type="checkbox" class="form-check-input" id="selectAll"></th>
+              <th>Test</th>
+              <th>Eye</th>
+              <th>Urgency</th>
+              <th>Dilation Req</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in pending_orders %}
+            <tr>
+              <td><input type="checkbox" class="form-check-input row-check" name="order_ids" value="{{ order.pk }}"></td>
+              <td class="fw-semibold">{{ order.investigation_type.name }}</td>
+              <td>{{ order.get_eye_display }}</td>
+              <td>
+                <span class="badge {% if order.urgency == 'URGENT' %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {{ order.get_urgency_display }}
+                </span>
+              </td>
+              <td>
+                {% with dr=order.investigation_type.get_dilation_requirement_display %}
+                <span class="badge {% if order.investigation_type.dilation_requirement == 'BEFORE' %}bg-primary{% elif order.investigation_type.dilation_requirement == 'AFTER' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                  {{ dr }}
+                </span>
+                {% endwith %}
+              </td>
+              <td>{{ order.investigation_type.estimated_duration_minutes|default:"—" }} min</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-4">No pending investigation orders for this patient.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <label for="notes" class="form-label fw-semibold small">Notes</label>
+      <textarea name="notes" id="notes" class="form-control form-control-sm" rows="3" placeholder="Optional notes for this visit plan..."></textarea>
+    </div>
+  </div>
+
+  {% if pending_orders %}
+  <button type="submit" class="btn btn-primary">
+    <i class="bi bi-plus-circle me-1"></i>Create Plan
+  </button>
+  {% endif %}
+</form>
+
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-body small">
+    <i class="bi bi-info-circle text-primary me-1"></i>
+    <strong>How it works:</strong> Pre-dilation tests are automatically sequenced before post-dilation tests.
+    A dilation wait period is inserted between phases.
+  </div>
+</div>
+
+<script>
+document.getElementById('selectAll')?.addEventListener('change', function(){
+  document.querySelectorAll('.row-check').forEach(c => c.checked = this.checked);
+});
+</script>
+{% endblock %}

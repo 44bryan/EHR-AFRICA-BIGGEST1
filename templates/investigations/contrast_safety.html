@@ -1,0 +1,208 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+
+{% block title %}Contrast Safety — {{ order.patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  <!-- Page Header -->
+  <div class="d-flex align-items-center mb-3">
+    <i class="bi bi-shield-exclamation fs-4 text-danger me-2"></i>
+    <div>
+      <h5 class="mb-0">Contrast Safety Checklist</h5>
+      <small class="text-muted">{{ order.patient.full_name }} &middot; {{ order.investigation_type }}</small>
+    </div>
+  </div>
+
+  <!-- Patient Allergies Alert -->
+  {% if allergies %}
+  <div class="alert alert-danger small">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>Known Allergies:</strong>
+    <ul class="mb-0 mt-1">
+      {% for allergy in allergies %}
+      <li><strong>{{ allergy.allergen }}</strong>{% if allergy.reaction %} — {{ allergy.reaction }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <!-- Safety Checklist Form -->
+  <form method="post" action="{% url 'investigations:contrast_safety' order.pk %}">
+    {% csrf_token %}
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-light py-2">
+        <small class="fw-semibold"><i class="bi bi-list-check me-1"></i>Pre-procedure Checklist</small>
+      </div>
+      <div class="card-body small p-0">
+        <table class="table table-hover mb-0 small">
+          <tbody>
+
+            <!-- Consent Obtained -->
+            <tr>
+              <td class="fw-semibold" style="width:40%">Consent obtained</td>
+              <td>
+                <div class="form-check form-check-inline">
+                  <input type="radio" class="form-check-input" name="consent_obtained" id="consent_yes" value="yes"
+                         {% if order.consent_obtained %}checked{% endif %}>
+                  <label class="form-check-label" for="consent_yes">Yes</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input type="radio" class="form-check-input" name="consent_obtained" id="consent_no" value="no"
+                         {% if order.consent_obtained == False %}checked{% endif %}>
+                  <label class="form-check-label" for="consent_no">No</label>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Allergy Check Done -->
+            <tr>
+              <td class="fw-semibold">Allergy check done</td>
+              <td>
+                <div class="form-check">
+                  <input type="checkbox" class="form-check-input" name="allergy_check_done" id="allergy_check"
+                         {% if order.allergy_check_done %}checked{% endif %}>
+                  <label class="form-check-label" for="allergy_check">Confirmed</label>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Pregnancy Check -->
+            <tr>
+              <td class="fw-semibold">Pregnancy check</td>
+              <td>
+                <div class="form-check form-check-inline">
+                  <input type="radio" class="form-check-input" name="pregnancy_check" id="preg_yes" value="yes"
+                         {% if order.pregnancy_check == 'yes' %}checked{% endif %}>
+                  <label class="form-check-label" for="preg_yes">Yes</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input type="radio" class="form-check-input" name="pregnancy_check" id="preg_no" value="no"
+                         {% if order.pregnancy_check == 'no' %}checked{% endif %}>
+                  <label class="form-check-label" for="preg_no">No</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input type="radio" class="form-check-input" name="pregnancy_check" id="preg_na" value="na"
+                         {% if order.pregnancy_check == 'na' %}checked{% endif %}>
+                  <label class="form-check-label" for="preg_na">N/A</label>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Resuscitation Trolley -->
+            <tr>
+              <td class="fw-semibold">Resuscitation trolley checked</td>
+              <td>
+                <div class="form-check">
+                  <input type="checkbox" class="form-check-input" name="resuscitation_trolley_checked" id="resus_check"
+                         {% if order.resuscitation_trolley_checked %}checked{% endif %}>
+                  <label class="form-check-label" for="resus_check">Confirmed</label>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Contrast Dye Batch -->
+            <tr>
+              <td class="fw-semibold">Contrast dye batch</td>
+              <td>
+                <input type="text" name="contrast_dye_batch" class="form-control form-control-sm" style="max-width:300px"
+                       value="{{ order.contrast_dye_batch|default:'' }}" placeholder="Batch number">
+              </td>
+            </tr>
+
+            <!-- Contrast Volume -->
+            <tr>
+              <td class="fw-semibold">Contrast volume (ml)</td>
+              <td>
+                <input type="number" step="0.1" name="contrast_volume" class="form-control form-control-sm" style="max-width:160px"
+                       value="{{ order.contrast_volume|default:'' }}" placeholder="ml">
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Status Messages -->
+    {% if order.consent_obtained and order.allergy_check_done %}
+    <div class="alert alert-success small py-2">
+      <i class="bi bi-check-circle-fill me-1"></i>
+      <strong>Clear to proceed.</strong> All mandatory checks passed.
+    </div>
+    {% endif %}
+
+    {% if order.consent_obtained == False or not order.allergy_check_done %}
+    <div class="alert alert-danger small py-2">
+      <i class="bi bi-x-circle-fill me-1"></i>
+      <strong>Cannot proceed.</strong>
+      {% if order.consent_obtained == False %}Consent has not been obtained. {% endif %}
+      {% if not order.allergy_check_done %}Allergy check has not been completed.{% endif %}
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-check-lg me-1"></i>Save Safety Checklist
+    </button>
+  </form>
+
+  <hr class="my-4">
+
+  <!-- Adverse Reaction Log -->
+  <div class="card shadow-sm">
+    <div class="card-header bg-light py-2">
+      <small class="fw-semibold text-danger"><i class="bi bi-heartbreak me-1"></i>Adverse Reaction Log</small>
+    </div>
+    <div class="card-body small">
+      <form method="post" action="{% url 'investigations:contrast_reaction' order.pk %}">
+        {% csrf_token %}
+
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label">Dye Used</label>
+            <input type="text" name="dye_used" class="form-control form-control-sm" placeholder="e.g. Iohexol">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Severity</label>
+            <select name="severity" class="form-select form-select-sm">
+              <option value="">— Select —</option>
+              <option value="MILD">Mild</option>
+              <option value="MODERATE">Moderate</option>
+              <option value="SEVERE">Severe</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Escalated To</label>
+            <input type="text" name="escalated_to" class="form-control form-control-sm" placeholder="Name / department">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Symptoms</label>
+            <textarea name="symptoms" rows="2" class="form-control form-control-sm" placeholder="Describe symptoms"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Treatment Given</label>
+            <textarea name="treatment_given" rows="2" class="form-control form-control-sm" placeholder="Describe treatment"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Outcome</label>
+            <textarea name="outcome" rows="2" class="form-control form-control-sm" placeholder="Patient outcome"></textarea>
+          </div>
+          <div class="col-md-6 d-flex align-items-end">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" name="escalated" id="id_escalated">
+              <label class="form-check-label" for="id_escalated">Escalated</label>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-danger btn-sm mt-3">
+          <i class="bi bi-exclamation-triangle me-1"></i>Log Reaction
+        </button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

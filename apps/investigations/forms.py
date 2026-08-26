@@ -1,9 +1,10 @@
 from django import forms
-from .models import InvestigationOrder, InvestigationResult, InvestigationType
+from .models import (
+    InvestigationOrder, InvestigationResult, InvestigationType, Laterality,
+)
 
 
 class InvestigationOrderForm(forms.ModelForm):
-    # Explicitly declared so empty_label and queryset are guaranteed correct
     investigation_type = forms.ModelChoiceField(
         queryset=InvestigationType.objects.filter(is_active=True).order_by('category', 'name'),
         empty_label='--- Select Investigation Type ---',

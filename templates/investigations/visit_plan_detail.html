@@ -1,0 +1,102 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Visit Plan — {{ plan.patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-list-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Visit Plan #{{ plan.pk }}</h5>
+      <div class="text-muted small">
+        {{ plan.patient.full_name }} &bull; {{ plan.patient.patient_id }}
+        &bull; {{ plan.created_at|date:"d M Y, H:i" }}
+      </div>
+    </div>
+  </div>
+  {% if plan.is_completed %}
+  <span class="badge bg-success fs-6">Completed</span>
+  {% else %}
+  <span class="badge bg-warning text-dark fs-6">In Progress</span>
+  {% endif %}
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold small">Plan Steps</div>
+  <div class="card-body">
+    {% with current_phase="" %}
+    {% for step in steps %}
+
+    {% ifchanged step.phase %}
+    {% if not forloop.first %}
+    <hr class="my-3">
+    {% endif %}
+    <div class="mb-2">
+      <span class="badge {% if step.phase == 'PRE' %}bg-primary{% elif step.phase == 'DILATE' %}bg-warning text-dark{% elif step.phase == 'POST' %}bg-warning bg-opacity-75 text-dark{% else %}bg-secondary{% endif %} px-3 py-1">
+        {% if step.phase == 'PRE' %}Pre-Dilation Phase
+        {% elif step.phase == 'DILATE' %}Dilation Wait
+        {% elif step.phase == 'POST' %}Post-Dilation Phase
+        {% else %}Any Phase
+        {% endif %}
+      </span>
+    </div>
+    {% endifchanged %}
+
+    <div class="d-flex align-items-start gap-3 mb-3 ps-2">
+      <div class="text-center" style="min-width:2rem">
+        {% if step.is_completed %}
+        <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        {% else %}
+        <span class="badge rounded-pill bg-light text-dark border" style="width:2rem;height:2rem;line-height:2rem;padding:0">{{ step.sequence }}</span>
+        {% endif %}
+      </div>
+
+      <div class="flex-grow-1">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold small">
+              {% if step.order %}{{ step.order.investigation_type.name }}{% else %}Dilation Wait{% endif %}
+            </span>
+            {% if step.order %}
+            <span class="text-muted small ms-2">{{ step.order.get_eye_display }}</span>
+            {% endif %}
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            {% if step.estimated_duration %}
+            <span class="text-muted small">{{ step.estimated_duration }} min</span>
+            {% endif %}
+
+            <span class="badge {% if step.phase == 'PRE' %}bg-primary{% elif step.phase == 'DILATE' %}bg-warning text-dark{% elif step.phase == 'POST' %}bg-warning bg-opacity-75 text-dark{% else %}bg-secondary{% endif %}">
+              {{ step.get_phase_display }}
+            </span>
+          </div>
+        </div>
+
+        {% if step.is_completed %}
+        <div class="text-success small mt-1">
+          <i class="bi bi-check me-1"></i>Completed at {{ step.completed_at|date:"H:i" }}
+        </div>
+        {% else %}
+        <form method="post" action="{% url 'investigations:visit_plan_complete_step' step_pk=step.pk %}" class="mt-1">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-check-circle me-1"></i>Mark Complete
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% empty %}
+    <div class="text-center text-muted py-4">No steps in this plan.</div>
+    {% endfor %}
+    {% endwith %}
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body small d-flex gap-4">
+    <div><strong>Total Steps:</strong> {{ steps|length }}</div>
+    <div><strong>Completed:</strong> {{ completed_count|default:"0" }}</div>
+    <div><strong>Est. Total Time:</strong> {{ estimated_total_minutes|default:"—" }} min</div>
+  </div>
+</div>
+{% endblock %}

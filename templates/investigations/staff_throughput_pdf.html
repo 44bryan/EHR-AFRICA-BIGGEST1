@@ -1,0 +1,218 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Investigation Staff Throughput — ISO 15189 §5.1 — {{ since|date:"d M Y" }} to {{ today|date:"d M Y" }}</title>
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  body { padding: 20px 28px; }
+  .report-band { background:#6366f1; color:#fff; padding:9px 14px; margin-bottom:14px;
+                 border-radius:3px; display:flex; justify-content:space-between; align-items:center; }
+  .report-band-title { font-size:13px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
+  .report-band-meta  { font-size:10px; opacity:.85; text-align:right; line-height:1.5; }
+  .kpi-grid  { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .kpi-card  { flex:1; min-width:90px; border:1px solid #dee2e6; border-radius:6px;
+               padding:10px 12px; text-align:center; }
+  .kpi-val   { font-size:22px; font-weight:700; color:#6366f1; }
+  .kpi-val.green  { color:#198754; }
+  .kpi-val.orange { color:#fd7e14; }
+  .kpi-val.grey   { color:#6c757d; }
+  .kpi-label { font-size:10px; color:#6c757d; margin-top:2px; }
+
+  table { width:100%; border-collapse:collapse; font-size:10px; margin-top:4px; }
+  th { background:#6366f1; color:#fff; padding:5px 7px; text-align:left; font-size:9px; font-weight:700; }
+  td { padding:4px 7px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+  tr:nth-child(even) td { background:#f8f9fa; }
+  .text-right  { text-align:right; }
+  .text-center { text-align:center; }
+
+  .badge-green  { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7;
+                  padding:1px 5px; border-radius:3px; font-size:8px; font-weight:700; }
+  .badge-amber  { background:#fef3c7; color:#92400e; border:1px solid #fcd34d;
+                  padding:1px 5px; border-radius:3px; font-size:8px; font-weight:700; }
+  .badge-red    { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5;
+                  padding:1px 5px; border-radius:3px; font-size:8px; font-weight:700; }
+
+  .bar-wrap { background:#e9ecef; border-radius:3px; height:5px; margin-top:2px; }
+  .bar-fill { background:#6366f1; border-radius:3px; height:5px; }
+
+  .leaderboard { list-style:none; padding:0; margin:0; }
+  .leaderboard li { display:flex; justify-content:space-between; align-items:center;
+                    padding:4px 0; border-bottom:1px solid #f0f0f0; font-size:11px; }
+  .leaderboard li:last-child { border-bottom:none; }
+  .rank-badge { font-weight:700; color:#6c757d; min-width:22px; }
+</style>
+</head>
+<body>
+
+{% with pdf_seal_label="INTERNAL USE ONLY" %}{% include 'reports/pdf/_letterhead.html' %}{% endwith %}
+
+<div class="accred-bar">
+  <span>Investigation &amp; Radiology Department — Staff Performance Report</span>
+  <span>Period: {{ since|date:"d M Y" }} → {{ today|date:"d M Y" }} &nbsp;&bull;&nbsp; {% now "d M Y" %}</span>
+</div>
+
+<div class="report-band">
+  <div class="report-band-title">Investigation Staff Throughput &amp; Quality Report &mdash; ISO 15189:2022 §5.1</div>
+  <div class="report-band-meta">
+    Last {{ days }} Days<br>
+    {{ since|date:"d M Y" }} → {{ today|date:"d M Y" }}<br>
+    Generated: {% now "d M Y H:i" %}
+  </div>
+</div>
+
+{# ── KPI Summary ── #}
+<div class="section-title">Summary</div>
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-val">{{ today_total }}</div>
+    <div class="kpi-label">Exams Today</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val green">{{ grand_total }}</div>
+    <div class="kpi-label">Total ({{ days }}d)</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val grey">{{ staff_summary|length }}</div>
+    <div class="kpi-label">Active Staff</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val orange">{% if staff_summary %}{{ staff_summary.0.avg_per_day }}{% else %}0{% endif %}</div>
+    <div class="kpi-label">Best Avg/Day</div>
+  </div>
+</div>
+
+{# ── Today's Leaderboard ── #}
+{% if today_board %}
+<div class="two-col" style="margin-bottom:16px;">
+  <div>
+    <div class="section-title">Today's Leaderboard — {{ today|date:"d M Y" }}</div>
+    <ul class="leaderboard">
+      {% for s in today_board %}
+      <li>
+        <span><span class="rank-badge">{{ forloop.counter }}.</span> {{ s.name }}</span>
+        <strong style="color:#6366f1;">{{ s.count }} exam{{ s.count|pluralize }}</strong>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div></div>
+</div>
+{% endif %}
+
+{# ── Full Quality Performance Table ── #}
+<div class="section-title">Staff Quality Performance — ISO 15189 §5.1 Competence Monitoring</div>
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Technician</th>
+      <th class="text-right">Total</th>
+      <th class="text-right">Avg/Day</th>
+      <th class="text-right">Verified</th>
+      <th class="text-right">Ver%</th>
+      <th class="text-right">Abnormal</th>
+      <th class="text-right">Abn%</th>
+      <th class="text-right">Avg TAT</th>
+      <th style="min-width:80px;">Volume</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in staff_summary %}
+    <tr>
+      <td class="text-center" style="color:#6c757d;font-weight:700;">{{ forloop.counter }}</td>
+      <td style="font-weight:600;">{{ s.name }}</td>
+      <td class="text-right" style="font-weight:700;color:#6366f1;">{{ s.total }}</td>
+      <td class="text-right" style="color:#6c757d;">{{ s.avg_per_day }}</td>
+      <td class="text-right" style="color:#198754;font-weight:600;">{{ s.verified }}</td>
+      <td class="text-right">
+        {% if s.verified_pct >= 90 %}
+        <span class="badge-green">{{ s.verified_pct }}%</span>
+        {% elif s.verified_pct >= 70 %}
+        <span class="badge-amber">{{ s.verified_pct }}%</span>
+        {% else %}
+        <span class="badge-red">{{ s.verified_pct }}%</span>
+        {% endif %}
+      </td>
+      <td class="text-right" style="{% if s.abnormal %}color:#fd7e14;font-weight:600;{% else %}color:#6c757d;{% endif %}">{{ s.abnormal }}</td>
+      <td class="text-right" style="color:#6c757d;">{{ s.abnormal_pct }}%</td>
+      <td class="text-right">
+        {% if s.tat_mins > 0 %}
+          {% if s.tat_mins < 120 %}<span class="badge-green">{{ s.tat_str }}</span>
+          {% elif s.tat_mins < 240 %}<span class="badge-amber">{{ s.tat_str }}</span>
+          {% else %}<span class="badge-red">{{ s.tat_str }}</span>{% endif %}
+        {% else %}<span style="color:#6c757d;">—</span>{% endif %}
+      </td>
+      <td>
+        {% if grand_total %}
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width:{% widthratio s.total grand_total 100 %}%;"></div>
+        </div>
+        <span style="font-size:8px;color:#6c757d;">{% widthratio s.total grand_total 100 %}%</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="10" style="text-align:center;color:#6c757d;padding:12px;">No exam results recorded for this period.</td></tr>
+    {% endfor %}
+  </tbody>
+  {% if staff_summary %}
+  <tfoot>
+    <tr style="background:#f0f0f0;font-weight:700;">
+      <td colspan="2">TOTAL</td>
+      <td class="text-right">{{ grand_total }}</td>
+      <td colspan="7"></td>
+    </tr>
+  </tfoot>
+  {% endif %}
+</table>
+
+{# ── Legend ── #}
+<div style="margin-top:10px;font-size:8.5px;color:#555;background:#f8f9fa;padding:8px 12px;border-radius:4px;border:1px solid #dee2e6;">
+  <strong>Key:</strong> &nbsp;
+  <span class="badge-green">Green TAT</span> &lt;2h target &nbsp;&bull;&nbsp;
+  <span class="badge-amber">Amber TAT</span> 2–4h monitor &nbsp;&bull;&nbsp;
+  <span class="badge-red">Red TAT</span> &gt;4h action required &nbsp;&bull;&nbsp;
+  <strong>Ver%</strong> = results verified ÷ total &nbsp;&bull;&nbsp;
+  <strong>Abnormal</strong> = results where is_normal = False (ISO 15189 §5.7)
+</div>
+
+<div class="data-note" style="margin-top:12px;">
+  <strong>Data Source:</strong> EHR Africa Hospital Information System &nbsp;&bull;&nbsp;
+  <strong>Standard:</strong> ISO 15189:2022 §5.1 — Personnel competence monitoring &nbsp;&bull;&nbsp;
+  <strong>Period:</strong> {{ since|date:"d M Y" }} to {{ today|date:"d M Y" }} ({{ days }} days) &nbsp;&bull;&nbsp;
+  TAT = average time from examination order to result entry per technician.
+</div>
+
+<div class="auth-block">
+  <div class="section-title">Authorization &amp; Approval</div>
+  <div class="auth-row">
+    <div class="auth-col">
+      <div class="auth-role">Prepared by</div>
+      <div class="auth-title">Head of Investigation Dept.</div>
+      <div class="auth-sig">Signature: _______________________</div>
+      <div class="auth-date">Date: ____________________________</div>
+    </div>
+    <div class="auth-col">
+      <div class="auth-role">Reviewed by</div>
+      <div class="auth-title">Quality Officer</div>
+      <div class="auth-sig">Signature: _______________________</div>
+      <div class="auth-date">Date: ____________________________</div>
+    </div>
+    <div class="auth-col">
+      <div class="auth-role">Approved by</div>
+      <div class="auth-title">Medical Director</div>
+      <div class="auth-sig">Signature: _______________________</div>
+      <div class="auth-date">Date: ____________________________</div>
+    </div>
+  </div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} — Investigation &amp; Radiology Department</span>
+  <span>ISO 15189:2022 §5.1 Staff Competence Report &nbsp;|&nbsp; {% now "d M Y" %}</span>
+  <span>CONFIDENTIAL — Internal Use Only</span>
+</div>
+
+</body>
+</html>

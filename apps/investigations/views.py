@@ -1,30 +1,54 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
-from django.db.models import Q
-from .models import InvestigationOrder, InvestigationResult, InvestigationType, InvestigationFile
+from django.db.models import Q, Count
+from .models import (
+    InvestigationOrder, InvestigationResult, InvestigationType, InvestigationFile,
+    Device, DeviceDowntime, AcquisitionRecord, BiometryRecord,
+    ImagingStudy, ImagingModality, InvestigationResultAmendment,
+    VisitInvestigationPlan, VisitInvestigationStep, ContrastReactionLog,
+    PaymentStatus, AcquisitionStatus, ReportStatus, Laterality,
+)
 from .forms import InvestigationOrderForm, InvestigationResultForm
 from apps.consultations.models import Consultation
 from apps.core.context_processors import qms_active as _qms_active
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ACCESS HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _is_invest_staff(user):
+    return (user.is_investigation_tech or user.is_medical_director
+            or user.is_super_admin or user.is_admin_director)
+
+
+def _is_invest_viewer(user):
+    return (_is_invest_staff(user) or user.is_ceo
+            or user.is_finance_director)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WORKSTATION
+# ══════════════════════════════════════════════════════════════════════════════
 
 @login_required
 def investigation_workstation_view(request):
     """
     Investigation Technician Workstation.
     Shows:
-      - Patients routed here via QMS (queued) — may not have a formal order yet
-      - Pending/in-progress investigation orders
+      - Patients routed here via QMS (queued)
+      - Pending/in-progress investigation orders with 4-state info
       - Completed today
     """
     from apps.patients.models import Visit
 
     today = timezone.localdate()
 
-    # ── Patients queued via QMS (from ordering OR direct routing) ──────────
+    # ── Patients queued via QMS ──────────────────────────────────────────────
     if _qms_active():
         try:
             from apps.qms.models import QueueToken, TokenStatus
@@ -40,7 +64,6 @@ def investigation_workstation_view(request):
                 _invest_qs = _invest_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
             elif _pt == 'STANDARD':
                 _invest_qs = _invest_qs.filter(service_tier='STANDARD')
-            # _pt == 'ALL' → no filter
             queued_tokens = list(
                 _invest_qs.select_related('visit__patient', 'visit__attending_doctor')
                 .order_by('-priority', 'issued_at')
@@ -49,7 +72,7 @@ def investigation_workstation_view(request):
             queued_tokens = []
     else:
         queued_tokens = []
-    # Attach the first pending order to each token so the template can link directly
+
     if queued_tokens:
         pending_by_patient = {}
         patient_ids = [t.visit.patient_id for t in queued_tokens if t.visit and t.visit.patient_id]
@@ -66,14 +89,14 @@ def investigation_workstation_view(request):
                 token.pending_order = pending_by_patient.get(token.visit.patient_id)
             else:
                 token.pending_order = None
-    queued_no_order = queued_tokens  # Show all — technician calls & records
+    queued_no_order = queued_tokens
 
     pending_orders = list(
         InvestigationOrder.objects.filter(
             status__in=[InvestigationOrder.Status.ORDERED, InvestigationOrder.Status.IN_PROGRESS],
             is_deleted=False,
         ).select_related(
-            'patient', 'investigation_type', 'ordered_by', 'consultation'
+            'patient', 'investigation_type', 'ordered_by', 'consultation', 'device'
         ).order_by('urgency', 'created_at')
     )
 
@@ -87,9 +110,7 @@ def investigation_workstation_view(request):
         ).prefetch_related('result__files').order_by('-updated_at')[:30]
     )
 
-    # ── Payment status — checked via ServiceWorkOrder ─────────────────────────
-    # PENDING_PAYMENT = doctor ordered, patient hasn't paid yet
-    # PENDING         = invoice paid → cleared for service
+    # ── Payment status via ServiceWorkOrder ──────────────────────────────────
     try:
         from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
         patient_ids = [o.patient_id for o in pending_orders]
@@ -116,21 +137,32 @@ def investigation_workstation_view(request):
             elif pid in unpaid_patient_ids:
                 order.is_paid = False
             else:
-                order.is_paid = None  # No work order — legacy or direct order
+                order.is_paid = None
     except Exception:
         for order in pending_orders:
             order.is_paid = None
 
-    urgent = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY')]
-    routine = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY')]
+    urgent = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY', 'STAT')]
+    routine = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY', 'STAT')]
     in_progress_count = sum(1 for o in pending_orders if o.status == InvestigationOrder.Status.IN_PROGRESS)
     ordered_count = sum(1 for o in pending_orders if o.status == InvestigationOrder.Status.ORDERED)
+
+    # ── Quality-failed orders needing repeat ─────────────────────────────────
+    quality_failed = list(
+        InvestigationOrder.objects.filter(
+            acquisition_status=AcquisitionStatus.QUALITY_FAILED,
+            status__in=[InvestigationOrder.Status.IN_PROGRESS, InvestigationOrder.Status.ORDERED],
+            is_deleted=False,
+        ).select_related('patient', 'investigation_type', 'device')
+        .order_by('-updated_at')[:20]
+    )
 
     return render(request, 'investigations/workstation.html', {
         'queued_no_order': queued_no_order,
         'urgent_orders': urgent,
         'routine_orders': routine,
         'completed_today': completed_today,
+        'quality_failed': quality_failed,
         'queued_count': len(queued_no_order),
         'pending_count': len(pending_orders),
         'in_progress_count': in_progress_count,
@@ -140,28 +172,36 @@ def investigation_workstation_view(request):
     })
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# LIST & ORDER
+# ══════════════════════════════════════════════════════════════════════════════
+
 @login_required
 def investigation_list_view(request):
     orders = InvestigationOrder.objects.select_related(
-        'patient', 'investigation_type', 'ordered_by', 'assigned_to'
+        'patient', 'investigation_type', 'ordered_by', 'assigned_to', 'device'
     ).filter(is_deleted=False)
 
-    # Investigation techs / medical director see all; others see only their orders
     if not (request.user.is_medical_director or request.user.is_admin_staff or request.user.is_investigation_tech):
         orders = orders.filter(ordered_by=request.user)
 
     status_filter = request.GET.get('status', '')
     patient_filter = request.GET.get('patient', '')
+    eye_filter = request.GET.get('eye', '')
     if status_filter:
         orders = orders.filter(status=status_filter)
     if patient_filter:
         orders = orders.filter(patient__patient_id=patient_filter)
+    if eye_filter:
+        orders = orders.filter(eye=eye_filter)
 
     return render(request, 'investigations/list.html', {
         'orders': orders[:100],
         'status_choices': InvestigationOrder.Status.choices,
+        'laterality_choices': Laterality.choices,
         'status_filter': status_filter,
         'patient_filter': patient_filter,
+        'eye_filter': eye_filter,
     })
 
 
@@ -171,12 +211,12 @@ def investigation_order_view(request, consultation_pk):
         return HttpResponseForbidden()
 
     consultation = get_object_or_404(Consultation, pk=consultation_pk)
+
     if request.method == 'POST':
         form = InvestigationOrderForm(request.POST)
         payment_waived = request.POST.get('payment_waived') == '1'
         waive_reason = request.POST.get('waive_reason', '').strip()
         if form.is_valid():
-            # Strict: waive reason is mandatory when payment is waived
             if payment_waived and not waive_reason:
                 messages.error(request, 'A reason is required when waiving payment. This is logged for audit.')
             else:
@@ -185,7 +225,42 @@ def investigation_order_view(request, consultation_pk):
                 order.patient = consultation.patient
                 order.ordered_by = request.user
                 order.created_by = request.user
+
+                # Payment status from waiver
+                if payment_waived:
+                    order.payment_status = PaymentStatus.WAIVED
+                    order.payment_authorized_by = request.user
+                    order.payment_authorized_at = timezone.now()
+                    order.payment_authorization_reason = waive_reason
+
+                # Prior study check
+                prior_count = InvestigationOrder.objects.filter(
+                    patient=consultation.patient,
+                    investigation_type=order.investigation_type,
+                    status='COMPLETED',
+                    is_deleted=False,
+                ).count()
+                if prior_count > 0 and not request.POST.get('prior_acknowledged'):
+                    latest = InvestigationOrder.objects.filter(
+                        patient=consultation.patient,
+                        investigation_type=order.investigation_type,
+                        status='COMPLETED',
+                        is_deleted=False,
+                    ).order_by('-created_at').first()
+                    order.prior_study_warning = True
+                    order.prior_study_warning_text = (
+                        f'{prior_count} prior {order.investigation_type.name} study(ies). '
+                        f'Last: {latest.created_at.strftime("%d %b %Y") if latest else "?"}'
+                    )
+
+                # Default device from investigation type
+                inv_type = order.investigation_type
+                if inv_type.default_device and not order.device:
+                    order.device = inv_type.default_device
+
                 order.save()
+
+                # ServiceWorkOrder for billing
                 try:
                     from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
                     wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
@@ -194,29 +269,31 @@ def investigation_order_view(request, consultation_pk):
                         patient=consultation.patient,
                         consultation=consultation,
                         category=ServiceCategory.INVESTIGATION,
-                        description=f'Investigation: {order.investigation_type.name}',
+                        description=f'Investigation: {inv_type.name} ({order.get_eye_display()})',
                         status=wo_status,
                         notes=wo_notes,
                         created_by=request.user,
                     )
                 except Exception:
-                    pass  # Never block the doctor
-                # Auto-route patient to investigation queue
+                    pass
+
+                # Auto-route to investigation queue
                 try:
                     from apps.core.patient_flow import auto_route_to_investigation
                     auto_route_to_investigation(consultation, ordered_by=request.user)
                 except Exception:
                     pass
+
                 messages.success(
                     request,
-                    f'Investigation ordered: {order.investigation_type.name}. '
-                    'Patient has been routed to the investigation queue automatically.'
+                    f'Investigation ordered: {inv_type.name} ({order.get_eye_display()}). '
+                    'Patient has been routed to the investigation queue.'
                 )
                 return redirect('consultations:detail', pk=consultation_pk)
     else:
         form = InvestigationOrderForm()
 
-    # Group types by category; optometry mode filters to relevant cats only
+    # Group types by category
     from itertools import groupby
     OPTOMETRY_CATS = {'ORTHOPTICS', 'LOW_VISION'}
     is_optometry = request.GET.get('cat') == 'optometry'
@@ -229,28 +306,229 @@ def investigation_order_view(request, consultation_pk):
         label = (cat or 'Other').replace('_', ' ').title()
         _grouped.append((label, list(items)))
 
+    # Prior studies for this patient
+    prior_orders = InvestigationOrder.objects.filter(
+        patient=consultation.patient,
+        status='COMPLETED',
+        is_deleted=False,
+    ).select_related('investigation_type').order_by('-created_at')[:20]
+
     return render(request, 'investigations/order_form.html', {
         'form': form,
         'consultation': consultation,
         'grouped_types': _grouped,
         'is_optometry': is_optometry,
+        'prior_orders': prior_orders,
     })
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DETAIL
+# ══════════════════════════════════════════════════════════════════════════════
 
 @login_required
 def investigation_detail_view(request, pk):
-    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    order = get_object_or_404(
+        InvestigationOrder.objects.select_related(
+            'patient', 'investigation_type', 'ordered_by', 'assigned_to',
+            'device', 'payment_authorized_by', 'consent_obtained_by',
+        ),
+        pk=pk, is_deleted=False,
+    )
     result = getattr(order, 'result', None)
+    acquisition = getattr(order, 'acquisition', None)
+    biometry = getattr(order, 'biometry', None)
+    contrast_reactions = order.contrast_reactions.all() if order.investigation_type.contrast_involved else []
+    amendments = result.amendments.all() if result else []
+
+    # Prior studies for comparison
+    prior_orders = InvestigationOrder.objects.filter(
+        patient=order.patient,
+        investigation_type=order.investigation_type,
+        status='COMPLETED',
+        is_deleted=False,
+    ).exclude(pk=pk).select_related('result').order_by('-created_at')[:5]
+
     return render(request, 'investigations/detail.html', {
         'order': order,
         'result': result,
+        'acquisition': acquisition,
+        'biometry': biometry,
+        'contrast_reactions': contrast_reactions,
+        'amendments': amendments,
+        'prior_orders': prior_orders,
     })
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ACQUISITION WORKFLOW — Quality gating at the chair
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def start_investigation_view(request, pk):
+    """Begin acquisition — creates AcquisitionRecord, sets acquisition_status to IN_PROGRESS."""
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+
+    if order.status == InvestigationOrder.Status.ORDERED:
+        order.status = InvestigationOrder.Status.IN_PROGRESS
+        order.acquisition_status = AcquisitionStatus.IN_PROGRESS
+        order.save(update_fields=['status', 'acquisition_status', 'updated_at'])
+
+    # Create acquisition record if not exists
+    if not hasattr(order, 'acquisition'):
+        AcquisitionRecord.objects.create(
+            order=order,
+            performed_by=request.user,
+            device=order.device,
+            device_serial=order.device.serial_number if order.device else '',
+            started_at=timezone.now(),
+            laterality_confirmed=order.eye,
+            created_by=request.user,
+        )
+
+    return redirect('investigations:workstation')
+
+
+@login_required
+@require_POST
+def complete_acquisition_view(request, pk):
+    """
+    Complete acquisition with quality gating.
+    Technician submits quality metrics; system auto-checks against thresholds.
+    """
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+
+    acq, created = AcquisitionRecord.objects.get_or_create(
+        order=order,
+        defaults={
+            'performed_by': request.user,
+            'device': order.device,
+            'started_at': timezone.now(),
+            'created_by': request.user,
+        }
+    )
+
+    # Update acquisition fields from POST
+    acq.performed_by = request.user
+    acq.completed_at = timezone.now()
+    acq.laterality_confirmed = request.POST.get('laterality_confirmed', order.eye)
+    acq.dilation_status_at_acquisition = request.POST.get('dilation_status', '')
+    acq.protocol_used = request.POST.get('protocol_used', '')
+
+    # Quality metrics
+    qm = request.POST.get('quality_metric_value', '').strip()
+    if qm:
+        from decimal import Decimal, InvalidOperation
+        try:
+            acq.quality_metric_value = Decimal(qm)
+        except (InvalidOperation, ValueError):
+            pass
+
+    # VF specific
+    for fld in ('fixation_losses_percent', 'false_positive_percent', 'false_negative_percent'):
+        val = request.POST.get(fld, '').strip()
+        if val:
+            from decimal import Decimal, InvalidOperation
+            try:
+                setattr(acq, fld, Decimal(val))
+            except (InvalidOperation, ValueError):
+                pass
+
+    # OCT specific
+    ss = request.POST.get('signal_strength', '').strip()
+    if ss:
+        from decimal import Decimal, InvalidOperation
+        try:
+            acq.signal_strength = Decimal(ss)
+        except (InvalidOperation, ValueError):
+            pass
+
+    acq.quality_notes = request.POST.get('quality_notes', '')
+    acq.save()
+
+    # Auto quality check
+    passed, reason = acq.check_quality()
+    if passed:
+        acq.quality_passed = True
+        acq.save(update_fields=['quality_passed'])
+        order.acquisition_status = AcquisitionStatus.ACQUIRED
+        order.save(update_fields=['acquisition_status', 'updated_at'])
+        messages.success(request, f'Acquisition completed — quality passed.')
+    else:
+        acq.quality_passed = False
+        acq.quality_notes = (acq.quality_notes or '') + f'\nAuto-fail: {reason}'
+        acq.save(update_fields=['quality_passed', 'quality_notes'])
+        order.acquisition_status = AcquisitionStatus.QUALITY_FAILED
+        order.save(update_fields=['acquisition_status', 'updated_at'])
+        messages.warning(request, f'Quality check FAILED: {reason}. Consider repeat acquisition.')
+
+    return redirect('investigations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def repeat_acquisition_view(request, pk):
+    """Mark acquisition for repeat — resets acquisition status, creates new record."""
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+
+    old_acq = getattr(order, 'acquisition', None)
+    repeat_count = 0
+    if old_acq:
+        repeat_count = old_acq.repeat_count + 1
+        old_acq.delete()
+
+    # Create fresh acquisition record
+    AcquisitionRecord.objects.create(
+        order=order,
+        performed_by=request.user,
+        device=order.device,
+        started_at=timezone.now(),
+        laterality_confirmed=order.eye,
+        is_repeat=True,
+        repeat_reason=request.POST.get('repeat_reason', ''),
+        repeat_count=repeat_count,
+        created_by=request.user,
+    )
+    order.acquisition_status = AcquisitionStatus.REPEAT
+    order.save(update_fields=['acquisition_status', 'updated_at'])
+
+    messages.info(request, f'Repeat acquisition #{repeat_count} started.')
+    return redirect('investigations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def override_quality_view(request, pk):
+    """Senior tech / MD can override a quality failure."""
+    u = request.user
+    if not (u.is_medical_director or u.is_super_admin):
+        return HttpResponseForbidden()
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    acq = getattr(order, 'acquisition', None)
+    if acq:
+        acq.quality_passed = True
+        acq.quality_notes = (acq.quality_notes or '') + f'\n[Quality override by {u.get_full_name()}]'
+        acq.save(update_fields=['quality_passed', 'quality_notes'])
+    order.acquisition_status = AcquisitionStatus.ACQUIRED
+    order.save(update_fields=['acquisition_status', 'updated_at'])
+    messages.success(request, 'Quality override applied.')
+    return redirect('investigations:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESULT ENTRY & REPORTING
+# ══════════════════════════════════════════════════════════════════════════════
 
 @login_required
 def add_result_view(request, pk):
     if not request.user.can_record_investigation_results():
-        from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Only Investigation Technicians can enter results.")
     order = get_object_or_404(InvestigationOrder, pk=pk)
     if hasattr(order, 'result'):
@@ -264,18 +542,18 @@ def add_result_view(request, pk):
             result.order = order
             result.performed_by = request.user
             result.created_by = request.user
-            # Save structured result fields from POST into result_data JSON
+            # Structured result fields
             structured = {}
             structured_keys = [
-                'vf_type','vf_md_od','vf_md_os','vf_psd_od','vf_psd_os',
-                'vf_ght_od','vf_ght_os','vf_progression','vf_comments',
-                'rnfl_avg_od','rnfl_avg_os','rnfl_inf_od','rnfl_inf_os',
-                'rnfl_interp','rim_area_od','rim_area_os',
-                'fundus_photo_od','fundus_photo_os',
-                'bscan_od','bscan_os',
-                'axial_length_od','axial_length_os','k1_od','k1_os',
-                'k2_od','k2_os','iol_od','iol_os','biometry_notes',
-                'pachymetry_od','pachymetry_os',
+                'vf_type', 'vf_md_od', 'vf_md_os', 'vf_psd_od', 'vf_psd_os',
+                'vf_ght_od', 'vf_ght_os', 'vf_progression', 'vf_comments',
+                'rnfl_avg_od', 'rnfl_avg_os', 'rnfl_inf_od', 'rnfl_inf_os',
+                'rnfl_interp', 'rim_area_od', 'rim_area_os',
+                'fundus_photo_od', 'fundus_photo_os',
+                'bscan_od', 'bscan_os',
+                'axial_length_od', 'axial_length_os', 'k1_od', 'k1_os',
+                'k2_od', 'k2_os', 'iol_od', 'iol_os', 'biometry_notes',
+                'pachymetry_od', 'pachymetry_os',
                 'other_findings',
             ]
             for key in structured_keys:
@@ -284,30 +562,39 @@ def add_result_view(request, pk):
                     structured[key] = val
             if structured:
                 result.result_data = structured
+
+            # Report status
+            result.reported_by = request.user
+            result.reported_at = timezone.now()
             result.save()
+
             order.status = InvestigationOrder.Status.COMPLETED
-            order.save(update_fields=['status'])
-            # Handle file upload
+            order.report_status = ReportStatus.REPORTED
+            order.save(update_fields=['status', 'report_status', 'updated_at'])
+
+            # File upload
             uploaded_file = request.FILES.get('result_file')
             if uploaded_file:
+                file_laterality = request.POST.get('file_laterality', Laterality.NA)
                 InvestigationFile.objects.create(
                     result=result,
                     file=uploaded_file,
                     file_type='IMAGE' if uploaded_file.content_type.startswith('image') else 'PDF',
+                    laterality=file_laterality,
                     uploaded_by=request.user,
                 )
-            # Notify the ordering doctor that the result is ready
+
+            # Notify ordering doctor
             try:
                 from apps.notifications.utils import notify
                 from apps.notifications.models import NotificationType, NotificationPriority
                 if order.ordered_by:
-                    file_note = ' (PDF attached)' if request.FILES.get('result_file') else ''
                     notify(
                         recipient=order.ordered_by,
                         title=f'Result ready: {order.investigation_type.name} — {order.patient.full_name}',
                         message=(
-                            f'{order.investigation_type.name} result entered by '
-                            f'{request.user.get_full_name() or request.user.username}{file_note}. '
+                            f'{order.investigation_type.name} ({order.get_eye_display()}) result entered by '
+                            f'{request.user.get_full_name() or request.user.username}. '
                             f'Patient: {order.patient.full_name} ({order.patient.patient_id})'
                         ),
                         link=f'/investigations/{order.pk}/',
@@ -315,32 +602,30 @@ def add_result_view(request, pk):
                         priority=NotificationPriority.HIGH,
                     )
             except Exception:
-                pass  # Never block the technician
+                pass
+
             messages.success(request, 'Investigation result recorded.')
             return redirect('investigations:workstation')
     else:
         form = InvestigationResultForm()
 
-    # Compute imaging sub-type so template shows the correct fields (not OCT for everything)
+    # Imaging subtype for conditional fields
     imaging_subtype = 'GENERIC'
     if order.investigation_type.category == 'IMAGING':
         code_up = order.investigation_type.code.upper()
         name_up = order.investigation_type.name.upper()
         if 'OCT' in code_up or 'OCT' in name_up:
             imaging_subtype = 'OCT'
-        elif ('BSCAN' in code_up or 'B_SCAN' in code_up or
-              'B-SCAN' in name_up or 'B SCAN' in name_up or
-              'BSCAN' in name_up or 'ULTRASOUND' in name_up):
+        elif 'BSCAN' in code_up or 'B_SCAN' in code_up or 'B-SCAN' in name_up or 'BSCAN' in name_up:
             imaging_subtype = 'BSCAN'
         elif 'FFA' in code_up or 'FLUORESCEIN' in name_up or 'ANGIOGRAPHY' in name_up:
             imaging_subtype = 'FFA'
         elif 'FUNDUS' in code_up or 'FUNDUS' in name_up or 'PHOTO' in name_up:
             imaging_subtype = 'FUNDUS'
 
-    # Last 5 completed results for the same test type on this patient (for comparison)
-    from .models import InvestigationOrder as _IO
+    # Prior results for comparison
     prev_results = list(
-        _IO.objects.filter(
+        InvestigationOrder.objects.filter(
             patient=order.patient,
             investigation_type=order.investigation_type,
             status='COMPLETED',
@@ -361,7 +646,6 @@ def add_result_view(request, pk):
 @login_required
 def verify_result_view(request, pk):
     order = get_object_or_404(InvestigationOrder, pk=pk)
-    # Technician verifies to print & give to patient; doctor/MD can also verify
     can_verify = (
         request.user.can_record_investigation_results()
         or request.user.is_doctor
@@ -374,12 +658,18 @@ def verify_result_view(request, pk):
     if result.is_verified:
         messages.info(request, 'This result has already been verified.')
         return redirect('investigations:detail', pk=pk)
+
     result.is_verified = True
     result.verified_by = request.user
     result.verified_at = timezone.now()
     result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'updated_at'])
+
+    order.report_status = ReportStatus.VERIFIED
+    order.save(update_fields=['report_status', 'updated_at'])
+
     messages.success(request, f'Result verified by {request.user.get_full_name()}.')
-    # Check if all results are done — auto-return patient to doctor queue
+
+    # Auto-return to doctor queue
     try:
         visit = order.consultation.visit if order.consultation else None
         if visit:
@@ -390,141 +680,651 @@ def verify_result_view(request, pk):
     return redirect('investigations:detail', pk=pk)
 
 
-# ── DICOM Imaging Studies ──────────────────────────────────────────────────────
-
 @login_required
-def imaging_study_list(request):
-    """All imaging studies — filterable by modality, patient, date range."""
-    from .models import ImagingStudy, ImagingModality
-    from django.db.models import Q
+@require_POST
+def acknowledge_result_view(request, pk):
+    """Ordering doctor acknowledges they've seen the result."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    result = get_object_or_404(InvestigationResult, order=order)
 
-    qs = ImagingStudy.objects.filter(is_deleted=False).select_related('patient', 'ordered_by')
-    q = request.GET.get('q', '')
-    modality = request.GET.get('modality', '')
-    reported = request.GET.get('reported', '')
+    if result.acknowledged_by:
+        messages.info(request, 'Already acknowledged.')
+        return redirect('investigations:detail', pk=pk)
 
-    if q:
-        qs = qs.filter(Q(patient__first_name__icontains=q) | Q(patient__last_name__icontains=q)
-                       | Q(description__icontains=q) | Q(accession_number__icontains=q))
-    if modality:
-        qs = qs.filter(modality=modality)
-    if reported == '1':
-        qs = qs.filter(is_reported=True)
-    elif reported == '0':
-        qs = qs.filter(is_reported=False)
-
-    from django.core.paginator import Paginator
-    page_obj = Paginator(qs.order_by('-study_date', '-created_at'), 25).get_page(request.GET.get('page'))
-    return render(request, 'investigations/imaging_list.html', {
-        'page_obj': page_obj,
-        'modalities': ImagingModality.choices,
-        'q': q, 'modality': modality, 'reported': reported,
-    })
+    result.acknowledged_by = request.user
+    result.acknowledged_at = timezone.now()
+    result.save(update_fields=['acknowledged_by', 'acknowledged_at', 'updated_at'])
+    messages.success(request, 'Result acknowledged.')
+    return redirect('investigations:detail', pk=pk)
 
 
 @login_required
-def imaging_study_create(request):
-    """Create a new imaging study record and link to viewer."""
-    from .models import ImagingStudy, ImagingModality
-    from apps.patients.models import Patient
-    from apps.consultations.models import Consultation
+@require_POST
+def amend_result_view(request, pk):
+    """Amend a verified result — creates version trail."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    result = get_object_or_404(InvestigationResult, order=order)
+
+    u = request.user
+    if not (u.is_medical_director or u.is_super_admin or u.can_record_investigation_results()):
+        return HttpResponseForbidden()
+
+    reason = request.POST.get('amendment_reason', '').strip()
+    if not reason:
+        messages.error(request, 'Amendment reason is required.')
+        return redirect('investigations:detail', pk=pk)
+
+    # Save amendment trail
+    InvestigationResultAmendment.objects.create(
+        result=result,
+        previous_interpretation=result.interpretation,
+        previous_data=result.result_data,
+        reason=reason,
+        amended_by=u,
+        version_number=result.version_number,
+        created_by=u,
+    )
+
+    # Update result
+    result.interpretation = request.POST.get('interpretation', result.interpretation)
+    new_normal = request.POST.get('is_normal', '')
+    if new_normal == 'True':
+        result.is_normal = True
+    elif new_normal == 'False':
+        result.is_normal = False
+    result.version_number += 1
+    result.save()
+
+    order.report_status = ReportStatus.AMENDED
+    order.save(update_fields=['report_status', 'updated_at'])
+
+    messages.success(request, f'Result amended (v{result.version_number}). Previous version preserved.')
+    return redirect('investigations:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAYMENT AUTHORIZATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def authorize_payment_view(request, pk):
+    """Authorize payment bypass (STAT, waiver, insurance, etc.)."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    u = request.user
+
+    new_status = request.POST.get('payment_status', '')
+    reason = request.POST.get('reason', '').strip()
+
+    allowed_statuses = [s[0] for s in PaymentStatus.choices if s[0] != PaymentStatus.UNPAID]
+    if new_status not in allowed_statuses:
+        messages.error(request, 'Invalid payment status.')
+        return redirect('investigations:detail', pk=pk)
+
+    if new_status in (PaymentStatus.WAIVED, PaymentStatus.STAT_OVERRIDE, PaymentStatus.FREE_REPEAT) and not reason:
+        messages.error(request, 'Reason required for this payment authorization type.')
+        return redirect('investigations:detail', pk=pk)
+
+    order.payment_status = new_status
+    order.payment_authorized_by = u
+    order.payment_authorized_at = timezone.now()
+    order.payment_authorization_reason = reason
+    order.save(update_fields=[
+        'payment_status', 'payment_authorized_by', 'payment_authorized_at',
+        'payment_authorization_reason', 'updated_at',
+    ])
+
+    messages.success(request, f'Payment status updated to {order.get_payment_status_display()}.')
+    return redirect('investigations:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CONTRAST PROCEDURE SAFETY (FFA / ICG)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def contrast_safety_view(request, pk):
+    """Contrast safety checklist — consent, allergy, pregnancy, resuscitation trolley."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+
+    if not order.investigation_type.contrast_involved:
+        messages.info(request, 'This investigation does not involve contrast.')
+        return redirect('investigations:detail', pk=pk)
 
     if request.method == 'POST':
-        patient_id = request.POST.get('patient_id', '').strip()
-        patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
-        consultation_id = request.POST.get('consultation_id', '').strip()
-        consultation = None
-        if consultation_id:
-            from django.core.exceptions import ValidationError
+        order.consent_obtained = request.POST.get('consent_obtained') == '1'
+        if order.consent_obtained:
+            order.consent_obtained_by = request.user
+            order.consent_obtained_at = timezone.now()
+        order.allergy_check_done = request.POST.get('allergy_check_done') == '1'
+        preg = request.POST.get('pregnancy_check_done', '')
+        if preg == '1':
+            order.pregnancy_check_done = True
+        elif preg == '0':
+            order.pregnancy_check_done = False
+        elif preg == 'na':
+            order.pregnancy_check_done = None
+        order.resuscitation_trolley_checked = request.POST.get('resuscitation_trolley_checked') == '1'
+        order.contrast_dye_batch = request.POST.get('contrast_dye_batch', '')
+        vol = request.POST.get('contrast_volume_ml', '').strip()
+        if vol:
+            from decimal import Decimal, InvalidOperation
             try:
-                consultation = Consultation.objects.get(id=consultation_id, is_deleted=False)
-            except (Consultation.DoesNotExist, ValidationError):
+                order.contrast_volume_ml = Decimal(vol)
+            except (InvalidOperation, ValueError):
                 pass
+        order.save()
+        messages.success(request, 'Contrast safety checklist saved.')
+        return redirect('investigations:detail', pk=pk)
 
-        study = ImagingStudy.objects.create(
-            patient=patient,
-            consultation=consultation,
-            modality=request.POST.get('modality', 'OTHER'),
-            description=request.POST.get('description', '').strip(),
-            study_uid=request.POST.get('study_uid', '').strip(),
-            accession_number=request.POST.get('accession_number', '').strip(),
-            series_count=int(request.POST.get('series_count', 1) or 1),
-            viewer_url=request.POST.get('viewer_url', '').strip(),
-            study_date=request.POST.get('study_date') or timezone.localdate(),
-            ordered_by=request.user,
-            created_by=request.user,
-        )
-        messages.success(request, f'Imaging study registered: {study}')
-        return redirect('investigations:imaging_detail', study_id=study.id)
+    # Check patient allergy history
+    allergies = []
+    try:
+        from apps.patients.models import PatientAllergy
+        allergies = list(PatientAllergy.objects.filter(
+            patient=order.patient, is_deleted=False
+        ))
+    except Exception:
+        pass
 
-    # GET — patient pre-fill from query param
-    patient_id = request.GET.get('patient', '')
-    consultation_id = request.GET.get('consultation', '')
-    patient = None
-    if patient_id:
-        try:
-            patient = Patient.objects.get(patient_id=patient_id, is_deleted=False)
-        except Patient.DoesNotExist:
-            pass
-
-    from .models import ImagingModality
-    return render(request, 'investigations/imaging_create.html', {
-        'modalities': ImagingModality.choices,
-        'patient': patient,
-        'consultation_id': consultation_id,
-        'today': timezone.localdate(),
-    })
-
-
-@login_required
-def imaging_study_detail(request, study_id):
-    from .models import ImagingStudy
-    study = get_object_or_404(ImagingStudy, id=study_id, is_deleted=False)
-    return render(request, 'investigations/imaging_detail.html', {'study': study})
-
-
-@login_required
-def imaging_study_report(request, study_id):
-    """Save / update the radiology/imaging report for a study."""
-    from .models import ImagingStudy
-    study = get_object_or_404(ImagingStudy, id=study_id, is_deleted=False)
-    if request.method == 'POST':
-        study.report = request.POST.get('report', '').strip()
-        study.is_reported = True
-        study.reported_by = request.user
-        study.save(update_fields=['report', 'is_reported', 'reported_by', 'updated_at'])
-        messages.success(request, 'Imaging report saved.')
-        return redirect('investigations:imaging_detail', study_id=study.id)
-    return redirect('investigations:imaging_detail', study_id=study.id)
-
-
-@login_required
-def patient_imaging_list(request, patient_id):
-    """All imaging studies for a specific patient — used in patient detail tab."""
-    from .models import ImagingStudy
-    from apps.patients.models import Patient
-    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
-    studies = ImagingStudy.objects.filter(
-        patient=patient, is_deleted=False
-    ).select_related('ordered_by', 'consultation').order_by('-study_date', '-created_at')
-    return render(request, 'investigations/patient_imaging.html', {
-        'patient': patient,
-        'studies': studies,
+    return render(request, 'investigations/contrast_safety.html', {
+        'order': order,
+        'allergies': allergies,
     })
 
 
 @login_required
 @require_POST
-def start_investigation_view(request, pk):
-    """Mark an investigation order as IN_PROGRESS — called when tech starts the test on the machine."""
+def contrast_reaction_view(request, pk):
+    """Log an adverse contrast reaction."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+
+    ContrastReactionLog.objects.create(
+        order=order,
+        patient=order.patient,
+        dye_used=request.POST.get('dye_used', ''),
+        dye_batch=order.contrast_dye_batch,
+        dye_volume_ml=order.contrast_volume_ml,
+        severity=request.POST.get('severity', 'MILD'),
+        symptoms=request.POST.get('symptoms', ''),
+        treatment_given=request.POST.get('treatment_given', ''),
+        outcome=request.POST.get('outcome', ''),
+        photographer=request.user,
+        escalated=request.POST.get('escalated') == '1',
+        escalated_to=request.POST.get('escalated_to', ''),
+        created_by=request.user,
+    )
+
+    order.contrast_adverse_reaction = request.POST.get('symptoms', '')
+    order.save(update_fields=['contrast_adverse_reaction', 'updated_at'])
+
+    messages.warning(request, 'Adverse reaction logged. Review patient status immediately.')
+    return redirect('investigations:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BIOMETRY — IOL Calculation Safety Workflow
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def biometry_record_view(request, pk):
+    """Record biometry measurements with safety checks."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
     if not request.user.can_record_investigation_results():
         return HttpResponseForbidden()
-    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
-    if order.status == InvestigationOrder.Status.ORDERED:
-        order.status = InvestigationOrder.Status.IN_PROGRESS
-        order.save(update_fields=['status', 'updated_at'])
-    return redirect('investigations:workstation')
 
+    biometry = getattr(order, 'biometry', None)
+
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+
+        if not biometry:
+            biometry = BiometryRecord(order=order, created_by=request.user)
+
+        biometry.measured_by = request.user
+
+        # Parse decimal fields
+        decimal_fields = [
+            'axial_length_od', 'axial_length_os',
+            'k1_od', 'k2_od', 'k1_os', 'k2_os',
+            'acd_od', 'acd_os', 'wtw',
+            'lens_thickness_od', 'lens_thickness_os',
+            'a_constant',
+            'iol_power_od', 'iol_power_os',
+            'target_refraction_od', 'target_refraction_os',
+            'signal_quality_od', 'signal_quality_os',
+        ]
+        for fld in decimal_fields:
+            val = request.POST.get(fld, '').strip()
+            if val:
+                try:
+                    setattr(biometry, fld, Decimal(val))
+                except (InvalidOperation, ValueError):
+                    pass
+
+        # Integer fields
+        for fld in ('valid_measurements_od', 'valid_measurements_os'):
+            val = request.POST.get(fld, '').strip()
+            if val:
+                try:
+                    setattr(biometry, fld, int(val))
+                except ValueError:
+                    pass
+
+        # String fields
+        biometry.al_method = request.POST.get('al_method', '')
+        biometry.formula_primary = request.POST.get('formula_primary', '')
+        biometry.formula_secondary = request.POST.get('formula_secondary', '')
+        biometry.iol_model = request.POST.get('iol_model', '')
+
+        # Safety checks (boolean)
+        biometry.al_plausibility_check = request.POST.get('al_plausibility_check') == '1'
+        biometry.k_consistency_check = request.POST.get('k_consistency_check') == '1'
+        biometry.refraction_crosscheck_done = request.POST.get('refraction_crosscheck_done') == '1'
+
+        biometry.save()  # auto inter-eye AL check in save()
+
+        if biometry.inter_eye_al_flagged:
+            messages.warning(
+                request,
+                f'Inter-eye axial length difference {biometry.inter_eye_al_difference}mm '
+                f'exceeds 0.3mm threshold. Please verify measurements.'
+            )
+        else:
+            messages.success(request, 'Biometry measurements saved.')
+
+        return redirect('investigations:detail', pk=pk)
+
+    return render(request, 'investigations/biometry_form.html', {
+        'order': order,
+        'biometry': biometry,
+    })
+
+
+@login_required
+@require_POST
+def biometry_surgeon_signoff_view(request, pk):
+    """Surgeon reviews and approves biometry/IOL selection."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    biometry = get_object_or_404(BiometryRecord, order=order)
+
+    if not request.user.is_doctor:
+        return HttpResponseForbidden()
+
+    biometry.surgeon = request.user
+    biometry.surgeon_approved = True
+    biometry.surgeon_approved_at = timezone.now()
+    biometry.surgeon_notes = request.POST.get('surgeon_notes', '')
+    biometry.save(update_fields=[
+        'surgeon', 'surgeon_approved', 'surgeon_approved_at', 'surgeon_notes', 'updated_at',
+    ])
+    messages.success(request, f'Biometry approved by {request.user.get_full_name()}.')
+    return redirect('investigations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def biometry_second_verify_view(request, pk):
+    """Second-person verification of biometry (different from original measurer)."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    biometry = get_object_or_404(BiometryRecord, order=order)
+
+    if request.user == biometry.measured_by:
+        messages.error(request, 'Second verification must be by a different person.')
+        return redirect('investigations:detail', pk=pk)
+
+    biometry.second_verified_by = request.user
+    biometry.second_verified_at = timezone.now()
+    biometry.save(update_fields=['second_verified_by', 'second_verified_at', 'updated_at'])
+    messages.success(request, 'Second-person verification completed.')
+    return redirect('investigations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def biometry_lock_view(request, pk):
+    """Lock biometry once surgery is booked — prevents further changes."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    biometry = get_object_or_404(BiometryRecord, order=order)
+
+    if not (request.user.is_doctor or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    biometry.is_locked = True
+    biometry.locked_at = timezone.now()
+    biometry.locked_reason = request.POST.get('lock_reason', 'Surgery booked')
+    biometry.save(update_fields=['is_locked', 'locked_at', 'locked_reason', 'updated_at'])
+    messages.success(request, 'Biometry locked for surgery.')
+    return redirect('investigations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def biometry_postop_view(request, pk):
+    """Record post-op refraction for prediction error calculation."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    biometry = get_object_or_404(BiometryRecord, order=order)
+
+    from decimal import Decimal, InvalidOperation
+    for fld in ('post_op_refraction_od', 'post_op_refraction_os'):
+        val = request.POST.get(fld, '').strip()
+        if val:
+            try:
+                setattr(biometry, fld, Decimal(val))
+            except (InvalidOperation, ValueError):
+                pass
+
+    biometry.post_op_recorded_at = timezone.now()
+    biometry.save()  # auto-calculates prediction error in save()
+
+    messages.success(request, 'Post-op refraction recorded. Prediction error calculated.')
+    return redirect('investigations:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DEVICE MANAGEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def device_list_view(request):
+    """List all investigation devices."""
+    if not _is_invest_staff(request.user):
+        return HttpResponseForbidden()
+    devices = Device.objects.filter(is_deleted=False).order_by('category', 'name')
+    return render(request, 'investigations/device_list.html', {'devices': devices})
+
+
+@login_required
+def device_detail_view(request, pk):
+    """Device detail with downtimes and recent orders."""
+    if not _is_invest_staff(request.user):
+        return HttpResponseForbidden()
+    device = get_object_or_404(Device, pk=pk, is_deleted=False)
+    downtimes = device.downtimes.order_by('-start')[:20]
+    recent_orders = InvestigationOrder.objects.filter(
+        device=device, is_deleted=False
+    ).select_related('patient', 'investigation_type').order_by('-created_at')[:20]
+    default_types = device.default_for_types.filter(is_active=True)
+    return render(request, 'investigations/device_detail.html', {
+        'device': device,
+        'downtimes': downtimes,
+        'recent_orders': recent_orders,
+        'default_types': default_types,
+    })
+
+
+@login_required
+def device_create_view(request):
+    """Create or edit a device."""
+    if not (request.user.is_super_admin or request.user.is_admin_director):
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        from .models import InvestigationCategory
+        device = Device(created_by=request.user)
+        device.name = request.POST.get('name', '')
+        device.code = request.POST.get('code', '')
+        device.manufacturer = request.POST.get('manufacturer', '')
+        device.model_number = request.POST.get('model_number', '')
+        device.serial_number = request.POST.get('serial_number', '')
+        device.room = request.POST.get('room', '')
+        device.category = request.POST.get('category', 'OTHER')
+        device.is_dicom_capable = request.POST.get('is_dicom_capable') == '1'
+        device.dicom_ae_title = request.POST.get('dicom_ae_title', '')
+        slot_dur = request.POST.get('slot_duration_minutes', '15')
+        device.slot_duration_minutes = int(slot_dur) if slot_dur.isdigit() else 15
+        cal = request.POST.get('last_calibration_date', '')
+        if cal:
+            device.last_calibration_date = cal
+        ncal = request.POST.get('next_calibration_due', '')
+        if ncal:
+            device.next_calibration_due = ncal
+        device.notes = request.POST.get('notes', '')
+        device.save()
+        messages.success(request, f'Device "{device.name}" created.')
+        return redirect('investigations:device_detail', pk=device.pk)
+
+    from .models import InvestigationCategory
+    return render(request, 'investigations/device_form.html', {
+        'categories': InvestigationCategory.choices,
+    })
+
+
+@login_required
+def device_edit_view(request, pk):
+    """Edit an existing device."""
+    if not (request.user.is_super_admin or request.user.is_admin_director):
+        return HttpResponseForbidden()
+
+    device = get_object_or_404(Device, pk=pk, is_deleted=False)
+
+    if request.method == 'POST':
+        device.name = request.POST.get('name', device.name)
+        device.code = request.POST.get('code', device.code)
+        device.manufacturer = request.POST.get('manufacturer', '')
+        device.model_number = request.POST.get('model_number', '')
+        device.serial_number = request.POST.get('serial_number', '')
+        device.room = request.POST.get('room', '')
+        device.category = request.POST.get('category', device.category)
+        device.is_dicom_capable = request.POST.get('is_dicom_capable') == '1'
+        device.dicom_ae_title = request.POST.get('dicom_ae_title', '')
+        slot_dur = request.POST.get('slot_duration_minutes', '15')
+        device.slot_duration_minutes = int(slot_dur) if slot_dur.isdigit() else 15
+        device.is_active = request.POST.get('is_active') != '0'
+        cal = request.POST.get('last_calibration_date', '')
+        if cal:
+            device.last_calibration_date = cal
+        ncal = request.POST.get('next_calibration_due', '')
+        if ncal:
+            device.next_calibration_due = ncal
+        device.notes = request.POST.get('notes', '')
+        device.save()
+        messages.success(request, f'Device "{device.name}" updated.')
+        return redirect('investigations:device_detail', pk=device.pk)
+
+    from .models import InvestigationCategory
+    return render(request, 'investigations/device_form.html', {
+        'device': device,
+        'categories': InvestigationCategory.choices,
+    })
+
+
+@login_required
+@require_POST
+def device_downtime_view(request, pk):
+    """Record a maintenance downtime for a device."""
+    if not _is_invest_staff(request.user):
+        return HttpResponseForbidden()
+    device = get_object_or_404(Device, pk=pk, is_deleted=False)
+
+    start = request.POST.get('start', '')
+    end = request.POST.get('end', '')
+    reason = request.POST.get('reason', '')
+
+    if start and end and reason:
+        DeviceDowntime.objects.create(
+            device=device,
+            start=start,
+            end=end,
+            reason=reason,
+            created_by=request.user,
+        )
+        messages.success(request, f'Downtime recorded for {device.name}.')
+    else:
+        messages.error(request, 'Start, end, and reason are required.')
+
+    return redirect('investigations:device_detail', pk=device.pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DILATION-AWARE VISIT PLAN
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def visit_plan_view(request, patient_id):
+    """Create/view a dilation-aware investigation plan for a patient visit."""
+    from apps.patients.models import Patient
+
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+    today = timezone.localdate()
+
+    if request.method == 'POST':
+        # Get selected order IDs
+        order_ids = request.POST.getlist('order_ids')
+        if not order_ids:
+            messages.error(request, 'Select at least one investigation.')
+            return redirect('investigations:visit_plan', patient_id=patient_id)
+
+        orders = list(InvestigationOrder.objects.filter(
+            pk__in=order_ids, is_deleted=False
+        ).select_related('investigation_type'))
+
+        # Create plan
+        plan = VisitInvestigationPlan.objects.create(
+            patient=patient,
+            visit_date=today,
+            planned_by=request.user,
+            notes=request.POST.get('notes', ''),
+            created_by=request.user,
+        )
+
+        # Auto-sequence: pre-dilation first, then dilation-indifferent, then post-dilation
+        from .models import DilationRequirement
+        pre = [o for o in orders if o.investigation_type.dilation_requirement == DilationRequirement.BEFORE]
+        indiff = [o for o in orders if o.investigation_type.dilation_requirement == DilationRequirement.INDIFFERENT]
+        post = [o for o in orders if o.investigation_type.dilation_requirement == DilationRequirement.AFTER]
+
+        seq = 1
+        for order in pre:
+            VisitInvestigationStep.objects.create(
+                plan=plan, order=order, sequence=seq,
+                phase=VisitInvestigationStep.Phase.PRE_DILATION,
+                estimated_duration_minutes=order.investigation_type.typical_duration_minutes,
+            )
+            order.slot_sequence = seq
+            order.save(update_fields=['slot_sequence'])
+            seq += 1
+
+        for order in indiff:
+            VisitInvestigationStep.objects.create(
+                plan=plan, order=order, sequence=seq,
+                phase=VisitInvestigationStep.Phase.PRE_DILATION,
+                estimated_duration_minutes=order.investigation_type.typical_duration_minutes,
+            )
+            order.slot_sequence = seq
+            order.save(update_fields=['slot_sequence'])
+            seq += 1
+
+        # Dilation wait marker
+        if post:
+            VisitInvestigationStep.objects.create(
+                plan=plan,
+                order=post[0],  # placeholder
+                sequence=seq,
+                phase=VisitInvestigationStep.Phase.DILATION_WAIT,
+                estimated_duration_minutes=20,
+            )
+            seq += 1
+
+        for order in post:
+            VisitInvestigationStep.objects.create(
+                plan=plan, order=order, sequence=seq,
+                phase=VisitInvestigationStep.Phase.POST_DILATION,
+                estimated_duration_minutes=order.investigation_type.typical_duration_minutes,
+            )
+            order.slot_sequence = seq
+            order.save(update_fields=['slot_sequence'])
+            seq += 1
+
+        messages.success(request, f'Investigation plan created with {seq - 1} steps.')
+        return redirect('investigations:visit_plan_detail', plan_pk=plan.pk)
+
+    # GET — show pending orders for this patient
+    pending_orders = InvestigationOrder.objects.filter(
+        patient=patient,
+        status__in=[InvestigationOrder.Status.ORDERED, InvestigationOrder.Status.SCHEDULED],
+        is_deleted=False,
+    ).select_related('investigation_type').order_by('investigation_type__dilation_requirement', 'created_at')
+
+    existing_plans = VisitInvestigationPlan.objects.filter(
+        patient=patient, is_deleted=False, visit_date=today,
+    ).prefetch_related('steps__order__investigation_type')
+
+    return render(request, 'investigations/visit_plan.html', {
+        'patient': patient,
+        'pending_orders': pending_orders,
+        'existing_plans': existing_plans,
+        'today': today,
+    })
+
+
+@login_required
+def visit_plan_detail_view(request, plan_pk):
+    """View a visit investigation plan with dilation-aware sequencing."""
+    plan = get_object_or_404(
+        VisitInvestigationPlan.objects.prefetch_related(
+            'steps__order__investigation_type',
+            'steps__order__device',
+        ),
+        pk=plan_pk, is_deleted=False,
+    )
+    steps = plan.steps.all()
+    return render(request, 'investigations/visit_plan_detail.html', {
+        'plan': plan,
+        'steps': steps,
+    })
+
+
+@login_required
+@require_POST
+def visit_plan_complete_step_view(request, step_pk):
+    """Mark a step in the visit plan as completed."""
+    step = get_object_or_404(VisitInvestigationStep, pk=step_pk)
+    step.is_completed = True
+    step.completed_at = timezone.now()
+    step.save(update_fields=['is_completed', 'completed_at'])
+
+    # Check if all steps done
+    plan = step.plan
+    if not plan.steps.filter(is_completed=False).exists():
+        plan.is_completed = True
+        plan.save(update_fields=['is_completed'])
+
+    return redirect('investigations:visit_plan_detail', plan_pk=plan.pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DILATION TRACKING
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def record_dilation_view(request, pk):
+    """Record dilation for a patient's investigation order."""
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    order.dilation_status = request.POST.get('dilation_status', 'dilating')
+    order.dilation_time = timezone.now()
+    order.dilation_agent = request.POST.get('dilation_agent', '')
+    order.save(update_fields=['dilation_status', 'dilation_time', 'dilation_agent', 'updated_at'])
+    messages.success(request, f'Dilation recorded: {order.dilation_agent}')
+
+    # Update all other pending orders for same patient on same day
+    InvestigationOrder.objects.filter(
+        patient=order.patient,
+        status__in=[InvestigationOrder.Status.ORDERED, InvestigationOrder.Status.IN_PROGRESS],
+        is_deleted=False,
+    ).exclude(pk=pk).update(
+        dilation_status=order.dilation_status,
+        dilation_time=order.dilation_time,
+        dilation_agent=order.dilation_agent,
+    )
+
+    return redirect('investigations:detail', pk=pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BULK START & CANCEL
+# ══════════════════════════════════════════════════════════════════════════════
 
 @login_required
 @require_POST
@@ -539,25 +1339,19 @@ def bulk_start_view(request):
     updated = InvestigationOrder.objects.filter(
         pk__in=pks,
         status=InvestigationOrder.Status.ORDERED,
-    ).update(status=InvestigationOrder.Status.IN_PROGRESS)
+    ).update(status=InvestigationOrder.Status.IN_PROGRESS, acquisition_status=AcquisitionStatus.IN_PROGRESS)
     messages.success(request, f'{updated} test(s) marked as In Progress.')
     return redirect('investigations:workstation')
 
 
 @login_required
 def cancel_investigation_order(request, pk):
-    """
-    Cancel a pending investigation order.
-    Only allowed when status == ORDERED (not yet started).
-    Permitted by: the ordering doctor, investigation tech, or medical director.
-    """
+    """Cancel a pending investigation order."""
     if request.method != 'POST':
         return redirect('investigations:detail', pk=pk)
 
     order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
 
-    # Permission check
-    from apps.accounts.models import UserRole
     u = request.user
     can_cancel = (
         u == order.ordered_by
@@ -585,6 +1379,147 @@ def cancel_investigation_order(request, pk):
     return redirect('investigations:list')
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# DICOM IMAGING STUDIES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def imaging_study_list(request):
+    qs = ImagingStudy.objects.filter(is_deleted=False).select_related('patient', 'ordered_by')
+    q = request.GET.get('q', '')
+    modality = request.GET.get('modality', '')
+    reported = request.GET.get('reported', '')
+    eye_filter = request.GET.get('eye', '')
+
+    if q:
+        qs = qs.filter(Q(patient__first_name__icontains=q) | Q(patient__last_name__icontains=q)
+                       | Q(description__icontains=q) | Q(accession_number__icontains=q))
+    if modality:
+        qs = qs.filter(modality=modality)
+    if reported == '1':
+        qs = qs.filter(is_reported=True)
+    elif reported == '0':
+        qs = qs.filter(is_reported=False)
+    if eye_filter:
+        qs = qs.filter(laterality=eye_filter)
+
+    from django.core.paginator import Paginator
+    page_obj = Paginator(qs.order_by('-study_date', '-created_at'), 25).get_page(request.GET.get('page'))
+    return render(request, 'investigations/imaging_list.html', {
+        'page_obj': page_obj,
+        'modalities': ImagingModality.choices,
+        'laterality_choices': Laterality.choices,
+        'q': q, 'modality': modality, 'reported': reported, 'eye_filter': eye_filter,
+    })
+
+
+@login_required
+def imaging_study_create(request):
+    from apps.patients.models import Patient
+
+    if request.method == 'POST':
+        patient_id = request.POST.get('patient_id', '').strip()
+        patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+        consultation_id = request.POST.get('consultation_id', '').strip()
+        consultation = None
+        if consultation_id:
+            from django.core.exceptions import ValidationError
+            try:
+                consultation = Consultation.objects.get(id=consultation_id, is_deleted=False)
+            except (Consultation.DoesNotExist, ValidationError):
+                pass
+
+        study = ImagingStudy.objects.create(
+            patient=patient,
+            consultation=consultation,
+            modality=request.POST.get('modality', 'OTHER'),
+            laterality=request.POST.get('laterality', Laterality.OU),
+            description=request.POST.get('description', '').strip(),
+            study_uid=request.POST.get('study_uid', '').strip(),
+            accession_number=request.POST.get('accession_number', '').strip(),
+            series_count=int(request.POST.get('series_count', 1) or 1),
+            viewer_url=request.POST.get('viewer_url', '').strip(),
+            study_date=request.POST.get('study_date') or timezone.localdate(),
+            ordered_by=request.user,
+            created_by=request.user,
+        )
+        messages.success(request, f'Imaging study registered: {study}')
+        return redirect('investigations:imaging_detail', study_id=study.id)
+
+    patient_id = request.GET.get('patient', '')
+    consultation_id = request.GET.get('consultation', '')
+    patient = None
+    if patient_id:
+        try:
+            patient = Patient.objects.get(patient_id=patient_id, is_deleted=False)
+        except Patient.DoesNotExist:
+            pass
+
+    return render(request, 'investigations/imaging_create.html', {
+        'modalities': ImagingModality.choices,
+        'laterality_choices': Laterality.choices,
+        'patient': patient,
+        'consultation_id': consultation_id,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def imaging_study_detail(request, study_id):
+    study = get_object_or_404(ImagingStudy, id=study_id, is_deleted=False)
+    return render(request, 'investigations/imaging_detail.html', {'study': study})
+
+
+@login_required
+def imaging_study_report(request, study_id):
+    study = get_object_or_404(ImagingStudy, id=study_id, is_deleted=False)
+    if request.method == 'POST':
+        study.report = request.POST.get('report', '').strip()
+        study.is_reported = True
+        study.reported_by = request.user
+        study.save(update_fields=['report', 'is_reported', 'reported_by', 'updated_at'])
+        messages.success(request, 'Imaging report saved.')
+        return redirect('investigations:imaging_detail', study_id=study.id)
+    return redirect('investigations:imaging_detail', study_id=study.id)
+
+
+@login_required
+def patient_imaging_list(request, patient_id):
+    from apps.patients.models import Patient
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+    studies = ImagingStudy.objects.filter(
+        patient=patient, is_deleted=False
+    ).select_related('ordered_by', 'consultation').order_by('-study_date', '-created_at')
+    return render(request, 'investigations/patient_imaging.html', {
+        'patient': patient,
+        'studies': studies,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UNACKNOWLEDGED RESULTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def unacknowledged_results_view(request):
+    """Show results ordered by this doctor that haven't been acknowledged yet."""
+    results = InvestigationResult.objects.filter(
+        order__ordered_by=request.user,
+        acknowledged_by__isnull=True,
+        is_deleted=False,
+    ).select_related(
+        'order__patient', 'order__investigation_type', 'performed_by'
+    ).order_by('-result_date')
+
+    return render(request, 'investigations/unacknowledged_results.html', {
+        'results': results,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STATISTICS & REPORTS (preserved from original)
+# ══════════════════════════════════════════════════════════════════════════════
+
 @login_required
 def investigation_stats_view(request):
     """Monthly statistics for Eye Investigations — WHO-standard demographics included."""
@@ -596,7 +1531,6 @@ def investigation_stats_view(request):
     u = request.user
     if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
             or u.is_admin_director or u.is_ceo):
-        from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 
     today = timezone.localdate()
@@ -623,7 +1557,7 @@ def investigation_stats_view(request):
     _cache_key = f'inv_stats_{year}_{month}'
     _cached = cache.get(_cache_key)
     if _cached:
-        _cached['today'] = timezone.now()  # always a datetime for H:i format compatibility
+        _cached['today'] = timezone.now()
         if request.GET.get('pdf'):
             from apps.reports.views import render_pdf
             _cached['pdf_filename'] = 'investigation-stats.pdf'
@@ -642,7 +1576,7 @@ def investigation_stats_view(request):
     pending_count   = base.filter(status__in=['ORDERED', 'IN_PROGRESS']).count()
     completed_count = base.filter(status='COMPLETED').count()
     cancelled_count = base.filter(status='CANCELLED').count()
-    urgent_count    = base.filter(urgency__in=['URGENT', 'EMERGENCY']).count()
+    urgent_count    = base.filter(urgency__in=['URGENT', 'EMERGENCY', 'STAT']).count()
     abnormal_count  = base.filter(result__is_normal=False).count()
     completion_rate = round(completed_count / total_orders * 100, 1) if total_orders else 0
 
@@ -662,9 +1596,10 @@ def investigation_stats_view(request):
     # ── By urgency ────────────────────────────────────────────────────────────
     routine_count   = base.filter(urgency='ROUTINE').count()
     emergency_count = base.filter(urgency='EMERGENCY').count()
+    stat_count      = base.filter(urgency='STAT').count()
     urgency_json = json.dumps({
-        'labels': ['Routine', 'Urgent', 'Emergency'],
-        'data':   [routine_count, max(0, urgent_count - emergency_count), emergency_count],
+        'labels': ['Routine', 'Urgent', 'STAT', 'Emergency'],
+        'data':   [routine_count, max(0, urgent_count - emergency_count - stat_count), stat_count, emergency_count],
     })
 
     # ── By status ─────────────────────────────────────────────────────────────
@@ -688,7 +1623,6 @@ def investigation_stats_view(request):
     ]
 
     # ── Abnormal rate by test ─────────────────────────────────────────────────
-    from .models import InvestigationResult as _Result
     abnormal_by_test = []
     for row in (base.filter(result__isnull=False)
                     .values('investigation_type__name')
@@ -742,23 +1676,14 @@ def investigation_stats_view(request):
     age_json = json.dumps([{'label': k, 'count': v} for k, v in age_counts.items()])
 
     # ── 12-month rolling trend ────────────────────────────────────────────────
-    trend_months = []
-    for i in range(11, -1, -1):
-        import datetime as _dt
-        # Go back i months from the current month
-        ref_month = (today.replace(day=1) - _dt.timedelta(days=1)) if i else today.replace(day=1)
-        # simpler: compute directly
-    # Build last 12 months list
     trend_12m = []
     for i in range(11, -1, -1):
-        import datetime as _dt
-        # Subtract i months
+        import datetime as _dt, calendar as _cal
         y = today.year
         m = today.month - i
         while m <= 0:
             m += 12
             y -= 1
-        import calendar as _cal
         last = _cal.monthrange(y, m)[1]
         ms = _dt.date(y, m, 1)
         me = _dt.date(y, m, last)
@@ -789,14 +1714,11 @@ def investigation_stats_view(request):
         if gdr in ('M', 'F'):
             cat_gender[cat][gdr] += count
 
-    # ── Per exam type × sex × age group breakdown ────────────────────────────
-    # Fetch raw rows: one row per order (investigation_type, gender, dob)
+    # ── Per exam type x sex x age group breakdown ────────────────────────────
     type_rows = list(
         base.values_list(
-            'investigation_type__name',
-            'investigation_type__category',
-            'patient__gender',
-            'patient__date_of_birth',
+            'investigation_type__name', 'investigation_type__category',
+            'patient__gender', 'patient__date_of_birth',
         )
     )
     type_breakdown = {}
@@ -824,7 +1746,6 @@ def investigation_stats_view(request):
             type_breakdown[name]['female'] += 1
             if is_child:
                 type_breakdown[name]['child_female'] += 1
-    # Sort by total desc, compute adult counts, convert to list
     type_breakdown_list = sorted(
         [{
             'name': k,
@@ -905,6 +1826,11 @@ def investigation_stats_view(request):
         'data':   [r['total'] for r in tier_table],
     })
 
+    # ── Laterality breakdown ──────────────────────────────────────────────────
+    lat_raw = base.values('eye').annotate(count=Count('id')).order_by('-count')
+    laterality_data = [{'label': r['eye'], 'count': r['count']} for r in lat_raw]
+    laterality_json = json.dumps(laterality_data)
+
     ctx = {
         'month_start': month_start, 'month_end': month_end,
         'year': year, 'month': month,
@@ -928,6 +1854,7 @@ def investigation_stats_view(request):
         'status_json': status_json, 'daily_json': daily_json,
         'gender_json': gender_json, 'age_json': age_json,
         'dept_json': dept_json, 'tier_json': tier_json,
+        'laterality_json': laterality_json,
         'is_current_month': (year == today.year and month == today.month),
         'today': timezone.now(),
         # 12-month trend
@@ -935,7 +1862,7 @@ def investigation_stats_view(request):
         # Outreach
         'clinic_count': clinic_count,
         'outreach_count': outreach_count,
-        # Per exam type × sex × age
+        # Per exam type x sex x age
         'type_breakdown_list': type_breakdown_list,
     }
     cache.set(_cache_key, ctx, _cache_ttl)
@@ -950,7 +1877,6 @@ def investigation_stats_view(request):
 
 @login_required
 def stats_csv_export_view(request):
-    """Download investigation stats breakdown as CSV."""
     import csv
     from django.http import HttpResponse
     import datetime as _dt, calendar as _cal
@@ -977,7 +1903,6 @@ def stats_csv_export_view(request):
         created_at__date__lte=month_end,
     )
 
-    # Per-type × sex × age
     type_rows = list(base.values_list(
         'investigation_type__name', 'investigation_type__category',
         'patient__gender', 'patient__date_of_birth',
@@ -1019,7 +1944,7 @@ def stats_csv_export_view(request):
     w.writerow(['Summary'])
     w.writerow(['Completed', base.filter(status='COMPLETED').count()])
     w.writerow(['Completion Rate %', f"{round(base.filter(status='COMPLETED').count() / total * 100, 1) if total else 0}%"])
-    w.writerow(['Urgent / Emergency', base.filter(urgency__in=['URGENT','EMERGENCY']).count()])
+    w.writerow(['Urgent / Emergency / STAT', base.filter(urgency__in=['URGENT','EMERGENCY','STAT']).count()])
     w.writerow(['Clinic', base.filter(location='CLINIC').count()])
     w.writerow(['Outreach', base.filter(location='OUTREACH').count()])
     return response
@@ -1029,15 +1954,12 @@ def stats_csv_export_view(request):
 
 @login_required
 def machine_revenue_view(request):
-    """Financial performance per imaging machine/modality (JCI AOP.5.4 / asset justification)."""
     from django.db.models import Count, Sum, F, ExpressionWrapper, DecimalField as _Dec
     from django.utils import timezone as _tz
     import datetime as _dt, calendar as _cal
 
     u = request.user
-    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
-            or u.is_admin_director or u.is_ceo or u.is_finance_director):
-        from django.http import HttpResponseForbidden
+    if not _is_invest_viewer(u):
         return HttpResponseForbidden()
 
     today = _tz.localdate()
@@ -1049,7 +1971,6 @@ def machine_revenue_view(request):
     year_start = _dt.date(year, 1, 1)
     year_end   = _dt.date(year, 12, 31)
 
-    # ── Per InvestigationType: orders completed + revenue ─────────────────────
     rows = list(
         InvestigationOrder.objects.filter(
             is_deleted=False,
@@ -1067,7 +1988,6 @@ def machine_revenue_view(request):
         .order_by('investigation_type__category', 'investigation_type__name')
     )
 
-    # Group by category
     from decimal import Decimal
     categories = {}
     grand_count = 0
@@ -1081,7 +2001,6 @@ def machine_revenue_view(request):
         grand_revenue += rev
         if cat not in categories:
             categories[cat] = {'tests': [], 'subtotal_count': 0, 'subtotal_rev': Decimal('0')}
-        # find existing test row
         existing = next((t for t in categories[cat]['tests'] if t['name'] == r['investigation_type__name']), None)
         if existing:
             existing['count'] += count
@@ -1102,8 +2021,6 @@ def machine_revenue_view(request):
         categories[cat]['subtotal_count'] += count
         categories[cat]['subtotal_rev']   += rev
 
-    # ── By imaging modality (from ImagingStudy) ───────────────────────────────
-    from .models import ImagingStudy, ImagingModality
     modality_rows = list(
         ImagingStudy.objects.filter(
             is_deleted=False,
@@ -1114,16 +2031,12 @@ def machine_revenue_view(request):
         .annotate(count=Count('id'))
         .order_by('-count')
     )
+    modality_map = dict(ImagingModality.choices)
     modality_table = [
-        {'modality': r['modality'], 'label': r['modality'], 'count': r['count']}
+        {'modality': r['modality'], 'label': modality_map.get(r['modality'], r['modality']), 'count': r['count']}
         for r in modality_rows
     ]
-    # Resolve labels
-    modality_map = dict(ImagingModality.choices)
-    for row in modality_table:
-        row['label'] = modality_map.get(row['modality'], row['modality'])
 
-    # ── 12-month monthly revenue trend ────────────────────────────────────────
     import json
     monthly_trend = []
     for i in range(11, -1, -1):
@@ -1139,7 +2052,6 @@ def machine_revenue_view(request):
             is_deleted=False, status='COMPLETED',
             created_at__date__gte=ms, created_at__date__lte=me,
         ).count()
-        # Revenue = sum of (unit_price × count) — approximated via annotation
         rev_q = InvestigationOrder.objects.filter(
             is_deleted=False, status='COMPLETED',
             created_at__date__gte=ms, created_at__date__lte=me,
@@ -1172,17 +2084,14 @@ def machine_revenue_view(request):
 
 @login_required
 def machine_revenue_csv_view(request):
-    """CSV download of machine revenue report."""
     import csv
     from django.http import HttpResponse
-    from django.db.models import Count, Sum, F, ExpressionWrapper, DecimalField as _Dec
+    from django.db.models import Count
     import datetime as _dt
     from decimal import Decimal
 
     u = request.user
-    if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
-            or u.is_admin_director or u.is_ceo or u.is_finance_director):
-        from django.http import HttpResponseForbidden
+    if not _is_invest_viewer(u):
         return HttpResponseForbidden()
 
     today = timezone.localdate()
@@ -1231,7 +2140,6 @@ def machine_revenue_csv_view(request):
 
 @login_required
 def staff_throughput_view(request):
-    """Per-staff daily throughput — exams per technician with ISO 15189 §5.1 quality metrics."""
     from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
     from django.utils import timezone as _tz
     import datetime as _dt, json
@@ -1251,7 +2159,6 @@ def staff_throughput_view(request):
 
     since = today - _dt.timedelta(days=days - 1)
 
-    # ── Today's leaderboard ────────────────────────────────────────────────────
     today_results = (
         InvestigationResult.objects
         .filter(is_deleted=False, result_date__date=today)
@@ -1267,7 +2174,6 @@ def staff_throughput_view(request):
         for r in today_results if r['performed_by__id']
     ]
 
-    # ── Per-staff quality summary ──────────────────────────────────────────────
     staff_summary_raw = (
         InvestigationResult.objects
         .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
@@ -1314,7 +2220,6 @@ def staff_throughput_view(request):
             'tat_str':      tat_str,
         })
 
-    # ── Daily totals chart (all staff combined, last N days) ──────────────────
     daily_raw = (
         InvestigationResult.objects
         .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
@@ -1325,7 +2230,6 @@ def staff_throughput_view(request):
     )
     daily_json = json.dumps([{'day': str(r['day']), 'count': r['count']} for r in daily_raw])
 
-    # ── Per-staff daily breakdown (for the chart — top 5 staff) ───────────────
     top5 = [s['name'] for s in staff_summary[:5]]
     staff_daily = {}
     if top5:
@@ -1346,7 +2250,6 @@ def staff_throughput_view(request):
                 staff_daily[name] = {}
             staff_daily[name][day] = r['count']
 
-    # Build date labels
     date_labels = [(since + _dt.timedelta(days=i)).strftime('%d %b') for i in range(days)]
     date_keys   = [(since + _dt.timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days)]
 
@@ -1379,7 +2282,6 @@ def staff_throughput_view(request):
 
 @login_required
 def staff_throughput_csv_view(request):
-    """CSV download of staff throughput report."""
     import csv
     from django.http import HttpResponse
     import datetime as _dt
@@ -1387,7 +2289,6 @@ def staff_throughput_csv_view(request):
     u = request.user
     if not (u.is_investigation_tech or u.is_medical_director or u.is_super_admin
             or u.is_admin_director or u.is_ceo):
-        from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 
     today = timezone.localdate()
@@ -1446,7 +2347,6 @@ def staff_throughput_csv_view(request):
 
 @login_required
 def staff_throughput_pdf_view(request):
-    """WeasyPrint PDF of staff throughput — ISO 15189 §5.1 competence monitoring."""
     from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
     from django.utils import timezone as _tz
     import datetime as _dt
