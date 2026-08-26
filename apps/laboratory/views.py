@@ -35,10 +35,12 @@ def lab_dashboard(request):
         updated_at__date=today,
     ).count()
 
-    # Critical results this month (unverified)
+    # Critical results this month (unverified) — also exclude soft-deleted orders/items
     critical_unverified = LabResult.objects.filter(
         is_critical=True, is_verified=False,
         is_deleted=False,
+        order_item__is_deleted=False,
+        order_item__order__is_deleted=False,
     ).select_related('order_item__order__patient', 'order_item__test_type')
 
     # Abnormal this month
@@ -330,12 +332,25 @@ def lab_stats_view(request):
     for t in abnormal_by_test:
         t['abn_rate'] = round(t['abnormal'] / t['total'] * 100, 1) if t['total'] else 0
 
-    # Daily volume
-    daily_volume = []
-    for i in range(13, -1, -1):
-        d = today - timedelta(days=i)
-        cnt = LabOrder.objects.filter(is_deleted=False, created_at__date=d).count()
-        daily_volume.append({'date': d.strftime('%d %b'), 'count': cnt})
+    # Daily volume — single aggregate instead of 14 separate queries
+    from django.db.models.functions import TruncDate as _TruncDate
+    _14_ago = today - timedelta(days=13)
+    _daily_raw = dict(
+        LabOrder.objects.filter(
+            is_deleted=False,
+            created_at__date__gte=_14_ago,
+            created_at__date__lte=today,
+        )
+        .annotate(day=_TruncDate('created_at'))
+        .values_list('day')
+        .annotate(cnt=Count('id'))
+        .values_list('day', 'cnt')
+    )
+    daily_volume = [
+        {'date': (today - timedelta(days=i)).strftime('%d %b'),
+         'count': _daily_raw.get(today - timedelta(days=i), 0)}
+        for i in range(13, -1, -1)
+    ]
 
     # ── Lab orders by requesting department / consultation type ──────────────
     dept_lab_raw = list(
@@ -637,10 +652,8 @@ def lab_detail_view(request, pk):
 
 
 @login_required
-@login_required
 def bulk_collect_sample_view(request):
     """Mark multiple lab orders as SAMPLE_COLLECTED in one click."""
-    from django.views.decorators.http import require_POST as _rp
     if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
         return HttpResponseForbidden()
     if request.method != 'POST':
@@ -797,6 +810,7 @@ def enter_results_view(request, pk):
     })
 
 
+@require_POST
 @login_required
 def cancel_lab_order(request, pk):
     """
@@ -804,7 +818,6 @@ def cancel_lab_order(request, pk):
     Allowed by: the doctor who ordered it, lab tech, or medical director.
     Only orders in ORDERED status can be cancelled (not after sample collected/processing).
     """
-    from django.views.decorators.http import require_POST
     order = get_object_or_404(LabOrder, pk=pk, is_deleted=False)
 
     can_cancel = (
@@ -822,9 +835,6 @@ def cancel_lab_order(request, pk):
             f'Cannot cancel — order is already {order.get_status_display()}. '
             'Contact the requesting doctor to discuss further action.'
         )
-        return redirect('laboratory:detail', pk=pk)
-
-    if request.method != 'POST':
         return redirect('laboratory:detail', pk=pk)
 
     reason = request.POST.get('cancel_reason', '').strip() or 'Patient unable to pay / cancelled by request'
@@ -938,8 +948,8 @@ def lab_stats_csv_view(request):
     w.writerow([])
     w.writerow(['Summary'])
     w.writerow(['Total Orders', total_orders])
-    w.writerow(['Completed', base_orders.filter(status='COMPLETED').count()])
     completion = base_orders.filter(status='COMPLETED').count()
+    w.writerow(['Completed', completion])
     w.writerow(['Completion Rate %',
                 f"{round(completion / total_orders * 100, 1) if total_orders else 0}%"])
     w.writerow(['Urgent / Emergency',
@@ -955,6 +965,7 @@ def lab_staff_throughput_view(request):
     import datetime as _dt
     import json
     from django.db.models import Count, Avg, ExpressionWrapper, F, DurationField
+    from django.db.models.functions import TruncDate
 
     u = request.user
     if not (u.is_lab_tech or u.is_medical_director or u.is_super_admin
@@ -1075,7 +1086,7 @@ def lab_staff_throughput_view(request):
     daily_raw = (
         LabResult.objects
         .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
-        .extra(select={'day': 'DATE(result_date)'})
+        .annotate(day=TruncDate('result_date'))
         .values('day').annotate(count=Count('id')).order_by('day')
     )
     daily_json = json.dumps([{'day': str(r['day']), 'count': r['count']} for r in daily_raw])
@@ -1087,7 +1098,7 @@ def lab_staff_throughput_view(request):
         for r in (
             LabResult.objects
             .filter(is_deleted=False, result_date__date__gte=since, result_date__date__lte=today)
-            .extra(select={'day': 'DATE(result_date)'})
+            .annotate(day=TruncDate('result_date'))
             .values('day', 'performed_by__first_name', 'performed_by__last_name')
             .annotate(count=Count('id')).order_by('day')
         ):
