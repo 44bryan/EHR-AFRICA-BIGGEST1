@@ -1,0 +1,236 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Uncollected Orders — Optical Shop{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-hourglass-split me-2 text-warning"></i>Uncollected Optical Orders</h4>
+    <div class="text-muted small">Orders ready for collection but not yet picked up — {{ total }} total</div>
+  </div>
+  <a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Dashboard
+  </a>
+</div>
+
+{# ── Summary cards ── #}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-2 px-3 text-center">
+        <div class="fs-4 fw-bold text-success">{{ buckets.0_7|length }}</div>
+        <div class="small text-muted">0–7 Days</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-2 px-3 text-center">
+        <div class="fs-4 fw-bold text-primary">{{ buckets.8_14|length }}</div>
+        <div class="small text-muted">8–14 Days</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-2 px-3 text-center">
+        <div class="fs-4 fw-bold text-warning">{{ buckets.15_30|length }}</div>
+        <div class="small text-muted">15–30 Days</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-2 px-3 text-center">
+        <div class="fs-4 fw-bold text-danger">{{ buckets.31_plus|length }}</div>
+        <div class="small text-muted">31+ Days</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% for bucket_key, label, color in bucket_list %}
+{% with orders=bucket_key %}
+{% if orders %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white">
+    <span class="badge bg-{{ color }} me-2">{{ orders|length }}</span>
+    <span class="fw-semibold small">{{ label }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Order #</th>
+          <th>Patient</th>
+          <th>Frame / Lens</th>
+          <th class="text-end">Total</th>
+          <th class="text-end">Balance</th>
+          <th>Days Waiting</th>
+          <th>Phone</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="fw-semibold text-decoration-none">{{ o.order_number }}</a></td>
+          <td>
+            <div class="fw-semibold">{{ o.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ o.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if o.frame %}<span>{{ o.frame }}</span>{% endif %}
+            {% if o.lens %}<span class="text-muted"> + {{ o.lens.name }}</span>{% endif %}
+          </td>
+          <td class="text-end fw-semibold">{{ o.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end {% if o.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+            {% if o.balance_due > 0 %}{{ o.balance_due|floatformat:0|intcomma }}{% else %}Paid{% endif %}
+          </td>
+          <td>
+            <span class="badge {% if o._days_waiting > 30 %}bg-danger{% elif o._days_waiting > 14 %}bg-warning text-dark{% elif o._days_waiting > 7 %}bg-primary{% else %}bg-success{% endif %}">
+              {{ o._days_waiting }} days
+            </span>
+          </td>
+          <td class="text-muted">{{ o.patient.phone_number|default:"—" }}</td>
+          <td>
+            <a href="{% url 'opticals:order_detail' order_id=o.id %}" class="btn btn-sm btn-outline-primary">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+{% endfor %}
+
+{# Manual rendering since Django templates can't iterate dict with mixed keys easily #}
+{% if buckets.31_plus %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white">
+    <span class="badge bg-danger me-2">{{ buckets.31_plus|length }}</span>
+    <span class="fw-semibold small">31+ Days — Urgent Follow-up Needed</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Order #</th><th>Patient</th><th>Frame / Lens</th><th class="text-end">Total</th><th class="text-end">Balance</th><th>Days</th><th>Phone</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for o in buckets.31_plus %}
+        <tr>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="fw-semibold text-decoration-none">{{ o.order_number }}</a></td>
+          <td><div class="fw-semibold">{{ o.patient.full_name }}</div><div class="text-muted" style="font-size:.72rem;">{{ o.patient.patient_id }}</div></td>
+          <td>{% if o.frame %}{{ o.frame }}{% endif %}{% if o.lens %} <span class="text-muted">+ {{ o.lens.name }}</span>{% endif %}</td>
+          <td class="text-end fw-semibold">{{ o.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end {% if o.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{% if o.balance_due > 0 %}{{ o.balance_due|floatformat:0|intcomma }}{% else %}Paid{% endif %}</td>
+          <td><span class="badge bg-danger">{{ o._days_waiting }} days</span></td>
+          <td class="text-muted">{{ o.patient.phone_number|default:"—" }}</td>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if buckets.15_30 %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white">
+    <span class="badge bg-warning text-dark me-2">{{ buckets.15_30|length }}</span>
+    <span class="fw-semibold small">15–30 Days</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Order #</th><th>Patient</th><th>Frame / Lens</th><th class="text-end">Total</th><th class="text-end">Balance</th><th>Days</th><th>Phone</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for o in buckets.15_30 %}
+        <tr>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="fw-semibold text-decoration-none">{{ o.order_number }}</a></td>
+          <td><div class="fw-semibold">{{ o.patient.full_name }}</div><div class="text-muted" style="font-size:.72rem;">{{ o.patient.patient_id }}</div></td>
+          <td>{% if o.frame %}{{ o.frame }}{% endif %}{% if o.lens %} <span class="text-muted">+ {{ o.lens.name }}</span>{% endif %}</td>
+          <td class="text-end fw-semibold">{{ o.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end {% if o.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{% if o.balance_due > 0 %}{{ o.balance_due|floatformat:0|intcomma }}{% else %}Paid{% endif %}</td>
+          <td><span class="badge bg-warning text-dark">{{ o._days_waiting }} days</span></td>
+          <td class="text-muted">{{ o.patient.phone_number|default:"—" }}</td>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if buckets.8_14 %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white">
+    <span class="badge bg-primary me-2">{{ buckets.8_14|length }}</span>
+    <span class="fw-semibold small">8–14 Days</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Order #</th><th>Patient</th><th>Frame / Lens</th><th class="text-end">Total</th><th class="text-end">Balance</th><th>Days</th><th>Phone</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for o in buckets.8_14 %}
+        <tr>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="fw-semibold text-decoration-none">{{ o.order_number }}</a></td>
+          <td><div class="fw-semibold">{{ o.patient.full_name }}</div><div class="text-muted" style="font-size:.72rem;">{{ o.patient.patient_id }}</div></td>
+          <td>{% if o.frame %}{{ o.frame }}{% endif %}{% if o.lens %} <span class="text-muted">+ {{ o.lens.name }}</span>{% endif %}</td>
+          <td class="text-end fw-semibold">{{ o.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end {% if o.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{% if o.balance_due > 0 %}{{ o.balance_due|floatformat:0|intcomma }}{% else %}Paid{% endif %}</td>
+          <td><span class="badge bg-primary">{{ o._days_waiting }} days</span></td>
+          <td class="text-muted">{{ o.patient.phone_number|default:"—" }}</td>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if buckets.0_7 %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white">
+    <span class="badge bg-success me-2">{{ buckets.0_7|length }}</span>
+    <span class="fw-semibold small">0–7 Days</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Order #</th><th>Patient</th><th>Frame / Lens</th><th class="text-end">Total</th><th class="text-end">Balance</th><th>Days</th><th>Phone</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for o in buckets.0_7 %}
+        <tr>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="fw-semibold text-decoration-none">{{ o.order_number }}</a></td>
+          <td><div class="fw-semibold">{{ o.patient.full_name }}</div><div class="text-muted" style="font-size:.72rem;">{{ o.patient.patient_id }}</div></td>
+          <td>{% if o.frame %}{{ o.frame }}{% endif %}{% if o.lens %} <span class="text-muted">+ {{ o.lens.name }}</span>{% endif %}</td>
+          <td class="text-end fw-semibold">{{ o.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end {% if o.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{% if o.balance_due > 0 %}{{ o.balance_due|floatformat:0|intcomma }}{% else %}Paid{% endif %}</td>
+          <td><span class="badge bg-success">{{ o._days_waiting }} days</span></td>
+          <td class="text-muted">{{ o.patient.phone_number|default:"—" }}</td>
+          <td><a href="{% url 'opticals:order_detail' order_id=o.id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if not total %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-check-circle-fill text-success fs-1"></i>
+  <div class="mt-2">No uncollected orders — all glasses have been picked up!</div>
+</div>
+{% endif %}
+{% endblock %}

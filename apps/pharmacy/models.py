@@ -134,8 +134,18 @@ class DrugStock(AuditModel):
 class DispensingStatus(models.TextChoices):
     PENDING = 'PENDING', 'Pending'
     PARTIAL = 'PARTIAL', 'Partially Dispensed'
+    CONFIRMED = 'CONFIRMED', 'Confirmed — Sent to Cashier'
     DISPENSED = 'DISPENSED', 'Fully Dispensed'
     CANCELLED = 'CANCELLED', 'Cancelled'
+
+
+class UnavailableReason(models.TextChoices):
+    OUT_OF_STOCK   = 'OUT_OF_STOCK',   'Out of Stock'
+    EXPIRED        = 'EXPIRED',        'All Batches Expired'
+    DISCONTINUED   = 'DISCONTINUED',   'Drug Discontinued'
+    NOT_IN_FORMULARY = 'NOT_FORMULARY', 'Not in Formulary'
+    PATIENT_DECLINED = 'DECLINED',     'Patient Declined'
+    OTHER          = 'OTHER',          'Other'
 
 
 class Dispensing(AuditModel):
@@ -157,6 +167,10 @@ class Dispensing(AuditModel):
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.TextField(blank=True)
+    is_otc = models.BooleanField(
+        default=False,
+        help_text='True for over-the-counter / walk-in sales without a prescription'
+    )
     # JCI MMU.6.1 — pharmacist verification and patient counseling
     verified_by_pharmacist = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
@@ -543,3 +557,35 @@ class DispensingReturn(AuditModel):
                 self.stock_batch.save(update_fields=['quantity_remaining'])
                 self.stock_restored = True
                 DispensingReturn.objects.filter(pk=self.pk).update(stock_restored=True)
+
+
+# ── Rx Line Unavailable Tracking ─────────────────────────────────────────────
+
+class RxLineUnavailable(AuditModel):
+    """
+    Tracks prescription items the pharmacy cannot fulfil.
+    One record per DrugPrescriptionItem — pharmacist marks it with a reason.
+    """
+    rx_item = models.OneToOneField(
+        'prescriptions.DrugPrescriptionItem',
+        on_delete=models.CASCADE,
+        related_name='unavailable',
+    )
+    prescription = models.ForeignKey(
+        'prescriptions.DrugPrescription',
+        on_delete=models.CASCADE,
+        related_name='unavailable_lines',
+    )
+    reason = models.CharField(max_length=20, choices=UnavailableReason.choices)
+    notes = models.TextField(blank=True)
+    marked_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT,
+        related_name='rx_lines_marked_unavailable',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Unavailable Rx Line'
+
+    def __str__(self):
+        return f"{self.rx_item.drug_name} — {self.get_reason_display()}"

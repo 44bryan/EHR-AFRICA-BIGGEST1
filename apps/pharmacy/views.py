@@ -14,6 +14,7 @@ from .models import (
     ChronicPrescription,
     Supplier, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus,
     DispensingReturn, DispensingReturnReason,
+    RxLineUnavailable, UnavailableReason,
 )
 from .forms import (
     DrugCreateForm, AddStockForm, DispensingItemForm,
@@ -139,7 +140,9 @@ def pharmacy_dashboard(request):
                 patient_id__in=patient_ids,
                 is_dispensed=False,
                 is_deleted=False,
-            ).select_related('prescribed_by').prefetch_related('items')
+            ).select_related('prescribed_by').prefetch_related(
+                'items', 'items__unavailable',
+            )
             .order_by('-created_at')
         }
         for v in waiting_visits:
@@ -157,7 +160,22 @@ def pharmacy_dashboard(request):
         except Exception:
             pass
 
-    declined_today = 0
+    # Rx lines marked unavailable today
+    unavailable_today = RxLineUnavailable.objects.filter(
+        is_deleted=False, created_at__date=today,
+    ).count()
+
+    # Declined Rx today (marked as "bought elsewhere")
+    declined_today = DrugPrescription.objects.filter(
+        is_dispensed=True, is_deleted=False,
+        dispensed_at__date=today,
+        notes__icontains='Bought elsewhere',
+    ).count()
+
+    # OTC sales today
+    otc_today = Dispensing.objects.filter(
+        is_otc=True, is_deleted=False, dispensed_at__date=today,
+    ).count()
 
     context = {
         'low_stock_count': len(low_stock_drugs),
@@ -179,6 +197,8 @@ def pharmacy_dashboard(request):
         'waiting_visits': waiting_visits,
         'my_shift': my_shift,
         'declined_today': declined_today,
+        'unavailable_today': unavailable_today,
+        'otc_today': otc_today,
     }
     return render(request, 'pharmacy/dashboard.html', context)
 
@@ -832,10 +852,99 @@ def dispensing_detail(request, dispensing_id):
 
 @login_required
 @require_POST
+def confirm_dispensing(request, dispensing_id):
+    """
+    Step 1 of 2-step flow: pharmacist confirms Rx items → invoice created → patient sent to cashier.
+    Dispensing status moves to CONFIRMED. Patient visit moves to BILLING.
+    After cashier collects payment, pharmacist clicks 'Dispense' to hand out drugs.
+    """
+    if not request.user.can_dispense_pharmacy():
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
+        messages.error(request, 'Cannot confirm a dispensing that is already confirmed, dispensed, or cancelled.')
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+    if not dispensing.items.exists():
+        messages.error(request, 'Add at least one item before confirming.')
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+    # Bill the dispensing items to the patient's invoice
+    from apps.billing.utils import bill_dispensing
+    try:
+        bill_dispensing(dispensing, created_by=request.user)
+    except Exception as e:
+        messages.error(request, f'Billing failed: {e}')
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+    # Move dispensing to CONFIRMED
+    dispensing.status = DispensingStatus.CONFIRMED
+    dispensing.save(update_fields=['status'])
+
+    # Move the patient's visit to BILLING so the cashier sees them
+    try:
+        from apps.patients.models import Visit
+        visit = Visit.objects.filter(
+            patient=dispensing.patient,
+            status='PHARMACY',
+            is_deleted=False,
+        ).order_by('-visit_date').first()
+        if visit:
+            visit.status = 'BILLING'
+            visit.save(update_fields=['status', 'updated_at'])
+    except Exception:
+        pass
+
+    messages.success(
+        request,
+        f'Prescription confirmed and billed — {dispensing.dispensing_number}. '
+        f'Patient sent to cashier for payment.'
+    )
+    return redirect('pharmacy:dashboard')
+
+
+@login_required
+@require_POST
+def finalize_dispensing(request, dispensing_id):
+    """
+    Step 2: after cashier has collected payment, pharmacist hands out drugs.
+    Marks dispensing as DISPENSED and marks the linked Rx as dispensed.
+    """
+    if not request.user.can_dispense_pharmacy():
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if dispensing.status != DispensingStatus.CONFIRMED:
+        messages.error(request, 'Only CONFIRMED dispensings can be finalized.')
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+    dispensing.status = DispensingStatus.DISPENSED
+    dispensing.save(update_fields=['status'])
+
+    # Mark linked Rx as dispensed
+    if dispensing.prescription and not dispensing.prescription.is_dispensed:
+        dispensing.prescription.is_dispensed = True
+        dispensing.prescription.dispensed_by = request.user
+        dispensing.prescription.dispensed_at = timezone.now()
+        dispensing.prescription.save(update_fields=['is_dispensed', 'dispensed_by', 'dispensed_at'])
+
+    messages.success(
+        request,
+        f'Drugs dispensed — {dispensing.dispensing_number} complete.'
+    )
+    return redirect('pharmacy:dispensing_receipt', dispensing_id=dispensing.id)
+
+
+@login_required
+@require_POST
 def complete_dispensing(request, dispensing_id):
     """
     Collect payment at pharmacy counter and dispense drugs in one step.
     Pharmacist enters payment method + amount → invoice created → payment recorded → drugs dispensed.
+    (Legacy single-step flow — still available for OTC sales and when pharmacist collects directly.)
     """
     if not request.user.can_dispense_pharmacy():
         from django.http import HttpResponseForbidden
@@ -1353,6 +1462,152 @@ def rx_declined(request, rx_id):
         rx.save(update_fields=['is_dispensed', 'dispensed_by', 'dispensed_at', 'notes'])
         messages.info(request, 'Prescription marked as bought elsewhere and removed from queue.')
     return redirect('pharmacy:patient_search')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DIRECT SALE / OTC (walk-in, no prescription)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def direct_sale(request):
+    """
+    OTC / walk-in sale — pharmacist sells drugs without a doctor's prescription.
+    Creates a Dispensing record with is_otc=True and prescription=None.
+    Patient lookup is optional — can sell to anonymous walk-in.
+    """
+    if not request.user.can_dispense_pharmacy():
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        patient_id = request.POST.get('patient_id', '').strip()
+        patient = None
+        if patient_id:
+            patient = Patient.objects.filter(id=patient_id, is_deleted=False).first()
+
+        # For anonymous walk-ins we still need a patient record — create a placeholder
+        # OR use an existing "Walk-in" patient. For now require patient selection.
+        if not patient:
+            messages.error(request, 'Please select a patient for the sale record.')
+            return redirect('pharmacy:direct_sale')
+
+        dispensing = Dispensing.objects.create(
+            patient=patient,
+            prescription=None,
+            dispensed_by=request.user,
+            is_otc=True,
+            notes=request.POST.get('notes', '') or 'OTC / Walk-in sale',
+            created_by=request.user,
+        )
+        messages.success(
+            request,
+            f'OTC sale {dispensing.dispensing_number} created. Add items below.'
+        )
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+    return render(request, 'pharmacy/direct_sale.html')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MARK RX LINE UNAVAILABLE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def mark_line_unavailable_ajax(request):
+    """AJAX: pharmacist marks a prescription line as unavailable with a reason."""
+    if not request.user.can_dispense_pharmacy():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    from apps.prescriptions.models import DrugPrescriptionItem
+    item_id = request.POST.get('item_id', '').strip()
+    reason = request.POST.get('reason', '').strip()
+    notes = request.POST.get('notes', '').strip()
+
+    if reason not in dict(UnavailableReason.choices):
+        return JsonResponse({'error': 'Invalid reason'}, status=400)
+
+    item = DrugPrescriptionItem.objects.filter(id=item_id).select_related('prescription').first()
+    if not item:
+        return JsonResponse({'error': 'Prescription item not found'}, status=404)
+
+    # Create or update
+    obj, created = RxLineUnavailable.objects.update_or_create(
+        rx_item=item,
+        defaults={
+            'prescription': item.prescription,
+            'reason': reason,
+            'notes': notes,
+            'marked_by': request.user,
+            'created_by': request.user,
+        },
+    )
+    return JsonResponse({
+        'success': True,
+        'created': created,
+        'drug_name': item.drug_name,
+        'reason_display': obj.get_reason_display(),
+    })
+
+
+@login_required
+@require_POST
+def unmark_line_unavailable_ajax(request):
+    """AJAX: remove the unavailable flag from a prescription line."""
+    if not request.user.can_dispense_pharmacy():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    item_id = request.POST.get('item_id', '').strip()
+    deleted = RxLineUnavailable.objects.filter(rx_item_id=item_id).delete()[0]
+    return JsonResponse({'success': True, 'deleted': deleted > 0})
+
+
+@login_required
+def unavailable_lines_view(request):
+    """Report: all prescription lines marked unavailable — filterable by date, reason."""
+    if not _can_access_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    date_from = request.GET.get('from', today.isoformat())
+    date_to = request.GET.get('to', today.isoformat())
+    reason_filter = request.GET.get('reason', '')
+
+    qs = RxLineUnavailable.objects.select_related(
+        'rx_item', 'prescription__patient', 'prescription__prescribed_by', 'marked_by',
+    ).filter(is_deleted=False)
+
+    try:
+        from datetime import date as _d
+        qs = qs.filter(created_at__date__gte=_d.fromisoformat(date_from),
+                       created_at__date__lte=_d.fromisoformat(date_to))
+    except (ValueError, TypeError):
+        pass
+
+    if reason_filter:
+        qs = qs.filter(reason=reason_filter)
+
+    lines = qs.order_by('-created_at')[:200]
+
+    # Summary counts by reason
+    from django.db.models import Count
+    reason_summary = list(
+        qs.values('reason').annotate(count=Count('id')).order_by('-count')
+    )
+    _reason_labels = dict(UnavailableReason.choices)
+    for r in reason_summary:
+        r['label'] = _reason_labels.get(r['reason'], r['reason'])
+
+    return render(request, 'pharmacy/unavailable_lines.html', {
+        'lines': lines,
+        'reason_summary': reason_summary,
+        'reasons': UnavailableReason.choices,
+        'date_from': date_from,
+        'date_to': date_to,
+        'reason_filter': reason_filter,
+        'today': today,
+    })
 
 
 # ── Controlled Drugs Register ─────────────────────────────────────────────────

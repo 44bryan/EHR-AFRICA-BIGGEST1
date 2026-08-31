@@ -21,6 +21,8 @@ urlpatterns = [
     path('dispensing/', views.dispensing_list, name='dispensing_list'),
     path('dispensing/<uuid:dispensing_id>/', views.dispensing_detail, name='dispensing_detail'),
     path('dispensing/<uuid:dispensing_id>/add-item/', views.add_dispensing_item, name='add_dispensing_item'),
+    path('dispensing/<uuid:dispensing_id>/confirm/', views.confirm_dispensing, name='confirm_dispensing'),
+    path('dispensing/<uuid:dispensing_id>/finalize/', views.finalize_dispensing, name='finalize_dispensing'),
     path('dispensing/<uuid:dispensing_id>/complete/', views.complete_dispensing, name='complete_dispensing'),
     path('dispensing/<uuid:dispensing_id>/cancel/', views.cancel_dispensing, name='cancel_dispensing'),
     path('pilferage/', views.pilferage_dashboard, name='pilferage'),
@@ -69,6 +71,14 @@ urlpatterns = [
 
     # Controlled drug register PDF
     path('controlled/pdf/', views.controlled_register_pdf, name='controlled_register_pdf'),
+
+    # Direct sale / OTC
+    path('direct-sale/', views.direct_sale, name='direct_sale'),
+
+    # Rx line unavailable tracking
+    path('rx-line/mark-unavailable/', views.mark_line_unavailable_ajax, name='mark_line_unavailable'),
+    path('rx-line/unmark-unavailable/', views.unmark_line_unavailable_ajax, name='unmark_line_unavailable'),
+    path('unavailable-lines/', views.unavailable_lines_view, name='unavailable_lines'),
 
     # Bulk drug/stock import
     path('drugs/import/', views.drug_bulk_import, name='drug_bulk_import'),

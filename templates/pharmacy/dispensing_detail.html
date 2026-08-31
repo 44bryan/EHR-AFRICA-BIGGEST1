@@ -469,11 +469,31 @@
         </div>
       </div>
 
-      {# Payment + Change Calculator (only when open) #}
+      {# Confirm & Send to Cashier (2-step flow) #}
       {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-3">
+          <form method="post" action="{% url 'pharmacy:confirm_dispensing' dispensing_id=dispensing.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning btn-lg fw-bold w-100"
+                    onclick="return confirm('Confirm items and send patient to cashier for payment?')">
+              <i class="bi bi-send me-2"></i>Confirm &amp; Send to Cashier
+            </button>
+          </form>
+          <div class="text-muted text-center small mt-2">
+            Bills the items, patient goes to cashier. Come back to dispense after payment.
+          </div>
+          <hr class="my-2">
+          <div class="text-muted text-center small">
+            <strong>OR</strong> collect payment directly below (OTC / walk-in)
+          </div>
+        </div>
+      </div>
+
+      {# Payment + Change Calculator (direct collection) #}
       <div class="card border-0 shadow mb-3" id="payment-card">
         <div class="card-header bg-white border-bottom py-2">
-          <h6 class="fw-semibold mb-0"><i class="bi bi-cash-coin me-1"></i>Collect Payment &amp; Dispense</h6>
+          <h6 class="fw-semibold mb-0"><i class="bi bi-cash-coin me-1"></i>Collect Payment &amp; Dispense (Direct)</h6>
         </div>
         <div class="card-body">
           <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}"
@@ -525,6 +545,24 @@
 
             <button type="submit" id="collect-btn" class="btn btn-success btn-lg fw-bold w-100">
               <i class="bi bi-send-check me-2"></i>Collect &amp; Dispense
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+      {# CONFIRMED — waiting for cashier payment, show Finalize button #}
+      {% if dispensing.status == 'CONFIRMED' %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body text-center py-4">
+          <i class="bi bi-hourglass-split text-warning fs-2"></i>
+          <div class="fw-bold mt-2 text-warning">Confirmed — Waiting for Payment</div>
+          <div class="text-muted small mb-3">Patient was sent to cashier. Click below once payment is collected.</div>
+          <form method="post" action="{% url 'pharmacy:finalize_dispensing' dispensing_id=dispensing.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success btn-lg fw-bold w-100"
+                    onclick="return confirm('Has the cashier confirmed payment? This will hand out the drugs.')">
+              <i class="bi bi-check2-all me-2"></i>Payment Received — Dispense Now
             </button>
           </form>
         </div>

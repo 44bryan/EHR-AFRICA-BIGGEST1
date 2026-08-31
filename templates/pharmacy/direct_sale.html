@@ -1,0 +1,103 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}OTC / Walk-in Sale — Pharmacy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-bag-plus me-2 text-success"></i>OTC / Walk-in Sale</h4>
+    <div class="text-muted small">Sell drugs without a doctor's prescription</div>
+  </div>
+  <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:600px;">
+  <div class="card-body">
+    <form method="post" id="otcForm">
+      {% csrf_token %}
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+        <div class="position-relative">
+          <input type="text" id="otcPatientSearch" class="form-control ps-4"
+                 placeholder="Search by name or patient ID…" autocomplete="off" required>
+          <i class="bi bi-person-search position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"></i>
+          <div id="otcPatientResults" class="dropdown-menu w-100 shadow-sm" style="display:none;max-height:220px;overflow-y:auto;"></div>
+        </div>
+        <input type="hidden" name="patient_id" id="otcPatientId">
+        <div id="otcPatientBadge" class="mt-2" style="display:none;">
+          <span class="badge bg-primary fs-6 py-2 px-3">
+            <i class="bi bi-person-check me-1"></i>
+            <span id="otcPatientName"></span>
+            <button type="button" class="btn-close btn-close-white ms-2" style="font-size:.6rem;" onclick="clearOtcPatient()"></button>
+          </span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Notes <span class="text-muted fw-normal">(optional)</span></label>
+        <textarea name="notes" class="form-control" rows="2" placeholder="OTC sale reason or remarks"></textarea>
+      </div>
+
+      <button type="submit" class="btn btn-success w-100" id="otcSubmitBtn" disabled>
+        <i class="bi bi-bag-plus me-1"></i>Create OTC Sale &amp; Add Items
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var input = document.getElementById('otcPatientSearch');
+  var results = document.getElementById('otcPatientResults');
+  var hiddenId = document.getElementById('otcPatientId');
+  var badge = document.getElementById('otcPatientBadge');
+  var nameSpan = document.getElementById('otcPatientName');
+  var submitBtn = document.getElementById('otcSubmitBtn');
+  var timer;
+
+  input.addEventListener('input', function() {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if (!q) { results.style.display='none'; return; }
+    timer = setTimeout(function() {
+      fetch('/patients/search/?q=' + encodeURIComponent(q), {headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(r => r.json())
+        .then(function(data) {
+          if (!data.length) { results.style.display='none'; return; }
+          results.innerHTML = data.map(function(p) {
+            return '<a class="dropdown-item small py-2" href="#" data-id="'+p.id+'" data-name="'+p.name+' ('+p.patient_id+')">' +
+              '<strong>'+p.name+'</strong> <span class="text-muted ms-2">'+p.patient_id+'</span></a>';
+          }).join('');
+          results.style.display = 'block';
+          results.querySelectorAll('a').forEach(function(a) {
+            a.addEventListener('click', function(e) {
+              e.preventDefault();
+              hiddenId.value = this.dataset.id;
+              nameSpan.textContent = this.dataset.name;
+              badge.style.display = 'block';
+              input.style.display = 'none';
+              results.style.display = 'none';
+              submitBtn.disabled = false;
+            });
+          });
+        });
+    }, 280);
+  });
+  input.addEventListener('keydown', function(e) { if(e.key==='Escape'){results.style.display='none';} });
+  document.addEventListener('click', function(e) { if(!input.contains(e.target)&&!results.contains(e.target)) results.style.display='none'; });
+
+  window.clearOtcPatient = function() {
+    hiddenId.value = '';
+    badge.style.display = 'none';
+    input.style.display = 'block';
+    input.value = '';
+    input.focus();
+    submitBtn.disabled = true;
+  };
+})();
+</script>
+{% endblock %}

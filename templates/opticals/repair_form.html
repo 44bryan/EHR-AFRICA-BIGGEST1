@@ -1,0 +1,137 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}New Repair — Optical{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-tools me-2 text-warning"></i>New Repair / After-Sales Job</h5>
+        <a href="{% url 'opticals:repair_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+
+          {% if patient %}
+          <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+            <i class="bi bi-person-check-fill fs-5"></i>
+            <div><strong>{{ patient.full_name }}</strong> &bull; {{ patient.patient_id }}</div>
+          </div>
+          <input type="hidden" name="patient_id" value="{{ patient.id }}">
+          {% else %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Patient <span class="text-danger">*</span></label>
+            <div class="position-relative">
+              <input type="text" id="rpr-patient-search" class="form-control" placeholder="Search by name or patient ID…" autocomplete="off">
+              <div id="rpr-results" class="dropdown-menu w-100" style="display:none;max-height:220px;overflow-y:auto;"></div>
+            </div>
+            <input type="hidden" name="patient_id" id="rpr-patient-id" required>
+            <div id="rpr-selected" class="mt-2 alert alert-info d-none"></div>
+          </div>
+          {% endif %}
+
+          {% if order %}
+          <div class="alert alert-light border mb-3">
+            <div class="fw-semibold small">Linked Order: {{ order.order_number }}</div>
+            <div class="text-muted small">{{ order.frame|default:"No frame" }} + {{ order.lens|default:"No lens" }} &mdash; {{ order.ordered_date|date:"d M Y" }}</div>
+          </div>
+          <input type="hidden" name="order_id" value="{{ order.id }}">
+          {% else %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Linked Order (optional)</label>
+            <input type="text" name="order_id" class="form-control form-control-sm" placeholder="Paste order UUID or leave blank">
+          </div>
+          {% endif %}
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Repair Type <span class="text-danger">*</span></label>
+              <select name="repair_type" class="form-select" required>
+                {% for val, label in repair_types %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Cost to Patient (FCFA)</label>
+              <input type="number" name="cost" class="form-control" min="0" step="1" value="0">
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_warranty_claim" id="warranty-check">
+                <label class="form-check-label small" for="warranty-check">
+                  <strong>Warranty claim</strong> — cost will be set to 0 if warranty is valid
+                </label>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Description <span class="text-danger">*</span></label>
+              <textarea name="description" class="form-control" rows="3" required placeholder="What is broken / what the patient wants…"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Received Date</label>
+              <input type="date" name="received_date" class="form-control" value="{{ today|date:'Y-m-d' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Technician Notes</label>
+              <textarea name="technician_notes" class="form-control" rows="2" placeholder="Internal notes…"></textarea>
+            </div>
+          </div>
+
+          <hr class="my-4">
+          <button type="submit" class="btn btn-primary px-4" {% if not patient %}id="rpr-submit" disabled{% endif %}>
+            <i class="bi bi-plus-circle me-1"></i>Create Repair Job
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if not patient %}
+<script>
+const rprSearch = document.getElementById('rpr-patient-search');
+const rprResults = document.getElementById('rpr-results');
+const rprHidden = document.getElementById('rpr-patient-id');
+const rprSelected = document.getElementById('rpr-selected');
+const rprSubmit = document.getElementById('rpr-submit');
+let rprTimer;
+rprSearch.addEventListener('input', function () {
+  clearTimeout(rprTimer);
+  const q = this.value.trim();
+  if (q.length < 2) { rprResults.style.display = 'none'; return; }
+  rprTimer = setTimeout(() => {
+    fetch(`/patients/search/?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        const list = data.results || [];
+        rprResults.innerHTML = '';
+        if (!list.length) { rprResults.innerHTML = '<span class="dropdown-item text-muted">No patients found</span>'; }
+        else {
+          list.forEach(p => {
+            const a = document.createElement('a');
+            a.className = 'dropdown-item'; a.href = '#';
+            a.innerHTML = `<strong>${p.full_name}</strong> <span class="text-muted small">${p.patient_id}</span>`;
+            a.addEventListener('click', e => {
+              e.preventDefault();
+              rprHidden.value = p.id;
+              rprSearch.value = p.full_name;
+              rprSelected.textContent = `✓ ${p.full_name} (${p.patient_id})`;
+              rprSelected.classList.remove('d-none');
+              rprResults.style.display = 'none';
+              rprSubmit.disabled = false;
+            });
+            rprResults.appendChild(a);
+          });
+        }
+        rprResults.style.display = 'block';
+      });
+  }, 300);
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#rpr-patient-search') && !e.target.closest('#rpr-results')) rprResults.style.display = 'none';
+});
+</script>
+{% endif %}
+{% endblock %}

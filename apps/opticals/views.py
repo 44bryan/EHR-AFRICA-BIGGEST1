@@ -4,7 +4,12 @@ from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.db.models import F
 from django.utils import timezone
-from .models import Frame, Lens, OpticalOrder, OpticalOrderStatus, ContactLensFitting, LowVisionAidDispensing
+from .models import (
+    Frame, Lens, LensType, OpticalOrder, OpticalOrderStatus,
+    ContactLensFitting, LowVisionAidDispensing, LensPriceMatrix,
+    CoatingType, PowerBand, OpticalWarranty, WarrantyStatus,
+    OpticalRepair, RepairType, RepairStatus,
+)
 
 
 def _can_access_optical(user):
@@ -52,6 +57,41 @@ def dashboard(request):
         .annotate(_tier_order=_tier_order).order_by('-_tier_order', 'visit_date')
     )
 
+    # Uncollected aging alert
+    from datetime import timedelta
+    ready_qs = OpticalOrder.objects.filter(status=OpticalOrderStatus.READY, is_deleted=False)
+    uncollected_total = ready_qs.count()
+    overdue_14 = sum(
+        1 for o in ready_qs.only('expected_date', 'ordered_date')
+        if (today - (o.expected_date or (o.ordered_date + timedelta(days=3)))).days > 14
+    )
+
+    # Dashboard enhancements: this month stats
+    from django.db.models import Sum, Count
+    month_start = today.replace(day=1)
+    month_orders = OpticalOrder.objects.filter(
+        is_deleted=False, ordered_date__gte=month_start, ordered_date__lte=today,
+    )
+    month_total = month_orders.count()
+    month_delivered = month_orders.filter(status=OpticalOrderStatus.DELIVERED).count()
+    month_revenue = month_orders.filter(status=OpticalOrderStatus.DELIVERED).aggregate(
+        total=Sum('total_amount')
+    )['total'] or 0
+    conversion_rate = round(month_delivered / month_total * 100, 1) if month_total else 0
+
+    # Top 5 frames this month
+    top_frames = list(
+        month_orders.filter(frame__isnull=False)
+        .values('frame__brand', 'frame__model')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:5]
+    )
+
+    # Stock value: frames
+    frame_stock_value = Frame.objects.filter(
+        is_active=True, is_deleted=False, quantity_in_stock__gt=0
+    ).aggregate(val=Sum(F('selling_price') * F('quantity_in_stock')))['val'] or 0
+
     context = {
         'total_frames': Frame.objects.filter(is_active=True, is_deleted=False).count(),
         'total_lenses': Lens.objects.filter(is_active=True, is_deleted=False).count(),
@@ -65,6 +105,12 @@ def dashboard(request):
         ).order_by('-ordered_date')[:15],
         'pipeline_stages': pipeline_stages,
         'waiting_visits': waiting_visits,
+        'uncollected_total': uncollected_total,
+        'overdue_14': overdue_14,
+        'month_revenue': month_revenue,
+        'conversion_rate': conversion_rate,
+        'top_frames': top_frames,
+        'frame_stock_value': frame_stock_value,
         'today': today,
     }
     return render(request, 'opticals/dashboard.html', context)
@@ -250,6 +296,16 @@ def create_order(request):
         except (ValueError, TypeError):
             frame_price = lens_price = fitting_charge = 0
 
+        # Parse measurement fields
+        def _dec_field(name):
+            v = request.POST.get(name, '').strip()
+            if v:
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    pass
+            return None
+
         order = OpticalOrder.objects.create(
             patient=patient,
             optical_prescription=rx,
@@ -261,6 +317,13 @@ def create_order(request):
             special_instructions=request.POST.get('special_instructions', ''),
             expected_date=request.POST.get('expected_date') or None,
             deposit_paid=request.POST.get('deposit_paid') or 0,
+            mono_pd_re=_dec_field('mono_pd_re'),
+            mono_pd_le=_dec_field('mono_pd_le'),
+            fitting_height_re=_dec_field('fitting_height_re'),
+            fitting_height_le=_dec_field('fitting_height_le'),
+            vertex_distance=_dec_field('vertex_distance'),
+            pantoscopic_tilt=_dec_field('pantoscopic_tilt'),
+            wrap_angle=_dec_field('wrap_angle'),
             created_by=request.user,
         )
 
@@ -459,6 +522,18 @@ def update_order_status(request, order_id):
         if order.status == OpticalOrderStatus.DELIVERED:
             order.delivered_date = timezone.localdate()
             order.delivered_to = request.user
+            # Auto-create warranty
+            try:
+                from datetime import timedelta
+                if not hasattr(order, 'warranty'):
+                    OpticalWarranty.objects.create(
+                        order=order,
+                        start_date=timezone.localdate(),
+                        end_date=timezone.localdate() + timedelta(days=365),
+                        created_by=request.user,
+                    )
+            except Exception:
+                pass
             # Mark visit as COMPLETED when glasses are handed to patient
             try:
                 from apps.patients.models import Visit
@@ -1119,13 +1194,41 @@ def lab_job_action(request, job_id):
         messages.success(request, f'Job marked as returned from lab.')
 
     elif action == 'ready':
+        # Require QC verification before marking as ready for collection
+        if not job.order.qc_verified:
+            messages.warning(request, f'Order {job.order.order_number} must pass QC verification before marking as ready.')
+            return redirect('opticals:order_detail', order_id=job.order.id)
         job.status = LabJobStatus.READY
         job.order.status = OpticalOrderStatus.READY
         job.order.save(update_fields=['status'])
         job.save()
+        # Notify ordering doctor
+        try:
+            from apps.notifications.utils import notify
+            from apps.notifications.models import NotificationType, NotificationPriority
+            doctor = getattr(job.order.optical_prescription, 'prescribed_by', None) if job.order.optical_prescription else None
+            if doctor:
+                notify(
+                    recipient=doctor,
+                    title=f'Optical glasses ready — {job.order.patient.full_name}',
+                    message=f'Order {job.order.order_number} passed QC and is ready for collection.',
+                    link=f'/opticals/orders/{job.order.id}/',
+                    notification_type=NotificationType.GENERAL,
+                    priority=NotificationPriority.NORMAL,
+                )
+        except Exception:
+            pass
         messages.success(request, f'Order {job.order.order_number} is ready for collection.')
 
     elif action == 'collected':
+        # Payment gate — warn (but allow override) if balance outstanding
+        if job.order.balance_due > 0 and 'force_collect' not in request.POST:
+            messages.warning(
+                request,
+                f'Order {job.order.order_number} has outstanding balance of {int(job.order.balance_due):,} FCFA. '
+                f'Collect payment first or use the order detail page to force-deliver.'
+            )
+            return redirect('opticals:order_detail', order_id=job.order.id)
         job.status = LabJobStatus.COLLECTED
         job.order.status = OpticalOrderStatus.DELIVERED
         job.order.delivered_date = timezone.localdate()
@@ -1165,3 +1268,385 @@ def lab_job_action(request, job_id):
         messages.warning(request, 'Lab job cancelled — frame stock restored.')
 
     return redirect('opticals:lab_job_queue')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# QC VERIFICATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def qc_verify(request, order_id):
+    """
+    QC verification step — dispenser checks power, alignment, cosmetic finish.
+    Marks the order as QC-passed and records notes.
+    """
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
+    notes = request.POST.get('qc_notes', '').strip()
+
+    order.qc_verified = True
+    order.qc_verified_by = request.user
+    order.qc_verified_at = timezone.now()
+    order.qc_notes = notes
+    order.save(update_fields=['qc_verified', 'qc_verified_by', 'qc_verified_at', 'qc_notes'])
+
+    messages.success(request, f'QC verification passed for order {order.order_number}.')
+    return redirect('opticals:order_detail', order_id=order.id)
+
+
+@login_required
+@require_POST
+def qc_fail(request, order_id):
+    """Mark an order as QC-failed — needs rework."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    order = get_object_or_404(OpticalOrder, id=order_id, is_deleted=False)
+    notes = request.POST.get('qc_notes', '').strip()
+
+    order.qc_verified = False
+    order.qc_verified_by = None
+    order.qc_verified_at = None
+    order.qc_notes = f'[QC FAILED] {notes}'
+    order.save(update_fields=['qc_verified', 'qc_verified_by', 'qc_verified_at', 'qc_notes'])
+
+    # Send back to lab
+    try:
+        from .models import OpticalLabJob, LabJobStatus
+        job = order.lab_job
+        if job.status in (LabJobStatus.RETURNED, LabJobStatus.READY):
+            job.status = LabJobStatus.SENT
+            job.save(update_fields=['status'])
+            order.status = OpticalOrderStatus.LAB_PROCESSING
+            order.save(update_fields=['status'])
+    except Exception:
+        pass
+
+    messages.warning(request, f'QC failed for {order.order_number} — sent back to lab for rework.')
+    return redirect('opticals:order_detail', order_id=order.id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UNCOLLECTED AGING REPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def uncollected_orders(request):
+    """
+    Orders stuck in READY status — bucketed by age (7 / 14 / 30+ days).
+    Helps optical shop follow up with patients who haven't collected their glasses.
+    """
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    from datetime import timedelta
+    today = timezone.localdate()
+    ready_orders = list(
+        OpticalOrder.objects.filter(
+            status=OpticalOrderStatus.READY, is_deleted=False,
+        ).select_related('patient', 'frame', 'lens')
+        .order_by('ordered_date')
+    )
+
+    buckets = {'0_7': [], '8_14': [], '15_30': [], '31_plus': []}
+    for o in ready_orders:
+        # Age = days since the order was first marked READY
+        # Use expected_date if set, else ordered_date + 3 days as proxy
+        ready_since = o.expected_date or (o.ordered_date + timedelta(days=3))
+        days_waiting = (today - ready_since).days
+        o._days_waiting = max(0, days_waiting)
+        if days_waiting <= 7:
+            buckets['0_7'].append(o)
+        elif days_waiting <= 14:
+            buckets['8_14'].append(o)
+        elif days_waiting <= 30:
+            buckets['15_30'].append(o)
+        else:
+            buckets['31_plus'].append(o)
+
+    return render(request, 'opticals/uncollected_orders.html', {
+        'buckets': buckets,
+        'total': len(ready_orders),
+        'today': today,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LENS PRICE MATRIX
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def lens_price_matrix(request):
+    """View / manage the lens price lookup table."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    entries = LensPriceMatrix.objects.filter(is_deleted=False).order_by(
+        'lens_type', 'refractive_index', 'coating', 'power_band'
+    )
+
+    # Group by lens_type for tabbed display
+    grouped = {}
+    for e in entries:
+        grouped.setdefault(e.get_lens_type_display(), []).append(e)
+
+    return render(request, 'opticals/lens_price_matrix.html', {
+        'grouped': grouped,
+        'total': entries.count(),
+        'lens_types': LensType.choices,
+        'coatings': CoatingType.choices,
+        'power_bands': PowerBand.choices,
+    })
+
+
+@login_required
+def lens_price_matrix_save(request):
+    """Create or update a lens price matrix entry."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+        lens_type = request.POST.get('lens_type', '')
+        try:
+            index_val = Decimal(request.POST.get('refractive_index', ''))
+        except (InvalidOperation, TypeError):
+            messages.error(request, 'Invalid refractive index.')
+            return redirect('opticals:lens_price_matrix')
+        coating = request.POST.get('coating', CoatingType.NONE)
+        power_band = request.POST.get('power_band', PowerBand.LOW)
+        try:
+            price = Decimal(request.POST.get('price', ''))
+        except (InvalidOperation, TypeError):
+            messages.error(request, 'Invalid price.')
+            return redirect('opticals:lens_price_matrix')
+
+        entry, created = LensPriceMatrix.objects.update_or_create(
+            lens_type=lens_type,
+            refractive_index=index_val,
+            coating=coating,
+            power_band=power_band,
+            defaults={'price': price, 'is_deleted': False, 'created_by': request.user},
+        )
+        action = 'added' if created else 'updated'
+        messages.success(request, f'Price matrix entry {action}: {entry}')
+
+    return redirect('opticals:lens_price_matrix')
+
+
+@login_required
+@require_POST
+def lens_price_matrix_delete(request, entry_id):
+    """Soft-delete a lens price matrix entry."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    entry = get_object_or_404(LensPriceMatrix, id=entry_id, is_deleted=False)
+    entry.is_deleted = True
+    entry.save(update_fields=['is_deleted'])
+    messages.success(request, f'Price matrix entry removed.')
+    return redirect('opticals:lens_price_matrix')
+
+
+@login_required
+def lens_price_lookup_ajax(request):
+    """AJAX: look up lens price given type, index, coating, power band."""
+    from django.http import JsonResponse
+    lt = request.GET.get('lens_type', '')
+    ri = request.GET.get('refractive_index', '')
+    co = request.GET.get('coating', '')
+    pb = request.GET.get('power_band', '')
+    entry = LensPriceMatrix.objects.filter(
+        lens_type=lt, refractive_index=ri, coating=co, power_band=pb, is_deleted=False
+    ).first()
+    if entry:
+        return JsonResponse({'price': float(entry.price), 'found': True})
+    return JsonResponse({'price': 0, 'found': False})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WARRANTY & AFTER-SALES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def repair_list(request):
+    """All repair / after-sales jobs."""
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    status_filter = request.GET.get('status', '')
+    qs = OpticalRepair.objects.filter(is_deleted=False).select_related(
+        'patient', 'order', 'received_by'
+    )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    else:
+        qs = qs.exclude(status=RepairStatus.CANCELLED)
+
+    # Remake rate KPI: remakes / total delivered this month
+    from django.db.models import Count
+    today = timezone.localdate()
+    month_start = today.replace(day=1)
+    month_delivered = OpticalOrder.objects.filter(
+        is_deleted=False, status=OpticalOrderStatus.DELIVERED,
+        delivered_date__gte=month_start, delivered_date__lte=today,
+    ).count()
+    month_remakes = OpticalRepair.objects.filter(
+        is_deleted=False, repair_type=RepairType.LENS_REMAKE,
+        received_date__gte=month_start, received_date__lte=today,
+    ).count()
+    remake_rate = round(month_remakes / month_delivered * 100, 1) if month_delivered else 0
+
+    return render(request, 'opticals/repair_list.html', {
+        'repairs': qs[:200],
+        'status_choices': RepairStatus.choices,
+        'status_filter': status_filter,
+        'remake_rate': remake_rate,
+        'month_remakes': month_remakes,
+        'month_delivered': month_delivered,
+    })
+
+
+@login_required
+def repair_create(request):
+    """Record a new repair / after-sales job."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        from apps.patients.models import Patient
+        from decimal import Decimal, InvalidOperation
+        patient = get_object_or_404(Patient, id=request.POST.get('patient_id'), is_deleted=False)
+        order_id = request.POST.get('order_id')
+        order = OpticalOrder.objects.filter(id=order_id, is_deleted=False).first() if order_id else None
+
+        try:
+            cost = Decimal(request.POST.get('cost', '0') or '0')
+        except (InvalidOperation, TypeError):
+            cost = 0
+
+        is_warranty = 'is_warranty_claim' in request.POST
+        # If warranty claim, check warranty validity
+        if is_warranty and order:
+            try:
+                w = order.warranty
+                if not w.is_valid:
+                    messages.warning(request, 'Warranty has expired or been voided. Processing as non-warranty repair.')
+                    is_warranty = False
+                else:
+                    w.status = WarrantyStatus.CLAIMED
+                    w.save(update_fields=['status'])
+                    cost = 0  # Warranty repairs are free
+            except OpticalWarranty.DoesNotExist:
+                messages.warning(request, 'No warranty found for this order.')
+                is_warranty = False
+
+        repair = OpticalRepair.objects.create(
+            patient=patient,
+            order=order,
+            repair_type=request.POST.get('repair_type', RepairType.OTHER),
+            description=request.POST.get('description', ''),
+            is_warranty_claim=is_warranty,
+            cost=cost,
+            received_date=request.POST.get('received_date') or timezone.localdate(),
+            technician_notes=request.POST.get('technician_notes', ''),
+            received_by=request.user,
+            created_by=request.user,
+        )
+        messages.success(request, f'Repair job {repair.repair_number} created.')
+        return redirect('opticals:repair_list')
+
+    # GET — show form
+    patient_id = request.GET.get('patient')
+    order_id = request.GET.get('order')
+    patient = None
+    order = None
+    if patient_id:
+        from apps.patients.models import Patient
+        patient = Patient.objects.filter(id=patient_id, is_deleted=False).first()
+    if order_id:
+        order = OpticalOrder.objects.filter(id=order_id, is_deleted=False).first()
+        if order and not patient:
+            patient = order.patient
+
+    return render(request, 'opticals/repair_form.html', {
+        'patient': patient,
+        'order': order,
+        'repair_types': RepairType.choices,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+@require_POST
+def repair_action(request, repair_id):
+    """Update repair status."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    repair = get_object_or_404(OpticalRepair, id=repair_id, is_deleted=False)
+    action = request.POST.get('action', '')
+
+    if action == 'in_progress':
+        repair.status = RepairStatus.IN_PROGRESS
+    elif action == 'completed':
+        repair.status = RepairStatus.COMPLETED
+        repair.completed_date = timezone.localdate()
+        repair.technician_notes = request.POST.get('technician_notes', repair.technician_notes)
+    elif action == 'returned':
+        repair.status = RepairStatus.RETURNED
+        repair.returned_date = timezone.localdate()
+    elif action == 'cancel':
+        repair.status = RepairStatus.CANCELLED
+
+    repair.save()
+    messages.success(request, f'Repair {repair.repair_number} → {repair.get_status_display()}')
+    return redirect('opticals:repair_list')
+
+
+@login_required
+def warranty_list(request):
+    """View all optical warranties."""
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    warranties = OpticalWarranty.objects.filter(is_deleted=False).select_related(
+        'order__patient', 'order__frame', 'order__lens'
+    ).order_by('-start_date')
+
+    today = timezone.localdate()
+    # Mark expired warranties
+    expired_count = 0
+    for w in warranties:
+        if w.status == WarrantyStatus.ACTIVE and w.end_date < today:
+            w.status = WarrantyStatus.EXPIRED
+            w.save(update_fields=['status'])
+            expired_count += 1
+
+    if expired_count:
+        warranties = OpticalWarranty.objects.filter(is_deleted=False).select_related(
+            'order__patient', 'order__frame', 'order__lens'
+        ).order_by('-start_date')
+
+    status_filter = request.GET.get('status', '')
+    if status_filter:
+        warranties = warranties.filter(status=status_filter)
+
+    return render(request, 'opticals/warranty_list.html', {
+        'warranties': warranties[:200],
+        'status_choices': WarrantyStatus.choices,
+        'status_filter': status_filter,
+        'today': today,
+    })

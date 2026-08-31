@@ -20,6 +20,9 @@
     <span class="badge bg-secondary" id="pharmRefreshCountdown" title="Auto-refreshes to show new patients">
       <i class="bi bi-arrow-clockwise me-1"></i><span id="pharmCountdownSec">30</span>s
     </span>
+    <a href="{% url 'pharmacy:direct_sale' %}" class="btn btn-success btn-sm">
+      <i class="bi bi-bag-plus me-1"></i>OTC / Walk-in Sale
+    </a>
     <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm">
       <i class="bi bi-capsule me-1"></i>New Dispensing
     </a>
@@ -148,12 +151,26 @@
           </td>
           <td>
             {% if v.latest_rx %}
-              {% for item in v.latest_rx.items.all|slice:":3" %}
-                <span class="badge bg-light text-dark border me-1">{{ item.drug_name }}{% if item.concentration %} {{ item.concentration }}{% endif %}</span>
+              {% for item in v.latest_rx.items.all %}
+              <div class="d-flex align-items-center gap-1 mb-1 rx-line-{{ item.pk }}">
+                <span class="badge {% if item.unavailable %}bg-danger{% else %}bg-light text-dark border{% endif %} me-1">
+                  {{ item.drug_name }}{% if item.concentration %} {{ item.concentration }}{% endif %}
+                  {% if item.unavailable %}<i class="bi bi-x-circle ms-1" title="{{ item.unavailable.get_reason_display }}"></i>{% endif %}
+                </span>
+                {% if not item.unavailable %}
+                <button type="button" class="btn btn-outline-warning btn-sm px-1 py-0 mark-unavail-btn"
+                        data-item="{{ item.pk }}" data-drug="{{ item.drug_name }}"
+                        title="Mark unavailable" style="font-size:.65rem;line-height:1;">
+                  <i class="bi bi-dash-circle"></i>
+                </button>
+                {% else %}
+                <button type="button" class="btn btn-outline-success btn-sm px-1 py-0 unmark-unavail-btn"
+                        data-item="{{ item.pk }}" title="Restore" style="font-size:.65rem;line-height:1;">
+                  <i class="bi bi-arrow-counterclockwise"></i>
+                </button>
+                {% endif %}
+              </div>
               {% endfor %}
-              {% if v.latest_rx.items.count > 3 %}
-                <span class="text-muted small">+{{ v.latest_rx.items.count|add:"-3" }} more</span>
-              {% endif %}
             {% else %}
               <span class="text-muted small">See patient record</span>
             {% endif %}
@@ -161,9 +178,24 @@
           <td class="text-muted">{% if v.attending_doctor %}Dr. {{ v.attending_doctor.last_name }}{% else %}—{% endif %}</td>
           <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
           <td>
-            <a href="{% url 'pharmacy:dispense' %}?patient={{ v.patient.pk }}" class="btn btn-sm btn-primary">
-              <i class="bi bi-capsule me-1"></i>Dispense
-            </a>
+            <div class="d-flex flex-column gap-1">
+              {% if v.latest_rx %}
+              <a href="{% url 'pharmacy:start_rx_dispensing' rx_id=v.latest_rx.pk %}" class="btn btn-sm btn-primary">
+                <i class="bi bi-play-fill me-1"></i>Start Rx
+              </a>
+              {% endif %}
+              <a href="{% url 'pharmacy:dispense' %}?patient={{ v.patient.pk }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-capsule me-1"></i>Manual
+              </a>
+              {% if v.latest_rx %}
+              <form method="post" action="{% url 'pharmacy:rx_declined' rx_id=v.latest_rx.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-danger w-100" onclick="return confirm('Mark as bought elsewhere?')">
+                  <i class="bi bi-x-circle me-1"></i>Declined
+                </button>
+              </form>
+              {% endif %}
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -212,10 +244,10 @@
 {# ── PRIORITY ROW 1: Action Required ── #}
 <div class="row g-3 mb-3">
 
-  {# Pending Dispensings — PRIMARY action card #}
+  {# Pending Dispensings #}
   <div class="col-md-4">
     <a href="{% url 'pharmacy:dispensing_list' %}" class="text-decoration-none">
-      <div class="card border-0 shadow h-100" style="border-left: 5px solid #f59e0b !important; background: {% if pending_dispensings %}#fffbeb{% else %}#f9fafb{% endif %};">
+      <div class="card border-0 shadow h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
           <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                style="width:52px;height:52px;background:{% if pending_dispensings %}#f59e0b{% else %}#d1d5db{% endif %};">
@@ -231,10 +263,10 @@
     </a>
   </div>
 
-  {# Low Stock — URGENT alert card #}
+  {# Low Stock #}
   <div class="col-md-4">
     <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
-      <div class="card border-0 shadow h-100" style="border-left: 5px solid {% if low_stock_count %}#dc2626{% else %}#16a34a{% endif %} !important; background: {% if low_stock_count %}#fef2f2{% else %}#f0fdf4{% endif %};">
+      <div class="card border-0 shadow h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
           <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                style="width:52px;height:52px;background:{% if low_stock_count %}#dc2626{% else %}#16a34a{% endif %};">
@@ -250,10 +282,10 @@
     </a>
   </div>
 
-  {# Expiry Alerts — combined #}
+  {# Expiry Alerts #}
   <div class="col-md-4">
     <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
-      <div class="card border-0 shadow h-100" style="border-left: 5px solid {% if expiring_critical %}#dc2626{% elif expiring_warning %}#f59e0b{% else %}#2563eb{% endif %} !important;">
+      <div class="card border-0 shadow h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
           <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                style="width:52px;height:52px;background:{% if expiring_critical %}#dc2626{% elif expiring_warning %}#f59e0b{% else %}#2563eb{% endif %};">
@@ -319,6 +351,23 @@
     <div class="card border-0 shadow-sm">
       <div class="card-body py-3 px-3">
         <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-bag-plus-fill {% if otc_today %}text-success{% else %}text-secondary{% endif %} fs-5"></i>
+          <div>
+            <div class="fw-bold fs-5 {% if otc_today %}text-success{% else %}text-secondary{% endif %} lh-1">{{ otc_today }}</div>
+            <div class="text-muted" style="font-size:.72rem;">OTC Sales Today</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── ROW 3: Declined & Unavailable ── #}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex align-items-center gap-2">
           <i class="bi bi-x-circle-fill {% if declined_today %}text-danger{% else %}text-secondary{% endif %} fs-5"></i>
           <div>
             <div class="fw-bold fs-5 {% if declined_today %}text-danger{% else %}text-secondary{% endif %} lh-1">{{ declined_today }}</div>
@@ -327,6 +376,21 @@
         </div>
       </div>
     </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a href="{% url 'pharmacy:unavailable_lines' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body py-3 px-3">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-exclamation-diamond-fill {% if unavailable_today %}text-warning{% else %}text-secondary{% endif %} fs-5"></i>
+            <div>
+              <div class="fw-bold fs-5 {% if unavailable_today %}text-warning{% else %}text-secondary{% endif %} lh-1">{{ unavailable_today }}</div>
+              <div class="text-muted" style="font-size:.72rem;">Unavailable Lines Today</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </a>
   </div>
 </div>
 
@@ -517,6 +581,62 @@
   input.addEventListener('keydown', e => { if(e.key==='Escape'){results.style.display='none';input.value='';} });
   document.addEventListener('click', e => { if(!input.contains(e.target)&&!results.contains(e.target)) results.style.display='none'; });
 })();
+
+/* ── Mark Rx line unavailable ─────────────────────────────────────── */
+document.querySelectorAll('.mark-unavail-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    var itemId = this.dataset.item;
+    var drugName = this.dataset.drug;
+    var reason = prompt(
+      'Mark "' + drugName + '" as unavailable.\n\n' +
+      'Choose reason:\n' +
+      '1 = Out of Stock\n2 = All Batches Expired\n3 = Drug Discontinued\n' +
+      '4 = Not in Formulary\n5 = Patient Declined\n6 = Other\n\nEnter number:'
+    );
+    if (!reason) return;
+    var reasonMap = {'1':'OUT_OF_STOCK','2':'EXPIRED','3':'DISCONTINUED','4':'NOT_FORMULARY','5':'DECLINED','6':'OTHER'};
+    var reasonCode = reasonMap[reason.trim()];
+    if (!reasonCode) { alert('Invalid choice.'); return; }
+    var notes = '';
+    if (reasonCode === 'OTHER') notes = prompt('Notes:') || '';
+    var fd = new FormData();
+    fd.append('item_id', itemId);
+    fd.append('reason', reasonCode);
+    fd.append('notes', notes);
+    fetch('{% url "pharmacy:mark_line_unavailable" %}', {
+      method: 'POST', body: fd,
+      headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json()).then(data => {
+      if (data.success) {
+        var line = document.querySelector('.rx-line-' + itemId);
+        if (line) {
+          var badge = line.querySelector('.badge');
+          badge.classList.remove('bg-light','text-dark','border');
+          badge.classList.add('bg-danger');
+          badge.innerHTML += ' <i class="bi bi-x-circle ms-1" title="' + data.reason_display + '"></i>';
+          var markBtn = line.querySelector('.mark-unavail-btn');
+          if (markBtn) markBtn.remove();
+        }
+      } else {
+        alert(data.error || 'Error');
+      }
+    });
+  });
+});
+document.querySelectorAll('.unmark-unavail-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    var itemId = this.dataset.item;
+    if (!confirm('Restore this drug line as available?')) return;
+    var fd = new FormData();
+    fd.append('item_id', itemId);
+    fetch('{% url "pharmacy:unmark_line_unavailable" %}', {
+      method: 'POST', body: fd,
+      headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json()).then(data => {
+      if (data.success) window.location.reload();
+    });
+  });
+});
 
 document.querySelectorAll('.wo-done-btn').forEach(btn => {
   btn.addEventListener('click', function() {

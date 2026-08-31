@@ -87,6 +87,23 @@ class OpticalOrder(AuditModel):
     fitting_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     deposit_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Dispensing measurements
+    mono_pd_re = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Monocular PD Right (mm)')
+    mono_pd_le = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Monocular PD Left (mm)')
+    fitting_height_re = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Fitting Height RE (mm)')
+    fitting_height_le = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Fitting Height LE (mm)')
+    vertex_distance = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Vertex Distance (mm)')
+    pantoscopic_tilt = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Pantoscopic Tilt (degrees)')
+    wrap_angle = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Frame Wrap / Face-form Angle (degrees)')
+    # QC verification
+    qc_verified = models.BooleanField(default=False, help_text='Quality check passed by dispenser')
+    qc_verified_by = models.ForeignKey(
+        'accounts.User', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='optical_qc_verified',
+    )
+    qc_verified_at = models.DateTimeField(null=True, blank=True)
+    qc_notes = models.TextField(blank=True, help_text='QC remarks — power verification, alignment, cosmetic check')
+
     special_instructions = models.TextField(blank=True)
     ordered_date = models.DateField(default=timezone.now)
     expected_date = models.DateField(null=True, blank=True)
@@ -304,4 +321,149 @@ class LowVisionAidDispensing(AuditModel):
             count = LowVisionAidDispensing.objects.filter(dispensing_date__year=today.year).count() + 1
             self.dispensing_number = f"LVA-{today.strftime('%Y')}-{count:04d}"
         self.total_amount = self.unit_price * self.quantity
+        super().save(*args, **kwargs)
+
+
+# ── Lens Price Matrix ────────────────────────────────────────────────────────
+
+class CoatingType(models.TextChoices):
+    NONE        = 'NONE',    'No Coating'
+    AR          = 'AR',      'Anti-Reflective'
+    BLUE_LIGHT  = 'BLUE',    'Blue-Light Filter'
+    PHOTOCHROM  = 'PHOTO',   'Photochromic (Transitions)'
+    POLARISED   = 'POLAR',   'Polarised'
+    UV400       = 'UV400',   'UV400'
+    SCRATCH     = 'SCRATCH', 'Scratch-Resistant'
+    HYDRO       = 'HYDRO',   'Hydrophobic'
+
+
+class PowerBand(models.TextChoices):
+    LOW       = 'LOW',   '0.00 to ±3.00'
+    MEDIUM    = 'MED',   '±3.25 to ±6.00'
+    HIGH      = 'HIGH',  '±6.25 to ±10.00'
+    VERY_HIGH = 'VHIGH', '±10.25 and above'
+
+
+class LensPriceMatrix(AuditModel):
+    """
+    Lookup table: lens_type × refractive_index × coating × power_band → price.
+    Used by the optical shop to auto-price lenses based on prescription parameters.
+    """
+    lens_type = models.CharField(max_length=20, choices=LensType.choices)
+    refractive_index = models.DecimalField(
+        max_digits=4, decimal_places=2,
+        help_text='e.g. 1.50, 1.56, 1.60, 1.67, 1.74'
+    )
+    coating = models.CharField(max_length=20, choices=CoatingType.choices, default=CoatingType.NONE)
+    power_band = models.CharField(max_length=10, choices=PowerBand.choices, default=PowerBand.LOW)
+    price = models.DecimalField(max_digits=10, decimal_places=2, help_text='Selling price in FCFA')
+
+    class Meta:
+        ordering = ['lens_type', 'refractive_index', 'coating', 'power_band']
+        unique_together = [('lens_type', 'refractive_index', 'coating', 'power_band')]
+        verbose_name = 'Lens Price Matrix Entry'
+        verbose_name_plural = 'Lens Price Matrix'
+
+    def __str__(self):
+        return (
+            f"{self.get_lens_type_display()} | "
+            f"Index {self.refractive_index} | "
+            f"{self.get_coating_display()} | "
+            f"{self.get_power_band_display()} → "
+            f"{self.price:,.0f} FCFA"
+        )
+
+
+# ── Warranty & After-Sales ───────────────────────────────────────────────────
+
+class WarrantyStatus(models.TextChoices):
+    ACTIVE    = 'ACTIVE',    'Active'
+    CLAIMED   = 'CLAIMED',   'Claimed'
+    EXPIRED   = 'EXPIRED',   'Expired'
+    VOIDED    = 'VOIDED',    'Voided'
+
+
+class OpticalWarranty(AuditModel):
+    """
+    Warranty record linked to an optical order.
+    Auto-created when an order is delivered.
+    """
+    order = models.OneToOneField(OpticalOrder, on_delete=models.CASCADE, related_name='warranty')
+    warranty_months = models.PositiveSmallIntegerField(default=12, help_text='Duration in months')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(max_length=10, choices=WarrantyStatus.choices, default=WarrantyStatus.ACTIVE)
+    terms = models.TextField(blank=True, help_text='Warranty terms / coverage details')
+
+    class Meta:
+        ordering = ['-start_date']
+        verbose_name = 'Optical Warranty'
+        verbose_name_plural = 'Optical Warranties'
+
+    def __str__(self):
+        return f"Warranty — {self.order.order_number} ({self.get_status_display()})"
+
+    @property
+    def is_valid(self):
+        return self.status == WarrantyStatus.ACTIVE and self.end_date >= timezone.localdate()
+
+    def save(self, *args, **kwargs):
+        if not self.end_date:
+            from datetime import timedelta
+            self.end_date = self.start_date + timedelta(days=30 * self.warranty_months)
+        super().save(*args, **kwargs)
+
+
+class RepairType(models.TextChoices):
+    WARRANTY_CLAIM = 'WARRANTY', 'Warranty Claim'
+    FRAME_REPAIR   = 'FRAME',   'Frame Repair / Adjustment'
+    LENS_REMAKE    = 'REMAKE',  'Lens Remake'
+    RELENS         = 'RELENS',  'Re-lens (New Prescription)'
+    NOSE_PAD       = 'NOSEPAD', 'Nose Pad Replacement'
+    TEMPLE_REPLACE = 'TEMPLE',  'Temple Arm Replacement'
+    SCREW_HINGE    = 'SCREW',   'Screw / Hinge Fix'
+    TINTING        = 'TINT',    'Re-tint'
+    OTHER          = 'OTHER',   'Other'
+
+
+class RepairStatus(models.TextChoices):
+    RECEIVED    = 'RECEIVED',   'Received'
+    IN_PROGRESS = 'IN_PROG',    'In Progress'
+    COMPLETED   = 'COMPLETED',  'Completed'
+    RETURNED    = 'RETURNED',   'Returned to Patient'
+    CANCELLED   = 'CANCELLED',  'Cancelled'
+
+
+class OpticalRepair(AuditModel):
+    """
+    After-sales repair / adjustment record.
+    Can be linked to an existing order (warranty claim) or standalone.
+    """
+    repair_number = models.CharField(max_length=30, unique=True)
+    patient = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='optical_repairs')
+    order = models.ForeignKey(OpticalOrder, null=True, blank=True, on_delete=models.SET_NULL, related_name='repairs')
+    repair_type = models.CharField(max_length=20, choices=RepairType.choices)
+    status = models.CharField(max_length=20, choices=RepairStatus.choices, default=RepairStatus.RECEIVED)
+    description = models.TextField(help_text='What is broken / what the patient wants')
+    is_warranty_claim = models.BooleanField(default=False)
+    cost = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text='Cost to patient (0 if warranty)')
+    received_date = models.DateField(default=timezone.now)
+    completed_date = models.DateField(null=True, blank=True)
+    returned_date = models.DateField(null=True, blank=True)
+    technician_notes = models.TextField(blank=True)
+    received_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='optical_repairs_received'
+    )
+
+    class Meta:
+        ordering = ['-received_date']
+
+    def __str__(self):
+        return f"Repair {self.repair_number} — {self.patient.full_name} ({self.get_repair_type_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.repair_number:
+            today = timezone.localdate()
+            count = OpticalRepair.objects.filter(received_date__year=today.year).count() + 1
+            self.repair_number = f"RPR-{today.strftime('%Y')}-{count:04d}"
         super().save(*args, **kwargs)

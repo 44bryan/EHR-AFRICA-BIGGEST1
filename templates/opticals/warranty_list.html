@@ -1,0 +1,74 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Warranties — Optical{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-shield-check me-2 text-success"></i>Optical Warranties</h4>
+    <div class="text-muted small">Track warranty status for delivered orders</div>
+  </div>
+  <a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+</div>
+
+{# ── Status filter ── #}
+<div class="d-flex gap-1 mb-3 flex-wrap">
+  <a href="{% url 'opticals:warranty_list' %}" class="btn btn-sm {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+  {% for val, label in status_choices %}
+  <a href="?status={{ val }}" class="btn btn-sm {% if status_filter == val %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Order #</th>
+          <th>Patient</th>
+          <th>Frame / Lens</th>
+          <th>Start</th>
+          <th>Expires</th>
+          <th>Status</th>
+          <th>Duration</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in warranties %}
+        <tr>
+          <td>
+            <a href="{% url 'opticals:order_detail' order_id=w.order.id %}" class="fw-semibold text-decoration-none">{{ w.order.order_number }}</a>
+          </td>
+          <td>
+            <div class="fw-semibold">{{ w.order.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ w.order.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if w.order.frame %}{{ w.order.frame }}{% endif %}
+            {% if w.order.lens %}<span class="text-muted"> + {{ w.order.lens.name }}</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ w.start_date|date:"d M Y" }}</td>
+          <td class="{% if w.end_date < today %}text-danger{% else %}text-muted{% endif %}">{{ w.end_date|date:"d M Y" }}</td>
+          <td>
+            <span class="badge {% if w.status == 'ACTIVE' %}bg-success{% elif w.status == 'CLAIMED' %}bg-warning text-dark{% elif w.status == 'EXPIRED' %}bg-secondary{% else %}bg-danger{% endif %}">
+              {{ w.get_status_display }}
+            </span>
+          </td>
+          <td class="text-muted">{{ w.warranty_months }} months</td>
+          <td>
+            {% if w.status == 'ACTIVE' %}
+            <a href="{% url 'opticals:repair_create' %}?order={{ w.order.id }}&patient={{ w.order.patient.id }}" class="btn btn-xs btn-outline-warning" style="font-size:.7rem;padding:2px 6px;">
+              <i class="bi bi-tools me-1"></i>Claim
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No warranties found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

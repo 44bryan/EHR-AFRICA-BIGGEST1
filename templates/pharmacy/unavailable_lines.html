@@ -1,0 +1,109 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Unavailable Rx Lines — Pharmacy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-exclamation-diamond me-2 text-warning"></i>Unavailable Prescription Lines</h4>
+    <div class="text-muted small">Drugs the pharmacy could not fulfil — track reasons &amp; patterns</div>
+  </div>
+  <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+{# ── Filters ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small mb-0">From</label>
+        <input type="date" name="from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">To</label>
+        <input type="date" name="to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">Reason</label>
+        <select name="reason" class="form-select form-select-sm">
+          <option value="">All Reasons</option>
+          {% for val, label in reasons %}
+          <option value="{{ val }}" {% if reason_filter == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Summary by reason ── #}
+{% if reason_summary %}
+<div class="row g-2 mb-3">
+  {% for r in reason_summary %}
+  <div class="col-auto">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+        <span class="badge bg-warning text-dark">{{ r.count }}</span>
+        <span class="small fw-semibold">{{ r.label }}</span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── Lines table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Patient</th>
+          <th>Drug</th>
+          <th>Qty</th>
+          <th>Reason</th>
+          <th>Prescriber</th>
+          <th>Marked By</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+        <tr>
+          <td class="text-muted">{{ line.created_at|date:"d M H:i" }}</td>
+          <td>
+            <div class="fw-semibold">{{ line.prescription.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ line.prescription.patient.patient_id }}</div>
+          </td>
+          <td>
+            <span class="fw-semibold">{{ line.rx_item.drug_name }}</span>
+            {% if line.rx_item.concentration %}<span class="text-muted"> {{ line.rx_item.concentration }}</span>{% endif %}
+          </td>
+          <td>{{ line.rx_item.quantity }}</td>
+          <td>
+            <span class="badge {% if line.reason == 'OUT_OF_STOCK' %}bg-danger{% elif line.reason == 'EXPIRED' %}bg-warning text-dark{% elif line.reason == 'DECLINED' %}bg-secondary{% else %}bg-info{% endif %}">
+              {{ line.get_reason_display }}
+            </span>
+          </td>
+          <td class="text-muted">{% if line.prescription.prescribed_by %}Dr. {{ line.prescription.prescribed_by.last_name }}{% else %}&mdash;{% endif %}</td>
+          <td class="text-muted">{{ line.marked_by.get_full_name }}</td>
+          <td class="text-muted" style="max-width:200px;">{{ line.notes|truncatewords:10 }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">
+            <i class="bi bi-check-circle-fill text-success me-1"></i>No unavailable lines for this period
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

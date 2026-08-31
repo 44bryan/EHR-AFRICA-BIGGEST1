@@ -98,6 +98,74 @@
         </dl>
       </div>
     </div>
+
+    {# ── Dispensing Measurements ── #}
+    {% if order.mono_pd_re or order.mono_pd_le or order.fitting_height_re or order.vertex_distance or order.pantoscopic_tilt %}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white fw-semibold py-2 small">
+        <i class="bi bi-rulers me-1 text-secondary"></i>Dispensing Measurements
+      </div>
+      <div class="card-body p-2">
+        <table class="table table-sm table-bordered mb-0 small text-center">
+          <thead class="table-light">
+            <tr><th></th><th>Mono PD</th><th>Fitting Ht</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="fw-semibold text-primary">OD</td><td>{{ order.mono_pd_re|default:"—" }} mm</td><td>{{ order.fitting_height_re|default:"—" }} mm</td></tr>
+            <tr><td class="fw-semibold text-success">OS</td><td>{{ order.mono_pd_le|default:"—" }} mm</td><td>{{ order.fitting_height_le|default:"—" }} mm</td></tr>
+          </tbody>
+        </table>
+        <div class="d-flex gap-3 px-2 pt-1 small text-muted">
+          {% if order.vertex_distance %}<span>Vertex: <strong>{{ order.vertex_distance }} mm</strong></span>{% endif %}
+          {% if order.pantoscopic_tilt %}<span>Panto: <strong>{{ order.pantoscopic_tilt }}&deg;</strong></span>{% endif %}
+          {% if order.wrap_angle %}<span>Wrap: <strong>{{ order.wrap_angle }}&deg;</strong></span>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── QC Verification ── #}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white fw-semibold py-2 small d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-check2-square me-1"></i>QC Verification</span>
+        {% if order.qc_verified %}
+        <span class="badge bg-success"><i class="bi bi-check-lg me-1"></i>Passed</span>
+        {% else %}
+        <span class="badge bg-secondary">Not verified</span>
+        {% endif %}
+      </div>
+      <div class="card-body p-2">
+        {% if order.qc_verified %}
+        <div class="small text-muted">
+          Verified by <strong>{{ order.qc_verified_by.get_full_name }}</strong>
+          on {{ order.qc_verified_at|date:"d M Y H:i" }}
+          {% if order.qc_notes %}<div class="mt-1 fst-italic">{{ order.qc_notes }}</div>{% endif %}
+        </div>
+        {% elif order.status == 'LAB' or order.status == 'READY' %}
+        <form method="post" action="{% url 'opticals:qc_verify' order.id %}" class="mb-2">
+          {% csrf_token %}
+          <div class="mb-2">
+            <textarea name="qc_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="QC remarks — power, alignment, cosmetic…"></textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-check-lg me-1"></i>QC Pass
+            </button>
+            <button type="submit" formaction="{% url 'opticals:qc_fail' order.id %}" class="btn btn-outline-danger btn-sm">
+              <i class="bi bi-x-lg me-1"></i>QC Fail — Rework
+            </button>
+          </div>
+        </form>
+        {% elif order.qc_notes and 'QC FAILED' in order.qc_notes %}
+        <div class="alert alert-danger py-2 small mb-0">
+          <i class="bi bi-x-circle me-1"></i>{{ order.qc_notes }}
+        </div>
+        {% else %}
+        <div class="small text-muted">QC check available after lab returns the job.</div>
+        {% endif %}
+      </div>
+    </div>
   </div>
 
   <div class="col-md-7">
@@ -290,7 +358,7 @@
               </td>
               <td class="fw-semibold text-success">{{ pmt.amount|floatformat:0 }}</td>
               <td class="text-muted">{{ pmt.reference|default:"—" }}</td>
-              <td class="text-muted">{{ pmt.received_by.get_full_name|default:pmt.received_by.username }}</td>
+              <td class="text-muted">{{ pmt.received_by|user_display }}</td>
             </tr>
             {% endfor %}
           </tbody>

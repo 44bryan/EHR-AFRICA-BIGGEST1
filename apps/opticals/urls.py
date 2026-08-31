@@ -38,4 +38,23 @@ urlpatterns = [
     path('lab/', views.lab_job_queue, name='lab_job_queue'),
     path('orders/<uuid:order_id>/send-to-lab/', views.send_to_lab, name='send_to_lab'),
     path('lab/<uuid:job_id>/action/', views.lab_job_action, name='lab_job_action'),
+
+    # QC verification
+    path('orders/<uuid:order_id>/qc-verify/', views.qc_verify, name='qc_verify'),
+    path('orders/<uuid:order_id>/qc-fail/', views.qc_fail, name='qc_fail'),
+
+    # Reports
+    path('uncollected/', views.uncollected_orders, name='uncollected_orders'),
+
+    # Lens price matrix
+    path('price-matrix/', views.lens_price_matrix, name='lens_price_matrix'),
+    path('price-matrix/save/', views.lens_price_matrix_save, name='lens_price_matrix_save'),
+    path('price-matrix/<uuid:entry_id>/delete/', views.lens_price_matrix_delete, name='lens_price_matrix_delete'),
+    path('price-matrix/lookup/', views.lens_price_lookup_ajax, name='lens_price_lookup'),
+
+    # Warranty & after-sales
+    path('warranties/', views.warranty_list, name='warranty_list'),
+    path('repairs/', views.repair_list, name='repair_list'),
+    path('repairs/new/', views.repair_create, name='repair_create'),
+    path('repairs/<uuid:repair_id>/action/', views.repair_action, name='repair_action'),
 ]
