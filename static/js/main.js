@@ -2,6 +2,49 @@
    EHR Africa — Main JavaScript v2
    ============================================================ */
 
+// ── Force normal navigation for pagination & month-nav links ─────────────────
+// HTMX hx-boost="true" on #wrapper intercepts ALL <a> clicks as AJAX requests.
+// This breaks pagination (?page=2), month navigation (?month=), and any link
+// inside [hx-boost="false"] containers (HTMX 1.9.x bug with hx-select).
+// Fix: capture click events BEFORE HTMX sees them and do normal navigation.
+// Using capture phase (3rd arg = true) so this fires before HTMX's bubbling listener.
+document.addEventListener('click', function(evt) {
+  // Find the closest <a> tag (user may click on <i> icon inside the link)
+  var link = evt.target.closest('a[href]');
+  if (!link) return;
+  var href = link.getAttribute('href') || '';
+  // Skip non-navigation links
+  if (!href || href === '#' || href.startsWith('javascript:')) return;
+
+  var shouldBypass = false;
+
+  // 1. Respect hx-boost="false" on the link or any ancestor (up to #wrapper)
+  var node = link;
+  while (node && node.id !== 'wrapper') {
+    if (node.getAttribute('hx-boost') === 'false' || node.getAttribute('data-hx-boost') === 'false') {
+      shouldBypass = true;
+      break;
+    }
+    node = node.parentElement;
+  }
+
+  // 2. Pagination links: ?page=N
+  if (!shouldBypass && /[?&]page=\d/.test(href)) {
+    shouldBypass = true;
+  }
+
+  // 3. Month/year navigation links: ?month= or ?year=
+  if (!shouldBypass && /[?&](month|year)=/.test(href)) {
+    shouldBypass = true;
+  }
+
+  if (shouldBypass) {
+    evt.preventDefault();
+    evt.stopPropagation();   // Prevent HTMX from seeing this click
+    window.location.href = link.href;  // Normal browser navigation
+  }
+}, true);  // ← capture phase: fires BEFORE htmx's bubbling listener
+
 // ── Prevent HTMX from intercepting file downloads ───────────────────────────
 // When hx-boost is on, clicking download/export/PDF links causes HTMX to
 // fetch the response as AJAX. Binary responses freeze the page. This handler

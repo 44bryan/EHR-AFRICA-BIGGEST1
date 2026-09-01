@@ -1826,10 +1826,10 @@ def unavailable_lines_view(request):
 @login_required
 def controlled_register(request):
     """Narcotics/controlled drug register — full movement log."""
-    from apps.core.decorators import CAN_VIEW_PATIENT
-    if request.user.role not in CAN_VIEW_PATIENT and not request.user.is_super_admin:
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+    if not (request.user.is_pharmacist or request.user.is_super_admin
+            or request.user.is_medical_director or request.user.is_ceo):
+        messages.error(request, 'Access restricted to pharmacy staff.')
+        return redirect('pharmacy:dashboard')
 
     drug_id = request.GET.get('drug')
     entries = ControlledDrugEntry.objects.select_related(
