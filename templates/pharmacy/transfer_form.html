@@ -1,0 +1,148 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Create Stock Transfer{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">
+      <i class="bi bi-arrow-left-right me-2 text-primary"></i>Create Stock Transfer
+    </h1>
+    <div class="text-muted small">Transfer stock between pharmacy locations</div>
+  </div>
+  <a href="{% url 'pharmacy:transfer_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Transfers
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-4 mx-auto" style="max-width:900px;">
+  <div class="card-header bg-light border-bottom fw-semibold">
+    <i class="bi bi-pencil-square me-2 text-primary"></i>Transfer Details
+  </div>
+  <div class="card-body">
+    <form method="post" action="{% url 'pharmacy:transfer_create' %}" id="transfer-form">
+      {% csrf_token %}
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">From Location <span class="text-danger">*</span></label>
+          <select name="from_location" class="form-select" required>
+            <option value="">-- Select source --</option>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">To Location <span class="text-danger">*</span></label>
+          <select name="to_location" class="form-select" required>
+            <option value="">-- Select destination --</option>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Notes</label>
+        <textarea name="notes" class="form-control" rows="2"
+                  placeholder="Optional remarks about this transfer"></textarea>
+      </div>
+
+      {# ── Transfer Items ── #}
+      <div class="border rounded p-3 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-box-seam me-2 text-primary"></i>Transfer Items</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-item">
+            <i class="bi bi-plus-lg me-1"></i>Add Item
+          </button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0" id="items-table">
+            <thead class="table-light">
+              <tr>
+                <th style="min-width:220px;">Drug <span class="text-danger">*</span></th>
+                <th style="min-width:180px;">Batch <span class="text-danger">*</span></th>
+                <th style="min-width:100px;">Qty <span class="text-danger">*</span></th>
+                <th style="width:50px;"></th>
+              </tr>
+            </thead>
+            <tbody id="items-body">
+              <tr class="item-row" data-index="0">
+                <td>
+                  <select name="items-0-drug_id" class="form-select form-select-sm" required>
+                    <option value="">-- Select drug --</option>
+                    {% for drug in drugs %}
+                    <option value="{{ drug.id }}">{{ drug.name }}{% if drug.strength %} ({{ drug.strength }}){% endif %}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <input type="text" name="items-0-batch_id" class="form-control form-control-sm"
+                         placeholder="Batch number" required>
+                </td>
+                <td>
+                  <input type="number" name="items-0-qty" class="form-control form-control-sm"
+                         min="1" placeholder="Qty" required>
+                </td>
+                <td class="text-center">
+                  <button type="button" class="btn btn-sm btn-outline-danger btn-remove-item" title="Remove">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <input type="hidden" name="item_count" id="item-count" value="1">
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-send me-1"></i>Create Transfer
+        </button>
+        <a href="{% url 'pharmacy:transfer_list' %}" class="btn btn-outline-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  const tbody = document.getElementById('items-body');
+  const countInput = document.getElementById('item-count');
+  let idx = 1;
+
+  document.getElementById('btn-add-item').addEventListener('click', function() {
+    const firstRow = tbody.querySelector('.item-row');
+    const newRow = firstRow.cloneNode(true);
+    newRow.setAttribute('data-index', idx);
+
+    // Update name attributes
+    newRow.querySelectorAll('[name]').forEach(function(el) {
+      el.name = el.name.replace(/items-\d+-/, 'items-' + idx + '-');
+      if (el.tagName === 'SELECT') el.selectedIndex = 0;
+      else el.value = '';
+    });
+
+    tbody.appendChild(newRow);
+    idx++;
+    countInput.value = tbody.querySelectorAll('.item-row').length;
+  });
+
+  tbody.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-remove-item');
+    if (!btn) return;
+    if (tbody.querySelectorAll('.item-row').length <= 1) {
+      alert('At least one item is required.');
+      return;
+    }
+    btn.closest('.item-row').remove();
+    countInput.value = tbody.querySelectorAll('.item-row').length;
+  });
+})();
+</script>
+{% endblock %}

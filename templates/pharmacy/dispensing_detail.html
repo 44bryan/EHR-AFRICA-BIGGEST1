@@ -10,8 +10,8 @@
       <span class="text-muted fw-normal fs-6 ms-2">{{ dispensing.dispensing_number }}</span>
     </h4>
     <p class="text-muted small mb-0">
-      <i class="bi bi-person me-1"></i>{{ dispensing.patient.full_name }}
-      &nbsp;&bull;&nbsp;{{ dispensing.patient.patient_id }}
+      <i class="bi bi-person me-1"></i>{{ dispensing.customer_name }}
+      {% if dispensing.patient %}&nbsp;&bull;&nbsp;{{ dispensing.patient.patient_id }}{% endif %}
       &nbsp;&bull;&nbsp;Started {{ dispensing.dispensed_at|date:"d M Y, H:i" }}
       &nbsp;&bull;&nbsp;By {{ dispensing.dispensed_by.get_full_name }}
     </p>
@@ -103,28 +103,34 @@
   <div class="col-lg-8">
 
     {# ── Patient info strip ── #}
-    <div class="card border-0 shadow-sm mb-3">
+    <div class="card border-0 shadow-sm mb-3 bg-light">
       <div class="card-body py-2 px-3">
         <div class="row g-2 align-items-center">
           <div class="col-auto">
             <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center text-white fw-bold"
                  style="width:40px;height:40px;font-size:1.1rem;">
-              {{ dispensing.patient.first_name|first }}{{ dispensing.patient.last_name|first }}
+              {% if dispensing.patient %}{{ dispensing.patient.first_name|first }}{{ dispensing.patient.last_name|first }}{% else %}<i class="bi bi-person-walking text-white"></i>{% endif %}
             </div>
           </div>
           <div class="col">
-            <div class="fw-bold">{{ dispensing.patient.full_name }}</div>
+            <div class="fw-bold">{{ dispensing.customer_name }}</div>
             <div class="text-muted small">
+              {% if dispensing.patient %}
               ID: {{ dispensing.patient.patient_id }}
               &nbsp;&bull;&nbsp;
               {% if dispensing.patient.date_of_birth %}Age: {{ dispensing.patient.date_of_birth|timesince|truncatewords:2 }}{% endif %}
               {% if dispensing.patient.gender %}&nbsp;&bull;&nbsp;{{ dispensing.patient.get_gender_display }}{% endif %}
+              {% else %}
+              <span class="badge bg-success bg-opacity-10 text-success">Walk-in Customer</span>
+              {% endif %}
             </div>
           </div>
           <div class="col-auto text-end">
+            {% if dispensing.patient %}
             <a href="{% url 'patients:detail' patient_id=dispensing.patient.patient_id %}" class="btn btn-sm btn-outline-secondary" target="_blank">
               <i class="bi bi-person me-1"></i>Patient Record
             </a>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -133,12 +139,19 @@
     {# ── Doctor Prescription reference panel ── #}
     {% if dispensing.prescription %}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2">
-        <i class="bi bi-file-medical text-secondary"></i>
+      <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2 flex-wrap">
+        <i class="bi bi-file-medical text-primary"></i>
         <span class="fw-semibold">Doctor's Prescription</span>
         <span class="text-muted small ms-1">{{ dispensing.prescription.prescription_date|date:"d M Y" }}</span>
         {% if dispensing.prescription.prescribed_by %}
-        <span class="ms-auto text-muted small">Dr. {{ dispensing.prescription.prescribed_by.get_full_name }}</span>
+        <span class="text-muted small">— Dr. {{ dispensing.prescription.prescribed_by.get_full_name }}</span>
+        {% endif %}
+        {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
+        {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+        <button type="button" class="btn btn-sm btn-primary ms-auto" id="fillAllRxBtn">
+          <i class="bi bi-lightning-fill me-1"></i>Fill All Rx
+        </button>
+        {% endif %}
         {% endif %}
       </div>
       <div class="card-body p-0">
@@ -166,6 +179,9 @@
                 <td>
                   <span class="badge bg-light text-dark border">{{ rx_item.frequency }}</span>
                   {% if rx_item.dose %}<br><span class="text-muted">{{ rx_item.dose }}</span>{% endif %}
+                  {% with rx_item.frequency|time_slots as ts %}{% if ts %}
+                  <br><span class="text-primary" style="font-size:.72rem;"><i class="bi bi-clock me-1"></i>{{ ts }}</span>
+                  {% endif %}{% endwith %}
                 </td>
                 <td class="text-muted">{{ rx_item.duration|default:"—" }}</td>
                 <td class="text-muted">{{ rx_item.get_route_display }}</td>
@@ -173,11 +189,11 @@
                 <td class="text-center fw-bold">{{ rx_item.quantity }}</td>
                 <td class="text-center">
                   {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
-                  <button type="button" class="btn btn-sm btn-outline-primary py-0 rx-quick-add"
+                  <button type="button" class="btn btn-sm btn-success py-0 rx-quick-add"
                           data-name="{{ rx_item.drug_name }}"
                           data-qty="{{ rx_item.quantity }}"
-                          data-instr="{{ rx_item.dose }} {{ rx_item.frequency }}{% if rx_item.duration %} × {{ rx_item.duration }}{% endif %}{% if rx_item.eye != 'NA' %} — {{ rx_item.get_eye_display }}{% endif %}{% if rx_item.special_instructions %} — {{ rx_item.special_instructions }}{% endif %}">
-                    <i class="bi bi-arrow-down-circle me-1"></i>Fill
+                          data-instr="{{ rx_item.dose }} {{ rx_item.frequency }}{% with rx_item.frequency|time_slots as ts %}{% if ts %} [{{ ts }}]{% endif %}{% endwith %}{% if rx_item.duration %} × {{ rx_item.duration }}{% endif %}{% if rx_item.eye != 'NA' %} — {{ rx_item.get_eye_display }}{% endif %}{% if rx_item.special_instructions %} — {{ rx_item.special_instructions }}{% endif %}">
+                    <i class="bi bi-check-circle me-1"></i>Fill
                   </button>
                   {% else %}
                   <span class="text-muted small">—</span>
@@ -188,22 +204,17 @@
             </tbody>
           </table>
         </div>
-        {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
-        <div class="px-3 py-2 border-top bg-light d-flex align-items-center justify-content-between flex-wrap gap-2" style="font-size:.78rem;">
-          <span><i class="bi bi-info-circle me-1 text-secondary"></i>Click <strong>Fill</strong> to add one drug, or <strong>Fill All Rx</strong> to add every formulary drug at once.</span>
-          <button type="button" class="btn btn-sm btn-primary" id="fillAllRxBtn">
-            <i class="bi bi-lightning-fill me-1"></i>Fill All Rx
-          </button>
+        <div class="px-3 py-2 border-top bg-light" style="font-size:.78rem;">
+          <i class="bi bi-info-circle me-1 text-secondary"></i>Click <strong>Fill</strong> to add one drug, or <strong>Fill All Rx</strong> in the header to add every formulary drug at once.
         </div>
-        {% endif %}
       </div>
     </div>
     {% endif %}
 
     {# ── Dispensed Items Table ── #}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
-        <h6 class="fw-semibold mb-0"><i class="bi bi-list-check me-1 text-secondary"></i>Items in this Dispensing</h6>
+      <div class="card-header bg-light border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-list-check me-1 text-success"></i>Items in this Dispensing</h6>
         <span id="item-count-badge" class="badge bg-secondary rounded-pill">{{ dispensing.items.count }}</span>
       </div>
       <div class="card-body p-0">
@@ -237,18 +248,38 @@
                   </span>
                   {% else %}—{% endif %}
                 </td>
-                <td class="text-center fw-semibold">{{ item.quantity_dispensed }}</td>
-                <td class="text-end" style="font-size:.88rem;">{{ item.unit_price|floatformat:0|intcomma }}</td>
-                <td class="text-end fw-bold" style="font-size:.9rem;">{{ item.subtotal|floatformat:0|intcomma }}</td>
-                <td style="font-size:.78rem;" class="text-muted">{{ item.instructions|default:"—" }}</td>
+                <td class="text-center fw-semibold">
+                  {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+                  <input type="number" class="form-control form-control-sm text-center edit-qty" data-item="{{ item.pk }}"
+                         value="{{ item.quantity_dispensed }}" min="1" style="width:60px;display:inline-block;">
+                  {% else %}{{ item.quantity_dispensed }}{% endif %}
+                </td>
+                <td class="text-end" style="font-size:.88rem;">
+                  {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+                  <input type="number" class="form-control form-control-sm text-end edit-price" data-item="{{ item.pk }}"
+                         value="{{ item.unit_price|floatformat:0 }}" min="0" style="width:80px;display:inline-block;">
+                  {% else %}{{ item.unit_price|floatformat:0|intcomma }}{% endif %}
+                </td>
+                <td class="text-end fw-bold" style="font-size:.9rem;" id="subtotal-{{ item.pk }}">{{ item.subtotal|floatformat:0|intcomma }}</td>
+                <td style="font-size:.78rem;">
+                  {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+                  <input type="text" class="form-control form-control-sm edit-instr" data-item="{{ item.pk }}"
+                         value="{{ item.instructions }}" placeholder="Instructions..." style="min-width:100px;">
+                  {% else %}<span class="text-muted">{{ item.instructions|default:"—" }}</span>{% endif %}
+                </td>
                 {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
                 <td>
-                  <form method="post" action="{% url 'pharmacy:remove_dispensing_item_ajax' dispensing_id=dispensing.id item_id=item.pk %}" class="remove-item-form">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Remove item">
-                      <i class="bi bi-trash"></i>
+                  <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0 save-edit-btn" data-item="{{ item.pk }}" title="Save changes">
+                      <i class="bi bi-check-lg"></i>
                     </button>
-                  </form>
+                    <form method="post" action="{% url 'pharmacy:remove_dispensing_item_ajax' dispensing_id=dispensing.id item_id=item.pk %}" class="remove-item-form">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Remove item">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  </div>
                 </td>
                 {% endif %}
               </tr>
@@ -278,8 +309,8 @@
     {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
     {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
     <div class="card border-0 shadow-sm" id="add-item-card">
-      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <h6 class="fw-semibold mb-0"><i class="bi bi-plus-circle me-1 text-secondary"></i>Add Drug</h6>
+      <div class="card-header bg-light border-bottom py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-plus-circle me-1 text-warning"></i>Add Drug</h6>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="toggleManualBtn">
           <i class="bi bi-pencil me-1"></i>Add Non-Formulary Drug
         </button>
@@ -455,8 +486,8 @@
 
       {# Running Total Card #}
       <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header bg-white border-bottom py-2">
-          <h6 class="fw-semibold mb-0"><i class="bi bi-receipt me-1 text-secondary"></i>Order Total</h6>
+        <div class="card-header bg-light border-bottom py-2">
+          <h6 class="fw-semibold mb-0"><i class="bi bi-receipt me-1 text-primary"></i>Order Total</h6>
         </div>
         <div class="card-body text-center py-3">
           <div class="text-muted small text-uppercase fw-semibold mb-1">Amount Due (FCFA)</div>
@@ -471,29 +502,35 @@
 
       {# Confirm & Send to Cashier (2-step flow) #}
       {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
-      <div class="card border-0 shadow-sm mb-3">
+      {# PATH 1: Send to Cashier #}
+      <div class="card border-0 shadow-sm mb-2">
         <div class="card-body py-3">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge bg-warning text-dark px-2 py-1" style="font-size:.7rem;">PATH 1</span>
+            <span class="fw-bold small">Patient pays at cashier</span>
+          </div>
           <form method="post" action="{% url 'pharmacy:confirm_dispensing' dispensing_id=dispensing.id %}">
             {% csrf_token %}
             <button type="submit" class="btn btn-warning btn-lg fw-bold w-100"
                     onclick="return confirm('Confirm items and send patient to cashier for payment?')">
-              <i class="bi bi-send me-2"></i>Confirm &amp; Send to Cashier
+              <i class="bi bi-send me-2"></i>Send to Cashier
             </button>
           </form>
           <div class="text-muted text-center small mt-2">
             Bills the items, patient goes to cashier. Come back to dispense after payment.
           </div>
-          <hr class="my-2">
-          <div class="text-muted text-center small">
-            <strong>OR</strong> collect payment directly below (OTC / walk-in)
-          </div>
         </div>
       </div>
 
-      {# Payment + Change Calculator (direct collection) #}
-      <div class="card border-0 shadow mb-3" id="payment-card">
-        <div class="card-header bg-white border-bottom py-2">
-          <h6 class="fw-semibold mb-0"><i class="bi bi-cash-coin me-1"></i>Collect Payment &amp; Dispense (Direct)</h6>
+      <div class="text-center my-2">
+        <span class="badge bg-light text-muted border px-3 py-1">OR</span>
+      </div>
+
+      {# PATH 2: Collect payment directly #}
+      <div class="card border-0 shadow-sm mb-2" id="payment-card">
+        <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
+          <span class="badge bg-success px-2 py-1" style="font-size:.7rem;">PATH 2</span>
+          <h6 class="fw-semibold mb-0"><i class="bi bi-cash-coin me-1 text-success"></i>Collect Payment Here</h6>
         </div>
         <div class="card-body">
           <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}"
@@ -507,11 +544,11 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn"
                         data-value="{{ val }}">{{ lbl }}</button>
                 {% empty %}
-                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn active" data-value="CASH">Cash</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="MOBILE">Mobile Money</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="CARD">Card</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="INSURANCE">Insurance</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="TRANSFER">Bank Transfer</button>
+                <button type="button" class="btn btn-sm btn-outline-success pay-method-btn active" data-value="CASH"><i class="bi bi-cash-stack me-1"></i>Cash</button>
+                <button type="button" class="btn btn-sm btn-outline-warning pay-method-btn" data-value="MOBILE"><i class="bi bi-phone me-1"></i>Mobile Money</button>
+                <button type="button" class="btn btn-sm btn-outline-primary pay-method-btn" data-value="CARD"><i class="bi bi-credit-card me-1"></i>Card</button>
+                <button type="button" class="btn btn-sm btn-outline-info pay-method-btn" data-value="INSURANCE"><i class="bi bi-shield-check me-1"></i>Insurance</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="TRANSFER"><i class="bi bi-bank me-1"></i>Transfer</button>
                 {% endfor %}
               </div>
               <input type="hidden" name="payment_method" id="payment-method-input" value="CASH">
@@ -587,7 +624,7 @@
       {# Notes / flags #}
       {% if dispensing.notes %}
       <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header bg-white border-bottom py-2">
+        <div class="card-header bg-light border-bottom py-2">
           <h6 class="fw-semibold mb-0 small"><i class="bi bi-sticky me-1"></i>Notes</h6>
         </div>
         <div class="card-body py-2 small text-muted">{{ dispensing.notes }}</div>
@@ -997,7 +1034,7 @@ function drugSearchCandidates(name) {
   const candidates = [stripped];
   // Also try progressively shorter (remove trailing descriptor words like "Isotonic", "Ophthalmic")
   const words = stripped.split(' ');
-  for (let i = words.length - 1; i >= 2; i--) {
+  for (let i = words.length - 1; i >= 1; i--) {
     const shorter = words.slice(0, i).join(' ');
     if (!candidates.includes(shorter)) candidates.push(shorter);
   }
@@ -1039,7 +1076,7 @@ document.querySelectorAll('.rx-quick-add').forEach(function(btn) {
           updateTotals(parseFloat(addData.total), itemCount);
           checkInteractions(addData.interactions);
           btn.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Added';
-          btn.classList.replace('btn-outline-primary', 'btn-outline-success');
+          btn.classList.replace('btn-success', 'btn-outline-success');
           return;
         } else {
           btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
@@ -1047,7 +1084,7 @@ document.querySelectorAll('.rx-quick-add').forEach(function(btn) {
       } else {
         btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Not found';
         btn.title = 'Drug "' + rawName + '" not in formulary — add manually below';
-        btn.classList.replace('btn-outline-primary', 'btn-outline-warning');
+        btn.classList.replace('btn-success', 'btn-outline-warning');
       }
     } catch(e) {
       btn.innerHTML = '<i class="bi bi-wifi-off me-1"></i>Network error';
@@ -1091,12 +1128,12 @@ if (fillAllBtn) {
             updateTotals(parseFloat(addData.total), itemCount);
             checkInteractions(addData.interactions);
             btn.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Added';
-            btn.classList.replace('btn-outline-primary', 'btn-outline-success');
+            btn.classList.replace('btn-success', 'btn-outline-success');
             added++;
           } else { skipped++; }
         } else {
           btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Not found';
-          btn.classList.replace('btn-outline-primary', 'btn-outline-warning');
+          btn.classList.replace('btn-success', 'btn-outline-warning');
           skipped++;
         }
       } catch(e) { skipped++; }
@@ -1149,34 +1186,43 @@ if (addManualBtn) {
   });
 }
 
-// ── Prescription quick-fill ────────────────────────────────────────────────
-document.querySelectorAll('.rx-quick-add').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    const name  = this.dataset.name;
-    const qty   = this.dataset.qty;
-    const instr = this.dataset.instr;
-    if (searchInput) {
-      searchInput.value = name;
-      if (instrInput) instrInput.value = instr || '';
-      // Fetch directly then auto-select first match — no timing issues
-      fetch(SEARCH_URL + '?q=' + encodeURIComponent(name))
-        .then(r => r.json())
-        .then(data => {
-          if (data.drugs && data.drugs.length > 0) {
-            selectDrug(data.drugs[0]);
-            if (qtyInput && qty) qtyInput.value = qty;
-            if (instrInput && instr) instrInput.value = instr;
-          } else {
-            // Not in formulary — show message so pharmacist can search manually
-            searchResults.innerHTML = '<div class="px-3 py-2 text-muted small"><i class="bi bi-exclamation-circle me-1"></i>Not in formulary — search a substitute manually</div>';
-            searchResults.classList.remove('d-none');
-          }
-        })
-        .catch(() => fetchDrugs(name));
-    }
-    // Scroll to add form
-    const addCard = document.getElementById('add-item-card');
-    if (addCard) addCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// (Duplicate quick-fill removed — handled by the async handler above with drugSearchCandidates)
+
+// ── Inline edit dispensing items ──────────────────────────────────────────
+document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const itemId = btn.dataset.item;
+    const row = document.getElementById('item-row-' + itemId);
+    if (!row) return;
+    const qtyInput   = row.querySelector('.edit-qty');
+    const priceInput = row.querySelector('.edit-price');
+    const instrInput = row.querySelector('.edit-instr');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    const fd = new FormData();
+    if (qtyInput)   fd.append('qty', qtyInput.value);
+    if (priceInput) fd.append('unit_price', priceInput.value);
+    if (instrInput) fd.append('instructions', instrInput.value);
+    fd.append('csrfmiddlewaretoken', CSRF);
+
+    const editUrl = '/pharmacy/dispensing/{{ dispensing.id }}/edit-item/' + itemId + '/';
+    fetch(editUrl, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          const sub = document.getElementById('subtotal-' + itemId);
+          if (sub) sub.textContent = parseInt(data.item.subtotal).toLocaleString();
+          updateTotals(parseFloat(data.total), data.item_count);
+          btn.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
+          setTimeout(function() { btn.innerHTML = '<i class="bi bi-check-lg"></i>'; }, 1500);
+        } else {
+          alert(data.error || 'Failed to update');
+        }
+      })
+      .catch(function() { alert('Network error'); })
+      .finally(function() { btn.disabled = false; });
   });
 });
 </script>
@@ -1193,7 +1239,7 @@ document.querySelectorAll('.rx-quick-add').forEach(function (btn) {
       <form method="post" action="{% url 'pharmacy:cancel_dispensing' dispensing_id=dispensing.id %}">
         {% csrf_token %}
         <div class="modal-body">
-          <p class="small mb-2">This will void dispensing <strong>{{ dispensing.dispensing_number }}</strong> for <strong>{{ dispensing.patient.full_name }}</strong>. No payment will be collected.</p>
+          <p class="small mb-2">This will void dispensing <strong>{{ dispensing.dispensing_number }}</strong> for <strong>{{ dispensing.customer_name }}</strong>. No payment will be collected.</p>
           <label class="form-label small fw-semibold">Reason (optional)</label>
           <textarea name="reason" class="form-control form-control-sm" rows="2" placeholder="Patient refused, item not available…"></textarea>
         </div>

@@ -1,0 +1,126 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{% if location %}Edit{% else %}New{% endif %} Pharmacy Location{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">
+      <i class="bi bi-geo-alt me-2 text-primary"></i>{% if location %}Edit{% else %}New{% endif %} Pharmacy Location
+    </h1>
+    <div class="text-muted small">
+      {% if location %}Update details for <strong>{{ location.name }}</strong>{% else %}Add a new pharmacy storage or dispensing location{% endif %}
+    </div>
+  </div>
+  <a href="{% url 'pharmacy:location_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Locations
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm mx-auto" style="max-width:800px;">
+  <div class="card-header bg-light">
+    <span class="fw-semibold"><i class="bi bi-pencil me-1"></i>Location Details</span>
+  </div>
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="row g-3">
+        {# ── Name ── #}
+        <div class="col-md-6">
+          <label for="id_name" class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="id_name" name="name"
+                 value="{{ location.name|default:'' }}" required placeholder="e.g. Main Pharmacy Store">
+        </div>
+
+        {# ── Location Type ── #}
+        <div class="col-md-6">
+          <label for="id_location_type" class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
+          <select class="form-select" id="id_location_type" name="location_type" required>
+            <option value="">— Select type —</option>
+            {% for value, label in location_types %}
+              <option value="{{ value }}" {% if location and location.location_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# ── Address ── #}
+        <div class="col-12">
+          <label for="id_address" class="form-label fw-semibold">Address</label>
+          <textarea class="form-control" id="id_address" name="address" rows="2"
+                    placeholder="Physical address or building/floor description">{{ location.address|default:'' }}</textarea>
+        </div>
+
+        {# ── Phone Extension ── #}
+        <div class="col-md-6">
+          <label for="id_phone_ext" class="form-label fw-semibold">Phone / Extension</label>
+          <input type="text" class="form-control" id="id_phone_ext" name="phone_ext"
+                 value="{{ location.phone_ext|default:'' }}" placeholder="e.g. +237 6XX XXX XXX or Ext 204">
+        </div>
+
+        {# ── Manager ── #}
+        <div class="col-md-6">
+          <label for="id_manager" class="form-label fw-semibold">Manager</label>
+          <select class="form-select" id="id_manager" name="manager">
+            <option value="">— No manager assigned —</option>
+            {% for pharm in pharmacists %}
+              <option value="{{ pharm.pk }}" {% if location and location.manager_id == pharm.pk %}selected{% endif %}>
+                {{ pharm.get_full_name|default:pharm.username }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# ── Storage Conditions (WHO GPP 6.2) ── #}
+        <div class="col-md-6">
+          <label for="id_storage_conditions" class="form-label fw-semibold">Storage Conditions</label>
+          <select class="form-select" id="id_storage_conditions" name="storage_conditions">
+            <option value="">— Not specified —</option>
+            <option value="AMBIENT" {% if location.storage_conditions == 'AMBIENT' %}selected{% endif %}>Ambient (15-25 °C)</option>
+            <option value="COOL" {% if location.storage_conditions == 'COOL' %}selected{% endif %}>Cool Room (2-8 °C)</option>
+            <option value="FROZEN" {% if location.storage_conditions == 'FROZEN' %}selected{% endif %}>Frozen (&lt; -15 °C)</option>
+            <option value="CONTROLLED" {% if location.storage_conditions == 'CONTROLLED' %}selected{% endif %}>Controlled Room (20-25 °C)</option>
+          </select>
+        </div>
+
+        {# ── License Number ── #}
+        <div class="col-md-6">
+          <label for="id_license_number" class="form-label fw-semibold">License / Permit No.</label>
+          <input type="text" class="form-control" id="id_license_number" name="license_number"
+                 value="{{ location.license_number|default:'' }}" placeholder="Regulatory license number">
+        </div>
+
+        {# ── Controlled Access ── #}
+        <div class="col-md-6">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" type="checkbox" id="id_has_controlled_access" name="has_controlled_access"
+                   {% if location.has_controlled_access %}checked{% endif %}>
+            <label class="form-check-label fw-semibold" for="id_has_controlled_access">Controlled Access</label>
+            <div class="text-muted small">Restricted area for controlled/scheduled substances</div>
+          </div>
+        </div>
+
+        {# ── Is Active (edit only) ── #}
+        {% if location %}
+        <div class="col-md-6">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" type="checkbox" id="id_is_active" name="is_active"
+                   {% if location.is_active %}checked{% endif %}>
+            <label class="form-check-label fw-semibold" for="id_is_active">Active</label>
+            <div class="text-muted small">Inactive locations cannot receive stock or dispense medications.</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <hr class="my-4">
+
+      <div class="d-flex justify-content-end gap-2">
+        <a href="{% url 'pharmacy:location_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg me-1"></i>{% if location %}Save Changes{% else %}Create Location{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

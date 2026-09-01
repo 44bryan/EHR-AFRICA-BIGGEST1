@@ -21,14 +21,14 @@ urlpatterns = [
     # ── Medical Records Officer tools (must come BEFORE <str:patient_id>/ to avoid conflict) ──
     path('records/releases/', views.record_release_list_view, name='record_release_list'),
     path('records/releases/new/', views.record_release_create_view, name='record_release_create'),
-    path('records/releases/<int:pk>/update/', views.record_release_update_view, name='record_release_update'),
+    path('records/releases/<uuid:pk>/update/', views.record_release_update_view, name='record_release_update'),
     path('records/deficiency/', views.chart_deficiency_view, name='chart_deficiency'),
     path('records/access-log/', views.access_audit_view, name='access_audit'),
     path('records/duplicates/', views.duplicate_detection_view, name='duplicate_detection'),
     path('records/consents/', views.consent_review_view, name='consent_review'),
     path('records/amendments/', views.amendment_list_view, name='amendment_list'),
     path('records/amendments/new/', views.amendment_create_view, name='amendment_create'),
-    path('records/amendments/<int:pk>/update/', views.amendment_update_view, name='amendment_update'),
+    path('records/amendments/<uuid:pk>/update/', views.amendment_update_view, name='amendment_update'),
     path('records/documents/', views.document_review_view, name='document_review'),
     path('prereg/manage/', views.prereg_management_view, name='prereg_management'),
 
@@ -48,11 +48,11 @@ urlpatterns = [
 
     # ── Chronic medications ─────────────────────────────────────────────────
     path('<str:patient_id>/medications/add/', views.medication_add_view, name='medication_add'),
-    path('<str:patient_id>/medications/<int:med_id>/toggle/', views.medication_toggle_view, name='medication_toggle'),
+    path('<str:patient_id>/medications/<uuid:med_id>/toggle/', views.medication_toggle_view, name='medication_toggle'),
 
     # ── Allergies ───────────────────────────────────────────────────────────
     path('<str:patient_id>/allergies/add/', views.allergy_add_view, name='allergy_add'),
-    path('<str:patient_id>/allergies/<int:allergy_id>/delete/', views.allergy_delete_view, name='allergy_delete'),
+    path('<str:patient_id>/allergies/<uuid:allergy_id>/delete/', views.allergy_delete_view, name='allergy_delete'),
 
     # ── Insurance ───────────────────────────────────────────────────────────
     path('<str:patient_id>/insurance/add/', views.insurance_add_view, name='insurance_add'),
@@ -60,8 +60,8 @@ urlpatterns = [
 
     # ── Problem List ─────────────────────────────────────────────────────────
     path('<str:patient_id>/problems/add/', views.problem_add_view, name='problem_add'),
-    path('<str:patient_id>/problems/<int:problem_id>/update-status/', views.problem_update_status_view, name='problem_update_status'),
-    path('<str:patient_id>/problems/<int:problem_id>/delete/', views.problem_delete_view, name='problem_delete'),
+    path('<str:patient_id>/problems/<uuid:problem_id>/update-status/', views.problem_update_status_view, name='problem_update_status'),
+    path('<str:patient_id>/problems/<uuid:problem_id>/delete/', views.problem_delete_view, name='problem_delete'),
 
     # ── Informed Consent (JCI PFR.5) ────────────────────────────────────────
     path('<str:patient_id>/consents/', views.consent_list_view, name='consent_list'),

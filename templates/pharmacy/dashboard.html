@@ -1,9 +1,47 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize %}
+{% load humanize static %}
 {% block title %}Pharmacy{% endblock %}
 
 {% block extra_css %}
 <style>
+  .pharm-kpi {
+    transition: transform .15s, box-shadow .15s;
+    border-radius: .75rem;
+  }
+  .pharm-kpi:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,.1) !important;
+  }
+  .pharm-kpi .kpi-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+  .pharm-kpi .kpi-value {
+    font-size: 1.6rem; font-weight: 700; line-height: 1.1;
+  }
+  .pharm-kpi .kpi-label {
+    font-size: .75rem; color: #6b7280; margin-top: 2px;
+  }
+  .pharm-alert-card {
+    border-left: 4px solid;
+    border-radius: .5rem;
+  }
+  .top-drug-bar {
+    height: 8px; border-radius: 4px; background: #e5e7eb;
+    overflow: hidden;
+  }
+  .top-drug-bar .fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  }
+  .chart-card {
+    border-radius: .75rem;
+  }
+  .scroll-table {
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .scroll-table thead { position: sticky; top: 0; z-index: 1; }
   .expiry-badge-critical { background: #dc2626; color: #fff; }
   .expiry-badge-warning  { background: #d97706; color: #fff; }
   .expiry-badge-notice   { background: #2563eb; color: #fff; }
@@ -11,44 +49,43 @@
 {% endblock %}
 
 {% block content %}
+
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
-    <h4 class="fw-bold mb-0"><i class="bi bi-capsule-pill me-2 text-primary"></i>Pharmacy</h4>
-    <div class="text-muted small">Stock management &amp; dispensing overview</div>
+    <h4 class="fw-bold mb-0">Pharmacy Workstation</h4>
+    <div class="text-muted small">Stock management & dispensing overview</div>
   </div>
   <div class="d-flex gap-2 align-items-center flex-wrap">
-    <span class="badge bg-secondary" id="pharmRefreshCountdown" title="Auto-refreshes to show new patients">
+    <span class="badge bg-secondary" id="pharmRefreshCountdown" title="Auto-refreshes">
       <i class="bi bi-arrow-clockwise me-1"></i><span id="pharmCountdownSec">30</span>s
     </span>
-    <a href="{% url 'pharmacy:direct_sale' %}" class="btn btn-success btn-sm">
-      <i class="bi bi-bag-plus me-1"></i>OTC / Walk-in Sale
-    </a>
-    <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm">
-      <i class="bi bi-capsule me-1"></i>New Dispensing
-    </a>
-    <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-list-ul me-1"></i>Drug Formulary
-    </a>
-    <a href="{% url 'pharmacy:purchase_order_list' %}" class="btn btn-outline-primary btn-sm">
-      <i class="bi bi-cart-check me-1"></i>Purchase Orders
-    </a>
-    <a href="{% url 'pharmacy:controlled_register' %}" class="btn btn-outline-danger btn-sm">
-      <i class="bi bi-file-earmark-lock-fill me-1"></i>Controlled Register
-    </a>
-    <a href="{% url 'pharmacy:supplier_list' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-building me-1"></i>Suppliers
-    </a>
+    <a href="{% url 'pharmacy:direct_sale' %}" class="btn btn-success btn-sm"><i class="bi bi-bag-plus me-1"></i>OTC Sale</a>
+    <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm"><i class="bi bi-capsule me-1"></i>Dispense</a>
+    <div class="dropdown">
+      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-three-dots me-1"></i>More</button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item small" href="{% url 'pharmacy:drug_list' %}"><i class="bi bi-list-ul me-2"></i>Drug Formulary</a></li>
+        <li><a class="dropdown-item small" href="{% url 'pharmacy:controlled_register' %}"><i class="bi bi-file-earmark-lock-fill me-2"></i>Controlled Register</a></li>
+        <li><a class="dropdown-item small" href="{% url 'pharmacy:expiry_alerts' %}"><i class="bi bi-calendar-x me-2"></i>Expiry Alerts</a></li>
+        <li><a class="dropdown-item small" href="{% url 'pharmacy:unavailable_lines' %}"><i class="bi bi-exclamation-diamond me-2"></i>Unavailable Lines</a></li>
+        {% if request.user.is_head_pharmacist or request.user.is_super_admin %}
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item small" href="{% url 'pharmacy:purchase_order_list' %}"><i class="bi bi-cart-check me-2"></i>Purchase Orders</a></li>
+        <li><a class="dropdown-item small" href="{% url 'pharmacy:supplier_list' %}"><i class="bi bi-building me-2"></i>Suppliers</a></li>
+        {% endif %}
+      </ul>
+    </div>
   </div>
 </div>
 
-{# ── Drug quick-search bar ───────────────────────────────────────────────── #}
+{# ── Drug & Patient quick-search ─────────────────────────────────────── #}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2 px-3">
     <div class="row g-2 align-items-center">
       <div class="col-md-6">
         <div class="position-relative">
           <input type="text" id="pharmDrugSearch" class="form-control form-control-sm ps-4"
-                 placeholder="Quick drug stock check — type name…" autocomplete="off">
+                 placeholder="Quick drug stock check -- type name..." autocomplete="off">
           <i class="bi bi-search position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"></i>
           <div id="pharmDrugResults" class="dropdown-menu w-100 shadow-sm" style="display:none;max-height:220px;overflow-y:auto;position:absolute;z-index:1000;"></div>
         </div>
@@ -56,7 +93,7 @@
       <div class="col-md-6">
         <div class="position-relative">
           <input type="text" id="pharmPatientSearch" class="form-control form-control-sm ps-4"
-                 placeholder="Search patient to dispense…" autocomplete="off">
+                 placeholder="Search patient to dispense..." autocomplete="off">
           <i class="bi bi-person-search position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"></i>
           <div id="pharmPatientResults" class="dropdown-menu w-100 shadow-sm" style="display:none;max-height:220px;overflow-y:auto;position:absolute;z-index:1000;"></div>
         </div>
@@ -67,42 +104,36 @@
 
 {# ── Pharmacist Cash Desk Status ── #}
 {% if request.user.is_pharmacist %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body d-flex align-items-center justify-content-between gap-3 py-3">
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body d-flex align-items-center justify-content-between gap-3 py-2">
     <div class="d-flex align-items-center gap-3">
-      <div class="rounded-circle d-flex align-items-center justify-content-center {% if my_shift %}bg-success{% else %}bg-secondary{% endif %} bg-opacity-10" style="width:46px;height:46px;">
+      <div class="rounded-circle d-flex align-items-center justify-content-center {% if my_shift %}bg-success{% else %}bg-secondary{% endif %} bg-opacity-10" style="width:42px;height:42px;">
         <i class="bi bi-cash-coin fs-5 {% if my_shift %}text-success{% else %}text-secondary{% endif %}"></i>
       </div>
       <div>
-        <div class="fw-semibold">Pharmacy Cash Desk</div>
+        <div class="fw-semibold small">Pharmacy Cash Desk</div>
         {% if my_shift %}
-        <div class="small text-success fw-bold">OPEN — Shift started {{ my_shift.created_at|date:"H:i" }}</div>
+        <div class="small text-success fw-bold">OPEN — Started {{ my_shift.created_at|date:"H:i" }}</div>
         {% else %}
-        <div class="small text-muted">No shift open today — will auto-open when you collect first payment</div>
+        <div class="small text-muted">No shift open — auto-opens on first payment</div>
         {% endif %}
       </div>
     </div>
-    <div class="d-flex gap-2">
-      {% if my_shift %}
-      <a href="{% url 'billing:shift_detail' shift_id=my_shift.id %}" class="btn btn-sm btn-outline-success">
-        <i class="bi bi-eye me-1"></i>View My Shift
-      </a>
-      {% else %}
-      <a href="{% url 'billing:shift_open' %}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-play-circle me-1"></i>Open Shift Manually
-      </a>
-      {% endif %}
-    </div>
+    {% if my_shift %}
+    <a href="{% url 'billing:shift_detail' shift_id=my_shift.id %}" class="btn btn-sm btn-outline-success"><i class="bi bi-eye me-1"></i>My Shift</a>
+    {% else %}
+    <a href="{% url 'billing:shift_open' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-play-circle me-1"></i>Open Shift</a>
+    {% endif %}
   </div>
 </div>
 {% endif %}
 
-{# ── EXPIRED STOCK STILL IN STOCK — highest priority alert ── #}
+{# ── EXPIRED STOCK ALERT ── #}
 {% if expired_in_stock %}
-<div class="alert alert-danger d-flex align-items-start gap-3 mb-4 shadow-sm" role="alert">
+<div class="alert alert-danger d-flex align-items-start gap-3 mb-3 shadow-sm" role="alert">
   <i class="bi bi-x-octagon-fill fs-4 flex-shrink-0 mt-1"></i>
   <div class="w-100">
-    <strong>EXPIRED STOCK STILL IN INVENTORY — Remove immediately</strong>
+    <strong>EXPIRED STOCK IN INVENTORY — Remove immediately</strong>
     <div class="table-responsive mt-2">
       <table class="table table-sm table-danger mb-0 small">
         <thead><tr><th>Drug</th><th>Batch</th><th>Expired</th><th>Qty</th></tr></thead>
@@ -122,16 +153,208 @@
 </div>
 {% endif %}
 
-{# ── Patients Waiting at Pharmacy ── #}
+{# ── SECTION: Action Required ── #}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <i class="bi bi-lightning-charge-fill text-warning"></i>
+  <span class="fw-bold small text-uppercase text-muted" style="letter-spacing:.05em;">Action Required</span>
+  <hr class="flex-grow-1 my-0">
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <a href="{% url 'pharmacy:dispensing_list' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm pharm-kpi h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon">
+            <i class="bi bi-hourglass-split fs-5 {% if pending_dispensings %}text-warning{% else %}text-secondary{% endif %}"></i>
+          </div>
+          <div>
+            <div class="kpi-value {% if pending_dispensings %}text-warning{% else %}text-secondary{% endif %}">{{ pending_dispensings }}</div>
+            <div class="kpi-label">Pending Prescriptions</div>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-receipt fs-5 {% if confirmed_at_cashier %}text-primary{% else %}text-secondary{% endif %}"></i>
+        </div>
+        <div>
+          <div class="kpi-value {% if confirmed_at_cashier %}text-primary{% else %}text-secondary{% endif %}">{{ confirmed_at_cashier }}</div>
+          <div class="kpi-label">Awaiting Payment</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm pharm-kpi h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon">
+            <i class="bi bi-{% if low_stock_count %}exclamation-triangle-fill text-danger{% else %}check-circle-fill text-success{% endif %} fs-5"></i>
+          </div>
+          <div>
+            <div class="kpi-value {% if low_stock_count %}text-danger{% else %}text-success{% endif %}">{{ low_stock_count }}</div>
+            <div class="kpi-label">Low Stock Drugs</div>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm pharm-kpi h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon">
+            <i class="bi bi-calendar-x-fill fs-5 {% if expiring_critical %}text-danger{% elif expiring_warning %}text-warning{% else %}text-primary{% endif %}"></i>
+          </div>
+          <div>
+            <div class="kpi-value {% if expiring_critical %}text-danger{% elif expiring_warning %}text-warning{% else %}text-primary{% endif %}">
+              {{ expiring_critical|length|add:expiring_warning|length|add:expiring_notice|length }}
+            </div>
+            <div class="kpi-label">Expiring Batches</div>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{# ── SECTION: Today's Activity ── #}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <i class="bi bi-activity text-primary"></i>
+  <span class="fw-bold small text-uppercase text-muted" style="letter-spacing:.05em;">Today's Activity</span>
+  <hr class="flex-grow-1 my-0">
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-bag-heart-fill fs-5 text-success"></i>
+        </div>
+        <div>
+          <div class="kpi-value text-success">{{ today_dispensings }}</div>
+          <div class="kpi-label">Dispensed</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-bag-plus-fill fs-5" style="color:#8b5cf6;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#8b5cf6;">{{ otc_today }}</div>
+          <div class="kpi-label">OTC Sales</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-x-circle-fill fs-5 {% if declined_today %}text-danger{% else %}text-secondary{% endif %}"></i>
+        </div>
+        <div>
+          <div class="kpi-value {% if declined_today %}text-danger{% else %}text-secondary{% endif %}">{{ declined_today }}</div>
+          <div class="kpi-label">Rx Declined</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a href="{% url 'pharmacy:unavailable_lines' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm pharm-kpi h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon">
+            <i class="bi bi-exclamation-diamond-fill fs-5 {% if unavailable_today %}text-warning{% else %}text-secondary{% endif %}"></i>
+          </div>
+          <div>
+            <div class="kpi-value {% if unavailable_today %}text-warning{% else %}text-secondary{% endif %}">{{ unavailable_today }}</div>
+            <div class="kpi-label">Unavailable Lines</div>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{# ── SECTION: Performance & Inventory ── #}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <i class="bi bi-graph-up-arrow text-success"></i>
+  <span class="fw-bold small text-uppercase text-muted" style="letter-spacing:.05em;">Performance & Inventory</span>
+  <hr class="flex-grow-1 my-0">
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-cash-coin fs-5 text-primary"></i>
+        </div>
+        <div>
+          <div class="kpi-value text-primary" style="font-size:1.3rem;">{% if today_revenue %}{{ today_revenue|floatformat:0|intcomma }}{% else %}0{% endif %}</div>
+          <div class="kpi-label">Revenue Today (FCFA)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-stopwatch-fill fs-5 text-info"></i>
+        </div>
+        <div>
+          <div class="kpi-value text-info">{% if avg_wait_minutes %}{{ avg_wait_minutes }}m{% else %}--{% endif %}</div>
+          <div class="kpi-label">Avg Wait Time</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-check2-all fs-5 {% if fulfilment_rate >= 90 %}text-success{% elif fulfilment_rate >= 70 %}text-warning{% else %}text-danger{% endif %}"></i>
+        </div>
+        <div>
+          <div class="kpi-value {% if fulfilment_rate >= 90 %}text-success{% elif fulfilment_rate >= 70 %}text-warning{% else %}text-danger{% endif %}">{{ fulfilment_rate }}%</div>
+          <div class="kpi-label">Fulfilment Rate</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm pharm-kpi h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="kpi-icon">
+          <i class="bi bi-box-seam-fill fs-5 text-dark"></i>
+        </div>
+        <div>
+          <div class="kpi-value text-dark" style="font-size:1.3rem;">{% if stock_value %}{{ stock_value|floatformat:0|intcomma }}{% else %}0{% endif %}</div>
+          <div class="kpi-label">Stock Value (FCFA)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% if waiting_visits %}
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-3">
   <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
     <div class="d-flex align-items-center gap-2">
       <i class="bi bi-person-walking text-primary fs-5"></i>
       <h6 class="mb-0 fw-bold text-dark">Patients Waiting at Pharmacy</h6>
       <span class="badge bg-primary">{{ waiting_visits|length }}</span>
     </div>
-    <small class="text-muted">Routed here by doctor &mdash; today</small>
+    <small class="text-muted">Routed here by doctor — today</small>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
@@ -207,14 +430,13 @@
 
 {# ── Paid & Ready to Dispense ── #}
 {% if pharmacy_work_orders %}
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-3">
   <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
     <div class="d-flex align-items-center gap-2">
       <i class="bi bi-check-circle-fill text-success fs-5"></i>
-      <h6 class="mb-0 fw-bold text-dark">Paid &amp; Waiting — Ready to Dispense</h6>
+      <h6 class="mb-0 fw-bold text-dark">Paid & Waiting — Ready to Dispense</h6>
       <span class="badge bg-success">{{ pharmacy_work_orders|length }}</span>
     </div>
-    <small class="text-muted">Today &middot; Click <strong>Done</strong> when dispensed</small>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
@@ -241,172 +463,71 @@
 </div>
 {% endif %}
 
-{# ── PRIORITY ROW 1: Action Required ── #}
 <div class="row g-3 mb-3">
-
-  {# Pending Dispensings #}
-  <div class="col-md-4">
-    <a href="{% url 'pharmacy:dispensing_list' %}" class="text-decoration-none">
-      <div class="card border-0 shadow h-100">
-        <div class="card-body d-flex align-items-center gap-3 py-3">
-          <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:52px;height:52px;background:{% if pending_dispensings %}#f59e0b{% else %}#d1d5db{% endif %};">
-            <i class="bi bi-bag-check-fill text-white fs-4"></i>
-          </div>
-          <div>
-            <div class="display-6 fw-bold {% if pending_dispensings %}text-warning{% else %}text-secondary{% endif %} lh-1">{{ pending_dispensings }}</div>
-            <div class="small fw-semibold text-dark mt-1">Pending Dispensings</div>
-            <div class="text-muted" style="font-size:.72rem;">Patients waiting today</div>
-          </div>
-        </div>
+  {# 7-Day Dispensing Trend #}
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm chart-card h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small"><i class="bi bi-bar-chart-fill text-primary me-2"></i>7-Day Dispensing Trend</h6>
       </div>
-    </a>
+      <div class="card-body">
+        <canvas id="trendChart" height="200"></canvas>
+      </div>
+    </div>
   </div>
 
-  {# Low Stock #}
-  <div class="col-md-4">
-    <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
-      <div class="card border-0 shadow h-100">
-        <div class="card-body d-flex align-items-center gap-3 py-3">
-          <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:52px;height:52px;background:{% if low_stock_count %}#dc2626{% else %}#16a34a{% endif %};">
-            <i class="bi bi-{% if low_stock_count %}exclamation-triangle-fill{% else %}check-circle-fill{% endif %} text-white fs-4"></i>
-          </div>
-          <div>
-            <div class="display-6 fw-bold {% if low_stock_count %}text-danger{% else %}text-success{% endif %} lh-1">{{ low_stock_count }}</div>
-            <div class="small fw-semibold text-dark mt-1">Low Stock Alerts</div>
-            <div class="text-muted" style="font-size:.72rem;">{% if low_stock_count %}Action required — reorder{% else %}All stock levels OK{% endif %}</div>
-          </div>
-        </div>
+  {# Status Doughnut #}
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm chart-card h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="mb-0 fw-semibold small"><i class="bi bi-pie-chart-fill text-info me-2"></i>Today's Status</h6>
       </div>
-    </a>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="statusChart" height="200"></canvas>
+      </div>
+    </div>
   </div>
 
-  {# Expiry Alerts #}
-  <div class="col-md-4">
-    <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
-      <div class="card border-0 shadow h-100">
-        <div class="card-body d-flex align-items-center gap-3 py-3">
-          <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:52px;height:52px;background:{% if expiring_critical %}#dc2626{% elif expiring_warning %}#f59e0b{% else %}#2563eb{% endif %};">
-            <i class="bi bi-calendar-x-fill text-white fs-4"></i>
-          </div>
-          <div>
-            <div class="display-6 fw-bold {% if expiring_critical %}text-danger{% elif expiring_warning %}text-warning{% else %}text-primary{% endif %} lh-1">
-              {{ expiring_critical|length|add:expiring_warning|length|add:expiring_notice|length }}
+  {# Top 5 Drugs Today #}
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm chart-card h-100">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between">
+        <h6 class="mb-0 fw-semibold small"><i class="bi bi-trophy-fill text-warning me-2"></i>Top Drugs Today</h6>
+      </div>
+      <div class="card-body">
+        {% if top_drugs_today %}
+          {% for d in top_drugs_today %}
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="small fw-semibold text-truncate" style="max-width:60%;">{{ d.drug__name }}</span>
+              <span class="small text-muted">{{ d.total_qty }} units &middot; {{ d.total_val|floatformat:0|intcomma }} F</span>
             </div>
-            <div class="small fw-semibold text-dark mt-1">Expiring Batches</div>
-            <div class="text-muted" style="font-size:.72rem;">
-              {% if expiring_critical %}{{ expiring_critical|length }} critical (&le;30d){% elif expiring_warning %}{{ expiring_warning|length }} within 60 days{% else %}Within 90 days{% endif %}
+            <div class="top-drug-bar">
+              <div class="fill" style="width:{% widthratio d.total_qty top_drugs_today.0.total_qty 100 %}%;"></div>
             </div>
           </div>
-        </div>
-      </div>
-    </a>
-  </div>
-</div>
-
-{# ── PRIORITY ROW 2: Today's Performance ── #}
-<div class="row g-2 mb-3">
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body py-3 px-3">
-        <div class="d-flex align-items-center gap-2">
-          <i class="bi bi-bag-heart-fill text-success fs-5"></i>
-          <div>
-            <div class="fw-bold fs-5 text-success lh-1">{{ today_dispensings }}</div>
-            <div class="text-muted" style="font-size:.72rem;">Dispensings Today</div>
-          </div>
-        </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center text-muted py-4 small">No dispensings yet today</div>
+        {% endif %}
       </div>
     </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body py-3 px-3">
-        <div class="d-flex align-items-center gap-2">
-          <i class="bi bi-cash-coin text-primary fs-5"></i>
-          <div>
-            <div class="fw-bold fs-5 text-primary lh-1">{% if today_revenue %}{{ today_revenue|floatformat:0 }}{% else %}0{% endif %}</div>
-            <div class="text-muted" style="font-size:.72rem;">Revenue Today (FCFA)</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body py-3 px-3">
-        <div class="d-flex align-items-center gap-2">
-          <i class="bi bi-capsule-pill text-secondary fs-5"></i>
-          <div>
-            <div class="fw-bold fs-5 text-secondary lh-1">{{ total_drugs }}</div>
-            <div class="text-muted" style="font-size:.72rem;">Drugs in Formulary</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body py-3 px-3">
-        <div class="d-flex align-items-center gap-2">
-          <i class="bi bi-bag-plus-fill {% if otc_today %}text-success{% else %}text-secondary{% endif %} fs-5"></i>
-          <div>
-            <div class="fw-bold fs-5 {% if otc_today %}text-success{% else %}text-secondary{% endif %} lh-1">{{ otc_today }}</div>
-            <div class="text-muted" style="font-size:.72rem;">OTC Sales Today</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ── ROW 3: Declined & Unavailable ── #}
-<div class="row g-2 mb-3">
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body py-3 px-3">
-        <div class="d-flex align-items-center gap-2">
-          <i class="bi bi-x-circle-fill {% if declined_today %}text-danger{% else %}text-secondary{% endif %} fs-5"></i>
-          <div>
-            <div class="fw-bold fs-5 {% if declined_today %}text-danger{% else %}text-secondary{% endif %} lh-1">{{ declined_today }}</div>
-            <div class="text-muted" style="font-size:.72rem;">Rx Declined Today</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <a href="{% url 'pharmacy:unavailable_lines' %}" class="text-decoration-none">
-      <div class="card border-0 shadow-sm">
-        <div class="card-body py-3 px-3">
-          <div class="d-flex align-items-center gap-2">
-            <i class="bi bi-exclamation-diamond-fill {% if unavailable_today %}text-warning{% else %}text-secondary{% endif %} fs-5"></i>
-            <div>
-              <div class="fw-bold fs-5 {% if unavailable_today %}text-warning{% else %}text-secondary{% endif %} lh-1">{{ unavailable_today }}</div>
-              <div class="text-muted" style="font-size:.72rem;">Unavailable Lines Today</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </a>
   </div>
 </div>
 
 <div class="row g-3 mb-4">
-  {# ── Low Stock Alert ── #}
+  {# ── Low Stock ── #}
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
         <h6 class="mb-0 fw-semibold text-danger small">
-          <i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts
+          <i class="bi bi-exclamation-triangle me-2"></i>Low Stock
           {% if low_stock_count %}<span class="badge bg-danger ms-1">{{ low_stock_count }}</span>{% endif %}
         </h6>
         <a href="{% url 'pharmacy:drug_list' %}" class="small">View All</a>
       </div>
       <div class="card-body p-0">
-        <div class="table-responsive">
+        <div class="scroll-table">
           <table class="table table-hover mb-0 small">
             <thead class="table-light">
               <tr><th>Drug</th><th>Form</th><th class="text-center">Stock</th><th class="text-center">Reorder</th><th></th></tr>
@@ -416,29 +537,21 @@
               <tr>
                 <td>
                   <a href="{% url 'pharmacy:drug_detail' drug.id %}" class="fw-semibold text-decoration-none">{{ drug.name }}</a>
-                  {% if drug.current_stock == 0 %}
-                    <span class="badge bg-danger ms-1" style="font-size:.65rem;">OUT</span>
-                  {% endif %}
+                  {% if drug.current_stock == 0 %}<span class="badge bg-danger ms-1" style="font-size:.65rem;">OUT</span>{% endif %}
                 </td>
                 <td class="text-muted">{{ drug.get_form_display }}</td>
                 <td class="text-center">
-                  <span class="badge {% if drug.current_stock == 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">
-                    {{ drug.current_stock }}
-                  </span>
+                  <span class="badge {% if drug.current_stock == 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ drug.current_stock }}</span>
                 </td>
                 <td class="text-center text-muted">{{ drug.reorder_level }}</td>
                 <td>
                   <a href="{% url 'pharmacy:add_stock' drug.id %}" class="btn btn-xs btn-outline-success" style="font-size:.75rem;padding:.2rem .5rem;">
-                    <i class="bi bi-plus-lg"></i> Add
+                    <i class="bi bi-plus-lg"></i>
                   </a>
                 </td>
               </tr>
               {% empty %}
-              <tr>
-                <td colspan="5" class="text-center text-muted py-4">
-                  <i class="bi bi-check-circle-fill text-success me-1"></i>All stock levels adequate
-                </td>
-              </tr>
+              <tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-check-circle-fill text-success me-1"></i>All stock levels OK</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -450,14 +563,14 @@
   {# ── Expiring Soon ── #}
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white">
+      <div class="card-header bg-white py-2">
         <h6 class="mb-0 fw-semibold text-warning small">
           <i class="bi bi-calendar-x me-2"></i>Expiring within 90 days
           {% if expiring_soon %}<span class="badge bg-warning text-dark ms-1">{{ expiring_soon|length }}</span>{% endif %}
         </h6>
       </div>
       <div class="card-body p-0">
-        <div class="table-responsive">
+        <div class="scroll-table">
           <table class="table table-hover mb-0 small">
             <thead class="table-light">
               <tr><th>Drug</th><th>Batch</th><th>Expiry</th><th class="text-center">Days</th><th class="text-center">Qty</th></tr>
@@ -465,34 +578,22 @@
             <tbody>
               {% for stock in expiring_soon %}
               <tr>
-                <td>
-                  <a href="{% url 'pharmacy:drug_detail' stock.drug.id %}" class="fw-semibold text-decoration-none">{{ stock.drug.name }}</a>
-                </td>
+                <td><a href="{% url 'pharmacy:drug_detail' stock.drug.id %}" class="fw-semibold text-decoration-none">{{ stock.drug.name }}</a></td>
                 <td class="text-muted" style="font-size:.75rem;">{{ stock.batch_number }}</td>
                 <td>
-                  <span class="
-                    {% if stock.days_to_expiry <= 30 %}text-danger fw-bold
-                    {% elif stock.days_to_expiry <= 60 %}text-warning fw-semibold
-                    {% else %}text-primary{% endif %}">
+                  <span class="{% if stock.days_to_expiry <= 30 %}text-danger fw-bold{% elif stock.days_to_expiry <= 60 %}text-warning fw-semibold{% else %}text-primary{% endif %}">
                     {{ stock.expiry_date|date:"d M Y" }}
                   </span>
                 </td>
                 <td class="text-center">
-                  <span class="badge
-                    {% if stock.days_to_expiry <= 30 %}bg-danger
-                    {% elif stock.days_to_expiry <= 60 %}bg-warning text-dark
-                    {% else %}bg-primary{% endif %}">
+                  <span class="badge {% if stock.days_to_expiry <= 30 %}bg-danger{% elif stock.days_to_expiry <= 60 %}bg-warning text-dark{% else %}bg-primary{% endif %}">
                     {{ stock.days_to_expiry }}d
                   </span>
                 </td>
                 <td class="text-center fw-semibold">{{ stock.quantity_remaining }}</td>
               </tr>
               {% empty %}
-              <tr>
-                <td colspan="5" class="text-center text-muted py-4">
-                  <i class="bi bi-check-circle-fill text-success me-1"></i>No stock expiring within 90 days
-                </td>
-              </tr>
+              <tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-check-circle-fill text-success me-1"></i>No stock expiring within 90 days</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -518,6 +619,61 @@
     if (sec <= 0) window.location.reload();
   }
   setInterval(tick, 1000);
+})();
+
+/* ── 7-Day Trend Bar Chart ──────────────────────────────────────────── */
+(function () {
+  var raw = {{ daily_trend_json|safe }};
+  var ctx = document.getElementById('trendChart');
+  if (!ctx || !raw) return;
+  new Chart(ctx.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: raw.labels,
+      datasets: [{
+        label: 'Dispensings',
+        data: raw.data,
+        backgroundColor: raw.data.map(function(v,i){ return i === raw.data.length-1 ? '#6366f1' : '#c7d2fe'; }),
+        borderRadius: 6,
+        barPercentage: 0.6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#f3f4f6' } },
+        x: { ticks: { font: { size: 11 } }, grid: { display: false } }
+      }
+    }
+  });
+})();
+
+/* ── Status Doughnut ────────────────────────────────────────────────── */
+(function () {
+  var raw = {{ status_chart_json|safe }};
+  var ctx = document.getElementById('statusChart');
+  if (!ctx || !raw) return;
+  new Chart(ctx.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: raw.labels,
+      datasets: [{
+        data: raw.data,
+        backgroundColor: ['#22c55e','#f59e0b','#6366f1','#ef4444','#94a3b8'],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 }, padding: 8 } }
+      }
+    }
+  });
 })();
 
 /* ── Drug quick-search ──────────────────────────────────────────────── */

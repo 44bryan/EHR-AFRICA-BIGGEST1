@@ -1,0 +1,161 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Record Stock Exit{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">
+      <i class="bi bi-box-arrow-right me-2 text-primary"></i>Record Stock Exit
+    </h1>
+    <div class="text-muted small">Remove stock from inventory with full audit trail</div>
+  </div>
+  <a href="{% url 'pharmacy:stock_exit_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to List
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-4 mx-auto" style="max-width:720px;">
+  <div class="card-header bg-light border-bottom fw-semibold">
+    <i class="bi bi-pencil-square me-2 text-primary"></i>Exit Details
+  </div>
+  <div class="card-body">
+    <form method="post" action="{% url 'pharmacy:stock_exit_create' %}">
+      {% csrf_token %}
+
+      {# ── Drug Selection ── #}
+      <div class="mb-3">
+        <label for="id_drug" class="form-label fw-semibold">Drug <span class="text-danger">*</span></label>
+        <select name="drug" id="id_drug" class="form-select" required>
+          <option value="">— Select drug —</option>
+          {% for drug in drugs %}
+          <option value="{{ drug.id }}">{{ drug.name }}{% if drug.strength %} ({{ drug.strength }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# ── Batch Selection (populated via JS) ── #}
+      <div class="mb-3">
+        <label for="id_stock_batch" class="form-label fw-semibold">Stock Batch <span class="text-danger">*</span></label>
+        <select name="stock_batch" id="id_stock_batch" class="form-select" required disabled>
+          <option value="">— Select a drug first —</option>
+        </select>
+        <div class="form-text" id="batch-help">Choose a drug above to load available batches.</div>
+      </div>
+
+      {# ── Quantity ── #}
+      <div class="mb-3">
+        <label for="id_quantity" class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
+        <input type="number" name="quantity" id="id_quantity" class="form-control" min="1" required
+               placeholder="Number of units to remove">
+      </div>
+
+      {# ── Reason ── #}
+      <div class="mb-3">
+        <label for="id_reason" class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+        <select name="reason" id="id_reason" class="form-select" required>
+          <option value="">— Select reason —</option>
+          {% for val, label in reasons %}
+          <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# ── Disposal Method ── #}
+      <div class="mb-3">
+        <label for="id_disposal_method" class="form-label fw-semibold">Disposal Method</label>
+        <input type="text" name="disposal_method" id="id_disposal_method" class="form-control"
+               placeholder="e.g. Incineration, Return to supplier, Pharma waste bin">
+      </div>
+
+      {# ── Witness ── #}
+      <div class="mb-3">
+        <label for="id_witness" class="form-label fw-semibold">Witness</label>
+        <select name="witness" id="id_witness" class="form-select">
+          <option value="">— No witness —</option>
+          {% for w in witnesses %}
+          <option value="{{ w.id }}">{{ w.get_full_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# ── Waste Classification (FIP / WHO GPP 2.3) ── #}
+      <div class="mb-3">
+        <label for="id_waste_classification" class="form-label fw-semibold">Waste Classification</label>
+        <select name="waste_classification" id="id_waste_classification" class="form-select">
+          <option value="">— Not specified —</option>
+          <option value="HAZARDOUS">Hazardous Pharmaceutical Waste</option>
+          <option value="NON_HAZARDOUS">Non-Hazardous Waste</option>
+          <option value="CYTOTOXIC">Cytotoxic Waste</option>
+          <option value="CONTROLLED">Controlled Substance Waste</option>
+        </select>
+      </div>
+
+      {# ── Destruction Certificate ── #}
+      <div class="mb-3">
+        <label for="id_destruction_certificate" class="form-label fw-semibold">Destruction Certificate No.</label>
+        <input type="text" name="destruction_certificate" id="id_destruction_certificate" class="form-control"
+               placeholder="Certificate of Destruction reference (if applicable)">
+      </div>
+
+      {# ── Notes ── #}
+      <div class="mb-4">
+        <label for="id_notes" class="form-label fw-semibold">Notes</label>
+        <textarea name="notes" id="id_notes" class="form-control" rows="3"
+                  placeholder="Optional — additional details or justification"></textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-check-circle me-1"></i>Save Stock Exit
+        </button>
+        <a href="{% url 'pharmacy:stock_exit_list' %}" class="btn btn-outline-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  const drugSelect = document.getElementById('id_drug');
+  const batchSelect = document.getElementById('id_stock_batch');
+  const batchHelp = document.getElementById('batch-help');
+
+  drugSelect.addEventListener('change', function() {
+    const drugId = this.value;
+    batchSelect.innerHTML = '<option value="">— Loading batches... —</option>';
+    batchSelect.disabled = true;
+
+    if (!drugId) {
+      batchSelect.innerHTML = '<option value="">— Select a drug first —</option>';
+      batchHelp.textContent = 'Choose a drug above to load available batches.';
+      return;
+    }
+
+    fetch("{% url 'pharmacy:drug_stock_ajax' %}?drug_id=" + drugId)
+      .then(function(resp) { return resp.json(); })
+      .then(function(data) {
+        var batches = data.batches || data;
+        if (!batches.length) {
+          batchSelect.innerHTML = '<option value="">— No batches available —</option>';
+          batchHelp.textContent = 'This drug has no batches with stock remaining.';
+          return;
+        }
+        var html = '<option value="">— Select batch —</option>';
+        batches.forEach(function(b) {
+          var label = (b.batch_number || b.batch) + ' | Exp: ' + (b.expiry_date || b.expiry || '—') + ' | Qty: ' + (b.quantity_remaining != null ? b.quantity_remaining : b.qty || 0);
+          html += '<option value="' + b.id + '">' + label + '</option>';
+        });
+        batchSelect.innerHTML = html;
+        batchSelect.disabled = false;
+        batchHelp.textContent = batches.length + ' batch(es) found.';
+      })
+      .catch(function() {
+        batchSelect.innerHTML = '<option value="">— Error loading batches —</option>';
+        batchHelp.textContent = 'Could not load batches. Please try again.';
+      });
+  });
+})();
+</script>
+{% endblock %}

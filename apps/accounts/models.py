@@ -44,6 +44,7 @@ class UserRole(models.TextChoices):
     INVESTIGATION_TECHNICIAN  = 'investigation_technician',  _('Investigation Technician')
     LAB_TECHNICIAN            = 'lab_technician',            _('Lab Technician')
     PHARMACIST                = 'pharmacist',                _('Pharmacist')
+    HEAD_PHARMACIST           = 'head_pharmacist',           _('Head Pharmacist / Chief Pharmacist')
     OPTICAL_DISPENSER         = 'optical_dispenser',         _('Optical Dispenser')
     CSSD_TECHNICIAN           = 'cssd_technician',           _('CSSD Technician (Sterilization)')
     # ── Administrative ───────────────────────────────────────────────────
@@ -314,7 +315,11 @@ class User(AbstractUser):
 
     @property
     def is_pharmacist(self):
-        return self.role == UserRole.PHARMACIST
+        return self.role in (UserRole.PHARMACIST, UserRole.HEAD_PHARMACIST)
+
+    @property
+    def is_head_pharmacist(self):
+        return self.role == UserRole.HEAD_PHARMACIST
 
     @property
     def is_optical_dispenser(self):
@@ -494,6 +499,7 @@ class User(AbstractUser):
     def can_dispense_pharmacy(self):
         return self.is_super_admin or self.is_executive or self.role in (
             UserRole.PHARMACIST,
+            UserRole.HEAD_PHARMACIST,
             UserRole.MEDICAL_DIRECTOR,
         )
 

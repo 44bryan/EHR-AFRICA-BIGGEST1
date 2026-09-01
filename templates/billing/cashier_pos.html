@@ -348,7 +348,7 @@
 .adv-bar-fill { height:100%; background:#4ade80; border-radius:3px; width:100%; transition:width 1s linear; }
 </style>
 <form id="csrf-holder">{% csrf_token %}</form>
-<div class="pos-root">
+<div class="pos-root" hx-boost="false" hx-disable>
 
 {# ── Shift Running Total Bar ──────────────────────────────────────────────── #}
 <div class="shift-bar">
@@ -356,7 +356,7 @@
     <div class="sb-item">
       <i class="bi bi-person-circle" style="color:#0d6efd;"></i>
       <span class="sb-label">Cashier:</span>
-      <span class="sb-val">{{ request.user.get_full_name|default:request.user.username }}</span>
+      <span class="sb-val">{{ request.user|user_display }}</span>
     </div>
     <div class="sb-item">
       <i class="bi bi-calendar3" style="color:#475569;"></i>
@@ -494,7 +494,7 @@
                   <span class="text-muted">{{ tc.old_tier }}</span>
                   <i class="bi bi-arrow-right mx-1" style="font-size:.65rem;"></i>
                   <strong>{{ tc.new_tier }}</strong>
-                  <span class="text-muted ms-1">· {{ tc.created_at|date:"d M H:i" }} by {{ tc.changed_by.get_full_name|default:tc.changed_by.username }}</span>
+                  <span class="text-muted ms-1">· {{ tc.created_at|date:"d M H:i" }} by {{ tc.changed_by|user_display }}</span>
                   {% if tc.reason %}<div class="text-muted fst-italic">{{ tc.reason|truncatechars:60 }}</div>{% endif %}
                 </div>
               </div>
@@ -912,7 +912,7 @@
         <input type="text" id="splitRef" class="pay-ref" placeholder="MoMo reference # (optional)">
       </div>
 
-      <button class="btn-collect" id="collectBtn" onclick="collectPay()"
+      <button type="button" class="btn-collect" id="collectBtn" onclick="collectPay()"
               {% if invoice.status == 'PAID' %}style="background:linear-gradient(135deg,#334155,#475569);"{% endif %}>
         <i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt
       </button>
@@ -1114,6 +1114,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.cat-pane').forEach(p => {
     p.style.display = p.classList.contains('active') ? 'block' : 'none';
   });
+  // Defensive: if page loads/reloads with an already-paid invoice, show receipt overlay
+  {% if invoice.status == 'PAID' and invoice.id %}
+  if (RECEIPT_URL && !sessionStorage.getItem('pos_shown_' + INV_ID)) {
+    sessionStorage.setItem('pos_shown_' + INV_ID, '1');
+    openReceiptPopup(RECEIPT_URL);
+  }
+  {% endif %}
 });
 
 // ── Add item from catalog ─────────────────────────────────────────────────────
@@ -1324,11 +1331,24 @@ function collectPay() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
     _recordPayment('CASH', cash, '', false)
-      .then(() => _recordPayment('MOBILE', momo, ref, true))
-      .catch(() => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
-      });
+      .then(function(data) {
+        if (data && data.is_paid) {
+          // Cash alone covered the full balance — trigger finalize directly
+          var ffd = new FormData();
+          ffd.append('csrfmiddlewaretoken', CSRF);
+          return fetch(FINALIZE_URL, { method: 'POST', body: ffd, redirect: 'manual' })
+            .then(function(r) {
+              if (r.type === 'opaqueredirect' || !r.ok) return { redirect_url: RECEIPT_URL };
+              return r.json().catch(function() { return { redirect_url: RECEIPT_URL }; });
+            })
+            .then(function(fdata) {
+              var url = (fdata && fdata.redirect_url) || RECEIPT_URL;
+              if (url) openReceiptPopup(url); else window.location.href = QUEUE_URL;
+            });
+        }
+        return _recordPayment('MOBILE', momo, ref, true);
+      })
+      .catch(function() { _resetCollectBtn(); });
   } else {
     const amount = parseFloat(document.getElementById('payAmt').value) || 0;
     const ref    = document.getElementById('payRef').value;
@@ -1375,6 +1395,14 @@ function openReceiptPopup(url) {
   startAutoAdvance();
 }
 
+function _resetCollectBtn() {
+  var btn = document.getElementById('collectBtn');
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+  }
+}
+
 function _recordPayment(method, amount, ref, finalize) {
   if (!amount || amount <= 0) return Promise.resolve({ success: true, skip: true });
   const btn = document.getElementById('collectBtn');
@@ -1384,11 +1412,15 @@ function _recordPayment(method, amount, ref, finalize) {
   fd.append('amount', amount);
   fd.append('reference', ref);
   return fetch(`/billing/invoice/${INV_ID}/record-payment/`, { method: 'POST', body: fd })
-    .then(r => r.json())
+    .then(function(r) {
+      if (!r.ok) {
+        return r.json().catch(function() { return { success: false, error: 'Server error (' + r.status + '). Please try again.' }; });
+      }
+      return r.json();
+    })
     .then(data => {
       if (!data.success) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+        _resetCollectBtn();
         toast(data.error || 'Payment failed.', 'danger');
         return data;
       }
@@ -1431,8 +1463,8 @@ function _recordPayment(method, amount, ref, finalize) {
             }
           });
       } else if (finalize && !data.is_paid) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+        _resetCollectBtn();
+        toast('Payment recorded but balance still outstanding. Collect remaining amount.', 'warn');
         document.getElementById('payRef').value = '';
         if (splitMode) {
           document.getElementById('splitCash').value = '';
@@ -1441,6 +1473,11 @@ function _recordPayment(method, amount, ref, finalize) {
         }
       }
       return data;
+    })
+    .catch(function(err) {
+      _resetCollectBtn();
+      toast('Payment request failed. Check your connection and try again.', 'danger');
+      return { success: false, error: err.message };
     });
 }
 

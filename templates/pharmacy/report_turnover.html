@@ -1,0 +1,84 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Stock Turnover Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-arrow-clockwise text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Stock Turnover Report</h5>
+      <div class="text-muted small">Annual dispensing vs. current stock levels &middot; {% now "d M Y H:i" %}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Pharmacy</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Legend ── #}
+<div class="alert alert-info small py-2 mb-3 d-flex align-items-center gap-2">
+  <i class="bi bi-info-circle-fill"></i>
+  <div>
+    <strong>Turnover Ratio</strong> = Annual Dispensed / Current Stock.
+    <span class="text-danger fw-semibold">&lt; 1 = Slow-moving</span> &middot;
+    <span class="text-warning fw-semibold">1 &ndash; 4 = Moderate</span> &middot;
+    <span class="text-success fw-semibold">&gt; 4 = Fast-moving</span>
+  </div>
+</div>
+
+{# ── Turnover Table ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span class="fw-semibold small">Stock Turnover Analysis</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 small align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Drug Name</th>
+          <th>Strength</th>
+          <th class="text-center">Current Stock</th>
+          <th class="text-center">Annual Dispensed</th>
+          <th class="text-center">Turnover Ratio</th>
+          <th class="text-center">Days of Stock</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ item.drug.name }}</td>
+          <td>{{ item.drug.strength|default:"—" }}</td>
+          <td class="text-center">{{ item.stock|intcomma }}</td>
+          <td class="text-center">{{ item.dispensed|intcomma }}</td>
+          <td class="text-center fw-bold {% if item.turnover_ratio < 1 %}text-danger{% elif item.turnover_ratio <= 4 %}text-warning{% else %}text-success{% endif %}">
+            {{ item.turnover_ratio|floatformat:1 }}
+          </td>
+          <td class="text-center">
+            {% if item.days_of_stock >= 999 %}
+              <span class="badge bg-danger">No movement</span>
+            {% elif item.days_of_stock > 180 %}
+              <span class="text-danger fw-semibold">{{ item.days_of_stock }}d</span>
+            {% elif item.days_of_stock > 90 %}
+              <span class="text-warning fw-semibold">{{ item.days_of_stock }}d</span>
+            {% else %}
+              <span class="text-success">{{ item.days_of_stock }}d</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No stock data available.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

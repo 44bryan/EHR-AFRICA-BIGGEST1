@@ -1,0 +1,113 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}VEN Analysis — Drug Classification{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-shield-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">VEN Analysis — Drug Classification</h5>
+      <div class="text-muted small">Vital / Essential / Non-essential classification &middot; {% now "d M Y H:i" %}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Pharmacy</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Summary Cards ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-danger">{{ counts.V }}</div>
+        <div class="small text-muted fw-semibold">Vital (V)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-warning">{{ counts.E }}</div>
+        <div class="small text-muted fw-semibold">Essential (E)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-success">{{ counts.N }}</div>
+        <div class="small text-muted fw-semibold">Non-essential (N)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-secondary">{{ counts.U }}</div>
+        <div class="small text-muted fw-semibold">Unclassified</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── VEN Classification Form ── #}
+<form method="post" action="{% url 'pharmacy:report_ven' %}">
+  {% csrf_token %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-light border-bottom py-2 d-flex align-items-center justify-content-between">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-pencil-square text-primary"></i>
+        <span class="fw-semibold small">Assign VEN Classification</span>
+      </div>
+      <button type="submit" class="btn btn-sm btn-primary d-print-none"><i class="bi bi-check-lg me-1"></i>Save Classifications</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 small align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Drug Name</th>
+            <th>Strength</th>
+            <th>Category</th>
+            <th class="text-center" style="width:160px;">VEN Class</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for drug in drugs %}
+          <tr>
+            <td class="fw-semibold">{{ drug.name }}</td>
+            <td>{{ drug.strength|default:"—" }}</td>
+            <td>{{ drug.get_category_display|default:drug.category|default:"—" }}</td>
+            <td class="text-center">
+              <select name="ven_{{ drug.pk }}" class="form-select form-select-sm d-print-none" style="width:140px;margin:0 auto;">
+                <option value="" {% if not drug.ven_class %}selected{% endif %}>— Select —</option>
+                <option value="V" {% if drug.ven_class == 'V' %}selected{% endif %}>V — Vital</option>
+                <option value="E" {% if drug.ven_class == 'E' %}selected{% endif %}>E — Essential</option>
+                <option value="N" {% if drug.ven_class == 'N' %}selected{% endif %}>N — Non-essential</option>
+              </select>
+              <span class="d-none d-print-inline">
+                {% if drug.ven_class == 'V' %}<span class="badge bg-danger">V</span>
+                {% elif drug.ven_class == 'E' %}<span class="badge bg-warning text-dark">E</span>
+                {% elif drug.ven_class == 'N' %}<span class="badge bg-success">N</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </span>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-center text-muted py-4">No drugs found in the formulary.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer bg-white border-top text-end d-print-none">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Classifications</button>
+    </div>
+  </div>
+</form>
+
+{% endblock %}

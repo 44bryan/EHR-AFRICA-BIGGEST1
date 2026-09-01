@@ -846,6 +846,35 @@
 </script>
 
 <script>
+// Re-initialise Bootstrap components after every HTMX content swap.
+// Without this, dropdowns/tabs/collapses stop working after browser-back
+// because HTMX restores cached HTML without re-running Bootstrap's init.
+(function () {
+  function reinitBootstrap(root) {
+    if (typeof bootstrap === 'undefined') return;
+    var el = root || document;
+    // Dropdowns
+    el.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function (n) {
+      if (!bootstrap.Dropdown.getInstance(n)) new bootstrap.Dropdown(n);
+    });
+    // Collapses
+    el.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function (n) {
+      if (!bootstrap.Collapse.getInstance(n)) new bootstrap.Collapse(n, { toggle: false });
+    });
+    // Tabs
+    el.querySelectorAll('[data-bs-toggle="tab"]').forEach(function (n) {
+      if (!bootstrap.Tab.getInstance(n)) new bootstrap.Tab(n);
+    });
+    // Tooltips
+    el.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (n) {
+      if (!bootstrap.Tooltip.getInstance(n)) new bootstrap.Tooltip(n);
+    });
+  }
+  document.addEventListener('htmx:afterSettle', function () { reinitBootstrap(document); });
+})();
+</script>
+
+<script>
 // Prevent page scroll from accidentally changing <select> values.
 // Without this, scrolling over a focused <select> changes its option.
 document.addEventListener('wheel', function(e) {

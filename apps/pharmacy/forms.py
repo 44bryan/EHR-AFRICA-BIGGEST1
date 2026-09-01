@@ -40,7 +40,7 @@ class AddStockForm(forms.ModelForm):
         model = DrugStock
         fields = [
             'batch_number', 'manufacture_date', 'expiry_date',
-            'quantity_received', 'purchase_price', 'notes',
+            'quantity_received', 'purchase_price', 'supplier', 'notes',
         ]
         widgets = {
             'batch_number': forms.TextInput(attrs={'class': 'form-control'}),
@@ -48,6 +48,7 @@ class AddStockForm(forms.ModelForm):
             'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'quantity_received': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
             'purchase_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
+            'supplier': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Supplier name'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
         }
 

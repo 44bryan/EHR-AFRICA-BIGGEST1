@@ -4,64 +4,100 @@
 
 {% block content %}
 <div id="pharm-dash-live">
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
-    <h1 class="h3 mb-1 fw-bold"><i class="bi bi-capsule-pill me-2 text-success"></i>Pharmacy Workstation</h1>
+    <h4 class="fw-bold mb-0">Pharmacy Workstation</h4>
     <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
   </div>
-  <div class="d-flex gap-2">
-    <a href="{% url 'pharmacy:patient_search' %}" class="btn btn-success btn-sm px-3">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a href="{% url 'pharmacy:patient_search' %}" class="btn btn-success btn-sm">
       <i class="bi bi-person-search me-1"></i>Search Patient
     </a>
-    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-primary btn-sm">
+    <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-capsule me-1"></i>Dispense
+    </a>
+    <a href="{% url 'pharmacy:direct_sale' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-bag-plus me-1"></i>OTC Sale
+    </a>
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-grid me-1"></i>Full Dashboard
     </a>
   </div>
 </div>
 
-{# ── KPI Summary Row ── #}
-<div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-primary mb-0">{{ waiting_visits|length }}</div>
-      <div class="text-muted small">Waiting Now</div>
+{# ── Overview KPIs ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+             style="width:44px;height:44px;background:{% if waiting_visits %}#dbeafe{% else %}#f3f4f6{% endif %};">
+          <i class="bi bi-person-walking fs-5 {% if waiting_visits %}text-primary{% else %}text-secondary{% endif %}"></i>
+        </div>
+        <div>
+          <div class="fs-3 fw-bold lh-1 {% if waiting_visits %}text-primary{% else %}text-secondary{% endif %}">{{ waiting_visits|length }}</div>
+          <div class="text-muted small mt-1">Waiting at Counter</div>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="h2 fw-bold text-warning mb-0">{{ pending_count }}</div>
-      <div class="text-muted small">Pending Prescriptions</div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+             style="width:44px;height:44px;background:{% if pending_count %}#fef3c7{% else %}#f3f4f6{% endif %};">
+          <i class="bi bi-file-medical fs-5 {% if pending_count %}text-warning{% else %}text-secondary{% endif %}"></i>
+        </div>
+        <div>
+          <div class="fs-3 fw-bold lh-1 {% if pending_count %}text-warning{% else %}text-secondary{% endif %}">{{ pending_count }}</div>
+          <div class="text-muted small mt-1">Pending Prescriptions</div>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <a href="{% url 'pharmacy:dashboard' %}" class="text-decoration-none">
-        <div class="h2 fw-bold {% if low_stock_count > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ low_stock_count }}</div>
-        <div class="text-muted small">Low Stock</div>
-      </a>
-    </div>
+  <div class="col-6 col-lg-3">
+    <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:44px;height:44px;background:{% if low_stock_count %}#fee2e2{% else %}#dcfce7{% endif %};">
+            <i class="bi bi-{% if low_stock_count %}exclamation-triangle-fill text-danger{% else %}check-circle-fill text-success{% endif %} fs-5"></i>
+          </div>
+          <div>
+            <div class="fs-3 fw-bold lh-1 {% if low_stock_count %}text-danger{% else %}text-success{% endif %}">{{ low_stock_count }}</div>
+            <div class="text-muted small mt-1">Low Stock Items</div>
+          </div>
+        </div>
+      </div>
+    </a>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <a href="{% url 'pharmacy:dashboard' %}" class="text-decoration-none">
-        <div class="h2 fw-bold {% if expiring_critical_count > 0 %}text-danger{% else %}text-success{% endif %} mb-0">{{ expiring_critical_count }}</div>
-        <div class="text-muted small">Expiring &le;30 Days</div>
-      </a>
-    </div>
+  <div class="col-6 col-lg-3">
+    <a href="{% url 'pharmacy:expiry_alerts' %}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:44px;height:44px;background:{% if expiring_critical_count %}#fee2e2{% else %}#dcfce7{% endif %};">
+            <i class="bi bi-{% if expiring_critical_count %}calendar-x-fill text-danger{% else %}check-circle-fill text-success{% endif %} fs-5"></i>
+          </div>
+          <div>
+            <div class="fs-3 fw-bold lh-1 {% if expiring_critical_count %}text-danger{% else %}text-success{% endif %}">{{ expiring_critical_count }}</div>
+            <div class="text-muted small mt-1">Expiring &le;30 Days</div>
+          </div>
+        </div>
+      </div>
+    </a>
   </div>
 </div>
 
-{# ── Patients Physically Waiting at Pharmacy Counter ── #}
+{# ── Patients at Counter ── #}
 {% if waiting_visits %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header d-flex align-items-center justify-content-between py-2 bg-light">
-    <div class="d-flex align-items-center gap-2">
-      <i class="bi bi-person-walking text-primary fs-5"></i>
-      <h6 class="mb-0 fw-bold text-primary">Patients at the Counter Now</h6>
-      <span class="badge bg-primary">{{ waiting_visits|length }}</span>
-    </div>
-    <small class="text-muted">Routed from consultation today</small>
-  </div>
+<div class="d-flex align-items-center gap-2 mb-2">
+  <i class="bi bi-person-walking text-primary"></i>
+  <span class="fw-bold small text-uppercase text-muted" style="letter-spacing:.05em;">Patients at Counter</span>
+  <span class="badge bg-primary">{{ waiting_visits|length }}</span>
+  <hr class="flex-grow-1 my-0">
+</div>
+<div class="card border-0 shadow-sm mb-3">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
@@ -104,12 +140,14 @@
 </div>
 {% endif %}
 
-{# ── All Pending Prescriptions ── #}
+{# ── Pending Prescriptions ── #}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <i class="bi bi-file-medical text-warning"></i>
+  <span class="fw-bold small text-uppercase text-muted" style="letter-spacing:.05em;">Pending Prescriptions</span>
+  {% if pending_count %}<span class="badge bg-warning text-dark">{{ pending_count }}</span>{% endif %}
+  <hr class="flex-grow-1 my-0">
+</div>
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-bold"><i class="bi bi-file-medical text-success me-2"></i>Pending Prescriptions</h6>
-    <span class="badge bg-warning text-dark">{{ pending_count }}</span>
-  </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
@@ -142,9 +180,9 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="5" class="text-center text-muted py-5">
-            <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
-            No pending prescriptions.
+          <td colspan="5" class="text-center text-muted py-4">
+            <i class="bi bi-check-circle-fill text-success me-1"></i>
+            No pending prescriptions
           </td>
         </tr>
         {% endfor %}

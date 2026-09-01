@@ -1,0 +1,99 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Dead Stock Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-archive text-danger fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Dead Stock Report — No Movement for {{ days }}+ Days</h5>
+      <div class="text-muted small">Items with zero dispensing activity &middot; {% now "d M Y H:i" %}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Pharmacy</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filter ── #}
+<div class="card border-0 shadow-sm mb-3 d-print-none">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex align-items-center gap-3">
+      <label class="fw-semibold small text-nowrap mb-0">No movement for at least</label>
+      <input type="number" name="days" value="{{ days }}" min="1" max="730" class="form-control form-control-sm" style="width:100px;">
+      <span class="small text-muted">days</span>
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+    </form>
+  </div>
+</div>
+
+{# ── Summary Cards ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-danger">{{ drugs|length }}</div>
+        <div class="small text-muted fw-semibold">Total Drugs with Dead Stock</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-warning">{{ total_value_at_risk|floatformat:0|intcomma }}</div>
+        <div class="small text-muted fw-semibold">Total Value at Risk (FCFA)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Dead Stock Table ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-exclamation-triangle text-warning"></i>
+    <span class="fw-semibold small">Dead Stock Items ({{ drugs|length }})</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 small align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Drug Name</th>
+          <th>Strength</th>
+          <th class="text-end">Current Stock</th>
+          <th class="text-end">Selling Price (FCFA)</th>
+          <th class="text-end">Stock Value (FCFA)</th>
+          <th>Last Dispensed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for drug in drugs %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ drug.name }}</td>
+          <td>{{ drug.strength|default:"—" }}</td>
+          <td class="text-end">{{ drug.stock_total|intcomma }}</td>
+          <td class="text-end">{{ drug.selling_price|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold text-danger">{{ drug.stock_value|floatformat:0|intcomma }}</td>
+          <td>
+            {% if drug.last_dispensed %}
+              {{ drug.last_dispensed|date:"d M Y" }}
+            {% else %}
+              <span class="text-muted fst-italic">Never dispensed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success me-1"></i>No dead stock found for the selected period.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

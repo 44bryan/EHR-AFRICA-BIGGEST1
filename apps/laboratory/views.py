@@ -126,10 +126,29 @@ def lab_dashboard(request):
             order.elapsed = ''
             order.elapsed_mins = 0
 
+    # ── Split into urgent vs routine (matches investigation workstation) ─────
+    urgent_orders = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY')]
+    routine_orders = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY')]
+    in_progress_count = sum(1 for o in pending_orders if o.status == 'PROCESSING')
+
+    # ── Completed today — full list (not just count) ──────────────────────────
+    completed_today_list = list(
+        LabOrder.objects.filter(
+            status='COMPLETED', is_deleted=False,
+            updated_at__date=today,
+        ).select_related('patient', 'ordered_by')
+        .prefetch_related('items__test_type', 'items__result')
+        .order_by('-updated_at')[:30]
+    )
+
     context = {
         'pending_orders': pending_orders,
+        'urgent_orders': urgent_orders,
+        'routine_orders': routine_orders,
         'pending_count': len(pending_orders),
+        'in_progress_count': in_progress_count,
         'completed_today': completed_today,
+        'completed_today_list': completed_today_list,
         'completed_this_month': completed_this_month,
         'critical_unverified': critical_unverified,
         'critical_count': critical_unverified.count(),

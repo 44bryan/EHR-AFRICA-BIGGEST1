@@ -2,6 +2,24 @@
    EHR Africa — Main JavaScript v2
    ============================================================ */
 
+// ── Prevent HTMX from intercepting file downloads ───────────────────────────
+// When hx-boost is on, clicking download/export/PDF links causes HTMX to
+// fetch the response as AJAX. Binary responses freeze the page. This handler
+// detects non-HTML responses and forces a normal browser download instead.
+document.addEventListener('htmx:beforeSwap', function(evt) {
+  var xhr = evt.detail.xhr;
+  if (!xhr) return;
+  var ct = (xhr.getResponseHeader('Content-Type') || '').toLowerCase();
+  var cd = xhr.getResponseHeader('Content-Disposition') || '';
+  if (cd.indexOf('attachment') !== -1 || ct.indexOf('pdf') !== -1 ||
+      ct.indexOf('spreadsheet') !== -1 || ct.indexOf('excel') !== -1 ||
+      ct.indexOf('csv') !== -1 || ct.indexOf('octet-stream') !== -1) {
+    evt.detail.shouldSwap = false;
+    // Trigger a real browser download by navigating to the same URL
+    window.location.href = evt.detail.pathInfo.requestPath || xhr.responseURL;
+  }
+});
+
 // ── One-time sidebar & persistent init ──────────────────────────────────────
 // Only called ONCE on DOMContentLoaded (never on HTMX swaps).
 // Moving sidebar init here eliminates duplicate event listeners and prevents

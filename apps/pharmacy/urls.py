@@ -17,6 +17,7 @@ urlpatterns = [
     path('dispensing/<uuid:dispensing_id>/add-item-ajax/', views.add_dispensing_item_ajax, name='add_dispensing_item_ajax'),
     path('dispensing/<uuid:dispensing_id>/add-manual-ajax/', views.add_manual_item_ajax, name='add_manual_item_ajax'),
     path('dispensing/<uuid:dispensing_id>/remove-item/<uuid:item_id>/', views.remove_dispensing_item_ajax, name='remove_dispensing_item_ajax'),
+    path('dispensing/<uuid:dispensing_id>/edit-item/<uuid:item_id>/', views.edit_dispensing_item_ajax, name='edit_dispensing_item_ajax'),
     path('dispense/', views.dispense, name='dispense'),
     path('dispensing/', views.dispensing_list, name='dispensing_list'),
     path('dispensing/<uuid:dispensing_id>/', views.dispensing_detail, name='dispensing_detail'),
@@ -83,4 +84,32 @@ urlpatterns = [
     # Bulk drug/stock import
     path('drugs/import/', views.drug_bulk_import, name='drug_bulk_import'),
     path('drugs/import/template/', views.drug_import_template, name='drug_import_template'),
+
+    # ── Head Pharmacist: Pharmacy Locations ─────────────────────────
+    path('locations/', views.location_list, name='location_list'),
+    path('locations/new/', views.location_create, name='location_create'),
+    path('locations/<uuid:loc_id>/edit/', views.location_edit, name='location_edit'),
+
+    # ── Head Pharmacist: Inter-Store Transfers ──────────────────────
+    path('transfers/', views.transfer_list, name='transfer_list'),
+    path('transfers/new/', views.transfer_create, name='transfer_create'),
+    path('transfers/<uuid:transfer_id>/', views.transfer_detail, name='transfer_detail'),
+    path('transfers/<uuid:transfer_id>/action/', views.transfer_action, name='transfer_action'),
+
+    # ── Head Pharmacist: Stock Exit ─────────────────────────────────
+    path('stock-exits/', views.stock_exit_list, name='stock_exit_list'),
+    path('stock-exits/new/', views.stock_exit_create, name='stock_exit_create'),
+
+    # ── Head Pharmacist: Drug Recalls ───────────────────────────────
+    path('recalls/', views.recall_list, name='recall_list'),
+    path('recalls/new/', views.recall_create, name='recall_create'),
+    path('recalls/<uuid:recall_id>/', views.recall_detail, name='recall_detail'),
+
+    # ── Head Pharmacist: Advanced Reports ───────────────────────────
+    path('reports/abc/', views.abc_analysis, name='report_abc'),
+    path('reports/ven/', views.ven_analysis, name='report_ven'),
+    path('reports/dead-stock/', views.dead_stock_report, name='report_dead_stock'),
+    path('reports/consumption/', views.consumption_report, name='report_consumption'),
+    path('reports/turnover/', views.turnover_report, name='report_turnover'),
+    path('reports/productivity/', views.productivity_report, name='report_productivity'),
 ]

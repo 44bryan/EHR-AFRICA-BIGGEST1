@@ -1,0 +1,88 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Drug Recalls{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">
+      <i class="bi bi-exclamation-triangle me-2 text-primary"></i>Drug Recalls
+    </h1>
+    <div class="text-muted small">Track and manage drug recall events</div>
+  </div>
+  <a href="{% url 'pharmacy:recall_create' %}" class="btn btn-danger btn-sm">
+    <i class="bi bi-plus-circle me-1"></i>Report Recall
+  </a>
+</div>
+
+{% if not recalls %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-exclamation-triangle fs-1 d-block mb-3" style="opacity:.3;"></i>
+  <div class="fw-semibold">No drug recalls recorded</div>
+  <div class="small mt-1">Use the button above to report a new recall.</div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light border-bottom fw-semibold">
+    <i class="bi bi-list-ul me-2 text-primary"></i>Recall Records
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Recall #</th>
+          <th>Drug</th>
+          <th>Severity</th>
+          <th>Status</th>
+          <th>Type</th>
+          <th>Source</th>
+          <th>Date</th>
+          <th class="text-end">Quarantined</th>
+          <th class="text-end">Patients Affected</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for recall in recalls %}
+        <tr>
+          <td class="fw-semibold">{{ recall.recall_number|default:"—" }}</td>
+          <td>
+            <span class="fw-semibold">{{ recall.drug.name }}</span>
+            {% if recall.drug.strength %}<div class="text-muted small">{{ recall.drug.strength }}</div>{% endif %}
+          </td>
+          <td>
+            <span class="badge
+              {% if recall.severity == 'CLASS_I' %}bg-danger
+              {% elif recall.severity == 'CLASS_II' %}bg-warning text-dark
+              {% elif recall.severity == 'CLASS_III' %}bg-info text-dark
+              {% else %}bg-light text-dark border{% endif %}">
+              {{ recall.get_severity_display }}
+            </span>
+          </td>
+          <td>
+            <span class="badge
+              {% if recall.status == 'ACTIVE' %}bg-danger
+              {% elif recall.status == 'COMPLETED' %}bg-success
+              {% elif recall.status == 'CANCELLED' %}bg-secondary
+              {% else %}bg-light text-dark border{% endif %}">
+              {{ recall.get_status_display }}
+            </span>
+          </td>
+          <td class="small">{{ recall.get_recall_type_display|default:"—" }}</td>
+          <td class="small">{{ recall.recall_source|default:"—" }}</td>
+          <td class="text-muted small">{{ recall.created_at|date:"d M Y" }}</td>
+          <td class="text-end">{{ recall.quarantined_quantity|default:0 }}</td>
+          <td class="text-end">{{ recall.patients_affected|default:0 }}</td>
+          <td>
+            <a href="{% url 'pharmacy:recall_detail' recall_id=recall.pk %}" class="btn btn-xs btn-outline-primary" style="font-size:.75rem;padding:2px 8px;">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

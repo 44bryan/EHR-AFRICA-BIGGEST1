@@ -3,13 +3,16 @@
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-  <div>
-    <h5 class="mb-0 fw-bold">Laboratory Workstation</h5>
-    <div class="text-muted small">{{ today|date:"l, d F Y" }} — Active sample processing queue</div>
+  <div class="d-flex align-items-center gap-3">
+    <i class="bi bi-droplet-half text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Laboratory Workstation</h5>
+      <div class="text-muted small">{{ request.user.get_full_name }} &bull; {{ today|date:"l, d F Y" }}</div>
+    </div>
   </div>
-  <div class="d-flex gap-2 align-items-center">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
     <span class="badge bg-light border text-muted d-flex align-items-center gap-1"
-          id="refreshCountdown" title="Page auto-refreshes to show new orders">
+          id="refreshCountdown" title="Auto-refreshes every 30 s">
       <i class="bi bi-arrow-clockwise"></i><span id="countdownSec">30</span>s
     </span>
     <a href="{% url 'laboratory:stats' %}" class="btn btn-sm btn-outline-primary">
@@ -24,68 +27,34 @@
 
 {% block content %}
 
-{% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up patient record…" %}
+{% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up patient record..." %}
 
-{# ── Patient search bar ────────────────────────────────────────────────── #}
-<div class="card border-0 shadow-sm mb-3">
+{# -- Patient Quick Search -- #}
+<div class="card border-0 shadow-sm mb-4">
   <div class="card-body py-2 px-3">
-    <div class="position-relative">
-      <input type="text" id="labPatientSearch" class="form-control form-control-sm ps-4"
-             placeholder="Search patient by name or ID…" autocomplete="off">
-      <i class="bi bi-search position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"></i>
-      <div id="labSearchResults" class="dropdown-menu w-100 shadow-sm" style="display:none;max-height:220px;overflow-y:auto;position:absolute;z-index:1000;"></div>
+    <div class="input-group">
+      <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+      <input type="text" id="labPatientSearch" class="form-control border-start-0"
+             placeholder="Search patient by name or ID to view their lab orders..." autocomplete="off">
+      <button class="btn btn-outline-secondary" type="button" id="labSearchClear" title="Clear">
+        <i class="bi bi-x"></i>
+      </button>
     </div>
+    <div id="labSearchResults" class="list-group mt-2" style="display:none;"></div>
   </div>
 </div>
 
+{# -- Live queue zone -- auto-refreshes via JS fetch -- #}
 <div id="lab-queue-live">
-<!-- KPI Row -->
-<div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100" >
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-primary">{{ pending_count }}</div>
-        <div class="small text-muted">Pending / In-Progress</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100" >
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-success">{{ completed_today }}</div>
-        <div class="small text-muted">Completed Today</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100" >
-      <div class="card-body py-3">
-        <div class="h2 fw-bold {% if critical_count %}text-danger{% else %}text-success{% endif %}">
-          {{ critical_count }}
-        </div>
-        <div class="small text-muted">Critical (Unverified)</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100" >
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-warning">{{ abnormal_count }}</div>
-        <div class="small text-muted">Abnormal (This Month)</div>
-      </div>
-    </div>
-  </div>
-</div>
 
+{# -- Patients Waiting at Lab (routed from consultation) -- #}
 {% if waiting_visits %}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header d-flex align-items-center justify-content-between py-2">
-    <div class="d-flex align-items-center gap-2">
-      <i class="bi bi-person-walking text-primary fs-5"></i>
-      <h6 class="mb-0 fw-bold text-primary">Patients Waiting at Lab</h6>
-      <span class="badge bg-primary">{{ waiting_visits|length }}</span>
-    </div>
-    <small class="text-muted">Sent here today — awaiting tests</small>
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold text-primary">
+      <i class="bi bi-person-walking me-2"></i>Patients Waiting at Lab
+    </h6>
+    <span class="badge bg-primary">{{ waiting_visits|length }}</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
@@ -100,7 +69,7 @@
             <div class="fw-semibold">{{ v.patient.full_name }}</div>
             <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
           </td>
-          <td class="text-muted">{{ v.attending_doctor.get_full_name|default:"—" }}</td>
+          <td class="text-muted">{{ v.attending_doctor.get_full_name|default:"---" }}</td>
           <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
           <td>
             <a href="{% url 'laboratory:list' %}?patient_id={{ v.patient.patient_id }}" class="btn btn-sm btn-primary">
@@ -115,25 +84,32 @@
 </div>
 {% endif %}
 
-<!-- Critical unverified results — urgent attention -->
+{# -- Critical Unverified Results -- urgent attention -- #}
 {% if critical_unverified %}
-<div class="alert alert-danger border-0 rounded-3 mb-4">
-  <div class="fw-bold mb-2"><i class="bi bi-exclamation-octagon-fill me-2"></i>CRITICAL RESULTS — Requires Immediate Verification</div>
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header d-flex align-items-center justify-content-between py-2">
+    <h6 class="mb-0 fw-bold text-danger">
+      <i class="bi bi-exclamation-octagon-fill me-2"></i>CRITICAL RESULTS -- Requires Immediate Verification
+    </h6>
+    <span class="badge bg-danger">{{ critical_count }}</span>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm mb-0 small">
-      <thead><tr><th>Patient</th><th>Test</th><th>Result</th><th>By</th><th></th></tr></thead>
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Test</th><th>Result</th><th>By</th><th></th></tr>
+      </thead>
       <tbody>
         {% for r in critical_unverified %}
         <tr>
           <td class="fw-semibold">{{ r.order_item.order.patient.full_name }}</td>
           <td>{{ r.order_item.test_type.name }}</td>
           <td class="text-danger fw-bold">{{ r.result_value }} {{ r.result_unit }}</td>
-          <td>{{ r.performed_by.get_full_name }}</td>
-          <td>
+          <td class="text-muted">{{ r.performed_by|user_display }}</td>
+          <td class="d-flex gap-1">
             <a href="{% url 'laboratory:verify_result' r.id %}"
-               class="btn btn-xs btn-danger" style="font-size:.7rem;padding:2px 6px;">Verify</a>
+               class="btn btn-sm btn-danger">Verify</a>
             <a href="{% url 'laboratory:detail' r.order_item.order.pk %}"
-               class="btn btn-xs btn-outline-secondary ms-1" style="font-size:.7rem;padding:2px 6px;">View</a>
+               class="btn btn-sm btn-outline-secondary">View</a>
           </td>
         </tr>
         {% endfor %}
@@ -143,155 +119,341 @@
 </div>
 {% endif %}
 
-<div class="row g-3">
+{# -- Urgent & Emergency Orders -- #}
+{% if urgent_orders %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold text-danger">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>Urgent &amp; Emergency Orders
+    </h6>
+    <span class="badge bg-danger">{{ urgent_orders|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Tests</th>
+          <th>Urgency</th>
+          <th>Auth</th>
+          <th>Status</th>
+          <th>TAT</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in urgent_orders %}
+        <tr {% if order.is_paid == False %}class="table-warning"{% endif %}>
+          <td>
+            <div class="fw-semibold">{{ order.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ order.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% for item in order.items.all %}
+            <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if order.urgency == 'EMERGENCY' %}<span class="badge bg-danger">EMERGENCY</span>
+            {% else %}<span class="badge bg-warning text-dark">URGENT</span>{% endif %}
+          </td>
+          <td>
+            {% if order.is_paid == True %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.65rem;">
+                <i class="bi bi-shield-check me-1"></i>Authorised
+              </span>
+            {% elif order.is_paid == False %}
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:.65rem;">
+                <i class="bi bi-shield-exclamation me-1"></i>Pending Auth
+              </span>
+            {% else %}
+              <span class="badge bg-light text-muted" style="font-size:.65rem;">---</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if order.status == 'ORDERED' %}<span class="badge bg-primary">Ordered</span>
+            {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info text-dark">Sample Collected</span>
+            {% elif order.status == 'PROCESSING' %}<span class="badge bg-warning text-dark">Processing</span>{% endif %}
+          </td>
+          <td>
+            {% if order.elapsed %}
+            <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning fw-semibold{% else %}text-muted{% endif %}"
+                  style="font-size:.72rem;">
+              {% if order.elapsed_mins > 240 %}<i class="bi bi-exclamation-triangle-fill me-1"></i>{% endif %}
+              {{ order.elapsed }}
+            </span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1 flex-wrap">
+              {% if order.status == 'ORDERED' %}
+              <a href="{% url 'laboratory:collect_sample' order.pk %}"
+                 class="btn btn-sm btn-outline-info">Collect</a>
+              {% endif %}
+              {% if order.status == 'SAMPLE_COLLECTED' or order.status == 'PROCESSING' %}
+              <a href="{% url 'laboratory:enter_results' order.pk %}"
+                 class="btn btn-sm btn-danger"><i class="bi bi-pencil-square me-1"></i>Results</a>
+              {% endif %}
+              <a href="{% url 'laboratory:detail' order.pk %}"
+                 class="btn btn-sm btn-outline-secondary">View</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
-  <!-- Pending work queue -->
-  <div class="col-md-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold"><i class="bi bi-clock-history text-primary me-2"></i>Pending Work Queue</span>
-        <form method="post" action="{% url 'laboratory:bulk_collect' %}" class="ms-auto d-inline" id="labBulkCollectAllForm">
-          {% csrf_token %}
-          {% for order in pending_orders %}{% if order.status == 'ORDERED' %}<input type="hidden" name="order_ids" value="{{ order.pk }}">{% endif %}{% endfor %}
-          <button type="submit" class="btn btn-xs btn-outline-info" style="font-size:.75rem;padding:3px 8px;"
-                  onclick="return confirm('Mark ALL ordered samples as collected?')">
-            <i class="bi bi-collection me-1"></i>Collect All Ordered
-          </button>
-        </form>
-      </div>
-      {# Bulk collect selected — action bar #}
-      <form method="post" action="{% url 'laboratory:bulk_collect' %}" id="labBulkSelectForm">
+{# -- In Progress -- Samples Currently Processing -- #}
+{% if in_progress_count %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header d-flex align-items-center justify-content-between py-2">
+    <h6 class="mb-0 fw-bold text-info">
+      <i class="bi bi-activity me-2"></i>In Progress -- Samples Being Processed
+    </h6>
+    <span class="badge bg-info text-white">{{ in_progress_count }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Patient</th><th>Tests</th><th>Urgency</th><th>TAT</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for order in pending_orders %}{% if order.status == 'PROCESSING' %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ order.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ order.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% for item in order.items.all %}
+            <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if order.urgency == 'EMERGENCY' %}<span class="badge bg-danger">EMERGENCY</span>
+            {% elif order.urgency == 'URGENT' %}<span class="badge bg-warning text-dark">URGENT</span>
+            {% else %}<span class="badge bg-secondary">Routine</span>{% endif %}
+          </td>
+          <td>
+            {% if order.elapsed %}
+            <span class="text-muted" style="font-size:.72rem;">{{ order.elapsed }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-sm btn-info text-white">
+              <i class="bi bi-pencil-square me-1"></i>Enter Results
+            </a>
+          </td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# -- Routine -- Pending Orders -- #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2 gap-2 flex-wrap">
+    <h6 class="mb-0 fw-semibold">
+      <i class="bi bi-clock me-2 text-warning"></i>Routine -- Pending Orders
+    </h6>
+    <div class="d-flex align-items-center gap-2 ms-auto">
+      <span class="badge bg-warning text-dark">{{ routine_orders|length }}</span>
+      {% if routine_orders %}
+      <form method="post" action="{% url 'laboratory:bulk_collect' %}" class="d-inline" id="labBulkCollectAllForm">
         {% csrf_token %}
-        <div id="labBulkBar" class="d-none align-items-center gap-2 px-3 py-2 border-bottom bg-light">
-          <span id="labBulkLabel" class="small fw-semibold text-info"></span>
-          <button type="submit" class="btn btn-sm btn-info text-white">
-            <i class="bi bi-collection me-1"></i>Mark Sample Collected
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="labBulkClear">Clear</button>
-        </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-hover small mb-0">
-            <thead class="table-light">
-              <tr>
-                <th style="width:32px;"><input type="checkbox" id="labChkAll" title="Select all ORDERED"></th>
-                <th>Patient</th>
-                <th>Tests</th>
-                <th>Urgency</th>
-                <th>Auth</th>
-                <th>Status</th>
-                <th>TAT</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for order in pending_orders %}
-              <tr class="{% if order.urgency == 'EMERGENCY' %}table-danger{% elif order.urgency == 'URGENT' %}table-warning{% elif order.elapsed_mins > 120 %}table-warning{% endif %}">
-                <td>
-                  {% if order.status == 'ORDERED' %}
-                  <input type="checkbox" name="order_ids" value="{{ order.pk }}" class="lab-row-chk">
-                  {% endif %}
-                </td>
-                <td>
-                  <div class="fw-semibold">{{ order.patient.full_name }}</div>
-                  <div class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</div>
-                </td>
-                <td>
-                  {% for item in order.items.all %}
-                  <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
-                  {% endfor %}
-                </td>
-                <td>
-                  {% if order.urgency == 'EMERGENCY' %}<span class="badge bg-danger">EMERGENCY</span>
-                  {% elif order.urgency == 'URGENT' %}<span class="badge bg-warning text-dark">URGENT</span>
-                  {% else %}<span class="badge bg-secondary">Routine</span>{% endif %}
-                </td>
-                <td>
-                  {# ISO 15189 §4.1.2 — lab sees authorisation status, not billing details #}
-                  {% if order.is_paid == True %}
-                    <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.65rem;">
-                      <i class="bi bi-shield-check me-1"></i>Authorised
-                    </span>
-                  {% elif order.is_paid == False %}
-                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:.65rem;">
-                      <i class="bi bi-shield-exclamation me-1"></i>Pending Auth
-                    </span>
-                  {% else %}
-                    <span class="badge bg-light text-muted" style="font-size:.65rem;">—</span>
-                  {% endif %}
-                </td>
-                <td>
-                  {% if order.status == 'ORDERED' %}<span class="badge bg-primary">Ordered</span>
-                  {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info text-dark">Sample ✓</span>
-                  {% elif order.status == 'PROCESSING' %}<span class="badge bg-warning text-dark">Processing</span>
-                  {% endif %}
-                  {# Sample rejection indicator #}
-                  {% if order.rejections.exists %}
-                  <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" style="font-size:.6rem;" title="Sample was previously rejected">
-                    <i class="bi bi-exclamation-triangle"></i> Rejected ×{{ order.rejections.count }}
-                  </span>
-                  {% endif %}
-                </td>
-                <td>
-                  {# ISO 15189 §5.5 — TAT display with overdue alert #}
-                  {% if order.elapsed %}
-                  <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning fw-semibold{% else %}text-muted{% endif %}"
-                        style="font-size:.72rem;" title="Time since order was placed">
-                    {% if order.elapsed_mins > 240 %}<i class="bi bi-exclamation-triangle-fill me-1"></i>{% endif %}
-                    {{ order.elapsed }}
-                  </span>
-                  {% endif %}
-                </td>
-                <td>
-                  <div class="d-flex gap-1 flex-wrap">
-                    {% if order.status == 'ORDERED' %}
-                    <a href="{% url 'laboratory:collect_sample' order.pk %}"
-                       class="btn btn-xs btn-outline-info" style="font-size:.7rem;padding:2px 6px;">Collect</a>
-                    {% endif %}
-                    {% if order.status == 'SAMPLE_COLLECTED' or order.status == 'PROCESSING' %}
-                    <a href="{% url 'laboratory:enter_results' order.pk %}"
-                       class="btn btn-xs btn-outline-success" style="font-size:.7rem;padding:2px 6px;">Results</a>
-                    {# Sample rejection — ISO 15189 §5.4.5 #}
-                    <button type="button" class="btn btn-xs btn-outline-danger"
-                            style="font-size:.7rem;padding:2px 6px;"
-                            data-bs-toggle="modal"
-                            data-bs-target="#rejectSampleModal"
-                            data-order-id="{{ order.pk }}"
-                            data-patient="{{ order.patient.full_name }}">
-                      <i class="bi bi-x-circle"></i> Reject
-                    </button>
-                    {% elif order.status == 'COMPLETED' %}
-                    <a href="{% url 'laboratory:enter_results' order.pk %}"
-                       class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:2px 6px;">Edit</a>
-                    <a href="{% url 'laboratory:result_pdf' order.pk %}"
-                       class="btn btn-xs btn-outline-danger" target="_blank" style="font-size:.7rem;padding:2px 6px;">
-                      <i class="bi bi-printer"></i> Print
-                    </a>
-                    {% endif %}
-                    <a href="{% url 'laboratory:detail' order.pk %}"
-                       class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:2px 6px;">View</a>
-                  </div>
-                </td>
-              </tr>
-              {% empty %}
-              <tr>
-                <td colspan="8" class="text-center text-muted py-4">
-                  <i class="bi bi-check-circle-fill text-success fs-3 d-block mb-2"></i>
-                  No pending lab orders — All clear!
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        {% for order in routine_orders %}{% if order.status == 'ORDERED' %}<input type="hidden" name="order_ids" value="{{ order.pk }}">{% endif %}{% endfor %}
+        <button type="submit" class="btn btn-sm btn-outline-info"
+                onclick="return confirm('Mark ALL ordered samples as collected?')">
+          <i class="bi bi-collection me-1"></i>Collect All Ordered
+        </button>
       </form>
+      {% endif %}
     </div>
   </div>
+  {% if routine_orders %}
+  {# Bulk collect selected -- action bar #}
+  <form method="post" action="{% url 'laboratory:bulk_collect' %}" id="labBulkSelectForm">
+    {% csrf_token %}
+    <div id="labBulkBar" class="d-none align-items-center gap-2 px-3 py-2 border-bottom bg-light">
+      <span id="labBulkLabel" class="small fw-semibold text-info"></span>
+      <button type="submit" class="btn btn-sm btn-info text-white">
+        <i class="bi bi-collection me-1"></i>Mark Sample Collected
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="labBulkClear">Clear</button>
+    </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th style="width:36px;"><input type="checkbox" id="labChkAll" title="Select all ORDERED"></th>
+          <th>Patient</th>
+          <th>Tests</th>
+          <th>Auth</th>
+          <th>Status</th>
+          <th>TAT</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in routine_orders %}{% if order.status != 'PROCESSING' %}
+        <tr {% if order.is_paid == False %}class="table-warning"{% elif order.elapsed_mins > 120 %}class="table-warning"{% endif %}>
+          <td>
+            {% if order.status == 'ORDERED' %}
+            <input type="checkbox" name="order_ids" value="{{ order.pk }}" class="lab-row-chk">
+            {% endif %}
+          </td>
+          <td>
+            <div class="fw-semibold">{{ order.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ order.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% for item in order.items.all %}
+            <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if order.is_paid == True %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.65rem;">
+                <i class="bi bi-shield-check me-1"></i>Authorised
+              </span>
+            {% elif order.is_paid == False %}
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:.65rem;">
+                <i class="bi bi-shield-exclamation me-1"></i>Pending Auth
+              </span>
+            {% else %}
+              <span class="badge bg-light text-muted" style="font-size:.65rem;">---</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if order.status == 'ORDERED' %}<span class="badge bg-primary">Ordered</span>
+            {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info text-dark">Sample Collected</span>{% endif %}
+            {% if order.rejections.exists %}
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" style="font-size:.6rem;"
+                  title="Sample was previously rejected">
+              <i class="bi bi-exclamation-triangle"></i> Rejected
+            </span>
+            {% endif %}
+          </td>
+          <td>
+            {% if order.elapsed %}
+            <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning fw-semibold{% else %}text-muted{% endif %}"
+                  style="font-size:.72rem;">
+              {% if order.elapsed_mins > 240 %}<i class="bi bi-exclamation-triangle-fill me-1"></i>{% endif %}
+              {{ order.elapsed }}
+            </span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1 flex-wrap">
+              {% if order.status == 'ORDERED' %}
+              <a href="{% url 'laboratory:collect_sample' order.pk %}"
+                 class="btn btn-sm btn-outline-info">Collect</a>
+              {% endif %}
+              {% if order.status == 'SAMPLE_COLLECTED' %}
+              <a href="{% url 'laboratory:enter_results' order.pk %}"
+                 class="btn btn-sm btn-primary"><i class="bi bi-pencil-square me-1"></i>Results</a>
+              <button type="button" class="btn btn-sm btn-outline-danger"
+                      data-bs-toggle="modal"
+                      data-bs-target="#rejectSampleModal"
+                      data-order-id="{{ order.pk }}"
+                      data-patient="{{ order.patient.full_name }}">
+                <i class="bi bi-x-circle me-1"></i>Reject
+              </button>
+              {% endif %}
+              <a href="{% url 'laboratory:detail' order.pk %}"
+                 class="btn btn-sm btn-outline-secondary">View</a>
+            </div>
+          </td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </form>
+  {% else %}
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+    No pending routine lab orders.
+  </div>
+  {% endif %}
+</div>
 
-  <!-- Category stats sidebar -->
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm mb-3">
+</div>{# /lab-queue-live #}
+
+{# -- Completed Today -- #}
+{% if completed_today_list %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+    <h6 class="mb-0 fw-semibold">
+      <i class="bi bi-check-circle me-2 text-success"></i>Completed Today
+    </h6>
+    <span class="badge bg-success">{{ completed_today }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Tests</th>
+          <th>Results</th>
+          <th>Verified</th>
+          <th>Time</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in completed_today_list %}
+        <tr>
+          <td class="fw-semibold">{{ order.patient.full_name }}</td>
+          <td>
+            {% for item in order.items.all %}
+            <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% for item in order.items.all %}
+              {% if item.result %}
+                {% if item.result.is_critical %}<span class="badge bg-danger">Critical</span>
+                {% elif item.result.is_abnormal %}<span class="badge bg-warning text-dark">Abnormal</span>
+                {% else %}<span class="badge bg-success">Normal</span>{% endif %}
+              {% endif %}
+            {% endfor %}
+          </td>
+          <td>
+            {% with first_item=order.items.all.0 %}
+            {% if first_item and first_item.result and first_item.result.is_verified %}
+              <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Yes</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% endif %}
+            {% endwith %}
+          </td>
+          <td class="text-muted">{{ order.updated_at|time:"H:i" }}</td>
+          <td class="d-flex gap-1">
+            <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
+            <a href="{% url 'laboratory:result_pdf' order.pk %}" class="btn btn-sm btn-outline-danger" target="_blank">
+              <i class="bi bi-printer me-1"></i>Print
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# -- Month Summary sidebar -- collapsible -- #}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold border-bottom py-2">
         <i class="bi bi-bar-chart text-primary me-2"></i>Tests by Category (Month)
       </div>
@@ -310,8 +472,9 @@
         {% endif %}
       </div>
     </div>
-
-    <div class="card border-0 shadow-sm">
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold border-bottom py-2">
         <i class="bi bi-check-all text-success me-2"></i>Month Summary
       </div>
@@ -336,24 +499,23 @@
     </div>
   </div>
 </div>
-</div>{# /lab-queue-live #}
 
-{# ── Sample Rejection Modal — ISO 15189 §5.4.5 ─────────────────────────── #}
+{# -- Sample Rejection Modal -- ISO 15189 -- #}
 <div class="modal fade" id="rejectSampleModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header bg-danger text-white py-2">
-        <h6 class="modal-title"><i class="bi bi-x-circle me-2"></i>Reject Sample — <span id="rejectPatientName"></span></h6>
+        <h6 class="modal-title"><i class="bi bi-x-circle me-2"></i>Reject Sample -- <span id="rejectPatientName"></span></h6>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <form method="post" id="rejectSampleForm" action="">
         {% csrf_token %}
         <div class="modal-body">
-          <p class="small text-muted mb-3">ISO 15189 §5.4.5 — This will reset the order to <strong>ORDERED</strong> status and notify the requesting doctor.</p>
+          <p class="small text-muted mb-3">ISO 15189 -- This will reset the order to <strong>ORDERED</strong> status and notify the requesting doctor.</p>
           <div class="mb-3">
             <label class="form-label fw-semibold small">Rejection Reason <span class="text-danger">*</span></label>
             <select name="rejection_reason" class="form-select form-select-sm" required>
-              <option value="">— Select reason —</option>
+              <option value="">-- Select reason --</option>
               <option value="HAEMOLYSED">Haemolysed sample</option>
               <option value="INSUFFICIENT">Insufficient volume</option>
               <option value="WRONG_CONTAINER">Wrong container / tube</option>
@@ -361,13 +523,13 @@
               <option value="CLOTTED">Clotted sample</option>
               <option value="CONTAMINATED">Contaminated</option>
               <option value="DELAYED">Excessive transport delay</option>
-              <option value="OTHER">Other — see notes</option>
+              <option value="OTHER">Other -- see notes</option>
             </select>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold small">Notes (optional)</label>
             <textarea name="rejection_notes" class="form-control form-control-sm" rows="2"
-                      placeholder="Additional details for the requesting doctor…"></textarea>
+                      placeholder="Additional details for the requesting doctor..."></textarea>
           </div>
         </div>
         <div class="modal-footer py-2">
@@ -385,7 +547,7 @@
 
 {% block extra_js %}
 <script>
-/* ── Sample rejection modal — wire up order ID ──────────────────────── */
+/* -- Sample rejection modal -- wire up order ID -- */
 (function(){
   var modal = document.getElementById('rejectSampleModal');
   if (!modal) return;
@@ -398,7 +560,7 @@
   });
 })();
 
-/* ── WebSocket live refresh — partial DOM swap ──────────────────────── */
+/* -- WebSocket live refresh -- partial DOM swap -- */
 (function(){
   var QID='lab-queue-live',ROOMS=['lab'],_busy=false,_pend=false,_fb;
   function isModal(){return !!document.querySelector('.modal.show');}
@@ -427,34 +589,45 @@
   });
   document.addEventListener('hidden.bs.modal',function(){if(_pend){_pend=false;swap();}});
   startFb();
-  // legacy stubs so rest of script doesn't error
-  function connect(){} function startFallback(){}
-  connect();
-  startFallback();
 })();
 
-/* ── Patient search (debounced AJAX) ─────────────────────────────────── */
+/* -- Patient search (debounced AJAX) -- */
 (function () {
   var input = document.getElementById('labPatientSearch');
   var results = document.getElementById('labSearchResults');
+  var clearBtn = document.getElementById('labSearchClear');
   if (!input || !results) return;
+
+  function clearSearch() {
+    input.value = '';
+    results.style.display = 'none';
+    results.innerHTML = '';
+  }
+  if (clearBtn) clearBtn.addEventListener('click', clearSearch);
 
   var timer;
   input.addEventListener('input', function () {
     clearTimeout(timer);
     var q = input.value.trim();
-    if (!q) { results.style.display = 'none'; results.innerHTML = ''; return; }
+    if (!q || q.length < 2) { results.style.display = 'none'; results.innerHTML = ''; return; }
     timer = setTimeout(function () {
       fetch('/patients/search/?q=' + encodeURIComponent(q), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (!data.length) { results.style.display = 'none'; results.innerHTML = ''; return; }
-        results.innerHTML = data.map(function (p) {
-          return '<a class="dropdown-item small py-2" href="/laboratory/?patient_id=' + encodeURIComponent(p.patient_id) + '">' +
-            '<strong>' + p.name + '</strong> <span class="text-muted ms-2">' + p.patient_id + '</span></a>';
-        }).join('');
+        results.innerHTML = '';
+        if (!data.length) {
+          results.innerHTML = '<div class="list-group-item text-muted small py-2">No patients found</div>';
+        } else {
+          data.forEach(function (p) {
+            var a = document.createElement('a');
+            a.className = 'list-group-item list-group-item-action py-2';
+            a.href = '/laboratory/list/?patient_id=' + encodeURIComponent(p.patient_id);
+            a.innerHTML = '<span class="fw-semibold">' + p.name + '</span> <span class="text-muted small ms-2">' + p.patient_id + '</span>';
+            results.appendChild(a);
+          });
+        }
         results.style.display = 'block';
       })
       .catch(function () { results.style.display = 'none'; });
@@ -462,7 +635,7 @@
   });
 
   input.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { results.style.display = 'none'; input.value = ''; }
+    if (e.key === 'Escape') clearSearch();
   });
 
   document.addEventListener('click', function (e) {
@@ -472,7 +645,7 @@
   });
 })();
 
-/* ── Lab bulk sample collection checkboxes ─────────────────────────── */
+/* -- Lab bulk sample collection checkboxes -- */
 (function () {
   var selectAll = document.getElementById('labChkAll');
   var bar       = document.getElementById('labBulkBar');
@@ -487,7 +660,6 @@
     if (checked.length > 0) {
       label.textContent = checked.length + ' order(s) selected';
       bar.classList.remove('d-none'); bar.classList.add('d-flex');
-      // Copy selected PKs into the bulk form
       form.querySelectorAll('input[name="order_ids"]').forEach(function(i){ i.remove(); });
       checked.forEach(function(chk) {
         var inp = document.createElement('input');

@@ -84,6 +84,15 @@ class Drug(AuditModel):
         max_length=5, blank=True, choices=ControlledSchedule.choices,
         help_text='WHO/national controlled drug schedule'
     )
+    ven_class = models.CharField(
+        max_length=1, blank=True,
+        help_text='V=Vital, E=Essential, N=Non-essential (WHO VEN analysis)'
+    )
+    location = models.ForeignKey(
+        'pharmacy.PharmacyLocation', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='drugs',
+        help_text='Primary pharmacy location for this drug'
+    )
 
     class Meta:
         ordering = ['name']
@@ -152,7 +161,12 @@ class Dispensing(AuditModel):
     """Dispensing record linked to a prescription"""
     dispensing_number = models.CharField(max_length=30, unique=True)
     patient = models.ForeignKey(
-        'patients.Patient', on_delete=models.PROTECT, related_name='dispensings'
+        'patients.Patient', on_delete=models.PROTECT, related_name='dispensings',
+        null=True, blank=True,
+    )
+    walk_in_name = models.CharField(
+        max_length=150, blank=True,
+        help_text='Customer name for walk-in OTC sales (no patient record needed)',
     )
     prescription = models.ForeignKey(
         'prescriptions.DrugPrescription', null=True, blank=True,
@@ -186,8 +200,14 @@ class Dispensing(AuditModel):
     class Meta:
         ordering = ['-dispensed_at']
 
+    @property
+    def customer_name(self):
+        if self.patient:
+            return self.patient.full_name
+        return self.walk_in_name or 'Walk-in Customer'
+
     def __str__(self):
-        return f"Dispensing {self.dispensing_number} - {self.patient.full_name}"
+        return f"Dispensing {self.dispensing_number} - {self.customer_name}"
 
     def save(self, *args, **kwargs):
         if not self.dispensing_number:
@@ -500,6 +520,10 @@ class PurchaseOrderItem(TimeStampedModel):
     def line_total(self):
         return self.quantity_ordered * self.unit_cost
 
+    @property
+    def remaining(self):
+        return self.quantity_ordered - self.quantity_received
+
     def __str__(self):
         return f"{self.drug.name} × {self.quantity_ordered} (PO {self.order.order_number})"
 
@@ -589,3 +613,293 @@ class RxLineUnavailable(AuditModel):
 
     def __str__(self):
         return f"{self.rx_item.drug_name} — {self.get_reason_display()}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HEAD PHARMACIST MODULE — WHO GPP, FIP, JCI MMU Standards
+# ══════════════════════════════════════════════════════════════════════════════
+
+class PharmacyLocation(AuditModel):
+    """
+    Multiple pharmacy service points within the facility.
+    WHO GPP 6.2 — adequate premises and equipment at each location.
+    """
+    name = models.CharField(max_length=100)
+    location_type = models.CharField(max_length=20, choices=[
+        ('MAIN', 'Main Pharmacy'),
+        ('SATELLITE', 'Satellite Pharmacy'),
+        ('WARD', 'Ward Pharmacy'),
+        ('THEATRE', 'Theatre Pharmacy'),
+        ('EMERGENCY', 'Emergency Pharmacy'),
+        ('OUTPATIENT', 'Outpatient Pharmacy'),
+    ])
+    address = models.TextField(blank=True, help_text='Physical location within facility')
+    phone_ext = models.CharField(max_length=20, blank=True)
+    is_active = models.BooleanField(default=True)
+    manager = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='managed_pharmacy_locations',
+    )
+    # WHO GPP 6.2 — storage condition tracking per location
+    storage_conditions = models.CharField(
+        max_length=20, blank=True,
+        choices=[
+            ('AMBIENT', 'Ambient (15-25 °C)'),
+            ('COOL', 'Cool Room (2-8 °C)'),
+            ('FROZEN', 'Frozen (< -15 °C)'),
+            ('CONTROLLED', 'Controlled Room (20-25 °C)'),
+        ],
+        help_text='Primary storage temperature range',
+    )
+    license_number = models.CharField(
+        max_length=50, blank=True,
+        help_text='Regulatory license/permit for this location',
+    )
+    has_controlled_access = models.BooleanField(
+        default=False, help_text='Restricted access for controlled substances',
+    )
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_location_type_display()})"
+
+
+# ── Inter-Store Transfers ───────────────────────────────────────────────────
+
+class TransferStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'Pending — Awaiting Acceptance'
+    IN_TRANSIT = 'IN_TRANSIT', 'In Transit'
+    RECEIVED  = 'RECEIVED',  'Received — Stock Updated'
+    REJECTED  = 'REJECTED',  'Rejected by Receiver'
+    CANCELLED = 'CANCELLED', 'Cancelled by Sender'
+
+
+class StockTransfer(AuditModel):
+    """
+    Inter-location stock movement.
+    WHO GPP — stock transfers between pharmacy locations must be documented.
+    """
+    transfer_number = models.CharField(max_length=30, unique=True)
+    from_location = models.ForeignKey(
+        PharmacyLocation, on_delete=models.PROTECT, related_name='transfers_out',
+    )
+    to_location = models.ForeignKey(
+        PharmacyLocation, on_delete=models.PROTECT, related_name='transfers_in',
+    )
+    status = models.CharField(max_length=15, choices=TransferStatus.choices, default=TransferStatus.PENDING)
+    initiated_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='transfers_initiated',
+    )
+    received_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transfers_received',
+    )
+    initiated_at = models.DateTimeField(default=timezone.now)
+    received_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    rejection_reason = models.TextField(blank=True)
+    # WHO GPP 3.4 — authorization and cold chain
+    approved_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transfers_approved',
+        help_text='Manager who authorized this transfer',
+    )
+    transport_conditions = models.CharField(
+        max_length=20, blank=True,
+        choices=[
+            ('AMBIENT', 'Ambient'),
+            ('COLD_CHAIN', 'Cold Chain (2-8 °C)'),
+            ('FROZEN', 'Frozen'),
+        ],
+        help_text='Temperature conditions during transit',
+    )
+
+    class Meta:
+        ordering = ['-initiated_at']
+
+    def __str__(self):
+        return f"{self.transfer_number}: {self.from_location} → {self.to_location}"
+
+    def save(self, *args, **kwargs):
+        if not self.transfer_number:
+            today = timezone.localdate()
+            count = StockTransfer.objects.filter(initiated_at__date=today).count() + 1
+            self.transfer_number = f"TRF-{today.strftime('%Y%m%d')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class StockTransferItem(TimeStampedModel):
+    """Individual drug line on a stock transfer."""
+    transfer = models.ForeignKey(StockTransfer, on_delete=models.CASCADE, related_name='items')
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='transfer_items')
+    stock_batch = models.ForeignKey(DrugStock, on_delete=models.PROTECT, related_name='transfer_items')
+    quantity = models.PositiveIntegerField()
+    quantity_received = models.PositiveIntegerField(default=0, help_text='Actual qty confirmed by receiver')
+
+    def __str__(self):
+        return f"{self.drug.name} × {self.quantity}"
+
+
+# ── Stock Exit (Non-Dispensing) ─────────────────────────────────────────────
+
+class StockExitReason(models.TextChoices):
+    EXPIRED     = 'EXPIRED',     'Expired — Destruction'
+    DAMAGED     = 'DAMAGED',     'Damaged / Broken'
+    DONATION    = 'DONATION',    'Donation / Sample'
+    THEFT       = 'THEFT',       'Theft / Loss'
+    RECALL      = 'RECALL',      'Manufacturer Recall'
+    QUALITY     = 'QUALITY',     'Quality Failure'
+    OTHER       = 'OTHER',       'Other'
+
+
+class StockExit(AuditModel):
+    """
+    Non-dispensing stock removal.
+    FIP Guidelines — all stock exits must be documented with reason and authorization.
+    """
+    exit_number = models.CharField(max_length=30, unique=True)
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='stock_exits')
+    stock_batch = models.ForeignKey(DrugStock, on_delete=models.PROTECT, related_name='stock_exits')
+    quantity = models.PositiveIntegerField()
+    reason = models.CharField(max_length=15, choices=StockExitReason.choices)
+    notes = models.TextField(blank=True)
+    authorized_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='stock_exits_authorized',
+    )
+    exit_date = models.DateTimeField(default=timezone.now)
+    disposal_method = models.CharField(max_length=100, blank=True, help_text='e.g. Incineration, Return to supplier')
+    witness = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stock_exits_witnessed',
+    )
+    # FIP / WHO GPP 2.3 — disposal documentation
+    waste_classification = models.CharField(
+        max_length=20, blank=True,
+        choices=[
+            ('HAZARDOUS', 'Hazardous Pharmaceutical Waste'),
+            ('NON_HAZARDOUS', 'Non-Hazardous Waste'),
+            ('CYTOTOXIC', 'Cytotoxic Waste'),
+            ('CONTROLLED', 'Controlled Substance Waste'),
+        ],
+    )
+    destruction_certificate = models.CharField(
+        max_length=100, blank=True,
+        help_text='Certificate of Destruction reference number',
+    )
+    financial_impact = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text='Value of destroyed stock (cost price × quantity)',
+    )
+
+    class Meta:
+        ordering = ['-exit_date']
+
+    def __str__(self):
+        return f"{self.exit_number}: {self.drug.name} × {self.quantity} ({self.get_reason_display()})"
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        if not self.exit_number:
+            today = timezone.localdate()
+            count = StockExit.objects.filter(exit_date__date=today).count() + 1
+            self.exit_number = f"EXIT-{today.strftime('%Y%m%d')}-{count:04d}"
+        super().save(*args, **kwargs)
+        # Deduct from stock on first save
+        if is_new and self.stock_batch:
+            self.stock_batch.quantity_remaining = max(
+                0, self.stock_batch.quantity_remaining - self.quantity
+            )
+            self.stock_batch.save(update_fields=['quantity_remaining'])
+
+
+# ── Drug Recall Management ──────────────────────────────────────────────────
+
+class RecallStatus(models.TextChoices):
+    ACTIVE      = 'ACTIVE',      'Active — Quarantine in Effect'
+    COMPLETED   = 'COMPLETED',   'Completed — All Stock Removed'
+    CANCELLED   = 'CANCELLED',   'Cancelled — False Alarm'
+
+
+class DrugRecall(AuditModel):
+    """
+    Manufacturer or regulatory drug recall.
+    JCI MMU.5.1 — medication recall process.
+    """
+    recall_number = models.CharField(max_length=30, unique=True)
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='recalls')
+    batch_numbers = models.TextField(help_text='Comma-separated batch numbers affected')
+    reason = models.TextField(help_text='Reason for recall (contamination, labeling error, etc.)')
+    severity = models.CharField(max_length=10, choices=[
+        ('CLASS_I', 'Class I — Life-threatening'),
+        ('CLASS_II', 'Class II — Temporary health risk'),
+        ('CLASS_III', 'Class III — Unlikely to cause harm'),
+    ])
+    recall_source = models.CharField(max_length=100, help_text='Manufacturer, WHO, MINSANTE, etc.')
+    recall_date = models.DateField(default=timezone.localdate)
+    status = models.CharField(max_length=15, choices=RecallStatus.choices, default=RecallStatus.ACTIVE)
+    quarantined_qty = models.PositiveIntegerField(default=0, help_text='Total units quarantined')
+    patients_affected = models.PositiveIntegerField(default=0, help_text='Patients who received recalled batch')
+    reported_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='drug_recalls_reported',
+    )
+    notes = models.TextField(blank=True)
+    # JCI MMU.5.1 — regulatory and patient safety tracking
+    recall_type = models.CharField(
+        max_length=20, blank=True,
+        choices=[
+            ('MANUFACTURER', 'Manufacturer Initiated'),
+            ('REGULATORY', 'Regulatory Authority (MINSANTE/WHO)'),
+            ('HOSPITAL', 'Hospital Initiated (Internal QC)'),
+        ],
+    )
+    regulatory_reference = models.CharField(
+        max_length=100, blank=True,
+        help_text='FDA/MINSANTE/WHO reference number',
+    )
+    patients_notified = models.BooleanField(
+        default=False,
+        help_text='Have affected patients been contacted?',
+    )
+    corrective_action = models.TextField(
+        blank=True,
+        help_text='Corrective/preventive action taken or planned',
+    )
+
+    class Meta:
+        ordering = ['-recall_date']
+
+    def __str__(self):
+        return f"RECALL-{self.recall_number}: {self.drug.name} ({self.get_severity_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.recall_number:
+            today = timezone.localdate()
+            count = DrugRecall.objects.filter(recall_date__year=today.year).count() + 1
+            self.recall_number = f"RCL-{today.year}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    def get_affected_batches(self):
+        """Return DrugStock queryset for batches listed in this recall."""
+        batch_list = [b.strip() for b in self.batch_numbers.split(',') if b.strip()]
+        return DrugStock.objects.filter(
+            drug=self.drug, batch_number__in=batch_list, is_deleted=False
+        )
+
+    def get_affected_patients(self):
+        """Return patients who received any of the recalled batches."""
+        affected_batches = self.get_affected_batches()
+        from apps.patients.models import Patient
+        patient_ids = DispensingItem.objects.filter(
+            stock_batch__in=affected_batches
+        ).values_list('dispensing__patient_id', flat=True).distinct()
+        return Patient.objects.filter(id__in=patient_ids)
+
+
+# ── Drug VEN Classification ─────────────────────────────────────────────────
+
+class VENClassification(models.TextChoices):
+    VITAL     = 'V', 'Vital — Life-saving, always in stock'
+    ESSENTIAL = 'E', 'Essential — Important but alternatives exist'
+    NON_ESSENTIAL = 'N', 'Non-essential — Nice to have'

@@ -1,0 +1,197 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Recall {{ recall.recall_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">
+      <i class="bi bi-exclamation-triangle me-2 text-primary"></i>Recall {{ recall.recall_number }}
+    </h1>
+    <div class="text-muted small">
+      {{ recall.drug.name }}{% if recall.drug.strength %} ({{ recall.drug.strength }}){% endif %}
+    </div>
+  </div>
+  <a href="{% url 'pharmacy:recall_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to List
+  </a>
+</div>
+
+{# ── Status & Severity Badges ── #}
+<div class="mb-4 d-flex gap-2 flex-wrap">
+  <span class="badge fs-6
+    {% if recall.status == 'ACTIVE' %}bg-danger
+    {% elif recall.status == 'COMPLETED' %}bg-success
+    {% elif recall.status == 'CANCELLED' %}bg-secondary
+    {% else %}bg-light text-dark border{% endif %}">
+    {{ recall.get_status_display }}
+  </span>
+  <span class="badge fs-6
+    {% if recall.severity == 'CLASS_I' %}bg-danger
+    {% elif recall.severity == 'CLASS_II' %}bg-warning text-dark
+    {% elif recall.severity == 'CLASS_III' %}bg-info text-dark
+    {% else %}bg-light text-dark border{% endif %}">
+    {{ recall.get_severity_display }}
+  </span>
+</div>
+
+{# ── Recall Information ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-light border-bottom fw-semibold">
+    <i class="bi bi-info-circle me-2 text-primary"></i>Recall Information
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Drug</div>
+        <div class="fw-bold">{{ recall.drug.name }}</div>
+        {% if recall.drug.strength %}<div class="text-muted small">{{ recall.drug.strength }}</div>{% endif %}
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Batch Numbers</div>
+        <div class="fw-bold">{{ recall.batch_numbers|default:"—" }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Reason</div>
+        <div>{{ recall.reason|default:"—" }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Recall Source</div>
+        <div>{{ recall.recall_source|default:"—" }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Recall Type</div>
+        <div>{{ recall.get_recall_type_display|default:"—" }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Regulatory Reference</div>
+        <div>{{ recall.regulatory_reference|default:"—" }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Date Reported</div>
+        <div>{{ recall.created_at|date:"d M Y, H:i" }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Quarantined Quantity</div>
+        <div class="fw-bold fs-5 text-danger">{{ recall.quarantined_quantity|default:0 }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Patients Affected</div>
+        <div class="fw-bold fs-5 text-warning">{{ recall.patients_affected|default:0 }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="text-muted small">Patients Notified</div>
+        <div>
+          {% if recall.patients_notified %}
+            <span class="badge bg-success"><i class="bi bi-check-lg me-1"></i>Yes</span>
+          {% else %}
+            <span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>Pending</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if recall.corrective_action %}
+      <div class="col-12">
+        <div class="text-muted small">Corrective / Preventive Action</div>
+        <div class="border rounded p-2 bg-light">{{ recall.corrective_action }}</div>
+      </div>
+      {% endif %}
+      {% if recall.notes %}
+      <div class="col-12">
+        <div class="text-muted small">Notes</div>
+        <div class="fst-italic">{{ recall.notes }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── Affected Batches ── #}
+{% if affected_batches %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-light border-bottom fw-semibold">
+    <i class="bi bi-boxes me-2 text-primary"></i>Affected Batches
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Batch #</th>
+          <th>Expiry Date</th>
+          <th class="text-end">Qty Remaining</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for batch in affected_batches %}
+        <tr>
+          <td class="fw-semibold">{{ batch.batch_number }}</td>
+          <td class="{% if batch.is_expired %}text-danger{% endif %}">
+            {{ batch.expiry_date|date:"d M Y" }}
+            {% if batch.is_expired %}<span class="badge bg-danger ms-1">Expired</span>{% endif %}
+          </td>
+          <td class="text-end fw-bold">{{ batch.quantity_remaining }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Affected Patients ── #}
+{% if affected_patients %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-light border-bottom fw-semibold">
+    <i class="bi bi-people me-2 text-primary"></i>Affected Patients
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Patient ID</th>
+          <th>Full Name</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for patient in affected_patients %}
+        <tr>
+          <td class="text-muted">{{ patient.patient_id }}</td>
+          <td>
+            <a href="{% url 'patients:detail' patient_id=patient.pk %}" class="fw-semibold text-decoration-none">
+              {{ patient.full_name }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Action Buttons (only when ACTIVE) ── #}
+{% if recall.status == 'ACTIVE' %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-light border-bottom fw-semibold">
+    <i class="bi bi-gear me-2 text-primary"></i>Actions
+  </div>
+  <div class="card-body d-flex gap-2 flex-wrap">
+    <form method="post" action="{% url 'pharmacy:recall_detail' recall_id=recall.pk %}"
+          onsubmit="return confirm('Mark this recall as completed?');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="complete">
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-check-circle me-1"></i>Complete Recall
+      </button>
+    </form>
+    <form method="post" action="{% url 'pharmacy:recall_detail' recall_id=recall.pk %}"
+          onsubmit="return confirm('Cancel this recall? This cannot be undone.');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="cancel">
+      <button type="submit" class="btn btn-outline-secondary">
+        <i class="bi bi-x-circle me-1"></i>Cancel Recall
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

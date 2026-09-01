@@ -2,10 +2,10 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
-from django.db.models import Q, Sum, F, Value, IntegerField
+from django.db.models import Q, Sum, F, Value, Max, Count, IntegerField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from .models import (
     Drug, DrugStock, Dispensing, DispensingItem, DispensingStatus,
     StockAdjustment, AdjustmentReason,
@@ -15,6 +15,8 @@ from .models import (
     Supplier, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus,
     DispensingReturn, DispensingReturnReason,
     RxLineUnavailable, UnavailableReason,
+    PharmacyLocation, StockTransfer, StockTransferItem, TransferStatus,
+    StockExit, StockExitReason, DrugRecall, RecallStatus,
 )
 from .forms import (
     DrugCreateForm, AddStockForm, DispensingItemForm,
@@ -28,7 +30,8 @@ def _can_access_pharmacy(user):
     """Pharmacy, dispensing, and admin roles."""
     from apps.accounts.models import UserRole
     return user.role in (
-        UserRole.PHARMACIST, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.PHARMACIST, UserRole.HEAD_PHARMACIST,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.ADMIN,
     ) or user.can_dispense_pharmacy()
 
@@ -172,10 +175,90 @@ def pharmacy_dashboard(request):
         notes__icontains='Bought elsewhere',
     ).count()
 
-    # OTC sales today
-    otc_today = Dispensing.objects.filter(
-        is_otc=True, is_deleted=False, dispensed_at__date=today,
+    # OTC + confirmed at cashier — single query on Dispensing
+    _disp_counts = Dispensing.objects.filter(is_deleted=False).aggregate(
+        otc_today=Count('id', filter=Q(is_otc=True, dispensed_at__date=today)),
+        confirmed_at_cashier=Count('id', filter=Q(status=DispensingStatus.CONFIRMED)),
+    )
+    otc_today = _disp_counts['otc_today']
+    confirmed_at_cashier = _disp_counts['confirmed_at_cashier']
+
+    # Stock inventory value (selling price × remaining qty, non-expired only)
+    stock_value = DrugStock.objects.filter(
+        is_deleted=False, expiry_date__gte=today, quantity_remaining__gt=0,
+    ).aggregate(
+        total=Sum(F('quantity_remaining') * F('drug__selling_price'))
+    )['total'] or 0
+
+    # Top 5 dispensed drugs today
+    top_drugs_today = list(
+        DispensingItem.objects.filter(
+            dispensing__dispensed_at__date=today,
+            dispensing__is_deleted=False,
+            drug__isnull=False,
+        ).values('drug__name').annotate(
+            total_qty=Sum('quantity_dispensed'),
+            total_val=Sum('subtotal'),
+        ).order_by('-total_qty')[:5]
+    )
+
+    # Average wait time: Rx created → dispensed (completed dispensings today)
+    from django.db.models import Avg, ExpressionWrapper, DurationField
+    avg_wait_raw = Dispensing.objects.filter(
+        status=DispensingStatus.DISPENSED,
+        dispensed_at__date=today,
+        is_deleted=False,
+        prescription__isnull=False,
+    ).annotate(
+        wait=ExpressionWrapper(
+            F('dispensed_at') - F('prescription__created_at'),
+            output_field=DurationField(),
+        )
+    ).aggregate(avg_wait=Avg('wait'))['avg_wait']
+    avg_wait_minutes = round(avg_wait_raw.total_seconds() / 60) if avg_wait_raw else None
+
+    # Fulfilment + status counts — single aggregate instead of 4 separate count() calls
+    import json
+    from datetime import timedelta
+    from django.db.models.functions import TruncDate
+    _today_agg = today_dispensings.aggregate(
+        today_count=Count('id'),
+        today_completed=Count('id', filter=Q(status=DispensingStatus.DISPENSED)),
+        today_cancelled=Count('id', filter=Q(status=DispensingStatus.CANCELLED)),
+    )
+    today_count = _today_agg['today_count']
+    today_completed = _today_agg['today_completed']
+    today_cancelled = _today_agg['today_cancelled']
+    today_total_resolved = today_completed + declined_today + today_cancelled
+    fulfilment_rate = round(today_completed / today_total_resolved * 100) if today_total_resolved else 100
+
+    # 7-day dispensing trend for chart — single query
+    week_ago = today - timedelta(days=6)
+    _trend_raw = dict(
+        Dispensing.objects.filter(
+            dispensed_at__date__gte=week_ago, is_deleted=False,
+        ).annotate(day=TruncDate('dispensed_at'))
+        .values_list('day').annotate(c=Count('id')).values_list('day', 'c')
+    )
+    daily_trend = []
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        daily_trend.append({'date': d.strftime('%a'), 'count': _trend_raw.get(d, 0)})
+    daily_trend_json = json.dumps({
+        'labels': [d['date'] for d in daily_trend],
+        'data': [d['count'] for d in daily_trend],
+    })
+
+    # Status breakdown for doughnut chart — single query
+    pending_count = Dispensing.objects.filter(
+        status__in=[DispensingStatus.PENDING, DispensingStatus.PARTIAL],
+        created_at__date=today, is_deleted=False,
     ).count()
+    status_chart_json = json.dumps({
+        'labels': ['Dispensed', 'Pending', 'At Cashier', 'Cancelled', 'Declined'],
+        'data': [today_completed, pending_count, confirmed_at_cashier, today_cancelled, declined_today],
+        'colors': ['#16a34a', '#f59e0b', '#3b82f6', '#6b7280', '#dc2626'],
+    })
 
     context = {
         'low_stock_count': len(low_stock_drugs),
@@ -185,13 +268,9 @@ def pharmacy_dashboard(request):
         'expiring_warning': expiring_warning,
         'expiring_notice': expiring_notice,
         'expired_in_stock': expired_in_stock,
-        'today_dispensings': today_dispensings.count(),
+        'today_dispensings': today_count,
         'today_revenue': pharmacy_billed_today,
-        'pending_dispensings': Dispensing.objects.filter(
-            status__in=[DispensingStatus.PENDING, DispensingStatus.PARTIAL],
-            created_at__date=today,
-            is_deleted=False,
-        ).count(),
+        'pending_dispensings': pending_count,
         'total_drugs': Drug.objects.filter(is_active=True, is_deleted=False).count(),
         'pharmacy_work_orders': pharmacy_work_orders,
         'waiting_visits': waiting_visits,
@@ -199,6 +278,13 @@ def pharmacy_dashboard(request):
         'declined_today': declined_today,
         'unavailable_today': unavailable_today,
         'otc_today': otc_today,
+        'confirmed_at_cashier': confirmed_at_cashier,
+        'stock_value': stock_value,
+        'top_drugs_today': top_drugs_today,
+        'avg_wait_minutes': avg_wait_minutes,
+        'fulfilment_rate': fulfilment_rate,
+        'daily_trend_json': daily_trend_json,
+        'status_chart_json': status_chart_json,
     }
     return render(request, 'pharmacy/dashboard.html', context)
 
@@ -215,7 +301,6 @@ def pharmacy_stats_view(request):
 
     import json, calendar
     from datetime import date as _date
-    from django.db.models import Count, Sum, Q as _Q
 
     today = timezone.localdate()
     try:
@@ -240,17 +325,21 @@ def pharmacy_stats_view(request):
         dispensing__dispensed_at__date__lte=month_end,
     )
 
-    total_dispensings  = base.count()
+    # Single aggregate for all status counts + revenue (replaces 5 separate queries)
+    _stats_agg = base.aggregate(
+        total_dispensings=Count('id'),
+        dispensed_count=Count('id', filter=Q(status=DispensingStatus.DISPENSED)),
+        partial_count=Count('id', filter=Q(status=DispensingStatus.PARTIAL)),
+        cancelled_count=Count('id', filter=Q(status=DispensingStatus.CANCELLED)),
+        revenue=Sum('total_amount', filter=Q(status=DispensingStatus.DISPENSED)),
+    )
+    total_dispensings  = _stats_agg['total_dispensings']
+    dispensed_count    = _stats_agg['dispensed_count']
+    partial_count      = _stats_agg['partial_count']
+    cancelled_count    = _stats_agg['cancelled_count']
+    revenue            = _stats_agg['revenue'] or 0
     total_items        = base_items.count()
-    dispensed_count    = base.filter(status=DispensingStatus.DISPENSED).count()
-    partial_count      = base.filter(status=DispensingStatus.PARTIAL).count()
-    cancelled_count    = base.filter(status=DispensingStatus.CANCELLED).count()
     completion_rate    = round(dispensed_count / total_dispensings * 100, 1) if total_dispensings else 0
-
-    # Revenue (total_amount on dispensed records)
-    revenue = base.filter(status=DispensingStatus.DISPENSED).aggregate(
-        total=Sum('total_amount')
-    )['total'] or 0
 
     # Top 15 drugs dispensed — group by drug FK + custom name
     top_drugs_raw = list(
@@ -267,13 +356,20 @@ def pharmacy_stats_view(request):
             'qty': d['qty'] or 0,
         })
 
-    # Daily volume (last 14 days)
+    # Daily volume (last 14 days) — single query instead of 14
     from datetime import timedelta
+    from django.db.models.functions import TruncDate
+    _14d_ago = today - timedelta(days=13)
+    _daily_raw = dict(
+        Dispensing.objects.filter(
+            is_deleted=False, dispensed_at__date__gte=_14d_ago,
+        ).annotate(day=TruncDate('dispensed_at'))
+        .values_list('day').annotate(c=Count('id')).values_list('day', 'c')
+    )
     daily_volume = []
     for i in range(13, -1, -1):
         d = today - timedelta(days=i)
-        cnt = Dispensing.objects.filter(is_deleted=False, dispensed_at__date=d).count()
-        daily_volume.append({'date': d.strftime('%d %b'), 'count': cnt})
+        daily_volume.append({'date': d.strftime('%d %b'), 'count': _daily_raw.get(d, 0)})
     daily_json = json.dumps({'labels': [d['date'] for d in daily_volume], 'data': [d['count'] for d in daily_volume]})
 
     # Gender breakdown (from patient)
@@ -326,38 +422,41 @@ def pharmacy_stats_view(request):
     # WHO Core Drug Use Indicators (Management Sciences for Health / WHO 1993)
     avg_items_per_rx = round(total_items / total_dispensings, 2) if total_dispensings else 0
 
-    # % antibiotic dispensings (WHO target: < 30%)
-    antibiotic_items = base_items.filter(drug__category='ANTIBIOTIC').count()
+    # WHO/JCI item-level indicators — single aggregate (replaces 2 separate count queries)
+    _item_agg = base_items.aggregate(
+        antibiotic_items=Count('id', filter=Q(drug__category='ANTIBIOTIC')),
+        controlled_items=Count('id', filter=Q(drug__is_controlled=True)),
+    )
+    antibiotic_items = _item_agg['antibiotic_items']
     antibiotic_rate = round(antibiotic_items / total_items * 100, 1) if total_items else 0
-
-    # % controlled drug dispensings (JCI MMU.3.1)
-    controlled_items = base_items.filter(drug__is_controlled=True).count()
+    controlled_items = _item_agg['controlled_items']
     controlled_rate = round(controlled_items / total_items * 100, 1) if total_items else 0
 
-    # Rx rejection/decline rate (JCI quality indicator)
+    # Rx rejection/decline rate (JCI quality indicator) — single aggregate
     try:
         from apps.prescriptions.models import DrugPrescription
-        total_rx = DrugPrescription.objects.filter(
+        _rx_agg = DrugPrescription.objects.filter(
             is_deleted=False,
             prescription_date__date__gte=month_start,
             prescription_date__date__lte=month_end,
-        ).count()
-        declined_rx = DrugPrescription.objects.filter(
-            is_deleted=False,
-            prescription_date__date__gte=month_start,
-            prescription_date__date__lte=month_end,
-            notes__icontains='Bought elsewhere',
-        ).count()
+        ).aggregate(
+            total_rx=Count('id'),
+            declined_rx=Count('id', filter=Q(notes__icontains='Bought elsewhere')),
+        )
+        total_rx = _rx_agg['total_rx']
+        declined_rx = _rx_agg['declined_rx']
         rx_decline_rate = round(declined_rx / total_rx * 100, 1) if total_rx else 0
     except Exception:
         total_rx = declined_rx = rx_decline_rate = 0
 
-    # Verified dispensings rate (JCI MMU.6.1 pharmacist sign-off)
-    verified_count = base.filter(verified_by_pharmacist__isnull=False).count()
+    # Verified + counseled — single aggregate (replaces 2 separate count queries)
+    _qual_agg = base.aggregate(
+        verified_count=Count('id', filter=Q(verified_by_pharmacist__isnull=False)),
+        counseled_count=Count('id', filter=Q(counseling_given=True)),
+    )
+    verified_count = _qual_agg['verified_count']
     verification_rate = round(verified_count / dispensed_count * 100, 1) if dispensed_count else 0
-
-    # Counseled patients rate (JCI MMU.6.1)
-    counseled_count = base.filter(counseling_given=True).count()
+    counseled_count = _qual_agg['counseled_count']
     counseling_rate = round(counseled_count / dispensed_count * 100, 1) if dispensed_count else 0
 
     # Revenue by tier
@@ -401,8 +500,13 @@ def pharmacy_stats_view(request):
         'data':   [c['qty']   for c in category_stats],
     })
 
-    # Low stock snapshot
-    low_stock_drugs = [d for d in Drug.objects.filter(is_active=True, is_deleted=False) if d.needs_reorder]
+    # Low stock snapshot — single annotated query (not N+1 via needs_reorder property)
+    _stock_q = Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=today)
+    low_stock_drugs = list(
+        Drug.objects.filter(is_active=True, is_deleted=False)
+        .annotate(_stock=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField())))
+        .filter(_stock__lte=F('reorder_level'))
+    )
 
     # Month nav
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
@@ -459,16 +563,23 @@ def drug_list(request):
         return HttpResponseForbidden()
     q = request.GET.get('q', '')
     category = request.GET.get('category', '')
-    drugs = Drug.objects.filter(is_deleted=False)
+    drugs = Drug.objects.filter(is_deleted=False).only(
+        'id', 'name', 'generic_name', 'brand_name', 'strength', 'form',
+        'category', 'selling_price', 'reorder_level', 'is_active', 'is_controlled',
+    )
     if q:
         drugs = drugs.filter(Q(name__icontains=q) | Q(generic_name__icontains=q) | Q(brand_name__icontains=q))
     if category:
         drugs = drugs.filter(category=category)
     drugs = drugs.order_by('name')
+    # Paginate — 50 per page
+    from django.core.paginator import Paginator
+    paginator = Paginator(drugs, 50)
+    page = paginator.get_page(request.GET.get('page', 1))
     from .models import DrugCategory
     return render(request, 'pharmacy/drug_list.html', {
-        'drugs': drugs, 'search': q, 'category': category,
-        'categories': DrugCategory.choices,
+        'drugs': page, 'search': q, 'category': category,
+        'categories': DrugCategory.choices, 'paginator': paginator, 'page_obj': page,
     })
 
 
@@ -629,11 +740,28 @@ def add_dispensing_item(request, dispensing_id):
 def drug_search_ajax(request):
     """Search drugs by name/generic name — returns JSON for autocomplete."""
     q = request.GET.get('q', '').strip()
-    drugs = Drug.objects.filter(is_active=True, is_deleted=False)
+    base = Drug.objects.filter(is_active=True, is_deleted=False)
     if q:
-        drugs = drugs.filter(
+        drugs = base.filter(
             Q(name__icontains=q) | Q(generic_name__icontains=q) | Q(brand_name__icontains=q)
         )
+        # Fallback: if no exact match, try each word individually (AND)
+        if not drugs.exists():
+            words = q.split()
+            if len(words) > 1:
+                qs = base
+                for w in words:
+                    qs = qs.filter(
+                        Q(name__icontains=w) | Q(generic_name__icontains=w) | Q(brand_name__icontains=w)
+                    )
+                drugs = qs
+            # Final fallback: try just the first word
+            if not drugs.exists() and len(words) >= 1:
+                drugs = base.filter(
+                    Q(name__icontains=words[0]) | Q(generic_name__icontains=words[0]) | Q(brand_name__icontains=words[0])
+                )
+    else:
+        drugs = base
     drugs = drugs.order_by('name')[:25]
     return JsonResponse({'drugs': [
         {
@@ -797,6 +925,69 @@ def remove_dispensing_item_ajax(request, dispensing_id, item_id):
         dispensing.status = DispensingStatus.PENDING
     dispensing.save(update_fields=['total_amount', 'status'])
     return JsonResponse({'success': True, 'total': str(total)})
+
+
+@login_required
+def edit_dispensing_item_ajax(request, dispensing_id, item_id):
+    """AJAX POST: edit qty, unit_price, or instructions on an open dispensing item."""
+    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    if not (request.user.can_dispense_pharmacy() or request.user == dispensing.dispensed_by):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
+        return JsonResponse({'error': 'Cannot modify a completed dispensing'}, status=400)
+    item = get_object_or_404(DispensingItem, id=item_id, dispensing=dispensing)
+
+    from decimal import Decimal, InvalidOperation
+    new_qty = request.POST.get('qty')
+    new_price = request.POST.get('unit_price')
+    new_instr = request.POST.get('instructions')
+
+    old_qty = item.quantity_dispensed
+
+    if new_qty is not None:
+        try:
+            new_qty = int(new_qty)
+            if new_qty < 1:
+                return JsonResponse({'error': 'Quantity must be at least 1'}, status=400)
+        except ValueError:
+            return JsonResponse({'error': 'Invalid quantity'}, status=400)
+        # Adjust stock: restore old qty, deduct new qty
+        if item.stock_batch:
+            item.stock_batch.quantity_remaining += old_qty
+            if new_qty > item.stock_batch.quantity_remaining:
+                item.stock_batch.quantity_remaining -= old_qty  # revert
+                return JsonResponse({'error': f'Only {item.stock_batch.quantity_remaining + old_qty - old_qty} in stock'}, status=400)
+            item.stock_batch.quantity_remaining -= new_qty
+            item.stock_batch.save(update_fields=['quantity_remaining'])
+        item.quantity_dispensed = new_qty
+
+    if new_price is not None:
+        try:
+            item.unit_price = Decimal(new_price)
+        except (InvalidOperation, ValueError):
+            return JsonResponse({'error': 'Invalid price'}, status=400)
+
+    if new_instr is not None:
+        item.instructions = new_instr.strip()
+
+    item.save()
+
+    total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
+    dispensing.total_amount = total
+    dispensing.save(update_fields=['total_amount'])
+
+    return JsonResponse({
+        'success': True,
+        'item': {
+            'id': str(item.pk),
+            'qty': item.quantity_dispensed,
+            'unit_price': str(item.unit_price),
+            'subtotal': str(item.subtotal),
+            'instructions': item.instructions,
+        },
+        'total': str(total),
+        'item_count': dispensing.items.count(),
+    })
 
 
 @login_required
@@ -1281,13 +1472,33 @@ def pilferage_dashboard(request):
 def dispensing_receipt(request, dispensing_id):
     """Printable dispensing receipt — thermal POS format matching billing desk."""
     dispensing = get_object_or_404(
-        Dispensing.objects.prefetch_related('items__drug', 'items__stock_batch'),
+        Dispensing.objects.select_related('prescription').prefetch_related(
+            'items__drug', 'items__stock_batch',
+        ),
         id=dispensing_id, is_deleted=False,
     )
     balance_due = max(dispensing.total_amount - dispensing.amount_paid, 0)
+    # Attach prescription details (dose, frequency, admin times) to each item
+    from apps.core.templatetags.ehr_tags import _FREQ_TIME_SLOTS
+    items_with_rx = []
+    rx_by_name = {}
+    if dispensing.prescription:
+        for rx_item in dispensing.prescription.items.all():
+            rx_by_name[rx_item.drug_name.strip().lower()] = rx_item
+    for item in dispensing.items.all():
+        drug_name = (item.drug.name if item.drug else item.custom_drug_name).strip().lower()
+        rx = rx_by_name.get(drug_name)
+        item.rx_dose = rx.dose if rx else ''
+        item.rx_frequency = rx.frequency if rx else ''
+        item.rx_duration = rx.duration if rx else ''
+        item.rx_route = rx.get_route_display() if rx else ''
+        item.rx_eye = (rx.get_eye_display() if rx and rx.eye and rx.eye != 'NA' else '')
+        item.rx_times = _FREQ_TIME_SLOTS.get(rx.frequency.strip(), '') if rx and rx.frequency else ''
+        items_with_rx.append(item)
     return render(request, 'pharmacy/dispensing_receipt.html', {
         'dispensing': dispensing,
         'balance_due': balance_due,
+        'items_with_rx': items_with_rx,
     })
 
 
@@ -1481,18 +1692,19 @@ def direct_sale(request):
 
     if request.method == 'POST':
         patient_id = request.POST.get('patient_id', '').strip()
+        walk_in_name = request.POST.get('walk_in_name', '').strip()
         patient = None
         if patient_id:
             patient = Patient.objects.filter(id=patient_id, is_deleted=False).first()
 
-        # For anonymous walk-ins we still need a patient record — create a placeholder
-        # OR use an existing "Walk-in" patient. For now require patient selection.
-        if not patient:
-            messages.error(request, 'Please select a patient for the sale record.')
+        # Walk-in: either a registered patient OR just a name
+        if not patient and not walk_in_name:
+            messages.error(request, 'Please select a patient or enter a walk-in customer name.')
             return redirect('pharmacy:direct_sale')
 
         dispensing = Dispensing.objects.create(
             patient=patient,
+            walk_in_name=walk_in_name if not patient else '',
             prescription=None,
             dispensed_by=request.user,
             is_otc=True,
@@ -1501,7 +1713,7 @@ def direct_sale(request):
         )
         messages.success(
             request,
-            f'OTC sale {dispensing.dispensing_number} created. Add items below.'
+            f'OTC sale {dispensing.dispensing_number} created for {dispensing.customer_name}. Add items below.'
         )
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
@@ -1591,7 +1803,6 @@ def unavailable_lines_view(request):
     lines = qs.order_by('-created_at')[:200]
 
     # Summary counts by reason
-    from django.db.models import Count
     reason_summary = list(
         qs.values('reason').annotate(count=Count('id')).order_by('-count')
     )
@@ -1917,9 +2128,9 @@ def drug_expiry_alerts(request):
     expiring_30       = base_qs.filter(expiry_date__gte=today, expiry_date__lte=today + timezone.timedelta(days=30)).order_by('expiry_date')
     expiring_60       = base_qs.filter(expiry_date__gt=today + timezone.timedelta(days=30), expiry_date__lte=today + timezone.timedelta(days=60)).order_by('expiry_date')
     expiring_90       = base_qs.filter(expiry_date__gt=today + timezone.timedelta(days=60), expiry_date__lte=today + timezone.timedelta(days=90)).order_by('expiry_date')
-    low_stock         = [d for d in Drug.objects.filter(is_active=True, is_deleted=False).annotate(
-        stock_total=Coalesce(Sum(F('stock_items__quantity_remaining'), filter=Q(stock_items__is_deleted=False)), Value(0), output_field=IntegerField())
-    ) if d.stock_total <= d.reorder_level]
+    low_stock         = list(Drug.objects.filter(is_active=True, is_deleted=False).annotate(
+        stock_total=Coalesce(Sum('stock_items__quantity_remaining', filter=Q(stock_items__is_deleted=False)), Value(0, output_field=IntegerField()))
+    ).filter(stock_total__lte=F('reorder_level')))
 
     return render(request, 'pharmacy/expiry_alerts.html', {
         'expired': expired,
@@ -2186,16 +2397,35 @@ def dispensing_label_pdf(request, dispensing_id):
     if not (request.user.can_dispense_pharmacy() or request.user.is_super_admin):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
+    dispensing = get_object_or_404(
+        Dispensing.objects.select_related('prescription'),
+        id=dispensing_id, is_deleted=False,
+    )
     from apps.accounts.models import HospitalConfig
     config = HospitalConfig.get()
+    # Attach rx data to each item for label printing
+    from apps.core.templatetags.ehr_tags import _FREQ_TIME_SLOTS
+    items = list(dispensing.items.select_related('drug', 'stock_batch').all())
+    rx_by_name = {}
+    if dispensing.prescription:
+        for rx_item in dispensing.prescription.items.all():
+            rx_by_name[rx_item.drug_name.strip().lower()] = rx_item
+    for item in items:
+        drug_name = (item.drug.name if item.drug else item.custom_drug_name).strip().lower()
+        rx = rx_by_name.get(drug_name)
+        item.rx_dose = rx.dose if rx else ''
+        item.rx_frequency = rx.frequency if rx else ''
+        item.rx_duration = rx.duration if rx else ''
+        item.rx_route = rx.get_route_display() if rx else ''
+        item.rx_eye = (rx.get_eye_display() if rx and rx.eye and rx.eye != 'NA' else '')
+        item.rx_times = _FREQ_TIME_SLOTS.get(rx.frequency.strip(), '') if rx and rx.frequency else ''
     from django.template.loader import render_to_string
     from django.http import HttpResponse
     try:
         import weasyprint
         html = render_to_string('pharmacy/dispensing_label.html', {
             'dispensing': dispensing,
-            'items': dispensing.items.select_related('drug', 'stock_batch').all(),
+            'items': items,
             'config': config,
         }, request=request)
         pdf = weasyprint.HTML(string=html).write_pdf()
@@ -2545,4 +2775,544 @@ def drug_bulk_import(request):
         'skipped': skipped,
         'errors': errors,
         'total_rows': len(rows),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HEAD PHARMACIST MODULE — Administration & Management
+# WHO GPP, FIP Guidelines, JCI MMU Standards
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _is_head_pharmacist(user):
+    from apps.accounts.models import UserRole
+    return user.role in (
+        UserRole.HEAD_PHARMACIST, UserRole.SUPER_ADMIN,
+        UserRole.ADMIN_DIRECTOR, UserRole.CEO,
+    )
+
+
+# ── Pharmacy Locations ─────────────────────────────────────────────────────
+
+@login_required
+def location_list(request):
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    locations = PharmacyLocation.objects.filter(is_deleted=False)
+    return render(request, 'pharmacy/location_list.html', {'locations': locations})
+
+
+@login_required
+def location_create(request):
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    if request.method == 'POST':
+        loc = PharmacyLocation(
+            name=request.POST.get('name', ''),
+            location_type=request.POST.get('location_type', 'MAIN'),
+            address=request.POST.get('address', ''),
+            phone_ext=request.POST.get('phone_ext', ''),
+            storage_conditions=request.POST.get('storage_conditions', ''),
+            license_number=request.POST.get('license_number', ''),
+            has_controlled_access=request.POST.get('has_controlled_access') == 'on',
+        )
+        manager_id = request.POST.get('manager')
+        if manager_id:
+            from apps.accounts.models import User
+            loc.manager = User.objects.filter(pk=manager_id).first()
+        loc.save()
+        messages.success(request, f'Location "{loc.name}" created.')
+        return redirect('pharmacy:location_list')
+    from apps.accounts.models import User, UserRole
+    pharmacists = User.objects.filter(
+        role__in=[UserRole.PHARMACIST, UserRole.HEAD_PHARMACIST], is_active=True
+    ).order_by('first_name')
+    return render(request, 'pharmacy/location_form.html', {
+        'pharmacists': pharmacists,
+        'location_types': PharmacyLocation._meta.get_field('location_type').choices,
+    })
+
+
+@login_required
+def location_edit(request, loc_id):
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    loc = get_object_or_404(PharmacyLocation, pk=loc_id, is_deleted=False)
+    if request.method == 'POST':
+        loc.name = request.POST.get('name', loc.name)
+        loc.location_type = request.POST.get('location_type', loc.location_type)
+        loc.address = request.POST.get('address', '')
+        loc.phone_ext = request.POST.get('phone_ext', '')
+        loc.is_active = request.POST.get('is_active') == 'on'
+        loc.storage_conditions = request.POST.get('storage_conditions', '')
+        loc.license_number = request.POST.get('license_number', '')
+        loc.has_controlled_access = request.POST.get('has_controlled_access') == 'on'
+        manager_id = request.POST.get('manager')
+        if manager_id:
+            from apps.accounts.models import User
+            loc.manager = User.objects.filter(pk=manager_id).first()
+        else:
+            loc.manager = None
+        loc.save()
+        messages.success(request, f'Location "{loc.name}" updated.')
+        return redirect('pharmacy:location_list')
+    from apps.accounts.models import User, UserRole
+    pharmacists = User.objects.filter(
+        role__in=[UserRole.PHARMACIST, UserRole.HEAD_PHARMACIST], is_active=True
+    ).order_by('first_name')
+    return render(request, 'pharmacy/location_form.html', {
+        'location': loc,
+        'pharmacists': pharmacists,
+        'location_types': PharmacyLocation._meta.get_field('location_type').choices,
+    })
+
+
+# ── Inter-Store Transfers ──────────────────────────────────────────────────
+
+@login_required
+def transfer_list(request):
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    status_filter = request.GET.get('status', '')
+    qs = StockTransfer.objects.filter(is_deleted=False).select_related(
+        'from_location', 'to_location', 'initiated_by', 'received_by'
+    )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return render(request, 'pharmacy/transfer_list.html', {
+        'transfers': qs[:200],
+        'status_filter': status_filter,
+        'statuses': TransferStatus.choices,
+    })
+
+
+@login_required
+def transfer_create(request):
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    locations = PharmacyLocation.objects.filter(is_deleted=False, is_active=True)
+    if request.method == 'POST':
+        from_loc = get_object_or_404(PharmacyLocation, pk=request.POST.get('from_location'))
+        to_loc = get_object_or_404(PharmacyLocation, pk=request.POST.get('to_location'))
+        if from_loc == to_loc:
+            messages.error(request, 'Source and destination must be different.')
+            return redirect('pharmacy:transfer_create')
+        transfer = StockTransfer(
+            from_location=from_loc, to_location=to_loc,
+            initiated_by=request.user, notes=request.POST.get('notes', ''),
+        )
+        transfer.save()
+        # Add items
+        drug_ids = request.POST.getlist('drug_id')
+        batch_ids = request.POST.getlist('batch_id')
+        qtys = request.POST.getlist('qty')
+        for drug_id, batch_id, qty in zip(drug_ids, batch_ids, qtys):
+            if not qty or int(qty) <= 0:
+                continue
+            drug = Drug.objects.filter(pk=drug_id).first()
+            batch = DrugStock.objects.filter(pk=batch_id).first()
+            if drug and batch and batch.quantity_remaining >= int(qty):
+                StockTransferItem.objects.create(
+                    transfer=transfer, drug=drug, stock_batch=batch, quantity=int(qty),
+                )
+                batch.quantity_remaining -= int(qty)
+                batch.save(update_fields=['quantity_remaining'])
+        messages.success(request, f'Transfer {transfer.transfer_number} created.')
+        return redirect('pharmacy:transfer_list')
+    drugs_with_stock = Drug.objects.filter(
+        is_active=True, is_deleted=False,
+        stock_items__quantity_remaining__gt=0, stock_items__is_deleted=False,
+        stock_items__expiry_date__gte=timezone.localdate(),
+    ).distinct().prefetch_related('stock_items').order_by('name')
+    return render(request, 'pharmacy/transfer_form.html', {
+        'locations': locations,
+        'drugs': drugs_with_stock,
+    })
+
+
+@login_required
+def transfer_detail(request, transfer_id):
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    transfer = get_object_or_404(
+        StockTransfer.objects.select_related('from_location', 'to_location', 'initiated_by', 'received_by'),
+        pk=transfer_id, is_deleted=False
+    )
+    items = transfer.items.select_related('drug', 'stock_batch').all()
+    return render(request, 'pharmacy/transfer_detail.html', {
+        'transfer': transfer, 'items': items,
+    })
+
+
+@login_required
+@require_POST
+def transfer_action(request, transfer_id):
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    transfer = get_object_or_404(StockTransfer, pk=transfer_id, is_deleted=False)
+    action = request.POST.get('action')
+    if action == 'receive' and transfer.status == TransferStatus.PENDING:
+        transfer.status = TransferStatus.RECEIVED
+        transfer.received_by = request.user
+        transfer.received_at = timezone.now()
+        for item in transfer.items.all():
+            item.quantity_received = item.quantity
+            item.save(update_fields=['quantity_received'])
+        transfer.save()
+        messages.success(request, f'Transfer {transfer.transfer_number} received.')
+    elif action == 'reject' and transfer.status == TransferStatus.PENDING:
+        transfer.status = TransferStatus.REJECTED
+        transfer.received_by = request.user
+        transfer.received_at = timezone.now()
+        transfer.rejection_reason = request.POST.get('rejection_reason', '')
+        # Restore stock to sender
+        for item in transfer.items.select_related('stock_batch').all():
+            item.stock_batch.quantity_remaining += item.quantity
+            item.stock_batch.save(update_fields=['quantity_remaining'])
+        transfer.save()
+        messages.warning(request, f'Transfer {transfer.transfer_number} rejected — stock restored.')
+    elif action == 'cancel' and transfer.status == TransferStatus.PENDING:
+        transfer.status = TransferStatus.CANCELLED
+        for item in transfer.items.select_related('stock_batch').all():
+            item.stock_batch.quantity_remaining += item.quantity
+            item.stock_batch.save(update_fields=['quantity_remaining'])
+        transfer.save()
+        messages.info(request, f'Transfer {transfer.transfer_number} cancelled — stock restored.')
+    return redirect('pharmacy:transfer_detail', transfer_id=transfer.pk)
+
+
+# ── Stock Exit (Non-Dispensing) ────────────────────────────────────────────
+
+@login_required
+def stock_exit_list(request):
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    qs = StockExit.objects.filter(is_deleted=False).select_related(
+        'drug', 'stock_batch', 'authorized_by', 'witness'
+    )[:200]
+    return render(request, 'pharmacy/stock_exit_list.html', {'exits': qs})
+
+
+@login_required
+def stock_exit_create(request):
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    if request.method == 'POST':
+        drug = get_object_or_404(Drug, pk=request.POST.get('drug'))
+        batch = get_object_or_404(DrugStock, pk=request.POST.get('stock_batch'))
+        qty = int(request.POST.get('quantity', 0))
+        if qty <= 0 or qty > batch.quantity_remaining:
+            messages.error(request, f'Invalid quantity. Batch has {batch.quantity_remaining} remaining.')
+            return redirect('pharmacy:stock_exit_create')
+        witness_id = request.POST.get('witness')
+        from apps.accounts.models import User
+        witness = User.objects.filter(pk=witness_id).first() if witness_id else None
+        exit_obj = StockExit(
+            drug=drug, stock_batch=batch, quantity=qty,
+            reason=request.POST.get('reason', 'OTHER'),
+            notes=request.POST.get('notes', ''),
+            disposal_method=request.POST.get('disposal_method', ''),
+            authorized_by=request.user,
+            witness=witness,
+            waste_classification=request.POST.get('waste_classification', ''),
+            destruction_certificate=request.POST.get('destruction_certificate', ''),
+            financial_impact=batch.purchase_price * qty,
+        )
+        exit_obj.save()
+        messages.success(request, f'Stock exit {exit_obj.exit_number} recorded — {qty} units removed.')
+        return redirect('pharmacy:stock_exit_list')
+    drugs_with_stock = Drug.objects.filter(
+        is_active=True, is_deleted=False,
+        stock_items__quantity_remaining__gt=0, stock_items__is_deleted=False,
+    ).distinct().order_by('name')
+    from apps.accounts.models import User, UserRole
+    witnesses = User.objects.filter(
+        role__in=[UserRole.PHARMACIST, UserRole.HEAD_PHARMACIST], is_active=True
+    ).exclude(pk=request.user.pk).order_by('first_name')
+    return render(request, 'pharmacy/stock_exit_form.html', {
+        'drugs': drugs_with_stock,
+        'reasons': StockExitReason.choices,
+        'witnesses': witnesses,
+    })
+
+
+# ── Drug Recall Management ────────────────────────────────────────────────
+
+@login_required
+def recall_list(request):
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    recalls = DrugRecall.objects.filter(is_deleted=False).select_related('drug', 'reported_by')
+    return render(request, 'pharmacy/recall_list.html', {'recalls': recalls})
+
+
+@login_required
+def recall_create(request):
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    if request.method == 'POST':
+        drug = get_object_or_404(Drug, pk=request.POST.get('drug'))
+        recall = DrugRecall(
+            drug=drug,
+            batch_numbers=request.POST.get('batch_numbers', ''),
+            reason=request.POST.get('reason', ''),
+            severity=request.POST.get('severity', 'CLASS_II'),
+            recall_source=request.POST.get('recall_source', ''),
+            recall_type=request.POST.get('recall_type', ''),
+            regulatory_reference=request.POST.get('regulatory_reference', ''),
+            corrective_action=request.POST.get('corrective_action', ''),
+            notes=request.POST.get('notes', ''),
+            reported_by=request.user,
+        )
+        recall.save()
+        # Quarantine affected batches
+        affected = recall.get_affected_batches()
+        total_quarantined = 0
+        for batch in affected:
+            total_quarantined += batch.quantity_remaining
+            batch.quantity_remaining = 0
+            batch.save(update_fields=['quantity_remaining'])
+        recall.quarantined_qty = total_quarantined
+        recall.patients_affected = recall.get_affected_patients().count()
+        recall.save(update_fields=['quarantined_qty', 'patients_affected'])
+        messages.warning(request,
+            f'Recall {recall.recall_number} issued — {total_quarantined} units quarantined, '
+            f'{recall.patients_affected} patients affected.'
+        )
+        return redirect('pharmacy:recall_list')
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    return render(request, 'pharmacy/recall_form.html', {'drugs': drugs})
+
+
+@login_required
+def recall_detail(request, recall_id):
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    recall = get_object_or_404(DrugRecall, pk=recall_id, is_deleted=False)
+    affected_batches = recall.get_affected_batches()
+    affected_patients = recall.get_affected_patients()
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'complete':
+            recall.status = RecallStatus.COMPLETED
+            recall.save(update_fields=['status'])
+            messages.success(request, 'Recall marked as completed.')
+        elif action == 'cancel':
+            recall.status = RecallStatus.CANCELLED
+            recall.save(update_fields=['status'])
+            messages.info(request, 'Recall cancelled.')
+        return redirect('pharmacy:recall_detail', recall_id=recall.pk)
+    return render(request, 'pharmacy/recall_detail.html', {
+        'recall': recall,
+        'affected_batches': affected_batches,
+        'affected_patients': affected_patients,
+    })
+
+
+# ── Advanced Reports (Head Pharmacist) ─────────────────────────────────────
+
+@login_required
+def abc_analysis(request):
+    """ABC Analysis — classify drugs by annual consumption value."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    one_year_ago = timezone.localdate() - datetime.timedelta(days=365)
+    # Calculate annual consumption value per drug
+    drug_consumption = (
+        DispensingItem.objects.filter(
+            dispensing__status=DispensingStatus.DISPENSED,
+            dispensing__dispensed_at__date__gte=one_year_ago,
+        )
+        .values('drug__id', 'drug__name', 'drug__strength')
+        .annotate(
+            total_qty=Sum('quantity_dispensed'),
+            total_value=Sum('subtotal'),
+        )
+        .order_by('-total_value')
+    )
+    # Classify into A (70%), B (20%), C (10%)
+    grand_total = sum(d['total_value'] or 0 for d in drug_consumption)
+    items = []
+    running = 0
+    for d in drug_consumption:
+        val = d['total_value'] or 0
+        running += val
+        pct = (running / grand_total * 100) if grand_total else 0
+        if pct <= 70:
+            cls = 'A'
+        elif pct <= 90:
+            cls = 'B'
+        else:
+            cls = 'C'
+        items.append({**d, 'cumulative_pct': round(pct, 1), 'abc_class': cls,
+                      'pct_of_total': round(val / grand_total * 100, 1) if grand_total else 0})
+    counts = {'A': sum(1 for i in items if i['abc_class'] == 'A'),
+              'B': sum(1 for i in items if i['abc_class'] == 'B'),
+              'C': sum(1 for i in items if i['abc_class'] == 'C')}
+    return render(request, 'pharmacy/report_abc.html', {
+        'items': items, 'grand_total': grand_total, 'counts': counts,
+    })
+
+
+@login_required
+def ven_analysis(request):
+    """VEN Analysis — Vital / Essential / Non-essential classification."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    if request.method == 'POST':
+        # Bulk update VEN classifications
+        for key, val in request.POST.items():
+            if key.startswith('ven_'):
+                drug_id = key.replace('ven_', '')
+                if val in ('V', 'E', 'N', ''):
+                    Drug.objects.filter(pk=drug_id, is_deleted=False).update(ven_class=val)
+        messages.success(request, 'VEN classifications updated.')
+        return redirect('pharmacy:ven_analysis')
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    # Single aggregate instead of 4 separate count() queries
+    summary = drugs.aggregate(
+        V=Count('id', filter=Q(ven_class='V')),
+        E=Count('id', filter=Q(ven_class='E')),
+        N=Count('id', filter=Q(ven_class='N')),
+        unclassified=Count('id', filter=Q(ven_class='')),
+    )
+    return render(request, 'pharmacy/report_ven.html', {'drugs': drugs, 'summary': summary})
+
+
+@login_required
+def dead_stock_report(request):
+    """Dead Stock — items with zero movement for 90+ days."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    days = int(request.GET.get('days', 90))
+    cutoff = timezone.localdate() - datetime.timedelta(days=days)
+    # Drugs with stock but no dispensing since cutoff
+    dispensed_drug_ids = (
+        DispensingItem.objects.filter(
+            dispensing__dispensed_at__date__gte=cutoff,
+            dispensing__status=DispensingStatus.DISPENSED,
+        ).values_list('drug_id', flat=True).distinct()
+    )
+    dead_drugs = list(Drug.objects.filter(
+        is_active=True, is_deleted=False,
+    ).exclude(
+        id__in=dispensed_drug_ids
+    ).annotate(
+        stock_total=Coalesce(
+            Sum('stock_items__quantity_remaining',
+                filter=Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=timezone.localdate())),
+            Value(0, output_field=IntegerField())
+        ),
+        last_dispensed=Max(
+            'dispensingitem__dispensing__dispensed_at',
+            filter=Q(dispensingitem__dispensing__status=DispensingStatus.DISPENSED),
+        ),
+    ).filter(stock_total__gt=0).order_by('-stock_total'))
+    for d in dead_drugs:
+        d.stock_value = d.stock_total * float(d.selling_price)
+    total_value_at_risk = sum(d.stock_value for d in dead_drugs)
+    return render(request, 'pharmacy/report_dead_stock.html', {
+        'drugs': dead_drugs, 'days': days, 'total_value_at_risk': total_value_at_risk,
+    })
+
+
+@login_required
+def consumption_report(request):
+    """Drug Consumption Report — monthly trends per drug."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    from django.db.models.functions import TruncMonth
+    months = int(request.GET.get('months', 6))
+    cutoff = timezone.localdate() - datetime.timedelta(days=months * 30)
+    monthly = (
+        DispensingItem.objects.filter(
+            dispensing__status=DispensingStatus.DISPENSED,
+            dispensing__dispensed_at__date__gte=cutoff,
+        )
+        .annotate(month=TruncMonth('dispensing__dispensed_at'))
+        .values('month', 'drug__id', 'drug__name')
+        .annotate(qty=Sum('quantity_dispensed'), value=Sum('subtotal'))
+        .order_by('drug__name', 'month')
+    )
+    # Group by drug
+    from collections import defaultdict
+    by_drug = defaultdict(list)
+    for row in monthly:
+        by_drug[row['drug__name']].append(row)
+    return render(request, 'pharmacy/report_consumption.html', {
+        'by_drug': dict(by_drug), 'months': months,
+    })
+
+
+@login_required
+def turnover_report(request):
+    """Stock Turnover — how fast each drug moves."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    one_year_ago = timezone.localdate() - datetime.timedelta(days=365)
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).annotate(
+        stock_total=Coalesce(
+            Sum('stock_items__quantity_remaining',
+                filter=Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=timezone.localdate())),
+            Value(0, output_field=IntegerField())
+        ),
+        annual_dispensed=Coalesce(
+            Sum('dispensingitem__quantity_dispensed',
+                filter=Q(dispensingitem__dispensing__status=DispensingStatus.DISPENSED,
+                          dispensingitem__dispensing__dispensed_at__date__gte=one_year_ago)),
+            Value(0, output_field=IntegerField())
+        ),
+    ).filter(stock_total__gt=0).order_by('name')
+    items = []
+    for d in drugs:
+        avg_stock = d.stock_total
+        ratio = round(d.annual_dispensed / avg_stock, 1) if avg_stock > 0 else 0
+        days_of_stock = round(avg_stock / (d.annual_dispensed / 365), 0) if d.annual_dispensed > 0 else 999
+        items.append({
+            'drug': d, 'stock': d.stock_total, 'dispensed': d.annual_dispensed,
+            'turnover_ratio': ratio, 'days_of_stock': int(days_of_stock),
+        })
+    items.sort(key=lambda x: x['turnover_ratio'])
+    return render(request, 'pharmacy/report_turnover.html', {'items': items})
+
+
+@login_required
+def productivity_report(request):
+    """Pharmacist Productivity — dispensings per pharmacist per day."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    from django.db.models.functions import TruncDate
+    days = int(request.GET.get('days', 30))
+    cutoff = timezone.localdate() - datetime.timedelta(days=days)
+    # Per pharmacist summary
+    by_pharmacist = (
+        Dispensing.objects.filter(
+            status=DispensingStatus.DISPENSED,
+            dispensed_at__date__gte=cutoff, is_deleted=False,
+        )
+        .values('dispensed_by__id', 'dispensed_by__first_name', 'dispensed_by__last_name')
+        .annotate(
+            total_dispensings=Count('id'),
+            total_items=Sum('items__quantity_dispensed'),
+            total_value=Sum('total_amount'),
+        )
+        .order_by('-total_dispensings')
+    )
+    # Daily trend
+    daily = (
+        Dispensing.objects.filter(
+            status=DispensingStatus.DISPENSED,
+            dispensed_at__date__gte=cutoff, is_deleted=False,
+        )
+        .annotate(day=TruncDate('dispensed_at'))
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+    return render(request, 'pharmacy/report_productivity.html', {
+        'by_pharmacist': by_pharmacist, 'daily': list(daily), 'days': days,
     })

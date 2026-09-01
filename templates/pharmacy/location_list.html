@@ -1,0 +1,76 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Pharmacy Locations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">
+      <i class="bi bi-geo-alt me-2 text-primary"></i>Pharmacy Locations
+    </h1>
+    <div class="text-muted small">Manage all pharmacy storage and dispensing locations</div>
+  </div>
+  <a href="{% url 'pharmacy:location_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Location
+  </a>
+</div>
+
+{% if not locations %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-geo-alt fs-1 d-block mb-3" style="opacity:.3;"></i>
+  <div class="fw-semibold">No pharmacy locations configured yet</div>
+  <div class="small mt-1">Click "New Location" to add your first location.</div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light d-flex justify-content-between align-items-center">
+    <span class="fw-semibold"><i class="bi bi-list-ul me-1"></i>All Locations</span>
+    <span class="badge bg-secondary">{{ locations|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Address</th>
+          <th>Phone</th>
+          <th>Storage</th>
+          <th>Manager</th>
+          <th class="text-center">Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for location in locations %}
+        <tr>
+          <td class="fw-semibold">{{ location.name }}</td>
+          <td>{{ location.get_location_type_display }}</td>
+          <td class="text-muted small" style="max-width:200px;">{{ location.address|default:"—"|truncatechars:60 }}</td>
+          <td class="small">{{ location.phone_ext|default:"—" }}</td>
+          <td class="small">
+            {{ location.get_storage_conditions_display|default:"—" }}
+            {% if location.has_controlled_access %}<span class="badge bg-danger ms-1" title="Controlled Access">C</span>{% endif %}
+          </td>
+          <td class="small">{{ location.manager|default:"—" }}</td>
+          <td class="text-center">
+            {% if location.is_active %}
+              <span class="badge bg-success">Active</span>
+            {% else %}
+              <span class="badge bg-secondary">Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'pharmacy:location_edit' loc_id=location.pk %}"
+               class="btn btn-outline-primary btn-sm" style="font-size:.75rem;padding:2px 8px;">
+              <i class="bi bi-pencil-square me-1"></i>Edit
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

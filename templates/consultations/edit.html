@@ -8,7 +8,7 @@
 
 {% block content %}
 
-{% with dept_code=consultation.department.code %}
+{% with dept_code=consultation.department.code|default:request.user.role_department_code %}
 
 <div id="editDraftToast" class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
   <div class="toast align-items-center text-bg-success border-0" role="alert">
@@ -51,6 +51,24 @@
     </a>
   </div>
 </div>
+
+<!-- Triage vitals bar — abnormal values highlighted in red -->
+{% if consultation.visit.vital_signs %}
+{% with v=consultation.visit.vital_signs %}
+<div class="alert alert-info py-2 px-3 mb-3 d-flex flex-wrap gap-3 align-items-center small">
+  <i class="bi bi-heart-pulse me-1"></i><strong>Triage Vitals:</strong>
+  {% if v.visual_acuity_right %}<span class="{{ v.visual_acuity_right|va_css }}">VA RE: {{ v.visual_acuity_right }}</span>{% endif %}
+  {% if v.visual_acuity_left %}<span class="{{ v.visual_acuity_left|va_css }}">VA LE: {{ v.visual_acuity_left }}</span>{% endif %}
+  {% if v.intraocular_pressure_right %}<span class="{{ v.intraocular_pressure_right|vital_css:'iop' }}">IOP RE: {{ v.intraocular_pressure_right }} mmHg</span>{% endif %}
+  {% if v.intraocular_pressure_left %}<span class="{{ v.intraocular_pressure_left|vital_css:'iop' }}">IOP LE: {{ v.intraocular_pressure_left }} mmHg</span>{% endif %}
+  {% if v.blood_pressure %}<span class="{{ v.blood_pressure|bp_css }}">BP: {{ v.blood_pressure }}</span>{% endif %}
+  {% if v.pulse %}<span class="{{ v.pulse|vital_css:'pulse' }}">Pulse: {{ v.pulse }} bpm</span>{% endif %}
+  {% if v.temperature %}<span class="{{ v.temperature|vital_css:'temperature' }}">Temp: {{ v.temperature }}°C</span>{% endif %}
+  {% if v.spo2 %}<span class="{{ v.spo2|vital_css:'spo2' }}">SpO2: {{ v.spo2 }}%</span>{% endif %}
+  {% if v.weight %}<span>Wt: {{ v.weight }} kg</span>{% endif %}
+</div>
+{% endwith %}
+{% endif %}
 
 {# ── Investigation results panel — shown when resuming with results available ── #}
 {% if investigation_orders %}

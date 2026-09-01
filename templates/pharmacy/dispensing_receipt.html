@@ -285,14 +285,18 @@
   <!-- PATIENT BAR -->
   <div class="patient-bar">
     <div>
-      <div class="patient-name">{{ dispensing.patient.full_name|upper }}</div>
+      <div class="patient-name">{{ dispensing.customer_name|upper }}</div>
       <div class="patient-meta">
+        {% if dispensing.patient %}
         Patient ID: <strong>{{ dispensing.patient.patient_id }}</strong>
         {% if dispensing.patient.date_of_birth %}
           &nbsp;·&nbsp; DOB: {{ dispensing.patient.date_of_birth|date:"d/m/Y" }}
         {% endif %}
         {% if dispensing.patient.phone_number %}
           &nbsp;·&nbsp; Tel: {{ dispensing.patient.phone_number }}
+        {% endif %}
+        {% else %}
+        <strong>Walk-in Customer</strong>
         {% endif %}
         {% if dispensing.prescription %}
         <br>Prescription: {{ dispensing.prescription }}
@@ -302,7 +306,7 @@
     </div>
     <div class="doc-meta">
       Printed: {% now "d/m/Y H:i" %}<br>
-      Pharmacist: {{ dispensing.dispensed_by.get_full_name|default:dispensing.dispensed_by.username }}<br>
+      Pharmacist: {{ dispensing.dispensed_by|user_display }}<br>
       {% if dispensing.verified_by_pharmacist %}
       <span style="color:#155724;font-weight:700;">&#10003; Verified</span><br>
       {% endif %}
@@ -332,7 +336,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for item in dispensing.items.all %}
+        {% for item in items_with_rx %}
         <tr>
           <td>
             <div class="drug-name">
@@ -341,8 +345,21 @@
               <span class="controlled-badge">CONTROLLED</span>
               {% endif %}
             </div>
-            {% if item.instructions %}
+            {% if item.rx_dose or item.rx_frequency %}
+            <div class="drug-instr">
+              &#8594; {{ item.rx_dose }}
+              {% if item.rx_frequency %} &mdash; {{ item.rx_frequency }}{% endif %}
+              {% if item.rx_duration %} &mdash; for {{ item.rx_duration }}{% endif %}
+              {% if item.rx_route %} ({{ item.rx_route }}){% endif %}
+              {% if item.rx_eye %} &mdash; {{ item.rx_eye }}{% endif %}
+            </div>
+            {% elif item.instructions %}
             <div class="drug-instr">&#8594; {{ item.instructions }}</div>
+            {% endif %}
+            {% if item.rx_times %}
+            <div style="font-size:7.5pt;color:#0c5460;background:#e8f4f8;border-left:2px solid #17a2b8;padding:2px 6px;margin-top:2px;">
+              &#128340; <strong>Take at:</strong> {{ item.rx_times }}
+            </div>
             {% endif %}
             {% if item.stock_batch %}
             <div class="batch-info">Batch: {{ item.stock_batch.batch_number }} &nbsp;·&nbsp; Exp: {{ item.stock_batch.expiry_date|date:"M Y" }}</div>

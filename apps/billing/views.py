@@ -1213,6 +1213,7 @@ def pos_apply_discount(request, invoice_id):
     })
 
 
+@json_error_handler
 @login_required
 @require_POST
 def pos_record_payment(request, invoice_id):

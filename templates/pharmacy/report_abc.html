@@ -1,0 +1,107 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}ABC Analysis — Drug Classification by Value{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-bar-chart-line text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">ABC Analysis — Drug Classification by Value</h5>
+      <div class="text-muted small">Annual consumption value ranking &middot; Generated {% now "d M Y H:i" %}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Pharmacy</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Summary Cards ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-danger">{{ counts.A }}</div>
+        <div class="small text-muted fw-semibold">Class A (High Value)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-warning">{{ counts.B }}</div>
+        <div class="small text-muted fw-semibold">Class B (Medium Value)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-success">{{ counts.C }}</div>
+        <div class="small text-muted fw-semibold">Class C (Low Value)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-primary">{{ grand_total|floatformat:0|intcomma }}</div>
+        <div class="small text-muted fw-semibold">Grand Total (FCFA)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── ABC Table ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span class="fw-semibold small">Drug Classification by Annual Consumption Value</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 small align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Drug Name</th>
+          <th>Strength</th>
+          <th class="text-end">Annual Qty</th>
+          <th class="text-end">Annual Value (FCFA)</th>
+          <th class="text-end">% of Total</th>
+          <th class="text-end">Cumulative %</th>
+          <th class="text-center">ABC Class</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ item.rank }}</td>
+          <td class="fw-semibold">{{ item.drug_name }}</td>
+          <td>{{ item.strength|default:"—" }}</td>
+          <td class="text-end">{{ item.annual_qty|intcomma }}</td>
+          <td class="text-end">{{ item.annual_value|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ item.pct_of_total|floatformat:1 }}%</td>
+          <td class="text-end">{{ item.cumulative_pct|floatformat:1 }}%</td>
+          <td class="text-center">
+            {% if item.abc_class == 'A' %}
+              <span class="badge bg-danger">A</span>
+            {% elif item.abc_class == 'B' %}
+              <span class="badge bg-warning text-dark">B</span>
+            {% else %}
+              <span class="badge bg-success">C</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No data available for this period.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
