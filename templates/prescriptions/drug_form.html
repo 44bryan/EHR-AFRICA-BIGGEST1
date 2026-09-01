@@ -43,17 +43,17 @@
             {{ drug_form.id }}
             <div class="row g-2">
 
-              <!-- Drug Name — select from pharmacy or type manually -->
+              <!-- Drug Name — typeahead search from pharmacy -->
               <div class="col-md-4">
                 <label class="form-label small fw-semibold">Drug Name <span class="text-danger">*</span></label>
                 <div class="d-none">{{ drug_form.drug_name }}</div>
-                <select class="form-select form-select-sm drug-name-select">
-                  <option value="">— Select from pharmacy —</option>
-                  <option value="__other__">✏ Other (type manually)</option>
-                </select>
-                <input type="text" class="form-control form-control-sm drug-name-other mt-1 d-none"
-                       placeholder="Enter drug name...">
-                <div class="form-text" style="font-size:.68rem;">Only in-stock drugs shown</div>
+                <div class="position-relative drug-typeahead-wrap">
+                  <input type="text" class="form-control form-control-sm drug-search-input"
+                         placeholder="Type to search drugs..." autocomplete="off">
+                  <div class="drug-dropdown list-group position-absolute w-100 shadow-sm d-none"
+                       style="z-index:1050;max-height:250px;overflow-y:auto;top:100%;left:0;"></div>
+                </div>
+                <div class="form-text" style="font-size:.68rem;">Type 2+ letters to search &bull; stock shown</div>
               </div>
 
               <div class="col-md-2"><label class="form-label small fw-semibold">Strength</label>{{ drug_form.concentration }}</div>
@@ -163,71 +163,111 @@
           }
 
           function initDrugRow(row) {
-            var sel   = row.querySelector('.drug-name-select');
-            var other = row.querySelector('.drug-name-other');
-            var hidden= row.querySelector('input[name$="-drug_name"]');
+            var searchInput = row.querySelector('.drug-search-input');
+            var dropdown    = row.querySelector('.drug-dropdown');
+            var hidden      = row.querySelector('input[name$="-drug_name"]');
+            var _debounce   = null;
 
-            // Populate select with stock indicator
-            PHARMACY_DRUGS.forEach(function(d) {
-              var opt = document.createElement('option');
-              opt.value = d.name;
-              var stockLabel = d.stock !== undefined
-                ? (d.stock <= 5 ? ' ⚠ ' + d.stock + ' left' : ' — ' + d.stock + ' in stock')
-                : '';
-              opt.text = d.name + (d.strength ? ' (' + d.strength + ')' : '') + stockLabel;
-              opt.dataset.strength = d.strength || '';
-              opt.dataset.form     = d.form     || '';
-              opt.dataset.stock    = d.stock    || 0;
-              // Highlight low-stock options
-              if (d.stock !== undefined && d.stock <= 5) {
-                opt.style.color = '#c05621';
-                opt.style.fontWeight = 'bold';
+            function showDropdown(matches) {
+              dropdown.innerHTML = '';
+              if (!matches.length) {
+                dropdown.innerHTML = '<div class="list-group-item text-muted small py-1">No matches found</div>';
+                dropdown.classList.remove('d-none');
+                return;
               }
-              sel.appendChild(opt);
-            });
-            // Move "Other" to end — create fresh if it was cleared during clone cleanup
-            var otherOpt = sel.querySelector('option[value="__other__"]');
-            if (!otherOpt) {
-              otherOpt = document.createElement('option');
-              otherOpt.value = '__other__';
-              otherOpt.text  = '✏ Other (type manually)';
+              matches.forEach(function(d) {
+                var item = document.createElement('a');
+                item.href = '#';
+                item.className = 'list-group-item list-group-item-action py-1 px-2 small';
+                var stockLabel = d.stock !== undefined
+                  ? (d.stock <= 5
+                    ? ' <span class="text-danger fw-bold">' + d.stock + ' left</span>'
+                    : ' <span class="text-muted">' + d.stock + ' in stock</span>')
+                  : '';
+                var strengthLabel = d.strength ? ' <span class="text-primary">(' + d.strength + ')</span>' : '';
+                item.innerHTML = '<strong>' + d.name + '</strong>' + strengthLabel + ' ' + stockLabel;
+                item.dataset.name     = d.name;
+                item.dataset.strength = d.strength || '';
+                item.dataset.form     = d.form || '';
+                item.addEventListener('mousedown', function(e) {
+                  e.preventDefault(); // Prevent blur from firing before click
+                  selectDrug(d);
+                });
+                dropdown.appendChild(item);
+              });
+              dropdown.classList.remove('d-none');
             }
-            sel.appendChild(otherOpt);
 
-            sel.addEventListener('change', function() {
-              if (sel.value === '__other__') {
-                other.classList.remove('d-none');
-                other.focus();
-                hidden.value = '';
-              } else {
-                other.classList.add('d-none');
-                hidden.value = sel.value;
-                // Auto-fill ALL fields from drug selection (always overwrite)
-                var chosen = sel.options[sel.selectedIndex];
-                if (chosen && chosen.dataset.form) {
-                  var concInput = row.querySelector('input[name$="-concentration"]');
-                  var formSel   = row.querySelector('select[name$="-drug_form"]');
-                  var routeSel  = row.querySelector('select[name$="-route"]');
-                  var doseSel   = row.querySelector('select[name$="-dose"]');
-                  var freqSel   = row.querySelector('select[name$="-frequency"]');
-                  var eyeSel    = row.querySelector('select[name$="-eye"]');
-                  // Always set strength and form from the selected drug
-                  if (concInput) concInput.value = chosen.dataset.strength || '';
-                  if (formSel) formSel.value = chosen.dataset.form;
-                  // Apply WHO/BNF defaults for the dosage form
-                  var defaults = FORM_DEFAULTS[chosen.dataset.form];
-                  if (defaults) {
-                    if (routeSel) routeSel.value = defaults.route;
-                    if (doseSel)  doseSel.value  = defaults.dose;
-                    if (freqSel)  { freqSel.value = defaults.frequency; updateTimeSlots(row); }
-                    if (eyeSel)   eyeSel.value   = defaults.eye;
-                  }
-                }
+            function selectDrug(d) {
+              // Set the search input display text
+              searchInput.value = d.name + (d.strength ? ' (' + d.strength + ')' : '');
+              hidden.value = d.name;
+              dropdown.classList.add('d-none');
+
+              // Auto-fill ALL fields
+              var concInput = row.querySelector('input[name$="-concentration"]');
+              var formSel   = row.querySelector('select[name$="-drug_form"]');
+              var routeSel  = row.querySelector('select[name$="-route"]');
+              var doseSel   = row.querySelector('select[name$="-dose"]');
+              var freqSel   = row.querySelector('select[name$="-frequency"]');
+              var eyeSel    = row.querySelector('select[name$="-eye"]');
+
+              if (concInput) concInput.value = d.strength || '';
+              if (formSel && d.form) formSel.value = d.form;
+
+              var defaults = FORM_DEFAULTS[d.form];
+              if (defaults) {
+                if (routeSel) routeSel.value = defaults.route;
+                if (doseSel)  doseSel.value  = defaults.dose;
+                if (freqSel)  { freqSel.value = defaults.frequency; updateTimeSlots(row); }
+                if (eyeSel)   eyeSel.value   = defaults.eye;
+              }
+            }
+
+            searchInput.addEventListener('input', function() {
+              clearTimeout(_debounce);
+              var q = searchInput.value.trim().toUpperCase();
+              hidden.value = searchInput.value.trim(); // Allow manual entry too
+
+              if (q.length < 2) {
+                dropdown.classList.add('d-none');
+                return;
+              }
+
+              _debounce = setTimeout(function() {
+                var matches = PHARMACY_DRUGS.filter(function(d) {
+                  return d.name.toUpperCase().indexOf(q) !== -1 ||
+                         (d.strength && d.strength.toUpperCase().indexOf(q) !== -1);
+                }).slice(0, 15); // Show max 15 results
+                showDropdown(matches);
+              }, 150);
+            });
+
+            searchInput.addEventListener('blur', function() {
+              setTimeout(function() { dropdown.classList.add('d-none'); }, 200);
+            });
+
+            searchInput.addEventListener('keydown', function(e) {
+              if (e.key === 'Escape') dropdown.classList.add('d-none');
+              // Arrow down → focus first dropdown item
+              if (e.key === 'ArrowDown' && !dropdown.classList.contains('d-none')) {
+                var first = dropdown.querySelector('a');
+                if (first) first.focus();
+                e.preventDefault();
               }
             });
 
-            other.addEventListener('input', function() {
-              hidden.value = other.value.trim();
+            // Allow keyboard navigation in dropdown
+            dropdown.addEventListener('keydown', function(e) {
+              var focused = document.activeElement;
+              if (e.key === 'ArrowDown' && focused.nextElementSibling) {
+                focused.nextElementSibling.focus(); e.preventDefault();
+              } else if (e.key === 'ArrowUp' && focused.previousElementSibling) {
+                focused.previousElementSibling.focus(); e.preventDefault();
+              } else if (e.key === 'Escape') {
+                dropdown.classList.add('d-none');
+                searchInput.focus();
+              }
             });
           }
 
@@ -252,11 +292,9 @@
             clone.querySelectorAll('input:not([type=hidden]), select, textarea').forEach(function(el) {
               el.value = '';
             });
-            clone.querySelectorAll('.drug-name-other').forEach(function(el) { el.classList.add('d-none'); });
-            clone.querySelectorAll('.drug-name-select').forEach(function(el) {
-              // Remove cloned options (they were duplicated), rebuild
-              while (el.options.length > 1) el.remove(1);
-            });
+            // Clear typeahead state
+            clone.querySelectorAll('.drug-search-input').forEach(function(el) { el.value = ''; });
+            clone.querySelectorAll('.drug-dropdown').forEach(function(el) { el.innerHTML = ''; el.classList.add('d-none'); });
 
             container.appendChild(clone);
             totalInput.value = idx + 1;
