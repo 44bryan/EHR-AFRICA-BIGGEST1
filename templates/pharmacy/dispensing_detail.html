@@ -927,6 +927,9 @@ if (addItemBtn) {
         if (data.is_controlled) {
           showControlledAlert(data.item.drug_name);
         }
+        if (data.no_stock) {
+          showNoStockWarning(data.item.drug_name);
+        }
         resetAddForm();
       })
       .catch(() => showAddError('Network error. Please try again.'))
@@ -957,13 +960,29 @@ function showControlledAlert(drugName) {
   setTimeout(function() { alertDiv.remove(); }, 15000);
 }
 
+function showNoStockWarning(drugName) {
+  const alertDiv = document.createElement('div');
+  alertDiv.className = 'alert alert-warning alert-dismissible fade show mt-2 shadow-sm border-warning';
+  alertDiv.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2 text-warning"></i>' +
+    '<strong>Out of Stock:</strong> <em>' + drugName +
+    '</em> — no stock batch found. Stock will <strong>not</strong> be deducted. ' +
+    'Please add stock via <strong>Drug &rarr; Add Stock</strong> to correct inventory.' +
+    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+  const card = document.getElementById('add-item-card');
+  if (card) card.parentNode.insertBefore(alertDiv, card);
+  setTimeout(function() { alertDiv.remove(); }, 20000);
+}
+
 function appendItemRow(item) {
   const emptyRow = document.getElementById('empty-row');
   if (emptyRow) emptyRow.remove();
 
-  const batchInfo = item.batch !== 'Auto'
-    ? `${item.batch}<br><span class="text-muted">Exp: ${item.expiry}</span>`
-    : '<span class="text-muted">Auto</span>';
+  let batchInfo;
+  if (item.batch === 'N/A') {
+    batchInfo = '<span class="badge bg-warning text-dark" style="font-size:.7rem;"><i class="bi bi-exclamation-triangle me-1"></i>No stock</span>';
+  } else {
+    batchInfo = `${item.batch}<br><span class="text-muted">Exp: ${item.expiry}</span>`;
+  }
 
   const tr = document.createElement('tr');
   tr.id = 'item-row-' + item.id;

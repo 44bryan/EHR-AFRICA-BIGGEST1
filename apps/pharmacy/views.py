@@ -885,7 +885,7 @@ def add_dispensing_item_ajax(request, dispensing_id):
             'drug_name': drug.name,
             'strength': drug.strength or '',
             'form': drug.get_form_display(),
-            'batch': batch.batch_number if batch else 'Auto',
+            'batch': batch.batch_number if batch else 'N/A',
             'expiry': batch.expiry_date.strftime('%b %Y') if batch else '',
             'qty': qty,
             'unit_price': str(unit_price),
@@ -895,6 +895,7 @@ def add_dispensing_item_ajax(request, dispensing_id):
         'total': str(total),
         'interactions': interactions,
         'is_controlled': drug.is_controlled,
+        'no_stock': batch is None,
     })
 
 
