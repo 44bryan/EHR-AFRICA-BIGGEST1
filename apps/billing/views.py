@@ -1894,7 +1894,7 @@ def shift_day_open(request):
     # All active cashiers (including optical dispenser and pharmacist who also have cash desks)
     cashiers = list(
         __import__('apps.accounts.models', fromlist=['User']).User.objects.filter(
-            role__in=[UserRole.CASHIER, UserRole.BILLING_OFFICER, UserRole.OPTICAL_DISPENSER, UserRole.PHARMACIST],
+            role__in=[UserRole.CASHIER, UserRole.BILLING_OFFICER, UserRole.OPTICAL_DISPENSER, UserRole.PHARMACIST, UserRole.HEAD_PHARMACIST],
             is_active=True,
         ).order_by('first_name', 'last_name')
     )
