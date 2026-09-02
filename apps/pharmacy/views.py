@@ -1805,6 +1805,20 @@ def start_rx_dispensing(request, rx_id):
 
     today = timezone.localdate()
 
+    # Resolve tier pricing from patient's active visit
+    tier, billing_type = 'STANDARD', 'SELF_PAY'
+    if rx.patient:
+        try:
+            from apps.patients.models import Visit
+            visit = Visit.objects.filter(
+                patient=rx.patient, is_deleted=False,
+            ).order_by('-visit_date').first()
+            if visit:
+                tier = visit.service_tier or 'STANDARD'
+                billing_type = visit.billing_type or 'SELF_PAY'
+        except Exception:
+            pass
+
     # Create the dispensing record
     dispensing = Dispensing.objects.create(
         patient=rx.patient,
@@ -1869,7 +1883,7 @@ def start_rx_dispensing(request, rx_id):
             drug=drug,
             stock_batch=batch,
             quantity_dispensed=rx_item.quantity,
-            unit_price=drug.selling_price,
+            unit_price=drug.get_tier_price(tier=tier, billing_type=billing_type),
             instructions=instructions,
         )
         matched_count += 1

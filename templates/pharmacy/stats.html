@@ -3,178 +3,338 @@
 {% block title %}Pharmacy Statistics — {{ month_name }}{% endblock %}
 
 {% block page_header %}
-<div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
   <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-graph-up text-primary fs-5"></i>
+    <i class="bi bi-graph-up-arrow text-primary fs-4"></i>
     <div>
-      <h5 class="mb-0 fw-bold" style="font-size:.95rem;">Pharmacy Monthly Report — {{ month_name }}</h5>
-      <span class="text-muted" style="font-size:.7rem;">WHO/JCI MMU &middot; PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span>
+      <h5 class="mb-0 fw-bold">Pharmacy Statistics</h5>
+      <div class="text-muted small">{{ month_name }} — WHO/JCI MMU monthly report</div>
     </div>
   </div>
-  <div class="d-flex gap-1 align-items-center flex-wrap">
-    <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-chevron-left"></i></a>
-    <span class="fw-semibold" style="font-size:.8rem;">{{ month_name }}</span>
-    {% if year != today.year or month != today.month %}
-    <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-chevron-right"></i></a>
-    {% endif %}
-    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-arrow-left"></i></a>
-    <button onclick="window.open('{{ request.path }}?year={{ year }}&amp;month={{ month }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger py-0"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
-    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <div class="btn-group btn-group-sm">
+      <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+      <span class="btn btn-outline-secondary disabled px-3">{{ month_name }}</span>
+      {% if year != today.year or month != today.month %}
+      <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+      {% endif %}
+    </div>
+    <button onclick="exportStatsPDF()" class="btn btn-sm btn-danger">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+    </button>
+    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-printer-fill me-1"></i>Print with Charts
+    </button>
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
   </div>
 </div>
-{% endblock %}
-
-{% block extra_css %}
-<style>
-.ps-kpi{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;}
-.ps-k{flex:1;min-width:90px;border:1px solid #e9ecef;border-radius:4px;text-align:center;padding:6px 4px;background:#fff;}
-.ps-k .v{font-size:1.15rem;font-weight:700;line-height:1.1;}
-.ps-k .l{font-size:.62rem;color:#6c757d;margin-top:1px;}
-.ps-k .v.ok{color:#198754}.ps-k .v.warn{color:#fd7e14}.ps-k .v.bad{color:#dc3545}.ps-k .v.purple{color:#6f42c1}.ps-k .v.blue{color:#0d6efd}
-.ps-hdr{background:#f8f9fa;font-size:.72rem;font-weight:700;padding:4px 8px;border-bottom:1px solid #dee2e6;color:#333;}
-.ps-tbl{width:100%;font-size:.75rem;margin-bottom:0;}
-.ps-tbl th{background:#f1f3f5;font-size:.65rem;padding:3px 6px;font-weight:600;color:#495057;border-bottom:1px solid #dee2e6;}
-.ps-tbl td{padding:3px 6px;border-bottom:1px solid #f0f0f0;vertical-align:middle;}
-.ps-tbl tr:last-child td{border-bottom:none;}
-.ps-badge{font-size:.58rem;padding:1px 5px;border-radius:3px;font-weight:600;}
-.ps-met{background:#d1fae5;color:#065f46}.ps-wrn{background:#fef3c7;color:#78350f}.ps-low{background:#fee2e2;color:#991b1b}.ps-trk{background:#e2e8f0;color:#475569}
-.ps-card{border:none!important;box-shadow:0 1px 3px rgba(0,0,0,.08)!important;margin-bottom:8px!important;}
-.ps-card .card-body{padding:0!important;}
-@media print{
-  #sidebar,nav.navbar,.btn,.btn-group,.no-print,.breadcrumb{display:none!important;}
-  #page-content-wrapper{margin-left:0!important;width:100%!important;padding:0 4px!important;}
-  body{background:#fff!important;font-size:9pt!important;}
-  .ps-card{box-shadow:none!important;border:1px solid #dee2e6!important;}
-  @page{size:A4 landscape;margin:8mm 10mm;}
-}
-</style>
 {% endblock %}
 
 {% block content %}
 
-{# ── KPI Strip ── #}
-<div class="ps-kpi">
-  <div class="ps-k"><div class="v">{{ total_dispensings }}</div><div class="l">Dispensings</div></div>
-  <div class="ps-k"><div class="v ok">{{ dispensed_count }}</div><div class="l">Dispensed</div></div>
-  <div class="ps-k"><div class="v warn">{{ partial_count }}</div><div class="l">Partial</div></div>
-  <div class="ps-k"><div class="v {% if completion_rate >= 90 %}ok{% elif completion_rate >= 75 %}warn{% else %}bad{% endif %}">{{ completion_rate }}%</div><div class="l">Fill Rate</div></div>
-  <div class="ps-k"><div class="v blue">{{ male_count|add:female_count }}</div><div class="l">Patients</div></div>
-  <div class="ps-k"><div class="v {% if stockout_rate > 10 %}bad{% elif stockout_rate > 5 %}warn{% else %}ok{% endif %}">{{ stockout_rate }}%</div><div class="l">Stockout</div></div>
-  <div class="ps-k"><div class="v ok">{{ revenue|floatformat:0|intcomma }}</div><div class="l">Revenue (FCFA)</div></div>
-  <div class="ps-k"><div class="v purple">{{ rx_per_day }}</div><div class="l">Rx/Day</div></div>
-  <div class="ps-k"><div class="v {% if gross_margin >= 30 %}ok{% elif gross_margin >= 15 %}warn{% else %}bad{% endif %}">{{ gross_margin }}%</div><div class="l">Gross Margin</div></div>
-</div>
-
-{# ══════════ ROW 1: WHO Indicators + JCI Safety ══════════ #}
-<div class="row g-2 mb-2">
-  <div class="col-lg-6">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-clipboard2-check me-1"></i>1. WHO Core Drug Use Indicators <span class="badge bg-info ms-1" style="font-size:.55rem;">WHO/MSH</span></div>
-      <div class="card-body">
-        <table class="ps-tbl">
-          <thead><tr><th>Indicator</th><th class="text-center">Target</th><th class="text-center">Actual</th><th class="text-center">Status</th></tr></thead>
-          <tbody>
-            <tr><td>Avg Items / Prescription</td><td class="text-center text-muted">&le;2.0</td><td class="text-center fw-bold">{{ avg_items_per_rx }}</td>
-              <td class="text-center">{% if avg_items_per_rx <= 2.0 %}<span class="ps-badge ps-met">Met</span>{% elif avg_items_per_rx <= 3.0 %}<span class="ps-badge ps-wrn">Watch</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
-            <tr><td>Generic Prescribing Rate</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ generic_prescribing_rate }}%</td>
-              <td class="text-center">{% if generic_prescribing_rate >= 90 %}<span class="ps-badge ps-met">Met</span>{% elif generic_prescribing_rate >= 70 %}<span class="ps-badge ps-wrn">Improve</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
-            <tr><td>Antibiotic Rate</td><td class="text-center text-muted">&lt;30%</td><td class="text-center fw-bold">{{ antibiotic_rate }}%</td>
-              <td class="text-center">{% if antibiotic_rate < 30 %}<span class="ps-badge ps-met">Met</span>{% elif antibiotic_rate < 50 %}<span class="ps-badge ps-wrn">Monitor</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
-            <tr><td>Injection Rate</td><td class="text-center text-muted">&lt;25%</td><td class="text-center fw-bold">{{ injection_rate }}%</td>
-              <td class="text-center">{% if injection_rate < 25 %}<span class="ps-badge ps-met">Met</span>{% elif injection_rate < 40 %}<span class="ps-badge ps-wrn">High</span>{% else %}<span class="ps-badge ps-low">Excess</span>{% endif %}</td></tr>
-            <tr><td>Formulary Rate</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ formulary_rate }}%</td>
-              <td class="text-center">{% if formulary_rate >= 95 %}<span class="ps-badge ps-met">Met</span>{% elif formulary_rate >= 80 %}<span class="ps-badge ps-wrn">Below</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
-            <tr><td>Generic Substitution</td><td class="text-center text-muted">Track</td><td class="text-center fw-bold">{{ substitution_rate }}% <span class="text-muted">({{ substitution_count }})</span></td>
-              <td class="text-center"><span class="ps-badge ps-trk">Tracked</span></td></tr>
-            <tr><td>Prescription Fill Rate</td><td class="text-center text-muted">&ge;90%</td><td class="text-center fw-bold">{{ completion_rate }}%</td>
-              <td class="text-center">{% if completion_rate >= 90 %}<span class="ps-badge ps-met">Met</span>{% elif completion_rate >= 75 %}<span class="ps-badge ps-wrn">Below</span>{% else %}<span class="ps-badge ps-low">Crit</span>{% endif %}</td></tr>
-          </tbody>
-        </table>
+{# ── Print-only letterhead ── #}
+<div class="print-only" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0d6efd;padding-bottom:10px;margin-bottom:14px;">
+    <div>
+      <div style="font-size:18px;font-weight:800;color:#0d6efd;">Pharmacy Department Statistics Dashboard</div>
+      <div style="font-size:11px;color:#555;margin-top:4px;">
+        Period: {{ month_name }} &nbsp;&bull;&nbsp; Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }} &nbsp;&bull;&nbsp; Generated: {% now "d M Y H:i" %}
       </div>
+    </div>
+    <div style="text-align:right;font-size:9px;color:#888;line-height:1.6;">
+      CONFIDENTIAL &mdash; INTERNAL USE ONLY<br>
+      <em>For management review only.</em>
     </div>
   </div>
-  <div class="col-lg-6">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-shield-check me-1"></i>2. JCI MMU Safety &amp; Quality <span class="badge bg-warning text-dark ms-1" style="font-size:.55rem;">JCI 7th</span></div>
-      <div class="card-body">
-        <table class="ps-tbl">
-          <thead><tr><th>Indicator</th><th class="text-center">Ref</th><th class="text-center">Target</th><th class="text-center">Actual</th><th class="text-center">Status</th></tr></thead>
-          <tbody>
-            <tr><td>Pharmacist Verification</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.6.1</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ verification_rate }}%</td>
-              <td class="text-center">{% if verification_rate == 100 %}<span class="ps-badge ps-met">Full</span>{% elif verification_rate >= 80 %}<span class="ps-badge ps-wrn">Part</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
-            <tr><td>Patient Counseling</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.6.2</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ counseling_rate }}%</td>
-              <td class="text-center">{% if counseling_rate >= 95 %}<span class="ps-badge ps-met">Met</span>{% elif counseling_rate >= 70 %}<span class="ps-badge ps-wrn">Imp</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
-            <tr><td>Controlled Drug Dispensing</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.3</td><td class="text-center text-muted">Track</td><td class="text-center fw-bold">{{ controlled_rate }}% <span class="text-muted">({{ controlled_items }})</span></td>
-              <td class="text-center"><span class="ps-badge ps-trk">Tracked</span></td></tr>
-            <tr><td>Dispensing Return Rate</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.5</td><td class="text-center text-muted">&lt;2%</td><td class="text-center fw-bold">{{ return_rate }}% <span class="text-muted">({{ return_count }})</span></td>
-              <td class="text-center">{% if return_rate < 2 %}<span class="ps-badge ps-met">OK</span>{% elif return_rate < 5 %}<span class="ps-badge ps-wrn">Watch</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
-            <tr><td>Rx Decline Rate</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.4</td><td class="text-center text-muted">&lt;5%</td><td class="text-center fw-bold">{{ rx_decline_rate }}%</td>
-              <td class="text-center">{% if rx_decline_rate < 5 %}<span class="ps-badge ps-met">OK</span>{% elif rx_decline_rate < 10 %}<span class="ps-badge ps-wrn">Mon</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+  <div style="background:#0d6efd;color:#fff;padding:5px 12px;font-size:8px;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;margin-bottom:14px;display:flex;justify-content:space-between;">
+    <span>EHR Africa &mdash; Pharmacy Department Report</span>
+    <span>WHO/JCI MMU Standards &nbsp;&bull;&nbsp; {% now "Y" %}</span>
   </div>
 </div>
 
-{# ══════════ ROW 2: Inventory + Financial ══════════ #}
-<div class="row g-2 mb-2">
-  <div class="col-lg-6">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-box-seam me-1"></i>3. Inventory Health <span class="badge bg-success ms-1" style="font-size:.55rem;">FIP GPP</span></div>
+{# ── KPI Cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_dispensings }}</div>
+        <div class="small text-muted">Total Dispensings</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ dispensed_count }}</div>
+        <div class="small text-muted">Dispensed</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ partial_count }}</div>
+        <div class="small text-muted">Partial</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold {% if completion_rate >= 90 %}text-success{% elif completion_rate >= 75 %}text-warning{% else %}text-danger{% endif %}">{{ completion_rate }}%</div>
+        <div class="small text-muted">Fill Rate</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ revenue|floatformat:0|intcomma }}</div>
+        <div class="small text-muted">Revenue (FCFA)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold {% if stockout_rate > 10 %}text-danger{% elif stockout_rate > 5 %}text-warning{% else %}text-success{% endif %}">{{ stockout_rate }}%</div>
+        <div class="small text-muted">Stockout Rate</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold" style="color:#6f42c1;">{{ rx_per_day }}</div>
+        <div class="small text-muted">Rx / Day</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold {% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">{{ gross_margin }}%</div>
+        <div class="small text-muted">Gross Margin</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Charts Row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-bar-chart-line text-primary me-2"></i>Daily Dispensings — Last 14 Days
+      </div>
       <div class="card-body">
-        <div class="row g-0">
-          <div class="col-6 border-end">
-            <table class="ps-tbl">
-              <tbody>
-                <tr><td>Active Drugs</td><td class="text-end fw-bold">{{ total_active_drugs }}</td></tr>
-                <tr><td>Stockout Items</td><td class="text-end fw-bold {% if stockout_count > 5 %}text-danger{% endif %}">{{ stockout_count }} <span class="text-muted" style="font-size:.6rem;">({{ stockout_rate }}%)</span></td></tr>
-                <tr><td>Low Stock</td><td class="text-end fw-bold {% if low_stock_count > 10 %}text-warning{% endif %}">{{ low_stock_count }}</td></tr>
-                <tr><td>Turnover Ratio</td><td class="text-end fw-bold">{{ stock_turnover }}x</td></tr>
-                <tr><td>Inventory Value</td><td class="text-end fw-bold text-primary">{{ total_inventory_value|floatformat:0|intcomma }}</td></tr>
-              </tbody>
-            </table>
+        <canvas id="dailyChart" height="110"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-graph-up-arrow text-success me-2"></i>Revenue Trend (14 Days)
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="revenueChart" style="max-height:220px;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── WHO Core Drug Use Indicators ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-clipboard2-check text-primary"></i>
+    <span>WHO Core Drug Use Indicators</span>
+    <span class="badge bg-info-subtle text-info small ms-1">WHO/MSH</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0">
+        <thead class="table-light">
+          <tr><th>Indicator</th><th class="text-center">WHO Target</th><th class="text-center">Actual</th><th class="text-center">Status</th><th>Interpretation</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="fw-semibold">Avg Items / Prescription</td>
+            <td class="text-center text-muted">&le; 2.0</td>
+            <td class="text-center fw-bold">{{ avg_items_per_rx }}</td>
+            <td class="text-center">{% if avg_items_per_rx <= 2.0 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif avg_items_per_rx <= 3.0 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            <td class="text-muted">Polypharmacy risk — lower is better</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Generic Prescribing Rate</td>
+            <td class="text-center text-muted">100%</td>
+            <td class="text-center fw-bold">{{ generic_prescribing_rate }}%</td>
+            <td class="text-center">{% if generic_prescribing_rate >= 90 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif generic_prescribing_rate >= 70 %}<span class="badge bg-warning-subtle text-warning">Improve</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            <td class="text-muted">WHO recommends 100% generic name prescribing</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Antibiotic Rate</td>
+            <td class="text-center text-muted">&lt; 30%</td>
+            <td class="text-center fw-bold">{{ antibiotic_rate }}%</td>
+            <td class="text-center">{% if antibiotic_rate < 30 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif antibiotic_rate < 50 %}<span class="badge bg-warning-subtle text-warning">Monitor</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            <td class="text-muted">Antimicrobial stewardship indicator</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Injection Rate</td>
+            <td class="text-center text-muted">&lt; 25%</td>
+            <td class="text-center fw-bold">{{ injection_rate }}%</td>
+            <td class="text-center">{% if injection_rate < 25 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif injection_rate < 40 %}<span class="badge bg-warning-subtle text-warning">High</span>{% else %}<span class="badge bg-danger-subtle text-danger">Excess</span>{% endif %}</td>
+            <td class="text-muted">Prefer oral over parenteral route</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Formulary (EDL) Rate</td>
+            <td class="text-center text-muted">100%</td>
+            <td class="text-center fw-bold">{{ formulary_rate }}%</td>
+            <td class="text-center">{% if formulary_rate >= 95 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif formulary_rate >= 80 %}<span class="badge bg-warning-subtle text-warning">Below</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            <td class="text-muted">Drugs dispensed from hospital formulary</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Prescription Fill Rate</td>
+            <td class="text-center text-muted">&ge; 90%</td>
+            <td class="text-center fw-bold">{{ completion_rate }}%</td>
+            <td class="text-center">{% if completion_rate >= 90 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif completion_rate >= 75 %}<span class="badge bg-warning-subtle text-warning">Below</span>{% else %}<span class="badge bg-danger-subtle text-danger">Critical</span>{% endif %}</td>
+            <td class="text-muted">Target &ge;90% for WHO essential medicines</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Generic Substitution</td>
+            <td class="text-center text-muted">Track</td>
+            <td class="text-center fw-bold">{{ substitution_rate }}% <span class="text-muted fw-normal">({{ substitution_count }})</span></td>
+            <td class="text-center"><span class="badge bg-secondary-subtle text-secondary">Tracked</span></td>
+            <td class="text-muted">Brand-to-generic substitutions this month</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── JCI MMU Safety & Quality ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-shield-check text-warning"></i>
+    <span>JCI MMU Safety &amp; Quality Indicators</span>
+    <span class="badge bg-warning-subtle text-warning small ms-1">JCI 7th Ed</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0">
+        <thead class="table-light">
+          <tr><th>Indicator</th><th class="text-center">Ref</th><th class="text-center">Target</th><th class="text-center">Actual</th><th class="text-center">Status</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="fw-semibold">Pharmacist Verification</td>
+            <td class="text-center text-muted">MMU.6.1</td>
+            <td class="text-center text-muted">100%</td>
+            <td class="text-center fw-bold">{{ verification_rate }}%</td>
+            <td class="text-center">{% if verification_rate == 100 %}<span class="badge bg-success-subtle text-success">Full</span>{% elif verification_rate >= 80 %}<span class="badge bg-warning-subtle text-warning">Partial</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            <td class="text-muted">{{ verified_count }} / {{ dispensed_count }} verified</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Patient Counseling</td>
+            <td class="text-center text-muted">MMU.6.2</td>
+            <td class="text-center text-muted">100%</td>
+            <td class="text-center fw-bold">{{ counseling_rate }}%</td>
+            <td class="text-center">{% if counseling_rate >= 95 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif counseling_rate >= 70 %}<span class="badge bg-warning-subtle text-warning">Improve</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            <td class="text-muted">{{ counseled_count }} counseling sessions</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Controlled Drug Dispensing</td>
+            <td class="text-center text-muted">MMU.3</td>
+            <td class="text-center text-muted">Track</td>
+            <td class="text-center fw-bold">{{ controlled_rate }}%</td>
+            <td class="text-center"><span class="badge bg-secondary-subtle text-secondary">Tracked</span></td>
+            <td class="text-muted">{{ controlled_items }} controlled items dispensed</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Dispensing Return Rate</td>
+            <td class="text-center text-muted">MMU.5</td>
+            <td class="text-center text-muted">&lt; 2%</td>
+            <td class="text-center fw-bold">{{ return_rate }}%</td>
+            <td class="text-center">{% if return_rate < 2 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif return_rate < 5 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            <td class="text-muted">{{ return_count }} returns ({{ return_qty }} units)</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Rx Decline Rate</td>
+            <td class="text-center text-muted">MMU.4</td>
+            <td class="text-center text-muted">&lt; 5%</td>
+            <td class="text-center fw-bold">{{ rx_decline_rate }}%</td>
+            <td class="text-center">{% if rx_decline_rate < 5 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif rx_decline_rate < 10 %}<span class="badge bg-warning-subtle text-warning">Monitor</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            <td class="text-muted">Patients buying medications elsewhere</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Inventory Health + Financial Performance ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-box-seam text-primary"></i>
+        <span>Inventory Health</span>
+        <span class="badge bg-success-subtle text-success small ms-1">FIP GPP</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Stock Metrics</h6>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Active Drugs</span><strong>{{ total_active_drugs }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Stockout Items</span><strong class="{% if stockout_count > 5 %}text-danger{% endif %}">{{ stockout_count }} ({{ stockout_rate }}%)</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Low Stock</span><strong class="{% if low_stock_count > 10 %}text-warning{% endif %}">{{ low_stock_count }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Turnover Ratio</span><strong>{{ stock_turnover }}x</strong></div>
+            <div class="d-flex justify-content-between py-1"><span class="text-muted">Inventory Value</span><strong class="text-primary">{{ total_inventory_value|floatformat:0|intcomma }}</strong></div>
           </div>
           <div class="col-6">
-            <table class="ps-tbl">
-              <tbody>
-                <tr><td>Expired This Month</td><td class="text-end fw-bold text-danger">{{ expired_units }} <span class="text-muted" style="font-size:.6rem;">({{ expired_value|floatformat:0|intcomma }})</span></td></tr>
-                <tr><td>Near-Expiry &lt;30d</td><td class="text-end fw-bold text-warning">{{ near_expiry_count }} btch</td></tr>
-                <tr><td>At-Risk Value</td><td class="text-end fw-bold text-warning">{{ near_expiry_value|floatformat:0|intcomma }}</td></tr>
-                <tr><td>COGS</td><td class="text-end fw-bold">{{ cogs|floatformat:0|intcomma }}</td></tr>
-                <tr><td>Returns to Stock</td><td class="text-end fw-bold">{{ return_qty }} units</td></tr>
-              </tbody>
-            </table>
+            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Expiry &amp; Wastage</h6>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Expired (Month)</span><strong class="text-danger">{{ expired_units }} units</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Expired Value</span><strong class="text-danger">{{ expired_value|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Near-Expiry &lt;30d</span><strong class="text-warning">{{ near_expiry_count }} btch</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">At-Risk Value</span><strong class="text-warning">{{ near_expiry_value|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1"><span class="text-muted">Returns to Stock</span><strong>{{ return_qty }} units</strong></div>
           </div>
         </div>
       </div>
     </div>
   </div>
-  <div class="col-lg-6">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-cash-stack me-1"></i>4. Financial Performance</div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-cash-stack text-success"></i>
+        <span>Financial Performance</span>
+      </div>
       <div class="card-body">
-        <div class="row g-0">
-          <div class="col-6 border-end">
-            <table class="ps-tbl">
-              <tbody>
-                <tr><td>Revenue</td><td class="text-end fw-bold text-success">{{ revenue|floatformat:0|intcomma }}</td></tr>
-                <tr><td>COGS</td><td class="text-end fw-bold">{{ cogs|floatformat:0|intcomma }}</td></tr>
-                <tr><td>Gross Margin</td><td class="text-end fw-bold {% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">{{ gross_margin }}%</td></tr>
-                <tr><td>Avg Revenue/Rx</td><td class="text-end fw-bold">{{ avg_cost_per_rx|floatformat:0|intcomma }}</td></tr>
-              </tbody>
-            </table>
+        <div class="row g-3">
+          <div class="col-6">
+            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Revenue</h6>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Total Revenue</span><strong class="text-success">{{ revenue|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">COGS</span><strong>{{ cogs|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Gross Margin</span><strong class="{% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">{{ gross_margin }}%</strong></div>
+            <div class="d-flex justify-content-between py-1"><span class="text-muted">Avg Revenue/Rx</span><strong>{{ avg_cost_per_rx|floatformat:0|intcomma }}</strong></div>
           </div>
           <div class="col-6">
-            <table class="ps-tbl">
-              <tbody>
-                <tr><td>Rx Sales</td><td class="text-end fw-bold">{{ rx_revenue|floatformat:0|intcomma }} <span class="ps-badge ps-met">{{ rx_count }}</span></td></tr>
-                <tr><td>OTC Sales</td><td class="text-end fw-bold">{{ otc_revenue|floatformat:0|intcomma }} <span class="ps-badge ps-trk">{{ otc_count }}</span></td></tr>
-                {% for t in tier_stats %}
-                <tr><td><span style="color:{{ t.color }};">{{ t.label }}</span></td><td class="text-end fw-bold">{{ t.revenue|floatformat:0|intcomma }} <span class="text-muted" style="font-size:.6rem;">{{ t.count }}Rx</span></td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
+            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Sales Split</h6>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Rx Sales</span><strong>{{ rx_revenue|floatformat:0|intcomma }} <span class="badge bg-success-subtle text-success small">{{ rx_count }}</span></strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">OTC Sales</span><strong>{{ otc_revenue|floatformat:0|intcomma }} <span class="badge bg-secondary-subtle text-secondary small">{{ otc_count }}</span></strong></div>
+            {% for t in tier_stats %}
+            <div class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom{% endif %}">
+              <span style="color:{{ t.color }};">{{ t.label }}</span>
+              <strong>{{ t.revenue|floatformat:0|intcomma }} <span class="text-muted small">{{ t.count }}Rx</span></strong>
+            </div>
+            {% endfor %}
           </div>
         </div>
       </div>
@@ -182,174 +342,307 @@
   </div>
 </div>
 
-{# ══════════ ROW 3: Charts ══════════ #}
-<div class="row g-2 mb-2">
-  <div class="col-lg-6">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-bar-chart-line me-1"></i>5. Daily Dispensings (14 Days)</div>
-      <div class="card-body" style="padding:6px 8px!important;">
-        <canvas id="dailyChart" height="70"></canvas>
-      </div>
-    </div>
+{# ── Demographics ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-people-fill text-primary"></i>
+    <span>Patient Demographics &amp; Status</span>
+    <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_name }}</span>
   </div>
-  <div class="col-lg-6">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-graph-up-arrow me-1"></i>Revenue Trend (14 Days)</div>
-      <div class="card-body" style="padding:6px 8px!important;">
-        <canvas id="revenueChart" height="70"></canvas>
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-gender-ambiguous me-1"></i>Sex Distribution
+        </h6>
+        <div class="d-flex gap-4 justify-content-center mb-3">
+          <div class="text-center">
+            <div class="h3 fw-bold text-primary">{{ male_count }}</div>
+            <div class="small text-muted"><i class="bi bi-gender-male text-primary me-1"></i>Male</div>
+          </div>
+          <div class="text-center">
+            <div class="h3 fw-bold" style="color:#e83e8c;">{{ female_count }}</div>
+            <div class="small text-muted"><i class="bi bi-gender-female me-1" style="color:#e83e8c;"></i>Female</div>
+          </div>
+        </div>
+        <canvas id="genderChart" height="160"></canvas>
+      </div>
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-pie-chart me-1"></i>Status Breakdown
+        </h6>
+        <canvas id="statusChart" height="180"></canvas>
+        <div class="mt-2 small">
+          <div class="d-flex justify-content-between py-1 border-bottom"><span><span class="badge bg-success me-1">&nbsp;</span>Dispensed</span><strong>{{ dispensed_count }}</strong></div>
+          <div class="d-flex justify-content-between py-1 border-bottom"><span><span class="badge bg-warning me-1">&nbsp;</span>Partial</span><strong>{{ partial_count }}</strong></div>
+          <div class="d-flex justify-content-between py-1"><span><span class="badge bg-secondary me-1">&nbsp;</span>Cancelled</span><strong>{{ cancelled_count }}</strong></div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-layers me-1"></i>Service Tier
+        </h6>
+        <canvas id="tierChart" height="180"></canvas>
+        {% for t in tier_stats %}
+        <div class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom{% endif %} small mt-1">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ t.color }};margin-right:6px;"></span>{{ t.label }}</span>
+          <strong>{{ t.count }}</strong>
+        </div>
+        {% endfor %}
       </div>
     </div>
   </div>
 </div>
 
-{# ══════════ ROW 4: Top Drugs + Staff + Demographics ══════════ #}
-<div class="row g-2 mb-2">
-  <div class="col-lg-5">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-capsule-pill me-1"></i>6. Top 15 Drugs</div>
-      <div class="card-body">
-        <table class="ps-tbl">
-          <thead><tr><th>#</th><th>Drug</th><th class="text-center">Rx</th><th class="text-center">Qty</th><th style="width:50px"></th></tr></thead>
-          <tbody>
-            {% for d in top_drugs %}
-            <tr>
-              <td class="text-muted fw-bold">{{ forloop.counter }}</td>
-              <td class="fw-semibold">{{ d.drug_name|truncatechars:28 }}</td>
-              <td class="text-center">{{ d.count }}</td>
-              <td class="text-center fw-bold" style="color:#0d6efd;">{{ d.qty }}</td>
-              <td><div class="progress" style="height:3px;"><div class="progress-bar" style="width:{% widthratio d.qty top_drugs.0.qty 100 %}%;background:#0d6efd;"></div></div></td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="5" class="text-center text-muted py-2">No data</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+{# ── Top 15 Drugs + Staff Throughput ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-trophy text-warning me-2"></i>Top 15 Drugs Dispensed
       </div>
-    </div>
-  </div>
-  <div class="col-lg-4">
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-person-gear me-1"></i>7. Staff Throughput <span class="badge bg-secondary ms-1" style="font-size:.55rem;">ASHP</span></div>
-      <div class="card-body">
-        <table class="ps-tbl">
-          <thead><tr><th>#</th><th>Staff</th><th class="text-center">Rx</th><th class="text-center">Revenue</th></tr></thead>
-          <tbody>
-            {% for s in staff_throughput %}
-            <tr>
-              <td class="text-muted">{{ forloop.counter }}</td>
-              <td class="fw-semibold">{{ s.name|truncatechars:18 }}</td>
-              <td class="text-center fw-bold">{{ s.count }}</td>
-              <td class="text-center text-success">{{ s.rev|floatformat:0|intcomma }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="4" class="text-center text-muted py-2">No data</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        <div class="border-top px-2 py-1 d-flex justify-content-between" style="font-size:.65rem;color:#6c757d;">
-          <span>{{ working_days }} working days</span>
-          <span>{{ rx_per_day }} Rx/day</span>
-          <span>{{ staff_throughput|length }} staff</span>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover small mb-0">
+            <thead class="table-light">
+              <tr><th>#</th><th>Drug</th><th class="text-end">Rx</th><th class="text-end">Qty</th><th style="min-width:90px;">Volume</th></tr>
+            </thead>
+            <tbody>
+              {% for d in top_drugs %}
+              <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td class="fw-semibold">{{ d.drug_name|truncatechars:30 }}</td>
+                <td class="text-end">{{ d.count }}</td>
+                <td class="text-end fw-bold text-primary">{{ d.qty }}</td>
+                <td>
+                  {% if top_drugs.0.qty %}
+                  <div class="progress" style="height:6px;margin-top:6px;">
+                    <div class="progress-bar bg-primary" style="width:{% widthratio d.qty top_drugs.0.qty 100 %}%;"></div>
+                  </div>
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No data yet</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   </div>
-  <div class="col-lg-3">
-    {% if category_stats %}
-    <div class="card ps-card mb-2">
-      <div class="ps-hdr"><i class="bi bi-tag-fill me-1"></i>Categories</div>
-      <div class="card-body">
-        <table class="ps-tbl">
-          <tbody>
-            {% for c in category_stats %}
-            <tr><td>{{ c.label }}</td><td class="text-end fw-bold" style="color:#0d6efd;">{{ c.qty }}</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-person-gear text-primary me-1"></i>
+        <span>Staff Throughput</span>
+        <span class="badge bg-secondary-subtle text-secondary small ms-1">ASHP</span>
+        <span class="ms-auto text-muted small fw-normal">{{ working_days }} days &bull; {{ rx_per_day }} Rx/day</span>
       </div>
-    </div>
-    {% endif %}
-    <div class="card ps-card">
-      <div class="ps-hdr"><i class="bi bi-people me-1"></i>Demographics</div>
-      <div class="card-body">
-        <table class="ps-tbl">
-          <tbody>
-            <tr><td><i class="bi bi-gender-male text-primary me-1"></i>Male</td><td class="text-end fw-bold">{{ male_count }}</td></tr>
-            <tr><td><i class="bi bi-gender-female me-1" style="color:#e83e8c;"></i>Female</td><td class="text-end fw-bold">{{ female_count }}</td></tr>
-            <tr class="border-top"><td class="text-muted">Dispensed</td><td class="text-end fw-bold">{{ dispensed_count }}</td></tr>
-            <tr><td class="text-muted">Partial</td><td class="text-end fw-bold">{{ partial_count }}</td></tr>
-            <tr><td class="text-muted">Cancelled</td><td class="text-end fw-bold">{{ cancelled_count }}</td></tr>
-          </tbody>
-        </table>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover small mb-0">
+            <thead class="table-light">
+              <tr><th>#</th><th>Pharmacist / Dispenser</th><th class="text-end">Rx</th><th class="text-end">Revenue (FCFA)</th><th style="min-width:70px;">Share</th></tr>
+            </thead>
+            <tbody>
+              {% for s in staff_throughput %}
+              <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td class="fw-semibold">{{ s.name|truncatechars:22 }}</td>
+                <td class="text-end fw-bold">{{ s.count }}</td>
+                <td class="text-end text-success fw-bold">{{ s.rev|floatformat:0|intcomma }}</td>
+                <td>
+                  {% if staff_throughput.0.count %}
+                  <div class="progress" style="height:6px;margin-top:6px;">
+                    <div class="progress-bar bg-success" style="width:{% widthratio s.count staff_throughput.0.count 100 %}%;"></div>
+                  </div>
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No data yet</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-{# Hidden canvases for print image capture #}
-<div style="position:absolute;left:-9999px;" aria-hidden="true">
-  <canvas id="statusChart" height="100"></canvas>
-  <canvas id="tierChart" height="100"></canvas>
+{# ── Categories ── #}
+{% if category_stats %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-tag-fill text-primary"></i>
+    <span>Dispensing by Drug Category</span>
+  </div>
+  <div class="card-body">
+    <div class="row align-items-center">
+      <div class="col-md-4">
+        <canvas id="categoryChart" style="max-height:220px;"></canvas>
+      </div>
+      <div class="col-md-8">
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr><th>Category</th><th class="text-end">Quantity</th><th class="text-end">%</th></tr>
+            </thead>
+            <tbody>
+              {% for c in category_stats %}
+              <tr>
+                <td class="fw-semibold">{{ c.label }}</td>
+                <td class="text-end fw-bold text-primary">{{ c.qty }}</td>
+                <td class="text-end text-muted">{% if total_items %}{% widthratio c.qty total_items 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+{% endif %}
 
 {% endblock %}
 
 {% block extra_js %}
 <script>
-(function(){
+function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[id]")){return;}window.__ehrChartInit=null;
+const COLORS = ['#6366f1','#0d6efd','#0dcaf0','#198754','#ffc107','#dc3545','#6c757d','#fd7e14','#20c997','#e83e8c'];
+
+// Daily dispensings bar
 const DAILY = {{ daily_json|safe }};
-const REV   = {{ revenue_json|safe }};
+new Chart(document.getElementById('dailyChart'), {
+  type: 'bar',
+  data: {
+    labels: DAILY.labels,
+    datasets: [{ label: 'Dispensings', data: DAILY.data,
+      backgroundColor: 'rgba(99,102,241,0.6)', borderColor: '#6366f1',
+      borderWidth: 1, borderRadius: 4 }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+});
+
+// Revenue trend line
+const REV = {{ revenue_json|safe }};
+new Chart(document.getElementById('revenueChart'), {
+  type: 'line',
+  data: {
+    labels: REV.labels,
+    datasets: [{ label: 'Revenue', data: REV.data,
+      borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.12)',
+      fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#198754', borderWidth: 2.5 }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { callback: function(v){return v.toLocaleString();} } } } }
+});
+
+// Gender doughnut
+{% if male_count or female_count %}
+new Chart(document.getElementById('genderChart'), {
+  type: 'doughnut',
+  data: { labels: ['Male','Female'],
+    datasets: [{ data: [{{ male_count }},{{ female_count }}],
+      backgroundColor: ['#0d6efd','#e83e8c'], borderWidth: 2 }] },
+  options: { responsive: true, cutout: '55%',
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+});
+{% endif %}
+
+// Status doughnut
 const STATUS = {{ status_json|safe }};
-const TIER   = {{ tier_json|safe }};
+if (STATUS.data.some(function(v){return v>0;})) {
+  new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: { labels: STATUS.labels,
+      datasets: [{ data: STATUS.data, backgroundColor: ['#198754','#ffc107','#6c757d','#0dcaf0'], borderWidth: 2, borderColor: '#fff' }] },
+    options: { responsive: true, cutout: '55%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+  });
+}
 
-if(document.getElementById('dailyChart'))
-new Chart(document.getElementById('dailyChart'),{type:'bar',data:{labels:DAILY.labels,datasets:[{label:'Dispensings',data:DAILY.data,backgroundColor:'rgba(13,110,253,.6)',borderRadius:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1,font:{size:9}}},x:{ticks:{font:{size:8}}}}}});
+// Tier doughnut
+const TIER = {{ tier_json|safe }};
+if (TIER.data.some(function(v){return v>0;})) {
+  new Chart(document.getElementById('tierChart'), {
+    type: 'doughnut',
+    data: { labels: TIER.labels,
+      datasets: [{ data: TIER.data, backgroundColor: TIER.colors, borderWidth: 2, borderColor: '#fff' }] },
+    options: { responsive: true, cutout: '55%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+  });
+}
 
-if(document.getElementById('revenueChart'))
-new Chart(document.getElementById('revenueChart'),{type:'line',data:{labels:REV.labels,datasets:[{label:'Revenue',data:REV.data,borderColor:'#198754',backgroundColor:'rgba(25,135,84,.1)',fill:true,tension:.3,pointRadius:2,pointBackgroundColor:'#198754'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:9},callback:function(v){return v.toLocaleString();}}},x:{ticks:{font:{size:8}}}}}});
-
-new Chart(document.getElementById('statusChart'),{type:'doughnut',data:{labels:STATUS.labels,datasets:[{data:STATUS.data,backgroundColor:['#198754','#ffc107','#6c757d','#0dcaf0']}]},options:{responsive:true,cutout:'60%',plugins:{legend:{display:false}}}});
-new Chart(document.getElementById('tierChart'),{type:'doughnut',data:{labels:TIER.labels,datasets:[{data:TIER.data,backgroundColor:TIER.colors}]},options:{responsive:true,cutout:'60%',plugins:{legend:{display:false}}}});
-})();
+// Category doughnut
+{% if category_stats %}
+const CAT = {{ category_json|safe }};
+if (CAT.data.some(function(v){return v>0;})) {
+  new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: { labels: CAT.labels,
+      datasets: [{ data: CAT.data, backgroundColor: COLORS, borderWidth: 2 }] },
+    options: { responsive: true, cutout: '58%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+  });
+}
+{% endif %}
+}window.__ehrChartInit=_c;_c();
 </script>
 
+<style>
+@media print {
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+  .print-only { display: block !important; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; margin-bottom: 8px !important; }
+  .card-header { background: #f8f9fa !important; color: #1a1a1a !important; }
+  .card-body { padding: 8px 10px !important; }
+  .row.g-3 { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-md-8 { width: 64% !important; flex: none; }
+  .col-md-4 { width: 33% !important; flex: none; }
+  .col-md-6 { width: 48% !important; flex: none; }
+  .col-6.col-md.col-lg { flex: 1 1 100px; max-width: 160px; }
+  .print-chart-img { width: 100% !important; height: auto !important; display: block; }
+  table { font-size: 9pt !important; }
+  .table-responsive { overflow: visible !important; }
+  .progress { border: 1px solid #dee2e6; height: 6px !important; }
+  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: 1px solid #dee2e6; }
+}
+</style>
+
 <script>
-function printWithCharts(){
-  var imgs={};
-  document.querySelectorAll('canvas').forEach(function(c){if(c.id&&typeof Chart!=='undefined'&&Chart.getChart&&Chart.getChart(c))imgs[c.id]=c.toDataURL('image/png');});
-  function ci(id,label){if(!imgs[id])return'';return'<div style="font-size:8px;font-weight:600;color:#444;margin-bottom:2px;">'+label+'</div><img src="'+imgs[id]+'" style="width:100%;border-radius:2px;">';}
-  var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pharmacy Stats — {{ month_name|escapejs }}</title>'
-    +'<style>@page{size:A4 landscape;margin:12mm 14mm;}body{font-family:Arial,sans-serif;font-size:9pt;margin:0;}'
-    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #1a3a5c;padding-bottom:6px;margin-bottom:6px;}'
-    +'.band{background:#1a3a5c;color:#fff;padding:5px 10px;border-radius:2px;margin-bottom:6px;font-size:9pt;font-weight:700;display:flex;justify-content:space-between;}'
-    +'.kpi-row{display:flex;gap:4px;margin-bottom:8px;}.kpi{flex:1;border:1px solid #dee2e6;border-radius:3px;text-align:center;padding:5px;}'
-    +'.kpi-v{font-size:14pt;font-weight:700;color:#1a3a5c;}.kpi-l{font-size:7pt;color:#6c757d;}'
-    +'.two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}'
-    +'.chart-box{border:1px solid #dee2e6;border-radius:3px;padding:6px;}'
-    +'.auth{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:12px;border-top:2px solid #dee2e6;padding-top:8px;}'
-    +'.sig-line{border-bottom:1px solid #333;height:16px;margin-bottom:3px;}.auth-r{font-size:7pt;color:#888;}'
-    +'.ft{margin-top:10px;padding-top:4px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:7pt;color:#999;}'
-    +'</style></head><body>'
-    +'<div class="hdr"><div><div style="font-size:13pt;font-weight:800;color:#1a3a5c;">{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }}</div></div>'
-    +'<div style="text-align:right;font-size:8pt;color:#666;">Pharmacy Monthly Report<br><strong>{{ month_name|escapejs }}</strong></div></div>'
-    +'<div class="band"><span>WHO/JCI MMU — Pharmacy Statistics</span><span style="font-size:8pt;">PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span></div>'
-    +'<div class="kpi-row">'
-    +'<div class="kpi"><div class="kpi-v">{{ total_dispensings }}</div><div class="kpi-l">Dispensings</div></div>'
-    +'<div class="kpi"><div class="kpi-v" style="color:#198754;">{{ dispensed_count }}</div><div class="kpi-l">Dispensed</div></div>'
-    +'<div class="kpi"><div class="kpi-v" style="color:#fd7e14;">{{ partial_count }}</div><div class="kpi-l">Partial</div></div>'
-    +'<div class="kpi"><div class="kpi-v">{{ completion_rate }}%</div><div class="kpi-l">Fill Rate</div></div>'
-    +'<div class="kpi"><div class="kpi-v" style="color:#198754;">{{ revenue|floatformat:0|intcomma }}</div><div class="kpi-l">Revenue</div></div>'
-    +'<div class="kpi"><div class="kpi-v">{{ stockout_rate }}%</div><div class="kpi-l">Stockout</div></div>'
-    +'<div class="kpi"><div class="kpi-v" style="color:#6f42c1;">{{ rx_per_day }}</div><div class="kpi-l">Rx/Day</div></div>'
-    +'<div class="kpi"><div class="kpi-v">{{ gross_margin }}%</div><div class="kpi-l">Margin</div></div></div>'
-    +'<div class="two"><div class="chart-box">'+ci('dailyChart','Daily Dispensings')+'</div><div class="chart-box">'+ci('revenueChart','Revenue Trend')+'</div></div>'
-    +'<div class="two"><div class="chart-box">'+ci('statusChart','Status Breakdown')+'</div><div class="chart-box">'+ci('tierChart','Service Tier')+'</div></div>'
-    +'<div class="auth"><div><div class="auth-r">Prepared by</div><div style="font-weight:700;font-size:8pt;">Head Pharmacist</div><div class="sig-line"></div><div class="auth-r">Date: ___________</div></div>'
-    +'<div><div class="auth-r">Reviewed by</div><div style="font-weight:700;font-size:8pt;">Medical Director</div><div class="sig-line"></div><div class="auth-r">Date: ___________</div></div>'
-    +'<div><div class="auth-r">Approved by</div><div style="font-weight:700;font-size:8pt;">Hospital Admin</div><div class="sig-line"></div><div class="auth-r">Date: ___________</div></div></div>'
-    +'<div class="ft"><span>{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }}</span><span>PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span><span>CONFIDENTIAL</span></div>'
-    +'</body></html>';
-  var w=window.open('','_blank');w.document.open();w.document.write(h);w.document.close();w.focus();setTimeout(function(){w.print();},600);
+function exportStatsPDF() {
+  window.open('{{ request.path }}?year={{ year }}&month={{ month }}&pdf=1', '_blank');
+}
+function printWithCharts() {
+  var pairs = [];
+  document.querySelectorAll('canvas').forEach(function(canvas) {
+    var chart = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+    if (!chart) return;
+    var img = new Image();
+    img.src = chart.toBase64Image('image/png', 1.0);
+    img.className = 'print-chart-img';
+    img.style.maxWidth = canvas.offsetWidth + 'px';
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = 'none';
+    pairs.push({ canvas: canvas, img: img });
+  });
+  window.print();
+  setTimeout(function() {
+    pairs.forEach(function(p) {
+      p.canvas.style.display = '';
+      if (p.img.parentNode) p.img.parentNode.removeChild(p.img);
+    });
+  }, 2000);
 }
 </script>
 {% endblock %}
