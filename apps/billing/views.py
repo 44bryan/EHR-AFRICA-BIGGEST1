@@ -1030,9 +1030,12 @@ def cashier_pos(request, token_id):
             _Pf2('refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
         ).order_by('-created_at')[:5]
 
-    # Active insurance for co-pay display
+    # Active insurance for co-pay display + auto copay split + eligibility
     from apps.patients.models import InsuranceInfo
     active_insurance = None
+    insurance_warnings = []
+    insured_member = None
+    preauth_warning = None
     if patient:
         active_insurance = (
             InsuranceInfo.objects
@@ -1040,6 +1043,65 @@ def cashier_pos(request, token_id):
             .order_by('-created_at')
             .first()
         )
+
+        # ── HMO member lookup for copay + eligibility + pre-auth ──────────
+        try:
+            from apps.hmo.models import InsuredMember, PreAuthorization, PreAuthStatus
+            insured_member = (
+                InsuredMember.objects
+                .filter(patient=patient, is_active=True)
+                .select_related('scheme')
+                .order_by('-created_at')
+                .first()
+            )
+            if insured_member:
+                # Eligibility: card expiry check
+                if insured_member.is_expired:
+                    insurance_warnings.append(
+                        f'Insurance card EXPIRED on {insured_member.card_expiry.strftime("%d %b %Y")}. '
+                        f'Verify coverage before billing.'
+                    )
+                # Eligibility: annual claim ceiling check
+                if insured_member.scheme.max_annual_claim:
+                    from django.db.models import Sum as _SumIns
+                    _year_start = timezone.localdate().replace(month=1, day=1)
+                    _claims_total = insured_member.claims.filter(
+                        is_deleted=False,
+                        service_date__gte=_year_start,
+                    ).aggregate(t=_SumIns('claimed_amount'))['t'] or 0
+                    _ceiling = float(insured_member.scheme.max_annual_claim)
+                    if float(_claims_total) >= _ceiling * 0.9:
+                        _pct_used = round(float(_claims_total) / _ceiling * 100)
+                        insurance_warnings.append(
+                            f'Annual claim ceiling: {int(_claims_total):,} / {int(_ceiling):,} FCFA '
+                            f'({_pct_used}% used). '
+                            f'{"CEILING EXCEEDED — bill as self-pay." if _pct_used >= 100 else "Near limit — verify with scheme."}'
+                        )
+                # Pre-auth enforcement
+                if insured_member.scheme.pre_auth_required:
+                    _has_valid_preauth = PreAuthorization.objects.filter(
+                        member=insured_member,
+                        status=PreAuthStatus.APPROVED,
+                        is_deleted=False,
+                    ).filter(
+                        models.Q(valid_until__isnull=True) | models.Q(valid_until__gte=timezone.localdate())
+                    ).exists()
+                    if not _has_valid_preauth:
+                        preauth_warning = (
+                            f'{insured_member.scheme.name} requires pre-authorization. '
+                            f'No valid pre-auth found for this patient. '
+                            f'Request pre-auth before billing or bill as self-pay.'
+                        )
+
+                # ── Auto copay split — set insurance_amount on new invoices ──
+                if invoice and invoice.insurance_amount == 0 and invoice.total > 0:
+                    _copay_pct = float(insured_member.copay_pct or 20)
+                    _ins_share = round(float(invoice.total) * (100 - _copay_pct) / 100)
+                    if _ins_share > 0 and not insured_member.is_expired:
+                        invoice.insurance_amount = _ins_share
+                        invoice.save(update_fields=['insurance_amount', 'updated_at'])
+        except Exception:
+            pass
 
     # Doctor's pre-orders waiting for payment
     doctor_orders = []
@@ -1098,6 +1160,9 @@ def cashier_pos(request, token_id):
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
         'active_insurance': active_insurance,
+        'insured_member': insured_member,
+        'insurance_warnings': insurance_warnings,
+        'preauth_warning': preauth_warning,
         'doctor_orders': doctor_orders,
         'receipt_url': f"/billing/receipt/{invoice.id}/" if invoice else '',
         'shift_total': shift_totals['total'] or 0,
@@ -1289,6 +1354,61 @@ def pos_record_payment(request, invoice_id):
     # Sync surgical booking deposit if this invoice is linked to a booking
     _sync_surgical_deposit(invoice)
 
+    # ── Auto-claim generation for insured patients ────────────────────────
+    # When invoice has insurance_amount > 0, auto-create an HMO claim
+    if invoice.insurance_amount > 0 and invoice.patient:
+        try:
+            from apps.hmo.models import (
+                InsuredMember as _IM, Claim as _HClaim,
+                ClaimItem as _HCI, ClaimStatus as _HCS,
+            )
+            _member = _IM.objects.filter(
+                patient=invoice.patient, is_active=True,
+            ).select_related('scheme').first()
+            if _member:
+                # Only create if no claim already exists for this invoice
+                _existing_claim = _HClaim.objects.filter(
+                    invoice=invoice, is_deleted=False,
+                ).exists()
+                if not _existing_claim:
+                    _today = timezone.localdate()
+                    _claim_count = _HClaim.objects.filter(
+                        member__scheme=_member.scheme,
+                        service_date=_today,
+                    ).count() + 1
+                    _claim_number = (
+                        f'{_member.scheme.code}-{_today.strftime("%Y%m%d")}-{_claim_count:04d}'
+                    )
+                    # Find the patient's visit for today
+                    from apps.patients.models import Visit as _ClaimVisit
+                    _visit = _ClaimVisit.objects.filter(
+                        patient=invoice.patient, is_deleted=False,
+                    ).order_by('-visit_date').first()
+                    _claim = _HClaim.objects.create(
+                        claim_number=_claim_number,
+                        member=_member,
+                        visit=_visit,
+                        invoice=invoice,
+                        status=_HCS.DRAFT,
+                        service_date=_today,
+                        claimed_amount=invoice.insurance_amount,
+                        patient_copay=invoice.patient_amount,
+                        created_by=request.user,
+                    )
+                    # Create claim line items from invoice items
+                    for _item in invoice.items.filter(is_deleted=False):
+                        _copay_pct = float(_member.copay_pct or 20) / 100
+                        _item_claimed = round(float(_item.line_total) * (1 - _copay_pct), 2)
+                        _HCI.objects.create(
+                            claim=_claim,
+                            service_name=_item.description,
+                            quantity=_item.quantity,
+                            unit_price=_item.unit_price,
+                            claimed_amount=_item_claimed,
+                        )
+        except Exception:
+            pass  # Don't block payment if claim creation fails
+
     resp = {
         'success': True,
         'amount_paid': int(invoice.amount_paid),
@@ -1448,6 +1568,59 @@ def patient_pos(request, patient_id):
     active_insurance = InsuranceInfo.objects.filter(
         patient=patient, is_active=True, is_deleted=False
     ).order_by('-created_at').first()
+
+    # ── HMO member: eligibility + pre-auth + auto copay (same as main POS) ──
+    insurance_warnings = []
+    insured_member = None
+    preauth_warning = None
+    try:
+        from apps.hmo.models import InsuredMember, PreAuthorization, PreAuthStatus
+        insured_member = (
+            InsuredMember.objects
+            .filter(patient=patient, is_active=True)
+            .select_related('scheme')
+            .order_by('-created_at')
+            .first()
+        )
+        if insured_member:
+            if insured_member.is_expired:
+                insurance_warnings.append(
+                    f'Insurance card EXPIRED on {insured_member.card_expiry.strftime("%d %b %Y")}. '
+                    f'Verify coverage before billing.'
+                )
+            if insured_member.scheme.max_annual_claim:
+                from django.db.models import Sum as _SumIns2
+                _year_start2 = timezone.localdate().replace(month=1, day=1)
+                _claims_total2 = insured_member.claims.filter(
+                    is_deleted=False, service_date__gte=_year_start2,
+                ).aggregate(t=_SumIns2('claimed_amount'))['t'] or 0
+                _ceiling2 = float(insured_member.scheme.max_annual_claim)
+                if float(_claims_total2) >= _ceiling2 * 0.9:
+                    _pct2 = round(float(_claims_total2) / _ceiling2 * 100)
+                    insurance_warnings.append(
+                        f'Annual ceiling: {int(_claims_total2):,} / {int(_ceiling2):,} FCFA ({_pct2}%). '
+                        f'{"CEILING EXCEEDED." if _pct2 >= 100 else "Near limit."}'
+                    )
+            if insured_member.scheme.pre_auth_required:
+                _has_pa = PreAuthorization.objects.filter(
+                    member=insured_member, status=PreAuthStatus.APPROVED, is_deleted=False,
+                ).filter(
+                    models.Q(valid_until__isnull=True) | models.Q(valid_until__gte=timezone.localdate())
+                ).exists()
+                if not _has_pa:
+                    preauth_warning = (
+                        f'{insured_member.scheme.name} requires pre-authorization. '
+                        f'No valid pre-auth found. Request pre-auth or bill as self-pay.'
+                    )
+            if invoice and invoice.insurance_amount == 0 and invoice.total > 0:
+                _copay2 = float(insured_member.copay_pct or 20)
+                _ins2 = round(float(invoice.total) * (100 - _copay2) / 100)
+                if _ins2 > 0 and not insured_member.is_expired:
+                    invoice.insurance_amount = _ins2
+                    invoice.save(update_fields=['insurance_amount', 'updated_at'])
+    except Exception:
+        pass
+
     doctor_orders = list(
         ServiceWorkOrder.objects.filter(
             patient=patient,
@@ -1479,7 +1652,7 @@ def patient_pos(request, patient_id):
         else (_today_visit.service_tier if _today_visit else 'STANDARD')
     )
     from django.urls import reverse as _rev
-    _pqueue_url = _rev('dashboard:home')  # always return cashier to their dashboard after payment
+    _pqueue_url = _rev('dashboard:home')
     return render(request, 'billing/cashier_pos.html', {
         'token': None,
         'patient': patient,
@@ -1493,6 +1666,9 @@ def patient_pos(request, patient_id):
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
         'active_insurance': active_insurance,
+        'insured_member': insured_member,
+        'insurance_warnings': insurance_warnings,
+        'preauth_warning': preauth_warning,
         'doctor_orders': doctor_orders,
         'receipt_url': f"/billing/receipt/{invoice.id}/" if invoice else '',
         'shift_total': shift_totals['total'] or 0,
