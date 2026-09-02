@@ -6,6 +6,7 @@ from django.db.models import Q, Sum, F, Value, Max, Count, IntegerField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.http import HttpResponse, JsonResponse
+import re
 from .models import (
     Drug, DrugStock, Dispensing, DispensingItem, DispensingStatus,
     StockAdjustment, AdjustmentReason,
@@ -3903,6 +3904,9 @@ def barcode_labels_view(request):
         # Strip XML declaration for inline embedding
         if '?>' in svg_str:
             svg_str = svg_str[svg_str.index('?>') + 2:]
+        # Remove fixed width/height from SVG tag so CSS controls sizing
+        svg_str = re.sub(r'\s+width="[^"]*"', '', svg_str, count=1)
+        svg_str = re.sub(r'\s+height="[^"]*"', '', svg_str, count=1)
         for _ in range(copies):
             drug_labels.append({
                 'drug': drug,
