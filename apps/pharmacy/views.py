@@ -420,7 +420,9 @@ def pharmacy_stats_view(request):
 
     # ── WHO/JCI Pharmacy Indicators ──────────────────────────────────────────
     # WHO Core Drug Use Indicators (Management Sciences for Health / WHO 1993)
-    avg_items_per_rx = round(total_items / total_dispensings, 2) if total_dispensings else 0
+    # Use dispensings with at least one item (exclude empty PENDING)
+    _rx_with_items = base.filter(items__isnull=False).distinct().count()
+    avg_items_per_rx = round(total_items / _rx_with_items, 2) if _rx_with_items else 0
 
     # WHO/JCI item-level indicators — single aggregate (replaces 2 separate count queries)
     _item_agg = base_items.aggregate(
@@ -437,8 +439,8 @@ def pharmacy_stats_view(request):
         from apps.prescriptions.models import DrugPrescription
         _rx_agg = DrugPrescription.objects.filter(
             is_deleted=False,
-            prescription_date__date__gte=month_start,
-            prescription_date__date__lte=month_end,
+            prescription_date__gte=month_start,
+            prescription_date__lte=month_end,
         ).aggregate(
             total_rx=Count('id'),
             declined_rx=Count('id', filter=Q(notes__icontains='Bought elsewhere')),
@@ -568,7 +570,11 @@ def pharmacy_stats_view(request):
     ).aggregate(val=Sum(F('quantity_remaining') * F('purchase_price')))['val'] or 0
 
     # Stock turnover ratio: cost of goods dispensed / avg inventory value
-    cogs = base_items.filter(drug__isnull=False).aggregate(
+    # COGS only from DISPENSED dispensings (not pending/partial/cancelled)
+    cogs = base_items.filter(
+        drug__isnull=False,
+        dispensing__status=DispensingStatus.DISPENSED,
+    ).aggregate(
         cost=Sum(F('quantity_dispensed') * F('drug__cost_price'))
     )['cost'] or 0
     stock_turnover = round(float(cogs) / float(total_inventory_value), 2) if total_inventory_value else 0
