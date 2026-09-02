@@ -508,6 +508,127 @@ def pharmacy_stats_view(request):
         .filter(_stock__lte=F('reorder_level'))
     )
 
+    # ── WHO Additional Indicators ─────────────────────────────────────────
+    # WHO indicator: % prescribed by generic name
+    _generic_agg = base_items.aggregate(
+        with_generic=Count('id', filter=Q(drug__generic_name__gt='')),
+        total_items_ct=Count('id'),
+    )
+    generic_prescribing_rate = round(
+        _generic_agg['with_generic'] / _generic_agg['total_items_ct'] * 100, 1
+    ) if _generic_agg['total_items_ct'] else 0
+
+    # WHO indicator: % encounters with injection
+    injection_items = base_items.filter(drug__form='INJECTION').count()
+    injection_rate = round(injection_items / total_items * 100, 1) if total_items else 0
+
+    # WHO indicator: % from essential drug list (formulary drugs vs custom/non-formulary)
+    formulary_items = base_items.filter(drug__isnull=False).count()
+    formulary_rate = round(formulary_items / total_items * 100, 1) if total_items else 0
+
+    # WHO indicator: generic substitution rate
+    substitution_count = base_items.filter(substituted_for__gt='').count()
+    substitution_rate = round(substitution_count / total_items * 100, 1) if total_items else 0
+
+    # ── Inventory Health Indicators ───────────────────────────────────────
+    from datetime import timedelta
+    total_active_drugs = Drug.objects.filter(is_active=True, is_deleted=False).count()
+
+    # Stockout rate: drugs with 0 stock / total active drugs
+    _drugs_with_stock = Drug.objects.filter(
+        is_active=True, is_deleted=False,
+        stock_items__is_deleted=False, stock_items__expiry_date__gte=today,
+        stock_items__quantity_remaining__gt=0,
+    ).distinct().count()
+    stockout_count = total_active_drugs - _drugs_with_stock
+    stockout_rate = round(stockout_count / total_active_drugs * 100, 1) if total_active_drugs else 0
+
+    # Expiry/wastage: expired stock value in period
+    expired_batches = DrugStock.objects.filter(
+        is_deleted=False, expiry_date__gte=month_start, expiry_date__lte=month_end,
+    )
+    expired_value = expired_batches.aggregate(
+        val=Sum(F('quantity_remaining') * F('purchase_price'))
+    )['val'] or 0
+    expired_units = expired_batches.aggregate(u=Sum('quantity_remaining'))['u'] or 0
+
+    # Near-expiry (next 30 days) stock value at risk
+    near_expiry_batches = DrugStock.objects.filter(
+        is_deleted=False, quantity_remaining__gt=0,
+        expiry_date__gt=today, expiry_date__lte=today + timedelta(days=30),
+    )
+    near_expiry_value = near_expiry_batches.aggregate(
+        val=Sum(F('quantity_remaining') * F('purchase_price'))
+    )['val'] or 0
+    near_expiry_count = near_expiry_batches.count()
+
+    # Total inventory value (at cost)
+    total_inventory_value = DrugStock.objects.filter(
+        is_deleted=False, quantity_remaining__gt=0, expiry_date__gte=today,
+    ).aggregate(val=Sum(F('quantity_remaining') * F('purchase_price')))['val'] or 0
+
+    # Stock turnover ratio: cost of goods dispensed / avg inventory value
+    cogs = base_items.filter(drug__isnull=False).aggregate(
+        cost=Sum(F('quantity_dispensed') * F('drug__cost_price'))
+    )['cost'] or 0
+    stock_turnover = round(float(cogs) / float(total_inventory_value), 2) if total_inventory_value else 0
+
+    # ── Financial KPIs ────────────────────────────────────────────────────
+    avg_cost_per_rx = round(float(revenue) / dispensed_count, 0) if dispensed_count else 0
+
+    # Gross margin: (revenue - COGS) / revenue
+    gross_margin = round((float(revenue) - float(cogs)) / float(revenue) * 100, 1) if revenue else 0
+
+    # Returns in period
+    returns_in_period = DispensingReturn.objects.filter(
+        is_deleted=False,
+        created_at__date__gte=month_start,
+        created_at__date__lte=month_end,
+    )
+    return_count = returns_in_period.count()
+    return_qty = returns_in_period.aggregate(q=Sum('quantity_returned'))['q'] or 0
+    return_rate = round(return_count / dispensed_count * 100, 1) if dispensed_count else 0
+
+    # OTC vs Rx split
+    otc_count = base.filter(is_otc=True).count()
+    rx_count = base.filter(is_otc=False).count()
+    otc_revenue = base.filter(is_otc=True, status=DispensingStatus.DISPENSED).aggregate(
+        r=Sum('total_amount'))['r'] or 0
+    rx_revenue = base.filter(is_otc=False, status=DispensingStatus.DISPENSED).aggregate(
+        r=Sum('total_amount'))['r'] or 0
+
+    # Revenue trend (daily, full month)
+    _daily_rev_raw = dict(
+        base.filter(status=DispensingStatus.DISPENSED)
+        .annotate(day=TruncDate('dispensed_at'))
+        .values_list('day').annotate(r=Sum('total_amount')).values_list('day', 'r')
+    )
+    daily_revenue = []
+    for i in range(13, -1, -1):
+        d = today - timedelta(days=i)
+        daily_revenue.append({'date': d.strftime('%d %b'), 'amount': float(_daily_rev_raw.get(d, 0))})
+    revenue_json = json.dumps({
+        'labels': [d['date'] for d in daily_revenue],
+        'data': [d['amount'] for d in daily_revenue],
+    })
+
+    # ── Staff Productivity ────────────────────────────────────────────────
+    staff_throughput = list(
+        base.filter(status=DispensingStatus.DISPENSED)
+        .values('dispensed_by__first_name', 'dispensed_by__last_name')
+        .annotate(count=Count('id'), rev=Sum('total_amount'))
+        .order_by('-count')[:10]
+    )
+    for s in staff_throughput:
+        s['name'] = f"{s['dispensed_by__first_name']} {s['dispensed_by__last_name']}".strip()
+
+    # Working days in month (Mon-Sat = 6 working days/week, exclude Sunday)
+    _end = min(month_end, today)
+    working_days = sum(1 for i in range((_end - month_start).days + 1)
+                       if (month_start + timedelta(days=i)).weekday() < 6)
+    working_days = max(working_days, 1)
+    rx_per_day = round(dispensed_count / working_days, 1) if working_days else 0
+
     # Month nav
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1)  if month == 12 else (year, month + 1)
@@ -548,6 +669,38 @@ def pharmacy_stats_view(request):
         'counseling_rate': counseling_rate,
         'category_stats': category_stats,
         'category_json': category_json,
+        # WHO additional indicators
+        'generic_prescribing_rate': generic_prescribing_rate,
+        'injection_rate': injection_rate,
+        'formulary_rate': formulary_rate,
+        'substitution_rate': substitution_rate,
+        'substitution_count': substitution_count,
+        # Inventory health
+        'total_active_drugs': total_active_drugs,
+        'stockout_count': stockout_count,
+        'stockout_rate': stockout_rate,
+        'expired_value': expired_value,
+        'expired_units': expired_units,
+        'near_expiry_value': near_expiry_value,
+        'near_expiry_count': near_expiry_count,
+        'total_inventory_value': total_inventory_value,
+        'stock_turnover': stock_turnover,
+        'cogs': cogs,
+        # Financial KPIs
+        'avg_cost_per_rx': avg_cost_per_rx,
+        'gross_margin': gross_margin,
+        'return_count': return_count,
+        'return_qty': return_qty,
+        'return_rate': return_rate,
+        'otc_count': otc_count,
+        'rx_count': rx_count,
+        'otc_revenue': otc_revenue,
+        'rx_revenue': rx_revenue,
+        'revenue_json': revenue_json,
+        # Staff productivity
+        'staff_throughput': staff_throughput,
+        'rx_per_day': rx_per_day,
+        'working_days': working_days,
     }
     if request.GET.get('pdf'):
         from apps.reports.views import render_pdf
