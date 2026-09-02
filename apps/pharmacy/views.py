@@ -765,11 +765,24 @@ def drug_create(request):
     form = DrugCreateForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         drug = form.save(commit=False)
+        # If user can't edit prices, strip any price changes from the form
+        if not _can_edit_drug_prices(request.user):
+            drug.cost_price = 0
+            drug.selling_price = 0
+            drug.price_express = 0
+            drug.price_vip = 0
+            drug.price_executive_vip = 0
+            drug.price_staff = 0
+            drug.price_outreach = 0
+            drug.insurance_markup_pct = 0
         drug.created_by = request.user
         drug.save()
         messages.success(request, f'{drug.name} added to formulary.')
         return redirect('pharmacy:drug_detail', drug_id=drug.id)
-    return render(request, 'pharmacy/drug_form.html', {'form': form, 'action': 'Add New Drug'})
+    return render(request, 'pharmacy/drug_form.html', {
+        'form': form, 'action': 'Add New Drug',
+        'can_edit_prices': _can_edit_drug_prices(request.user),
+    })
 
 
 @login_required
@@ -778,12 +791,26 @@ def drug_edit(request, drug_id):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     drug = get_object_or_404(Drug, id=drug_id, is_deleted=False)
+    _price_fields = [
+        'cost_price', 'selling_price', 'price_express', 'price_vip',
+        'price_executive_vip', 'price_staff', 'price_outreach', 'insurance_markup_pct',
+    ]
+    # Save original prices to revert if user can't edit prices
+    _orig_prices = {f: getattr(drug, f) for f in _price_fields}
     form = DrugCreateForm(request.POST or None, instance=drug)
     if request.method == 'POST' and form.is_valid():
-        form.save()
+        updated = form.save(commit=False)
+        # If user can't edit prices, revert price fields to originals
+        if not _can_edit_drug_prices(request.user):
+            for f in _price_fields:
+                setattr(updated, f, _orig_prices[f])
+        updated.save()
         messages.success(request, f'{drug.name} updated.')
         return redirect('pharmacy:drug_detail', drug_id=drug.id)
-    return render(request, 'pharmacy/drug_form.html', {'form': form, 'drug': drug, 'action': f'Edit: {drug.name}'})
+    return render(request, 'pharmacy/drug_form.html', {
+        'form': form, 'drug': drug, 'action': f'Edit: {drug.name}',
+        'can_edit_prices': _can_edit_drug_prices(request.user),
+    })
 
 
 @login_required
@@ -1149,7 +1176,11 @@ def edit_dispensing_item_ajax(request, dispensing_id, item_id):
     new_price = request.POST.get('unit_price')
     new_instr = request.POST.get('instructions')
 
+    # ── Audit trail: capture old values before modification ────────────────
     old_qty = item.quantity_dispensed
+    old_price = item.unit_price
+    old_instr = item.instructions
+    _changes = []
 
     if new_qty is not None:
         try:
@@ -1178,6 +1209,30 @@ def edit_dispensing_item_ajax(request, dispensing_id, item_id):
         item.instructions = new_instr.strip()
 
     item.save()
+
+    # ── Audit trail: log what changed ──────────────────────────────────────
+    if new_qty is not None and int(new_qty) != old_qty:
+        _changes.append(f'qty: {old_qty} → {new_qty}')
+    if new_price is not None and item.unit_price != old_price:
+        _changes.append(f'price: {old_price} → {item.unit_price}')
+    if new_instr is not None and item.instructions != old_instr:
+        _changes.append(f'instructions changed')
+    if _changes:
+        try:
+            from apps.accounts.models import UserAuditLog
+            UserAuditLog.objects.create(
+                user=request.user,
+                action=UserAuditLog.Action.UPDATE_RECORD,
+                resource_type='DispensingItem',
+                resource_id=str(item.pk),
+                details=(
+                    f'Edited dispensing item: {item.drug.name if item.drug else "unknown"} '
+                    f'on Rx#{dispensing.id} — {", ".join(_changes)}'
+                ),
+                ip_address=request.META.get('REMOTE_ADDR', ''),
+            )
+        except Exception:
+            pass  # Don't block on audit failure
 
     total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
     dispensing.total_amount = total
@@ -2413,6 +2468,12 @@ def drug_expiry_alerts(request):
 
 def _can_manage_pharmacy(user):
     return (user.is_pharmacist or user.is_super_admin or user.is_admin_director
+            or user.is_finance_director or user.is_senior_accountant)
+
+
+def _can_edit_drug_prices(user):
+    """Only head pharmacist and admin roles can set/change drug prices."""
+    return (user.is_head_pharmacist or user.is_super_admin or user.is_admin_director
             or user.is_finance_director or user.is_senior_accountant)
 
 

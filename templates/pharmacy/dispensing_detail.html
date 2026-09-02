@@ -376,8 +376,32 @@
               <input type="text" id="barcode-scan-input" class="form-control"
                      placeholder="Scan or type barcode…" autocomplete="off">
               <span id="barcode-feedback" class="input-group-text d-none bg-light"></span>
+              <button type="button" class="btn btn-outline-primary" id="camera-scan-btn"
+                      title="Open camera to scan barcode">
+                <i class="bi bi-camera"></i> <span class="d-none d-md-inline">Camera</span>
+              </button>
             </div>
-            <div class="form-text text-muted">Scan a drug barcode to instantly add it. Focus this field and scan.</div>
+            <div class="form-text text-muted">
+              Type/paste barcode, use a USB scanner, or tap <strong>Camera</strong> to scan with your tablet camera.
+            </div>
+          </div>
+        </div>
+
+        {# Camera scanner modal #}
+        <div id="camera-scanner-wrap" class="mb-3" style="display:none;">
+          <div class="card border-primary">
+            <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-camera-video me-1"></i>Camera Barcode Scanner</span>
+              <button type="button" class="btn btn-sm btn-light" id="camera-stop-btn">
+                <i class="bi bi-x-lg"></i> Close
+              </button>
+            </div>
+            <div class="card-body p-0">
+              <div id="camera-reader" style="width:100%;"></div>
+            </div>
+            <div class="card-footer py-1 text-center small text-muted" id="camera-status">
+              Point camera at barcode on drug package
+            </div>
           </div>
         </div>
 
@@ -1476,6 +1500,91 @@ document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
   </div>
 </div>
 {% endif %}
+
+{# ── Camera Barcode Scanner (html5-qrcode) ── #}
+<script src="{% static 'js/vendor/html5-qrcode.min.js' %}"></script>
+<script>
+(function() {
+  const camBtn   = document.getElementById('camera-scan-btn');
+  const stopBtn  = document.getElementById('camera-stop-btn');
+  const camWrap  = document.getElementById('camera-scanner-wrap');
+  const camStatus = document.getElementById('camera-status');
+  if (!camBtn || !camWrap) return;
+
+  let scanner = null;
+  let isScanning = false;
+
+  camBtn.addEventListener('click', function() {
+    if (isScanning) { stopCamera(); return; }
+    startCamera();
+  });
+  stopBtn.addEventListener('click', stopCamera);
+
+  function startCamera() {
+    if (typeof Html5Qrcode === 'undefined') {
+      alert('Barcode scanner library not loaded. Check your internet/static files.');
+      return;
+    }
+    camWrap.style.display = '';
+    camBtn.innerHTML = '<i class="bi bi-camera-video-off"></i> <span class="d-none d-md-inline">Stop</span>';
+    camBtn.classList.replace('btn-outline-primary', 'btn-danger');
+    camStatus.textContent = 'Starting camera...';
+
+    scanner = new Html5Qrcode('camera-reader');
+    isScanning = true;
+
+    scanner.start(
+      { facingMode: 'environment' },  // rear camera
+      {
+        fps: 10,
+        qrbox: function(vw, vh) {
+          var s = Math.min(vw, vh);
+          return { width: Math.floor(s * 0.85), height: Math.floor(s * 0.4) };
+        },
+        aspectRatio: 1.5,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.DATA_MATRIX,
+        ],
+      },
+      function onScanSuccess(decodedText) {
+        // Barcode detected — trigger lookup
+        camStatus.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Scanned: ' + decodedText + '</span>';
+        // Put into barcode input and trigger lookup
+        var inp = document.getElementById('barcode-scan-input');
+        if (inp) { inp.value = decodedText; inp.dispatchEvent(new Event('input')); }
+        // Auto-stop camera after successful scan
+        setTimeout(function() { stopCamera(); }, 1500);
+      },
+      function onScanFailure() {
+        // Ignore — keep scanning
+      }
+    ).catch(function(err) {
+      camStatus.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>' + err + '</span>';
+      isScanning = false;
+    });
+  }
+
+  function stopCamera() {
+    if (scanner && isScanning) {
+      scanner.stop().then(function() {
+        scanner.clear();
+      }).catch(function() {});
+    }
+    isScanning = false;
+    camWrap.style.display = 'none';
+    camBtn.innerHTML = '<i class="bi bi-camera"></i> <span class="d-none d-md-inline">Camera</span>';
+    camBtn.classList.replace('btn-danger', 'btn-outline-primary');
+    camStatus.textContent = 'Point camera at barcode on drug package';
+  }
+})();
+</script>
 
 {% endblock %}
 
