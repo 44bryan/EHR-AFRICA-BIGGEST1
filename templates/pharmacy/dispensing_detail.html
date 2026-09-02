@@ -249,29 +249,38 @@
                   {% else %}—{% endif %}
                 </td>
                 <td class="text-center fw-semibold">
+                  <span class="item-display item-display-qty">{{ item.quantity_dispensed }}</span>
                   {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
-                  <input type="number" class="form-control form-control-sm text-center edit-qty" data-item="{{ item.pk }}"
+                  <input type="number" class="form-control form-control-sm text-center edit-qty d-none" data-item="{{ item.pk }}"
                          value="{{ item.quantity_dispensed }}" min="1" style="width:60px;display:inline-block;">
-                  {% else %}{{ item.quantity_dispensed }}{% endif %}
+                  {% endif %}
                 </td>
                 <td class="text-end" style="font-size:.88rem;">
+                  <span class="item-display item-display-price">{{ item.unit_price|floatformat:0|intcomma }}</span>
                   {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
-                  <input type="number" class="form-control form-control-sm text-end edit-price" data-item="{{ item.pk }}"
+                  <input type="number" class="form-control form-control-sm text-end edit-price d-none" data-item="{{ item.pk }}"
                          value="{{ item.unit_price|floatformat:0 }}" min="0" style="width:80px;display:inline-block;">
-                  {% else %}{{ item.unit_price|floatformat:0|intcomma }}{% endif %}
+                  {% endif %}
                 </td>
                 <td class="text-end fw-bold" style="font-size:.9rem;" id="subtotal-{{ item.pk }}">{{ item.subtotal|floatformat:0|intcomma }}</td>
                 <td style="font-size:.78rem;">
+                  <span class="item-display item-display-instr text-muted">{{ item.instructions|default:"—" }}</span>
                   {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
-                  <input type="text" class="form-control form-control-sm edit-instr" data-item="{{ item.pk }}"
+                  <input type="text" class="form-control form-control-sm edit-instr d-none" data-item="{{ item.pk }}"
                          value="{{ item.instructions }}" placeholder="Instructions..." style="min-width:100px;">
-                  {% else %}<span class="text-muted">{{ item.instructions|default:"—" }}</span>{% endif %}
+                  {% endif %}
                 </td>
                 {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
                 <td>
                   <div class="d-flex gap-1">
-                    <button type="button" class="btn btn-sm btn-outline-primary py-0 save-edit-btn" data-item="{{ item.pk }}" title="Save changes">
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 toggle-edit-btn" data-item="{{ item.pk }}" title="Edit item">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0 save-edit-btn d-none" data-item="{{ item.pk }}" title="Save changes">
                       <i class="bi bi-check-lg"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 cancel-edit-btn d-none" data-item="{{ item.pk }}" title="Cancel">
+                      <i class="bi bi-x-lg"></i>
                     </button>
                     <form method="post" action="{% url 'pharmacy:remove_dispensing_item_ajax' dispensing_id=dispensing.id item_id=item.pk %}" class="remove-item-form">
                       {% csrf_token %}
@@ -1304,7 +1313,51 @@ if (addManualBtn) {
 
 // (Duplicate quick-fill removed — handled by the async handler above with drugSearchCandidates)
 
-// ── Inline edit dispensing items ──────────────────────────────────────────
+// ── Click-to-edit dispensing items ────────────────────────────────────────
+function enterEditMode(itemId) {
+  const row = document.getElementById('item-row-' + itemId);
+  if (!row) return;
+  // Hide display text, show inputs
+  row.querySelectorAll('.item-display').forEach(el => el.classList.add('d-none'));
+  row.querySelectorAll('.edit-qty, .edit-price, .edit-instr').forEach(el => el.classList.remove('d-none'));
+  // Hide edit button, show save + cancel
+  const editBtn = row.querySelector('.toggle-edit-btn');
+  const saveBtn = row.querySelector('.save-edit-btn');
+  const cancelBtn = row.querySelector('.cancel-edit-btn');
+  if (editBtn) editBtn.classList.add('d-none');
+  if (saveBtn) saveBtn.classList.remove('d-none');
+  if (cancelBtn) cancelBtn.classList.remove('d-none');
+  // Focus qty input
+  const qtyInput = row.querySelector('.edit-qty');
+  if (qtyInput) qtyInput.focus();
+}
+
+function exitEditMode(itemId) {
+  const row = document.getElementById('item-row-' + itemId);
+  if (!row) return;
+  // Show display text, hide inputs
+  row.querySelectorAll('.item-display').forEach(el => el.classList.remove('d-none'));
+  row.querySelectorAll('.edit-qty, .edit-price, .edit-instr').forEach(el => el.classList.add('d-none'));
+  // Show edit button, hide save + cancel
+  const editBtn = row.querySelector('.toggle-edit-btn');
+  const saveBtn = row.querySelector('.save-edit-btn');
+  const cancelBtn = row.querySelector('.cancel-edit-btn');
+  if (editBtn) editBtn.classList.remove('d-none');
+  if (saveBtn) saveBtn.classList.add('d-none');
+  if (cancelBtn) cancelBtn.classList.add('d-none');
+}
+
+// Wire edit toggle buttons
+document.querySelectorAll('.toggle-edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() { enterEditMode(btn.dataset.item); });
+});
+
+// Wire cancel buttons
+document.querySelectorAll('.cancel-edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() { exitEditMode(btn.dataset.item); });
+});
+
+// Wire save buttons
 document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     const itemId = btn.dataset.item;
@@ -1328,16 +1381,24 @@ document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
       .then(r => r.json())
       .then(data => {
         if (data.success) {
+          // Update display values
+          const qtyDisp = row.querySelector('.item-display-qty');
+          const priceDisp = row.querySelector('.item-display-price');
+          const instrDisp = row.querySelector('.item-display-instr');
+          if (qtyDisp && qtyInput) qtyDisp.textContent = qtyInput.value;
+          if (priceDisp && priceInput) priceDisp.textContent = parseInt(priceInput.value).toLocaleString();
+          if (instrDisp && instrInput) instrDisp.textContent = instrInput.value || '\u2014';
           const sub = document.getElementById('subtotal-' + itemId);
           if (sub) sub.textContent = parseInt(data.item.subtotal).toLocaleString();
           updateTotals(parseFloat(data.total), data.item_count);
-          btn.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
-          setTimeout(function() { btn.innerHTML = '<i class="bi bi-check-lg"></i>'; }, 1500);
+          btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+          exitEditMode(itemId);
         } else {
           alert(data.error || 'Failed to update');
+          btn.innerHTML = '<i class="bi bi-check-lg"></i>';
         }
       })
-      .catch(function() { alert('Network error'); })
+      .catch(function() { alert('Network error'); btn.innerHTML = '<i class="bi bi-check-lg"></i>'; })
       .finally(function() { btn.disabled = false; });
   });
 });
