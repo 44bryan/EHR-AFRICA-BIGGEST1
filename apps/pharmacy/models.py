@@ -67,9 +67,24 @@ class Drug(AuditModel):
     is_active = models.BooleanField(default=True)
     requires_prescription = models.BooleanField(default=True)
     reorder_level = models.PositiveIntegerField(default=10)
-    # Pricing
+    # ── Tier-Based Pricing ──────────────────────────────────────────────
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                        help_text='Standard tier selling price')
+    price_express = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                         help_text='Express / Fast-Track tier price')
+    price_vip = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                     help_text='VIP tier price')
+    price_executive_vip = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                               help_text='Executive VIP tier price')
+    price_staff = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                       help_text='Staff / employee price')
+    price_outreach = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                          help_text='Outreach / community campaign price')
+    insurance_markup_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        help_text='Markup % on cost_price for insured patients (e.g. 30 = cost + 30%)'
+    )
     # Storage
     storage_condition = models.CharField(
         max_length=10, choices=StorageCondition.choices,
@@ -106,6 +121,40 @@ class Drug(AuditModel):
             import uuid
             self.barcode = f"DRG{uuid.uuid4().hex[:10].upper()}"
         super().save(*args, **kwargs)
+
+    def get_tier_price(self, tier=None, billing_type=None, insurance_copay_pct=None):
+        """
+        Return the correct selling price based on visit tier and billing type.
+        Tier mapping:
+          STANDARD    → selling_price
+          EXPRESS     → price_express (falls back to selling_price)
+          FAST_TRACK  → price_express (same tier)
+          VIP         → price_vip (falls back to selling_price)
+          EXECUTIVE_VIP → price_executive_vip (falls back to price_vip → selling_price)
+          STAFF       → price_staff (falls back to cost_price)
+          OUTREACH    → price_outreach (falls back to cost_price)
+        Insurance:   cost_price + insurance_markup_pct% (scheme pays coverage_pct, patient pays copay)
+        """
+        from decimal import Decimal
+        sp = self.selling_price or Decimal('0')
+
+        # Insurance billing: cost + markup
+        if billing_type in ('INSURANCE', 'HMO'):
+            base = self.cost_price or Decimal('0')
+            markup = self.insurance_markup_pct or Decimal('0')
+            return round(base * (1 + markup / 100), 0)
+
+        tier = (tier or '').upper().replace(' ', '_')
+        _map = {
+            'STANDARD': sp,
+            'EXPRESS': self.price_express or sp,
+            'FAST_TRACK': self.price_express or sp,
+            'VIP': self.price_vip or sp,
+            'EXECUTIVE_VIP': self.price_executive_vip or self.price_vip or sp,
+            'STAFF': self.price_staff or self.cost_price or sp,
+            'OUTREACH': self.price_outreach or self.cost_price or sp,
+        }
+        return _map.get(tier, sp)
 
     @property
     def current_stock(self):

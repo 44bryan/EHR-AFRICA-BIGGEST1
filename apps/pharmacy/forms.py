@@ -15,6 +15,8 @@ class DrugCreateForm(forms.ModelForm):
             'strength', 'unit', 'barcode', 'description',
             'is_active', 'requires_prescription',
             'reorder_level', 'cost_price', 'selling_price',
+            'price_express', 'price_vip', 'price_executive_vip',
+            'price_staff', 'price_outreach', 'insurance_markup_pct',
             'storage_condition', 'is_controlled', 'controlled_schedule',
         ]
         widgets = {
@@ -28,8 +30,14 @@ class DrugCreateForm(forms.ModelForm):
             'barcode': forms.TextInput(attrs={'class': 'form-control'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'reorder_level': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
-            'cost_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
-            'selling_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
+            'cost_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': 0, 'placeholder': 'Purchase cost'}),
+            'selling_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': 0, 'placeholder': 'Standard price'}),
+            'price_express': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': 0, 'placeholder': 'Express price'}),
+            'price_vip': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': 0, 'placeholder': 'VIP price'}),
+            'price_executive_vip': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': 0, 'placeholder': 'Executive VIP price'}),
+            'price_staff': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': 0, 'placeholder': 'Staff price'}),
+            'price_outreach': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': 0, 'placeholder': 'Outreach price'}),
+            'insurance_markup_pct': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0, 'placeholder': 'e.g. 30 = cost + 30%'}),
             'storage_condition': forms.Select(attrs={'class': 'form-select'}),
             'controlled_schedule': forms.Select(attrs={'class': 'form-select'}),
         }

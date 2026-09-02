@@ -916,6 +916,8 @@ def drug_search_ajax(request):
     else:
         drugs = base
     drugs = drugs.order_by('name')[:25]
+    tier = request.GET.get('tier', 'STANDARD')
+    billing_type = request.GET.get('billing_type', 'SELF_PAY')
     return JsonResponse({'drugs': [
         {
             'id': str(d.id),
@@ -924,7 +926,7 @@ def drug_search_ajax(request):
             'strength': d.strength or '',
             'form': d.get_form_display(),
             'stock': d.current_stock,
-            'price': str(d.selling_price),
+            'price': str(d.get_tier_price(tier=tier, billing_type=billing_type)),
             'low': d.needs_reorder,
             'barcode': d.barcode or '',
         }
@@ -941,6 +943,8 @@ def barcode_lookup_ajax(request):
     drug = Drug.objects.filter(barcode=code, is_active=True, is_deleted=False).first()
     if not drug:
         return JsonResponse({'error': 'No drug found for this barcode'}, status=404)
+    tier = request.GET.get('tier', 'STANDARD')
+    billing_type = request.GET.get('billing_type', 'SELF_PAY')
     return JsonResponse({'drug': {
         'id': str(drug.id),
         'name': drug.name,
@@ -948,7 +952,7 @@ def barcode_lookup_ajax(request):
         'strength': drug.strength or '',
         'form': drug.get_form_display(),
         'stock': drug.current_stock,
-        'price': str(drug.selling_price),
+        'price': str(drug.get_tier_price(tier=tier, billing_type=billing_type)),
         'low': drug.needs_reorder,
         'barcode': drug.barcode or '',
     }})
@@ -1189,7 +1193,8 @@ def edit_dispensing_item_ajax(request, dispensing_id, item_id):
 
 @login_required
 def drug_stock_ajax(request):
-    """Return available stock batches for a drug as JSON (for dynamic form)."""
+    """Return available stock batches for a drug as JSON (for dynamic form).
+    Accepts optional ?tier= and ?billing_type= to return tier-resolved price."""
     drug_id = request.GET.get('drug_id')
     if not drug_id:
         return JsonResponse({'batches': [], 'selling_price': 0})
@@ -1200,8 +1205,17 @@ def drug_stock_ajax(request):
         drug=drug, is_deleted=False, quantity_remaining__gt=0,
         expiry_date__gte=timezone.localdate()
     ).order_by('expiry_date')
+
+    # Tier-resolved price
+    tier = request.GET.get('tier', 'STANDARD')
+    billing_type = request.GET.get('billing_type', 'SELF_PAY')
+    resolved_price = drug.get_tier_price(tier=tier, billing_type=billing_type)
+
     return JsonResponse({
-        'selling_price': str(drug.selling_price),
+        'selling_price': str(resolved_price),
+        'standard_price': str(drug.selling_price),
+        'tier': tier,
+        'billing_type': billing_type,
         'current_stock': drug.current_stock,
         'batches': [
             {
@@ -1215,6 +1229,35 @@ def drug_stock_ajax(request):
 
 
 @login_required
+def _get_dispensing_tier_info(dispensing):
+    """Resolve service_tier and billing_type from the patient's active visit."""
+    tier, billing_type, insurance_copay = 'STANDARD', 'SELF_PAY', None
+    if dispensing.patient:
+        try:
+            from apps.patients.models import Visit
+            visit = Visit.objects.filter(
+                patient=dispensing.patient, is_deleted=False,
+            ).order_by('-visit_date').first()
+            if visit:
+                tier = visit.service_tier or 'STANDARD'
+                billing_type = visit.billing_type or 'SELF_PAY'
+                # Look up insurance copay if insured
+                if billing_type in ('INSURANCE', 'HMO'):
+                    try:
+                        from apps.hmo.models import InsuredMember
+                        member = InsuredMember.objects.filter(
+                            patient=dispensing.patient, is_active=True
+                        ).select_related('scheme').first()
+                        if member:
+                            insurance_copay = float(member.copay_pct)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    return tier, billing_type, insurance_copay
+
+
+@login_required
 def dispensing_detail(request, dispensing_id):
     if not _can_access_pharmacy(request.user):
         from django.http import HttpResponseForbidden
@@ -1223,7 +1266,13 @@ def dispensing_detail(request, dispensing_id):
         Dispensing.objects.prefetch_related('items__drug', 'items__stock_batch'),
         id=dispensing_id, is_deleted=False
     )
-    ctx = {'dispensing': dispensing}
+    tier, billing_type, insurance_copay = _get_dispensing_tier_info(dispensing)
+    ctx = {
+        'dispensing': dispensing,
+        'patient_tier': tier,
+        'billing_type': billing_type,
+        'insurance_copay': insurance_copay,
+    }
     if dispensing.status in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
         ctx['available_drugs'] = Drug.objects.filter(
             is_active=True, is_deleted=False
@@ -2763,6 +2812,8 @@ def drug_import_template(request):
     headers = [
         'drug_name', 'generic_name', 'brand_name', 'form', 'strength', 'unit',
         'category', 'reorder_level', 'selling_price', 'cost_price',
+        'price_express', 'price_vip', 'price_executive_vip',
+        'price_staff', 'price_outreach', 'insurance_markup_pct',
         'is_controlled', 'controlled_schedule', 'storage_condition',
         'batch_number', 'expiry_date', 'quantity', 'purchase_price',
         'supplier_name', 'manufacture_date',
@@ -2772,7 +2823,9 @@ def drug_import_template(request):
         'tablet/capsule/eye drop/injection/syrup/cream/other',
         'e.g. 5mg, 0.5%', 'e.g. bottle, tube, tablet',
         'antibiotic/antifungal/glaucoma/analgesic/vitamin/other',
-        'Default: 10', 'FCFA', 'FCFA',
+        'Default: 10', 'FCFA — Standard', 'FCFA — Purchase cost',
+        'FCFA — Express', 'FCFA — VIP', 'FCFA — Executive VIP',
+        'FCFA — Staff', 'FCFA — Outreach', '% markup on cost for insured',
         'Yes / No', 'S2/S3/S4/S5 (only if controlled)',
         'room temp / refrigerated / frozen / controlled / light',
         'REQUIRED for stock entry', 'REQUIRED — DD/MM/YYYY', 'REQUIRED — whole number',
@@ -2797,7 +2850,9 @@ def drug_import_template(request):
 
     sample = [
         'Ciprofloxacin', 'Ciprofloxacin', 'Cipro', 'tablet', '500mg', 'tablet',
-        'antibiotic', 20, 2500, 1500, 'No', '', 'room temp',
+        'antibiotic', 20, 2500, 1500,
+        3000, 3500, 4000, 2000, 1800, 30,
+        'No', '', 'room temp',
         'BATCH-2024-001', '31/12/2026', 100, 1400, 'PharmaCo Ltd', '',
     ]
     for col, val in enumerate(sample, 1):
@@ -2805,7 +2860,7 @@ def drug_import_template(request):
         c.fill = PatternFill(fill_type='solid', fgColor='F0FFF0')
         c.border = border
 
-    for i, w in enumerate([22,20,16,14,12,10,16,12,12,12,12,16,18,18,14,10,14,18,16], 1):
+    for i, w in enumerate([22,20,16,14,12,10,16,12,12,12,12,12,14,12,12,14,12,16,18,18,14,10,14,18,16], 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 36
@@ -2923,6 +2978,12 @@ def drug_bulk_import(request):
                 'reorder_level': _int(row.get('reorder_level'), 10),
                 'selling_price': _dec(row.get('selling_price', '0')),
                 'cost_price': _dec(row.get('cost_price', '0')),
+                'price_express': _dec(row.get('price_express', '0')),
+                'price_vip': _dec(row.get('price_vip', '0')),
+                'price_executive_vip': _dec(row.get('price_executive_vip', '0')),
+                'price_staff': _dec(row.get('price_staff', '0')),
+                'price_outreach': _dec(row.get('price_outreach', '0')),
+                'insurance_markup_pct': _dec(row.get('insurance_markup_pct', '0')),
                 'is_controlled': is_controlled,
                 'controlled_schedule': controlled_schedule if is_controlled else '',
                 'storage_condition': storage,
@@ -3595,7 +3656,7 @@ def generate_barcodes_bulk(request):
 
     drugs_without = Drug.objects.filter(
         is_active=True, is_deleted=False
-    ).filter(models.Q(barcode__isnull=True) | models.Q(barcode=''))
+    ).filter(Q(barcode__isnull=True) | Q(barcode=''))
     count = 0
     for drug in drugs_without:
         drug.save()  # triggers auto-generate

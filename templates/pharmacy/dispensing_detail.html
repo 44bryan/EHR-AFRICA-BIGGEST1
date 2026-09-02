@@ -126,6 +126,20 @@
             </div>
           </div>
           <div class="col-auto text-end">
+            {% if patient_tier %}
+            <span class="badge fs-6 px-2 py-1 me-2
+              {% if patient_tier == 'VIP' %}bg-purple
+              {% elif patient_tier == 'EXECUTIVE_VIP' %}bg-pink
+              {% elif patient_tier == 'EXPRESS' or patient_tier == 'FAST_TRACK' %}bg-orange
+              {% elif billing_type == 'INSURANCE' or billing_type == 'HMO' %}bg-warning text-dark
+              {% else %}bg-primary{% endif %}"
+              title="Pricing tier: {{ patient_tier }}{% if billing_type == 'INSURANCE' or billing_type == 'HMO' %} (Insured){% endif %}">
+              <i class="bi bi-tag-fill me-1"></i>{{ patient_tier|title }}
+              {% if billing_type == 'INSURANCE' or billing_type == 'HMO' %}
+                <span class="ms-1 badge bg-light text-dark" style="font-size:.65rem;">Insured{% if insurance_copay %} · {{ insurance_copay }}% copay{% endif %}</span>
+              {% endif %}
+            </span>
+            {% endif %}
             {% if dispensing.patient %}
             <a href="{% url 'patients:detail' patient_id=dispensing.patient.patient_id %}" class="btn btn-sm btn-outline-secondary" target="_blank">
               <i class="bi bi-person me-1"></i>Patient Record
@@ -675,6 +689,9 @@
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
 const CSRF = '{{ csrf_token }}';
+const PATIENT_TIER = '{{ patient_tier|default:"STANDARD" }}';
+const BILLING_TYPE = '{{ billing_type|default:"SELF_PAY" }}';
+const TIER_QS      = '&tier=' + PATIENT_TIER + '&billing_type=' + BILLING_TYPE;
 const SEARCH_URL   = '{% url "pharmacy:drug_search_ajax" %}';
 const BARCODE_URL  = '{% url "pharmacy:barcode_lookup_ajax" %}';
 const ADD_URL      = '{% url "pharmacy:add_dispensing_item_ajax" dispensing_id=dispensing.id %}';
@@ -741,7 +758,7 @@ if (barcodeInput) {
 
 function lookupBarcode(code) {
   showBarcodeStatus('searching');
-  fetch(BARCODE_URL + '?code=' + encodeURIComponent(code))
+  fetch(BARCODE_URL + '?code=' + encodeURIComponent(code) + TIER_QS)
     .then(r => r.json())
     .then(data => {
       if (data.error) {
@@ -796,7 +813,7 @@ if (searchInput) {
 }
 
 function fetchDrugs(q) {
-  fetch(SEARCH_URL + '?q=' + encodeURIComponent(q))
+  fetch(SEARCH_URL + '?q=' + encodeURIComponent(q) + TIER_QS)
     .then(r => r.json())
     .then(data => {
       searchResults.innerHTML = '';
@@ -852,8 +869,8 @@ function selectDrug(drug) {
   selectedPanel.classList.remove('d-none');
   updateLineTotal();
 
-  // Fetch batches
-  fetch(STOCK_URL + '?drug_id=' + drug.id)
+  // Fetch batches (with tier-resolved price)
+  fetch(STOCK_URL + '?drug_id=' + drug.id + TIER_QS)
     .then(r => r.json())
     .then(data => {
       batchSelect.innerHTML = '<option value="">Auto (FEFO)</option>';
@@ -1466,6 +1483,9 @@ document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
 <style>
 .drug-result-item:hover { background: #f8f9fa; }
 .pay-method-btn.active { background: #212529 !important; color: #fff !important; border-color: #212529 !important; }
+.bg-purple { background-color: #6f42c1 !important; color: #fff !important; }
+.bg-pink   { background-color: #d63384 !important; color: #fff !important; }
+.bg-orange { background-color: #fd7e14 !important; color: #fff !important; }
 @media print {
   #sidebar, .topbar, .page-header-bar, form, .btn, nav { display: none !important; }
   #page-content-wrapper { margin: 0 !important; padding: 0 !important; }
