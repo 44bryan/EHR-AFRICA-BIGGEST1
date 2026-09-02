@@ -16,6 +16,14 @@
       <i class="bi bi-arrow-left me-1"></i>Back to Formulary
     </a>
     {% else %}
+    <a href="{% url 'pharmacy:generate_barcodes_bulk' %}" class="btn btn-outline-secondary btn-sm"
+       onclick="return confirm('Generate barcodes for all drugs that don\'t have one?')">
+      <i class="bi bi-upc-scan me-1"></i>Generate All Barcodes
+    </a>
+    <button type="button" class="btn btn-outline-primary btn-sm" id="printBarcodesBtn" disabled
+            onclick="printSelectedBarcodes()">
+      <i class="bi bi-printer me-1"></i>Print Barcodes (<span id="selCount">0</span>)
+    </button>
     <a href="{% url 'pharmacy:drug_create' %}" class="btn btn-primary">
       <i class="bi bi-plus-circle me-1"></i>Add New Drug
     </a>
@@ -50,6 +58,9 @@
       <table class="table table-hover mb-0">
         <thead class="table-light">
           <tr>
+            {% if add_stock_mode != 'add_stock' %}
+            <th style="width:30px"><input type="checkbox" id="selectAll" title="Select all"></th>
+            {% endif %}
             <th>Drug Name</th><th>Generic</th><th>Form</th><th>Category</th>
             <th>Stock</th><th>Price</th><th>Status</th>
             {% if add_stock_mode == 'add_stock' %}<th></th>{% endif %}
@@ -58,6 +69,9 @@
         <tbody>
           {% for drug in drugs %}
           <tr {% if add_stock_mode == 'add_stock' and drug.needs_reorder %}class="table-warning"{% endif %}>
+            {% if add_stock_mode != 'add_stock' %}
+            <td><input type="checkbox" class="drug-cb" value="{{ drug.id }}"></td>
+            {% endif %}
             <td>
               <a href="{% url 'pharmacy:drug_detail' drug.id %}" class="fw-semibold text-decoration-none">
                 {{ drug.name }}
@@ -91,7 +105,7 @@
             {% endif %}
           </tr>
           {% empty %}
-          <tr><td colspan="{% if add_stock_mode == 'add_stock' %}8{% else %}7{% endif %}" class="text-center text-muted py-4">No drugs found</td></tr>
+          <tr><td colspan="{% if add_stock_mode == 'add_stock' %}8{% else %}8{% endif %}" class="text-center text-muted py-4">No drugs found</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -101,4 +115,38 @@
 {% endwith %}
 
 {% include "components/pagination.html" %}
+
+<script>
+(function() {
+  var selectAll = document.getElementById('selectAll');
+  var printBtn = document.getElementById('printBarcodesBtn');
+  var countEl = document.getElementById('selCount');
+  if (!selectAll || !printBtn) return;
+
+  function updateCount() {
+    var checked = document.querySelectorAll('.drug-cb:checked');
+    countEl.textContent = checked.length;
+    printBtn.disabled = checked.length === 0;
+  }
+
+  selectAll.addEventListener('change', function() {
+    document.querySelectorAll('.drug-cb').forEach(function(cb) { cb.checked = selectAll.checked; });
+    updateCount();
+  });
+
+  document.querySelectorAll('.drug-cb').forEach(function(cb) {
+    cb.addEventListener('change', updateCount);
+  });
+})();
+
+function printSelectedBarcodes() {
+  var checked = document.querySelectorAll('.drug-cb:checked');
+  if (!checked.length) return;
+  var ids = [];
+  checked.forEach(function(cb) { ids.push('drugs=' + cb.value); });
+  var copies = prompt('How many copies per drug?', '2');
+  if (!copies) return;
+  window.open('{% url "pharmacy:barcode_labels" %}?' + ids.join('&') + '&copies=' + copies, '_blank');
+}
+</script>
 {% endblock %}

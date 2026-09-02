@@ -1,0 +1,119 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drug Barcode Labels</title>
+<style>
+  @page {
+    size: A4;
+    margin: 8mm 5mm;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; }
+
+  .no-print { margin: 10px; }
+  @media print { .no-print { display: none !important; } }
+
+  .label-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3mm;
+    justify-content: flex-start;
+  }
+
+  .label {
+    width: 63mm;
+    height: 30mm;
+    border: 0.5pt solid #ccc;
+    border-radius: 2mm;
+    padding: 2mm 3mm;
+    overflow: hidden;
+    page-break-inside: avoid;
+    position: relative;
+  }
+
+  .label-hosp {
+    font-size: 5.5pt;
+    color: #666;
+    text-align: center;
+    border-bottom: 0.3pt solid #ddd;
+    padding-bottom: 1mm;
+    margin-bottom: 1mm;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .label-drug {
+    font-size: 8pt;
+    font-weight: bold;
+    color: #000;
+    line-height: 1.2;
+    max-height: 10mm;
+    overflow: hidden;
+  }
+  .label-detail {
+    font-size: 6pt;
+    color: #555;
+    margin-top: 0.5mm;
+  }
+
+  .label-barcode {
+    text-align: center;
+    margin-top: 1mm;
+  }
+  .label-barcode svg {
+    width: 50mm;
+    height: 10mm;
+  }
+
+  .label-price {
+    position: absolute;
+    top: 2mm;
+    right: 3mm;
+    font-size: 7pt;
+    font-weight: bold;
+    color: #1a3a5c;
+    background: #e8eaf6;
+    padding: 0.5mm 1.5mm;
+    border-radius: 1mm;
+  }
+</style>
+</head>
+<body>
+
+<div class="no-print">
+  <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+    <h5 style="margin:0;">Barcode Labels — {{ labels|length }} label{{ labels|length|pluralize }}</h5>
+    <button onclick="window.print()" style="padding:6px 16px;background:#0d6efd;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px;">
+      Print Labels
+    </button>
+    <a href="{% url 'pharmacy:drug_list' %}" style="padding:6px 16px;background:#6c757d;color:#fff;border:none;border-radius:4px;text-decoration:none;font-size:14px;">
+      Back to Drugs
+    </a>
+    <span style="color:#666;font-size:13px;">Tip: Use 63x30mm label paper (3 columns on A4) or print on plain A4 and cut.</span>
+  </div>
+  <hr style="margin:10px 0;">
+</div>
+
+<div class="label-grid">
+  {% for item in labels %}
+  <div class="label">
+    <div class="label-hosp">{{ config.hospital_name|default:"Hospital Pharmacy" }}</div>
+    <div class="label-price">{{ item.drug.selling_price|floatformat:0|intcomma }} F</div>
+    <div class="label-drug">{{ item.drug.name }}</div>
+    <div class="label-detail">
+      {{ item.drug.strength }}{% if item.drug.strength %} | {% endif %}{{ item.drug.get_form_display }} | {{ item.drug.unit }}
+    </div>
+    <div class="label-barcode">
+      {{ item.svg|safe }}
+    </div>
+  </div>
+  {% empty %}
+  <div style="padding:30px;text-align:center;color:#999;">No drugs selected for label printing.</div>
+  {% endfor %}
+</div>
+
+</body>
+</html>

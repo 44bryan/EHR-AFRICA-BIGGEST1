@@ -100,6 +100,13 @@ class Drug(AuditModel):
     def __str__(self):
         return f"{self.name} {self.strength}".strip()
 
+    def save(self, *args, **kwargs):
+        # Auto-generate barcode if empty
+        if not self.barcode:
+            import uuid
+            self.barcode = f"DRG{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
     @property
     def current_stock(self):
         return self.stock_items.filter(

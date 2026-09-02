@@ -106,6 +106,10 @@ urlpatterns = [
     path('recalls/new/', views.recall_create, name='recall_create'),
     path('recalls/<uuid:recall_id>/', views.recall_detail, name='recall_detail'),
 
+    # ── Barcode Label Printing ────────────────────────────────────
+    path('barcode-labels/', views.barcode_labels_view, name='barcode_labels'),
+    path('generate-barcodes/', views.generate_barcodes_bulk, name='generate_barcodes_bulk'),
+
     # ── Head Pharmacist: Advanced Reports ───────────────────────────
     path('reports/abc/', views.abc_analysis, name='report_abc'),
     path('reports/ven/', views.ven_analysis, name='report_ven'),

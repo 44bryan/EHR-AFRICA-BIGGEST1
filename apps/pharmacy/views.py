@@ -3360,3 +3360,86 @@ def productivity_report(request):
     return render(request, 'pharmacy/report_productivity.html', {
         'by_pharmacist': by_pharmacist, 'daily': list(daily), 'days': days,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BARCODE LABEL GENERATION & PRINTING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def barcode_labels_view(request):
+    """Generate printable barcode sticker labels for selected drugs."""
+    if not _can_manage_pharmacy(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('pharmacy:dashboard')
+
+    drug_ids = request.GET.getlist('drugs')
+    copies = int(request.GET.get('copies', 1))
+    copies = min(max(copies, 1), 50)  # 1-50 copies
+
+    if drug_ids:
+        drugs = Drug.objects.filter(id__in=drug_ids, is_deleted=False)
+    else:
+        drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')[:50]
+
+    # Auto-generate barcodes for any drugs missing them
+    for drug in drugs:
+        if not drug.barcode:
+            drug.save()  # triggers auto-generate in save()
+
+    # Generate barcode SVGs inline
+    import io
+    try:
+        import barcode
+        from barcode.writer import SVGWriter
+    except ImportError:
+        messages.error(request, 'python-barcode library not installed.')
+        return redirect('pharmacy:drug_list')
+
+    drug_labels = []
+    for drug in drugs:
+        svg_io = io.BytesIO()
+        code128 = barcode.get('code128', drug.barcode, writer=SVGWriter())
+        code128.write(svg_io, options={
+            'module_width': 0.3,
+            'module_height': 8,
+            'font_size': 8,
+            'text_distance': 2,
+            'quiet_zone': 2,
+        })
+        svg_str = svg_io.getvalue().decode('utf-8')
+        # Strip XML declaration for inline embedding
+        if '?>' in svg_str:
+            svg_str = svg_str[svg_str.index('?>') + 2:]
+        for _ in range(copies):
+            drug_labels.append({
+                'drug': drug,
+                'svg': svg_str,
+            })
+
+    from apps.accounts.models import HospitalConfig
+    config = HospitalConfig.get()
+
+    return render(request, 'pharmacy/barcode_labels.html', {
+        'labels': drug_labels,
+        'config': config,
+        'copies': copies,
+    })
+
+
+@login_required
+def generate_barcodes_bulk(request):
+    """POST: auto-generate barcodes for all drugs that don't have one."""
+    if not _can_manage_pharmacy(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('pharmacy:dashboard')
+
+    drugs_without = Drug.objects.filter(
+        is_active=True, is_deleted=False
+    ).filter(models.Q(barcode__isnull=True) | models.Q(barcode=''))
+    count = 0
+    for drug in drugs_without:
+        drug.save()  # triggers auto-generate
+        count += 1
+    messages.success(request, f'Generated barcodes for {count} drugs.')
+    return redirect('pharmacy:drug_list')
