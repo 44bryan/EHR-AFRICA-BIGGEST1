@@ -773,9 +773,32 @@ def drug_search_ajax(request):
             'stock': d.current_stock,
             'price': str(d.selling_price),
             'low': d.needs_reorder,
+            'barcode': d.barcode or '',
         }
         for d in drugs
     ]})
+
+
+@login_required
+def barcode_lookup_ajax(request):
+    """Lookup a drug by barcode — returns same format as drug_search_ajax for a single match."""
+    code = request.GET.get('code', '').strip()
+    if not code:
+        return JsonResponse({'error': 'No barcode provided'}, status=400)
+    drug = Drug.objects.filter(barcode=code, is_active=True, is_deleted=False).first()
+    if not drug:
+        return JsonResponse({'error': 'No drug found for this barcode'}, status=404)
+    return JsonResponse({'drug': {
+        'id': str(drug.id),
+        'name': drug.name,
+        'generic': drug.generic_name,
+        'strength': drug.strength or '',
+        'form': drug.get_form_display(),
+        'stock': drug.current_stock,
+        'price': str(drug.selling_price),
+        'low': drug.needs_reorder,
+        'barcode': drug.barcode or '',
+    }})
 
 
 @login_required
@@ -820,6 +843,25 @@ def add_dispensing_item_ajax(request, dispensing_id):
         instructions=request.POST.get('instructions', '').strip(),
     )
 
+    # Auto-create controlled drug register entry for narcotics
+    if drug.is_controlled:
+        from decimal import Decimal as D
+        balance_before = ControlledDrugEntry.objects.filter(
+            drug=drug
+        ).order_by('-entry_date').values_list('balance_after', flat=True).first() or D('0')
+        ControlledDrugEntry.objects.create(
+            drug=drug,
+            batch=batch,
+            entry_type=ControlledDrugEntryType.DISPENSE,
+            quantity=D(str(qty)),
+            balance_before=balance_before,
+            balance_after=balance_before - D(str(qty)),
+            patient=dispensing.patient,
+            dispensing=dispensing,
+            performed_by=request.user,
+            notes=f'Auto-created from dispensing {dispensing.dispensing_number}',
+        )
+
     total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
     dispensing.total_amount = total
     dispensing.status = DispensingStatus.PARTIAL
@@ -852,6 +894,7 @@ def add_dispensing_item_ajax(request, dispensing_id):
         },
         'total': str(total),
         'interactions': interactions,
+        'is_controlled': drug.is_controlled,
     })
 
 

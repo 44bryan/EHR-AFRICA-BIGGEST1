@@ -344,6 +344,22 @@
       </div>
       <div class="card-body">
 
+        {# Barcode Scan Input #}
+        <div class="row g-3 mb-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold small"><i class="bi bi-upc-scan me-1"></i>Scan Barcode</label>
+            <div class="input-group">
+              <span class="input-group-text bg-light"><i class="bi bi-upc-scan"></i></span>
+              <input type="text" id="barcode-scan-input" class="form-control"
+                     placeholder="Scan or type barcode…" autocomplete="off">
+              <span id="barcode-feedback" class="input-group-text d-none bg-light"></span>
+            </div>
+            <div class="form-text text-muted">Scan a drug barcode to instantly add it. Focus this field and scan.</div>
+          </div>
+        </div>
+
+        <div class="text-center my-2"><span class="badge bg-light text-muted border px-3 py-1 small">OR search by name</span></div>
+
         {# Drug Search Autocomplete #}
         <div class="row g-3 mb-3">
           <div class="col-12">
@@ -650,11 +666,12 @@
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
 const CSRF = '{{ csrf_token }}';
-const SEARCH_URL  = '{% url "pharmacy:drug_search_ajax" %}';
-const ADD_URL     = '{% url "pharmacy:add_dispensing_item_ajax" dispensing_id=dispensing.id %}';
-const MANUAL_URL  = '{% url "pharmacy:add_manual_item_ajax" dispensing_id=dispensing.id %}';
-const STOCK_URL   = '{% url "pharmacy:drug_stock_ajax" %}';
-const dispStatus  = '{{ dispensing.status }}';
+const SEARCH_URL   = '{% url "pharmacy:drug_search_ajax" %}';
+const BARCODE_URL  = '{% url "pharmacy:barcode_lookup_ajax" %}';
+const ADD_URL      = '{% url "pharmacy:add_dispensing_item_ajax" dispensing_id=dispensing.id %}';
+const MANUAL_URL   = '{% url "pharmacy:add_manual_item_ajax" dispensing_id=dispensing.id %}';
+const STOCK_URL    = '{% url "pharmacy:drug_stock_ajax" %}';
+const dispStatus   = '{{ dispensing.status }}';
 
 let selectedDrug  = null;
 let searchTimer   = null;
@@ -689,6 +706,71 @@ const changeDueDisp   = document.getElementById('change-due-display');
 const changePanel     = document.getElementById('change-panel');
 const interPanel      = document.getElementById('interaction-panel');
 const payMethodInput  = document.getElementById('payment-method-input');
+
+// ── Barcode Scanning ──────────────────────────────────────────────────────
+const barcodeInput    = document.getElementById('barcode-scan-input');
+const barcodeFeedback = document.getElementById('barcode-feedback');
+
+if (barcodeInput) {
+  let barcodeTimer = null;
+  barcodeInput.addEventListener('input', function () {
+    clearTimeout(barcodeTimer);
+    const code = this.value.trim();
+    if (!code) { hideBarcodeStatus(); return; }
+    // Barcode scanners typically send chars fast then Enter; debounce 400ms
+    barcodeTimer = setTimeout(() => lookupBarcode(code), 400);
+  });
+  barcodeInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      clearTimeout(barcodeTimer);
+      const code = this.value.trim();
+      if (code) lookupBarcode(code);
+    }
+  });
+}
+
+function lookupBarcode(code) {
+  showBarcodeStatus('searching');
+  fetch(BARCODE_URL + '?code=' + encodeURIComponent(code))
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        showBarcodeStatus('notfound');
+        return;
+      }
+      showBarcodeStatus('found', data.drug.name);
+      selectDrug(data.drug);
+      barcodeInput.value = '';
+      // Auto-set qty to 1 and focus qty input for quick adjust
+      if (qtyInput) { qtyInput.value = 1; qtyInput.focus(); qtyInput.select(); }
+    })
+    .catch(() => showBarcodeStatus('error'));
+}
+
+function showBarcodeStatus(status, name) {
+  if (!barcodeFeedback) return;
+  barcodeFeedback.classList.remove('d-none', 'text-success', 'text-danger', 'text-warning');
+  if (status === 'searching') {
+    barcodeFeedback.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    barcodeFeedback.classList.add('text-warning');
+  } else if (status === 'found') {
+    barcodeFeedback.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i>';
+    barcodeFeedback.classList.add('text-success');
+    setTimeout(hideBarcodeStatus, 2000);
+  } else if (status === 'notfound') {
+    barcodeFeedback.innerHTML = '<i class="bi bi-x-circle-fill text-danger"></i>';
+    barcodeFeedback.classList.add('text-danger');
+    setTimeout(hideBarcodeStatus, 3000);
+  } else {
+    barcodeFeedback.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i>';
+    setTimeout(hideBarcodeStatus, 3000);
+  }
+}
+
+function hideBarcodeStatus() {
+  if (barcodeFeedback) barcodeFeedback.classList.add('d-none');
+}
 
 // ── Drug Search Autocomplete ───────────────────────────────────────────────
 if (searchInput) {
@@ -842,6 +924,9 @@ if (addItemBtn) {
         appendItemRow(data.item);
         updateTotals(parseFloat(data.total), ++itemCount);
         checkInteractions(data.interactions);
+        if (data.is_controlled) {
+          showControlledAlert(data.item.drug_name);
+        }
         resetAddForm();
       })
       .catch(() => showAddError('Network error. Please try again.'))
@@ -858,6 +943,18 @@ function showAddError(msg) {
   addErrMsg.classList.remove('d-none');
   addItemBtn.disabled = false;
   addSpinner.classList.add('d-none');
+}
+
+function showControlledAlert(drugName) {
+  const alertDiv = document.createElement('div');
+  alertDiv.className = 'alert alert-warning alert-dismissible fade show mt-2 shadow-sm';
+  alertDiv.innerHTML = '<i class="bi bi-shield-exclamation me-2"></i>' +
+    '<strong>Controlled Drug:</strong> ' + drugName +
+    ' — narcotics register entry auto-created. <strong>A second pharmacist must counter-sign</strong> via the Controlled Register.' +
+    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+  const card = document.getElementById('add-item-card');
+  if (card) card.parentNode.insertBefore(alertDiv, card);
+  setTimeout(function() { alertDiv.remove(); }, 15000);
 }
 
 function appendItemRow(item) {
