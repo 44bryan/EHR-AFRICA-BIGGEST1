@@ -153,19 +153,21 @@ def bp_css(value):
     return ''
 
 
-# ── Drug administration time slots (WHO/BNF international standards) ──────────
+# ── Drug administration time slots (hospital practice: base hour 06:00) ───────
 _FREQ_TIME_SLOTS = {
-    'OD':           '08:00',
-    'BD':           '08:00, 20:00',
-    'TDS':          '08:00, 14:00, 20:00',
+    'OD':           '06:00',
+    'BD':           '06:00, 18:00',
+    'TDS':          '06:00, 12:00, 18:00',
     'QID':          '06:00, 12:00, 18:00, 00:00',
-    'Q2H':          'Every 2 hrs (06:00, 08:00, 10:00, ...)',
+    '5x daily':     '06:00, 10:00, 14:00, 18:00, 22:00',
+    'Q2H':          '06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00',
+    'Q3H':          '06:00, 09:00, 12:00, 15:00, 18:00, 21:00',
     'Q4H':          '06:00, 10:00, 14:00, 18:00, 22:00, 02:00',
     'Q6H':          '06:00, 12:00, 18:00, 00:00',
     'Q8H':          '06:00, 14:00, 22:00',
-    'Q12H':         '08:00, 20:00',
+    'Q12H':         '06:00, 18:00',
     'Nocte':        '22:00 (bedtime)',
-    'Mane':         '08:00 (morning)',
+    'Mane':         '06:00 (morning)',
     'STAT':         'Immediately (once)',
     'PRN':          'As needed',
     'Weekly':       'Same day each week',
