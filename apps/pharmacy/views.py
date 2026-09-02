@@ -722,6 +722,7 @@ def drug_list(request):
         return HttpResponseForbidden()
     q = request.GET.get('q', '')
     category = request.GET.get('category', '')
+    drug_form = request.GET.get('form', '')
     drugs = Drug.objects.filter(is_deleted=False).only(
         'id', 'name', 'generic_name', 'brand_name', 'strength', 'form',
         'category', 'selling_price', 'reorder_level', 'is_active', 'is_controlled',
@@ -730,15 +731,18 @@ def drug_list(request):
         drugs = drugs.filter(Q(name__icontains=q) | Q(generic_name__icontains=q) | Q(brand_name__icontains=q))
     if category:
         drugs = drugs.filter(category=category)
+    if drug_form:
+        drugs = drugs.filter(form=drug_form)
     drugs = drugs.order_by('name')
     # Paginate — 50 per page
     from django.core.paginator import Paginator
     paginator = Paginator(drugs, 50)
     page = paginator.get_page(request.GET.get('page', 1))
-    from .models import DrugCategory
+    from .models import DrugCategory, DrugForm as DrugFormChoices
     return render(request, 'pharmacy/drug_list.html', {
-        'drugs': page, 'search': q, 'category': category,
-        'categories': DrugCategory.choices, 'paginator': paginator, 'page_obj': page,
+        'drugs': page, 'search': q, 'category': category, 'drug_form': drug_form,
+        'categories': DrugCategory.choices, 'drug_forms': DrugFormChoices.choices,
+        'paginator': paginator, 'page_obj': page,
     })
 
 
@@ -908,7 +912,7 @@ def add_dispensing_item(request, dispensing_id):
         # Update dispensing totals
         total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
         dispensing.total_amount = total
-        dispensing.status = DispensingStatus.PARTIAL
+        dispensing.status = DispensingStatus.PENDING
         dispensing.save(update_fields=['total_amount', 'status'])
 
         messages.success(request, f'{drug.name} x{qty} added.')
@@ -1054,7 +1058,7 @@ def add_dispensing_item_ajax(request, dispensing_id):
 
     total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
     dispensing.total_amount = total
-    dispensing.status = DispensingStatus.PARTIAL
+    dispensing.status = DispensingStatus.PENDING
     dispensing.save(update_fields=['total_amount', 'status'])
 
     drug_names = list(DispensingItem.objects.filter(dispensing=dispensing).values_list('drug__name', flat=True))
@@ -1121,7 +1125,7 @@ def add_manual_item_ajax(request, dispensing_id):
 
     total = DispensingItem.objects.filter(dispensing=dispensing).aggregate(t=Sum('subtotal'))['t'] or 0
     dispensing.total_amount = total
-    dispensing.status = DispensingStatus.PARTIAL
+    dispensing.status = DispensingStatus.PENDING
     dispensing.save(update_fields=['total_amount', 'status'])
 
     return JsonResponse({
@@ -1809,6 +1813,33 @@ def dispensing_receipt(request, dispensing_id):
 
 
 @login_required
+def patient_typeahead_ajax(request):
+    """AJAX typeahead for pharmacy patient search — returns JSON with pending Rx info."""
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({'results': []})
+    from apps.core.utils import patient_search_q, calculate_age
+    patients = Patient.objects.filter(
+        patient_search_q(q), is_deleted=False,
+    ).order_by('last_name', 'first_name')[:8]
+    rx_counts = dict(
+        DrugPrescription.objects.filter(
+            patient__in=patients, is_dispensed=False, is_deleted=False,
+        ).values_list('patient_id').annotate(cnt=Count('id')).values_list('patient_id', 'cnt')
+    )
+    results = []
+    for p in patients:
+        results.append({
+            'patient_id': p.patient_id,
+            'name': p.full_name,
+            'age': calculate_age(p.date_of_birth) if p.date_of_birth else None,
+            'gender': p.get_gender_display() if p.gender else '',
+            'pending_rx': rx_counts.get(p.id, 0),
+        })
+    return JsonResponse({'results': results})
+
+
+@login_required
 def patient_search(request):
     """
     Dedicated pharmacy patient search page.
@@ -1955,7 +1986,7 @@ def start_rx_dispensing(request, rx_id):
     )['t'] or 0
     dispensing.total_amount = total
     if matched_count > 0:
-        dispensing.status = DispensingStatus.PARTIAL
+        dispensing.status = DispensingStatus.PENDING
     dispensing.save(update_fields=['total_amount', 'status'])
 
     if skipped:
@@ -3318,6 +3349,46 @@ def transfer_action(request, transfer_id):
     return redirect('pharmacy:transfer_detail', transfer_id=transfer.pk)
 
 
+# ── Cross-Store Stock Visibility ──────────────────────────────────────────
+
+@login_required
+def cross_store_stock(request):
+    """View stock at other pharmacy locations — theatre can see pharmacy stock and vice versa."""
+    if not _can_access_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    locations = PharmacyLocation.objects.filter(is_deleted=False, is_active=True)
+    selected_loc_id = request.GET.get('location', '')
+    q = request.GET.get('q', '')
+    stock_data = []
+    selected_location = None
+    if selected_loc_id:
+        selected_location = locations.filter(pk=selected_loc_id).first()
+    if selected_location:
+        drugs = Drug.objects.filter(
+            is_deleted=False, is_active=True, location=selected_location,
+        )
+        if q:
+            drugs = drugs.filter(
+                Q(name__icontains=q) | Q(generic_name__icontains=q)
+            )
+        drugs = drugs.annotate(
+            avail_stock=Coalesce(
+                Sum('stock_items__quantity_remaining',
+                    filter=Q(stock_items__is_deleted=False,
+                             stock_items__expiry_date__gte=timezone.localdate())),
+                0
+            ),
+        ).order_by('name')[:200]
+        stock_data = drugs
+    return render(request, 'pharmacy/cross_store_stock.html', {
+        'locations': locations,
+        'selected_location': selected_location,
+        'selected_loc_id': selected_loc_id,
+        'stock_data': stock_data,
+        'search': q,
+    })
+
+
 # ── Stock Exit (Non-Dispensing) ────────────────────────────────────────────
 
 @login_required
@@ -3653,6 +3724,127 @@ def productivity_report(request):
     )
     return render(request, 'pharmacy/report_productivity.html', {
         'by_pharmacist': by_pharmacist, 'daily': list(daily), 'days': days,
+    })
+
+
+# ── SAGE-Style Reports ─────────────────────────────────────────────────────
+
+@login_required
+def stock_situation_report(request):
+    """Stock Situation / Inventory Valuation — current stock with cost and selling value."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    location_id = request.GET.get('location', '')
+    q = request.GET.get('q', '')
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).annotate(
+        stock_qty=Coalesce(
+            Sum('stock_items__quantity_remaining',
+                filter=Q(stock_items__is_deleted=False,
+                         stock_items__expiry_date__gte=timezone.localdate())),
+            Value(0, output_field=IntegerField())
+        ),
+    )
+    if location_id:
+        drugs = drugs.filter(location_id=location_id)
+    if q:
+        drugs = drugs.filter(Q(name__icontains=q) | Q(generic_name__icontains=q))
+    drugs = drugs.order_by('name')
+    items = []
+    total_cost_val = 0
+    total_sell_val = 0
+    for d in drugs:
+        cost_val = d.stock_qty * float(d.cost_price)
+        sell_val = d.stock_qty * float(d.selling_price)
+        total_cost_val += cost_val
+        total_sell_val += sell_val
+        items.append({
+            'drug': d, 'stock_qty': d.stock_qty,
+            'cost_val': cost_val, 'sell_val': sell_val,
+        })
+    locations = PharmacyLocation.objects.filter(is_deleted=False, is_active=True)
+    return render(request, 'pharmacy/report_stock_situation.html', {
+        'items': items, 'total_cost': total_cost_val, 'total_sell': total_sell_val,
+        'locations': locations, 'location_id': location_id, 'search': q,
+    })
+
+
+@login_required
+def sales_journal(request):
+    """Sales Journal — daily dispensing log with line items and totals."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    date_str = request.GET.get('date', '')
+    try:
+        report_date = datetime.date.fromisoformat(date_str)
+    except (ValueError, TypeError):
+        report_date = timezone.localdate()
+    dispensings = Dispensing.objects.filter(
+        dispensed_at__date=report_date,
+        status=DispensingStatus.DISPENSED,
+        is_deleted=False,
+    ).select_related('patient', 'dispensed_by').prefetch_related('items__drug').order_by('dispensed_at')
+    total_sales = dispensings.aggregate(t=Sum('total_amount'))['t'] or 0
+    total_discount = dispensings.aggregate(t=Sum('discount'))['t'] or 0
+    otc_count = dispensings.filter(is_otc=True).count()
+    rx_count = dispensings.filter(is_otc=False).count()
+    return render(request, 'pharmacy/report_sales_journal.html', {
+        'dispensings': dispensings, 'report_date': report_date,
+        'total_sales': total_sales, 'total_discount': total_discount,
+        'otc_count': otc_count, 'rx_count': rx_count,
+    })
+
+
+@login_required
+def expiring_stock_report(request):
+    """Near-Expiry Stock — drugs expiring within N days."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    days = int(request.GET.get('days', 90))
+    cutoff = timezone.localdate() + datetime.timedelta(days=days)
+    today = timezone.localdate()
+    batches = DrugStock.objects.filter(
+        is_deleted=False, quantity_remaining__gt=0,
+        expiry_date__lte=cutoff,
+    ).select_related('drug').order_by('expiry_date')
+    total_qty = 0
+    total_value = 0
+    items = []
+    for b in batches:
+        val = b.quantity_remaining * float(b.drug.cost_price)
+        total_qty += b.quantity_remaining
+        total_value += val
+        items.append({
+            'batch': b, 'value': val,
+            'is_expired': b.expiry_date < today,
+            'days_left': (b.expiry_date - today).days,
+        })
+    return render(request, 'pharmacy/report_expiring.html', {
+        'items': items, 'days': days, 'total_qty': total_qty, 'total_value': total_value,
+    })
+
+
+@login_required
+def supplier_purchase_history(request):
+    """Supplier Purchase History — all POs grouped by supplier."""
+    if not _is_head_pharmacist(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    supplier_id = request.GET.get('supplier', '')
+    months = int(request.GET.get('months', 12))
+    cutoff = timezone.localdate() - datetime.timedelta(days=months * 30)
+    suppliers = Supplier.objects.filter(is_deleted=False).order_by('name')
+    orders = PurchaseOrder.objects.filter(
+        is_deleted=False, order_date__gte=cutoff,
+    ).select_related('supplier').prefetch_related('items__drug')
+    if supplier_id:
+        orders = orders.filter(supplier_id=supplier_id)
+    orders = orders.order_by('-order_date')
+    total_amount = orders.aggregate(t=Sum('total_amount'))['t'] or 0
+    return render(request, 'pharmacy/report_supplier_history.html', {
+        'orders': orders[:200], 'suppliers': suppliers,
+        'supplier_id': supplier_id, 'months': months, 'total_amount': total_amount,
     })
 
 

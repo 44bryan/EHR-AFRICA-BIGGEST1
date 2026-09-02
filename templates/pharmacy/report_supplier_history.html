@@ -1,0 +1,138 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Supplier Purchase History{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-truck text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Supplier Purchase History</h5>
+      <div class="text-muted small">Purchase orders over the last {{ months }} months &middot; Generated {% now "d M Y H:i" %}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Pharmacy</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filter Bar ── #}
+<div class="card border-0 shadow-sm mb-3 d-print-none">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small fw-semibold mb-1">Supplier</label>
+        <select name="supplier" class="form-select form-select-sm" style="min-width:200px;">
+          <option value="">All Suppliers</option>
+          {% for s in suppliers %}
+          <option value="{{ s.id }}" {% if s.id|stringformat:"i" == supplier_id|stringformat:"i" %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small fw-semibold mb-1">Last N months</label>
+        <input type="number" name="months" value="{{ months }}" min="1" max="60" class="form-control form-control-sm" style="width:100px;">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Summary Cards ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-primary">{{ orders|length }}</div>
+        <div class="small text-muted fw-semibold">Purchase Orders</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-info">{{ suppliers|length }}</div>
+        <div class="small text-muted fw-semibold">Active Suppliers</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-success">{{ total_amount|floatformat:0|intcomma }}</div>
+        <div class="small text-muted fw-semibold">Total Amount (XAF)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Purchase Orders Table ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span class="fw-semibold small">Purchase Order History ({{ orders|length }})</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 small align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>PO Number</th>
+          <th>Date</th>
+          <th>Supplier</th>
+          <th class="text-center">Items Count</th>
+          <th class="text-end">Total Amount (XAF)</th>
+          <th class="text-center">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ order.po_number }}</td>
+          <td>{{ order.order_date|date:"d M Y" }}</td>
+          <td>{{ order.supplier.name }}</td>
+          <td class="text-center">{{ order.items.count }}</td>
+          <td class="text-end fw-semibold">{{ order.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-center">
+            {% with status=order.get_status_display %}
+            {% if order.status == 'RECEIVED' or order.status == 'COMPLETED' %}
+              <span class="badge bg-success">{{ status }}</span>
+            {% elif order.status == 'PENDING' or order.status == 'DRAFT' %}
+              <span class="badge bg-secondary">{{ status }}</span>
+            {% elif order.status == 'APPROVED' or order.status == 'ORDERED' %}
+              <span class="badge bg-primary">{{ status }}</span>
+            {% elif order.status == 'PARTIAL' %}
+              <span class="badge bg-warning text-dark">{{ status }}</span>
+            {% elif order.status == 'CANCELLED' %}
+              <span class="badge bg-danger">{{ status }}</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ status }}</span>
+            {% endif %}
+            {% endwith %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-inbox me-1"></i>No purchase orders found for the selected filters.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if orders %}
+      <tfoot class="table-light">
+        <tr class="fw-bold">
+          <td colspan="5" class="text-end">Grand Total:</td>
+          <td class="text-end text-success">{{ total_amount|floatformat:0|intcomma }} XAF</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}

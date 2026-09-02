@@ -164,6 +164,22 @@
             });
           }
 
+          // ── External drug badge helpers ──────────────────────────────────────
+          function _showExternalBadge(row) {
+            if (row.querySelector('.ext-drug-badge')) return;
+            var wrap = row.querySelector('.drug-typeahead-wrap');
+            if (!wrap) return;
+            var badge = document.createElement('div');
+            badge.className = 'ext-drug-badge mt-1';
+            badge.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>EXTERNAL — Not in hospital pharmacy</span>'
+              + '<div class="form-text text-warning" style="font-size:.68rem;">Patient must buy this drug elsewhere. It will NOT appear in pharmacy dispensing.</div>';
+            wrap.parentElement.appendChild(badge);
+          }
+          function _clearExternalBadge(row) {
+            var badge = row.querySelector('.ext-drug-badge');
+            if (badge) badge.remove();
+          }
+
           function initDrugRow(row) {
             var searchInput = row.querySelector('.drug-search-input');
             var dropdown    = row.querySelector('.drug-dropdown');
@@ -201,10 +217,10 @@
             }
 
             function selectDrug(d) {
-              // Set the search input display text
               searchInput.value = d.name + (d.strength ? ' (' + d.strength + ')' : '');
               hidden.value = d.name;
               dropdown.classList.add('d-none');
+              _clearExternalBadge(row);
 
               // Auto-fill ALL fields
               var concInput = row.querySelector('input[name$="-concentration"]');
@@ -233,6 +249,7 @@
 
               if (q.length < 2) {
                 dropdown.classList.add('d-none');
+                _clearExternalBadge(row);
                 return;
               }
 
@@ -240,8 +257,14 @@
                 var matches = PHARMACY_DRUGS.filter(function(d) {
                   return d.name.toUpperCase().indexOf(q) !== -1 ||
                          (d.strength && d.strength.toUpperCase().indexOf(q) !== -1);
-                }).slice(0, 15); // Show max 15 results
+                }).slice(0, 15);
                 showDropdown(matches);
+                // If no matches and user typed 3+ chars, show external drug warning
+                if (matches.length === 0 && q.length >= 3) {
+                  _showExternalBadge(row);
+                } else {
+                  _clearExternalBadge(row);
+                }
               }, 150);
             });
 

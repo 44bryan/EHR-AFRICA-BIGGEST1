@@ -186,6 +186,17 @@ class DrugStock(AuditModel):
     def __str__(self):
         return f"{self.drug.name} - Batch {self.batch_number} (Exp: {self.expiry_date})"
 
+    def save(self, *args, **kwargs):
+        # Lock quantity_received after initial creation — cannot be modified
+        if self.pk:
+            try:
+                orig = DrugStock.objects.get(pk=self.pk)
+                if orig.quantity_received != self.quantity_received:
+                    self.quantity_received = orig.quantity_received  # revert
+            except DrugStock.DoesNotExist:
+                pass
+        super().save(*args, **kwargs)
+
     @property
     def is_expired(self):
         return self.expiry_date < timezone.localdate()
@@ -223,6 +234,10 @@ class Dispensing(AuditModel):
     walk_in_name = models.CharField(
         max_length=150, blank=True,
         help_text='Customer name for walk-in OTC sales (no patient record needed)',
+    )
+    walk_in_code = models.CharField(
+        max_length=20, blank=True,
+        help_text='Auto-generated unique code for walk-in customers (WLK-YYYYMMDD-NNNN)',
     )
     prescription = models.ForeignKey(
         'prescriptions.DrugPrescription', null=True, blank=True,
@@ -272,6 +287,13 @@ class Dispensing(AuditModel):
                 dispensed_at__date=today
             ).count() + 1
             self.dispensing_number = f"DISP-{today.strftime('%Y%m%d')}-{count:04d}"
+        # Auto-generate walk_in_code for OTC / walk-in sales
+        if not self.walk_in_code and (self.is_otc or not self.patient):
+            today = timezone.localdate()
+            wlk_count = Dispensing.objects.filter(
+                walk_in_code__startswith=f"WLK-{today.strftime('%Y%m%d')}",
+            ).count() + 1
+            self.walk_in_code = f"WLK-{today.strftime('%Y%m%d')}-{wlk_count:04d}"
         super().save(*args, **kwargs)
 
 

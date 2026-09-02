@@ -1,0 +1,121 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Sales Journal{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-journal-text text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Sales Journal</h5>
+      <div class="text-muted small">Daily dispensing log &middot; {{ report_date|date:"d M Y" }} &middot; Generated {% now "d M Y H:i" %}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Pharmacy</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Date Filter ── #}
+<div class="card border-0 shadow-sm mb-3 d-print-none">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex align-items-center gap-3">
+      <label class="fw-semibold small text-nowrap mb-0">Report Date</label>
+      <input type="date" name="date" value="{{ report_date|date:'Y-m-d' }}" class="form-control form-control-sm" style="width:180px;">
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+    </form>
+  </div>
+</div>
+
+{# ── KPI Cards ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-success">{{ total_sales|floatformat:0|intcomma }}</div>
+        <div class="small text-muted fw-semibold">Total Sales (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-warning">{{ total_discount|floatformat:0|intcomma }}</div>
+        <div class="small text-muted fw-semibold">Total Discount (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-primary">{{ rx_count }}</div>
+        <div class="small text-muted fw-semibold">Prescription (Rx) Count</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-info">{{ otc_count }}</div>
+        <div class="small text-muted fw-semibold">OTC Sales Count</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Sales Journal Table ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span class="fw-semibold small">Dispensing Log &mdash; {{ report_date|date:"d M Y" }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 small align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Dispensing #</th>
+          <th>Time</th>
+          <th>Patient</th>
+          <th>Pharmacist</th>
+          <th>Items</th>
+          <th class="text-end">Total (XAF)</th>
+          <th class="text-end">Discount (XAF)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in dispensings %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ d.dispensing_number|default:d.id }}</td>
+          <td>{{ d.created_at|date:"H:i" }}</td>
+          <td>{{ d.patient.get_full_name|default:d.patient }}</td>
+          <td>{{ d.pharmacist.get_full_name|default:d.pharmacist }}</td>
+          <td>
+            {% for item in d.items.all %}{{ item.drug.name }}{% if item.quantity_dispensed %} (x{{ item.quantity_dispensed }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+          </td>
+          <td class="text-end fw-semibold">{{ d.total|floatformat:0|intcomma }}</td>
+          <td class="text-end text-warning">{{ d.discount|floatformat:0|intcomma }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-4"><i class="bi bi-inbox me-1"></i>No dispensing records for this date.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if dispensings %}
+      <tfoot class="table-light">
+        <tr class="fw-bold">
+          <td colspan="6" class="text-end">Day Total:</td>
+          <td class="text-end text-success">{{ total_sales|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end text-warning">{{ total_discount|floatformat:0|intcomma }} XAF</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}

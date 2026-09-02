@@ -1,0 +1,110 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Cross-Store Stock Visibility{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1 fw-bold"><i class="bi bi-building me-2 text-primary"></i>Cross-Store Stock</h1>
+    <div class="text-muted small">View stock at other pharmacy locations — request transfers for items you need</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:transfer_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>New Transfer Request
+    </a>
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Select Location</label>
+        <select name="location" class="form-select" onchange="this.form.submit()">
+          <option value="">— Choose a pharmacy location —</option>
+          {% for loc in locations %}
+          <option value="{{ loc.pk }}" {% if selected_loc_id == loc.pk|slugify %}selected{% endif %}>
+            {{ loc.name }} ({{ loc.get_location_type_display }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Search Drug</label>
+        <input type="text" name="q" value="{{ search }}" class="form-control" placeholder="Drug name or generic...">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">View Stock</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if selected_location %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+    <div class="fw-semibold">
+      <i class="bi bi-shop me-1 text-primary"></i>
+      {{ selected_location.name }} — {{ selected_location.get_location_type_display }}
+    </div>
+    <span class="badge bg-primary">{{ stock_data|length }} drug{{ stock_data|length|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Drug Name</th>
+            <th>Generic</th>
+            <th>Form</th>
+            <th>Category</th>
+            <th class="text-center">Available Stock</th>
+            <th>Price (XAF)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for drug in stock_data %}
+          <tr>
+            <td class="fw-semibold">{{ drug.name }}</td>
+            <td class="text-muted">{{ drug.generic_name }}</td>
+            <td><span class="badge bg-light text-dark">{{ drug.get_form_display }}</span></td>
+            <td>{{ drug.get_category_display }}</td>
+            <td class="text-center">
+              {% if drug.avail_stock > drug.reorder_level %}
+              <span class="badge bg-success">{{ drug.avail_stock }}</span>
+              {% elif drug.avail_stock > 0 %}
+              <span class="badge bg-warning text-dark">{{ drug.avail_stock }} Low</span>
+              {% else %}
+              <span class="badge bg-danger">0</span>
+              {% endif %}
+            </td>
+            <td>{{ drug.selling_price|floatformat:0|intcomma }}</td>
+            <td>
+              {% if drug.avail_stock > 0 %}
+              <a href="{% url 'pharmacy:transfer_create' %}?from_loc={{ selected_location.pk }}&drug={{ drug.pk }}"
+                 class="btn btn-sm btn-outline-primary" title="Request transfer of this drug">
+                <i class="bi bi-arrow-left-right"></i>
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No drugs found at this location</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% elif not selected_loc_id %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-building fs-1 d-block mb-3" style="opacity:.3;"></i>
+  <div class="fw-semibold">Select a pharmacy location above to view its stock</div>
+  <div class="small mt-1">Theatre store, satellite pharmacies, etc.</div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Stock Situation Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-clipboard2-data text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Stock Situation Report</h5>
+      <div class="text-muted small">Inventory valuation by location &middot; Generated {% now "d M Y H:i" %}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Pharmacy</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filter Bar ── #}
+<div class="card border-0 shadow-sm mb-3 d-print-none">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small fw-semibold mb-1">Location</label>
+        <select name="location" class="form-select form-select-sm" style="min-width:180px;">
+          <option value="">All Locations</option>
+          {% for loc in locations %}
+          <option value="{{ loc.id }}" {% if loc.id|stringformat:"i" == location_id|stringformat:"i" %}selected{% endif %}>{{ loc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small fw-semibold mb-1">Search Drug</label>
+        <input type="text" name="search" value="{{ search|default:'' }}" class="form-control form-control-sm" placeholder="Drug name..." style="min-width:200px;">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Summary Cards ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-primary">{{ items|length }}</div>
+        <div class="small text-muted fw-semibold">Total Items</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-success">{{ total_cost|floatformat:0|intcomma }}</div>
+        <div class="small text-muted fw-semibold">Total Stock Value &mdash; Cost (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3 text-center">
+        <div class="fs-2 fw-bold text-info">{{ total_sell|floatformat:0|intcomma }}</div>
+        <div class="small text-muted fw-semibold">Total Stock Value &mdash; Selling (XAF)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Stock Situation Table ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span class="fw-semibold small">Inventory Valuation ({{ items|length }} items)</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 small align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Drug Name</th>
+          <th>Generic Name</th>
+          <th>Form</th>
+          <th class="text-end">Stock Qty</th>
+          <th class="text-end">Cost Price (XAF)</th>
+          <th class="text-end">Selling Price (XAF)</th>
+          <th class="text-end">Stock Value &mdash; Cost (XAF)</th>
+          <th class="text-end">Stock Value &mdash; Selling (XAF)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ item.drug }}</td>
+          <td>{{ item.generic_name|default:"&mdash;" }}</td>
+          <td>{{ item.form|default:"&mdash;" }}</td>
+          <td class="text-end">{{ item.stock_qty|intcomma }}</td>
+          <td class="text-end">{{ item.cost_price|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ item.sell_price|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold text-success">{{ item.cost_val|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold text-info">{{ item.sell_val|floatformat:0|intcomma }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-center text-muted py-4"><i class="bi bi-inbox me-1"></i>No stock items found.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if items %}
+      <tfoot class="table-light">
+        <tr class="fw-bold">
+          <td colspan="7" class="text-end">Grand Total:</td>
+          <td class="text-end text-success">{{ total_cost|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end text-info">{{ total_sell|floatformat:0|intcomma }} XAF</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}

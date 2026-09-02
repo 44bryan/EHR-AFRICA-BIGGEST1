@@ -30,6 +30,7 @@ urlpatterns = [
     path('pilferage/', views.pilferage_dashboard, name='pilferage'),
     path('dispensing/<uuid:dispensing_id>/receipt/', views.dispensing_receipt, name='dispensing_receipt'),
     path('search/', views.patient_search, name='patient_search'),
+    path('search/ajax/', views.patient_typeahead_ajax, name='patient_typeahead_ajax'),
     path('rx/<uuid:rx_id>/start-dispensing/', views.start_rx_dispensing, name='start_rx_dispensing'),
     path('rx/<uuid:rx_id>/declined/', views.rx_declined, name='rx_declined'),
     path('adjustments/', views.stock_adjustment_list, name='stock_adjustment_list'),
@@ -91,6 +92,9 @@ urlpatterns = [
     path('locations/new/', views.location_create, name='location_create'),
     path('locations/<uuid:loc_id>/edit/', views.location_edit, name='location_edit'),
 
+    # ── Cross-Store Stock Visibility ─────────────────────────────
+    path('cross-store/', views.cross_store_stock, name='cross_store_stock'),
+
     # ── Head Pharmacist: Inter-Store Transfers ──────────────────────
     path('transfers/', views.transfer_list, name='transfer_list'),
     path('transfers/new/', views.transfer_create, name='transfer_create'),
@@ -117,4 +121,8 @@ urlpatterns = [
     path('reports/consumption/', views.consumption_report, name='report_consumption'),
     path('reports/turnover/', views.turnover_report, name='report_turnover'),
     path('reports/productivity/', views.productivity_report, name='report_productivity'),
+    path('reports/stock-situation/', views.stock_situation_report, name='report_stock_situation'),
+    path('reports/sales-journal/', views.sales_journal, name='report_sales_journal'),
+    path('reports/expiring/', views.expiring_stock_report, name='report_expiring'),
+    path('reports/supplier-history/', views.supplier_purchase_history, name='report_supplier_history'),
 ]
