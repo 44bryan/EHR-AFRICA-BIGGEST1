@@ -58,6 +58,7 @@ class UserRole(models.TextChoices):
     GATEKEEPER                = 'gatekeeper',                _('Gate Security / Ticket Issuer')
     MEDICAL_RECORDS           = 'medical_records',           _('Medical Records Officer')
     QUALITY_OFFICER           = 'quality_officer',           _('Quality / JCI Compliance Officer')
+    STORE_KEEPER              = 'store_keeper',              _('General Store Keeper')
     ADMIN                     = 'admin',                     _('System Administrator')
 
 
@@ -328,6 +329,10 @@ class User(AbstractUser):
     @property
     def is_cssd_technician(self):
         return self.role == UserRole.CSSD_TECHNICIAN
+
+    @property
+    def is_store_keeper(self):
+        return self.role == UserRole.STORE_KEEPER
 
     @property
     def is_anaesthetist(self):

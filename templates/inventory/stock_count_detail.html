@@ -1,0 +1,144 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Stock Count {{ sc.count_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-clipboard-data text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Stock Count {{ sc.count_number }}</h5>
+      <div class="text-muted small">{{ sc.created_at|date:"d M Y, H:i" }} &middot; by {{ sc.counted_by.get_full_name|default:sc.counted_by.username }}</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    {% if sc.status == 'IN_PROGRESS' %}
+      <span class="badge bg-warning text-dark fs-6">In Progress</span>
+    {% elif sc.status == 'COMPLETED' %}
+      <span class="badge bg-info fs-6">Completed</span>
+    {% elif sc.status == 'APPROVED' %}
+      <span class="badge bg-success fs-6">Approved</span>
+    {% else %}
+      <span class="badge bg-secondary fs-6">{{ sc.get_status_display|default:sc.status }}</span>
+    {% endif %}
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small">Total Items</div>
+        <div class="fs-3 fw-bold text-primary">{{ items|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small">Variance Items</div>
+        <div class="fs-3 fw-bold text-danger">{{ variance_count }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if sc.notes %}
+<div class="alert alert-light border small mb-3">
+  <i class="bi bi-sticky me-1"></i><strong>Notes:</strong> {{ sc.notes }}
+</div>
+{% endif %}
+
+{% if sc.status == 'APPROVED' %}
+<div class="alert alert-success border-0 small">
+  <i class="bi bi-check-circle me-1"></i>
+  Approved by <strong>{{ sc.approved_by.get_full_name|default:sc.approved_by.username }}</strong>
+  {% if sc.approved_at %} on {{ sc.approved_at|date:"d M Y, H:i" }}{% endif %}
+</div>
+{% endif %}
+
+<!-- Count Items Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    {% if sc.status == 'IN_PROGRESS' %}
+    <form method="post" action="{% url 'inventory:stock_count_update' sc.id %}">
+      {% csrf_token %}
+    {% endif %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Item Name</th>
+              <th>Item Code</th>
+              <th class="text-center">System Qty</th>
+              <th class="text-center">Physical Qty</th>
+              <th class="text-center">Variance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ci in items %}
+            <tr class="{% if ci.variance < 0 %}table-danger{% elif ci.variance > 0 %}table-warning{% else %}table-success{% endif %}">
+              <td class="fw-semibold">{{ ci.item.name }}</td>
+              <td><code>{{ ci.item.item_code }}</code></td>
+              <td class="text-center">{{ ci.system_qty }}</td>
+              <td class="text-center">
+                {% if sc.status == 'IN_PROGRESS' %}
+                  <input type="hidden" name="item_id_{{ ci.id }}" value="{{ ci.id }}">
+                  <input type="number" name="physical_qty_{{ ci.id }}" value="{{ ci.physical_qty|default:'' }}"
+                         class="form-control form-control-sm text-center" style="width:80px; display:inline-block;" min="0">
+                {% else %}
+                  {{ ci.physical_qty|default:"--" }}
+                {% endif %}
+              </td>
+              <td class="text-center fw-bold">
+                {% if ci.variance > 0 %}+{% endif %}{{ ci.variance }}
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-4">No items in this count.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    {% if sc.status == 'IN_PROGRESS' %}
+      <div class="card-footer bg-white d-flex justify-content-end gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-save me-1"></i>Save Physical Counts
+        </button>
+      </div>
+    </form>
+    <div class="card-footer bg-white border-top-0 d-flex justify-content-end">
+      <form method="post" action="{% url 'inventory:stock_count_complete' sc.id %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-warning btn-sm"
+                onclick="return confirm('Mark this count as complete? You will not be able to edit quantities after this.')">
+          <i class="bi bi-check2-circle me-1"></i>Mark Complete
+        </button>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if sc.status == 'COMPLETED' %}
+      <div class="card-footer bg-white d-flex justify-content-end">
+        <form method="post" action="{% url 'inventory:stock_count_approve' sc.id %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-success btn-sm"
+                  onclick="return confirm('Approve this count and apply adjustments to system stock? This action cannot be undone.')">
+            <i class="bi bi-check-circle me-1"></i>Approve &amp; Apply Adjustments
+          </button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

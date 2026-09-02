@@ -1,0 +1,120 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Expiry Alert Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Expiry Alert Report</h5>
+      <div class="text-muted small">Items expiring within {{ days }} days</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-3">
+        <select name="days" class="form-select form-select-sm">
+          <option value="30" {% if days == 30 %}selected{% endif %}>Next 30 days</option>
+          <option value="60" {% if days == 60 %}selected{% endif %}>Next 60 days</option>
+          <option value="90" {% if days == 90 %}selected{% endif %}>Next 90 days</option>
+          <option value="180" {% if days == 180 %}selected{% endif %}>Next 180 days</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- KPI -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small">Total Batches</div>
+        <div class="fs-3 fw-bold text-warning">{{ batches|length|intcomma }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="text-muted small">Total Value at Risk</div>
+        <div class="fs-4 fw-bold text-danger">{{ total_value|floatformat:0|intcomma }} <span class="small text-muted">FCFA</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Item</th>
+            <th>Lot #</th>
+            <th>Expiry Date</th>
+            <th class="text-center">Days Left</th>
+            <th class="text-center">Qty</th>
+            <th class="text-end">Value (FCFA)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in batches %}
+          <tr class="{% if b.days_left < 0 %}table-danger{% elif b.days_left < 30 %}table-danger{% elif b.days_left < 60 %}table-warning{% else %}{% endif %}">
+            <td class="fw-semibold">{{ b.item.name }}</td>
+            <td><code>{{ b.lot_number|default:"--" }}</code></td>
+            <td>{{ b.expiry_date|date:"d M Y" }}</td>
+            <td class="text-center fw-bold">
+              {% if b.days_left < 0 %}
+                <span class="text-danger">Expired ({{ b.days_left }} days)</span>
+              {% elif b.days_left == 0 %}
+                <span class="text-danger">Today</span>
+              {% else %}
+                <span class="{% if b.days_left < 30 %}text-danger{% elif b.days_left < 60 %}text-warning{% else %}text-dark{% endif %}">
+                  {{ b.days_left }}
+                </span>
+              {% endif %}
+            </td>
+            <td class="text-center">{{ b.quantity|intcomma }}</td>
+            <td class="text-end">{{ b.value|floatformat:0|intcomma }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              <i class="bi bi-check-circle fs-3 d-block mb-2 text-success"></i>
+              No items expiring within {{ days }} days. All clear!
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if batches %}
+  <div class="card-footer bg-white small text-muted d-flex justify-content-between">
+    <span>{{ batches|length }} batch{{ batches|length|pluralize:"es" }} shown</span>
+    <span>
+      <span class="badge bg-danger me-1">Red = Expired / &lt;30 days</span>
+      <span class="badge bg-warning text-dark me-1">Orange = &lt;60 days</span>
+    </span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

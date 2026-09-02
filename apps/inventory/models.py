@@ -322,3 +322,133 @@ class RequisitionItem(TimeStampedModel):
 
     def __str__(self):
         return f"{self.item.name} × {self.quantity_requested}"
+
+
+# ── Store Locations ──────────────────────────────────────────────────────────
+
+class StoreLocation(AuditModel):
+    """Physical store rooms within the facility."""
+    name = models.CharField(max_length=100, unique=True)
+    location_type = models.CharField(max_length=20, choices=[
+        ('CENTRAL', 'Central Store'),
+        ('SUB', 'Sub-Store'),
+        ('WARD', 'Ward Store'),
+        ('THEATRE', 'Theatre Store'),
+        ('EMERGENCY', 'Emergency Store'),
+    ])
+    address = models.TextField(blank=True, help_text='Physical location within facility')
+    manager = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='managed_store_locations',
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_location_type_display()})"
+
+
+# ── Physical Stock Count ─────────────────────────────────────────────────────
+
+class StockCountStatus(models.TextChoices):
+    IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
+    COMPLETED   = 'COMPLETED',   'Completed'
+    APPROVED    = 'APPROVED',    'Approved — Adjustments Applied'
+
+
+class StockCount(AuditModel):
+    """Periodic physical inventory count."""
+    count_number = models.CharField(max_length=30, unique=True, blank=True)
+    count_date   = models.DateField(default=timezone.localdate)
+    status       = models.CharField(max_length=15, choices=StockCountStatus.choices,
+                                     default=StockCountStatus.IN_PROGRESS)
+    counted_by   = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='stock_counts',
+    )
+    approved_by  = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_stock_counts',
+    )
+    notes        = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-count_date']
+
+    def __str__(self):
+        return f"Count {self.count_number} ({self.get_status_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.count_number:
+            today = timezone.localdate()
+            count = StockCount.objects.filter(count_date__year=today.year).count() + 1
+            self.count_number = f"SC-{today.strftime('%Y%m%d')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class StockCountItem(TimeStampedModel):
+    """Individual item line in a stock count."""
+    stock_count      = models.ForeignKey(StockCount, on_delete=models.CASCADE, related_name='items')
+    item             = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
+    system_quantity  = models.PositiveIntegerField(help_text='Quantity per system at time of count')
+    physical_quantity = models.PositiveIntegerField(help_text='Actual count found')
+    variance         = models.IntegerField(default=0, help_text='physical - system')
+    notes            = models.CharField(max_length=200, blank=True)
+
+    def save(self, *args, **kwargs):
+        self.variance = self.physical_quantity - self.system_quantity
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.item.name}: sys={self.system_quantity} phys={self.physical_quantity} var={self.variance}"
+
+
+# ── Department Returns ───────────────────────────────────────────────────────
+
+class DepartmentReturn(AuditModel):
+    """Items returned from departments back to central store."""
+    return_number = models.CharField(max_length=30, unique=True, blank=True)
+    department    = models.CharField(max_length=100)
+    returned_by   = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='store_returns',
+    )
+    received_by   = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='received_store_returns',
+    )
+    status        = models.CharField(max_length=15, choices=[
+        ('PENDING', 'Pending Acceptance'),
+        ('ACCEPTED', 'Accepted — Stock Restored'),
+        ('REJECTED', 'Rejected'),
+    ], default='PENDING')
+    notes         = models.TextField(blank=True)
+    rejection_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"RET-{self.return_number} ({self.department})"
+
+    def save(self, *args, **kwargs):
+        if not self.return_number:
+            today = timezone.localdate()
+            count = DepartmentReturn.objects.filter(created_at__year=today.year).count() + 1
+            self.return_number = f"RET-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class DepartmentReturnItem(TimeStampedModel):
+    department_return = models.ForeignKey(DepartmentReturn, on_delete=models.CASCADE, related_name='items')
+    item              = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
+    quantity          = models.PositiveIntegerField()
+    condition         = models.CharField(max_length=20, choices=[
+        ('GOOD', 'Good — Restock'),
+        ('DAMAGED', 'Damaged — Write Off'),
+        ('EXPIRED', 'Expired'),
+    ], default='GOOD')
+    notes             = models.CharField(max_length=200, blank=True)
+
+    def __str__(self):
+        return f"{self.item.name} × {self.quantity} ({self.get_condition_display()})"

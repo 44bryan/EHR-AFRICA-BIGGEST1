@@ -1,0 +1,79 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Vendor Performance Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-truck text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Vendor Performance Report</h5>
+      <div class="text-muted small">ISO 9001 &sect;8.4 Supplier evaluation</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Vendor Name</th>
+            <th class="text-center">Total Orders</th>
+            <th class="text-center">On-Time</th>
+            <th class="text-center">Late</th>
+            <th class="text-center">Quality Issues</th>
+            <th class="text-center">On-Time Rate</th>
+            <th class="text-center">Performance Rating</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in vendors %}
+          <tr>
+            <td class="fw-semibold">{{ v.name }}</td>
+            <td class="text-center">{{ v.total_orders|intcomma }}</td>
+            <td class="text-center text-success fw-semibold">{{ v.on_time|intcomma }}</td>
+            <td class="text-center {% if v.late > 0 %}text-danger fw-semibold{% else %}text-muted{% endif %}">{{ v.late|intcomma }}</td>
+            <td class="text-center {% if v.quality_issues > 0 %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ v.quality_issues|intcomma }}</td>
+            <td class="text-center">
+              {% if v.on_time_rate is not None %}
+                <span class="fw-semibold {% if v.on_time_rate >= 95 %}text-success{% elif v.on_time_rate >= 85 %}text-info{% elif v.on_time_rate >= 70 %}text-warning{% else %}text-danger{% endif %}">
+                  {{ v.on_time_rate }}%
+                </span>
+              {% else %}
+                <span class="text-muted">N/A</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="badge bg-{{ v.performance_color }}">{{ v.performance_rating }}</span>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-truck fs-3 d-block mb-2"></i>
+              No vendor performance data available.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-secondary border-0 mt-3 small">
+  <strong>Performance Rating:</strong>
+  <span class="badge bg-success ms-1">Excellent &ge; 95%</span>
+  <span class="badge bg-info ms-1">Good &ge; 85%</span>
+  <span class="badge bg-warning text-dark ms-1">Fair &ge; 70%</span>
+  <span class="badge bg-danger ms-1">Poor &lt; 70%</span>
+  &mdash; Based on on-time delivery rate across all received purchase orders.
+</div>
+{% endblock %}

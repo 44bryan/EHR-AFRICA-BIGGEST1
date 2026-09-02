@@ -1298,6 +1298,10 @@ def home_view(request):
     if user.is_cssd_technician:
         return redirect('cssd:dashboard')
 
+    # ── Store Keeper → General Store dashboard ──────────────────────────
+    if user.is_store_keeper:
+        return redirect('inventory:dashboard')
+
     # ── Anaesthetist — reuses theatre dashboard (same workspace) ─────────
     if user.role == 'anaesthetist':
         try:

@@ -1,0 +1,95 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Consumption by Department{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-graph-down text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Consumption by Department</h5>
+      <div class="text-muted small">Requisitions and items issued per department</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-3">
+        <select name="months" class="form-select form-select-sm">
+          <option value="3" {% if months == 3 %}selected{% endif %}>Last 3 months</option>
+          <option value="6" {% if months == 6 %}selected{% endif %}>Last 6 months</option>
+          <option value="12" {% if months == 12 %}selected{% endif %}>Last 12 months</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Department</th>
+            <th class="text-center">Total Requisitions</th>
+            <th class="text-center">Total Items Issued</th>
+            <th style="min-width:200px;">Comparison</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% with max_items=0 %}
+          {% for row in dept_data %}
+            {% if row.total_items > max_items %}{% endif %}
+          {% endfor %}
+          {% endwith %}
+          {% for row in dept_data %}
+          <tr>
+            <td class="fw-semibold">{{ row.department }}</td>
+            <td class="text-center">{{ row.total_reqs|intcomma }}</td>
+            <td class="text-center fw-semibold">{{ row.total_items|intcomma }}</td>
+            <td>
+              {% if row.total_items > 0 %}
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-fill" style="height:18px;">
+                  <div class="progress-bar bg-primary" role="progressbar"
+                       style="width:{% widthratio row.total_items row.max_items 100 %}%"
+                       aria-valuenow="{{ row.total_items }}" aria-valuemin="0" aria-valuemax="{{ row.max_items }}">
+                    {{ row.total_items|intcomma }}
+                  </div>
+                </div>
+              </div>
+              {% else %}
+              <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="text-center text-muted py-5">
+              <i class="bi bi-graph-down fs-3 d-block mb-2"></i>
+              No consumption data found for the selected period.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

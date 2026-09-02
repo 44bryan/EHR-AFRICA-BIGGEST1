@@ -1,0 +1,126 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Create Department Return{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0"><i class="bi bi-arrow-return-left me-2 text-primary"></i>Create Department Return</h1>
+  <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <form method="post" id="returnForm">
+          {% csrf_token %}
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Department <span class="text-danger">*</span></label>
+              <select name="department" class="form-select" required>
+                <option value="">-- Select Department --</option>
+                {% for dept in departments %}
+                <option value="{{ dept.id }}">{{ dept.name|default:dept }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"
+                      placeholder="Reason for return..."></textarea>
+          </div>
+
+          <hr class="my-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold mb-0"><i class="bi bi-list-ul me-1"></i>Return Items</h6>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="addRowBtn">
+              <i class="bi bi-plus-lg me-1"></i>Add Row
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-bordered align-middle small mb-0" id="itemsTable">
+              <thead class="table-light">
+                <tr>
+                  <th style="min-width:250px;">Item <span class="text-danger">*</span></th>
+                  <th style="width:120px;">Quantity <span class="text-danger">*</span></th>
+                  <th style="width:180px;">Condition <span class="text-danger">*</span></th>
+                  <th style="width:50px;"></th>
+                </tr>
+              </thead>
+              <tbody id="itemRows">
+                <tr class="item-row">
+                  <td>
+                    <select name="item_id" class="form-select form-select-sm" required>
+                      <option value="">-- Select Item --</option>
+                      {% for it in items %}
+                      <option value="{{ it.id }}">{{ it.name }} ({{ it.item_code }})</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" name="quantity" class="form-control form-control-sm" min="1" value="1" required>
+                  </td>
+                  <td>
+                    <select name="condition" class="form-select form-select-sm" required>
+                      <option value="GOOD">Good</option>
+                      <option value="DAMAGED">Damaged</option>
+                      <option value="EXPIRED">Expired</option>
+                    </select>
+                  </td>
+                  <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 remove-row" title="Remove">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <a href="{% url 'inventory:return_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>Submit Return
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const tbody = document.getElementById('itemRows');
+  const addBtn = document.getElementById('addRowBtn');
+  const templateRow = tbody.querySelector('.item-row');
+
+  addBtn.addEventListener('click', function() {
+    const clone = templateRow.cloneNode(true);
+    clone.querySelectorAll('select').forEach(function(s) { s.selectedIndex = 0; });
+    clone.querySelector('input[type="number"]').value = 1;
+    tbody.appendChild(clone);
+    bindRemoveButtons();
+  });
+
+  function bindRemoveButtons() {
+    tbody.querySelectorAll('.remove-row').forEach(function(btn) {
+      btn.onclick = function() {
+        if (tbody.querySelectorAll('.item-row').length > 1) {
+          btn.closest('.item-row').remove();
+        }
+      };
+    });
+  }
+  bindRemoveButtons();
+});
+</script>
+{% endblock %}
