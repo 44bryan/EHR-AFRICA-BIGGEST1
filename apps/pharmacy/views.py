@@ -1228,7 +1228,6 @@ def drug_stock_ajax(request):
     })
 
 
-@login_required
 def _get_dispensing_tier_info(dispensing):
     """Resolve service_tier and billing_type from the patient's active visit."""
     tier, billing_type, insurance_copay = 'STANDARD', 'SELF_PAY', None
