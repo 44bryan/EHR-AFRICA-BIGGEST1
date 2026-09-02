@@ -3,321 +3,113 @@
 {% block title %}Pharmacy Statistics — {{ month_name }}{% endblock %}
 
 {% block page_header %}
-<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
   <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-graph-up text-primary fs-4"></i>
+    <i class="bi bi-graph-up text-primary fs-5"></i>
     <div>
-      <h5 class="mb-0 fw-bold">Pharmacy Monthly Report</h5>
-      <div class="text-muted small">{{ month_name }} &middot; WHO/JCI MMU Standards &middot; Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }}</div>
+      <h5 class="mb-0 fw-bold" style="font-size:.95rem;">Pharmacy Monthly Report — {{ month_name }}</h5>
+      <span class="text-muted" style="font-size:.7rem;">WHO/JCI MMU &middot; PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span>
     </div>
   </div>
-  <div class="d-flex gap-2 align-items-center flex-wrap">
-    <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
-    <span class="fw-semibold small">{{ month_name }}</span>
+  <div class="d-flex gap-1 align-items-center flex-wrap">
+    <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-chevron-left"></i></a>
+    <span class="fw-semibold" style="font-size:.8rem;">{{ month_name }}</span>
     {% if year != today.year or month != today.month %}
-    <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+    <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-chevron-right"></i></a>
     {% endif %}
-    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
-    <button onclick="window.open('{{ request.path }}?year={{ year }}&amp;month={{ month }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i>Export PDF</button>
-    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer-fill me-1"></i>Print</button>
+    <a href="{% url 'pharmacy:dashboard' %}" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-arrow-left"></i></a>
+    <button onclick="window.open('{{ request.path }}?year={{ year }}&amp;month={{ month }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger py-0"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
+    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-printer-fill me-1"></i>Print</button>
   </div>
 </div>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+.ps-kpi{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;}
+.ps-k{flex:1;min-width:90px;border:1px solid #e9ecef;border-radius:4px;text-align:center;padding:6px 4px;background:#fff;}
+.ps-k .v{font-size:1.15rem;font-weight:700;line-height:1.1;}
+.ps-k .l{font-size:.62rem;color:#6c757d;margin-top:1px;}
+.ps-k .v.ok{color:#198754}.ps-k .v.warn{color:#fd7e14}.ps-k .v.bad{color:#dc3545}.ps-k .v.purple{color:#6f42c1}.ps-k .v.blue{color:#0d6efd}
+.ps-hdr{background:#f8f9fa;font-size:.72rem;font-weight:700;padding:4px 8px;border-bottom:1px solid #dee2e6;color:#333;}
+.ps-tbl{width:100%;font-size:.75rem;margin-bottom:0;}
+.ps-tbl th{background:#f1f3f5;font-size:.65rem;padding:3px 6px;font-weight:600;color:#495057;border-bottom:1px solid #dee2e6;}
+.ps-tbl td{padding:3px 6px;border-bottom:1px solid #f0f0f0;vertical-align:middle;}
+.ps-tbl tr:last-child td{border-bottom:none;}
+.ps-badge{font-size:.58rem;padding:1px 5px;border-radius:3px;font-weight:600;}
+.ps-met{background:#d1fae5;color:#065f46}.ps-wrn{background:#fef3c7;color:#78350f}.ps-low{background:#fee2e2;color:#991b1b}.ps-trk{background:#e2e8f0;color:#475569}
+.ps-card{border:none!important;box-shadow:0 1px 3px rgba(0,0,0,.08)!important;margin-bottom:8px!important;}
+.ps-card .card-body{padding:0!important;}
+@media print{
+  #sidebar,nav.navbar,.btn,.btn-group,.no-print,.breadcrumb{display:none!important;}
+  #page-content-wrapper{margin-left:0!important;width:100%!important;padding:0 4px!important;}
+  body{background:#fff!important;font-size:9pt!important;}
+  .ps-card{box-shadow:none!important;border:1px solid #dee2e6!important;}
+  @page{size:A4 landscape;margin:8mm 10mm;}
+}
+</style>
+{% endblock %}
+
 {% block content %}
 
-<div class="print-only" style="display:none;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #1a3a5c;">
-    <div>
-      <div style="font-size:18px;font-weight:800;color:#1a3a5c;">Pharmacy Monthly Statistics Report</div>
-      <div style="font-size:11px;color:#555;margin-top:3px;">Period: {{ month_name }} &bull; Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }} &bull; Generated: {% now "d M Y H:i" %}</div>
-      <div style="font-size:9px;color:#888;margin-top:1px;">WHO Core Drug Use Indicators &bull; JCI MMU Standards &bull; FIP Good Pharmacy Practice</div>
-    </div>
-    <div style="text-align:right;font-size:10px;color:#6c757d;">CONFIDENTIAL — INTERNAL USE ONLY<br><em>For management review only.</em></div>
-  </div>
+{# ── KPI Strip ── #}
+<div class="ps-kpi">
+  <div class="ps-k"><div class="v">{{ total_dispensings }}</div><div class="l">Dispensings</div></div>
+  <div class="ps-k"><div class="v ok">{{ dispensed_count }}</div><div class="l">Dispensed</div></div>
+  <div class="ps-k"><div class="v warn">{{ partial_count }}</div><div class="l">Partial</div></div>
+  <div class="ps-k"><div class="v {% if completion_rate >= 90 %}ok{% elif completion_rate >= 75 %}warn{% else %}bad{% endif %}">{{ completion_rate }}%</div><div class="l">Fill Rate</div></div>
+  <div class="ps-k"><div class="v blue">{{ male_count|add:female_count }}</div><div class="l">Patients</div></div>
+  <div class="ps-k"><div class="v {% if stockout_rate > 10 %}bad{% elif stockout_rate > 5 %}warn{% else %}ok{% endif %}">{{ stockout_rate }}%</div><div class="l">Stockout</div></div>
+  <div class="ps-k"><div class="v ok">{{ revenue|floatformat:0|intcomma }}</div><div class="l">Revenue (FCFA)</div></div>
+  <div class="ps-k"><div class="v purple">{{ rx_per_day }}</div><div class="l">Rx/Day</div></div>
+  <div class="ps-k"><div class="v {% if gross_margin >= 30 %}ok{% elif gross_margin >= 15 %}warn{% else %}bad{% endif %}">{{ gross_margin }}%</div><div class="l">Gross Margin</div></div>
 </div>
 
-{# ── Report Banner ── #}
-<div class="who-rpt-hdr mb-3">
-  <span><i class="bi bi-clipboard-data me-2"></i>Pharmacy Monthly Report — {{ month_name }}</span>
-  <span class="who-ref">WHO/JCI MMU &middot; Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }} &nbsp;&middot;&nbsp; {% now "d M Y H:i" %}</span>
-</div>
-
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 1: Executive Summary KPIs                                     #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<table class="kpi-strip mb-3">
-  <tr>
-    <td><div class="kv">{{ total_dispensings }}</div><div class="kl">Total Dispensings</div></td>
-    <td><div class="kv" style="color:#198754;">{{ dispensed_count }}</div><div class="kl">Fully Dispensed</div></td>
-    <td><div class="kv" style="color:#fd7e14;">{{ partial_count }}</div><div class="kl">Partial</div></td>
-    <td><div class="kv {% if completion_rate >= 90 %}kv-ok{% elif completion_rate >= 75 %}kv-warn{% else %}kv-bad{% endif %}">{{ completion_rate }}%</div><div class="kl">Fill Rate</div></td>
-    <td><div class="kv" style="color:#0dcaf0;">{{ male_count|add:female_count }}</div><div class="kl">Patients</div></td>
-    <td><div class="kv {% if stockout_rate > 10 %}kv-bad{% elif stockout_rate > 5 %}kv-warn{% else %}kv-ok{% endif %}">{{ stockout_rate }}%</div><div class="kl">Stockout Rate</div></td>
-    <td><div class="kv kv-ok">{{ revenue|floatformat:0|intcomma }}</div><div class="kl">Revenue (FCFA)</div></td>
-    <td><div class="kv" style="color:#6f42c1;">{{ rx_per_day }}</div><div class="kl">Rx/Day</div></td>
-  </tr>
-</table>
-
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 2: WHO Core Drug Use Indicators                              #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-clipboard2-check me-2"></i>1. WHO Core Drug Use Indicators
-    <span class="badge bg-info ms-2" style="font-size:7pt;">WHO/MSH 1993</span>
-  </div>
-  <div class="card-body p-0">
-    <table class="table table-sm align-middle mb-0 who-table">
-      <thead>
-        <tr>
-          <th style="width:35%">Indicator</th>
-          <th class="text-center" style="width:15%">WHO Target</th>
-          <th class="text-center" style="width:12%">Actual</th>
-          <th class="text-center" style="width:12%">Status</th>
-          <th style="width:26%">Interpretation</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="fw-semibold small">Average Items per Prescription</td>
-          <td class="text-center small text-muted">&le; 2.0</td>
-          <td class="text-center fw-bold">{{ avg_items_per_rx }}</td>
-          <td class="text-center">
-            {% if avg_items_per_rx <= 2.0 %}<span class="badge bg-success">Met</span>
-            {% elif avg_items_per_rx <= 3.0 %}<span class="badge bg-warning text-dark">Borderline</span>
-            {% else %}<span class="badge bg-danger">Exceeds</span>{% endif %}
-          </td>
-          <td class="small text-muted">Polypharmacy risk indicator — lower is better</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Generic Prescribing Rate</td>
-          <td class="text-center small text-muted">100%</td>
-          <td class="text-center fw-bold">{{ generic_prescribing_rate }}%</td>
-          <td class="text-center">
-            {% if generic_prescribing_rate >= 90 %}<span class="badge bg-success">Met</span>
-            {% elif generic_prescribing_rate >= 70 %}<span class="badge bg-warning text-dark">Improve</span>
-            {% else %}<span class="badge bg-danger">Low</span>{% endif %}
-          </td>
-          <td class="small text-muted">WHO recommends 100% generic name prescribing</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Antibiotic Dispensing Rate</td>
-          <td class="text-center small text-muted">&lt; 30%</td>
-          <td class="text-center fw-bold">{{ antibiotic_rate }}%</td>
-          <td class="text-center">
-            {% if antibiotic_rate < 30 %}<span class="badge bg-success">Met</span>
-            {% elif antibiotic_rate < 50 %}<span class="badge bg-warning text-dark">Monitor</span>
-            {% else %}<span class="badge bg-danger">High</span>{% endif %}
-          </td>
-          <td class="small text-muted">Antimicrobial stewardship — &lt;30% is ideal</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Injection Dispensing Rate</td>
-          <td class="text-center small text-muted">&lt; 25%</td>
-          <td class="text-center fw-bold">{{ injection_rate }}%</td>
-          <td class="text-center">
-            {% if injection_rate < 25 %}<span class="badge bg-success">Met</span>
-            {% elif injection_rate < 40 %}<span class="badge bg-warning text-dark">High</span>
-            {% else %}<span class="badge bg-danger">Excessive</span>{% endif %}
-          </td>
-          <td class="small text-muted">WHO target: prefer oral over parenteral route</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Formulary (Essential Drug List) Rate</td>
-          <td class="text-center small text-muted">100%</td>
-          <td class="text-center fw-bold">{{ formulary_rate }}%</td>
-          <td class="text-center">
-            {% if formulary_rate >= 95 %}<span class="badge bg-success">Met</span>
-            {% elif formulary_rate >= 80 %}<span class="badge bg-warning text-dark">Below</span>
-            {% else %}<span class="badge bg-danger">Low</span>{% endif %}
-          </td>
-          <td class="small text-muted">Drugs dispensed from hospital formulary</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Generic Substitution Rate</td>
-          <td class="text-center small text-muted">Monitored</td>
-          <td class="text-center fw-bold">{{ substitution_rate }}%<span class="small text-muted ms-1">({{ substitution_count }})</span></td>
-          <td class="text-center"><span class="badge bg-secondary">Tracked</span></td>
-          <td class="small text-muted">Brand-to-generic swaps with prescriber approval</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Prescription Fill Rate</td>
-          <td class="text-center small text-muted">&ge; 90%</td>
-          <td class="text-center fw-bold">{{ completion_rate }}%</td>
-          <td class="text-center">
-            {% if completion_rate >= 90 %}<span class="badge bg-success">Met</span>
-            {% elif completion_rate >= 75 %}<span class="badge bg-warning text-dark">Below</span>
-            {% else %}<span class="badge bg-danger">Critical</span>{% endif %}
-          </td>
-          <td class="small text-muted">% of prescriptions fully dispensed</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 3: JCI MMU Safety & Quality Indicators                       #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-shield-check me-2"></i>2. JCI MMU — Safety &amp; Quality Indicators
-    <span class="badge bg-warning text-dark ms-2" style="font-size:7pt;">JCI 7th Ed.</span>
-  </div>
-  <div class="card-body p-0">
-    <table class="table table-sm align-middle mb-0 who-table">
-      <thead>
-        <tr>
-          <th style="width:30%">Indicator</th>
-          <th class="text-center" style="width:10%">Std Ref</th>
-          <th class="text-center" style="width:12%">Target</th>
-          <th class="text-center" style="width:12%">Actual</th>
-          <th class="text-center" style="width:10%">Status</th>
-          <th style="width:26%">Note</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="fw-semibold small">Pharmacist Verification Rate</td>
-          <td class="text-center"><span class="badge bg-light text-dark border" style="font-size:7pt;">MMU.6.1</span></td>
-          <td class="text-center small text-muted">100%</td>
-          <td class="text-center fw-bold">{{ verification_rate }}%</td>
-          <td class="text-center">
-            {% if verification_rate == 100 %}<span class="badge bg-success">Full</span>
-            {% elif verification_rate >= 80 %}<span class="badge bg-warning text-dark">Partial</span>
-            {% else %}<span class="badge bg-danger">Low</span>{% endif %}
-          </td>
-          <td class="small text-muted">All Rx must be verified before patient handoff</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Patient Counseling Rate</td>
-          <td class="text-center"><span class="badge bg-light text-dark border" style="font-size:7pt;">MMU.6.2</span></td>
-          <td class="text-center small text-muted">100%</td>
-          <td class="text-center fw-bold">{{ counseling_rate }}%</td>
-          <td class="text-center">
-            {% if counseling_rate >= 95 %}<span class="badge bg-success">Met</span>
-            {% elif counseling_rate >= 70 %}<span class="badge bg-warning text-dark">Improve</span>
-            {% else %}<span class="badge bg-danger">Low</span>{% endif %}
-          </td>
-          <td class="small text-muted">Drug use, storage, and side-effect counseling</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Controlled Drug Dispensing</td>
-          <td class="text-center"><span class="badge bg-light text-dark border" style="font-size:7pt;">MMU.3</span></td>
-          <td class="text-center small text-muted">Monitored</td>
-          <td class="text-center fw-bold">{{ controlled_rate }}%<span class="small text-muted ms-1">({{ controlled_items }})</span></td>
-          <td class="text-center"><span class="badge bg-secondary">Tracked</span></td>
-          <td class="small text-muted">Narcotics register compliance — witness required</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Dispensing Return Rate</td>
-          <td class="text-center"><span class="badge bg-light text-dark border" style="font-size:7pt;">MMU.5</span></td>
-          <td class="text-center small text-muted">&lt; 2%</td>
-          <td class="text-center fw-bold">{{ return_rate }}%<span class="small text-muted ms-1">({{ return_count }})</span></td>
-          <td class="text-center">
-            {% if return_rate < 2 %}<span class="badge bg-success">OK</span>
-            {% elif return_rate < 5 %}<span class="badge bg-warning text-dark">Watch</span>
-            {% else %}<span class="badge bg-danger">High</span>{% endif %}
-          </td>
-          <td class="small text-muted">Returns may indicate dispensing errors</td>
-        </tr>
-        <tr>
-          <td class="fw-semibold small">Prescription Decline Rate</td>
-          <td class="text-center"><span class="badge bg-light text-dark border" style="font-size:7pt;">MMU.4</span></td>
-          <td class="text-center small text-muted">&lt; 5%</td>
-          <td class="text-center fw-bold">{{ rx_decline_rate }}%</td>
-          <td class="text-center">
-            {% if rx_decline_rate < 5 %}<span class="badge bg-success">OK</span>
-            {% elif rx_decline_rate < 10 %}<span class="badge bg-warning text-dark">Monitor</span>
-            {% else %}<span class="badge bg-danger">High</span>{% endif %}
-          </td>
-          <td class="small text-muted">Patients buying elsewhere — pricing/availability</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 4: Inventory Health (FIP Good Pharmacy Practice)             #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-box-seam me-2"></i>3. Inventory Health &amp; Supply Chain
-    <span class="badge bg-success ms-2" style="font-size:7pt;">FIP GPP</span>
-  </div>
-  <div class="card-body p-0">
-    <div class="row g-0">
-      <div class="col-md-6 border-end">
-        <table class="table table-sm align-middle mb-0 who-table">
-          <thead><tr><th colspan="3" class="small text-muted bg-light">Stock Metrics</th></tr></thead>
+{# ══════════ ROW 1: WHO Indicators + JCI Safety ══════════ #}
+<div class="row g-2 mb-2">
+  <div class="col-lg-6">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-clipboard2-check me-1"></i>1. WHO Core Drug Use Indicators <span class="badge bg-info ms-1" style="font-size:.55rem;">WHO/MSH</span></div>
+      <div class="card-body">
+        <table class="ps-tbl">
+          <thead><tr><th>Indicator</th><th class="text-center">Target</th><th class="text-center">Actual</th><th class="text-center">Status</th></tr></thead>
           <tbody>
-            <tr>
-              <td class="fw-semibold small" style="width:55%">Total Active Drugs</td>
-              <td class="text-end fw-bold" style="width:20%">{{ total_active_drugs }}</td>
-              <td class="small text-muted" style="width:25%">Formulary items</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Stockout Items</td>
-              <td class="text-end fw-bold {% if stockout_count > 5 %}text-danger{% endif %}">{{ stockout_count }}</td>
-              <td class="small text-muted">{{ stockout_rate }}% of formulary</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Low Stock Items</td>
-              <td class="text-end fw-bold {% if low_stock_count > 10 %}text-warning{% endif %}">{{ low_stock_count }}</td>
-              <td class="small text-muted">At/below reorder level</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Stock Turnover Ratio</td>
-              <td class="text-end fw-bold">{{ stock_turnover }}x</td>
-              <td class="small text-muted">
-                {% if stock_turnover >= 4 %}Healthy
-                {% elif stock_turnover >= 2 %}Moderate
-                {% else %}Slow-moving{% endif %}
-              </td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Total Inventory Value</td>
-              <td class="text-end fw-bold text-primary">{{ total_inventory_value|floatformat:0|intcomma }}</td>
-              <td class="small text-muted">FCFA (at cost)</td>
-            </tr>
+            <tr><td>Avg Items / Prescription</td><td class="text-center text-muted">&le;2.0</td><td class="text-center fw-bold">{{ avg_items_per_rx }}</td>
+              <td class="text-center">{% if avg_items_per_rx <= 2.0 %}<span class="ps-badge ps-met">Met</span>{% elif avg_items_per_rx <= 3.0 %}<span class="ps-badge ps-wrn">Watch</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
+            <tr><td>Generic Prescribing Rate</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ generic_prescribing_rate }}%</td>
+              <td class="text-center">{% if generic_prescribing_rate >= 90 %}<span class="ps-badge ps-met">Met</span>{% elif generic_prescribing_rate >= 70 %}<span class="ps-badge ps-wrn">Improve</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
+            <tr><td>Antibiotic Rate</td><td class="text-center text-muted">&lt;30%</td><td class="text-center fw-bold">{{ antibiotic_rate }}%</td>
+              <td class="text-center">{% if antibiotic_rate < 30 %}<span class="ps-badge ps-met">Met</span>{% elif antibiotic_rate < 50 %}<span class="ps-badge ps-wrn">Monitor</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
+            <tr><td>Injection Rate</td><td class="text-center text-muted">&lt;25%</td><td class="text-center fw-bold">{{ injection_rate }}%</td>
+              <td class="text-center">{% if injection_rate < 25 %}<span class="ps-badge ps-met">Met</span>{% elif injection_rate < 40 %}<span class="ps-badge ps-wrn">High</span>{% else %}<span class="ps-badge ps-low">Excess</span>{% endif %}</td></tr>
+            <tr><td>Formulary Rate</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ formulary_rate }}%</td>
+              <td class="text-center">{% if formulary_rate >= 95 %}<span class="ps-badge ps-met">Met</span>{% elif formulary_rate >= 80 %}<span class="ps-badge ps-wrn">Below</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
+            <tr><td>Generic Substitution</td><td class="text-center text-muted">Track</td><td class="text-center fw-bold">{{ substitution_rate }}% <span class="text-muted">({{ substitution_count }})</span></td>
+              <td class="text-center"><span class="ps-badge ps-trk">Tracked</span></td></tr>
+            <tr><td>Prescription Fill Rate</td><td class="text-center text-muted">&ge;90%</td><td class="text-center fw-bold">{{ completion_rate }}%</td>
+              <td class="text-center">{% if completion_rate >= 90 %}<span class="ps-badge ps-met">Met</span>{% elif completion_rate >= 75 %}<span class="ps-badge ps-wrn">Below</span>{% else %}<span class="ps-badge ps-low">Crit</span>{% endif %}</td></tr>
           </tbody>
         </table>
       </div>
-      <div class="col-md-6">
-        <table class="table table-sm align-middle mb-0 who-table">
-          <thead><tr><th colspan="3" class="small text-muted bg-light">Expiry &amp; Wastage</th></tr></thead>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-shield-check me-1"></i>2. JCI MMU Safety &amp; Quality <span class="badge bg-warning text-dark ms-1" style="font-size:.55rem;">JCI 7th</span></div>
+      <div class="card-body">
+        <table class="ps-tbl">
+          <thead><tr><th>Indicator</th><th class="text-center">Ref</th><th class="text-center">Target</th><th class="text-center">Actual</th><th class="text-center">Status</th></tr></thead>
           <tbody>
-            <tr>
-              <td class="fw-semibold small" style="width:55%">Expired This Month</td>
-              <td class="text-end fw-bold text-danger" style="width:20%">{{ expired_units }}</td>
-              <td class="small text-muted" style="width:25%">{{ expired_value|floatformat:0|intcomma }} FCFA lost</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Near-Expiry (&lt;30 days)</td>
-              <td class="text-end fw-bold text-warning" style="width:20%">{{ near_expiry_count }} batches</td>
-              <td class="small text-muted">{{ near_expiry_value|floatformat:0|intcomma }} FCFA at risk</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Wastage Rate (Value)</td>
-              <td class="text-end fw-bold">
-                {% widthratio expired_value total_inventory_value 100 %}%
-              </td>
-              <td class="small text-muted">
-                {% if expired_value %}Target: &lt; 2%{% else %}No wastage{% endif %}
-              </td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">COGS (Cost of Goods Dispensed)</td>
-              <td class="text-end fw-bold">{{ cogs|floatformat:0|intcomma }}</td>
-              <td class="small text-muted">FCFA this month</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Returns to Stock</td>
-              <td class="text-end fw-bold">{{ return_qty }} units</td>
-              <td class="small text-muted">{{ return_count }} return records</td>
-            </tr>
+            <tr><td>Pharmacist Verification</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.6.1</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ verification_rate }}%</td>
+              <td class="text-center">{% if verification_rate == 100 %}<span class="ps-badge ps-met">Full</span>{% elif verification_rate >= 80 %}<span class="ps-badge ps-wrn">Part</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
+            <tr><td>Patient Counseling</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.6.2</td><td class="text-center text-muted">100%</td><td class="text-center fw-bold">{{ counseling_rate }}%</td>
+              <td class="text-center">{% if counseling_rate >= 95 %}<span class="ps-badge ps-met">Met</span>{% elif counseling_rate >= 70 %}<span class="ps-badge ps-wrn">Imp</span>{% else %}<span class="ps-badge ps-low">Low</span>{% endif %}</td></tr>
+            <tr><td>Controlled Drug Dispensing</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.3</td><td class="text-center text-muted">Track</td><td class="text-center fw-bold">{{ controlled_rate }}% <span class="text-muted">({{ controlled_items }})</span></td>
+              <td class="text-center"><span class="ps-badge ps-trk">Tracked</span></td></tr>
+            <tr><td>Dispensing Return Rate</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.5</td><td class="text-center text-muted">&lt;2%</td><td class="text-center fw-bold">{{ return_rate }}% <span class="text-muted">({{ return_count }})</span></td>
+              <td class="text-center">{% if return_rate < 2 %}<span class="ps-badge ps-met">OK</span>{% elif return_rate < 5 %}<span class="ps-badge ps-wrn">Watch</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
+            <tr><td>Rx Decline Rate</td><td class="text-center text-muted" style="font-size:.6rem;">MMU.4</td><td class="text-center text-muted">&lt;5%</td><td class="text-center fw-bold">{{ rx_decline_rate }}%</td>
+              <td class="text-center">{% if rx_decline_rate < 5 %}<span class="ps-badge ps-met">OK</span>{% elif rx_decline_rate < 10 %}<span class="ps-badge ps-wrn">Mon</span>{% else %}<span class="ps-badge ps-low">High</span>{% endif %}</td></tr>
           </tbody>
         </table>
       </div>
@@ -325,165 +117,62 @@
   </div>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 5: Financial Performance                                      #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<div class="row g-3 mb-3">
-  <div class="col-md-5">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-cash-stack me-2"></i>4. Financial Performance
-      </div>
-      <div class="card-body p-0">
-        <table class="table table-sm align-middle mb-0 who-table">
-          <tbody>
-            <tr>
-              <td class="fw-semibold small">Total Revenue</td>
-              <td class="text-end fw-bold text-success">{{ revenue|floatformat:0|intcomma }} <span class="small text-muted">FCFA</span></td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Cost of Goods Dispensed</td>
-              <td class="text-end fw-bold">{{ cogs|floatformat:0|intcomma }} <span class="small text-muted">FCFA</span></td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Gross Margin</td>
-              <td class="text-end fw-bold {% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">
-                {{ gross_margin }}%
-              </td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Avg. Revenue per Rx</td>
-              <td class="text-end fw-bold">{{ avg_cost_per_rx|floatformat:0|intcomma }} <span class="small text-muted">FCFA</span></td>
-            </tr>
-            <tr class="table-light">
-              <td class="fw-semibold small">Rx Sales (Prescription)</td>
-              <td class="text-end fw-bold">{{ rx_revenue|floatformat:0|intcomma }} <span class="small text-muted">FCFA</span><span class="badge bg-primary ms-1" style="font-size:7pt;">{{ rx_count }} Rx</span></td>
-            </tr>
-            <tr class="table-light">
-              <td class="fw-semibold small">OTC / Walk-in Sales</td>
-              <td class="text-end fw-bold">{{ otc_revenue|floatformat:0|intcomma }} <span class="small text-muted">FCFA</span><span class="badge bg-info ms-1" style="font-size:7pt;">{{ otc_count }}</span></td>
-            </tr>
-          </tbody>
-        </table>
-        {% if tier_stats %}
-        <table class="table table-sm align-middle mb-0 small who-table border-top">
-          <thead><tr><th colspan="4" class="small text-muted bg-light">Revenue by Service Tier</th></tr></thead>
-          <tbody>
-            {% for t in tier_stats %}
-            <tr>
-              <td><span class="badge" style="background:{{ t.color }};font-size:.7rem;">{{ t.label }}</span></td>
-              <td class="text-center fw-bold">{{ t.count }} Rx</td>
-              <td class="text-end fw-bold text-success">{{ t.revenue|floatformat:0|intcomma }}</td>
-              <td class="text-end small text-muted">{% if revenue %}{% widthratio t.revenue revenue 100 %}%{% else %}-{% endif %}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-  <div class="col-md-7">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-graph-up-arrow me-2"></i>Revenue Trend — Last 14 Days
-      </div>
-      <div class="card-body pb-2">
-        {% if revenue > 0 %}
-        <canvas id="revenueChart" height="75"></canvas>
-        {% else %}
-        <div class="text-center text-muted py-3 small">No revenue data for this period</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 6: Top Drugs + Category + Daily Trend                        #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<div class="row g-3 mb-3">
-  <div class="col-md-7">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-capsule-pill me-2"></i>5. Top 15 Drugs Dispensed
-      </div>
-      <div class="card-body p-0">
-        <table class="table table-sm table-hover mb-0 small align-middle who-table">
-          <thead>
-            <tr><th>#</th><th>Drug</th><th class="text-center">Rx Count</th><th class="text-center">Qty</th><th style="width:70px;">Share</th></tr>
-          </thead>
-          <tbody>
-            {% for d in top_drugs %}
-            <tr>
-              <td class="text-muted fw-bold">{{ forloop.counter }}</td>
-              <td class="fw-semibold">{{ d.drug_name }}</td>
-              <td class="text-center">{{ d.count }}</td>
-              <td class="text-center fw-bold" style="color:#0d6efd;">{{ d.qty }}</td>
-              <td>
-                <div class="progress" style="height:5px;">
-                  <div class="progress-bar" style="width:{% widthratio d.qty top_drugs.0.qty 100 %}%;background:#0d6efd;"></div>
-                </div>
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="5" class="text-center text-muted py-3">No dispensing data</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-5">
-    {% if category_stats %}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-tag-fill me-2"></i>Drug Category Volume
-      </div>
-      <div class="card-body p-0">
-        <table class="table table-sm align-middle mb-0 small who-table">
-          <thead><tr><th>#</th><th>Category</th><th class="text-center">Qty</th><th style="width:60px;">Share</th></tr></thead>
-          <tbody>
-            {% for c in category_stats %}
-            <tr>
-              <td class="text-muted">{{ forloop.counter }}</td>
-              <td class="fw-semibold">{{ c.label }}</td>
-              <td class="text-center fw-bold" style="color:#0d6efd;">{{ c.qty }}</td>
-              <td>
-                <div class="progress" style="height:4px;">
-                  <div class="progress-bar" style="width:{% widthratio c.qty category_stats.0.qty 100 %}%;background:#0d6efd;"></div>
-                </div>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
-    <div class="card border-0 shadow-sm">
-      <div class="card-header who-card-hdr py-2">
-        <i class="bi bi-people me-2"></i>Demographics &amp; Status
-      </div>
-      <div class="card-body p-0">
+{# ══════════ ROW 2: Inventory + Financial ══════════ #}
+<div class="row g-2 mb-2">
+  <div class="col-lg-6">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-box-seam me-1"></i>3. Inventory Health <span class="badge bg-success ms-1" style="font-size:.55rem;">FIP GPP</span></div>
+      <div class="card-body">
         <div class="row g-0">
           <div class="col-6 border-end">
-            <table class="table table-sm mb-0 small">
-              <thead class="table-light"><tr><th colspan="2" class="small text-muted">Gender</th></tr></thead>
+            <table class="ps-tbl">
               <tbody>
-                <tr><td><i class="bi bi-gender-male text-primary me-1"></i>Male</td><td class="text-end fw-bold">{{ male_count }}</td></tr>
-                <tr><td><i class="bi bi-gender-female me-1" style="color:#e83e8c;"></i>Female</td><td class="text-end fw-bold">{{ female_count }}</td></tr>
-                <tr class="table-light"><td class="text-muted">Total</td><td class="text-end fw-bold">{{ male_count|add:female_count }}</td></tr>
+                <tr><td>Active Drugs</td><td class="text-end fw-bold">{{ total_active_drugs }}</td></tr>
+                <tr><td>Stockout Items</td><td class="text-end fw-bold {% if stockout_count > 5 %}text-danger{% endif %}">{{ stockout_count }} <span class="text-muted" style="font-size:.6rem;">({{ stockout_rate }}%)</span></td></tr>
+                <tr><td>Low Stock</td><td class="text-end fw-bold {% if low_stock_count > 10 %}text-warning{% endif %}">{{ low_stock_count }}</td></tr>
+                <tr><td>Turnover Ratio</td><td class="text-end fw-bold">{{ stock_turnover }}x</td></tr>
+                <tr><td>Inventory Value</td><td class="text-end fw-bold text-primary">{{ total_inventory_value|floatformat:0|intcomma }}</td></tr>
               </tbody>
             </table>
           </div>
           <div class="col-6">
-            <table class="table table-sm mb-0 small">
-              <thead class="table-light"><tr><th colspan="2" class="small text-muted">Status</th></tr></thead>
+            <table class="ps-tbl">
               <tbody>
-                <tr><td class="text-success">Dispensed</td><td class="text-end fw-bold">{{ dispensed_count }}</td></tr>
-                <tr><td class="text-warning">Partial</td><td class="text-end fw-bold">{{ partial_count }}</td></tr>
-                <tr><td class="text-secondary">Cancelled</td><td class="text-end fw-bold">{{ cancelled_count }}</td></tr>
+                <tr><td>Expired This Month</td><td class="text-end fw-bold text-danger">{{ expired_units }} <span class="text-muted" style="font-size:.6rem;">({{ expired_value|floatformat:0|intcomma }})</span></td></tr>
+                <tr><td>Near-Expiry &lt;30d</td><td class="text-end fw-bold text-warning">{{ near_expiry_count }} btch</td></tr>
+                <tr><td>At-Risk Value</td><td class="text-end fw-bold text-warning">{{ near_expiry_value|floatformat:0|intcomma }}</td></tr>
+                <tr><td>COGS</td><td class="text-end fw-bold">{{ cogs|floatformat:0|intcomma }}</td></tr>
+                <tr><td>Returns to Stock</td><td class="text-end fw-bold">{{ return_qty }} units</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-cash-stack me-1"></i>4. Financial Performance</div>
+      <div class="card-body">
+        <div class="row g-0">
+          <div class="col-6 border-end">
+            <table class="ps-tbl">
+              <tbody>
+                <tr><td>Revenue</td><td class="text-end fw-bold text-success">{{ revenue|floatformat:0|intcomma }}</td></tr>
+                <tr><td>COGS</td><td class="text-end fw-bold">{{ cogs|floatformat:0|intcomma }}</td></tr>
+                <tr><td>Gross Margin</td><td class="text-end fw-bold {% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">{{ gross_margin }}%</td></tr>
+                <tr><td>Avg Revenue/Rx</td><td class="text-end fw-bold">{{ avg_cost_per_rx|floatformat:0|intcomma }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-6">
+            <table class="ps-tbl">
+              <tbody>
+                <tr><td>Rx Sales</td><td class="text-end fw-bold">{{ rx_revenue|floatformat:0|intcomma }} <span class="ps-badge ps-met">{{ rx_count }}</span></td></tr>
+                <tr><td>OTC Sales</td><td class="text-end fw-bold">{{ otc_revenue|floatformat:0|intcomma }} <span class="ps-badge ps-trk">{{ otc_count }}</span></td></tr>
+                {% for t in tier_stats %}
+                <tr><td><span style="color:{{ t.color }};">{{ t.label }}</span></td><td class="text-end fw-bold">{{ t.revenue|floatformat:0|intcomma }} <span class="text-muted" style="font-size:.6rem;">{{ t.count }}Rx</span></td></tr>
+                {% endfor %}
               </tbody>
             </table>
           </div>
@@ -493,80 +182,103 @@
   </div>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 7: Daily Dispensing Trend                                    #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-bar-chart-line me-2"></i>6. Daily Dispensing Volume — Last 14 Days
+{# ══════════ ROW 3: Charts ══════════ #}
+<div class="row g-2 mb-2">
+  <div class="col-lg-6">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-bar-chart-line me-1"></i>5. Daily Dispensings (14 Days)</div>
+      <div class="card-body" style="padding:6px 8px!important;">
+        <canvas id="dailyChart" height="70"></canvas>
+      </div>
+    </div>
   </div>
-  <div class="card-body pb-2">
-    {% if total_dispensings > 0 %}
-    <canvas id="dailyChart" height="65"></canvas>
-    {% else %}
-    <div class="text-center text-muted py-3 small">No dispensing data for this period</div>
-    {% endif %}
+  <div class="col-lg-6">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-graph-up-arrow me-1"></i>Revenue Trend (14 Days)</div>
+      <div class="card-body" style="padding:6px 8px!important;">
+        <canvas id="revenueChart" height="70"></canvas>
+      </div>
+    </div>
   </div>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════════ #}
-{# SECTION 8: Staff Productivity (ASHP Benchmark)                       #}
-{# ══════════════════════════════════════════════════════════════════════ #}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header who-card-hdr py-2">
-    <i class="bi bi-person-gear me-2"></i>7. Staff Productivity
-    <span class="badge bg-secondary ms-2" style="font-size:7pt;">ASHP Benchmark</span>
-  </div>
-  <div class="card-body p-0">
-    <div class="row g-0">
-      <div class="col-md-8 border-end">
-        <table class="table table-sm table-hover mb-0 small align-middle who-table">
-          <thead>
-            <tr><th>#</th><th>Pharmacist / Dispenser</th><th class="text-center">Dispensings</th><th class="text-center">Revenue (FCFA)</th><th style="width:80px;">Share</th></tr>
-          </thead>
+{# ══════════ ROW 4: Top Drugs + Staff + Demographics ══════════ #}
+<div class="row g-2 mb-2">
+  <div class="col-lg-5">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-capsule-pill me-1"></i>6. Top 15 Drugs</div>
+      <div class="card-body">
+        <table class="ps-tbl">
+          <thead><tr><th>#</th><th>Drug</th><th class="text-center">Rx</th><th class="text-center">Qty</th><th style="width:50px"></th></tr></thead>
           <tbody>
-            {% for s in staff_throughput %}
+            {% for d in top_drugs %}
             <tr>
-              <td class="text-muted">{{ forloop.counter }}</td>
-              <td class="fw-semibold">{{ s.name }}</td>
-              <td class="text-center fw-bold">{{ s.count }}</td>
-              <td class="text-center text-success fw-bold">{{ s.rev|floatformat:0|intcomma }}</td>
-              <td>
-                <div class="progress" style="height:4px;">
-                  <div class="progress-bar bg-success" style="width:{% widthratio s.count staff_throughput.0.count 100 %}%;"></div>
-                </div>
-              </td>
+              <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+              <td class="fw-semibold">{{ d.drug_name|truncatechars:28 }}</td>
+              <td class="text-center">{{ d.count }}</td>
+              <td class="text-center fw-bold" style="color:#0d6efd;">{{ d.qty }}</td>
+              <td><div class="progress" style="height:3px;"><div class="progress-bar" style="width:{% widthratio d.qty top_drugs.0.qty 100 %}%;background:#0d6efd;"></div></div></td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="text-center text-muted py-3">No data</td></tr>
+            <tr><td colspan="5" class="text-center text-muted py-2">No data</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-      <div class="col-md-4">
-        <table class="table table-sm mb-0 who-table">
-          <thead><tr><th colspan="2" class="small text-muted bg-light">Summary</th></tr></thead>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-person-gear me-1"></i>7. Staff Throughput <span class="badge bg-secondary ms-1" style="font-size:.55rem;">ASHP</span></div>
+      <div class="card-body">
+        <table class="ps-tbl">
+          <thead><tr><th>#</th><th>Staff</th><th class="text-center">Rx</th><th class="text-center">Revenue</th></tr></thead>
           <tbody>
+            {% for s in staff_throughput %}
             <tr>
-              <td class="fw-semibold small">Working Days</td>
-              <td class="text-end fw-bold">{{ working_days }}</td>
+              <td class="text-muted">{{ forloop.counter }}</td>
+              <td class="fw-semibold">{{ s.name|truncatechars:18 }}</td>
+              <td class="text-center fw-bold">{{ s.count }}</td>
+              <td class="text-center text-success">{{ s.rev|floatformat:0|intcomma }}</td>
             </tr>
-            <tr>
-              <td class="fw-semibold small">Rx / Working Day</td>
-              <td class="text-end fw-bold" style="color:#6f42c1;">{{ rx_per_day }}</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Total Items Dispensed</td>
-              <td class="text-end fw-bold">{{ total_items }}</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Avg Items / Rx</td>
-              <td class="text-end fw-bold">{{ avg_items_per_rx }}</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold small">Staff Count</td>
-              <td class="text-end fw-bold">{{ staff_throughput|length }}</td>
-            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-2">No data</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="border-top px-2 py-1 d-flex justify-content-between" style="font-size:.65rem;color:#6c757d;">
+          <span>{{ working_days }} working days</span>
+          <span>{{ rx_per_day }} Rx/day</span>
+          <span>{{ staff_throughput|length }} staff</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-3">
+    {% if category_stats %}
+    <div class="card ps-card mb-2">
+      <div class="ps-hdr"><i class="bi bi-tag-fill me-1"></i>Categories</div>
+      <div class="card-body">
+        <table class="ps-tbl">
+          <tbody>
+            {% for c in category_stats %}
+            <tr><td>{{ c.label }}</td><td class="text-end fw-bold" style="color:#0d6efd;">{{ c.qty }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    <div class="card ps-card">
+      <div class="ps-hdr"><i class="bi bi-people me-1"></i>Demographics</div>
+      <div class="card-body">
+        <table class="ps-tbl">
+          <tbody>
+            <tr><td><i class="bi bi-gender-male text-primary me-1"></i>Male</td><td class="text-end fw-bold">{{ male_count }}</td></tr>
+            <tr><td><i class="bi bi-gender-female me-1" style="color:#e83e8c;"></i>Female</td><td class="text-end fw-bold">{{ female_count }}</td></tr>
+            <tr class="border-top"><td class="text-muted">Dispensed</td><td class="text-end fw-bold">{{ dispensed_count }}</td></tr>
+            <tr><td class="text-muted">Partial</td><td class="text-end fw-bold">{{ partial_count }}</td></tr>
+            <tr><td class="text-muted">Cancelled</td><td class="text-end fw-bold">{{ cancelled_count }}</td></tr>
           </tbody>
         </table>
       </div>
@@ -574,197 +286,70 @@
   </div>
 </div>
 
-{# Off-screen canvases for print capture only #}
-<div style="position:absolute;left:-9999px;width:400px;height:300px;overflow:hidden;" aria-hidden="true">
-  <canvas id="genderChart" height="100"></canvas>
+{# Hidden canvases for print image capture #}
+<div style="position:absolute;left:-9999px;" aria-hidden="true">
   <canvas id="statusChart" height="100"></canvas>
   <canvas id="tierChart" height="100"></canvas>
-  {% if top_drugs %}<canvas id="topDrugsChart" height="100"></canvas>{% endif %}
-  {% if category_stats %}<canvas id="categoryChart" height="100"></canvas>{% endif %}
 </div>
 
 {% endblock %}
 
 {% block extra_js %}
 <script>
-function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[id]")){return;}window.__ehrChartInit=null;
-const DAILY  = {{ daily_json|safe }};
-const GENDER = {{ gender_json|safe }};
+(function(){
+const DAILY = {{ daily_json|safe }};
+const REV   = {{ revenue_json|safe }};
 const STATUS = {{ status_json|safe }};
 const TIER   = {{ tier_json|safe }};
-const REV    = {{ revenue_json|safe }};
 
 if(document.getElementById('dailyChart'))
-new Chart(document.getElementById('dailyChart'), {
-  type: 'bar',
-  data: {
-    labels: DAILY.labels,
-    datasets: [{ label: 'Dispensings', data: DAILY.data,
-      backgroundColor: 'rgba(13,110,253,.65)', borderRadius: 3 }]
-  },
-  options: { responsive: true, plugins: { legend: { display: false } },
-    scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font:{size:10} } }, x:{ticks:{font:{size:10}}} } }
-});
+new Chart(document.getElementById('dailyChart'),{type:'bar',data:{labels:DAILY.labels,datasets:[{label:'Dispensings',data:DAILY.data,backgroundColor:'rgba(13,110,253,.6)',borderRadius:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1,font:{size:9}}},x:{ticks:{font:{size:8}}}}}});
 
 if(document.getElementById('revenueChart'))
-new Chart(document.getElementById('revenueChart'), {
-  type: 'line',
-  data: {
-    labels: REV.labels,
-    datasets: [{ label: 'Revenue (FCFA)', data: REV.data,
-      borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.12)',
-      fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: '#198754' }]
-  },
-  options: { responsive: true, plugins: { legend: { display: false } },
-    scales: { y: { beginAtZero: true, ticks: { font:{size:10}, callback: function(v){return v.toLocaleString();} } }, x:{ticks:{font:{size:10}}} } }
-});
+new Chart(document.getElementById('revenueChart'),{type:'line',data:{labels:REV.labels,datasets:[{label:'Revenue',data:REV.data,borderColor:'#198754',backgroundColor:'rgba(25,135,84,.1)',fill:true,tension:.3,pointRadius:2,pointBackgroundColor:'#198754'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:9},callback:function(v){return v.toLocaleString();}}},x:{ticks:{font:{size:8}}}}}});
 
-new Chart(document.getElementById('genderChart'), {
-  type: 'doughnut',
-  data: { labels: GENDER.map(g => g.label), datasets: [{ data: GENDER.map(g => g.count), backgroundColor: ['#0d6efd','#dc3545','#6c757d'] }] },
-  options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
-});
-new Chart(document.getElementById('tierChart'), {
-  type: 'doughnut',
-  data: { labels: TIER.labels, datasets: [{ data: TIER.data, backgroundColor: TIER.colors }] },
-  options: { responsive: true, cutout: '65%', plugins: { legend: { display: false } } }
-});
-new Chart(document.getElementById('statusChart'), {
-  type: 'doughnut',
-  data: { labels: STATUS.labels, datasets: [{ data: STATUS.data, backgroundColor: ['#198754','#ffc107','#6c757d','#0dcaf0'] }] },
-  options: { responsive: true, cutout: '60%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
-});
-{% if top_drugs %}
-new Chart(document.getElementById('topDrugsChart'), {
-  type: 'bar',
-  data: {
-    labels: [{% for d in top_drugs|slice:":8" %}"{{ d.drug_name|truncatechars:20 }}"{% if not forloop.last %},{% endif %}{% endfor %}],
-    datasets: [{ label: 'Qty', indexAxis: 'y',
-      data: [{% for d in top_drugs|slice:":8" %}{{ d.qty }}{% if not forloop.last %},{% endif %}{% endfor %}],
-      backgroundColor: 'rgba(13,110,253,.55)', borderRadius: 3 }]
-  },
-  options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
-});
-{% endif %}
-{% if category_stats %}
-const CAT = {{ category_json|safe }};
-const catColors = ['#0d6efd','#198754','#ffc107','#dc3545','#6f42c1','#0dcaf0','#fd7e14','#20c997'];
-if(document.getElementById('categoryChart'))
-new Chart(document.getElementById('categoryChart'), {
-  type: 'doughnut',
-  data: { labels: CAT.labels, datasets: [{ data: CAT.data, backgroundColor: catColors.slice(0, CAT.labels.length), borderWidth: 2, borderColor: '#fff' }] },
-  options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
-});
-{% endif %}
-}window.__ehrChartInit=_c;_c();
-</script>
-
-<style>
-.who-rpt-hdr { background:#f8f9fa; color:#333; padding:8px 14px; border-radius:4px; border:1px solid #dee2e6; display:flex; justify-content:space-between; align-items:center; font-size:9pt; font-weight:600; }
-.who-rpt-hdr .who-ref { font-size:8pt; color:#6c757d; }
-.who-card-hdr { background:#fff !important; color:#333 !important; font-size:9.5pt; font-weight:600; border-bottom:1px solid #dee2e6 !important; }
-.kpi-strip { width:100%; border-collapse:collapse; margin-bottom:14px; }
-.kpi-strip td { border:1px solid #e9ecef; text-align:center; padding:10px 12px; background:#fff; }
-.kpi-strip .kv { font-size:15pt; font-weight:700; color:#333; line-height:1.1; }
-.kpi-strip .kl { font-size:7.5pt; color:#6c757d; margin-top:2px; }
-.kv-ok { color:#198754 !important; }
-.kv-warn { color:#fd7e14 !important; }
-.kv-bad { color:#dc3545 !important; }
-.who-table thead th { background:#f8f9fa !important; color:#495057 !important; font-size:8.5pt; padding:6px 8px; border-bottom:2px solid #dee2e6; }
-.who-table tbody tr:nth-child(even) { background:#fafbfc; }
-.who-table td { font-size:9pt; padding:5px 8px; border-bottom:1px solid #eee; vertical-align:middle; }
-@media print {
-  #sidebar, nav.navbar, .btn, .btn-group, .dropdown-menu, .breadcrumb, .no-print { display: none !important; }
-  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
-  body { padding: 0; background: #fff !important; }
-  .print-only { display: block !important; }
-  @page { size: A4 landscape; margin: 10mm 12mm; }
-  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; }
-  .who-card-hdr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .kpi-strip { page-break-inside: avoid; }
-}
-</style>
-
-<script>
-function printWithCharts() {
-  var imgs = {};
-  document.querySelectorAll('canvas').forEach(function(c) {
-    if (c.id && typeof Chart !== 'undefined' && Chart.getChart && Chart.getChart(c)) {
-      imgs[c.id] = c.toDataURL('image/png');
-    }
-  });
-  var logoEl = document.querySelector('.lh-logo, img[alt*="logo"], img[alt*="Logo"]');
-  var logoHtml = logoEl ? '<img src="' + logoEl.src + '" style="height:50px;object-fit:contain;" alt="Logo">' : '';
-  function chartImg(id, label) {
-    if (!imgs[id]) return '<div style="background:#f8f9fa;border:1px dashed #dee2e6;border-radius:4px;padding:16px;text-align:center;color:#aaa;font-size:10px;">'+label+' — no data</div>';
-    return '<div style="font-size:9px;font-weight:600;color:#444;margin-bottom:3px;">'+label+'</div><img src="'+imgs[id]+'" style="width:100%;border-radius:3px;">';
-  }
-  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pharmacy Statistics — {{ month_name|escapejs }}</title>'
-    + '<style>@page{size:A4 portrait;margin:1.4cm 1.8cm;@bottom-right{content:"Page " counter(page) " of " counter(pages);font-size:8pt;color:#999;}}'
-    + 'body{font-family:Arial,sans-serif;font-size:10pt;color:#1a1a1a;margin:0;}'
-    + '.lh{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1a3a5c;padding-bottom:8px;margin-bottom:10px;}'
-    + '.band{background:#1a3a5c;color:#fff;padding:6px 12px;border-radius:3px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;font-size:10pt;font-weight:700;}'
-    + '.kpi-row{display:flex;gap:6px;margin-bottom:12px;}'
-    + '.kpi{flex:1;border:1px solid #dee2e6;border-radius:5px;padding:7px;text-align:center;}'
-    + '.kpi-v{font-size:16pt;font-weight:700;color:#1a3a5c;}.kpi-l{font-size:7.5pt;color:#6c757d;margin-top:2px;}'
-    + '.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}'
-    + '.chart-box{border:1px solid #dee2e6;border-radius:4px;padding:8px;}'
-    + '.auth{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px;border-top:2px solid #dee2e6;padding-top:12px;}'
-    + '.auth-sig{border-bottom:1px solid #333;margin-bottom:4px;height:20px;}.auth-role{font-size:8pt;color:#888;}'
-    + '.footer{margin-top:14px;padding-top:6px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:8pt;color:#999;}'
-    + '</style></head><body>'
-    + '<div class="lh"><div style="display:flex;align-items:center;gap:10px;">'+logoHtml+'<div><div style="font-size:14pt;font-weight:800;color:#1a3a5c;">{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }}</div><div style="font-size:8pt;color:#555;">{{ hospital_address|default:""|escapejs }}</div></div></div>'
-    + '<div style="text-align:right;font-size:8pt;color:#666;">Pharmacy Monthly Report<br><strong>{{ month_name|escapejs }}</strong><br>Generated: ' + new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) + '</div></div>'
-    + '<div class="band"><span>WHO/JCI MMU — Pharmacy Statistics Report</span><span style="font-size:9pt;opacity:.85;">Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span></div>'
-    + '<div class="kpi-row"><div class="kpi"><div class="kpi-v">{{ total_dispensings }}</div><div class="kpi-l">Dispensings</div></div>'
-    + '<div class="kpi"><div class="kpi-v" style="color:#198754;">{{ dispensed_count }}</div><div class="kpi-l">Dispensed</div></div>'
-    + '<div class="kpi"><div class="kpi-v" style="color:#fd7e14;">{{ partial_count }}</div><div class="kpi-l">Partial</div></div>'
-    + '<div class="kpi"><div class="kpi-v">{{ completion_rate }}%</div><div class="kpi-l">Fill Rate</div></div>'
-    + '<div class="kpi"><div class="kpi-v" style="color:#198754;">{{ revenue|floatformat:0|intcomma }}</div><div class="kpi-l">Revenue (FCFA)</div></div>'
-    + '<div class="kpi"><div class="kpi-v">{{ stockout_rate }}%</div><div class="kpi-l">Stockout</div></div>'
-    + '<div class="kpi"><div class="kpi-v" style="color:#6f42c1;">{{ rx_per_day }}</div><div class="kpi-l">Rx/Day</div></div></div>'
-    + '<div class="two-col"><div class="chart-box">'+chartImg('dailyChart','Daily Dispensings (14 Days)')+'</div><div class="chart-box">'+chartImg('revenueChart','Revenue Trend (14 Days)')+'</div></div>'
-    + '<div class="two-col"><div class="chart-box">'+chartImg('statusChart','Dispensing Status')+'</div><div class="chart-box">'+chartImg('tierChart','By Service Tier')+'</div></div>'
-    + '<div class="chart-box" style="margin-bottom:10px;">'+chartImg('topDrugsChart','Top Drugs by Volume')+'</div>'
-    + '<div class="auth"><div><div class="auth-role">Prepared by</div><div style="font-weight:700;font-size:9pt;margin-bottom:6px;">Head Pharmacist</div><div class="auth-sig"></div><div class="auth-role">Date: _______________</div></div>'
-    + '<div><div class="auth-role">Reviewed by</div><div style="font-weight:700;font-size:9pt;margin-bottom:6px;">Medical Director</div><div class="auth-sig"></div><div class="auth-role">Date: _______________</div></div>'
-    + '<div><div class="auth-role">Approved by</div><div style="font-weight:700;font-size:9pt;margin-bottom:6px;">Hospital Administrator</div><div class="auth-sig"></div><div class="auth-role">Date: _______________</div></div></div>'
-    + '<div class="footer"><span>{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }} — Pharmacy Dept.</span><span>PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span><span>CONFIDENTIAL — Internal Use Only</span></div>'
-    + '</body></html>';
-  var w = window.open('', '_blank');
-  w.document.open(); w.document.write(html); w.document.close();
-  w.focus(); setTimeout(function() { w.print(); }, 800);
-}
+new Chart(document.getElementById('statusChart'),{type:'doughnut',data:{labels:STATUS.labels,datasets:[{data:STATUS.data,backgroundColor:['#198754','#ffc107','#6c757d','#0dcaf0']}]},options:{responsive:true,cutout:'60%',plugins:{legend:{display:false}}}});
+new Chart(document.getElementById('tierChart'),{type:'doughnut',data:{labels:TIER.labels,datasets:[{data:TIER.data,backgroundColor:TIER.colors}]},options:{responsive:true,cutout:'60%',plugins:{legend:{display:false}}}});
+})();
 </script>
 
 <script>
-window._AI_STATS = {
-  dept: 'pharmacy',
-  data: {
-    period: '{{ month_name }}',
-    total_dispensings: {{ total_dispensings }},
-    dispensed: {{ dispensed_count }},
-    partial: {{ partial_count }},
-    cancelled: {{ cancelled_count }},
-    completion_rate: {{ completion_rate }},
-    revenue_fcfa: {{ revenue|floatformat:0 }},
-    low_stock_count: {{ low_stock_count }},
-    stockout_rate: {{ stockout_rate }},
-    gross_margin: {{ gross_margin }},
-    avg_items_per_rx: {{ avg_items_per_rx }},
-    antibiotic_rate: {{ antibiotic_rate }},
-    generic_prescribing_rate: {{ generic_prescribing_rate }},
-    formulary_rate: {{ formulary_rate }},
-    verification_rate: {{ verification_rate }},
-    counseling_rate: {{ counseling_rate }},
-    stock_turnover: {{ stock_turnover }},
-    rx_per_day: {{ rx_per_day }},
-    male_patients: {{ male_count }},
-    female_patients: {{ female_count }},
-    top_drugs: [{% for d in top_drugs|slice:":5" %}{"name":"{{ d.drug_name|escapejs }}","qty":{{ d.qty }}}{% if not forloop.last %},{% endif %}{% endfor %}]
-  }
-};
+function printWithCharts(){
+  var imgs={};
+  document.querySelectorAll('canvas').forEach(function(c){if(c.id&&typeof Chart!=='undefined'&&Chart.getChart&&Chart.getChart(c))imgs[c.id]=c.toDataURL('image/png');});
+  function ci(id,label){if(!imgs[id])return'';return'<div style="font-size:8px;font-weight:600;color:#444;margin-bottom:2px;">'+label+'</div><img src="'+imgs[id]+'" style="width:100%;border-radius:2px;">';}
+  var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pharmacy Stats — {{ month_name|escapejs }}</title>'
+    +'<style>@page{size:A4 landscape;margin:12mm 14mm;}body{font-family:Arial,sans-serif;font-size:9pt;margin:0;}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #1a3a5c;padding-bottom:6px;margin-bottom:6px;}'
+    +'.band{background:#1a3a5c;color:#fff;padding:5px 10px;border-radius:2px;margin-bottom:6px;font-size:9pt;font-weight:700;display:flex;justify-content:space-between;}'
+    +'.kpi-row{display:flex;gap:4px;margin-bottom:8px;}.kpi{flex:1;border:1px solid #dee2e6;border-radius:3px;text-align:center;padding:5px;}'
+    +'.kpi-v{font-size:14pt;font-weight:700;color:#1a3a5c;}.kpi-l{font-size:7pt;color:#6c757d;}'
+    +'.two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}'
+    +'.chart-box{border:1px solid #dee2e6;border-radius:3px;padding:6px;}'
+    +'.auth{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:12px;border-top:2px solid #dee2e6;padding-top:8px;}'
+    +'.sig-line{border-bottom:1px solid #333;height:16px;margin-bottom:3px;}.auth-r{font-size:7pt;color:#888;}'
+    +'.ft{margin-top:10px;padding-top:4px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:7pt;color:#999;}'
+    +'</style></head><body>'
+    +'<div class="hdr"><div><div style="font-size:13pt;font-weight:800;color:#1a3a5c;">{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }}</div></div>'
+    +'<div style="text-align:right;font-size:8pt;color:#666;">Pharmacy Monthly Report<br><strong>{{ month_name|escapejs }}</strong></div></div>'
+    +'<div class="band"><span>WHO/JCI MMU — Pharmacy Statistics</span><span style="font-size:8pt;">PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span></div>'
+    +'<div class="kpi-row">'
+    +'<div class="kpi"><div class="kpi-v">{{ total_dispensings }}</div><div class="kpi-l">Dispensings</div></div>'
+    +'<div class="kpi"><div class="kpi-v" style="color:#198754;">{{ dispensed_count }}</div><div class="kpi-l">Dispensed</div></div>'
+    +'<div class="kpi"><div class="kpi-v" style="color:#fd7e14;">{{ partial_count }}</div><div class="kpi-l">Partial</div></div>'
+    +'<div class="kpi"><div class="kpi-v">{{ completion_rate }}%</div><div class="kpi-l">Fill Rate</div></div>'
+    +'<div class="kpi"><div class="kpi-v" style="color:#198754;">{{ revenue|floatformat:0|intcomma }}</div><div class="kpi-l">Revenue</div></div>'
+    +'<div class="kpi"><div class="kpi-v">{{ stockout_rate }}%</div><div class="kpi-l">Stockout</div></div>'
+    +'<div class="kpi"><div class="kpi-v" style="color:#6f42c1;">{{ rx_per_day }}</div><div class="kpi-l">Rx/Day</div></div>'
+    +'<div class="kpi"><div class="kpi-v">{{ gross_margin }}%</div><div class="kpi-l">Margin</div></div></div>'
+    +'<div class="two"><div class="chart-box">'+ci('dailyChart','Daily Dispensings')+'</div><div class="chart-box">'+ci('revenueChart','Revenue Trend')+'</div></div>'
+    +'<div class="two"><div class="chart-box">'+ci('statusChart','Status Breakdown')+'</div><div class="chart-box">'+ci('tierChart','Service Tier')+'</div></div>'
+    +'<div class="auth"><div><div class="auth-r">Prepared by</div><div style="font-weight:700;font-size:8pt;">Head Pharmacist</div><div class="sig-line"></div><div class="auth-r">Date: ___________</div></div>'
+    +'<div><div class="auth-r">Reviewed by</div><div style="font-weight:700;font-size:8pt;">Medical Director</div><div class="sig-line"></div><div class="auth-r">Date: ___________</div></div>'
+    +'<div><div class="auth-r">Approved by</div><div style="font-weight:700;font-size:8pt;">Hospital Admin</div><div class="sig-line"></div><div class="auth-r">Date: ___________</div></div></div>'
+    +'<div class="ft"><span>{{ HOSPITAL_NAME|default:"EHR Africa"|escapejs }}</span><span>PHARM-{{ year }}-{{ month|stringformat:"02d" }}</span><span>CONFIDENTIAL</span></div>'
+    +'</body></html>';
+  var w=window.open('','_blank');w.document.open();w.document.write(h);w.document.close();w.focus();setTimeout(function(){w.print();},600);
+}
 </script>
-{% include "components/ai_stats_insights.html" %}
 {% endblock %}
