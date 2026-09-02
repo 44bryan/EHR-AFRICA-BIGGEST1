@@ -3376,9 +3376,15 @@ def barcode_labels_view(request):
     drug_ids = request.GET.getlist('drugs')
     copies = int(request.GET.get('copies', 1))
     copies = min(max(copies, 1), 50)  # 1-50 copies
+    print_all = request.GET.get('all') == '1'
+    location_id = request.GET.get('location', '').strip()
 
     if drug_ids:
         drugs = Drug.objects.filter(id__in=drug_ids, is_deleted=False)
+    elif print_all:
+        drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
+        if location_id:
+            drugs = drugs.filter(location_id=location_id)
     else:
         drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')[:50]
 
