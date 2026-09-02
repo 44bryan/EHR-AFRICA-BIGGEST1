@@ -174,12 +174,67 @@ def patient_register_view(request):
             if _posted_tier not in _allowed2:
                 _posted_tier = _allowed2[0]
 
+            # ── Insurance handling ──────────────────────────────────────────
+            _is_insured = request.POST.get('is_insured') == '1'
+            _billing_type = 'INSURANCE' if _is_insured else 'SELF_PAY'
+            _ins_company_name = ''
+            if _is_insured:
+                _scheme_id = request.POST.get('insurance_scheme', '')
+                _member_number = request.POST.get('member_number', '').strip()
+                _group_number = request.POST.get('group_number', '').strip()
+                _card_expiry = request.POST.get('card_expiry', '').strip() or None
+                _copay_pct = request.POST.get('copay_pct', '20').strip()
+                try:
+                    _copay_pct = min(max(float(_copay_pct), 0), 100)
+                except (ValueError, TypeError):
+                    _copay_pct = 20
+
+                _ins_scheme = None
+                if _scheme_id and _scheme_id != 'OTHER':
+                    from apps.hmo.models import InsuranceScheme, InsuredMember as HMOMember
+                    try:
+                        _ins_scheme = InsuranceScheme.objects.get(id=_scheme_id, is_active=True)
+                        _ins_company_name = _ins_scheme.name
+                    except InsuranceScheme.DoesNotExist:
+                        _ins_scheme = None
+
+                if _scheme_id == 'OTHER':
+                    _ins_company_name = request.POST.get('insurance_company_manual', '').strip()
+
+                # Create InsuranceInfo (simple patient-level record used by cashier)
+                InsuranceInfo.objects.create(
+                    patient=patient,
+                    provider=_ins_company_name or 'Unknown',
+                    policy_number=_member_number,
+                    group_number=_group_number,
+                    is_active=True,
+                    expiry_date=_card_expiry,
+                    notes=f'Copay: {_copay_pct}%. Registered at intake.',
+                )
+
+                # Create InsuredMember (HMO module — for claim processing)
+                if _ins_scheme and _member_number:
+                    from apps.hmo.models import InsuredMember as HMOMember
+                    HMOMember.objects.get_or_create(
+                        patient=patient,
+                        scheme=_ins_scheme,
+                        defaults={
+                            'member_number': _member_number,
+                            'group_number': _group_number,
+                            'copay_pct': _copay_pct,
+                            'card_expiry': _card_expiry,
+                            'is_active': True,
+                        },
+                    )
+            # ─────────────────────────────────────────────────────────────────
+
             visit_kwargs = dict(
                 patient=patient,
                 chief_complaint=request.POST.get('chief_complaint', ''),
                 service_tier=_posted_tier,
-                billing_type=request.POST.get('billing_type', 'SELF_PAY'),
-                insurance_company=request.POST.get('insurance_company', ''),
+                billing_type=_billing_type,
+                insurance_company=_ins_company_name,
+                insurance_policy_ref=request.POST.get('member_number', '').strip() if _is_insured else '',
                 has_referral_letter=_parse_bool(request.POST.get('has_referral_letter')),
                 referral_hospital=request.POST.get('referral_hospital', ''),
                 intake_disability=','.join(request.POST.getlist('intake_disability')),
@@ -344,11 +399,16 @@ def patient_register_view(request):
     _requested_tier = src.get('service_tier', 'STANDARD')
     # If the requested tier is not in allowed, force to first allowed
     _safe_tier = _requested_tier if _requested_tier in _allowed_tiers else _allowed_tiers[0]
+    # ── Insurance schemes for the toggle ──────────────────────────────────────
+    from apps.hmo.models import InsuranceScheme
+    _ins_schemes = InsuranceScheme.objects.filter(is_active=True).order_by('name')
+
     return render(request, 'patients/register.html', {
         'form': form,
         'nok_form': nok_form,
         'qms_token_id': qms_token_id,
         'allowed_tiers': _allowed_tiers,
+        'insurance_schemes': _ins_schemes,
         'init_service_tier':       _safe_tier,
         'init_billing_type':       src.get('billing_type', 'SELF_PAY'),
         'init_insurance_company':  src.get('insurance_company', ''),
@@ -358,6 +418,12 @@ def patient_register_view(request):
         'init_nok_name':           src.get('nok_name', ''),
         'init_nok_relationship':   src.get('nok_relationship', ''),
         'init_nok_phone':          src.get('nok_phone', ''),
+        'init_is_insured':         src.get('is_insured', ''),
+        'init_insurance_scheme':   src.get('insurance_scheme', ''),
+        'init_member_number':      src.get('member_number', ''),
+        'init_copay_pct':          src.get('copay_pct', ''),
+        'init_card_expiry':        src.get('card_expiry', ''),
+        'init_group_number':       src.get('group_number', ''),
     })
 
 

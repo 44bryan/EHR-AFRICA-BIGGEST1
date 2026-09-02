@@ -841,7 +841,105 @@
             {% endif %}
           </div>
           {% endif %}
-          <div class="form-text mt-2" style="font-size:.72rem;"><i class="bi bi-info-circle me-1"></i>Billing type (cash/HMO/insurance) is set by the cashier when processing payment.</div>
+        </div>
+      </div>
+
+      <!-- INSURANCE / BILLING -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between"
+             role="button" data-bs-toggle="collapse" data-bs-target="#secInsurance" aria-expanded="true" style="cursor:pointer;">
+          <h6 class="fw-bold mb-0"><i class="bi bi-shield-check me-2 text-info"></i>Insurance / Billing</h6>
+          <i class="bi bi-chevron-up text-muted sec-chevron"></i>
+        </div>
+        <div class="collapse show card-body" id="secInsurance">
+          <!-- Toggle -->
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" role="switch" id="id_is_insured"
+                     name="is_insured" value="1" {% if init_is_insured %}checked{% endif %}
+                     onchange="toggleInsuranceFields(this.checked)">
+              <label class="form-check-label fw-medium" for="id_is_insured">Patient is Insured</label>
+            </div>
+            <span class="badge bg-light text-muted" id="ins_badge_off" {% if init_is_insured %}style="display:none;"{% endif %}>Self-Pay</span>
+            <span class="badge bg-info text-white" id="ins_badge_on" {% if not init_is_insured %}style="display:none;"{% endif %}>
+              <i class="bi bi-shield-check me-1"></i>Insured
+            </span>
+          </div>
+
+          <!-- Insurance fields (hidden by default) -->
+          <div id="insurance_fields" {% if not init_is_insured %}style="display:none;"{% endif %}>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label small fw-medium">Insurance Scheme / Company *</label>
+                <select name="insurance_scheme" id="id_insurance_scheme" class="form-select" onchange="onSchemeChange(this)">
+                  <option value="">-- Select Insurance --</option>
+                  {% for scheme in insurance_schemes %}
+                  <option value="{{ scheme.id }}"
+                          data-type="{{ scheme.scheme_type }}"
+                          data-coverage="{{ scheme.coverage_pct }}"
+                          data-copay="{{ scheme.copay_pct|default:'20' }}"
+                          data-preauth="{{ scheme.pre_auth_required|yesno:'1,0' }}"
+                          {% if init_insurance_scheme == scheme.id|stringformat:"s" %}selected{% endif %}>
+                    {{ scheme.name }} ({{ scheme.get_scheme_type_display }})
+                  </option>
+                  {% endfor %}
+                  <option value="OTHER" {% if init_insurance_scheme == 'OTHER' %}selected{% endif %}>Other — Enter Manually</option>
+                </select>
+              </div>
+              <div class="col-md-6" id="manual_company_wrap" style="display:none;">
+                <label class="form-label small fw-medium">Company Name *</label>
+                <input type="text" name="insurance_company_manual" class="form-control"
+                       placeholder="Enter insurance company name"
+                       value="{{ init_insurance_company }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-medium">Member / Policy Number *</label>
+                <input type="text" name="member_number" class="form-control" placeholder="e.g. CNPS-12345"
+                       value="{{ init_member_number }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-medium">Group / Employer Number</label>
+                <input type="text" name="group_number" class="form-control" placeholder="Optional"
+                       value="{{ init_group_number }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-medium">Card Expiry Date</label>
+                <input type="date" name="card_expiry" class="form-control"
+                       value="{{ init_card_expiry }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-medium">
+                  Patient Co-pay %
+                  <i class="bi bi-info-circle text-muted" data-bs-toggle="tooltip"
+                     title="Percentage the patient pays out-of-pocket. E.g. 20% means insurance covers 80%."></i>
+                </label>
+                <div class="input-group">
+                  <input type="number" name="copay_pct" id="id_copay_pct" class="form-control"
+                         min="0" max="100" step="1" placeholder="20"
+                         value="{{ init_copay_pct|default:'20' }}">
+                  <span class="input-group-text">%</span>
+                </div>
+              </div>
+              <div class="col-md-8">
+                <div class="alert alert-info mb-0 py-2 px-3 small" id="ins_summary" style="display:none;">
+                  <i class="bi bi-calculator me-1"></i>
+                  <strong>Split:</strong>
+                  Insurance pays <span id="ins_pct_label">80</span>% &mdash;
+                  Patient pays <span id="copay_pct_label">20</span>%
+                  <span id="preauth_badge" style="display:none;" class="ms-2 badge bg-warning text-dark">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Pre-auth Required
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Self-pay note -->
+          <div id="selfpay_note" {% if init_is_insured %}style="display:none;"{% endif %}>
+            <div class="text-muted small">
+              <i class="bi bi-info-circle me-1"></i>Patient will pay the full amount at the cashier. Toggle ON if patient has insurance.
+            </div>
+          </div>
         </div>
       </div>
 
@@ -868,6 +966,48 @@ if (!window.SignaturePad && !window._ehrSigPadLoaded) {
 }
 </script>
 <script>
+// ── Insurance toggle ────────────────────────────────────────────────────────
+function toggleInsuranceFields(on) {
+  document.getElementById('insurance_fields').style.display = on ? '' : 'none';
+  document.getElementById('selfpay_note').style.display = on ? 'none' : '';
+  document.getElementById('ins_badge_on').style.display = on ? '' : 'none';
+  document.getElementById('ins_badge_off').style.display = on ? 'none' : '';
+  if (on) onSchemeChange(document.getElementById('id_insurance_scheme'));
+}
+
+function onSchemeChange(sel) {
+  var opt = sel.options[sel.selectedIndex];
+  var isOther = (sel.value === 'OTHER');
+  document.getElementById('manual_company_wrap').style.display = isOther ? '' : 'none';
+  if (!sel.value) {
+    document.getElementById('ins_summary').style.display = 'none';
+    return;
+  }
+  var coverage = parseFloat(opt.getAttribute('data-coverage')) || 80;
+  var copayDefault = parseFloat(opt.getAttribute('data-copay')) || (100 - coverage);
+  var preauth = opt.getAttribute('data-preauth') === '1';
+  var copayInp = document.getElementById('id_copay_pct');
+  if (!copayInp._userEdited) copayInp.value = copayDefault;
+  updateInsSummary();
+  document.getElementById('preauth_badge').style.display = preauth ? '' : 'none';
+  document.getElementById('ins_summary').style.display = '';
+}
+
+function updateInsSummary() {
+  var copay = parseFloat(document.getElementById('id_copay_pct').value) || 0;
+  document.getElementById('copay_pct_label').textContent = copay;
+  document.getElementById('ins_pct_label').textContent = (100 - copay);
+}
+document.getElementById('id_copay_pct')?.addEventListener('input', function() {
+  this._userEdited = true;
+  updateInsSummary();
+});
+
+// On page load, if insured toggle is already on
+if (document.getElementById('id_is_insured')?.checked) {
+  toggleInsuranceFields(true);
+}
+
 // ── Tier picker — highlight selected tier option ──────────────────────────
 function highlightTier() {
   document.querySelectorAll('#tier_picker .tier-opt').forEach(function(lbl) {
