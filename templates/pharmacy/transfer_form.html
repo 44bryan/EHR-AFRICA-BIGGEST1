@@ -79,8 +79,9 @@
                   </select>
                 </td>
                 <td>
-                  <input type="text" name="items-0-batch_id" class="form-control form-control-sm"
-                         placeholder="Batch number" required>
+                  <select name="items-0-batch_id" class="form-select form-select-sm batch-select" required disabled>
+                    <option value="">-- Select drug first --</option>
+                  </select>
                 </td>
                 <td>
                   <input type="number" name="items-0-qty" class="form-control form-control-sm"
@@ -114,19 +115,75 @@
 (function() {
   const tbody = document.getElementById('items-body');
   const countInput = document.getElementById('item-count');
+  const STOCK_URL = '{% url "pharmacy:drug_stock_ajax" %}';
   let idx = 1;
+
+  // Load batches when drug is selected
+  function loadBatches(drugSelect) {
+    const row = drugSelect.closest('.item-row');
+    const batchSelect = row.querySelector('.batch-select');
+    const drugId = drugSelect.value;
+
+    batchSelect.innerHTML = '<option value="">Loading…</option>';
+    batchSelect.disabled = true;
+
+    if (!drugId) {
+      batchSelect.innerHTML = '<option value="">-- Select drug first --</option>';
+      return;
+    }
+
+    fetch(STOCK_URL + '?drug_id=' + encodeURIComponent(drugId), {credentials: 'same-origin'})
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var batches = data.batches || [];
+        if (!batches.length) {
+          batchSelect.innerHTML = '<option value="">No stock available</option>';
+          return;
+        }
+        var html = '<option value="">-- Select batch --</option>';
+        batches.forEach(function(b) {
+          html += '<option value="' + b.id + '" data-qty="' + b.qty_remaining + '">' + b.label + '</option>';
+        });
+        batchSelect.innerHTML = html;
+        batchSelect.disabled = false;
+      })
+      .catch(function() {
+        batchSelect.innerHTML = '<option value="">Error loading batches</option>';
+      });
+  }
+
+  // Delegate drug change events
+  tbody.addEventListener('change', function(e) {
+    var drugSel = e.target.closest('select[name$="-drug_id"]');
+    if (drugSel) loadBatches(drugSel);
+
+    // Update max qty when batch is selected
+    var batchSel = e.target.closest('.batch-select');
+    if (batchSel) {
+      var opt = batchSel.options[batchSel.selectedIndex];
+      var qtyInput = batchSel.closest('.item-row').querySelector('input[name$="-qty"]');
+      if (opt && opt.dataset.qty) {
+        qtyInput.max = opt.dataset.qty;
+        qtyInput.title = 'Max: ' + opt.dataset.qty;
+      }
+    }
+  });
 
   document.getElementById('btn-add-item').addEventListener('click', function() {
     const firstRow = tbody.querySelector('.item-row');
     const newRow = firstRow.cloneNode(true);
     newRow.setAttribute('data-index', idx);
 
-    // Update name attributes
     newRow.querySelectorAll('[name]').forEach(function(el) {
       el.name = el.name.replace(/items-\d+-/, 'items-' + idx + '-');
       if (el.tagName === 'SELECT') el.selectedIndex = 0;
       else el.value = '';
     });
+
+    // Reset batch select
+    var bs = newRow.querySelector('.batch-select');
+    bs.innerHTML = '<option value="">-- Select drug first --</option>';
+    bs.disabled = true;
 
     tbody.appendChild(newRow);
     idx++;

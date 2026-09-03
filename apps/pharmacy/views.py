@@ -1485,8 +1485,26 @@ def complete_dispensing(request, dispensing_id):
     payment_method = request.POST.get('payment_method', PaymentMethod.CASH)
     amount_str = request.POST.get('amount', '').strip()
 
+    # Save discount fields
     try:
-        amount = Decimal(amount_str) if amount_str else dispensing.total_amount
+        disc_pct = Decimal(request.POST.get('discount_pct', '0').strip() or '0')
+        disc_pct = max(Decimal('0'), min(disc_pct, Decimal('100')))
+    except InvalidOperation:
+        disc_pct = Decimal('0')
+    try:
+        disc_flat = Decimal(request.POST.get('discount', '0').strip() or '0')
+        disc_flat = max(Decimal('0'), disc_flat)
+    except InvalidOperation:
+        disc_flat = Decimal('0')
+
+    dispensing.discount_pct = disc_pct
+    dispensing.discount = disc_flat
+    dispensing.save(update_fields=['discount_pct', 'discount'])
+
+    net_amount = dispensing.net_amount
+
+    try:
+        amount = Decimal(amount_str) if amount_str else net_amount
     except InvalidOperation:
         messages.error(request, 'Invalid payment amount.')
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
@@ -1496,11 +1514,11 @@ def complete_dispensing(request, dispensing_id):
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
     # Guard: pharmacy counter always collects full payment — no partial dispensing allowed
-    if amount < dispensing.total_amount:
+    if amount < net_amount:
         messages.error(
             request,
-            f'Amount entered ({int(amount):,} FCFA) is less than the total '
-            f'({int(dispensing.total_amount):,} FCFA). '
+            f'Amount entered ({int(amount):,} FCFA) is less than the net total '
+            f'({int(net_amount):,} FCFA). '
             'Full payment is required before drugs can be dispensed.'
         )
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
@@ -3286,12 +3304,13 @@ def transfer_create(request):
             initiated_by=request.user, notes=request.POST.get('notes', ''),
         )
         transfer.save()
-        # Add items
-        drug_ids = request.POST.getlist('drug_id')
-        batch_ids = request.POST.getlist('batch_id')
-        qtys = request.POST.getlist('qty')
-        for drug_id, batch_id, qty in zip(drug_ids, batch_ids, qtys):
-            if not qty or int(qty) <= 0:
+        # Add items — form uses items-N-field pattern
+        item_count = int(request.POST.get('item_count', 0))
+        for i in range(item_count):
+            drug_id = request.POST.get(f'items-{i}-drug_id')
+            batch_id = request.POST.get(f'items-{i}-batch_id')
+            qty = request.POST.get(f'items-{i}-qty')
+            if not drug_id or not batch_id or not qty or int(qty) <= 0:
                 continue
             drug = Drug.objects.filter(pk=drug_id).first()
             batch = DrugStock.objects.filter(pk=batch_id).first()

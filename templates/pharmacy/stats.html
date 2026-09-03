@@ -8,7 +8,7 @@
     <i class="bi bi-graph-up-arrow text-primary fs-4"></i>
     <div>
       <h5 class="mb-0 fw-bold">Pharmacy Statistics</h5>
-      <div class="text-muted small">{{ month_name }} — WHO/JCI MMU monthly report</div>
+      <div class="text-muted small">{{ month_name }} — Monthly report</div>
     </div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -42,7 +42,7 @@
 <div class="print-only" style="display:none;">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0d6efd;padding-bottom:10px;margin-bottom:14px;">
     <div>
-      <div style="font-size:18px;font-weight:800;color:#0d6efd;">Pharmacy Department Statistics Dashboard</div>
+      <div style="font-size:18px;font-weight:800;color:#0d6efd;">Pharmacy Department Statistics</div>
       <div style="font-size:11px;color:#555;margin-top:4px;">
         Period: {{ month_name }} &nbsp;&bull;&nbsp; Ref: PHARM-{{ year }}-{{ month|stringformat:"02d" }} &nbsp;&bull;&nbsp; Generated: {% now "d M Y H:i" %}
       </div>
@@ -51,10 +51,6 @@
       CONFIDENTIAL &mdash; INTERNAL USE ONLY<br>
       <em>For management review only.</em>
     </div>
-  </div>
-  <div style="background:#0d6efd;color:#fff;padding:5px 12px;font-size:8px;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;margin-bottom:14px;display:flex;justify-content:space-between;">
-    <span>EHR Africa &mdash; Pharmacy Department Report</span>
-    <span>WHO/JCI MMU Standards &nbsp;&bull;&nbsp; {% now "Y" %}</span>
   </div>
 </div>
 
@@ -108,22 +104,6 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md col-lg">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold" style="color:#6f42c1;">{{ rx_per_day }}</div>
-        <div class="small text-muted">Rx / Day</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md col-lg">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold {% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">{{ gross_margin }}%</div>
-        <div class="small text-muted">Gross Margin</div>
-      </div>
-    </div>
-  </div>
 </div>
 
 {# ── Charts Row ── #}
@@ -141,202 +121,10 @@
   <div class="col-md-4">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-graph-up-arrow text-success me-2"></i>Revenue Trend (14 Days)
+        <i class="bi bi-pie-chart text-primary me-2"></i>By Drug Category
       </div>
       <div class="card-body d-flex align-items-center justify-content-center">
-        <canvas id="revenueChart" style="max-height:220px;"></canvas>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ── WHO Core Drug Use Indicators ── #}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
-    <i class="bi bi-clipboard2-check text-primary"></i>
-    <span>WHO Core Drug Use Indicators</span>
-    <span class="badge bg-info-subtle text-info small ms-1">WHO/MSH</span>
-  </div>
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-hover small mb-0">
-        <thead class="table-light">
-          <tr><th>Indicator</th><th class="text-center">WHO Target</th><th class="text-center">Actual</th><th class="text-center">Status</th><th>Interpretation</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="fw-semibold">Avg Items / Prescription</td>
-            <td class="text-center text-muted">&le; 2.0</td>
-            <td class="text-center fw-bold">{{ avg_items_per_rx }}</td>
-            <td class="text-center">{% if avg_items_per_rx <= 2.0 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif avg_items_per_rx <= 3.0 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
-            <td class="text-muted">Polypharmacy risk — lower is better</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Generic Prescribing Rate</td>
-            <td class="text-center text-muted">100%</td>
-            <td class="text-center fw-bold">{{ generic_prescribing_rate }}%</td>
-            <td class="text-center">{% if generic_prescribing_rate >= 90 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif generic_prescribing_rate >= 70 %}<span class="badge bg-warning-subtle text-warning">Improve</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
-            <td class="text-muted">WHO recommends 100% generic name prescribing</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Antibiotic Rate</td>
-            <td class="text-center text-muted">&lt; 30%</td>
-            <td class="text-center fw-bold">{{ antibiotic_rate }}%</td>
-            <td class="text-center">{% if antibiotic_rate < 30 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif antibiotic_rate < 50 %}<span class="badge bg-warning-subtle text-warning">Monitor</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
-            <td class="text-muted">Antimicrobial stewardship indicator</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Injection Rate</td>
-            <td class="text-center text-muted">&lt; 25%</td>
-            <td class="text-center fw-bold">{{ injection_rate }}%</td>
-            <td class="text-center">{% if injection_rate < 25 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif injection_rate < 40 %}<span class="badge bg-warning-subtle text-warning">High</span>{% else %}<span class="badge bg-danger-subtle text-danger">Excess</span>{% endif %}</td>
-            <td class="text-muted">Prefer oral over parenteral route</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Formulary (EDL) Rate</td>
-            <td class="text-center text-muted">100%</td>
-            <td class="text-center fw-bold">{{ formulary_rate }}%</td>
-            <td class="text-center">{% if formulary_rate >= 95 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif formulary_rate >= 80 %}<span class="badge bg-warning-subtle text-warning">Below</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
-            <td class="text-muted">Drugs dispensed from hospital formulary</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Prescription Fill Rate</td>
-            <td class="text-center text-muted">&ge; 90%</td>
-            <td class="text-center fw-bold">{{ completion_rate }}%</td>
-            <td class="text-center">{% if completion_rate >= 90 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif completion_rate >= 75 %}<span class="badge bg-warning-subtle text-warning">Below</span>{% else %}<span class="badge bg-danger-subtle text-danger">Critical</span>{% endif %}</td>
-            <td class="text-muted">Target &ge;90% for WHO essential medicines</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Generic Substitution</td>
-            <td class="text-center text-muted">Track</td>
-            <td class="text-center fw-bold">{{ substitution_rate }}% <span class="text-muted fw-normal">({{ substitution_count }})</span></td>
-            <td class="text-center"><span class="badge bg-secondary-subtle text-secondary">Tracked</span></td>
-            <td class="text-muted">Brand-to-generic substitutions this month</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-{# ── JCI MMU Safety & Quality ── #}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
-    <i class="bi bi-shield-check text-warning"></i>
-    <span>JCI MMU Safety &amp; Quality Indicators</span>
-    <span class="badge bg-warning-subtle text-warning small ms-1">JCI 7th Ed</span>
-  </div>
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-hover small mb-0">
-        <thead class="table-light">
-          <tr><th>Indicator</th><th class="text-center">Ref</th><th class="text-center">Target</th><th class="text-center">Actual</th><th class="text-center">Status</th><th>Note</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="fw-semibold">Pharmacist Verification</td>
-            <td class="text-center text-muted">MMU.6.1</td>
-            <td class="text-center text-muted">100%</td>
-            <td class="text-center fw-bold">{{ verification_rate }}%</td>
-            <td class="text-center">{% if verification_rate == 100 %}<span class="badge bg-success-subtle text-success">Full</span>{% elif verification_rate >= 80 %}<span class="badge bg-warning-subtle text-warning">Partial</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
-            <td class="text-muted">{{ verified_count }} / {{ dispensed_count }} verified</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Patient Counseling</td>
-            <td class="text-center text-muted">MMU.6.2</td>
-            <td class="text-center text-muted">100%</td>
-            <td class="text-center fw-bold">{{ counseling_rate }}%</td>
-            <td class="text-center">{% if counseling_rate >= 95 %}<span class="badge bg-success-subtle text-success">Met</span>{% elif counseling_rate >= 70 %}<span class="badge bg-warning-subtle text-warning">Improve</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
-            <td class="text-muted">{{ counseled_count }} counseling sessions</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Controlled Drug Dispensing</td>
-            <td class="text-center text-muted">MMU.3</td>
-            <td class="text-center text-muted">Track</td>
-            <td class="text-center fw-bold">{{ controlled_rate }}%</td>
-            <td class="text-center"><span class="badge bg-secondary-subtle text-secondary">Tracked</span></td>
-            <td class="text-muted">{{ controlled_items }} controlled items dispensed</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Dispensing Return Rate</td>
-            <td class="text-center text-muted">MMU.5</td>
-            <td class="text-center text-muted">&lt; 2%</td>
-            <td class="text-center fw-bold">{{ return_rate }}%</td>
-            <td class="text-center">{% if return_rate < 2 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif return_rate < 5 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
-            <td class="text-muted">{{ return_count }} returns ({{ return_qty }} units)</td>
-          </tr>
-          <tr>
-            <td class="fw-semibold">Rx Decline Rate</td>
-            <td class="text-center text-muted">MMU.4</td>
-            <td class="text-center text-muted">&lt; 5%</td>
-            <td class="text-center fw-bold">{{ rx_decline_rate }}%</td>
-            <td class="text-center">{% if rx_decline_rate < 5 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif rx_decline_rate < 10 %}<span class="badge bg-warning-subtle text-warning">Monitor</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
-            <td class="text-muted">Patients buying medications elsewhere</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-{# ── Inventory Health + Financial Performance ── #}
-<div class="row g-3 mb-4">
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
-        <i class="bi bi-box-seam text-primary"></i>
-        <span>Inventory Health</span>
-        <span class="badge bg-success-subtle text-success small ms-1">FIP GPP</span>
-      </div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-6">
-            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Stock Metrics</h6>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Active Drugs</span><strong>{{ total_active_drugs }}</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Stockout Items</span><strong class="{% if stockout_count > 5 %}text-danger{% endif %}">{{ stockout_count }} ({{ stockout_rate }}%)</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Low Stock</span><strong class="{% if low_stock_count > 10 %}text-warning{% endif %}">{{ low_stock_count }}</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Turnover Ratio</span><strong>{{ stock_turnover }}x</strong></div>
-            <div class="d-flex justify-content-between py-1"><span class="text-muted">Inventory Value</span><strong class="text-primary">{{ total_inventory_value|floatformat:0|intcomma }}</strong></div>
-          </div>
-          <div class="col-6">
-            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Expiry &amp; Wastage</h6>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Expired (Month)</span><strong class="text-danger">{{ expired_units }} units</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Expired Value</span><strong class="text-danger">{{ expired_value|floatformat:0|intcomma }}</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Near-Expiry &lt;30d</span><strong class="text-warning">{{ near_expiry_count }} btch</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">At-Risk Value</span><strong class="text-warning">{{ near_expiry_value|floatformat:0|intcomma }}</strong></div>
-            <div class="d-flex justify-content-between py-1"><span class="text-muted">Returns to Stock</span><strong>{{ return_qty }} units</strong></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
-        <i class="bi bi-cash-stack text-success"></i>
-        <span>Financial Performance</span>
-      </div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-6">
-            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Revenue</h6>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Total Revenue</span><strong class="text-success">{{ revenue|floatformat:0|intcomma }}</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">COGS</span><strong>{{ cogs|floatformat:0|intcomma }}</strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Gross Margin</span><strong class="{% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">{{ gross_margin }}%</strong></div>
-            <div class="d-flex justify-content-between py-1"><span class="text-muted">Avg Revenue/Rx</span><strong>{{ avg_cost_per_rx|floatformat:0|intcomma }}</strong></div>
-          </div>
-          <div class="col-6">
-            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Sales Split</h6>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Rx Sales</span><strong>{{ rx_revenue|floatformat:0|intcomma }} <span class="badge bg-success-subtle text-success small">{{ rx_count }}</span></strong></div>
-            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">OTC Sales</span><strong>{{ otc_revenue|floatformat:0|intcomma }} <span class="badge bg-secondary-subtle text-secondary small">{{ otc_count }}</span></strong></div>
-            {% for t in tier_stats %}
-            <div class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom{% endif %}">
-              <span style="color:{{ t.color }};">{{ t.label }}</span>
-              <strong>{{ t.revenue|floatformat:0|intcomma }} <span class="text-muted small">{{ t.count }}Rx</span></strong>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
+        <canvas id="categoryChart" style="max-height:220px;"></canvas>
       </div>
     </div>
   </div>
@@ -346,7 +134,7 @@
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
     <i class="bi bi-people-fill text-primary"></i>
-    <span>Patient Demographics &amp; Status</span>
+    <span>Patient Demographics</span>
     <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_name }}</span>
   </div>
   <div class="card-body">
@@ -394,6 +182,198 @@
   </div>
 </div>
 
+{# ── Key Indicators (compact table — no verbose interpretation) ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-clipboard2-check text-primary"></i>
+        <span>Drug Use Indicators</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover small mb-0">
+          <thead class="table-light">
+            <tr><th>Indicator</th><th class="text-center">Target</th><th class="text-center">Actual</th><th class="text-center">Status</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Avg Items / Rx</td>
+              <td class="text-center text-muted">&le; 2.0</td>
+              <td class="text-center fw-bold">{{ avg_items_per_rx }}</td>
+              <td class="text-center">{% if avg_items_per_rx <= 2.0 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif avg_items_per_rx <= 3.0 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Antibiotic Rate</td>
+              <td class="text-center text-muted">&lt; 30%</td>
+              <td class="text-center fw-bold">{{ antibiotic_rate }}%</td>
+              <td class="text-center">{% if antibiotic_rate < 30 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif antibiotic_rate < 50 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Injection Rate</td>
+              <td class="text-center text-muted">&lt; 25%</td>
+              <td class="text-center fw-bold">{{ injection_rate }}%</td>
+              <td class="text-center">{% if injection_rate < 25 %}<span class="badge bg-success-subtle text-success">OK</span>{% else %}<span class="badge bg-warning-subtle text-warning">High</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Generic Prescribing</td>
+              <td class="text-center text-muted">100%</td>
+              <td class="text-center fw-bold">{{ generic_prescribing_rate }}%</td>
+              <td class="text-center">{% if generic_prescribing_rate >= 90 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif generic_prescribing_rate >= 70 %}<span class="badge bg-warning-subtle text-warning">Improve</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Formulary Rate</td>
+              <td class="text-center text-muted">100%</td>
+              <td class="text-center fw-bold">{{ formulary_rate }}%</td>
+              <td class="text-center">{% if formulary_rate >= 95 %}<span class="badge bg-success-subtle text-success">OK</span>{% else %}<span class="badge bg-warning-subtle text-warning">Below</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Fill Rate</td>
+              <td class="text-center text-muted">&ge; 90%</td>
+              <td class="text-center fw-bold">{{ completion_rate }}%</td>
+              <td class="text-center">{% if completion_rate >= 90 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif completion_rate >= 75 %}<span class="badge bg-warning-subtle text-warning">Below</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-shield-check text-warning"></i>
+        <span>Quality &amp; Safety</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover small mb-0">
+          <thead class="table-light">
+            <tr><th>Indicator</th><th class="text-center">Actual</th><th class="text-center">Status</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Pharmacist Verification</td>
+              <td class="text-center fw-bold">{{ verification_rate }}% <span class="text-muted fw-normal">({{ verified_count }}/{{ dispensed_count }})</span></td>
+              <td class="text-center">{% if verification_rate == 100 %}<span class="badge bg-success-subtle text-success">Full</span>{% elif verification_rate >= 80 %}<span class="badge bg-warning-subtle text-warning">Partial</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Patient Counseling</td>
+              <td class="text-center fw-bold">{{ counseling_rate }}% <span class="text-muted fw-normal">({{ counseled_count }})</span></td>
+              <td class="text-center">{% if counseling_rate >= 95 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif counseling_rate >= 70 %}<span class="badge bg-warning-subtle text-warning">Improve</span>{% else %}<span class="badge bg-danger-subtle text-danger">Low</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Controlled Drug Dispensing</td>
+              <td class="text-center fw-bold">{{ controlled_rate }}% <span class="text-muted fw-normal">({{ controlled_items }} items)</span></td>
+              <td class="text-center"><span class="badge bg-secondary-subtle text-secondary">Tracked</span></td>
+            </tr>
+            <tr>
+              <td>Return Rate</td>
+              <td class="text-center fw-bold">{{ return_rate }}% <span class="text-muted fw-normal">({{ return_count }} / {{ return_qty }} units)</span></td>
+              <td class="text-center">{% if return_rate < 2 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif return_rate < 5 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Rx Decline Rate</td>
+              <td class="text-center fw-bold">{{ rx_decline_rate }}%</td>
+              <td class="text-center">{% if rx_decline_rate < 5 %}<span class="badge bg-success-subtle text-success">OK</span>{% elif rx_decline_rate < 10 %}<span class="badge bg-warning-subtle text-warning">Watch</span>{% else %}<span class="badge bg-danger-subtle text-danger">High</span>{% endif %}</td>
+            </tr>
+            <tr>
+              <td>Generic Substitution</td>
+              <td class="text-center fw-bold">{{ substitution_rate }}% <span class="text-muted fw-normal">({{ substitution_count }})</span></td>
+              <td class="text-center"><span class="badge bg-secondary-subtle text-secondary">Tracked</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Inventory Health + Financial Performance ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-box-seam text-primary"></i>
+        <span>Inventory Health</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Active Drugs</span><strong>{{ total_active_drugs }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Stockout Items</span><strong class="{% if stockout_count > 5 %}text-danger{% endif %}">{{ stockout_count }} ({{ stockout_rate }}%)</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Low Stock</span><strong class="{% if low_stock_count > 10 %}text-warning{% endif %}">{{ low_stock_count }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Turnover Ratio</span><strong>{{ stock_turnover }}x</strong></div>
+            <div class="d-flex justify-content-between py-1"><span class="text-muted">Inventory Value</span><strong class="text-primary">{{ total_inventory_value|floatformat:0|intcomma }}</strong></div>
+          </div>
+          <div class="col-6">
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Expired (Month)</span><strong class="text-danger">{{ expired_units }} units</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Expired Value</span><strong class="text-danger">{{ expired_value|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Near-Expiry &lt;30d</span><strong class="text-warning">{{ near_expiry_count }} btch</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">At-Risk Value</span><strong class="text-warning">{{ near_expiry_value|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1"><span class="text-muted">Returns to Stock</span><strong>{{ return_qty }} units</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+        <i class="bi bi-cash-stack text-success"></i>
+        <span>Financial Performance</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Total Revenue</span><strong class="text-success">{{ revenue|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">COGS</span><strong>{{ cogs|floatformat:0|intcomma }}</strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Gross Margin</span><strong class="{% if gross_margin >= 30 %}text-success{% elif gross_margin >= 15 %}text-warning{% else %}text-danger{% endif %}">{{ gross_margin }}%</strong></div>
+            <div class="d-flex justify-content-between py-1"><span class="text-muted">Avg Revenue/Rx</span><strong>{{ avg_cost_per_rx|floatformat:0|intcomma }}</strong></div>
+          </div>
+          <div class="col-6">
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Rx Sales</span><strong>{{ rx_revenue|floatformat:0|intcomma }} <span class="badge bg-success-subtle text-success small">{{ rx_count }}</span></strong></div>
+            <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">OTC Sales</span><strong>{{ otc_revenue|floatformat:0|intcomma }} <span class="badge bg-secondary-subtle text-secondary small">{{ otc_count }}</span></strong></div>
+            {% for t in tier_stats %}
+            <div class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom{% endif %}">
+              <span style="color:{{ t.color }};">{{ t.label }}</span>
+              <strong>{{ t.revenue|floatformat:0|intcomma }} <span class="text-muted small">{{ t.count }}Rx</span></strong>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Revenue Trend + Rx/Day ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-graph-up-arrow text-success me-2"></i>Revenue Trend (14 Days)
+      </div>
+      <div class="card-body">
+        <canvas id="revenueChart" height="110"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-speedometer2 text-primary me-2"></i>Productivity
+      </div>
+      <div class="card-body d-flex flex-column justify-content-center">
+        <div class="text-center mb-3">
+          <div class="h1 fw-bold" style="color:#6f42c1;">{{ rx_per_day }}</div>
+          <div class="text-muted">Rx / Day</div>
+        </div>
+        <div class="d-flex justify-content-between py-1 border-bottom small"><span class="text-muted">Working Days</span><strong>{{ working_days }}</strong></div>
+        <div class="d-flex justify-content-between py-1 border-bottom small"><span class="text-muted">Gross Margin</span><strong class="{% if gross_margin >= 30 %}text-success{% else %}text-warning{% endif %}">{{ gross_margin }}%</strong></div>
+        <div class="d-flex justify-content-between py-1 small"><span class="text-muted">Total Items</span><strong>{{ total_items }}</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# ── Top 15 Drugs + Staff Throughput ── #}
 <div class="row g-3 mb-4">
   <div class="col-md-6">
@@ -433,11 +413,8 @@
   </div>
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
-        <i class="bi bi-person-gear text-primary me-1"></i>
-        <span>Staff Throughput</span>
-        <span class="badge bg-secondary-subtle text-secondary small ms-1">ASHP</span>
-        <span class="ms-auto text-muted small fw-normal">{{ working_days }} days &bull; {{ rx_per_day }} Rx/day</span>
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-person-gear text-primary me-2"></i>Staff Throughput
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
@@ -471,36 +448,35 @@
   </div>
 </div>
 
-{# ── Categories ── #}
+{# ── Categories Table ── #}
 {% if category_stats %}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
-    <i class="bi bi-tag-fill text-primary"></i>
-    <span>Dispensing by Drug Category</span>
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-tag-fill text-primary me-2"></i>Dispensing by Drug Category
   </div>
-  <div class="card-body">
-    <div class="row align-items-center">
-      <div class="col-md-4">
-        <canvas id="categoryChart" style="max-height:220px;"></canvas>
-      </div>
-      <div class="col-md-8">
-        <div class="table-responsive">
-          <table class="table table-sm small mb-0">
-            <thead class="table-light">
-              <tr><th>Category</th><th class="text-end">Quantity</th><th class="text-end">%</th></tr>
-            </thead>
-            <tbody>
-              {% for c in category_stats %}
-              <tr>
-                <td class="fw-semibold">{{ c.label }}</td>
-                <td class="text-end fw-bold text-primary">{{ c.qty }}</td>
-                <td class="text-end text-muted">{% if total_items %}{% widthratio c.qty total_items 100 %}%{% else %}—{% endif %}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover small mb-0">
+        <thead class="table-light">
+          <tr><th>Category</th><th class="text-end">Quantity</th><th class="text-end">%</th><th style="min-width:120px;">Volume</th></tr>
+        </thead>
+        <tbody>
+          {% for c in category_stats %}
+          <tr>
+            <td class="fw-semibold">{{ c.label }}</td>
+            <td class="text-end fw-bold text-primary">{{ c.qty }}</td>
+            <td class="text-end text-muted">{% if total_items %}{% widthratio c.qty total_items 100 %}%{% else %}—{% endif %}</td>
+            <td>
+              {% if category_stats.0.qty %}
+              <div class="progress" style="height:6px;margin-top:6px;">
+                <div class="progress-bar bg-primary" style="width:{% widthratio c.qty category_stats.0.qty 100 %}%;"></div>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -541,6 +517,18 @@ new Chart(document.getElementById('revenueChart'), {
     scales: { y: { beginAtZero: true, ticks: { callback: function(v){return v.toLocaleString();} } } } }
 });
 
+// Category doughnut
+const CAT = {{ category_json|safe }};
+if (CAT.data.some(function(v){return v>0;})) {
+  new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: { labels: CAT.labels,
+      datasets: [{ data: CAT.data, backgroundColor: COLORS, borderWidth: 2 }] },
+    options: { responsive: true, cutout: '58%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+  });
+}
+
 // Gender doughnut
 {% if male_count or female_count %}
 new Chart(document.getElementById('genderChart'), {
@@ -576,20 +564,6 @@ if (TIER.data.some(function(v){return v>0;})) {
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
   });
 }
-
-// Category doughnut
-{% if category_stats %}
-const CAT = {{ category_json|safe }};
-if (CAT.data.some(function(v){return v>0;})) {
-  new Chart(document.getElementById('categoryChart'), {
-    type: 'doughnut',
-    data: { labels: CAT.labels,
-      datasets: [{ data: CAT.data, backgroundColor: COLORS, borderWidth: 2 }] },
-    options: { responsive: true, cutout: '58%',
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
-  });
-}
-{% endif %}
 }window.__ehrChartInit=_c;_c();
 </script>
 

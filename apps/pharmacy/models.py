@@ -255,6 +255,10 @@ class Dispensing(AuditModel):
     dispensed_at = models.DateTimeField(default=timezone.now)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        help_text='Discount percentage (0-100)',
+    )
     amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.TextField(blank=True)
     is_otc = models.BooleanField(
@@ -275,6 +279,17 @@ class Dispensing(AuditModel):
 
     class Meta:
         ordering = ['-dispensed_at']
+
+    @property
+    def net_amount(self):
+        """Total after applying flat discount and percentage discount."""
+        from decimal import Decimal
+        subtotal = self.total_amount or Decimal('0')
+        if self.discount_pct and self.discount_pct > 0:
+            subtotal -= subtotal * self.discount_pct / Decimal('100')
+        if self.discount and self.discount > 0:
+            subtotal -= self.discount
+        return max(subtotal, Decimal('0'))
 
     @property
     def customer_name(self):

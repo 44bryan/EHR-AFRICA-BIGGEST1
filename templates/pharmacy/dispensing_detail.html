@@ -631,6 +631,33 @@
               <input type="hidden" name="payment_method" id="payment-method-input" value="CASH">
             </div>
 
+            {# Discount Section #}
+            <div class="mb-3 p-2 rounded" style="background:#fefce8;border:1px solid #fef08a;">
+              <label class="form-label fw-semibold small mb-1"><i class="bi bi-percent me-1"></i>Discount</label>
+              <div class="row g-2">
+                <div class="col-6">
+                  <div class="input-group input-group-sm">
+                    <input type="number" name="discount_pct" id="discount-pct"
+                           class="form-control text-center" value="{{ dispensing.discount_pct|default:0 }}"
+                           min="0" max="100" step="0.5" placeholder="0">
+                    <span class="input-group-text">%</span>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="input-group input-group-sm">
+                    <input type="number" name="discount" id="discount-flat"
+                           class="form-control text-center" value="{{ dispensing.discount|floatformat:0|default:0 }}"
+                           min="0" step="100" placeholder="0">
+                    <span class="input-group-text">FCFA</span>
+                  </div>
+                </div>
+              </div>
+              <div class="d-flex justify-content-between mt-1 small">
+                <span class="text-muted">Subtotal: <strong id="subtotal-display">{{ dispensing.total_amount|floatformat:0|intcomma }}</strong></span>
+                <span class="text-dark fw-bold">Net: <strong id="net-display" class="text-success">{{ dispensing.total_amount|floatformat:0|intcomma }}</strong> FCFA</span>
+              </div>
+            </div>
+
             <div class="mb-2">
               <label class="form-label fw-semibold small">Amount Received (FCFA)</label>
               <input type="number" name="amount" id="amount-received"
@@ -1088,10 +1115,7 @@ function updateTotals(total, count) {
   if (tableTotal)   tableTotal.textContent = fmt;
   if (itemSummary)  itemSummary.textContent = count + ' item' + (count !== 1 ? 's' : '');
   if (itemCountBadge) itemCountBadge.textContent = count;
-  if (amtReceived) {
-    amtReceived.value = Math.round(total);
-    calcChange();
-  }
+  recalcDiscount();
   const blockedMsg = document.getElementById('payment-blocked-msg');
   if (blockedMsg) blockedMsg.classList.toggle('d-none', count > 0);
 }
@@ -1163,11 +1187,34 @@ document.querySelectorAll('.remove-item-form').forEach(function (form) {
   wireRemoveForm(form, itemId, removeUrl);
 });
 
-// ── Change calculator ──────────────────────────────────────────────────────
+// ── Discount + Change calculator ──────────────────────────────────────────
+const discPctInput  = document.getElementById('discount-pct');
+const discFlatInput = document.getElementById('discount-flat');
+const subtotalDisp  = document.getElementById('subtotal-display');
+const netDisp       = document.getElementById('net-display');
+
+function getNetTotal() {
+  let net = runningTotal;
+  const pct  = parseFloat(discPctInput  ? discPctInput.value  : 0) || 0;
+  const flat = parseFloat(discFlatInput ? discFlatInput.value : 0) || 0;
+  if (pct > 0 && pct <= 100) net -= net * pct / 100;
+  if (flat > 0) net -= flat;
+  return Math.max(0, Math.round(net));
+}
+
+function recalcDiscount() {
+  const net = getNetTotal();
+  if (subtotalDisp) subtotalDisp.textContent = Math.round(runningTotal).toLocaleString();
+  if (netDisp) netDisp.textContent = net.toLocaleString();
+  if (amtReceived) amtReceived.value = net;
+  calcChange();
+}
+
 function calcChange() {
   if (!amtReceived || !changeDueDisp) return;
   const received = parseFloat(amtReceived.value) || 0;
-  const change   = received - runningTotal;
+  const net = getNetTotal();
+  const change = received - net;
   changeDueDisp.textContent = Math.max(0, Math.round(change)).toLocaleString();
   if (changePanel) {
     changePanel.style.background = change < 0 ? '#fef2f2' : '#f0fdf4';
@@ -1179,6 +1226,8 @@ function calcChange() {
   }
 }
 if (amtReceived) amtReceived.addEventListener('input', calcChange);
+if (discPctInput)  discPctInput.addEventListener('input', recalcDiscount);
+if (discFlatInput) discFlatInput.addEventListener('input', recalcDiscount);
 calcChange();
 
 // ── Payment method toggle ──────────────────────────────────────────────────
