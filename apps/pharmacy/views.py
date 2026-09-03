@@ -384,6 +384,100 @@ def pharmacy_stats_view(request):
         {'label': 'Female', 'count': female_count},
     ])
 
+    # ── WHO Age Group Breakdown ────────────────────────────────────────
+    from datetime import date as _dt
+    WHO_BANDS = [
+        ('0-4', 0, 4), ('5-14', 5, 14), ('15-24', 15, 24), ('25-34', 25, 34),
+        ('35-44', 35, 44), ('45-54', 45, 54), ('55-64', 55, 64), ('65+', 65, 200),
+    ]
+    age_counts = {b[0]: 0 for b in WHO_BANDS}
+    paed_count = 0
+    adult_count = 0
+    # Get unique patients with DOB from this month's dispensings
+    _patient_dobs = list(
+        base.filter(patient__isnull=False)
+        .values_list('patient__date_of_birth', flat=True)
+        .distinct()
+    )
+    for dob in _patient_dobs:
+        if not dob:
+            continue
+        age = (month_start - dob).days // 365
+        if age < 15:
+            paed_count += 1
+        else:
+            adult_count += 1
+        for label, lo, hi in WHO_BANDS:
+            if lo <= age <= hi:
+                age_counts[label] += 1
+                break
+    age_json = json.dumps([{'label': k, 'count': v} for k, v in age_counts.items()])
+
+    # ── Drug Category × Sex × Age Group Audit Table ────────────────────
+    # For each drug category: male_adult, male_child, female_adult, female_child
+    _cat_gender_age_raw = list(
+        base_items.filter(drug__isnull=False, dispensing__patient__isnull=False)
+        .values(
+            'drug__category',
+            'dispensing__patient__gender',
+            'dispensing__patient__date_of_birth',
+        )
+        .annotate(cnt=Count('id'))
+    )
+    _cat_breakdown = {}
+    for row in _cat_gender_age_raw:
+        cat = row['drug__category'] or 'OTHER'
+        sex = row['dispensing__patient__gender'] or ''
+        dob = row['dispensing__patient__date_of_birth']
+        cnt = row['cnt'] or 0
+        if cat not in _cat_breakdown:
+            _cat_breakdown[cat] = {'male_adult': 0, 'male_child': 0, 'female_adult': 0, 'female_child': 0, 'total': 0}
+        is_child = False
+        if dob:
+            age = (month_start - dob).days // 365
+            is_child = age < 15
+        if sex == 'M':
+            _cat_breakdown[cat]['male_child' if is_child else 'male_adult'] += cnt
+        elif sex == 'F':
+            _cat_breakdown[cat]['female_child' if is_child else 'female_adult'] += cnt
+        _cat_breakdown[cat]['total'] += cnt
+
+    from apps.pharmacy.models import DrugCategory as _DC
+    _cat_lbl = dict(_DC.choices)
+    cat_gender_age = []
+    for cat_code, vals in sorted(_cat_breakdown.items(), key=lambda x: -x[1]['total']):
+        cat_gender_age.append({
+            'category': _cat_lbl.get(cat_code, cat_code),
+            **vals,
+        })
+
+    # ── 12-Month Rolling Trend ──────────────────────────────────────────
+    monthly_trend = []
+    for i in range(11, -1, -1):
+        _m = month - i
+        _y = year
+        while _m <= 0:
+            _m += 12
+            _y -= 1
+        _ms = _date(_y, _m, 1)
+        _me = _date(_y, _m, calendar.monthrange(_y, _m)[1])
+        _mc = Dispensing.objects.filter(
+            is_deleted=False,
+            dispensed_at__date__gte=_ms,
+            dispensed_at__date__lte=_me,
+            status=DispensingStatus.DISPENSED,
+        ).aggregate(c=Count('id'), r=Sum('total_amount'))
+        monthly_trend.append({
+            'label': _ms.strftime('%b %Y'),
+            'count': _mc['c'] or 0,
+            'revenue': float(_mc['r'] or 0),
+        })
+    monthly_trend_json = json.dumps({
+        'labels': [m['label'] for m in monthly_trend],
+        'counts': [m['count'] for m in monthly_trend],
+        'revenue': [m['revenue'] for m in monthly_trend],
+    })
+
     # Status doughnut
     status_json = json.dumps({
         'labels': ['Dispensed', 'Partial', 'Cancelled', 'Pending'],
@@ -709,12 +803,95 @@ def pharmacy_stats_view(request):
         'staff_throughput': staff_throughput,
         'rx_per_day': rx_per_day,
         'working_days': working_days,
+        # WHO Demographics
+        'age_counts': age_counts,
+        'age_json': age_json,
+        'paed_count': paed_count,
+        'adult_count': adult_count,
+        # Drug Category × Sex × Age audit table
+        'cat_gender_age': cat_gender_age,
+        # 12-month rolling trend
+        'monthly_trend_json': monthly_trend_json,
     }
     if request.GET.get('pdf'):
         from apps.reports.views import render_pdf
         context['pdf_filename'] = 'pharmacy-stats.pdf'
         return render_pdf('pharmacy/stats_pdf.html', context)
     return render(request, 'pharmacy/stats.html', context)
+
+
+@login_required
+def pharmacy_stats_csv(request):
+    """Export monthly pharmacy stats as CSV."""
+    if not (request.user.is_pharmacist or request.user.is_medical_director
+            or request.user.is_admin_staff or request.user.is_super_admin
+            or request.user.is_ceo or request.user.is_admin_director
+            or request.user.is_finance_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    import csv, calendar
+    from datetime import date as _date
+
+    today = timezone.localdate()
+    try:
+        year  = int(request.GET.get('year',  today.year))
+        month = int(request.GET.get('month', today.month))
+    except (ValueError, TypeError):
+        year, month = today.year, today.month
+
+    month_start = _date(year, month, 1)
+    month_end   = _date(year, month, calendar.monthrange(year, month)[1])
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="pharmacy-stats-{year}-{month:02d}.csv"'
+    writer = csv.writer(response)
+
+    # Header
+    writer.writerow(['Pharmacy Statistics', f'{month_start.strftime("%B %Y")}'])
+    writer.writerow([])
+
+    # Dispensing summary
+    base = Dispensing.objects.filter(
+        is_deleted=False,
+        dispensed_at__date__gte=month_start,
+        dispensed_at__date__lte=month_end,
+    )
+    _agg = base.aggregate(
+        total=Count('id'),
+        dispensed=Count('id', filter=Q(status=DispensingStatus.DISPENSED)),
+        partial=Count('id', filter=Q(status=DispensingStatus.PARTIAL)),
+        cancelled=Count('id', filter=Q(status=DispensingStatus.CANCELLED)),
+        revenue=Sum('total_amount', filter=Q(status=DispensingStatus.DISPENSED)),
+    )
+    writer.writerow(['Metric', 'Value'])
+    writer.writerow(['Total Dispensings', _agg['total']])
+    writer.writerow(['Dispensed', _agg['dispensed']])
+    writer.writerow(['Partial', _agg['partial']])
+    writer.writerow(['Cancelled', _agg['cancelled']])
+    writer.writerow(['Revenue (FCFA)', _agg['revenue'] or 0])
+    writer.writerow([])
+
+    # Gender
+    writer.writerow(['Gender', 'Count'])
+    for row in base.values('patient__gender').annotate(c=Count('id')):
+        writer.writerow([row['patient__gender'] or 'Unknown', row['c']])
+    writer.writerow([])
+
+    # Top drugs
+    writer.writerow(['Top Drugs', 'Rx Count', 'Quantity'])
+    items = DispensingItem.objects.filter(
+        dispensing__is_deleted=False,
+        dispensing__dispensed_at__date__gte=month_start,
+        dispensing__dispensed_at__date__lte=month_end,
+    )
+    top = items.values('drug__name').annotate(
+        cnt=Count('id'), qty=Sum('quantity_dispensed')
+    ).order_by('-qty')[:30]
+    for d in top:
+        writer.writerow([d['drug__name'] or 'Non-formulary', d['cnt'], d['qty'] or 0])
+
+    return response
 
 
 @login_required

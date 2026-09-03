@@ -6,6 +6,7 @@ app_name = 'pharmacy'
 urlpatterns = [
     path('', views.pharmacy_dashboard, name='dashboard'),
     path('stats/', views.pharmacy_stats_view, name='stats'),
+    path('stats/csv/', views.pharmacy_stats_csv, name='stats_csv'),
     path('alerts/', views.drug_expiry_alerts, name='expiry_alerts'),
     path('drugs/', views.drug_list, name='drug_list'),
     path('drugs/new/', views.drug_create, name='drug_create'),

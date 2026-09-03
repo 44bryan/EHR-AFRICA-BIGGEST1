@@ -23,6 +23,9 @@
       </a>
       {% endif %}
     </div>
+    <a href="{% url 'pharmacy:stats_csv' %}?year={{ year }}&month={{ month }}" class="btn btn-sm btn-success">
+      <i class="bi bi-filetype-csv me-1"></i>Export CSV
+    </a>
     <button onclick="exportStatsPDF()" class="btn btn-sm btn-danger">
       <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
     </button>
@@ -136,10 +139,12 @@
     <i class="bi bi-people-fill text-primary"></i>
     <span>Patient Demographics</span>
     <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_name }}</span>
+    <span class="badge bg-info-subtle text-info small">WHO Standard</span>
   </div>
   <div class="card-body">
     <div class="row g-4">
-      <div class="col-md-4">
+      {# Sex + Paed/Adult #}
+      <div class="col-md-3">
         <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
           <i class="bi bi-gender-ambiguous me-1"></i>Sex Distribution
         </h6>
@@ -154,29 +159,68 @@
           </div>
         </div>
         <canvas id="genderChart" height="160"></canvas>
-      </div>
-      <div class="col-md-4">
-        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
-          <i class="bi bi-pie-chart me-1"></i>Status Breakdown
-        </h6>
-        <canvas id="statusChart" height="180"></canvas>
-        <div class="mt-2 small">
-          <div class="d-flex justify-content-between py-1 border-bottom"><span><span class="badge bg-success me-1">&nbsp;</span>Dispensed</span><strong>{{ dispensed_count }}</strong></div>
-          <div class="d-flex justify-content-between py-1 border-bottom"><span><span class="badge bg-warning me-1">&nbsp;</span>Partial</span><strong>{{ partial_count }}</strong></div>
-          <div class="d-flex justify-content-between py-1"><span><span class="badge bg-secondary me-1">&nbsp;</span>Cancelled</span><strong>{{ cancelled_count }}</strong></div>
+        <div class="mt-3 pt-2 border-top">
+          <div class="d-flex justify-content-between py-1 border-bottom small">
+            <span><i class="bi bi-emoji-smile me-1 text-info"></i>Paediatric (&lt;15y)</span>
+            <strong class="text-info">{{ paed_count }}</strong>
+          </div>
+          <div class="d-flex justify-content-between py-1 small">
+            <span><i class="bi bi-person me-1 text-primary"></i>Adult (&ge;15y)</span>
+            <strong class="text-primary">{{ adult_count }}</strong>
+          </div>
         </div>
       </div>
+      {# WHO Age Groups Bar Chart #}
+      <div class="col-md-5">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-bar-chart me-1"></i>WHO Age Groups
+        </h6>
+        <canvas id="ageChart" height="180"></canvas>
+        <div class="mt-2">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light"><tr><th>Age Band</th><th class="text-end">Patients</th><th style="min-width:80px">%</th></tr></thead>
+            <tbody>
+              {% for band, count in age_counts.items %}
+              <tr>
+                <td>{{ band }}</td>
+                <td class="text-end fw-bold">{{ count }}</td>
+                <td>
+                  {% if paed_count or adult_count %}
+                  <div class="progress" style="height:5px;margin-top:4px;">
+                    <div class="progress-bar bg-info" style="width:{% widthratio count paed_count|add:adult_count 100 %}%"></div>
+                  </div>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {# Status + Tier #}
       <div class="col-md-4">
         <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
-          <i class="bi bi-layers me-1"></i>Service Tier
+          <i class="bi bi-pie-chart me-1"></i>Status &amp; Tier
         </h6>
-        <canvas id="tierChart" height="180"></canvas>
-        {% for t in tier_stats %}
-        <div class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom{% endif %} small mt-1">
-          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ t.color }};margin-right:6px;"></span>{{ t.label }}</span>
-          <strong>{{ t.count }}</strong>
+        <div class="row g-2">
+          <div class="col-6">
+            <canvas id="statusChart" height="140"></canvas>
+            <div class="mt-1 small">
+              <div class="d-flex justify-content-between py-1 border-bottom"><span><span class="badge bg-success me-1">&nbsp;</span>Dispensed</span><strong>{{ dispensed_count }}</strong></div>
+              <div class="d-flex justify-content-between py-1 border-bottom"><span><span class="badge bg-warning me-1">&nbsp;</span>Partial</span><strong>{{ partial_count }}</strong></div>
+              <div class="d-flex justify-content-between py-1"><span><span class="badge bg-secondary me-1">&nbsp;</span>Cancelled</span><strong>{{ cancelled_count }}</strong></div>
+            </div>
+          </div>
+          <div class="col-6">
+            <canvas id="tierChart" height="140"></canvas>
+            {% for t in tier_stats %}
+            <div class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom{% endif %} small mt-1">
+              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ t.color }};margin-right:6px;"></span>{{ t.label }}</span>
+              <strong>{{ t.count }}</strong>
+            </div>
+            {% endfor %}
+          </div>
         </div>
-        {% endfor %}
       </div>
     </div>
   </div>
@@ -344,15 +388,15 @@
   </div>
 </div>
 
-{# ── Revenue Trend + Rx/Day ── #}
+{# ── 12-Month Rolling Trend ── #}
 <div class="row g-3 mb-4">
   <div class="col-md-8">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-graph-up-arrow text-success me-2"></i>Revenue Trend (14 Days)
+        <i class="bi bi-graph-up-arrow text-success me-2"></i>12-Month Rolling Trend — Dispensings &amp; Revenue
       </div>
       <div class="card-body">
-        <canvas id="revenueChart" height="110"></canvas>
+        <canvas id="monthlyTrendChart" height="120"></canvas>
       </div>
     </div>
   </div>
@@ -371,6 +415,16 @@
         <div class="d-flex justify-content-between py-1 small"><span class="text-muted">Total Items</span><strong>{{ total_items }}</strong></div>
       </div>
     </div>
+  </div>
+</div>
+
+{# ── Revenue Trend (14 Days) ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-bar-chart-line text-success me-2"></i>Daily Revenue — Last 14 Days
+  </div>
+  <div class="card-body">
+    <canvas id="revenueChart" height="80"></canvas>
   </div>
 </div>
 
@@ -448,6 +502,49 @@
   </div>
 </div>
 
+{# ── Drug Category × Sex × Age Group (WHO Audit Table) ── #}
+{% if cat_gender_age %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span>Drug Category by Sex &amp; Age Group</span>
+    <span class="badge bg-info-subtle text-info small">WHO Standard</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover small mb-0">
+        <thead class="table-light">
+          <tr>
+            <th rowspan="2">Drug Category</th>
+            <th colspan="2" class="text-center border-start" style="color:#0d6efd;">Male</th>
+            <th colspan="2" class="text-center border-start" style="color:#e83e8c;">Female</th>
+            <th rowspan="2" class="text-center border-start">Total</th>
+          </tr>
+          <tr>
+            <th class="text-center border-start small text-muted">Adult</th>
+            <th class="text-center small text-muted">Child</th>
+            <th class="text-center border-start small text-muted">Adult</th>
+            <th class="text-center small text-muted">Child</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in cat_gender_age %}
+          <tr>
+            <td class="fw-semibold">{{ row.category }}</td>
+            <td class="text-center border-start">{{ row.male_adult }}</td>
+            <td class="text-center">{{ row.male_child }}</td>
+            <td class="text-center border-start">{{ row.female_adult }}</td>
+            <td class="text-center">{{ row.female_child }}</td>
+            <td class="text-center border-start fw-bold text-primary">{{ row.total }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# ── Categories Table ── #}
 {% if category_stats %}
 <div class="card border-0 shadow-sm mb-4">
@@ -503,7 +600,7 @@ new Chart(document.getElementById('dailyChart'), {
     scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
 });
 
-// Revenue trend line
+// Revenue trend line (14 days)
 const REV = {{ revenue_json|safe }};
 new Chart(document.getElementById('revenueChart'), {
   type: 'line',
@@ -515,6 +612,71 @@ new Chart(document.getElementById('revenueChart'), {
   },
   options: { responsive: true, plugins: { legend: { display: false } },
     scales: { y: { beginAtZero: true, ticks: { callback: function(v){return v.toLocaleString();} } } } }
+});
+
+// WHO Age Groups bar chart
+const AGE = {{ age_json|safe }};
+if (AGE.some(function(a){return a.count>0;})) {
+  new Chart(document.getElementById('ageChart'), {
+    type: 'bar',
+    data: {
+      labels: AGE.map(function(a){return a.label;}),
+      datasets: [{
+        label: 'Patients',
+        data: AGE.map(function(a){return a.count;}),
+        backgroundColor: ['#0dcaf0','#0dcaf0','#6366f1','#6366f1','#0d6efd','#0d6efd','#198754','#fd7e14'],
+        borderRadius: 4, borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+        x: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+// 12-Month Rolling Trend (dual axis: bars = count, line = revenue)
+const TREND = {{ monthly_trend_json|safe }};
+new Chart(document.getElementById('monthlyTrendChart'), {
+  type: 'bar',
+  data: {
+    labels: TREND.labels,
+    datasets: [
+      {
+        label: 'Dispensings',
+        data: TREND.counts,
+        backgroundColor: 'rgba(99,102,241,0.5)',
+        borderColor: '#6366f1',
+        borderWidth: 1, borderRadius: 4,
+        yAxisID: 'y'
+      },
+      {
+        label: 'Revenue (FCFA)',
+        data: TREND.revenue,
+        type: 'line',
+        borderColor: '#198754',
+        backgroundColor: 'rgba(25,135,84,.08)',
+        fill: true, tension: 0.3, pointRadius: 3,
+        pointBackgroundColor: '#198754', borderWidth: 2.5,
+        yAxisID: 'y1'
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Dispensings', font: { size: 10 } } },
+      y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false },
+        title: { display: true, text: 'Revenue (FCFA)', font: { size: 10 } },
+        ticks: { callback: function(v){return v.toLocaleString();} } }
+    }
+  }
 });
 
 // Category doughnut
