@@ -23,6 +23,18 @@ class ItemCategory(models.TextChoices):
     OTHER             = 'OTHER',              'Other'
 
 
+class ABCClass(models.TextChoices):
+    A = 'A', 'A — High Value (top 20% items = ~80% value)'
+    B = 'B', 'B — Medium Value (next 30% items = ~15% value)'
+    C = 'C', 'C — Low Value (bottom 50% items = ~5% value)'
+
+
+class VENClass(models.TextChoices):
+    VITAL     = 'V', 'Vital — Life-saving, must never stock out'
+    ESSENTIAL = 'E', 'Essential — Important but short stock tolerable'
+    NON_ESSENTIAL = 'N', 'Non-Essential — Desirable, substitutes available'
+
+
 class InventoryItem(AuditModel):
     """Master item catalogue"""
     name             = models.CharField(max_length=200)
@@ -31,10 +43,19 @@ class InventoryItem(AuditModel):
     description      = models.TextField(blank=True)
     unit             = models.CharField(max_length=50, default='unit')
     reorder_level    = models.PositiveIntegerField(default=5)
+    max_stock_level  = models.PositiveIntegerField(default=0, help_text='Maximum stock level — 0 means no limit (ISO 9001 §8.5.4)')
     current_stock    = models.PositiveIntegerField(default=0)
     unit_cost        = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     location         = models.CharField(max_length=100, blank=True, help_text='Storage location')
     is_active        = models.BooleanField(default=True)
+    barcode          = models.CharField(max_length=100, blank=True, unique=True, null=True,
+                                         help_text='Auto-generated barcode for scanning')
+
+    # ── ABC / VEN Classification (WHO Essential Medicines) ────────────────────
+    abc_class = models.CharField(max_length=1, choices=ABCClass.choices, blank=True,
+                                  help_text='ABC analysis classification by annual consumption value')
+    ven_class = models.CharField(max_length=1, choices=VENClass.choices, blank=True,
+                                  help_text='VEN analysis — Vital / Essential / Non-essential')
 
     # ── International Standard additions ──────────────────────────────────────
     requires_expiry_tracking = models.BooleanField(
@@ -65,9 +86,33 @@ class InventoryItem(AuditModel):
     def __str__(self):
         return f"{self.item_code} - {self.name}"
 
+    def save(self, *args, **kwargs):
+        if not self.barcode:
+            import uuid
+            self.barcode = f"INV{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
     @property
     def needs_reorder(self):
         return self.current_stock <= self.reorder_level
+
+    @property
+    def is_overstocked(self):
+        return self.max_stock_level > 0 and self.current_stock > self.max_stock_level
+
+    @property
+    def stock_status(self):
+        if self.current_stock == 0:
+            return 'OUT_OF_STOCK'
+        if self.needs_reorder:
+            return 'LOW'
+        if self.is_overstocked:
+            return 'OVER'
+        return 'OK'
+
+    @property
+    def stock_value(self):
+        return self.current_stock * self.unit_cost
 
     @property
     def available_batches(self):
@@ -452,3 +497,249 @@ class DepartmentReturnItem(TimeStampedModel):
 
     def __str__(self):
         return f"{self.item.name} × {self.quantity} ({self.get_condition_display()})"
+
+
+# ── Inter-Store Transfers (ISO 9001 §8.5.4) ─────────────────────────────────
+
+class StoreTransferStatus(models.TextChoices):
+    REQUESTED = 'REQUESTED', 'Requested'
+    APPROVED  = 'APPROVED',  'Approved'
+    IN_TRANSIT = 'IN_TRANSIT', 'In Transit'
+    RECEIVED  = 'RECEIVED',  'Received'
+    CANCELLED = 'CANCELLED', 'Cancelled'
+
+
+class StoreTransfer(AuditModel):
+    """Transfer stock between store locations."""
+    transfer_number = models.CharField(max_length=30, unique=True, blank=True)
+    from_location   = models.ForeignKey(StoreLocation, on_delete=models.PROTECT, related_name='transfers_out')
+    to_location     = models.ForeignKey(StoreLocation, on_delete=models.PROTECT, related_name='transfers_in')
+    status          = models.CharField(max_length=15, choices=StoreTransferStatus.choices,
+                                        default=StoreTransferStatus.REQUESTED)
+    requested_by    = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='store_transfer_requests')
+    approved_by     = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name='store_transfer_approvals')
+    received_by     = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name='store_transfers_received')
+    transfer_date   = models.DateField(default=timezone.localdate)
+    notes           = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"TRF-{self.transfer_number} ({self.from_location} → {self.to_location})"
+
+    def save(self, *args, **kwargs):
+        if not self.transfer_number:
+            today = timezone.localdate()
+            count = StoreTransfer.objects.filter(created_at__year=today.year).count() + 1
+            self.transfer_number = f"TRF-{today.strftime('%Y%m%d')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class StoreTransferItem(TimeStampedModel):
+    transfer  = models.ForeignKey(StoreTransfer, on_delete=models.CASCADE, related_name='items')
+    item      = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
+    quantity  = models.PositiveIntegerField()
+    notes     = models.CharField(max_length=200, blank=True)
+
+    def __str__(self):
+        return f"{self.item.name} × {self.quantity}"
+
+
+# ── Goods Received Note (JCI FMS.5 / ISO 9001 §8.6) ────────────────────────
+
+class GRNStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'Pending Inspection'
+    INSPECTED = 'INSPECTED', 'Inspected'
+    ACCEPTED  = 'ACCEPTED',  'Accepted — Stock Updated'
+    REJECTED  = 'REJECTED',  'Rejected'
+
+
+class GoodsReceivedNote(AuditModel):
+    """Formal goods receipt with quality inspection checklist."""
+    grn_number     = models.CharField(max_length=30, unique=True, blank=True)
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name='grns')
+    status         = models.CharField(max_length=15, choices=GRNStatus.choices, default=GRNStatus.PENDING)
+    received_date  = models.DateField(default=timezone.localdate)
+    received_by    = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='grns_received')
+    inspected_by   = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                        related_name='grns_inspected')
+    # Inspection checklist (JCI FMS.5)
+    packaging_intact    = models.BooleanField(default=False, help_text='Packaging undamaged and sealed')
+    labels_correct      = models.BooleanField(default=False, help_text='Labels match PO and are legible')
+    quantity_matches_po = models.BooleanField(default=False, help_text='Delivered qty matches PO qty')
+    expiry_acceptable   = models.BooleanField(default=False, help_text='Expiry dates within acceptable range')
+    storage_temp_ok     = models.BooleanField(default=False, help_text='Cold chain maintained (if applicable)')
+    certificates_present = models.BooleanField(default=False, help_text='COA / Batch certificates provided')
+    visual_inspection_ok = models.BooleanField(default=False, help_text='No visible damage, discoloration, leakage')
+    inspection_notes    = models.TextField(blank=True)
+    notes               = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-received_date']
+
+    def __str__(self):
+        return f"GRN-{self.grn_number} (PO {self.purchase_order.po_number})"
+
+    def save(self, *args, **kwargs):
+        if not self.grn_number:
+            today = timezone.localdate()
+            count = GoodsReceivedNote.objects.filter(received_date__year=today.year).count() + 1
+            self.grn_number = f"GRN-{today.strftime('%Y%m%d')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def inspection_score(self):
+        checks = [
+            self.packaging_intact, self.labels_correct, self.quantity_matches_po,
+            self.expiry_acceptable, self.storage_temp_ok, self.certificates_present,
+            self.visual_inspection_ok,
+        ]
+        passed = sum(1 for c in checks if c)
+        return f"{passed}/7"
+
+    @property
+    def all_checks_passed(self):
+        return all([
+            self.packaging_intact, self.labels_correct, self.quantity_matches_po,
+            self.expiry_acceptable, self.certificates_present, self.visual_inspection_ok,
+        ])
+
+
+class GRNItem(TimeStampedModel):
+    grn               = models.ForeignKey(GoodsReceivedNote, on_delete=models.CASCADE, related_name='items')
+    po_item           = models.ForeignKey(PurchaseOrderItem, on_delete=models.PROTECT)
+    quantity_received  = models.PositiveIntegerField()
+    quantity_accepted  = models.PositiveIntegerField(default=0)
+    quantity_rejected  = models.PositiveIntegerField(default=0)
+    rejection_reason   = models.CharField(max_length=200, blank=True)
+    lot_number         = models.CharField(max_length=100, blank=True)
+    expiry_date        = models.DateField(null=True, blank=True)
+    notes              = models.CharField(max_length=200, blank=True)
+
+    def __str__(self):
+        return f"{self.po_item.item.name} × {self.quantity_received}"
+
+
+# ── Wastage / Disposal Workflow (JCI MMU.3.2 / WHO) ─────────────────────────
+
+class DisposalStatus(models.TextChoices):
+    PENDING  = 'PENDING',  'Pending Authorization'
+    APPROVED = 'APPROVED', 'Authorized for Disposal'
+    DISPOSED = 'DISPOSED', 'Disposed'
+    REJECTED = 'REJECTED', 'Rejected — Return to Stock'
+
+
+class DisposalMethod(models.TextChoices):
+    INCINERATION = 'INCINERATION', 'Incineration'
+    CHEMICAL     = 'CHEMICAL',     'Chemical Treatment'
+    LANDFILL     = 'LANDFILL',     'Sanitary Landfill'
+    RETURN_VENDOR = 'RETURN_VENDOR', 'Return to Vendor'
+    DONATION     = 'DONATION',     'Donation (if still usable)'
+    OTHER        = 'OTHER',        'Other'
+
+
+class DisposalRecord(AuditModel):
+    """Formal disposal of expired / damaged / obsolete stock."""
+    disposal_number = models.CharField(max_length=30, unique=True, blank=True)
+    status          = models.CharField(max_length=15, choices=DisposalStatus.choices,
+                                        default=DisposalStatus.PENDING)
+    reason          = models.CharField(max_length=20, choices=[
+        ('EXPIRED', 'Expired'),
+        ('DAMAGED', 'Damaged'),
+        ('RECALLED', 'Recalled by Manufacturer'),
+        ('OBSOLETE', 'Obsolete / Discontinued'),
+        ('CONTAMINATED', 'Contaminated'),
+        ('OTHER', 'Other'),
+    ])
+    disposal_method = models.CharField(max_length=20, choices=DisposalMethod.choices, blank=True)
+    requested_by    = models.ForeignKey('accounts.User', on_delete=models.PROTECT,
+                                         related_name='disposal_requests')
+    authorized_by   = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name='disposal_authorizations')
+    witness         = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name='disposal_witnessed',
+                                         help_text='Second person present during disposal (JCI requirement)')
+    disposal_date   = models.DateField(null=True, blank=True)
+    notes           = models.TextField(blank=True)
+    environmental_certificate = models.BooleanField(
+        default=False, help_text='Environmental disposal certificate obtained')
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"DSP-{self.disposal_number} ({self.get_reason_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.disposal_number:
+            today = timezone.localdate()
+            count = DisposalRecord.objects.filter(created_at__year=today.year).count() + 1
+            self.disposal_number = f"DSP-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def total_value(self):
+        return sum(di.value for di in self.items.all())
+
+
+class DisposalItem(TimeStampedModel):
+    disposal  = models.ForeignKey(DisposalRecord, on_delete=models.CASCADE, related_name='items')
+    item      = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
+    batch     = models.ForeignKey(BatchStock, on_delete=models.SET_NULL, null=True, blank=True)
+    quantity  = models.PositiveIntegerField()
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes     = models.CharField(max_length=200, blank=True)
+
+    @property
+    def value(self):
+        return self.quantity * self.unit_cost
+
+    def __str__(self):
+        return f"{self.item.name} × {self.quantity}"
+
+
+# ── Stock Take Schedule ─────────────────────────────────────────────────────
+
+class StockTakeSchedule(AuditModel):
+    """Recurring stock count schedule — ISO 9001 §8.5.4."""
+    name       = models.CharField(max_length=100, help_text='e.g. Monthly Full Count, Weekly High-Value')
+    frequency  = models.CharField(max_length=20, choices=[
+        ('WEEKLY', 'Weekly'),
+        ('MONTHLY', 'Monthly'),
+        ('QUARTERLY', 'Quarterly'),
+        ('SEMI_ANNUAL', 'Semi-Annual'),
+        ('ANNUAL', 'Annual'),
+    ])
+    category_filter = models.CharField(
+        max_length=20, choices=ItemCategory.choices, blank=True,
+        help_text='Only count items in this category (blank = all items)',
+    )
+    abc_filter = models.CharField(
+        max_length=1, choices=ABCClass.choices, blank=True,
+        help_text='Only count items with this ABC class (blank = all)',
+    )
+    assigned_to = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assigned_stock_takes',
+    )
+    next_due    = models.DateField()
+    last_completed = models.DateField(null=True, blank=True)
+    is_active   = models.BooleanField(default=True)
+    notes       = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['next_due']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_frequency_display()}) — next {self.next_due}"
+
+    @property
+    def is_overdue(self):
+        return self.next_due < timezone.localdate()
+
+    @property
+    def days_until_due(self):
+        return (self.next_due - timezone.localdate()).days

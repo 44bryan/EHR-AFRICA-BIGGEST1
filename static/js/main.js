@@ -229,7 +229,7 @@ function ehrInitOnce() {
     var val = item.textContent.trim();
     if (!val) return;
     var combo = item.closest('.ehr-combo');
-    var ta = combo && combo.querySelector('textarea');
+    var ta = combo && (combo.querySelector('textarea') || combo.querySelector('input[type="text"]'));
     if (!ta) return;
     var cur = ta.value.trim();
     ta.value = cur ? cur + ', ' + val : val;
@@ -244,7 +244,7 @@ function ehrInitOnce() {
     var val = item.textContent.trim();
     if (!val) return;
     var combo = item.closest('.ehr-combo');
-    var ta = combo && combo.querySelector('textarea');
+    var ta = combo && (combo.querySelector('textarea') || combo.querySelector('input[type="text"]'));
     if (!ta) return;
     var cur = ta.value.trim();
     ta.value = cur ? cur + ', ' + val : val;
@@ -272,7 +272,7 @@ function ehrInit() {
     if (combo.dataset.ehrSuggest) return; // already initialized
     combo.dataset.ehrSuggest = '1';
 
-    var ta = combo.querySelector('textarea');
+    var ta = combo.querySelector('textarea') || combo.querySelector('input[type="text"]');
     var menu = combo.querySelector('.ehr-add-menu');
     if (!ta || !menu) return;
 
@@ -732,9 +732,9 @@ function quickAppend(sel) {
   sel.value = '';
   // textarea is always the immediate previous sibling inside .ehr-combo
   var ta = sel.previousElementSibling;
-  if (!ta || ta.tagName !== 'TEXTAREA') {
+  if (!ta || (ta.tagName !== 'TEXTAREA' && ta.tagName !== 'INPUT')) {
     var combo = sel.closest('.ehr-combo');
-    ta = combo && combo.querySelector('textarea');
+    ta = combo && (combo.querySelector('textarea') || combo.querySelector('input[type="text"]'));
   }
   if (!ta) return;
   var cur = ta.value.trim();

@@ -1,7 +1,8 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Q, Sum, F, FloatField, ExpressionWrapper
+from django.db.models import Q, Sum, F, Count, FloatField, ExpressionWrapper
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from decimal import Decimal
 from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
@@ -12,6 +13,10 @@ from .models import (
     DepartmentRequisition, RequisitionItem, RequisitionStatus,
     StoreLocation, StockCount, StockCountItem, StockCountStatus,
     DepartmentReturn, DepartmentReturnItem,
+    StoreTransfer, StoreTransferItem, StoreTransferStatus,
+    GoodsReceivedNote, GRNItem, GRNStatus,
+    DisposalRecord, DisposalItem, DisposalStatus,
+    StockTakeSchedule, ABCClass, VENClass,
 )
 
 
@@ -1044,8 +1049,12 @@ def report_expiry_alert(request):
     cutoff = today + datetime.timedelta(days=days)
     batches = BatchStock.objects.filter(
         quantity_remaining__gt=0, expiry_date__lte=cutoff,
-    ).select_related('item').order_by('expiry_date')
-    total_value = sum(b.quantity_remaining * float(b.unit_cost) for b in batches)
+    ).select_related('item').order_by('expiry_date').annotate(
+        at_risk_value=ExpressionWrapper(
+            F('quantity_remaining') * F('unit_cost'), output_field=FloatField()
+        ),
+    )
+    total_value = sum(b.at_risk_value or 0 for b in batches)
     return render(request, 'inventory/report_expiry.html', {
         'batches': batches, 'days': days, 'total_value': total_value, 'today': today,
     })
@@ -1058,3 +1067,541 @@ def report_vendor_performance(request):
         return HttpResponseForbidden('Access denied.')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('-total_orders')
     return render(request, 'inventory/report_vendors.html', {'vendors': vendors})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTER-STORE TRANSFERS (ISO 9001 §8.5.4)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def transfer_list(request):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    status = request.GET.get('status', '')
+    qs = StoreTransfer.objects.filter(is_deleted=False).select_related(
+        'from_location', 'to_location', 'requested_by',
+    )
+    if status:
+        qs = qs.filter(status=status)
+    return render(request, 'inventory/transfer_list.html', {
+        'transfers': qs[:200], 'status_filter': status,
+        'status_choices': StoreTransferStatus.choices,
+    })
+
+
+@login_required
+def transfer_create(request):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    locations = StoreLocation.objects.filter(is_active=True, is_deleted=False)
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    if request.method == 'POST':
+        from_loc = get_object_or_404(StoreLocation, pk=request.POST.get('from_location'))
+        to_loc = get_object_or_404(StoreLocation, pk=request.POST.get('to_location'))
+        if from_loc == to_loc:
+            messages.error(request, 'From and To locations must be different.')
+            return render(request, 'inventory/transfer_form.html', {
+                'locations': locations, 'items': items,
+            })
+        tr = StoreTransfer.objects.create(
+            from_location=from_loc, to_location=to_loc,
+            requested_by=request.user, created_by=request.user,
+            notes=request.POST.get('notes', '').strip(),
+        )
+        item_ids = request.POST.getlist('item_id[]')
+        qtys = request.POST.getlist('quantity[]')
+        notes_list = request.POST.getlist('item_notes[]')
+        for i, (item_id, qty_str) in enumerate(zip(item_ids, qtys)):
+            if not item_id or not qty_str:
+                continue
+            StoreTransferItem.objects.create(
+                transfer=tr,
+                item=InventoryItem.objects.get(id=item_id),
+                quantity=int(qty_str),
+                notes=notes_list[i] if i < len(notes_list) else '',
+            )
+        messages.success(request, f'Transfer {tr.transfer_number} created.')
+        return redirect('inventory:transfer_list')
+    return render(request, 'inventory/transfer_form.html', {
+        'locations': locations, 'items': items,
+    })
+
+
+@login_required
+def transfer_detail(request, transfer_id):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    tr = get_object_or_404(StoreTransfer, pk=transfer_id, is_deleted=False)
+    return render(request, 'inventory/transfer_detail.html', {
+        'transfer': tr,
+        'transfer_items': tr.items.select_related('item').all(),
+    })
+
+
+@login_required
+@require_POST
+def transfer_approve(request, transfer_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    tr = get_object_or_404(StoreTransfer, pk=transfer_id, status=StoreTransferStatus.REQUESTED)
+    tr.status = StoreTransferStatus.APPROVED
+    tr.approved_by = request.user
+    tr.save(update_fields=['status', 'approved_by', 'updated_at'])
+    messages.success(request, f'Transfer {tr.transfer_number} approved.')
+    return redirect('inventory:transfer_detail', transfer_id=tr.pk)
+
+
+@login_required
+@require_POST
+def transfer_dispatch(request, transfer_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    tr = get_object_or_404(StoreTransfer, pk=transfer_id, status=StoreTransferStatus.APPROVED)
+    # Deduct stock from source
+    for ti in tr.items.select_related('item').all():
+        item = ti.item
+        item.current_stock = max(0, item.current_stock - ti.quantity)
+        item.save(update_fields=['current_stock'])
+        StockMovement.objects.create(
+            item=item, movement_type='OUT', quantity=-ti.quantity,
+            balance_after=item.current_stock,
+            reference=f'Transfer {tr.transfer_number} to {tr.to_location.name}',
+            performed_by=request.user,
+        )
+    tr.status = StoreTransferStatus.IN_TRANSIT
+    tr.save(update_fields=['status', 'updated_at'])
+    messages.success(request, f'Transfer {tr.transfer_number} dispatched.')
+    return redirect('inventory:transfer_detail', transfer_id=tr.pk)
+
+
+@login_required
+@require_POST
+def transfer_receive(request, transfer_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    tr = get_object_or_404(StoreTransfer, pk=transfer_id, status=StoreTransferStatus.IN_TRANSIT)
+    # Add stock at destination
+    for ti in tr.items.select_related('item').all():
+        item = ti.item
+        item.current_stock += ti.quantity
+        item.save(update_fields=['current_stock'])
+        StockMovement.objects.create(
+            item=item, movement_type='IN', quantity=ti.quantity,
+            balance_after=item.current_stock,
+            reference=f'Transfer {tr.transfer_number} from {tr.from_location.name}',
+            performed_by=request.user,
+        )
+    tr.status = StoreTransferStatus.RECEIVED
+    tr.received_by = request.user
+    tr.save(update_fields=['status', 'received_by', 'updated_at'])
+    messages.success(request, f'Transfer {tr.transfer_number} received.')
+    return redirect('inventory:transfer_detail', transfer_id=tr.pk)
+
+
+@login_required
+@require_POST
+def transfer_cancel(request, transfer_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    tr = get_object_or_404(StoreTransfer, pk=transfer_id)
+    if tr.status in (StoreTransferStatus.RECEIVED,):
+        messages.error(request, 'Cannot cancel a received transfer.')
+        return redirect('inventory:transfer_detail', transfer_id=tr.pk)
+    tr.status = StoreTransferStatus.CANCELLED
+    tr.save(update_fields=['status', 'updated_at'])
+    messages.success(request, f'Transfer {tr.transfer_number} cancelled.')
+    return redirect('inventory:transfer_detail', transfer_id=tr.pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GOODS RECEIVED NOTE (JCI FMS.5 / ISO 9001 §8.6)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def grn_list(request):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    grns = GoodsReceivedNote.objects.filter(is_deleted=False).select_related(
+        'purchase_order__vendor', 'received_by',
+    )[:200]
+    return render(request, 'inventory/grn_list.html', {'grns': grns})
+
+
+@login_required
+def grn_create(request):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    received_pos = PurchaseOrder.objects.filter(
+        status='RECEIVED', is_deleted=False,
+    ).select_related('vendor')
+    if request.method == 'POST':
+        po = get_object_or_404(PurchaseOrder, pk=request.POST.get('purchase_order'))
+        grn = GoodsReceivedNote.objects.create(
+            purchase_order=po,
+            received_by=request.user,
+            created_by=request.user,
+            packaging_intact='packaging_intact' in request.POST,
+            labels_correct='labels_correct' in request.POST,
+            quantity_matches_po='quantity_matches_po' in request.POST,
+            expiry_acceptable='expiry_acceptable' in request.POST,
+            storage_temp_ok='storage_temp_ok' in request.POST,
+            certificates_present='certificates_present' in request.POST,
+            visual_inspection_ok='visual_inspection_ok' in request.POST,
+            inspection_notes=request.POST.get('inspection_notes', '').strip(),
+            notes=request.POST.get('notes', '').strip(),
+            status=GRNStatus.INSPECTED,
+        )
+        # Auto-create GRN items from PO items
+        for poi in po.items.select_related('item').all():
+            GRNItem.objects.create(
+                grn=grn, po_item=poi,
+                quantity_received=poi.quantity_received or poi.quantity_ordered,
+                quantity_accepted=poi.quantity_received or poi.quantity_ordered,
+                lot_number=poi.lot_number,
+                expiry_date=poi.expiry_date,
+            )
+        grn.inspected_by = request.user
+        grn.save(update_fields=['inspected_by'])
+        messages.success(request, f'GRN {grn.grn_number} created and inspected.')
+        return redirect('inventory:grn_detail', grn_id=grn.pk)
+    return render(request, 'inventory/grn_form.html', {'pos': received_pos})
+
+
+@login_required
+def grn_detail(request, grn_id):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    grn = get_object_or_404(GoodsReceivedNote, pk=grn_id, is_deleted=False)
+    return render(request, 'inventory/grn_detail.html', {
+        'grn': grn,
+        'grn_items': grn.items.select_related('po_item__item').all(),
+    })
+
+
+@login_required
+@require_POST
+def grn_accept(request, grn_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    grn = get_object_or_404(GoodsReceivedNote, pk=grn_id, status=GRNStatus.INSPECTED)
+    # Update stock for accepted quantities
+    for gi in grn.items.select_related('po_item__item').all():
+        item = gi.po_item.item
+        item.current_stock += gi.quantity_accepted
+        item.save(update_fields=['current_stock'])
+        StockMovement.objects.create(
+            item=item, movement_type='IN', quantity=gi.quantity_accepted,
+            balance_after=item.current_stock,
+            reference=f'GRN {grn.grn_number}',
+            performed_by=request.user,
+        )
+        # Create batch if expiry tracked
+        if item.requires_expiry_tracking and gi.expiry_date:
+            BatchStock.objects.create(
+                item=item, lot_number=gi.lot_number or grn.grn_number,
+                expiry_date=gi.expiry_date,
+                quantity_received=gi.quantity_accepted,
+                quantity_remaining=gi.quantity_accepted,
+                unit_cost=gi.po_item.unit_price,
+                purchase_order=grn.purchase_order,
+            )
+    grn.status = GRNStatus.ACCEPTED
+    grn.save(update_fields=['status', 'updated_at'])
+    # Update vendor stats
+    vendor = grn.purchase_order.vendor
+    vendor.total_orders += 1
+    po = grn.purchase_order
+    if po.expected_date and grn.received_date <= po.expected_date:
+        vendor.on_time_deliveries += 1
+    else:
+        vendor.late_deliveries += 1
+    vendor.save(update_fields=['total_orders', 'on_time_deliveries', 'late_deliveries'])
+    messages.success(request, f'GRN {grn.grn_number} accepted — stock updated.')
+    return redirect('inventory:grn_detail', grn_id=grn.pk)
+
+
+@login_required
+@require_POST
+def grn_reject(request, grn_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    grn = get_object_or_404(GoodsReceivedNote, pk=grn_id, status=GRNStatus.INSPECTED)
+    grn.status = GRNStatus.REJECTED
+    grn.notes = f"{grn.notes}\nRejection: {request.POST.get('reason', '').strip()}"
+    grn.save(update_fields=['status', 'notes', 'updated_at'])
+    # Record quality incident on vendor
+    vendor = grn.purchase_order.vendor
+    vendor.quality_incidents += 1
+    vendor.save(update_fields=['quality_incidents'])
+    messages.warning(request, f'GRN {grn.grn_number} rejected.')
+    return redirect('inventory:grn_detail', grn_id=grn.pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISPOSAL WORKFLOW (JCI MMU.3.2 / WHO)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def disposal_list(request):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    status = request.GET.get('status', '')
+    qs = DisposalRecord.objects.filter(is_deleted=False).select_related('requested_by')
+    if status:
+        qs = qs.filter(status=status)
+    return render(request, 'inventory/disposal_list.html', {
+        'disposals': qs[:200], 'status_filter': status,
+        'status_choices': DisposalStatus.choices,
+    })
+
+
+@login_required
+def disposal_create(request):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    batches = BatchStock.objects.filter(quantity_remaining__gt=0).select_related('item').order_by('item__name', 'expiry_date')
+    if request.method == 'POST':
+        dr = DisposalRecord.objects.create(
+            reason=request.POST.get('reason', 'OTHER'),
+            disposal_method=request.POST.get('disposal_method', ''),
+            notes=request.POST.get('notes', '').strip(),
+            requested_by=request.user,
+            created_by=request.user,
+        )
+        item_ids = request.POST.getlist('item_id[]')
+        batch_ids = request.POST.getlist('batch_id[]')
+        qtys = request.POST.getlist('quantity[]')
+        costs = request.POST.getlist('unit_cost[]')
+        for i, (item_id, qty_str) in enumerate(zip(item_ids, qtys)):
+            if not item_id or not qty_str:
+                continue
+            batch = None
+            if i < len(batch_ids) and batch_ids[i]:
+                try:
+                    batch = BatchStock.objects.get(pk=batch_ids[i])
+                except BatchStock.DoesNotExist:
+                    pass
+            cost = Decimal(costs[i]) if i < len(costs) and costs[i] else Decimal('0')
+            DisposalItem.objects.create(
+                disposal=dr,
+                item=InventoryItem.objects.get(id=item_id),
+                batch=batch,
+                quantity=int(qty_str),
+                unit_cost=cost,
+            )
+        messages.success(request, f'Disposal request {dr.disposal_number} submitted.')
+        return redirect('inventory:disposal_list')
+    return render(request, 'inventory/disposal_form.html', {
+        'items': items, 'batches': batches,
+    })
+
+
+@login_required
+def disposal_detail(request, disposal_id):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    dr = get_object_or_404(DisposalRecord, pk=disposal_id, is_deleted=False)
+    return render(request, 'inventory/disposal_detail.html', {
+        'disposal': dr,
+        'disposal_items': dr.items.select_related('item', 'batch').all(),
+    })
+
+
+@login_required
+@require_POST
+def disposal_authorize(request, disposal_id):
+    """Admin / Finance Director authorizes disposal."""
+    from apps.accounts.models import UserRole
+    if request.user.role not in (UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR):
+        return HttpResponseForbidden('Only Admin Director or Finance Director can authorize disposal.')
+    dr = get_object_or_404(DisposalRecord, pk=disposal_id, status=DisposalStatus.PENDING)
+    dr.status = DisposalStatus.APPROVED
+    dr.authorized_by = request.user
+    dr.save(update_fields=['status', 'authorized_by', 'updated_at'])
+    messages.success(request, f'Disposal {dr.disposal_number} authorized.')
+    return redirect('inventory:disposal_detail', disposal_id=dr.pk)
+
+
+@login_required
+@require_POST
+def disposal_dispose(request, disposal_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    dr = get_object_or_404(DisposalRecord, pk=disposal_id, status=DisposalStatus.APPROVED)
+    # Deduct from stock
+    for di in dr.items.select_related('item', 'batch').all():
+        item = di.item
+        item.current_stock = max(0, item.current_stock - di.quantity)
+        item.save(update_fields=['current_stock'])
+        StockMovement.objects.create(
+            item=item, movement_type='OUT', quantity=-di.quantity,
+            balance_after=item.current_stock,
+            reference=f'Disposal {dr.disposal_number} ({dr.get_reason_display()})',
+            performed_by=request.user,
+        )
+        # If linked to a batch, deduct from batch too
+        if di.batch:
+            di.batch.quantity_remaining = max(0, di.batch.quantity_remaining - di.quantity)
+            di.batch.save(update_fields=['quantity_remaining'])
+    dr.status = DisposalStatus.DISPOSED
+    dr.disposal_date = timezone.localdate()
+    dr.witness_id = request.POST.get('witness') or None
+    dr.environmental_certificate = 'env_cert' in request.POST
+    dr.save(update_fields=['status', 'disposal_date', 'witness', 'environmental_certificate', 'updated_at'])
+    messages.success(request, f'Disposal {dr.disposal_number} completed — stock deducted.')
+    return redirect('inventory:disposal_detail', disposal_id=dr.pk)
+
+
+@login_required
+@require_POST
+def disposal_reject(request, disposal_id):
+    from apps.accounts.models import UserRole
+    if request.user.role not in (UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR):
+        return HttpResponseForbidden('Access denied.')
+    dr = get_object_or_404(DisposalRecord, pk=disposal_id, status=DisposalStatus.PENDING)
+    dr.status = DisposalStatus.REJECTED
+    dr.notes = f"{dr.notes}\nRejection: {request.POST.get('reason', '').strip()}"
+    dr.save(update_fields=['status', 'notes', 'updated_at'])
+    messages.warning(request, f'Disposal {dr.disposal_number} rejected.')
+    return redirect('inventory:disposal_detail', disposal_id=dr.pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STOCK TAKE SCHEDULE (ISO 9001 §8.5.4)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def schedule_list(request):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    schedules = StockTakeSchedule.objects.filter(is_active=True, is_deleted=False)
+    return render(request, 'inventory/schedule_list.html', {'schedules': schedules})
+
+
+@login_required
+def schedule_create(request):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    from apps.accounts.models import User, UserRole
+    staff = User.objects.filter(role__in=[UserRole.STORE_KEEPER, UserRole.ADMIN], is_active=True).order_by('first_name')
+    if request.method == 'POST':
+        StockTakeSchedule.objects.create(
+            name=request.POST.get('name', '').strip(),
+            frequency=request.POST.get('frequency', 'MONTHLY'),
+            category_filter=request.POST.get('category_filter', ''),
+            abc_filter=request.POST.get('abc_filter', ''),
+            assigned_to_id=request.POST.get('assigned_to') or None,
+            next_due=request.POST.get('next_due'),
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        messages.success(request, 'Stock take schedule created.')
+        return redirect('inventory:schedule_list')
+    return render(request, 'inventory/schedule_form.html', {
+        'staff': staff,
+        'category_choices': ItemCategory.choices,
+        'abc_choices': ABCClass.choices,
+        'frequency_choices': StockTakeSchedule._meta.get_field('frequency').choices,
+    })
+
+
+@login_required
+@require_POST
+def schedule_start_count(request, schedule_id):
+    """Create a new StockCount from a schedule."""
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    sched = get_object_or_404(StockTakeSchedule, pk=schedule_id, is_active=True)
+    # Build item filter
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False)
+    if sched.category_filter:
+        items = items.filter(category=sched.category_filter)
+    if sched.abc_filter:
+        items = items.filter(abc_class=sched.abc_filter)
+    # Create count
+    sc = StockCount.objects.create(
+        counted_by=request.user,
+        notes=f'Scheduled: {sched.name} ({sched.get_frequency_display()})',
+        created_by=request.user,
+    )
+    for item in items:
+        StockCountItem.objects.create(
+            stock_count=sc, item=item,
+            system_quantity=item.current_stock,
+            physical_quantity=0,
+        )
+    # Update schedule
+    import datetime
+    sched.last_completed = timezone.localdate()
+    freq_days = {'WEEKLY': 7, 'MONTHLY': 30, 'QUARTERLY': 90, 'SEMI_ANNUAL': 182, 'ANNUAL': 365}
+    sched.next_due = timezone.localdate() + datetime.timedelta(days=freq_days.get(sched.frequency, 30))
+    sched.save(update_fields=['last_completed', 'next_due', 'updated_at'])
+    messages.success(request, f'Stock count {sc.count_number} created from schedule "{sched.name}" with {items.count()} items.')
+    return redirect('inventory:stock_count_detail', count_id=sc.pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ABC / VEN ANALYSIS REPORT (WHO Essential Medicines Standard)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_abc_analysis(request):
+    """ABC/VEN analysis — classify items by annual consumption value."""
+    if not _can_view_reports(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    # Calculate annual consumption value from stock movements (last 12 months)
+    cutoff = timezone.localdate() - datetime.timedelta(days=365)
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).annotate(
+        annual_usage=Coalesce(
+            Sum('movements__quantity',
+                filter=Q(movements__movement_type__in=['OUT', 'ISSUE'],
+                         movements__created_at__date__gte=cutoff)),
+            0,
+        ),
+    )
+    # Calculate annual value
+    analysis = []
+    for item in items:
+        annual_value = abs(item.annual_usage) * float(item.unit_cost)
+        analysis.append({
+            'item': item, 'annual_usage': abs(item.annual_usage),
+            'annual_value': annual_value,
+        })
+    # Sort by annual_value DESC
+    analysis.sort(key=lambda x: x['annual_value'], reverse=True)
+    grand_total = sum(a['annual_value'] for a in analysis) or 1
+    # Calculate cumulative % and assign ABC class
+    cumulative = 0
+    class_a_count = class_b_count = class_c_count = 0
+    class_a_value = class_b_value = class_c_value = 0
+    for a in analysis:
+        cumulative += a['annual_value']
+        a['cumulative_pct'] = round(cumulative / grand_total * 100, 1)
+        if a['cumulative_pct'] <= 80:
+            a['abc_class'] = 'A'
+            class_a_count += 1
+            class_a_value += a['annual_value']
+        elif a['cumulative_pct'] <= 95:
+            a['abc_class'] = 'B'
+            class_b_count += 1
+            class_b_value += a['annual_value']
+        else:
+            a['abc_class'] = 'C'
+            class_c_count += 1
+            class_c_value += a['annual_value']
+    # Auto-update ABC class on items if requested
+    if request.GET.get('apply') == '1':
+        for a in analysis:
+            item = a['item']
+            if item.abc_class != a['abc_class']:
+                item.abc_class = a['abc_class']
+                item.save(update_fields=['abc_class'])
+        messages.success(request, 'ABC classes updated on all items.')
+    return render(request, 'inventory/report_abc.html', {
+        'analysis': analysis, 'grand_total': grand_total,
+        'class_a_count': class_a_count, 'class_a_value': class_a_value,
+        'class_b_count': class_b_count, 'class_b_value': class_b_value,
+        'class_c_count': class_c_count, 'class_c_value': class_c_value,
+    })

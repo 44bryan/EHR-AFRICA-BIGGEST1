@@ -296,6 +296,8 @@ SESSION_COOKIE_SAMESITE = 'Lax'     # CSRF protection
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=(not DEBUG))
 
 # CSRF cookie
+CSRF_COOKIE_NAME = 'ehr_csrf'      # fresh name — invalidates old secure cookies
+SESSION_COOKIE_NAME = 'ehr_session' # fresh name — invalidates old secure sessions
 CSRF_COOKIE_HTTPONLY = False        # JS must read it for AJAX
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=(not DEBUG))
