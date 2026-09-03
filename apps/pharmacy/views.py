@@ -2794,12 +2794,11 @@ def quick_reorder(request):
     drugs = (
         Drug.objects.filter(is_active=True, is_deleted=False)
         .annotate(
-            _current_stock=Coalesce(
+            stock_qty=Coalesce(
                 Sum('stock_items__quantity_remaining', filter=valid_stock),
                 Value(0, output_field=IntegerField()),
             ),
         )
-        .select_related()
         .order_by('name')
     )
 
@@ -2809,9 +2808,9 @@ def quick_reorder(request):
     search = request.GET.get('q', '').strip()
 
     if stock_filter == 'out_of_stock':
-        drugs = drugs.filter(_current_stock=0)
+        drugs = drugs.filter(stock_qty=0)
     elif stock_filter == 'needs_reorder':
-        drugs = drugs.filter(_current_stock__lte=F('reorder_level'))
+        drugs = drugs.filter(stock_qty__lte=F('reorder_level'))
     # 'all' shows everything
 
     if category:
