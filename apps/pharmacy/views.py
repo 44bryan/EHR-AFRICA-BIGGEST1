@@ -1845,6 +1845,7 @@ def patient_typeahead_ajax(request):
     results = []
     for p in patients:
         results.append({
+            'id': str(p.id),
             'patient_id': p.patient_id,
             'name': p.full_name,
             'age': calculate_age(p.date_of_birth) if p.date_of_birth else None,
@@ -2488,7 +2489,7 @@ def drug_expiry_alerts(request):
         return HttpResponseForbidden()
 
     today = timezone.localdate()
-    base_qs = DrugStock.objects.filter(is_deleted=False, quantity_remaining__gt=0).select_related('drug')
+    base_qs = DrugStock.objects.filter(is_deleted=False, quantity_remaining__gt=0, expiry_date__isnull=False).select_related('drug')
 
     expired           = base_qs.filter(expiry_date__lt=today).order_by('expiry_date')
     expiring_30       = base_qs.filter(expiry_date__gte=today, expiry_date__lte=today + timezone.timedelta(days=30)).order_by('expiry_date')

@@ -171,7 +171,7 @@ class DrugStock(AuditModel):
     """Individual stock batch"""
     drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='stock_items')
     batch_number = models.CharField(max_length=100)
-    expiry_date = models.DateField()
+    expiry_date = models.DateField(null=True, blank=True)
     quantity_received = models.PositiveIntegerField()
     quantity_remaining = models.PositiveIntegerField()
     supplier = models.CharField(max_length=200, blank=True)
@@ -184,7 +184,8 @@ class DrugStock(AuditModel):
         ordering = ['expiry_date']
 
     def __str__(self):
-        return f"{self.drug.name} - Batch {self.batch_number} (Exp: {self.expiry_date})"
+        exp = self.expiry_date.strftime('%Y-%m-%d') if self.expiry_date else 'No expiry'
+        return f"{self.drug.name} - Batch {self.batch_number} ({exp})"
 
     def save(self, *args, **kwargs):
         # Lock quantity_received after initial creation — cannot be modified
@@ -199,10 +200,14 @@ class DrugStock(AuditModel):
 
     @property
     def is_expired(self):
+        if not self.expiry_date:
+            return False
         return self.expiry_date < timezone.localdate()
 
     @property
     def days_to_expiry(self):
+        if not self.expiry_date:
+            return None
         delta = self.expiry_date - timezone.localdate()
         return delta.days
 

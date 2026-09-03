@@ -137,13 +137,15 @@
     var q = input.value.trim();
     if (!q) { results.style.display='none'; return; }
     timer = setTimeout(function() {
-      fetch('/patients/search/?q=' + encodeURIComponent(q), {headers:{'X-Requested-With':'XMLHttpRequest'}})
+      fetch('{% url "pharmacy:patient_typeahead_ajax" %}?q=' + encodeURIComponent(q), {credentials:'same-origin'})
         .then(r => r.json())
         .then(function(data) {
-          if (!data.length) { results.style.display='none'; return; }
-          results.innerHTML = data.map(function(p) {
+          var list = data.results || [];
+          if (!list.length) { results.style.display='none'; return; }
+          results.innerHTML = list.map(function(p) {
             return '<a class="dropdown-item small py-2" href="#" data-id="'+p.id+'" data-name="'+p.name+' ('+p.patient_id+')">' +
-              '<strong>'+p.name+'</strong> <span class="text-muted ms-2">'+p.patient_id+'</span></a>';
+              '<strong>'+p.name+'</strong> <span class="text-muted ms-2">'+p.patient_id+'</span>' +
+              (p.pending_rx ? ' <span class=\"badge bg-warning text-dark ms-1\">'+p.pending_rx+' Rx</span>' : '') + '</a>';
           }).join('');
           results.style.display = 'block';
           results.querySelectorAll('a').forEach(function(a) {
