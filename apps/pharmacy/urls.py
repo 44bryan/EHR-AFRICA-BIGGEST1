@@ -114,6 +114,9 @@ urlpatterns = [
     path('barcode-labels/', views.barcode_labels_view, name='barcode_labels'),
     path('generate-barcodes/', views.generate_barcodes_bulk, name='generate_barcodes_bulk'),
 
+    # ── Quick Reorder (smart PO from low/out-of-stock) ──────────────
+    path('quick-reorder/', views.quick_reorder, name='quick_reorder'),
+
     # ── Head Pharmacist: Advanced Reports ───────────────────────────
     path('reports/abc/', views.abc_analysis, name='report_abc'),
     path('reports/ven/', views.ven_analysis, name='report_ven'),

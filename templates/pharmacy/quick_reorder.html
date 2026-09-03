@@ -1,0 +1,183 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Quick Reorder — Pharmacy{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-arrow-repeat me-2 text-primary"></i>Quick Reorder</h4>
+    <p class="text-muted small mb-0">Select low-stock or out-of-stock drugs, then generate a Purchase Order</p>
+  </div>
+  <a href="{% url 'pharmacy:purchase_order_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Purchase Orders
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filters ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-3 col-6">
+        <label class="form-label small mb-0 fw-semibold">Stock Status</label>
+        <select name="filter" class="form-select form-select-sm">
+          <option value="needs_reorder" {% if stock_filter == 'needs_reorder' %}selected{% endif %}>Low & Out of Stock</option>
+          <option value="out_of_stock" {% if stock_filter == 'out_of_stock' %}selected{% endif %}>Out of Stock Only</option>
+          <option value="all" {% if stock_filter == 'all' %}selected{% endif %}>All Active Drugs</option>
+        </select>
+      </div>
+      <div class="col-md-2 col-6">
+        <label class="form-label small mb-0 fw-semibold">Category</label>
+        <select name="category" class="form-select form-select-sm">
+          <option value="">All Categories</option>
+          {% for code, label in categories %}
+          <option value="{{ code }}" {% if category == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 col-8">
+        <label class="form-label small mb-0 fw-semibold">Search</label>
+        <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm" placeholder="Drug name or generic...">
+      </div>
+      <div class="col-md-1 col-4">
+        <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-funnel me-1"></i>Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Drug Selection Table ── #}
+<form method="post" id="reorderForm">
+  {% csrf_token %}
+
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="d-flex gap-2 align-items-center">
+      <button type="button" class="btn btn-sm btn-outline-primary" id="selectAllBtn">
+        <i class="bi bi-check2-all me-1"></i>Select All
+      </button>
+      <span class="text-muted small" id="selInfo">0 drugs selected</span>
+    </div>
+    <button type="submit" class="btn btn-success btn-sm fw-bold" id="createPoBtn" disabled>
+      <i class="bi bi-cart-plus me-1"></i>Create Purchase Order (<span id="selCount">0</span>)
+    </button>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:36px"><input type="checkbox" id="checkAll" title="Select all"></th>
+              <th>Drug Name</th>
+              <th>Generic</th>
+              <th>Category</th>
+              <th class="text-center">Current Stock</th>
+              <th class="text-center">Reorder Level</th>
+              <th class="text-center" style="width:90px">Deficit</th>
+              <th class="text-end" style="width:110px">Order Qty</th>
+              <th class="text-end">Cost Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for drug in drugs %}
+            <tr class="{% if drug._current_stock == 0 %}table-danger{% elif drug._current_stock <= drug.reorder_level %}table-warning{% endif %}">
+              <td>
+                <input type="checkbox" class="drug-cb" name="drug_ids" value="{{ drug.id }}">
+              </td>
+              <td>
+                <span class="fw-semibold">{{ drug.name }}</span>
+                {% if drug.strength %}<small class="text-muted ms-1">{{ drug.strength }}</small>{% endif %}
+              </td>
+              <td class="small">{{ drug.generic_name }}</td>
+              <td><span class="badge bg-light text-dark">{{ drug.get_category_display }}</span></td>
+              <td class="text-center">
+                {% if drug._current_stock == 0 %}
+                  <span class="badge bg-danger">0 — OUT</span>
+                {% elif drug._current_stock <= drug.reorder_level %}
+                  <span class="badge bg-warning text-dark">{{ drug._current_stock }}</span>
+                {% else %}
+                  <span class="badge bg-success">{{ drug._current_stock }}</span>
+                {% endif %}
+              </td>
+              <td class="text-center text-muted">{{ drug.reorder_level }}</td>
+              <td class="text-center">
+                {% if drug._current_stock < drug.reorder_level %}
+                  <span class="text-danger fw-bold" data-deficit data-reorder="{{ drug.reorder_level }}" data-stock="{{ drug._current_stock }}"></span>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <input type="number" name="order_qty" class="form-control form-control-sm text-end order-qty"
+                       value="{{ drug.reorder_level }}"
+                       min="1" style="width:80px;display:inline-block" disabled>
+              </td>
+              <td class="text-end small">{{ drug.cost_price|floatformat:0 }} XAF</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="9" class="text-center text-muted py-4">No drugs match your filter criteria.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+// Compute deficit and suggested order qty
+document.querySelectorAll('[data-deficit]').forEach(function(el) {
+  var reorder = parseInt(el.dataset.reorder) || 0;
+  var stock   = parseInt(el.dataset.stock) || 0;
+  var deficit = reorder - stock;
+  el.textContent = deficit > 0 ? deficit : 0;
+  // Also set the order qty input to the deficit
+  var row = el.closest('tr');
+  var qtyInput = row.querySelector('.order-qty');
+  if (qtyInput && deficit > 0) qtyInput.value = deficit;
+});
+
+(function() {
+  var checkAll   = document.getElementById('checkAll');
+  var selectBtn  = document.getElementById('selectAllBtn');
+  var createBtn  = document.getElementById('createPoBtn');
+  var countEl    = document.getElementById('selCount');
+  var infoEl     = document.getElementById('selInfo');
+  var allCbs     = document.querySelectorAll('.drug-cb');
+
+  function updateUI() {
+    var checked = document.querySelectorAll('.drug-cb:checked');
+    var n = checked.length;
+    countEl.textContent = n;
+    infoEl.textContent  = n + ' drug' + (n !== 1 ? 's' : '') + ' selected';
+    createBtn.disabled  = n === 0;
+    // Enable/disable qty inputs based on checkbox
+    allCbs.forEach(function(cb) {
+      var row = cb.closest('tr');
+      var qtyInput = row.querySelector('.order-qty');
+      if (qtyInput) qtyInput.disabled = !cb.checked;
+    });
+  }
+
+  if (checkAll) {
+    checkAll.addEventListener('change', function() {
+      allCbs.forEach(function(cb) { cb.checked = checkAll.checked; });
+      updateUI();
+    });
+  }
+
+  selectBtn.addEventListener('click', function() {
+    var anyUnchecked = Array.from(allCbs).some(function(cb) { return !cb.checked; });
+    allCbs.forEach(function(cb) { cb.checked = anyUnchecked; });
+    if (checkAll) checkAll.checked = anyUnchecked;
+    updateUI();
+  });
+
+  allCbs.forEach(function(cb) {
+    cb.addEventListener('change', updateUI);
+  });
+})();
+</script>
+{% endblock %}

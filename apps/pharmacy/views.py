@@ -2662,8 +2662,29 @@ def purchase_order_create(request):
             return redirect('pharmacy:purchase_order_detail', po_id=po.id)
     else:
         form = PurchaseOrderForm()
+
     drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
-    return render(request, 'pharmacy/purchase_order_form.html', {'form': form, 'drugs': drugs})
+
+    # Pick up pre-selected drugs from Quick Reorder
+    reorder_items = request.session.pop('reorder_items', None) or []
+    prefill = []
+    for item in reorder_items:
+        try:
+            d = Drug.objects.get(id=item['drug_id'], is_deleted=False)
+            prefill.append({
+                'drug_id': str(d.id),
+                'drug_name': f'{d.name} {d.strength}'.strip(),
+                'qty': item.get('qty') or d.reorder_level or 10,
+                'unit_cost': float(d.cost_price),
+            })
+        except Drug.DoesNotExist:
+            pass
+
+    import json
+    return render(request, 'pharmacy/purchase_order_form.html', {
+        'form': form, 'drugs': drugs,
+        'prefill_json': json.dumps(prefill),
+    })
 
 
 @login_required
@@ -2750,6 +2771,82 @@ def receive_purchase_order(request, po_id):
     else:
         messages.error(request, 'No valid receipt data submitted.')
     return redirect('pharmacy:purchase_order_detail', po_id=po.id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# QUICK REORDER — smart PO creation from low / out-of-stock drugs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def quick_reorder(request):
+    """Show low/out-of-stock drugs with checkboxes; POST creates a PO pre-filled."""
+    if not _can_manage_pharmacy(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    valid_stock = Q(
+        stock_items__is_deleted=False,
+        stock_items__quantity_remaining__gt=0,
+        stock_items__expiry_date__gte=today,
+    )
+
+    drugs = (
+        Drug.objects.filter(is_active=True, is_deleted=False)
+        .annotate(
+            _current_stock=Coalesce(
+                Sum('stock_items__quantity_remaining', filter=valid_stock),
+                Value(0, output_field=IntegerField()),
+            ),
+        )
+        .select_related()
+        .order_by('name')
+    )
+
+    # Filters
+    stock_filter = request.GET.get('filter', 'needs_reorder')  # needs_reorder, out_of_stock, all
+    category = request.GET.get('category', '')
+    search = request.GET.get('q', '').strip()
+
+    if stock_filter == 'out_of_stock':
+        drugs = drugs.filter(_current_stock=0)
+    elif stock_filter == 'needs_reorder':
+        drugs = drugs.filter(_current_stock__lte=F('reorder_level'))
+    # 'all' shows everything
+
+    if category:
+        drugs = drugs.filter(category=category)
+    if search:
+        drugs = drugs.filter(Q(name__icontains=search) | Q(generic_name__icontains=search))
+
+    # POST: redirect to PO create with selected drug IDs in session
+    if request.method == 'POST':
+        selected_ids = request.POST.getlist('drug_ids')
+        selected_qtys = request.POST.getlist('order_qty')
+        if not selected_ids:
+            messages.warning(request, 'No drugs selected.')
+            return redirect('pharmacy:quick_reorder')
+        # Store in session for PO create to pick up
+        reorder_items = []
+        for did, qty in zip(selected_ids, selected_qtys):
+            try:
+                reorder_items.append({'drug_id': did, 'qty': int(qty) if qty else 0})
+            except (ValueError, TypeError):
+                reorder_items.append({'drug_id': did, 'qty': 0})
+        request.session['reorder_items'] = reorder_items
+        return redirect('pharmacy:purchase_order_create')
+
+    from .models import DrugCategory
+    categories = DrugCategory.choices
+
+    return render(request, 'pharmacy/quick_reorder.html', {
+        'drugs': drugs,
+        'stock_filter': stock_filter,
+        'category': category,
+        'search': search,
+        'categories': categories,
+        'suppliers': Supplier.objects.filter(is_deleted=False).order_by('name'),
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
