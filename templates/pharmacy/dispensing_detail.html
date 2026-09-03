@@ -184,10 +184,11 @@
             </thead>
             <tbody>
               {% for rx_item in dispensing.prescription.items.all %}
-              <tr>
+              <tr class="rx-line-{{ rx_item.pk }}">
                 <td class="fw-semibold">
                   {{ rx_item.drug_name }}
                   {% if rx_item.concentration %}<span class="text-muted">{{ rx_item.concentration }}</span>{% endif %}
+                  {% if rx_item.unavailable %}<span class="badge bg-danger ms-1" style="font-size:.65rem;"><i class="bi bi-x-circle me-1"></i>{{ rx_item.unavailable.get_reason_display }}</span>{% endif %}
                   <br><span class="text-muted fw-normal">{{ rx_item.get_drug_form_display }}</span>
                 </td>
                 <td>
@@ -201,14 +202,27 @@
                 <td class="text-muted">{{ rx_item.get_route_display }}</td>
                 <td class="text-muted">{% if rx_item.eye != 'NA' %}{{ rx_item.get_eye_display }}{% else %}—{% endif %}</td>
                 <td class="text-center fw-bold">{{ rx_item.quantity }}</td>
-                <td class="text-center">
+                <td class="text-center text-nowrap">
                   {% if request.user.can_dispense_pharmacy or request.user == dispensing.dispensed_by %}
+                  {% if not rx_item.unavailable %}
                   <button type="button" class="btn btn-sm btn-success py-0 rx-quick-add"
                           data-name="{{ rx_item.drug_name }}"
                           data-qty="{{ rx_item.quantity }}"
                           data-instr="{{ rx_item.dose }} {{ rx_item.frequency }}{% with rx_item.frequency|time_slots as ts %}{% if ts %} [{{ ts }}]{% endif %}{% endwith %}{% if rx_item.duration %} × {{ rx_item.duration }}{% endif %}{% if rx_item.eye != 'NA' %} — {{ rx_item.get_eye_display }}{% endif %}{% if rx_item.special_instructions %} — {{ rx_item.special_instructions }}{% endif %}">
                     <i class="bi bi-check-circle me-1"></i>Fill
                   </button>
+                  <button type="button" class="btn btn-sm btn-outline-warning py-0 mark-unavail-btn"
+                          data-item="{{ rx_item.pk }}" data-drug="{{ rx_item.drug_name }}"
+                          title="Mark as unavailable (out of stock, expired, etc.)">
+                    <i class="bi bi-dash-circle"></i>
+                  </button>
+                  {% else %}
+                  <span class="badge bg-danger me-1" style="font-size:.7rem;">Unavailable</span>
+                  <button type="button" class="btn btn-sm btn-outline-success py-0 unmark-unavail-btn"
+                          data-item="{{ rx_item.pk }}" title="Restore as available">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                  </button>
+                  {% endif %}
                   {% else %}
                   <span class="text-muted small">—</span>
                   {% endif %}
@@ -219,7 +233,7 @@
           </table>
         </div>
         <div class="px-3 py-2 border-top bg-light" style="font-size:.78rem;">
-          <i class="bi bi-info-circle me-1 text-secondary"></i>Click <strong>Fill</strong> to add one drug, or <strong>Fill All Rx</strong> in the header to add every formulary drug at once.
+          <i class="bi bi-info-circle me-1 text-secondary"></i>Click <strong>Fill</strong> to add a drug, <strong>Fill All Rx</strong> to add every formulary drug at once, or <i class="bi bi-dash-circle text-warning"></i> to mark a line as <strong>unavailable</strong> (out of stock, expired, etc.).
         </div>
       </div>
     </div>
@@ -1591,6 +1605,51 @@ document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
     camStatus.textContent = 'Point camera at barcode on drug package';
   }
 })();
+
+/* ── Mark / Unmark Rx line unavailable ──────────────────────────── */
+document.querySelectorAll('.mark-unavail-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var itemId = this.dataset.item;
+    var drugName = this.dataset.drug;
+    var reason = prompt(
+      'Mark "' + drugName + '" as unavailable.\n\n' +
+      'Choose reason:\n' +
+      '1 = Out of Stock\n2 = All Batches Expired\n3 = Drug Discontinued\n' +
+      '4 = Not in Formulary\n5 = Patient Declined\n6 = Other\n\nEnter number:'
+    );
+    if (!reason) return;
+    var reasonMap = {'1':'OUT_OF_STOCK','2':'EXPIRED','3':'DISCONTINUED','4':'NOT_FORMULARY','5':'DECLINED','6':'OTHER'};
+    var reasonCode = reasonMap[reason.trim()];
+    if (!reasonCode) { alert('Invalid choice.'); return; }
+    var notes = '';
+    if (reasonCode === 'OTHER') notes = prompt('Notes:') || '';
+    var fd = new FormData();
+    fd.append('item_id', itemId);
+    fd.append('reason', reasonCode);
+    fd.append('notes', notes);
+    fetch('{% url "pharmacy:mark_line_unavailable" %}', {
+      method: 'POST', body: fd,
+      headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.success) { window.location.reload(); }
+      else { alert(data.error || 'Error'); }
+    });
+  });
+});
+document.querySelectorAll('.unmark-unavail-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var itemId = this.dataset.item;
+    if (!confirm('Restore this drug line as available?')) return;
+    var fd = new FormData();
+    fd.append('item_id', itemId);
+    fetch('{% url "pharmacy:unmark_line_unavailable" %}', {
+      method: 'POST', body: fd,
+      headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.success) window.location.reload();
+    });
+  });
+});
 </script>
 
 {% endblock %}

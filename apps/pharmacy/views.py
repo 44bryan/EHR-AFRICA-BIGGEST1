@@ -1602,10 +1602,23 @@ def dispensing_list(request):
     if not _can_access_pharmacy(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    dispensings = Dispensing.objects.filter(is_deleted=False).select_related(
+    status_filter = request.GET.get('status', '')
+    qs = Dispensing.objects.filter(is_deleted=False).select_related(
         'patient', 'dispensed_by'
-    ).order_by('-dispensed_at')[:100]
-    return render(request, 'pharmacy/dispensing_list.html', {'dispensings': dispensings})
+    ).order_by('-dispensed_at')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    # My active dispensings (PENDING/PARTIAL by current user)
+    my_active = Dispensing.objects.filter(
+        is_deleted=False, dispensed_by=request.user,
+        status__in=[DispensingStatus.PENDING, DispensingStatus.PARTIAL],
+    ).select_related('patient').order_by('-dispensed_at')
+    return render(request, 'pharmacy/dispensing_list.html', {
+        'dispensings': qs[:100],
+        'my_active': my_active,
+        'status_filter': status_filter,
+        'status_choices': DispensingStatus.choices,
+    })
 
 
 @login_required

@@ -2,10 +2,10 @@
 {% load humanize %}
 {% block title %}Dispensing Records{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h1 class="h3 mb-0">Dispensing Records</h1>
-    <small class="text-muted">Last 100 dispensings</small>
+    <small class="text-muted">{% if status_filter %}Filtered by status{% else %}Last 100 dispensings{% endif %}</small>
   </div>
   <div class="d-flex gap-2">
     <button onclick="window.print()" class="btn btn-outline-dark btn-sm">
@@ -14,6 +14,53 @@
     <a href="{% url 'pharmacy:dispense' %}" class="btn btn-primary btn-sm"><i class="bi bi-capsule me-1"></i>New Dispensing</a>
   </div>
 </div>
+
+{# ── My Active Dispensings (quick resume) ── #}
+{% if my_active %}
+<div class="card border-0 shadow-sm mb-3 border-start border-4 border-warning">
+  <div class="card-header bg-warning bg-opacity-10 py-2">
+    <i class="bi bi-lightning-fill text-warning me-1"></i>
+    <span class="fw-semibold">My Active Dispensings</span>
+    <span class="badge bg-warning text-dark ms-1">{{ my_active|length }}</span>
+    <small class="text-muted ms-2">Click to resume where you left off</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 small">
+        <thead class="table-light">
+          <tr><th>Ref No.</th><th>Patient</th><th>Items</th><th>Status</th><th>Started</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for d in my_active %}
+          <tr>
+            <td><code>{{ d.dispensing_number }}</code></td>
+            <td class="fw-semibold">{{ d.customer_name }}{% if d.patient %}<br><small class="text-muted">{{ d.patient.patient_id }}</small>{% endif %}</td>
+            <td class="text-muted">{{ d.items.count }} item{{ d.items.count|pluralize }}</td>
+            <td><span class="badge {% if d.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">{{ d.get_status_display }}</span></td>
+            <td class="text-muted">{{ d.dispensed_at|date:"d M Y H:i" }}</td>
+            <td>
+              <a href="{% url 'pharmacy:dispensing_detail' d.id %}" class="btn btn-sm btn-primary py-0">
+                <i class="bi bi-play-fill me-1"></i>Resume
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Status filter pills ── #}
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <a href="{% url 'pharmacy:dispensing_list' %}" class="btn btn-sm {% if not status_filter %}btn-dark{% else %}btn-outline-secondary{% endif %}">All</a>
+  {% for val, label in status_choices %}
+  <a href="{% url 'pharmacy:dispensing_list' %}?status={{ val }}"
+     class="btn btn-sm {% if status_filter == val %}btn-dark{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+  {% endfor %}
+</div>
+
 <div class="card border-0 shadow-sm" id="dispense-list-live">
   <div class="card-body p-0">
     <div class="table-responsive">
@@ -33,7 +80,9 @@
             <td class="text-end">{{ d.total_amount|floatformat:0|intcomma }}</td>
             <td class="text-end fw-semibold {% if d.amount_paid >= d.total_amount and d.total_amount > 0 %}text-success{% else %}text-danger{% endif %}">{{ d.amount_paid|floatformat:0|intcomma }}</td>
             <td class="text-nowrap">
-              <a href="{% url 'pharmacy:dispensing_detail' d.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+              <a href="{% url 'pharmacy:dispensing_detail' d.id %}" class="btn btn-sm {% if d.status == 'PENDING' or d.status == 'PARTIAL' %}btn-primary{% else %}btn-outline-primary{% endif %} py-0">
+                {% if d.status == 'PENDING' or d.status == 'PARTIAL' %}Resume{% else %}View{% endif %}
+              </a>
               {% if d.status == 'DISPENSED' %}
               <a href="{% url 'pharmacy:dispensing_receipt' d.id %}" target="_blank" class="btn btn-sm btn-outline-success py-0">
                 <i class="bi bi-printer"></i>
@@ -42,7 +91,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="9" class="text-center text-muted py-4">No dispensing records yet</td></tr>
+          <tr><td colspan="9" class="text-center text-muted py-4">No dispensing records{% if status_filter %} with this status{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
