@@ -725,6 +725,9 @@ def drug_list(request):
     q = request.GET.get('q', '')
     category = request.GET.get('category', '')
     drug_form = request.GET.get('form', '')
+    status_filter = request.GET.get('status', '')   # active, inactive, controlled, low_stock, out_of_stock
+    sort_by = request.GET.get('sort', 'name')       # name, -name, price, -price, category, stock
+
     drugs = Drug.objects.filter(is_deleted=False).only(
         'id', 'name', 'generic_name', 'brand_name', 'strength', 'form',
         'category', 'selling_price', 'reorder_level', 'is_active', 'is_controlled',
@@ -735,7 +738,35 @@ def drug_list(request):
         drugs = drugs.filter(category=category)
     if drug_form:
         drugs = drugs.filter(form=drug_form)
-    drugs = drugs.order_by('name')
+
+    # Status filters
+    today = timezone.localdate()
+    if status_filter == 'active':
+        drugs = drugs.filter(is_active=True)
+    elif status_filter == 'inactive':
+        drugs = drugs.filter(is_active=False)
+    elif status_filter == 'controlled':
+        drugs = drugs.filter(is_controlled=True)
+    elif status_filter == 'low_stock':
+        _stock_q = Q(stock_items__is_deleted=False, stock_items__quantity_remaining__gt=0, stock_items__expiry_date__gte=today)
+        drugs = drugs.annotate(
+            _stock=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField()))
+        ).filter(_stock__gt=0, _stock__lte=F('reorder_level'))
+    elif status_filter == 'out_of_stock':
+        _stock_q = Q(stock_items__is_deleted=False, stock_items__quantity_remaining__gt=0, stock_items__expiry_date__gte=today)
+        drugs = drugs.annotate(
+            _stock=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField()))
+        ).filter(_stock=0)
+
+    # Sorting
+    SORT_MAP = {
+        'name': 'name', '-name': '-name',
+        'price': 'selling_price', '-price': '-selling_price',
+        'category': 'category', '-category': '-category',
+    }
+    order = SORT_MAP.get(sort_by, 'name')
+    drugs = drugs.order_by(order)
+
     # Paginate — 50 per page
     from django.core.paginator import Paginator
     paginator = Paginator(drugs, 50)
@@ -743,6 +774,7 @@ def drug_list(request):
     from .models import DrugCategory, DrugForm as DrugFormChoices
     return render(request, 'pharmacy/drug_list.html', {
         'drugs': page, 'search': q, 'category': category, 'drug_form': drug_form,
+        'status_filter': status_filter, 'sort_by': sort_by,
         'categories': DrugCategory.choices, 'drug_forms': DrugFormChoices.choices,
         'paginator': paginator, 'page_obj': page,
     })
