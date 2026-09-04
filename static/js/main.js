@@ -508,6 +508,9 @@ document.addEventListener('click', function (e) {
   if (link) {
     _sidebarClickedLink = link;
     _pendingSidebarActivation = true;
+    // Persist sidebar scroll position so it survives full page reloads
+    var _sb = document.getElementById('sidebarBody');
+    if (_sb) { try { sessionStorage.setItem('ehr_sidebar_scroll', _sb.scrollTop); } catch(ex){} }
     // Immediate visual feedback — no waiting for HTMX settle.
     document.querySelectorAll('#sidebar .sidebar-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
@@ -538,9 +541,20 @@ document.addEventListener('click', function (e) {
 // We deliberately do NOT listen to htmx:pushedIntoHistory because that fires
 // before the DOM has settled and can consume _pendingSidebarActivation too early,
 // leaving afterSettle with nothing to work with.
-document.addEventListener('htmx:afterSettle', function() {
+document.addEventListener('htmx:afterSettle', function(evt) {
   setActiveSidebarLink();
   buildBreadcrumbs();
+});
+
+// ── Update <title> after hx-boost swap ─────────────────────────────────────
+// hx-boost only swaps #page-content-wrapper — the <title> tag is in <head>
+// and never gets replaced. Parse the full response and extract <title>.
+document.addEventListener('htmx:beforeSwap', function(evt) {
+  var xhr = evt.detail.xhr;
+  if (!xhr) return;
+  var html = xhr.responseText || '';
+  var m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  if (m && m[1]) document.title = m[1].trim();
 });
 
 // ── Single quick-add helper (append one option to text input) ────────────────
@@ -822,6 +836,16 @@ document.addEventListener('DOMContentLoaded', function() {
   ehrInit();
   setActiveSidebarLink();  // initial active state on fresh/hard loads
   buildBreadcrumbs();
+  // Restore sidebar scroll position (survives full page reloads)
+  requestAnimationFrame(function() {
+    var _sb = document.getElementById('sidebarBody');
+    if (_sb) {
+      try {
+        var _saved = sessionStorage.getItem('ehr_sidebar_scroll');
+        if (_saved) _sb.scrollTop = parseInt(_saved, 10) || 0;
+      } catch(ex){}
+    }
+  });
 });
 
 // Re-run ehrInit after every HTMX swap (re-inits tooltips, modals, etc.)
