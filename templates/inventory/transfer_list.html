@@ -1,0 +1,110 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Inter-Store Transfers{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-arrow-left-right text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Inter-Store Transfers</h5>
+      <div class="text-muted small">Stock movement between store locations</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <a href="{% url 'inventory:transfer_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>New Transfer
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Status filter tabs -->
+<ul class="nav nav-pills mb-3 gap-1 flex-wrap">
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if not status_filter %}active{% endif %}" href="{% url 'inventory:transfer_list' %}">All</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'REQUESTED' %}active{% endif %}" href="?status=REQUESTED">Requested</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'APPROVED' %}active{% endif %}" href="?status=APPROVED">Approved</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'IN_TRANSIT' %}active{% endif %}" href="?status=IN_TRANSIT">In Transit</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'RECEIVED' %}active{% endif %}" href="?status=RECEIVED">Received</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'CANCELLED' %}active{% endif %}" href="?status=CANCELLED">Cancelled</a>
+  </li>
+</ul>
+
+<!-- Transfers table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Transfer #</th>
+            <th>Date</th>
+            <th>From Location</th>
+            <th>To Location</th>
+            <th class="text-center">Items</th>
+            <th class="text-center">Status</th>
+            <th>Requested By</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in transfers %}
+          <tr>
+            <td><strong>{{ t.transfer_number }}</strong></td>
+            <td>{{ t.transfer_date|date:"d M Y" }}</td>
+            <td>{{ t.from_location }}</td>
+            <td>{{ t.to_location }}</td>
+            <td class="text-center">
+              <span class="badge bg-light text-dark">{{ t.items.count }}</span>
+            </td>
+            <td class="text-center">
+              {% if t.status == 'REQUESTED' %}
+                <span class="badge bg-secondary">{{ t.get_status_display }}</span>
+              {% elif t.status == 'APPROVED' %}
+                <span class="badge bg-primary">{{ t.get_status_display }}</span>
+              {% elif t.status == 'IN_TRANSIT' %}
+                <span class="badge bg-info">{{ t.get_status_display }}</span>
+              {% elif t.status == 'RECEIVED' %}
+                <span class="badge bg-success">{{ t.get_status_display }}</span>
+              {% elif t.status == 'CANCELLED' %}
+                <span class="badge bg-danger">{{ t.get_status_display }}</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ t.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td>{{ t.requested_by.get_full_name }}</td>
+            <td>
+              <a href="{% url 'inventory:transfer_detail' t.id %}" class="btn btn-sm btn-outline-primary py-0 px-2">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-5">
+              <i class="bi bi-arrow-left-right fs-3 d-block mb-2"></i>
+              No transfers found.
+              <a href="{% url 'inventory:transfer_create' %}" class="d-block mt-1">Create your first transfer &rarr;</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

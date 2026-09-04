@@ -1,0 +1,177 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}New Disposal Request{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-trash3 text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">New Disposal Request</h5>
+      <div class="text-muted small">Request disposal of expired, damaged, or obsolete inventory items</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:disposal_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Disposals
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+
+  <div class="row g-4">
+    <!-- Disposal details -->
+    <div class="col-lg-8">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold">
+          <i class="bi bi-info-circle me-1"></i>Disposal Details
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+              <select name="reason" class="form-select" required>
+                <option value="">-- Select Reason --</option>
+                <option value="EXPIRED">Expired</option>
+                <option value="DAMAGED">Damaged</option>
+                <option value="RECALLED">Recalled</option>
+                <option value="OBSOLETE">Obsolete</option>
+                <option value="CONTAMINATED">Contaminated</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Disposal Method <span class="text-danger">*</span></label>
+              <select name="disposal_method" class="form-select" required>
+                <option value="">-- Select Method --</option>
+                <option value="INCINERATION">Incineration</option>
+                <option value="CHEMICAL">Chemical Treatment</option>
+                <option value="LANDFILL">Landfill</option>
+                <option value="RETURN_VENDOR">Return to Vendor</option>
+                <option value="DONATION">Donation</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Notes</label>
+              <textarea name="notes" class="form-control" rows="3"
+                        placeholder="Additional notes about this disposal request..."></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Items -->
+      <div class="card border-0 shadow-sm mt-3">
+        <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-list-ul me-1"></i>Items for Disposal</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-row">
+            <i class="bi bi-plus-lg me-1"></i>Add Row
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table align-middle mb-0 small" id="disposal-items-table">
+              <thead class="table-light">
+                <tr>
+                  <th style="min-width:200px;">Item <span class="text-danger">*</span></th>
+                  <th style="min-width:200px;">Batch (optional)</th>
+                  <th style="min-width:100px;" class="text-center">Quantity <span class="text-danger">*</span></th>
+                  <th style="min-width:130px;" class="text-end">Unit Cost (FCFA)</th>
+                  <th style="width:50px;"></th>
+                </tr>
+              </thead>
+              <tbody id="disposal-items-body">
+                <tr class="disposal-row">
+                  <td>
+                    <select name="item_id[]" class="form-select form-select-sm" required>
+                      <option value="">-- Select Item --</option>
+                      {% for item in items %}
+                      <option value="{{ item.id }}">{{ item.name }} ({{ item.item_code }})</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <select name="batch_id[]" class="form-select form-select-sm">
+                      <option value="">-- No Batch --</option>
+                      {% for batch in batches %}
+                      <option value="{{ batch.id }}">{{ batch.lot_number }} (exp: {{ batch.expiry_date|date:"d/m/Y" }})</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" name="quantity[]" class="form-control form-control-sm text-center"
+                           min="1" step="1" required placeholder="0">
+                  </td>
+                  <td>
+                    <input type="number" name="unit_cost[]" class="form-control form-control-sm text-end"
+                           min="0" step="1" placeholder="0">
+                  </td>
+                  <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 btn-remove-row" title="Remove row">
+                      <i class="bi bi-x-lg"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-send me-1"></i>Submit Disposal Request
+            </button>
+            <a href="{% url 'inventory:disposal_list' %}" class="btn btn-outline-secondary">
+              Cancel
+            </a>
+          </div>
+          <hr>
+          <div class="text-muted small">
+            <i class="bi bi-info-circle me-1"></i>
+            Once submitted, a disposal request must be authorized before items can be disposed of.
+            Include all relevant items and accurate quantities.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const tbody = document.getElementById('disposal-items-body');
+  const addBtn = document.getElementById('btn-add-row');
+
+  addBtn.addEventListener('click', function() {
+    const firstRow = tbody.querySelector('.disposal-row');
+    const newRow = firstRow.cloneNode(true);
+    // Clear values
+    newRow.querySelectorAll('select').forEach(function(sel) { sel.selectedIndex = 0; });
+    newRow.querySelectorAll('input').forEach(function(inp) { inp.value = ''; });
+    tbody.appendChild(newRow);
+    bindRemoveButtons();
+  });
+
+  function bindRemoveButtons() {
+    tbody.querySelectorAll('.btn-remove-row').forEach(function(btn) {
+      btn.onclick = function() {
+        if (tbody.querySelectorAll('.disposal-row').length > 1) {
+          btn.closest('tr').remove();
+        }
+      };
+    });
+  }
+
+  bindRemoveButtons();
+});
+</script>
+{% endblock %}

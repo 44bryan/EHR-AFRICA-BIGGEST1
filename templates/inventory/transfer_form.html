@@ -1,0 +1,151 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}New Inter-Store Transfer{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-arrow-left-right text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">New Inter-Store Transfer</h5>
+      <div class="text-muted small">Request stock movement between locations</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:transfer_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Transfers
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" id="transferForm">
+  {% csrf_token %}
+
+  <!-- Transfer details -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-info-circle me-1"></i>Transfer Details</h6>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label for="from_location" class="form-label fw-semibold">From Location <span class="text-danger">*</span></label>
+          <select name="from_location" id="from_location" class="form-select" required>
+            <option value="">-- Select source location --</option>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label for="to_location" class="form-label fw-semibold">To Location <span class="text-danger">*</span></label>
+          <select name="to_location" id="to_location" class="form-select" required>
+            <option value="">-- Select destination location --</option>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label for="notes" class="form-label fw-semibold">Notes</label>
+          <textarea name="notes" id="notes" class="form-control" rows="3" placeholder="Reason for transfer, special instructions..."></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transfer items -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-box-seam me-1"></i>Transfer Items</h6>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="addRowBtn">
+        <i class="bi bi-plus-lg me-1"></i>Add Row
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0 small" id="itemsTable">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width:250px;">Item <span class="text-danger">*</span></th>
+              <th style="width:120px;">Quantity <span class="text-danger">*</span></th>
+              <th>Notes</th>
+              <th style="width:50px;"></th>
+            </tr>
+          </thead>
+          <tbody id="itemsBody">
+            <tr class="item-row">
+              <td>
+                <select name="item_id[]" class="form-select form-select-sm" required>
+                  <option value="">-- Select item --</option>
+                  {% for item in items %}
+                  <option value="{{ item.id }}">{{ item.name }} ({{ item.item_code }})</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <input type="number" name="quantity[]" class="form-control form-control-sm" min="1" value="1" required>
+              </td>
+              <td>
+                <input type="text" name="item_notes[]" class="form-control form-control-sm" placeholder="Optional notes">
+              </td>
+              <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 remove-row" title="Remove row">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div class="d-flex justify-content-end gap-2">
+    <a href="{% url 'inventory:transfer_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-send me-1"></i>Submit Transfer Request
+    </button>
+  </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const tbody = document.getElementById('itemsBody');
+  const addBtn = document.getElementById('addRowBtn');
+
+  addBtn.addEventListener('click', function() {
+    const firstRow = tbody.querySelector('.item-row');
+    const newRow = firstRow.cloneNode(true);
+    // Reset values
+    newRow.querySelector('select[name="item_id[]"]').value = '';
+    newRow.querySelector('input[name="quantity[]"]').value = '1';
+    newRow.querySelector('input[name="item_notes[]"]').value = '';
+    tbody.appendChild(newRow);
+    bindRemoveButtons();
+  });
+
+  function bindRemoveButtons() {
+    document.querySelectorAll('.remove-row').forEach(function(btn) {
+      btn.onclick = function() {
+        if (tbody.querySelectorAll('.item-row').length > 1) {
+          btn.closest('.item-row').remove();
+        }
+      };
+    });
+  }
+  bindRemoveButtons();
+
+  // Prevent same from/to location
+  document.getElementById('transferForm').addEventListener('submit', function(e) {
+    var from = document.getElementById('from_location').value;
+    var to = document.getElementById('to_location').value;
+    if (from && to && from === to) {
+      e.preventDefault();
+      alert('Source and destination locations cannot be the same.');
+    }
+  });
+});
+</script>
+{% endblock %}

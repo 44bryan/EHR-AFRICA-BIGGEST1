@@ -1,0 +1,57 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Compare Quotations{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-columns-gap me-2"></i>Compare Quotations</h5>
+    <a href="{% url 'inventory:quotation_list' %}" class="btn btn-sm btn-outline-secondary">Back to List</a>
+  </div>
+
+  {% if not quotations %}
+  <div class="alert alert-info">Select quotations to compare by adding <code>?rfq=ID1&rfq=ID2</code> to the URL, or use the checkboxes on the quotation list.</div>
+  {% else %}
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered align-middle" style="font-size:.82rem;">
+      <thead class="table-light">
+        <tr>
+          <th>Item</th>
+          {% for q in quotations %}
+          <th class="text-center">
+            <div class="fw-bold">{{ q.vendor.name }}</div>
+            <div class="text-muted small">{{ q.rfq_number }}</div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in comparison %}
+      <tr>
+        <td class="fw-semibold">{{ row.item.name }}<br><span class="text-muted small">{{ row.item.item_code }}</span></td>
+        {% for q in quotations %}
+        {% with qid=q.pk|stringformat:"s" %}
+        <td class="text-center">
+          {% if qid in row.quotes %}
+            <div class="fw-bold">{{ row.quotes|get_item:qid|get_item:"price"|intcomma }} F</div>
+            <div class="text-muted small">{{ row.quotes|get_item:qid|get_item:"qty" }} × {{ row.quotes|get_item:qid|get_item:"price"|intcomma }}</div>
+            <div class="small">= {{ row.quotes|get_item:qid|get_item:"subtotal"|intcomma }} F</div>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        {% endwith %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="table-warning fw-bold">
+        <td>TOTAL</td>
+        {% for q in quotations %}
+        <td class="text-center">{{ q.total_amount|intcomma }} F</td>
+        {% endfor %}
+      </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

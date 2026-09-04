@@ -1,0 +1,96 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Stock Exit Note{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-right me-2"></i>Stock Exit / Issue Note</h5>
+      <p class="text-muted small mb-0">ISO 9001 &sect;8.5.2 &mdash; Controlled Stock Release</p>
+    </div>
+    <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Exit Log</a>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="row g-2 mb-3">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Issued To (Department) <span class="text-danger">*</span></label>
+        <select name="department" class="form-select form-select-sm" required>
+          <option value="">-- Select Department --</option>
+          {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Reason <span class="text-danger">*</span></label>
+        <select name="reason" class="form-select form-select-sm" required>
+          {% for val, label in reasons %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Reference / Req. No.</label>
+        <input type="text" name="reference" class="form-control form-control-sm" placeholder="REQ-001 or reference">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Authorized By</label>
+        <input type="text" name="authorized_by" class="form-control form-control-sm" placeholder="Supervisor name">
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small">Items to Issue</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addExitLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0" style="font-size:.82rem;">
+          <thead class="table-light">
+            <tr><th>Item</th><th style="width:100px;">Available</th><th style="width:100px;">Qty to Issue</th><th style="width:40px;"></th></tr>
+          </thead>
+          <tbody id="exitLines">
+            <tr class="exit-line">
+              <td>
+                <select name="item_id[]" class="form-select form-select-sm" required onchange="showStock(this)">
+                  <option value="">-- Select Item --</option>
+                  {% for item in items %}
+                  <option value="{{ item.id }}" data-stock="{{ item.current_stock }}" data-unit="{{ item.unit }}">{{ item.item_code }} &mdash; {{ item.name }} ({{ item.unit }})</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="stock-display text-muted text-center">—</td>
+              <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" required></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove()"><i class="bi bi-x"></i></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label small fw-semibold">Notes</label>
+      <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks..."></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Issue Stock</button>
+    <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+  </form>
+</div>
+
+<script>
+function addExitLine(){
+  const tbody = document.getElementById('exitLines');
+  const first = tbody.querySelector('.exit-line');
+  const clone = first.cloneNode(true);
+  clone.querySelectorAll('input').forEach(i => i.value = '');
+  clone.querySelector('select').selectedIndex = 0;
+  clone.querySelector('.stock-display').textContent = '—';
+  tbody.appendChild(clone);
+}
+function showStock(sel){
+  const opt = sel.options[sel.selectedIndex];
+  const stock = opt?.dataset?.stock || '—';
+  const unit = opt?.dataset?.unit || '';
+  sel.closest('tr').querySelector('.stock-display').textContent = stock + ' ' + unit;
+}
+</script>
+{% endblock %}

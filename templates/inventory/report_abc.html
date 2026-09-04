@@ -1,0 +1,155 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}ABC / VEN Analysis Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-bar-chart text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">ABC / VEN Analysis Report</h5>
+      <div class="text-muted small">Annual usage value classification and VEN categorization</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print();">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-md-4">
+    <div class="card border-0 shadow-sm border-start border-danger border-4">
+      <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small">Class A Items</div>
+            <div class="fs-3 fw-bold text-danger">{{ class_a_count|intcomma }}</div>
+            <div class="text-muted small">{{ class_a_value|floatformat:0|intcomma }} FCFA</div>
+          </div>
+          <div class="bg-danger bg-opacity-10 rounded-3 p-3">
+            <span class="fs-4 fw-bold text-danger">A</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-md-4">
+    <div class="card border-0 shadow-sm border-start border-warning border-4">
+      <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small">Class B Items</div>
+            <div class="fs-3 fw-bold text-warning">{{ class_b_count|intcomma }}</div>
+            <div class="text-muted small">{{ class_b_value|floatformat:0|intcomma }} FCFA</div>
+          </div>
+          <div class="bg-warning bg-opacity-10 rounded-3 p-3">
+            <span class="fs-4 fw-bold text-warning">B</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-md-4">
+    <div class="card border-0 shadow-sm border-start border-success border-4">
+      <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small">Class C Items</div>
+            <div class="fs-3 fw-bold text-success">{{ class_c_count|intcomma }}</div>
+            <div class="text-muted small">{{ class_c_value|floatformat:0|intcomma }} FCFA</div>
+          </div>
+          <div class="bg-success bg-opacity-10 rounded-3 p-3">
+            <span class="fs-4 fw-bold text-success">C</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Analysis Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Item Name</th>
+            <th>Item Code</th>
+            <th>Category</th>
+            <th class="text-end">Annual Usage Value (FCFA)</th>
+            <th class="text-end">Cumulative %</th>
+            <th class="text-center">ABC Class</th>
+            <th class="text-center">VEN Class</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in analysis %}
+          <tr>
+            <td class="fw-semibold">{{ item.item.name }}</td>
+            <td><code>{{ item.item.item_code }}</code></td>
+            <td>
+              <span class="badge bg-light text-dark border">{{ item.item.get_category_display }}</span>
+            </td>
+            <td class="text-end">{{ item.annual_value|floatformat:0|intcomma }}</td>
+            <td class="text-end">{{ item.cumulative_pct|floatformat:1 }}%</td>
+            <td class="text-center">
+              {% if item.abc_class == 'A' %}
+              <span class="badge bg-danger">A</span>
+              {% elif item.abc_class == 'B' %}
+              <span class="badge bg-warning text-dark">B</span>
+              {% elif item.abc_class == 'C' %}
+              <span class="badge bg-success">C</span>
+              {% else %}
+              <span class="badge bg-secondary">{{ item.abc_class }}</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if item.item.ven_class == 'V' %}
+              <span class="badge bg-danger">V</span>
+              {% elif item.item.ven_class == 'E' %}
+              <span class="badge bg-warning text-dark">E</span>
+              {% elif item.item.ven_class == 'N' %}
+              <span class="badge bg-success">N</span>
+              {% else %}
+              <span class="badge bg-secondary">{{ item.item.ven_class|default:"--" }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-bar-chart fs-3 d-block mb-2"></i>
+              No analysis data available. Ensure items have usage records.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if analysis %}
+  <div class="card-footer bg-white border-top small text-muted d-flex justify-content-between flex-wrap gap-2">
+    <span>{{ analysis|length }} item{{ analysis|length|pluralize }} analysed</span>
+    <span>
+      <span class="badge bg-danger me-1">A = ~70% value</span>
+      <span class="badge bg-warning text-dark me-1">B = ~20% value</span>
+      <span class="badge bg-success me-1">C = ~10% value</span>
+      <span class="mx-2">|</span>
+      <span class="badge bg-danger me-1">V = Vital</span>
+      <span class="badge bg-warning text-dark me-1">E = Essential</span>
+      <span class="badge bg-success">N = Non-essential</span>
+    </span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

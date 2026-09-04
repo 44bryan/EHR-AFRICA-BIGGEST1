@@ -1,0 +1,112 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Stock Take Schedule{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-calendar-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Stock Take Schedule</h5>
+      <div class="text-muted small">{{ schedules|length }} schedule{{ schedules|length|pluralize }} configured</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:schedule_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Schedule
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Name</th>
+            <th>Frequency</th>
+            <th>Category Filter</th>
+            <th>ABC Filter</th>
+            <th>Assigned To</th>
+            <th>Next Due</th>
+            <th>Last Completed</th>
+            <th class="text-center">Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in schedules %}
+          <tr class="{% if s.is_overdue %}table-danger{% endif %}">
+            <td class="fw-semibold">{{ s.name }}</td>
+            <td>
+              <span class="badge bg-light text-dark border">{{ s.get_frequency_display }}</span>
+            </td>
+            <td>{{ s.get_category_filter_display|default:"All" }}</td>
+            <td>
+              {% if s.abc_filter %}
+              <span class="badge {% if s.abc_filter == 'A' %}bg-danger{% elif s.abc_filter == 'B' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                Class {{ s.get_abc_filter_display }}
+              </span>
+              {% else %}
+              <span class="text-muted">All</span>
+              {% endif %}
+            </td>
+            <td>{{ s.assigned_to.get_full_name|default:"Unassigned" }}</td>
+            <td>
+              {% if s.next_due %}
+              {{ s.next_due|date:"d M Y" }}
+              {% else %}
+              <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.last_completed %}
+              {{ s.last_completed|date:"d M Y" }}
+              {% else %}
+              <span class="text-muted">Never</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if s.is_overdue %}
+              <span class="badge bg-danger">Overdue</span>
+              {% elif s.next_due %}
+              <span class="badge bg-light text-dark border">Due in {{ s.next_due|timeuntil }}</span>
+              {% else %}
+              <span class="badge bg-secondary">Not scheduled</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{% url 'inventory:schedule_start_count' s.id %}" class="btn btn-sm btn-outline-success py-0 px-2"
+                   title="Start Count">
+                  <i class="bi bi-play-fill"></i> Start Count
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-5">
+              <i class="bi bi-calendar-x fs-3 d-block mb-2"></i>
+              No stock take schedules configured yet.
+              <a href="{% url 'inventory:schedule_create' %}" class="d-block mt-1">Create your first schedule &rarr;</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if schedules %}
+  <div class="card-footer bg-white border-top small text-muted d-flex justify-content-between">
+    <span>{{ schedules|length }} schedule{{ schedules|length|pluralize }} shown</span>
+    <span>
+      <span class="badge bg-danger me-1">Red row = overdue</span>
+    </span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

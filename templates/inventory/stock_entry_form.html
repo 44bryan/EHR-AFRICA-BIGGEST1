@@ -1,0 +1,97 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Stock Entry Note{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-in-down me-2"></i>Stock Entry Note</h5>
+      <p class="text-muted small mb-0">ISO 9001 &sect;8.5.1 &mdash; Controlled Stock Receipt</p>
+    </div>
+    <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Entry Log</a>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="row g-2 mb-3">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Source <span class="text-danger">*</span></label>
+        <select name="source" class="form-select form-select-sm" required>
+          {% for val, label in sources %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Vendor / Supplier</label>
+        <input type="text" name="vendor_name" class="form-control form-control-sm" list="vendorList" placeholder="Type vendor name...">
+        <datalist id="vendorList">
+          {% for v in vendors %}<option value="{{ v.name }}">{% endfor %}
+        </datalist>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Delivery Note #</label>
+        <input type="text" name="delivery_note" class="form-control form-control-sm" placeholder="DN reference">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Invoice #</label>
+        <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="Invoice number">
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small">Items to Receive</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addEntryLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0" style="font-size:.82rem;">
+          <thead class="table-light">
+            <tr><th>Item</th><th style="width:80px;">Qty</th><th style="width:120px;">Batch / Lot</th><th style="width:130px;">Expiry Date</th><th style="width:100px;">Unit Cost</th><th style="width:40px;"></th></tr>
+          </thead>
+          <tbody id="entryLines">
+            <tr class="entry-line">
+              <td>
+                <select name="item_id[]" class="form-select form-select-sm" required onchange="fillEntryCost(this)">
+                  <option value="">-- Select Item --</option>
+                  {% for item in items %}
+                  <option value="{{ item.id }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} &mdash; {{ item.name }} ({{ item.unit }})</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" required></td>
+              <td><input type="text" name="lot_number[]" class="form-control form-control-sm" placeholder="Optional"></td>
+              <td><input type="date" name="expiry_date[]" class="form-control form-control-sm"></td>
+              <td><input type="number" name="unit_cost[]" class="form-control form-control-sm" step="0.01" min="0"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove()"><i class="bi bi-x"></i></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label small fw-semibold">Notes</label>
+      <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks..."></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg me-1"></i>Receive Stock</button>
+    <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+  </form>
+</div>
+
+<script>
+function addEntryLine(){
+  const tbody = document.getElementById('entryLines');
+  const first = tbody.querySelector('.entry-line');
+  const clone = first.cloneNode(true);
+  clone.querySelectorAll('input').forEach(i => i.value = '');
+  clone.querySelector('select').selectedIndex = 0;
+  tbody.appendChild(clone);
+}
+function fillEntryCost(sel){
+  const opt = sel.options[sel.selectedIndex];
+  const cost = opt?.dataset?.cost || '';
+  const costInput = sel.closest('tr').querySelector('input[name="unit_cost[]"]');
+  if(costInput && cost) costInput.value = cost;
+}
+</script>
+{% endblock %}

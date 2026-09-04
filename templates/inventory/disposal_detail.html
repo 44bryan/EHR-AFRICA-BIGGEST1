@@ -1,0 +1,193 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Disposal {{ disposal.disposal_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-trash3 text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">
+        {{ disposal.disposal_number }}
+        {% if disposal.status == 'PENDING' %}
+        <span class="badge bg-warning text-dark ms-2">{{ disposal.get_status_display }}</span>
+        {% elif disposal.status == 'APPROVED' %}
+        <span class="badge bg-info ms-2">{{ disposal.get_status_display }}</span>
+        {% elif disposal.status == 'DISPOSED' %}
+        <span class="badge bg-success ms-2">{{ disposal.get_status_display }}</span>
+        {% elif disposal.status == 'REJECTED' %}
+        <span class="badge bg-danger ms-2">{{ disposal.get_status_display }}</span>
+        {% endif %}
+      </h5>
+      <div class="text-muted small">
+        <span class="badge bg-light text-dark border">{{ disposal.get_reason_display }}</span>
+        &mdash; Created {{ disposal.created_at|date:"d M Y H:i" }}
+      </div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:disposal_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Disposals
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- Main content -->
+  <div class="col-lg-8">
+    <!-- Info card -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-info-circle me-1"></i>Disposal Information
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="text-muted small">Disposal Method</div>
+            <div class="fw-semibold">{{ disposal.get_disposal_method_display|default:"--" }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-muted small">Requested By</div>
+            <div class="fw-semibold">{{ disposal.requested_by.get_full_name }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-muted small">Authorized By</div>
+            <div class="fw-semibold">{{ disposal.authorized_by.get_full_name|default:"--" }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-muted small">Witness</div>
+            <div class="fw-semibold">{{ disposal.witness.get_full_name|default:"--" }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-muted small">Disposal Date</div>
+            <div class="fw-semibold">{{ disposal.disposal_date|date:"d M Y"|default:"--" }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-muted small">Environmental Certificate</div>
+            <div class="fw-semibold">
+              {% if disposal.environmental_certificate %}
+              <i class="bi bi-check-circle-fill text-success me-1"></i>Yes
+              {% else %}
+              <span class="text-muted">No</span>
+              {% endif %}
+            </div>
+          </div>
+          {% if disposal.notes %}
+          <div class="col-12">
+            <div class="text-muted small">Notes</div>
+            <div>{{ disposal.notes }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Items table -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-list-ul me-1"></i>Disposal Items
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr>
+                <th>Item</th>
+                <th>Batch / Lot</th>
+                <th class="text-center">Qty</th>
+                <th class="text-end">Unit Cost (FCFA)</th>
+                <th class="text-end">Value (FCFA)</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for di in disposal_items %}
+              <tr>
+                <td class="fw-semibold">{{ di.item.name }}</td>
+                <td>
+                  {% if di.batch %}
+                  <code>{{ di.batch.lot_number }}</code>
+                  {% else %}
+                  <span class="text-muted">--</span>
+                  {% endif %}
+                </td>
+                <td class="text-center">{{ di.quantity|intcomma }}</td>
+                <td class="text-end">{{ di.unit_cost|floatformat:0|intcomma }}</td>
+                <td class="text-end fw-semibold">{{ di.value|floatformat:0|intcomma }}</td>
+                <td class="text-muted">{{ di.notes|default:"--" }}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">
+                  <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                  No items in this disposal record.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% if disposal_items %}
+            <tfoot class="table-light">
+              <tr class="fw-bold">
+                <td colspan="4" class="text-end">Total Disposal Value:</td>
+                <td class="text-end text-danger">{{ disposal.total_value|floatformat:0|intcomma }} FCFA</td>
+                <td></td>
+              </tr>
+            </tfoot>
+            {% endif %}
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions sidebar -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-lightning me-1"></i>Actions
+      </div>
+      <div class="card-body d-grid gap-2">
+        {% if disposal.status == 'PENDING' %}
+        <form method="post" action="{% url 'inventory:disposal_authorize' disposal.id %}"
+              onsubmit="return confirm('Authorize this disposal request?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-info w-100">
+            <i class="bi bi-check-circle me-1"></i>Authorize Disposal
+          </button>
+        </form>
+        <form method="post" action="{% url 'inventory:disposal_reject' disposal.id %}"
+              onsubmit="return confirm('Reject this disposal request? This action cannot be undone.');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline-danger w-100">
+            <i class="bi bi-x-circle me-1"></i>Reject
+          </button>
+        </form>
+        {% elif disposal.status == 'APPROVED' %}
+        <form method="post" action="{% url 'inventory:disposal_dispose' disposal.id %}"
+              onsubmit="return confirm('Mark items as disposed? Stock will be deducted permanently.');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-success w-100">
+            <i class="bi bi-check2-all me-1"></i>Mark as Disposed
+          </button>
+        </form>
+        {% elif disposal.status == 'DISPOSED' %}
+        <div class="alert alert-success mb-0 small">
+          <i class="bi bi-check-circle-fill me-1"></i>
+          This disposal has been completed. Items have been removed from stock.
+        </div>
+        {% elif disposal.status == 'REJECTED' %}
+        <div class="alert alert-danger mb-0 small">
+          <i class="bi bi-x-circle-fill me-1"></i>
+          This disposal request was rejected.
+        </div>
+        {% endif %}
+
+        <hr>
+        <a href="{% url 'inventory:disposal_list' %}" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-left me-1"></i>Back to List
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

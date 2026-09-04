@@ -1,0 +1,129 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Goods Received Notes{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-clipboard-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Goods Received Notes</h5>
+      <div class="text-muted small">Inbound goods inspection and acceptance — ISO 9001:2015 &sect;8.6</div>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <a href="{% url 'inventory:grn_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Create GRN from PO
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Status filter tabs -->
+<ul class="nav nav-pills mb-3 gap-1 flex-wrap">
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if not status_filter %}active{% endif %}" href="{% url 'inventory:grn_list' %}">All</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'PENDING' %}active{% endif %}" href="?status=PENDING">Pending</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'INSPECTED' %}active{% endif %}" href="?status=INSPECTED">Inspected</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'ACCEPTED' %}active{% endif %}" href="?status=ACCEPTED">Accepted</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link py-1 px-3 {% if status_filter == 'REJECTED' %}active{% endif %}" href="?status=REJECTED">Rejected</a>
+  </li>
+</ul>
+
+<!-- GRN table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>GRN #</th>
+            <th>PO #</th>
+            <th>Received Date</th>
+            <th>Vendor</th>
+            <th class="text-center">Status</th>
+            <th class="text-center">Inspection Score</th>
+            <th>Received By</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in grns %}
+          <tr>
+            <td><strong>{{ g.grn_number }}</strong></td>
+            <td>
+              {% if g.purchase_order %}
+                <a href="{% url 'inventory:po_detail' g.purchase_order.id %}" class="text-decoration-none">
+                  {{ g.purchase_order.po_number }}
+                </a>
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td>{{ g.received_date|date:"d M Y" }}</td>
+            <td>
+              {% if g.purchase_order and g.purchase_order.vendor %}
+                {{ g.purchase_order.vendor.name }}
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if g.status == 'PENDING' %}
+                <span class="badge bg-warning text-dark">{{ g.get_status_display }}</span>
+              {% elif g.status == 'INSPECTED' %}
+                <span class="badge bg-info">{{ g.get_status_display }}</span>
+              {% elif g.status == 'ACCEPTED' %}
+                <span class="badge bg-success">{{ g.get_status_display }}</span>
+              {% elif g.status == 'REJECTED' %}
+                <span class="badge bg-danger">{{ g.get_status_display }}</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ g.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if g.inspection_score is not None %}
+                {% if g.inspection_score >= 6 %}
+                  <span class="badge bg-success">{{ g.inspection_score }}/7</span>
+                {% elif g.inspection_score >= 4 %}
+                  <span class="badge bg-warning text-dark">{{ g.inspection_score }}/7</span>
+                {% else %}
+                  <span class="badge bg-danger">{{ g.inspection_score }}/7</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td>{{ g.received_by.get_full_name }}</td>
+            <td>
+              <a href="{% url 'inventory:grn_detail' g.id %}" class="btn btn-sm btn-outline-primary py-0 px-2">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-5">
+              <i class="bi bi-clipboard-check fs-3 d-block mb-2"></i>
+              No GRNs found.
+              <a href="{% url 'inventory:grn_create' %}" class="d-block mt-1">Create your first GRN &rarr;</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

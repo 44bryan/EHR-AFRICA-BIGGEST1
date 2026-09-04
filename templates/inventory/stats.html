@@ -1,0 +1,264 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Store Analytics{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-bar-chart-line me-2"></i>General Store — Analytics &amp; KPIs</h5>
+    <div class="d-flex gap-2">
+      <div class="btn-group btn-group-sm">
+        <a href="?period=month" class="btn btn-{% if period == 'month' %}primary{% else %}outline-primary{% endif %}">Month</a>
+        <a href="?period=quarter" class="btn btn-{% if period == 'quarter' %}primary{% else %}outline-primary{% endif %}">Quarter</a>
+        <a href="?period=year" class="btn btn-{% if period == 'year' %}primary{% else %}outline-primary{% endif %}">Year</a>
+      </div>
+      <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-house"></i></a>
+    </div>
+  </div>
+  <p class="text-muted small mb-3"><i class="bi bi-calendar3 me-1"></i>Period: <strong>{{ period_label }}</strong></p>
+
+  {# ── KPI Cards ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3 col-xl-2">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Total Items</div>
+          <div class="fs-4 fw-bold text-primary">{{ total_items }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Stock Value</div>
+          <div class="fs-5 fw-bold text-success">{{ stock_value|intcomma }} F</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Low Stock</div>
+          <div class="fs-4 fw-bold text-warning">{{ low_stock }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Out of Stock</div>
+          <div class="fs-4 fw-bold text-danger">{{ out_of_stock }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Stockout Rate</div>
+          <div class="fs-4 fw-bold {% if stockout_rate > 10 %}text-danger{% elif stockout_rate > 5 %}text-warning{% else %}text-success{% endif %}">{{ stockout_rate }}%</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Overstocked</div>
+          <div class="fs-4 fw-bold text-info">{{ overstocked }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Second row KPIs ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">PO Spend (Period)</div>
+          <div class="fs-5 fw-bold">{{ po_spend|intcomma }} F</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Fulfillment Rate</div>
+          <div class="fs-5 fw-bold {% if fulfillment_rate >= 90 %}text-success{% elif fulfillment_rate >= 70 %}text-warning{% else %}text-danger{% endif %}">{{ fulfillment_rate }}%</div>
+          <div class="text-muted" style="font-size:.7rem;">{{ fulfilled_reqs }}/{{ total_reqs }} requisitions</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Avg Lead Time</div>
+          <div class="fs-5 fw-bold">{{ avg_lead_time }} days</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-2 text-center">
+          <div class="text-muted small">Expiry Risk Value</div>
+          <div class="fs-5 fw-bold text-danger">{{ expiry_value|intcomma }} F</div>
+          <div class="text-muted" style="font-size:.7rem;">{{ near_expiry }} near + {{ expired }} expired</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Charts Row 1 ── #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-8">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-graph-up me-1"></i>12-Month Stock Movement Trend</div>
+        <div class="card-body p-2"><canvas id="trendChart" height="220"></canvas></div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-pie-chart me-1"></i>Category Distribution</div>
+        <div class="card-body p-2"><canvas id="catChart" height="220"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Charts Row 2 ── #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-bar-chart me-1"></i>Daily Movements (Last 30 Days)</div>
+        <div class="card-body p-2"><canvas id="dailyChart" height="200"></canvas></div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-building me-1"></i>Department Consumption</div>
+        <div class="card-body p-2"><canvas id="deptChart" height="200"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Top 10 Consumed + Vendor Performance ── #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-trophy me-1"></i>Top 10 Consumed Items</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+            <thead class="table-light"><tr><th>#</th><th>Item</th><th>Code</th><th class="text-end">Qty Used</th></tr></thead>
+            <tbody>
+            {% for t in top_consumed %}
+            <tr><td>{{ forloop.counter }}</td><td>{{ t.name }}</td><td class="text-muted">{{ t.code }}</td><td class="text-end fw-semibold">{{ t.qty }}</td></tr>
+            {% empty %}<tr><td colspan="4" class="text-muted text-center">No consumption data</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-truck me-1"></i>Vendor Performance (Top 10)</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+            <thead class="table-light"><tr><th>Vendor</th><th>Orders</th><th>On-Time</th><th>Rating</th></tr></thead>
+            <tbody>
+            {% for v in vendors %}
+            <tr>
+              <td>{{ v.name }}</td><td>{{ v.total_orders }}</td>
+              <td>{{ v.on_time_rate|default:"N/A" }}%</td>
+              <td><span class="badge bg-{{ v.performance_color }}">{{ v.performance_rating }}</span></td>
+            </tr>
+            {% empty %}<tr><td colspan="4" class="text-muted text-center">No vendor data</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── ABC / VEN Summary ── #}
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-diagram-3 me-1"></i>ABC Classification</div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" style="font-size:.82rem;">
+            <thead class="table-light"><tr><th>Class</th><th>Items</th><th class="text-end">Stock Value</th></tr></thead>
+            <tbody>
+            {% for a in abc_counts %}
+            <tr>
+              <td><span class="badge bg-{% if a.abc_class == 'A' %}danger{% elif a.abc_class == 'B' %}warning{% else %}secondary{% endif %}">{{ a.abc_class }}</span></td>
+              <td>{{ a.count }}</td>
+              <td class="text-end">{{ a.value|floatformat:0|intcomma }} F</td>
+            </tr>
+            {% empty %}<tr><td colspan="3" class="text-muted text-center">Run ABC analysis first</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold small"><i class="bi bi-heart-pulse me-1"></i>VEN Classification</div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" style="font-size:.82rem;">
+            <thead class="table-light"><tr><th>Class</th><th>Items</th></tr></thead>
+            <tbody>
+            {% for v in ven_counts %}
+            <tr>
+              <td><span class="badge bg-{% if v.ven_class == 'V' %}danger{% elif v.ven_class == 'E' %}warning{% else %}info{% endif %}">{{ v.ven_class }}</span></td>
+              <td>{{ v.count }}</td>
+            </tr>
+            {% empty %}<tr><td colspan="2" class="text-muted text-center">No VEN data</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  const COLORS = ['#0d6efd','#198754','#ffc107','#dc3545','#6f42c1','#20c997','#fd7e14','#0dcaf0','#d63384','#6610f2','#adb5bd','#495057'];
+
+  // 12-month trend
+  new Chart(document.getElementById('trendChart'), {
+    type:'bar',
+    data:{
+      labels: {{ trend_labels|safe }},
+      datasets:[
+        {label:'Stock In', data:{{ trend_in|safe }}, backgroundColor:'rgba(25,135,84,.6)', borderRadius:3},
+        {label:'Stock Out', data:{{ trend_out|safe }}, backgroundColor:'rgba(220,53,69,.6)', borderRadius:3},
+      ]
+    },
+    options:{responsive:true, plugins:{legend:{position:'top',labels:{font:{size:11}}}}, scales:{y:{beginAtZero:true}}}
+  });
+
+  // Category doughnut
+  new Chart(document.getElementById('catChart'), {
+    type:'doughnut',
+    data:{labels:{{ cat_labels|safe }}, datasets:[{data:{{ cat_counts|safe }}, backgroundColor:COLORS}]},
+    options:{responsive:true, plugins:{legend:{position:'right',labels:{font:{size:10}}}}}
+  });
+
+  // Daily bar
+  new Chart(document.getElementById('dailyChart'), {
+    type:'bar',
+    data:{labels:{{ daily_labels|safe }}, datasets:[{label:'Movements', data:{{ daily_data|safe }}, backgroundColor:'rgba(13,110,253,.5)', borderRadius:2}]},
+    options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}, x:{ticks:{maxTicksLimit:10,font:{size:9}}}}}
+  });
+
+  // Dept consumption
+  new Chart(document.getElementById('deptChart'), {
+    type:'bar',
+    data:{labels:{{ dept_labels|safe }}, datasets:[{label:'Items Issued', data:{{ dept_values|safe }}, backgroundColor:'rgba(111,66,193,.6)', borderRadius:3}]},
+    options:{indexAxis:'y', responsive:true, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}}}
+  });
+});
+</script>
+{% endblock %}

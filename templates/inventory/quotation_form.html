@@ -1,0 +1,70 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}{{ action }} Quotation{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-plus me-2"></i>{{ action }} Supplier Quotation (RFQ)</h5>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="row g-2 mb-3">
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Vendor</label>
+        <select name="vendor_id" class="form-select form-select-sm" required>
+          <option value="">-- Select Vendor --</option>
+          {% for v in vendors %}<option value="{{ v.id }}">{{ v.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Valid Until</label>
+        <input type="date" name="valid_until" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small fw-semibold">Notes</label>
+        <input type="text" name="notes" class="form-control form-control-sm" placeholder="RFQ notes...">
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small">Items to Quote</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addQuoteLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0" style="font-size:.82rem;">
+          <thead class="table-light">
+            <tr><th>Item</th><th style="width:80px;">Qty</th><th style="width:120px;">Est. Price</th><th style="width:40px;"></th></tr>
+          </thead>
+          <tbody id="quoteLines">
+            <tr class="quote-line">
+              <td>
+                <select name="item_id[]" class="form-select form-select-sm" required>
+                  <option value="">-- Select Item --</option>
+                  {% for item in items %}<option value="{{ item.id }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} — {{ item.name }}</option>{% endfor %}
+                </select>
+              </td>
+              <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" required></td>
+              <td><input type="number" name="price[]" class="form-control form-control-sm" step="0.01" min="0" placeholder="0.00"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove()"><i class="bi bi-x"></i></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Submit RFQ</button>
+    <a href="{% url 'inventory:quotation_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+  </form>
+</div>
+
+<script>
+function addQuoteLine(){
+  const tbody = document.getElementById('quoteLines');
+  const first = tbody.querySelector('.quote-line');
+  const clone = first.cloneNode(true);
+  clone.querySelectorAll('input').forEach(i => i.value = '');
+  clone.querySelector('select').selectedIndex = 0;
+  tbody.appendChild(clone);
+}
+</script>
+{% endblock %}

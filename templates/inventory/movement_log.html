@@ -1,0 +1,80 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Movement Log{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-clock-history me-2"></i>Stock Movement Log</h5>
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-house"></i></a>
+  </div>
+
+  {# Summary badges #}
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <span class="badge bg-success-subtle text-success border">IN: {{ type_map.IN|default:0 }}</span>
+    <span class="badge bg-danger-subtle text-danger border">OUT: {{ type_map.OUT|default:0 }}</span>
+    <span class="badge bg-primary-subtle text-primary border">ISSUE: {{ type_map.ISSUE|default:0 }}</span>
+    <span class="badge bg-info-subtle text-info border">RETURN: {{ type_map.RETURN|default:0 }}</span>
+    <span class="badge bg-warning-subtle text-warning border">ADJUST: {{ type_map.ADJUST|default:0 }}</span>
+    <span class="badge bg-danger-subtle text-danger border">EXPIRE: {{ type_map.EXPIRE|default:0 }}</span>
+  </div>
+
+  {# Filters #}
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+      <select name="type" class="form-select form-select-sm">
+        <option value="">All Types</option>
+        {% for code, label in move_types %}
+        <option value="{{ code }}" {% if move_type == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <select name="days" class="form-select form-select-sm">
+        {% for d in "7,14,30,60,90"|split:"," %}
+        <option value="{{ d }}" {% if days|stringformat:"d" == d %}selected{% endif %}>Last {{ d }} days</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm" placeholder="Search item / ref...">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Filter</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle" style="font-size:.82rem;">
+      <thead class="table-light">
+        <tr><th>Date/Time</th><th>Type</th><th>Item</th><th>Batch</th><th class="text-end">Qty</th><th class="text-end">Balance</th><th>Reference</th><th>User</th></tr>
+      </thead>
+      <tbody>
+      {% for m in movements %}
+      <tr>
+        <td class="text-nowrap">{{ m.created_at|date:"d/m/Y H:i" }}</td>
+        <td>
+          {% if m.movement_type == 'IN' %}<span class="badge bg-success">IN</span>
+          {% elif m.movement_type == 'OUT' %}<span class="badge bg-danger">OUT</span>
+          {% elif m.movement_type == 'ISSUE' %}<span class="badge bg-primary">ISSUE</span>
+          {% elif m.movement_type == 'RETURN' %}<span class="badge bg-info">RETURN</span>
+          {% elif m.movement_type == 'ADJUST' %}<span class="badge bg-secondary">ADJUST</span>
+          {% elif m.movement_type == 'EXPIRE' %}<span class="badge bg-danger">EXPIRE</span>
+          {% else %}<span class="badge bg-secondary">{{ m.movement_type }}</span>{% endif %}
+        </td>
+        <td><a href="{% url 'inventory:item_detail' item_id=m.item_id %}">{{ m.item.name }}</a></td>
+        <td class="text-muted">{% if m.batch %}{{ m.batch.lot_number }}{% endif %}</td>
+        <td class="text-end fw-semibold {% if m.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+          {% if m.quantity > 0 %}+{% endif %}{{ m.quantity }}
+        </td>
+        <td class="text-end">{{ m.balance_after }}</td>
+        <td class="text-muted small">{{ m.reference|truncatechars:40 }}</td>
+        <td>{{ m.performed_by.get_short_name|default:"System" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="text-center text-muted py-3">No movements found</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

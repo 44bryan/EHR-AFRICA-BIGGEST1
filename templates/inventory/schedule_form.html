@@ -1,0 +1,111 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{% if schedule %}Edit Schedule{% else %}New Schedule{% endif %}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-calendar-check text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">{% if schedule %}Edit Schedule{% else %}New Stock Take Schedule{% endif %}</h5>
+      <div class="text-muted small">Configure recurring stock count schedules</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:schedule_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Schedules
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Schedule Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control"
+                   value="{{ schedule.name|default:'' }}" required
+                   placeholder="e.g. Monthly A-Class Count">
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Frequency <span class="text-danger">*</span></label>
+              <select name="frequency" class="form-select" required>
+                <option value="">-- Select Frequency --</option>
+                {% for code, label in frequency_choices %}
+                <option value="{{ code }}" {% if schedule.frequency == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Next Due Date <span class="text-danger">*</span></label>
+              <input type="date" name="next_due" class="form-control"
+                     value="{{ schedule.next_due|date:'Y-m-d'|default:'' }}" required>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Category Filter <span class="text-muted fw-normal">(optional)</span></label>
+              <select name="category_filter" class="form-select">
+                <option value="">All Categories</option>
+                <option value="SURGICAL" {% if schedule.category_filter == 'SURGICAL' %}selected{% endif %}>Surgical</option>
+                <option value="MEDICAL_CONSUMABLE" {% if schedule.category_filter == 'MEDICAL_CONSUMABLE' %}selected{% endif %}>Medical Consumable</option>
+                <option value="DIAGNOSTIC" {% if schedule.category_filter == 'DIAGNOSTIC' %}selected{% endif %}>Diagnostic</option>
+                <option value="PHARMACEUTICAL" {% if schedule.category_filter == 'PHARMACEUTICAL' %}selected{% endif %}>Pharmaceutical</option>
+                <option value="IMPLANT" {% if schedule.category_filter == 'IMPLANT' %}selected{% endif %}>Implant</option>
+                <option value="LENS" {% if schedule.category_filter == 'LENS' %}selected{% endif %}>Lens</option>
+                <option value="OFFICE" {% if schedule.category_filter == 'OFFICE' %}selected{% endif %}>Office</option>
+                <option value="CLEANING" {% if schedule.category_filter == 'CLEANING' %}selected{% endif %}>Cleaning</option>
+                <option value="IT" {% if schedule.category_filter == 'IT' %}selected{% endif %}>IT</option>
+                <option value="FURNITURE" {% if schedule.category_filter == 'FURNITURE' %}selected{% endif %}>Furniture</option>
+                <option value="LINEN" {% if schedule.category_filter == 'LINEN' %}selected{% endif %}>Linen</option>
+                <option value="OTHER" {% if schedule.category_filter == 'OTHER' %}selected{% endif %}>Other</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">ABC Filter <span class="text-muted fw-normal">(optional)</span></label>
+              <select name="abc_filter" class="form-select">
+                <option value="">All Classes</option>
+                <option value="A" {% if schedule.abc_filter == 'A' %}selected{% endif %}>Class A (High value)</option>
+                <option value="B" {% if schedule.abc_filter == 'B' %}selected{% endif %}>Class B (Medium value)</option>
+                <option value="C" {% if schedule.abc_filter == 'C' %}selected{% endif %}>Class C (Low value)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Assigned To <span class="text-muted fw-normal">(optional)</span></label>
+            <select name="assigned_to" class="form-select">
+              <option value="">-- Unassigned --</option>
+              {% for user in staff %}
+              <option value="{{ user.id }}" {% if schedule.assigned_to_id == user.id %}selected{% endif %}>
+                {{ user.get_full_name }} ({{ user.get_role_display }})
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea name="notes" class="form-control" rows="3"
+                      placeholder="Optional notes about this schedule...">{{ schedule.notes|default:'' }}</textarea>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{% url 'inventory:schedule_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>Save Schedule
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

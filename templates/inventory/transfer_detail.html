@@ -1,0 +1,154 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Transfer {{ transfer.transfer_number }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-arrow-left-right text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">
+        {{ transfer.transfer_number }}
+        {% if transfer.status == 'REQUESTED' %}
+          <span class="badge bg-secondary ms-2">{{ transfer.get_status_display }}</span>
+        {% elif transfer.status == 'APPROVED' %}
+          <span class="badge bg-primary ms-2">{{ transfer.get_status_display }}</span>
+        {% elif transfer.status == 'IN_TRANSIT' %}
+          <span class="badge bg-info ms-2">{{ transfer.get_status_display }}</span>
+        {% elif transfer.status == 'RECEIVED' %}
+          <span class="badge bg-success ms-2">{{ transfer.get_status_display }}</span>
+        {% elif transfer.status == 'CANCELLED' %}
+          <span class="badge bg-danger ms-2">{{ transfer.get_status_display }}</span>
+        {% endif %}
+      </h5>
+      <div class="text-muted small">Inter-store transfer detail</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:transfer_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Transfers
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Info cards -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1"><i class="bi bi-geo-alt me-1"></i>From Location</div>
+      <div class="fw-bold">{{ transfer.from_location }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1"><i class="bi bi-geo-alt-fill me-1"></i>To Location</div>
+      <div class="fw-bold">{{ transfer.to_location }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1"><i class="bi bi-calendar me-1"></i>Transfer Date</div>
+      <div class="fw-bold">{{ transfer.transfer_date|date:"d M Y" }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1"><i class="bi bi-person me-1"></i>Requested By</div>
+      <div class="fw-bold">{{ transfer.requested_by.get_full_name }}</div>
+    </div>
+  </div>
+</div>
+
+{% if transfer.notes %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <h6 class="fw-bold mb-2"><i class="bi bi-sticky me-1"></i>Notes</h6>
+    <p class="mb-0 text-muted">{{ transfer.notes }}</p>
+  </div>
+</div>
+{% endif %}
+
+<!-- Transfer items -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom">
+    <h6 class="mb-0 fw-bold"><i class="bi bi-box-seam me-1"></i>Transfer Items</h6>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Item Name</th>
+            <th>Item Code</th>
+            <th class="text-center">Qty</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ti in transfer_items %}
+          <tr>
+            <td class="text-muted">{{ forloop.counter }}</td>
+            <td class="fw-semibold">{{ ti.item.name }}</td>
+            <td><code>{{ ti.item.item_code }}</code></td>
+            <td class="text-center">
+              <span class="badge bg-light text-dark">{{ ti.quantity }}</span>
+            </td>
+            <td>{{ ti.notes|default:"--" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">No items in this transfer.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Action buttons -->
+{% if transfer.status == 'REQUESTED' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body d-flex gap-2 justify-content-end">
+    <form method="post" action="{% url 'inventory:transfer_approve' transfer.id %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-circle me-1"></i>Approve Transfer
+      </button>
+    </form>
+    <form method="post" action="{% url 'inventory:transfer_cancel' transfer.id %}" class="d-inline"
+          onsubmit="return confirm('Are you sure you want to cancel this transfer?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">
+        <i class="bi bi-x-circle me-1"></i>Cancel Transfer
+      </button>
+    </form>
+  </div>
+</div>
+{% elif transfer.status == 'APPROVED' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body d-flex gap-2 justify-content-end">
+    <form method="post" action="{% url 'inventory:transfer_dispatch' transfer.id %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-info text-white">
+        <i class="bi bi-truck me-1"></i>Mark In Transit
+      </button>
+    </form>
+  </div>
+</div>
+{% elif transfer.status == 'IN_TRANSIT' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body d-flex gap-2 justify-content-end">
+    <form method="post" action="{% url 'inventory:transfer_receive' transfer.id %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-box-arrow-in-down me-1"></i>Mark Received
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

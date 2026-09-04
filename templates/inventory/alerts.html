@@ -1,0 +1,199 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Store Alerts{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Store Alerts &amp; Notifications</h5>
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-house"></i></a>
+  </div>
+
+  {# Alert counts #}
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3"><div class="alert alert-danger mb-0 p-2 text-center"><strong>{{ out_of_stock_items|length }}</strong><br><small>Out of Stock</small></div></div>
+    <div class="col-6 col-md-3"><div class="alert alert-warning mb-0 p-2 text-center"><strong>{{ low_stock_items|length }}</strong><br><small>Low Stock</small></div></div>
+    <div class="col-6 col-md-3"><div class="alert alert-danger mb-0 p-2 text-center"><strong>{{ expired_batches|length }}</strong><br><small>Expired Batches</small></div></div>
+    <div class="col-6 col-md-3"><div class="alert alert-warning mb-0 p-2 text-center"><strong>{{ expiring_30|length }}</strong><br><small>Expiring (30d)</small></div></div>
+  </div>
+
+  {# Out of Stock #}
+  {% if out_of_stock_items %}
+  <div class="card border-danger border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-danger bg-opacity-10 fw-semibold small"><i class="bi bi-x-octagon me-1 text-danger"></i>Out of Stock ({{ out_of_stock_items|length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Code</th><th>Item</th><th>Category</th><th>Reorder Level</th><th>Vendor</th><th></th></tr></thead>
+        <tbody>
+        {% for item in out_of_stock_items %}
+        <tr>
+          <td>{{ item.item_code }}</td><td>{{ item.name }}</td>
+          <td><span class="badge bg-secondary">{{ item.get_category_display }}</span></td>
+          <td>{{ item.reorder_level }}</td>
+          <td>{{ item.preferred_vendor.name|default:"—" }}</td>
+          <td><a href="{% url 'inventory:item_detail' item_id=item.id %}" class="btn btn-sm btn-outline-primary py-0">View</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Low Stock #}
+  {% if low_stock_items %}
+  <div class="card border-warning border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-warning bg-opacity-10 fw-semibold small"><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Low Stock ({{ low_stock_items|length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Code</th><th>Item</th><th class="text-end">Current</th><th class="text-end">Reorder</th><th></th></tr></thead>
+        <tbody>
+        {% for item in low_stock_items %}
+        <tr>
+          <td>{{ item.item_code }}</td><td>{{ item.name }}</td>
+          <td class="text-end fw-semibold text-warning">{{ item.current_stock }}</td>
+          <td class="text-end">{{ item.reorder_level }}</td>
+          <td><a href="{% url 'inventory:item_detail' item_id=item.id %}" class="btn btn-sm btn-outline-primary py-0">View</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Expired Batches #}
+  {% if expired_batches %}
+  <div class="card border-danger border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-danger bg-opacity-10 fw-semibold small"><i class="bi bi-calendar-x me-1 text-danger"></i>Expired Batches ({{ expired_batches|length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Item</th><th>Lot</th><th>Expiry</th><th class="text-end">Remaining</th><th></th></tr></thead>
+        <tbody>
+        {% for b in expired_batches %}
+        <tr>
+          <td>{{ b.item.name }}</td><td>{{ b.lot_number }}</td>
+          <td class="text-danger">{{ b.expiry_date|date:"d/m/Y" }}</td>
+          <td class="text-end">{{ b.quantity_remaining }}</td>
+          <td><a href="{% url 'inventory:item_batches' item_id=b.item_id %}" class="btn btn-sm btn-outline-danger py-0">Manage</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Expiring Soon (30 days) #}
+  {% if expiring_30 %}
+  <div class="card border-warning border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-warning bg-opacity-10 fw-semibold small"><i class="bi bi-hourglass-split me-1 text-warning"></i>Expiring Within 30 Days ({{ expiring_30|length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Item</th><th>Lot</th><th>Expiry</th><th class="text-end">Remaining</th></tr></thead>
+        <tbody>
+        {% for b in expiring_30 %}
+        <tr><td>{{ b.item.name }}</td><td>{{ b.lot_number }}</td><td class="text-warning">{{ b.expiry_date|date:"d/m/Y" }}</td><td class="text-end">{{ b.quantity_remaining }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Expiring 31-90 days #}
+  {% if expiring_90 %}
+  <div class="card border-info border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-info bg-opacity-10 fw-semibold small"><i class="bi bi-clock me-1 text-info"></i>Expiring 31–90 Days ({{ expiring_90|length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Item</th><th>Lot</th><th>Expiry</th><th class="text-end">Remaining</th></tr></thead>
+        <tbody>
+        {% for b in expiring_90 %}
+        <tr><td>{{ b.item.name }}</td><td>{{ b.lot_number }}</td><td>{{ b.expiry_date|date:"d/m/Y" }}</td><td class="text-end">{{ b.quantity_remaining }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Overstocked #}
+  {% if overstocked_items %}
+  <div class="card border-info border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-info bg-opacity-10 fw-semibold small"><i class="bi bi-arrow-up-circle me-1 text-info"></i>Overstocked ({{ overstocked_items|length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Item</th><th class="text-end">Current</th><th class="text-end">Max Level</th><th class="text-end">Excess</th></tr></thead>
+        <tbody>
+        {% for item in overstocked_items %}
+        <tr><td>{{ item.name }}</td><td class="text-end">{{ item.current_stock }}</td><td class="text-end">{{ item.max_stock_level }}</td><td class="text-end text-info">+{{ item.excess_qty }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Auto-Reorder POs #}
+  {% if auto_pos %}
+  <div class="card border-primary border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-primary bg-opacity-10 fw-semibold small"><i class="bi bi-robot me-1 text-primary"></i>Auto-Reorder POs (Draft) — {{ auto_pos|length }}</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>PO #</th><th>Vendor</th><th>Amount</th><th></th></tr></thead>
+        <tbody>
+        {% for po in auto_pos %}
+        <tr>
+          <td>{{ po.po_number }}</td><td>{{ po.vendor.name }}</td><td>{{ po.total_amount|intcomma }} F</td>
+          <td><a href="{% url 'inventory:po_detail' po_id=po.id %}" class="btn btn-sm btn-outline-primary py-0">Review</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Quarantined #}
+  {% if quarantined %}
+  <div class="card border-dark border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-dark bg-opacity-10 fw-semibold small"><i class="bi bi-shield-exclamation me-1"></i>Quarantined Batches ({{ quarantined|length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Item</th><th>Lot</th><th>Reason</th><th class="text-end">Qty</th></tr></thead>
+        <tbody>
+        {% for b in quarantined %}
+        <tr><td>{{ b.item.name }}</td><td>{{ b.lot_number }}</td><td>{{ b.quarantine_reason }}</td><td class="text-end">{{ b.quantity_remaining }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Overdue Schedules #}
+  {% if overdue_schedules %}
+  <div class="card border-warning border-start border-4 shadow-sm mb-3">
+    <div class="card-header bg-warning bg-opacity-10 fw-semibold small"><i class="bi bi-calendar-event me-1 text-warning"></i>Overdue Stock Counts</div>
+    <div class="card-body p-0">
+      <table class="table table-sm mb-0" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Schedule</th><th>Frequency</th><th>Due Date</th><th></th></tr></thead>
+        <tbody>
+        {% for s in overdue_schedules %}
+        <tr>
+          <td>{{ s.name }}</td><td>{{ s.get_frequency_display }}</td>
+          <td class="text-danger">{{ s.next_due|date:"d/m/Y" }}</td>
+          <td><form method="post" action="{% url 'inventory:schedule_start_count' schedule_id=s.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-outline-success py-0">Start Count</button></form></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not out_of_stock_items and not low_stock_items and not expired_batches and not expiring_30 %}
+  <div class="alert alert-success text-center mt-4"><i class="bi bi-check-circle me-2"></i>No active alerts. All stock levels are healthy.</div>
+  {% endif %}
+</div>
+{% endblock %}

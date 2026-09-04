@@ -1,0 +1,73 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Store Budget{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-wallet2 me-2"></i>Store Budget — {{ year }}</h5>
+    <div class="d-flex gap-2">
+      <a href="{% url 'inventory:budget_create' %}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New Budget</a>
+      <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-house"></i></a>
+    </div>
+  </div>
+
+  {# Year filter #}
+  <div class="d-flex gap-2 mb-3">
+    {% for y in years %}
+    <a href="?year={{ y }}" class="btn btn-sm {% if y == year %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ y }}</a>
+    {% endfor %}
+  </div>
+
+  {# Summary #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm"><div class="card-body p-2 text-center">
+        <div class="text-muted small">Total Allocated</div>
+        <div class="fs-5 fw-bold text-primary">{{ total_allocated|intcomma }} F</div>
+      </div></div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm"><div class="card-body p-2 text-center">
+        <div class="text-muted small">Total Spent</div>
+        <div class="fs-5 fw-bold">{{ total_spent|intcomma }} F</div>
+      </div></div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm"><div class="card-body p-2 text-center">
+        <div class="text-muted small">Remaining</div>
+        <div class="fs-5 fw-bold {% if total_remaining < 0 %}text-danger{% else %}text-success{% endif %}">{{ total_remaining|intcomma }} F</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover" style="font-size:.82rem;">
+      <thead class="table-light">
+        <tr><th>Budget</th><th>Category</th><th class="text-end">Allocated</th><th class="text-end">Spent</th><th class="text-end">Remaining</th><th>Utilization</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for b in budgets %}
+      <tr>
+        <td class="fw-semibold">{{ b.name }}</td>
+        <td>{% if b.category %}<span class="badge bg-secondary">{{ b.get_category_display }}</span>{% else %}All{% endif %}</td>
+        <td class="text-end">{{ b.allocated|intcomma }} F</td>
+        <td class="text-end">{{ b.spent|intcomma }} F</td>
+        <td class="text-end {% if b.is_over_budget %}text-danger fw-bold{% else %}text-success{% endif %}">{{ b.remaining|intcomma }} F</td>
+        <td>
+          <div class="d-flex align-items-center gap-1">
+            <div class="progress flex-grow-1" style="height:6px;">
+              <div class="progress-bar {% if b.utilization_pct > 100 %}bg-danger{% elif b.utilization_pct > 80 %}bg-warning{% else %}bg-success{% endif %}" style="width:{% if b.utilization_pct > 100 %}100{% else %}{{ b.utilization_pct }}{% endif %}%"></div>
+            </div>
+            <span class="small {% if b.is_over_budget %}text-danger{% endif %}">{{ b.utilization_pct }}%</span>
+          </div>
+        </td>
+        <td><a href="{% url 'inventory:budget_edit' budget_id=b.pk %}" class="btn btn-sm btn-outline-primary py-0">Edit</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="text-center text-muted py-3">No budgets for {{ year }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Receive Stock{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-in-down me-2"></i>Receive Stock (Walk-in Delivery)</h5>
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-house"></i></a>
+  </div>
+  <p class="text-muted small mb-3">For deliveries without a Purchase Order. Use <a href="{% url 'inventory:po_list' %}">PO Receive</a> for PO-linked deliveries.</p>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="row g-2 mb-3">
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Vendor / Supplier</label>
+        <input type="text" name="vendor_name" class="form-control form-control-sm" list="vendorList" placeholder="Type vendor name...">
+        <datalist id="vendorList">
+          {% for v in vendors %}<option value="{{ v.name }}">{% endfor %}
+        </datalist>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Delivery Note #</label>
+        <input type="text" name="delivery_note" class="form-control form-control-sm" placeholder="DN / Invoice reference">
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small">Items to Receive</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0" style="font-size:.82rem;">
+          <thead class="table-light">
+            <tr><th>Item</th><th style="width:80px;">Qty</th><th style="width:120px;">Lot / Batch</th><th style="width:130px;">Expiry</th><th style="width:100px;">Unit Cost</th><th style="width:40px;"></th></tr>
+          </thead>
+          <tbody id="lineBody">
+            <tr class="stock-line">
+              <td>
+                <select name="item_id[]" class="form-select form-select-sm" required onchange="fillCost(this)">
+                  <option value="">-- Select Item --</option>
+                  {% for item in items %}
+                  <option value="{{ item.id }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} — {{ item.name }} ({{ item.unit }})</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" required></td>
+              <td><input type="text" name="lot_number[]" class="form-control form-control-sm" placeholder="Lot #"></td>
+              <td><input type="date" name="expiry_date[]" class="form-control form-control-sm"></td>
+              <td><input type="number" name="unit_cost[]" class="form-control form-control-sm" step="0.01" min="0"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove()"><i class="bi bi-x"></i></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg me-1"></i>Receive All</button>
+  </form>
+
+  {# Recent Receipts #}
+  {% if recent %}
+  <div class="mt-4">
+    <h6 class="fw-semibold"><i class="bi bi-clock-history me-1"></i>Recent Receipts (7 days)</h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover" style="font-size:.82rem;">
+        <thead class="table-light"><tr><th>Date</th><th>Item</th><th class="text-end">Qty</th><th>Reference</th><th>By</th></tr></thead>
+        <tbody>
+        {% for m in recent %}
+        <tr>
+          <td>{{ m.created_at|date:"d/m H:i" }}</td>
+          <td>{{ m.item.name }}</td>
+          <td class="text-end text-success fw-semibold">+{{ m.quantity }}</td>
+          <td class="text-muted">{{ m.reference|truncatechars:30 }}</td>
+          <td>{{ m.performed_by.get_short_name }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function addLine(){
+  const tbody = document.getElementById('lineBody');
+  const first = tbody.querySelector('.stock-line');
+  const clone = first.cloneNode(true);
+  clone.querySelectorAll('input').forEach(i => i.value = '');
+  clone.querySelector('select').selectedIndex = 0;
+  tbody.appendChild(clone);
+}
+function fillCost(sel){
+  const opt = sel.options[sel.selectedIndex];
+  const cost = opt?.dataset?.cost || '';
+  const row = sel.closest('tr');
+  const costInput = row.querySelector('input[name="unit_cost[]"]');
+  if(costInput && cost) costInput.value = cost;
+}
+</script>
+{% endblock %}

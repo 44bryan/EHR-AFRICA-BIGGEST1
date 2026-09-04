@@ -1,0 +1,120 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Disposal Records{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <i class="bi bi-trash3 text-primary fs-4"></i>
+    <div>
+      <h5 class="mb-0 fw-bold">Disposal Records</h5>
+      <div class="text-muted small">{{ disposals|length }} record{{ disposals|length|pluralize }} found</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:disposal_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Disposal Request
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter bar -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-4">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          <option value="PENDING" {% if status == 'PENDING' %}selected{% endif %}>Pending</option>
+          <option value="APPROVED" {% if status == 'APPROVED' %}selected{% endif %}>Approved</option>
+          <option value="DISPOSED" {% if status == 'DISPOSED' %}selected{% endif %}>Disposed</option>
+          <option value="REJECTED" {% if status == 'REJECTED' %}selected{% endif %}>Rejected</option>
+        </select>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm flex-fill">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+        {% if status %}
+        <a href="{% url 'inventory:disposal_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Status pills -->
+<div class="d-flex gap-1 flex-wrap mb-3">
+  <a href="{% url 'inventory:disposal_list' %}" class="btn btn-sm {% if not status %}btn-primary{% else %}btn-outline-secondary{% endif %} py-0">All</a>
+  <a href="?status=PENDING" class="btn btn-sm {% if status == 'PENDING' %}btn-warning{% else %}btn-outline-warning{% endif %} py-0">Pending</a>
+  <a href="?status=APPROVED" class="btn btn-sm {% if status == 'APPROVED' %}btn-info{% else %}btn-outline-info{% endif %} py-0">Approved</a>
+  <a href="?status=DISPOSED" class="btn btn-sm {% if status == 'DISPOSED' %}btn-success{% else %}btn-outline-success{% endif %} py-0">Disposed</a>
+  <a href="?status=REJECTED" class="btn btn-sm {% if status == 'REJECTED' %}btn-danger{% else %}btn-outline-danger{% endif %} py-0">Rejected</a>
+</div>
+
+<!-- Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Disposal #</th>
+            <th>Date</th>
+            <th>Reason</th>
+            <th class="text-center">Items Count</th>
+            <th class="text-end">Total Value (FCFA)</th>
+            <th class="text-center">Status</th>
+            <th>Requested By</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in disposals %}
+          <tr>
+            <td><code>{{ d.disposal_number }}</code></td>
+            <td>{{ d.created_at|date:"d M Y" }}</td>
+            <td>{{ d.get_reason_display }}</td>
+            <td class="text-center">{{ d.items.count }}</td>
+            <td class="text-end fw-semibold">{{ d.total_value|floatformat:0|intcomma }}</td>
+            <td class="text-center">
+              {% if d.status == 'PENDING' %}
+              <span class="badge bg-warning text-dark">{{ d.get_status_display }}</span>
+              {% elif d.status == 'APPROVED' %}
+              <span class="badge bg-info">{{ d.get_status_display }}</span>
+              {% elif d.status == 'DISPOSED' %}
+              <span class="badge bg-success">{{ d.get_status_display }}</span>
+              {% elif d.status == 'REJECTED' %}
+              <span class="badge bg-danger">{{ d.get_status_display }}</span>
+              {% else %}
+              <span class="badge bg-secondary">{{ d.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td>{{ d.requested_by.get_full_name }}</td>
+            <td>
+              <a href="{% url 'inventory:disposal_detail' d.id %}" class="btn btn-sm btn-outline-primary py-0 px-2">
+                View
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-5">
+              <i class="bi bi-trash3 fs-3 d-block mb-2"></i>
+              No disposal records found{% if status %} with status "{{ status }}"{% endif %}.
+              <a href="{% url 'inventory:disposal_create' %}" class="d-block mt-1">Create a disposal request &rarr;</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if disposals %}
+  <div class="card-footer bg-white border-top small text-muted">
+    {{ disposals|length }} record{{ disposals|length|pluralize }} shown
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
