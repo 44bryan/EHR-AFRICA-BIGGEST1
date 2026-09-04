@@ -118,6 +118,14 @@ urlpatterns = [
     # ── Quick Reorder (smart PO from low/out-of-stock) ──────────────
     path('quick-reorder/', views.quick_reorder, name='quick_reorder'),
 
+    # ── Dedicated Receive Stock + Bulk Import ────────────────────────
+    path('receive-stock/', views.receive_stock, name='receive_stock'),
+    path('receive-stock/import/', views.stock_bulk_import, name='stock_bulk_import'),
+    path('receive-stock/import/template/', views.stock_import_template, name='stock_import_template'),
+
+    # ── Stock Movement Log ───────────────────────────────────────────
+    path('stock-movement-log/', views.stock_movement_log, name='stock_movement_log'),
+
     # ── Head Pharmacist: Advanced Reports ───────────────────────────
     path('reports/abc/', views.abc_analysis, name='report_abc'),
     path('reports/ven/', views.ven_analysis, name='report_ven'),

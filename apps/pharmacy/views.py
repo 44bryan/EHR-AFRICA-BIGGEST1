@@ -49,7 +49,7 @@ def pharmacy_dashboard(request):
     _cache_key = f'pharm_stock_data_{today}'
     _cached_stock = cache.get(_cache_key)
     if _cached_stock is None:
-        _stock_q = Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=today)
+        _stock_q = Q(stock_items__is_deleted=False) & (Q(stock_items__expiry_date__gte=today) | Q(stock_items__expiry_date__isnull=True))
         low_stock_drugs = list(
             Drug.objects.filter(is_active=True, is_deleted=False)
             .annotate(stock_total=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField())))
@@ -187,7 +187,9 @@ def pharmacy_dashboard(request):
 
     # Stock inventory value (selling price × remaining qty, non-expired only)
     stock_value = DrugStock.objects.filter(
-        is_deleted=False, expiry_date__gte=today, quantity_remaining__gt=0,
+        is_deleted=False, quantity_remaining__gt=0,
+    ).filter(
+        Q(expiry_date__gte=today) | Q(expiry_date__isnull=True)
     ).aggregate(
         total=Sum(F('quantity_remaining') * F('drug__selling_price'))
     )['total'] or 0
@@ -599,7 +601,7 @@ def pharmacy_stats_view(request):
     })
 
     # Low stock snapshot — single annotated query (not N+1 via needs_reorder property)
-    _stock_q = Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=today)
+    _stock_q = Q(stock_items__is_deleted=False) & (Q(stock_items__expiry_date__gte=today) | Q(stock_items__expiry_date__isnull=True))
     low_stock_drugs = list(
         Drug.objects.filter(is_active=True, is_deleted=False)
         .annotate(_stock=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField())))
@@ -635,8 +637,10 @@ def pharmacy_stats_view(request):
     # Stockout rate: drugs with 0 stock / total active drugs
     _drugs_with_stock = Drug.objects.filter(
         is_active=True, is_deleted=False,
-        stock_items__is_deleted=False, stock_items__expiry_date__gte=today,
+        stock_items__is_deleted=False,
         stock_items__quantity_remaining__gt=0,
+    ).filter(
+        Q(stock_items__expiry_date__gte=today) | Q(stock_items__expiry_date__isnull=True)
     ).distinct().count()
     stockout_count = total_active_drugs - _drugs_with_stock
     stockout_rate = round(stockout_count / total_active_drugs * 100, 1) if total_active_drugs else 0
@@ -662,7 +666,9 @@ def pharmacy_stats_view(request):
 
     # Total inventory value (at cost)
     total_inventory_value = DrugStock.objects.filter(
-        is_deleted=False, quantity_remaining__gt=0, expiry_date__gte=today,
+        is_deleted=False, quantity_remaining__gt=0,
+    ).filter(
+        Q(expiry_date__gte=today) | Q(expiry_date__isnull=True)
     ).aggregate(val=Sum(F('quantity_remaining') * F('purchase_price')))['val'] or 0
 
     # Stock turnover ratio: cost of goods dispensed / avg inventory value
@@ -734,10 +740,12 @@ def pharmacy_stats_view(request):
     # Month nav
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1)  if month == 12 else (year, month + 1)
+    is_current_month = (year == today.year and month == today.month)
 
     context = {
         'year': year, 'month': month,
         'month_name': _date(year, month, 1).strftime('%B %Y'),
+        'is_current_month': is_current_month,
         'prev_year': prev_year, 'prev_month': prev_month,
         'next_year': next_year, 'next_month': next_month,
         'total_dispensings': total_dispensings,
@@ -925,12 +933,12 @@ def drug_list(request):
     elif status_filter == 'controlled':
         drugs = drugs.filter(is_controlled=True)
     elif status_filter == 'low_stock':
-        _stock_q = Q(stock_items__is_deleted=False, stock_items__quantity_remaining__gt=0, stock_items__expiry_date__gte=today)
+        _stock_q = Q(stock_items__is_deleted=False, stock_items__quantity_remaining__gt=0) & (Q(stock_items__expiry_date__gte=today) | Q(stock_items__expiry_date__isnull=True))
         drugs = drugs.annotate(
             _stock=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField()))
         ).filter(_stock__gt=0, _stock__lte=F('reorder_level'))
     elif status_filter == 'out_of_stock':
-        _stock_q = Q(stock_items__is_deleted=False, stock_items__quantity_remaining__gt=0, stock_items__expiry_date__gte=today)
+        _stock_q = Q(stock_items__is_deleted=False, stock_items__quantity_remaining__gt=0) & (Q(stock_items__expiry_date__gte=today) | Q(stock_items__expiry_date__isnull=True))
         drugs = drugs.annotate(
             _stock=Coalesce(Sum('stock_items__quantity_remaining', filter=_stock_q), Value(0, output_field=IntegerField()))
         ).filter(_stock=0)
@@ -1108,7 +1116,8 @@ def add_dispensing_item(request, dispensing_id):
         if not batch:
             batch = DrugStock.objects.filter(
                 drug=drug, is_deleted=False, quantity_remaining__gt=0,
-                expiry_date__gte=timezone.localdate()
+            ).filter(
+                Q(expiry_date__gte=timezone.localdate()) | Q(expiry_date__isnull=True)
             ).order_by('expiry_date').first()
 
         item = DispensingItem.objects.create(
@@ -1236,7 +1245,8 @@ def add_dispensing_item_ajax(request, dispensing_id):
     if not batch:
         batch = DrugStock.objects.filter(
             drug=drug, is_deleted=False, quantity_remaining__gt=0,
-            expiry_date__gte=timezone.localdate()
+        ).filter(
+            Q(expiry_date__gte=timezone.localdate()) | Q(expiry_date__isnull=True)
         ).order_by('expiry_date').first()
 
     item = DispensingItem.objects.create(
@@ -1479,7 +1489,8 @@ def drug_stock_ajax(request):
         return JsonResponse({'batches': [], 'selling_price': 0})
     batches = DrugStock.objects.filter(
         drug=drug, is_deleted=False, quantity_remaining__gt=0,
-        expiry_date__gte=timezone.localdate()
+    ).filter(
+        Q(expiry_date__gte=timezone.localdate()) | Q(expiry_date__isnull=True)
     ).order_by('expiry_date')
 
     # Tier-resolved price
@@ -2186,7 +2197,8 @@ def start_rx_dispensing(request, rx_id):
         batch = DrugStock.objects.filter(
             drug=drug, is_deleted=False,
             quantity_remaining__gte=rx_item.quantity,
-            expiry_date__gte=today,
+        ).filter(
+            Q(expiry_date__gte=today) | Q(expiry_date__isnull=True)
         ).order_by('expiry_date').first()
 
         if not batch:
@@ -2194,7 +2206,8 @@ def start_rx_dispensing(request, rx_id):
             batch = DrugStock.objects.filter(
                 drug=drug, is_deleted=False,
                 quantity_remaining__gt=0,
-                expiry_date__gte=today,
+            ).filter(
+                Q(expiry_date__gte=today) | Q(expiry_date__isnull=True)
             ).order_by('expiry_date').first()
 
         if not batch:
@@ -2965,8 +2978,7 @@ def quick_reorder(request):
     valid_stock = Q(
         stock_items__is_deleted=False,
         stock_items__quantity_remaining__gt=0,
-        stock_items__expiry_date__gte=today,
-    )
+    ) & (Q(stock_items__expiry_date__gte=today) | Q(stock_items__expiry_date__isnull=True))
 
     drugs = (
         Drug.objects.filter(is_active=True, is_deleted=False)
@@ -3581,15 +3593,39 @@ def transfer_list(request):
     if not _can_manage_pharmacy(request.user):
         return HttpResponse('Access denied', status=403)
     status_filter = request.GET.get('status', '')
+    direction = request.GET.get('direction', '')  # 'outgoing', 'incoming', or '' (all)
     qs = StockTransfer.objects.filter(is_deleted=False).select_related(
         'from_location', 'to_location', 'initiated_by', 'received_by'
     )
     if status_filter:
         qs = qs.filter(status=status_filter)
+    # Direction filter based on user's pharmacy location
+    user_locations = PharmacyLocation.objects.filter(
+        is_deleted=False, is_active=True, manager=request.user,
+    )
+    if direction == 'outgoing':
+        if user_locations.exists():
+            qs = qs.filter(from_location__in=user_locations)
+        else:
+            qs = qs.filter(initiated_by=request.user)
+    elif direction == 'incoming':
+        if user_locations.exists():
+            qs = qs.filter(to_location__in=user_locations)
+        else:
+            qs = qs.exclude(initiated_by=request.user)
+    # Count pending incoming for badge
+    pending_incoming_count = 0
+    if user_locations.exists():
+        pending_incoming_count = StockTransfer.objects.filter(
+            is_deleted=False, status=TransferStatus.PENDING,
+            to_location__in=user_locations,
+        ).count()
     return render(request, 'pharmacy/transfer_list.html', {
         'transfers': qs[:200],
         'status_filter': status_filter,
         'statuses': TransferStatus.choices,
+        'direction': direction,
+        'pending_incoming_count': pending_incoming_count,
     })
 
 
@@ -3630,7 +3666,8 @@ def transfer_create(request):
     drugs_with_stock = Drug.objects.filter(
         is_active=True, is_deleted=False,
         stock_items__quantity_remaining__gt=0, stock_items__is_deleted=False,
-        stock_items__expiry_date__gte=timezone.localdate(),
+    ).filter(
+        Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True)
     ).distinct().prefetch_related('stock_items').order_by('name')
     return render(request, 'pharmacy/transfer_form.html', {
         'locations': locations,
@@ -3714,8 +3751,7 @@ def cross_store_stock(request):
         drugs = drugs.annotate(
             avail_stock=Coalesce(
                 Sum('stock_items__quantity_remaining',
-                    filter=Q(stock_items__is_deleted=False,
-                             stock_items__expiry_date__gte=timezone.localdate())),
+                    filter=Q(stock_items__is_deleted=False) & (Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True))),
                 0
             ),
         ).order_by('name')[:200]
@@ -3950,7 +3986,7 @@ def dead_stock_report(request):
     ).annotate(
         stock_total=Coalesce(
             Sum('stock_items__quantity_remaining',
-                filter=Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=timezone.localdate())),
+                filter=Q(stock_items__is_deleted=False) & (Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True))),
             Value(0, output_field=IntegerField())
         ),
         last_dispensed=Max(
@@ -4005,7 +4041,7 @@ def turnover_report(request):
     drugs = Drug.objects.filter(is_active=True, is_deleted=False).annotate(
         stock_total=Coalesce(
             Sum('stock_items__quantity_remaining',
-                filter=Q(stock_items__is_deleted=False, stock_items__expiry_date__gte=timezone.localdate())),
+                filter=Q(stock_items__is_deleted=False) & (Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True))),
             Value(0, output_field=IntegerField())
         ),
         annual_dispensed=Coalesce(
@@ -4079,8 +4115,7 @@ def stock_situation_report(request):
     drugs = Drug.objects.filter(is_active=True, is_deleted=False).annotate(
         stock_qty=Coalesce(
             Sum('stock_items__quantity_remaining',
-                filter=Q(stock_items__is_deleted=False,
-                         stock_items__expiry_date__gte=timezone.localdate())),
+                filter=Q(stock_items__is_deleted=False) & (Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True))),
             Value(0, output_field=IntegerField())
         ),
     )
@@ -4278,3 +4313,440 @@ def generate_barcodes_bulk(request):
         count += 1
     messages.success(request, f'Generated barcodes for {count} drugs.')
     return redirect('pharmacy:drug_list')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEDICATED RECEIVE STOCK PAGE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def receive_stock(request):
+    """Standalone stock receiving — add new deliveries without navigating Drug & Stock."""
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+
+    suppliers = Supplier.objects.filter(is_deleted=False).order_by('name')
+    drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        line_count = int(request.POST.get('line_count', 0))
+        created = 0
+        for i in range(line_count):
+            drug_id = request.POST.get(f'lines-{i}-drug_id')
+            batch_number = request.POST.get(f'lines-{i}-batch_number', '').strip()
+            quantity = request.POST.get(f'lines-{i}-quantity')
+            expiry = request.POST.get(f'lines-{i}-expiry_date', '').strip()
+            purchase_price = request.POST.get(f'lines-{i}-purchase_price', '0')
+            supplier_name = request.POST.get(f'lines-{i}-supplier', '').strip()
+            notes = request.POST.get(f'lines-{i}-notes', '').strip()
+            manufacture_date = request.POST.get(f'lines-{i}-manufacture_date', '').strip()
+
+            if not drug_id or not quantity or int(quantity) <= 0:
+                continue
+            drug = Drug.objects.filter(pk=drug_id, is_deleted=False).first()
+            if not drug:
+                continue
+            import datetime
+            exp_date = None
+            if expiry:
+                try:
+                    exp_date = datetime.date.fromisoformat(expiry)
+                except ValueError:
+                    pass
+            mfg_date = None
+            if manufacture_date:
+                try:
+                    mfg_date = datetime.date.fromisoformat(manufacture_date)
+                except ValueError:
+                    pass
+            qty = int(quantity)
+            price = float(purchase_price) if purchase_price else 0
+            DrugStock.objects.create(
+                drug=drug,
+                batch_number=batch_number or f"RCV-{timezone.localdate().strftime('%Y%m%d')}-{i+1:03d}",
+                expiry_date=exp_date,
+                manufacture_date=mfg_date,
+                quantity_received=qty,
+                quantity_remaining=qty,
+                supplier=supplier_name,
+                purchase_price=price,
+                received_date=timezone.localdate(),
+                notes=notes,
+                created_by=request.user,
+            )
+            created += 1
+
+        if created:
+            messages.success(request, f'{created} stock batch{"es" if created != 1 else ""} received successfully.')
+        else:
+            messages.warning(request, 'No valid stock lines to receive.')
+        return redirect('pharmacy:receive_stock')
+
+    # Recent stock receipts (last 20)
+    recent = DrugStock.objects.filter(
+        is_deleted=False,
+        received_date__gte=timezone.localdate() - timezone.timedelta(days=7),
+    ).select_related('drug').order_by('-created_at')[:20]
+
+    return render(request, 'pharmacy/receive_stock.html', {
+        'drugs': drugs,
+        'suppliers': suppliers,
+        'recent': recent,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STOCK BULK IMPORT — CSV / Excel upload for receiving deliveries
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def stock_import_template(request):
+    """Download a blank Excel template for bulk stock receiving."""
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Stock Import'
+
+    headers = [
+        'drug_name', 'batch_number', 'quantity', 'expiry_date',
+        'manufacture_date', 'cost_price', 'supplier', 'notes',
+    ]
+    hints = [
+        'REQUIRED — must match an existing drug in the formulary',
+        'Optional — auto-generated if blank',
+        'REQUIRED — whole number',
+        'Optional — DD/MM/YYYY',
+        'Optional — DD/MM/YYYY',
+        'FCFA per unit (0 if blank)',
+        'Optional — supplier name',
+        'Optional — any notes',
+    ]
+    thin = Side(border_style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for col, (h, hint) in enumerate(zip(headers, hints), 1):
+        hc = ws.cell(row=1, column=col, value=h)
+        hc.font = Font(bold=True, color='FFFFFF', size=10)
+        hc.fill = PatternFill(fill_type='solid', fgColor='1E3A5F')
+        hc.alignment = Alignment(horizontal='center', wrap_text=True)
+        hc.border = border
+        hintc = ws.cell(row=2, column=col, value=hint)
+        hintc.font = Font(italic=True, color='555555', size=9)
+        hintc.fill = PatternFill(fill_type='solid', fgColor='E8F0FE')
+        hintc.alignment = Alignment(wrap_text=True)
+        hintc.border = border
+
+    sample = ['Ciprofloxacin 500mg', 'BATCH-2026-001', 100, '31/12/2027', '', 1400, 'PharmaCo Ltd', '']
+    for col, val in enumerate(sample, 1):
+        c = ws.cell(row=3, column=col, value=val)
+        c.fill = PatternFill(fill_type='solid', fgColor='F0FFF0')
+        c.border = border
+
+    for i, w in enumerate([28, 20, 10, 14, 14, 12, 22, 20], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[2].height = 36
+    ws.freeze_panes = 'A4'
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="EHR_Stock_Import_Template.xlsx"'
+    wb.save(response)
+    return response
+
+
+@login_required
+def stock_bulk_import(request):
+    """Upload Excel/CSV to bulk-receive stock batches for existing drugs."""
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+
+    if request.method != 'POST':
+        return redirect('pharmacy:receive_stock')
+
+    uploaded = request.FILES.get('import_file')
+    if not uploaded:
+        messages.error(request, 'No file selected.')
+        return redirect('pharmacy:receive_stock')
+
+    filename = uploaded.name.lower()
+    rows = []
+    try:
+        if filename.endswith('.xlsx') or filename.endswith('.xls'):
+            import openpyxl
+            wb = openpyxl.load_workbook(uploaded, data_only=True)
+            ws = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            if len(all_rows) < 3:
+                messages.error(request, 'File has no data rows (need header + hint + at least 1 data row).')
+                return redirect('pharmacy:receive_stock')
+            headers = [str(h).strip().lower().replace(' ', '_') if h else '' for h in all_rows[0]]
+            for raw in all_rows[2:]:  # skip header + hint row
+                if all(v is None for v in raw):
+                    continue
+                rows.append(dict(zip(headers, raw)))
+        elif filename.endswith('.csv'):
+            import csv, io
+            content = uploaded.read().decode('utf-8-sig')
+            reader = csv.DictReader(io.StringIO(content))
+            reader.fieldnames = [f.strip().lower().replace(' ', '_') for f in (reader.fieldnames or [])]
+            for row in reader:
+                rows.append({k.strip().lower().replace(' ', '_'): v for k, v in row.items()})
+        else:
+            messages.error(request, 'Unsupported format — upload .xlsx or .csv only.')
+            return redirect('pharmacy:receive_stock')
+    except Exception as e:
+        messages.error(request, f'Could not read file: {e}')
+        return redirect('pharmacy:receive_stock')
+
+    created = skipped = 0
+    errors_list = []
+    today = timezone.localdate()
+
+    for i, row in enumerate(rows, start=3):
+        drug_name = _str(row.get('drug_name') or row.get('name', ''))
+        if not drug_name:
+            skipped += 1
+            continue
+        drug = Drug.objects.filter(
+            Q(name__iexact=drug_name) | Q(name__icontains=drug_name),
+            is_active=True, is_deleted=False,
+        ).first()
+        if not drug:
+            errors_list.append(f'Row {i}: drug "{drug_name}" not found in formulary — skipped.')
+            skipped += 1
+            continue
+
+        qty = _int(row.get('quantity') or row.get('qty'), 0)
+        if qty <= 0:
+            errors_list.append(f'Row {i} ({drug_name}): quantity must be > 0 — skipped.')
+            skipped += 1
+            continue
+
+        batch_number = _str(row.get('batch_number', ''))
+        expiry_date = _parse_date(row.get('expiry_date'))
+        mfg_date = _parse_date(row.get('manufacture_date'))
+        cost = _dec(row.get('cost_price') or row.get('purchase_price', '0'))
+        supplier = _str(row.get('supplier') or row.get('supplier_name', ''))
+        notes = _str(row.get('notes', ''))
+
+        if expiry_date and expiry_date < today:
+            errors_list.append(f'Row {i} ({drug_name}): expired batch ({expiry_date}) — skipped.')
+            skipped += 1
+            continue
+
+        if not batch_number:
+            batch_number = f"IMP-{today.strftime('%Y%m%d')}-{i:04d}"
+
+        DrugStock.objects.create(
+            drug=drug,
+            batch_number=batch_number,
+            expiry_date=expiry_date,
+            manufacture_date=mfg_date,
+            quantity_received=qty,
+            quantity_remaining=qty,
+            purchase_price=cost,
+            supplier=supplier,
+            received_date=today,
+            notes=notes,
+            created_by=request.user,
+        )
+        created += 1
+
+    if created:
+        messages.success(request, f'{created} stock batch{"es" if created != 1 else ""} imported successfully.')
+    if skipped:
+        messages.warning(request, f'{skipped} row{"s" if skipped != 1 else ""} skipped.')
+    if errors_list:
+        messages.info(request, ' | '.join(errors_list[:10]))
+    if not created and not skipped:
+        messages.warning(request, 'No valid rows found in the file.')
+    return redirect('pharmacy:receive_stock')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STOCK MOVEMENT LOG — Unified Audit Trail
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def stock_movement_log(request):
+    """Unified chronological log of all stock movements."""
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+    import datetime
+    from itertools import chain
+    from operator import attrgetter
+
+    days = int(request.GET.get('days', 30))
+    movement_type = request.GET.get('type', '')
+    drug_search = request.GET.get('q', '').strip()
+    cutoff = timezone.now() - datetime.timedelta(days=days)
+
+    movements = []
+
+    # 1) Stock Received
+    if not movement_type or movement_type == 'received':
+        received_qs = DrugStock.objects.filter(
+            is_deleted=False, created_at__gte=cutoff,
+        ).select_related('drug')
+        if drug_search:
+            received_qs = received_qs.filter(
+                Q(drug__name__icontains=drug_search) | Q(drug__generic_name__icontains=drug_search)
+            )
+        for s in received_qs:
+            movements.append({
+                'date': s.created_at,
+                'type': 'Received',
+                'type_class': 'success',
+                'drug': s.drug.name,
+                'drug_strength': s.drug.strength or '',
+                'batch': s.batch_number,
+                'qty': f'+{s.quantity_received}',
+                'detail': f'Supplier: {s.supplier or "N/A"}',
+                'user': s.created_by.get_full_name() if s.created_by else '--',
+            })
+
+    # 2) Dispensed
+    if not movement_type or movement_type == 'dispensed':
+        disp_qs = DispensingItem.objects.filter(
+            dispensing__status=DispensingStatus.DISPENSED,
+            dispensing__dispensed_at__gte=cutoff,
+            dispensing__is_deleted=False,
+        ).select_related('drug', 'dispensing', 'dispensing__dispensed_by')
+        if drug_search:
+            disp_qs = disp_qs.filter(
+                Q(drug__name__icontains=drug_search) | Q(drug__generic_name__icontains=drug_search)
+            )
+        for di in disp_qs:
+            movements.append({
+                'date': di.dispensing.dispensed_at,
+                'type': 'Dispensed',
+                'type_class': 'primary',
+                'drug': di.drug.name,
+                'drug_strength': di.drug.strength or '',
+                'batch': di.stock_batch.batch_number if di.stock_batch else '--',
+                'qty': f'-{di.quantity_dispensed}',
+                'detail': f'Rx: {di.dispensing.dispensing_number}',
+                'user': di.dispensing.dispensed_by.get_full_name() if di.dispensing.dispensed_by else '--',
+            })
+
+    # 3) Transfers Out
+    if not movement_type or movement_type == 'transfer_out':
+        tout_qs = StockTransferItem.objects.filter(
+            transfer__status__in=[TransferStatus.PENDING, TransferStatus.RECEIVED, TransferStatus.IN_TRANSIT],
+            transfer__initiated_at__gte=cutoff,
+            transfer__is_deleted=False,
+        ).select_related('drug', 'transfer', 'transfer__from_location', 'transfer__to_location', 'transfer__initiated_by')
+        if drug_search:
+            tout_qs = tout_qs.filter(
+                Q(drug__name__icontains=drug_search) | Q(drug__generic_name__icontains=drug_search)
+            )
+        for ti in tout_qs:
+            movements.append({
+                'date': ti.transfer.initiated_at,
+                'type': 'Transfer Out',
+                'type_class': 'warning',
+                'drug': ti.drug.name,
+                'drug_strength': ti.drug.strength or '',
+                'batch': ti.stock_batch.batch_number if ti.stock_batch else '--',
+                'qty': f'-{ti.quantity}',
+                'detail': f'{ti.transfer.from_location} → {ti.transfer.to_location}',
+                'user': ti.transfer.initiated_by.get_full_name() if ti.transfer.initiated_by else '--',
+            })
+
+    # 4) Transfers In (received)
+    if not movement_type or movement_type == 'transfer_in':
+        tin_qs = StockTransferItem.objects.filter(
+            transfer__status=TransferStatus.RECEIVED,
+            transfer__received_at__gte=cutoff,
+            transfer__is_deleted=False,
+        ).select_related('drug', 'transfer', 'transfer__from_location', 'transfer__to_location', 'transfer__received_by')
+        if drug_search:
+            tin_qs = tin_qs.filter(
+                Q(drug__name__icontains=drug_search) | Q(drug__generic_name__icontains=drug_search)
+            )
+        for ti in tin_qs:
+            movements.append({
+                'date': ti.transfer.received_at,
+                'type': 'Transfer In',
+                'type_class': 'info',
+                'drug': ti.drug.name,
+                'drug_strength': ti.drug.strength or '',
+                'batch': ti.stock_batch.batch_number if ti.stock_batch else '--',
+                'qty': f'+{ti.quantity_received}',
+                'detail': f'{ti.transfer.from_location} → {ti.transfer.to_location}',
+                'user': ti.transfer.received_by.get_full_name() if ti.transfer.received_by else '--',
+            })
+
+    # 5) Stock Adjustments
+    if not movement_type or movement_type == 'adjusted':
+        adj_qs = StockAdjustment.objects.filter(
+            is_deleted=False, created_at__gte=cutoff,
+        ).select_related('batch__drug', 'created_by')
+        if drug_search:
+            adj_qs = adj_qs.filter(
+                Q(batch__drug__name__icontains=drug_search) | Q(batch__drug__generic_name__icontains=drug_search)
+            )
+        for a in adj_qs:
+            sign = '+' if a.quantity_change > 0 else ''
+            movements.append({
+                'date': a.created_at,
+                'type': 'Adjustment',
+                'type_class': 'secondary',
+                'drug': a.batch.drug.name,
+                'drug_strength': a.batch.drug.strength or '',
+                'batch': a.batch.batch_number,
+                'qty': f'{sign}{a.quantity_change}',
+                'detail': f'{a.get_reason_display()}',
+                'user': a.created_by.get_full_name() if a.created_by else '--',
+            })
+
+    # 6) Stock Exits
+    if not movement_type or movement_type == 'exit':
+        exit_qs = StockExit.objects.filter(
+            is_deleted=False, exit_date__gte=cutoff,
+        ).select_related('drug', 'stock_batch', 'authorized_by')
+        if drug_search:
+            exit_qs = exit_qs.filter(
+                Q(drug__name__icontains=drug_search) | Q(drug__generic_name__icontains=drug_search)
+            )
+        for ex in exit_qs:
+            movements.append({
+                'date': ex.exit_date,
+                'type': f'Exit ({ex.get_reason_display()})',
+                'type_class': 'danger',
+                'drug': ex.drug.name,
+                'drug_strength': ex.drug.strength or '',
+                'batch': ex.stock_batch.batch_number,
+                'qty': f'-{ex.quantity}',
+                'detail': ex.disposal_method or ex.notes or '--',
+                'user': ex.authorized_by.get_full_name() if ex.authorized_by else '--',
+            })
+
+    # Sort by date descending
+    movements.sort(key=lambda x: x['date'], reverse=True)
+
+    # Limit to 500
+    movements = movements[:500]
+
+    movement_types = [
+        ('', 'All Movements'),
+        ('received', 'Stock Received'),
+        ('dispensed', 'Dispensed'),
+        ('transfer_out', 'Transfers Out'),
+        ('transfer_in', 'Transfers In'),
+        ('adjusted', 'Adjustments'),
+        ('exit', 'Stock Exits'),
+    ]
+
+    return render(request, 'pharmacy/stock_movement_log.html', {
+        'movements': movements,
+        'days': days,
+        'movement_type': movement_type,
+        'drug_search': drug_search,
+        'movement_types': movement_types,
+        'total_count': len(movements),
+    })

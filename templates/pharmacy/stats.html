@@ -8,7 +8,7 @@
     <i class="bi bi-graph-up-arrow text-primary fs-4"></i>
     <div>
       <h5 class="mb-0 fw-bold">Pharmacy Statistics</h5>
-      <div class="text-muted small">{{ month_name }} — Monthly report</div>
+      <div class="text-muted small">{{ month_name }} — WHO-standard monthly report</div>
     </div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -17,18 +17,22 @@
         <i class="bi bi-chevron-left"></i>
       </a>
       <span class="btn btn-outline-secondary disabled px-3">{{ month_name }}</span>
-      {% if year != today.year or month != today.month %}
       <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary">
         <i class="bi bi-chevron-right"></i>
       </a>
-      {% endif %}
     </div>
-    <a href="{% url 'pharmacy:stats_csv' %}?year={{ year }}&month={{ month }}" class="btn btn-sm btn-success">
-      <i class="bi bi-filetype-csv me-1"></i>Export CSV
-    </a>
+    {% if is_current_month %}
+    <span class="badge bg-light border text-muted small d-flex align-items-center gap-1"
+          title="Auto-refreshes every 60 seconds">
+      <i class="bi bi-arrow-clockwise"></i> <span id="statsCountdown">60s</span>
+    </span>
+    {% endif %}
     <button onclick="exportStatsPDF()" class="btn btn-sm btn-danger">
       <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
     </button>
+    <a href="{% url 'pharmacy:stats_csv' %}?year={{ year }}&month={{ month }}" class="btn btn-sm btn-success">
+      <i class="bi bi-filetype-csv me-1"></i>CSV
+    </a>
     <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-printer-fill me-1"></i>Print with Charts
     </button>
@@ -545,6 +549,37 @@
 </div>
 {% endif %}
 
+{# ── Low Stock Alert Summary ── #}
+{% if low_stock_count %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-exclamation-triangle text-warning"></i>
+    <span>Low Stock / Stockout Summary</span>
+    <span class="badge bg-warning-subtle text-warning small ms-2">{{ low_stock_count }} items below reorder level</span>
+  </div>
+  <div class="card-body py-2">
+    <div class="row g-3 text-center">
+      <div class="col-md-3">
+        <div class="h3 fw-bold text-danger">{{ stockout_count }}</div>
+        <div class="small text-muted">Zero Stock</div>
+      </div>
+      <div class="col-md-3">
+        <div class="h3 fw-bold text-warning">{{ low_stock_count }}</div>
+        <div class="small text-muted">Below Reorder Level</div>
+      </div>
+      <div class="col-md-3">
+        <div class="h3 fw-bold text-info">{{ near_expiry_count }}</div>
+        <div class="small text-muted">Expiring in 30 Days</div>
+      </div>
+      <div class="col-md-3">
+        <div class="h3 fw-bold text-danger">{{ expired_value|floatformat:0|intcomma }} F</div>
+        <div class="small text-muted">Expired Value (Month)</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# ── Categories Table ── #}
 {% if category_stats %}
 <div class="card border-0 shadow-sm mb-4">
@@ -582,6 +617,30 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+window._AI_STATS = {
+  dept: 'pharmacy',
+  data: {
+    period: '{{ month_name }}',
+    total_dispensings: {{ total_dispensings }},
+    dispensed: {{ dispensed_count }},
+    partial: {{ partial_count }},
+    cancelled: {{ cancelled_count }},
+    completion_rate: {{ completion_rate }},
+    revenue: {{ revenue|floatformat:0 }},
+    male_patients: {{ male_count }},
+    female_patients: {{ female_count }},
+    paediatric: {{ paed_count }},
+    adult: {{ adult_count }},
+    antibiotic_rate: {{ antibiotic_rate }},
+    stockout_rate: {{ stockout_rate }},
+    gross_margin: {{ gross_margin }},
+    rx_per_day: {{ rx_per_day }},
+    top_drugs: [{% for d in top_drugs|slice:":5" %}{"name":"{{ d.drug_name|escapejs }}","qty":{{ d.qty }}}{% if not forloop.last %},{% endif %}{% endfor %}]
+  }
+};
+</script>
+{% include "components/ai_stats_insights.html" %}
 <script>
 function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[id]")){return;}window.__ehrChartInit=null;
 const COLORS = ['#6366f1','#0d6efd','#0dcaf0','#198754','#ffc107','#dc3545','#6c757d','#fd7e14','#20c997','#e83e8c'];
@@ -726,6 +785,19 @@ if (TIER.data.some(function(v){return v>0;})) {
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
   });
 }
+// Auto-refresh countdown (current month only)
+{% if is_current_month %}
+(function(){
+  var countdown = 60;
+  var el = document.getElementById('statsCountdown');
+  if (!el) return;
+  var timer = setInterval(function(){
+    countdown--;
+    el.textContent = countdown + 's';
+    if (countdown <= 0){ clearInterval(timer); location.reload(); }
+  }, 1000);
+}());
+{% endif %}
 }window.__ehrChartInit=_c;_c();
 </script>
 

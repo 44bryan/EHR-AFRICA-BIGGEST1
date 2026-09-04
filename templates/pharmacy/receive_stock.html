@@ -1,0 +1,249 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Receive Stock — Pharmacy{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-boxes me-2 text-success"></i>Receive Stock</h4>
+    <p class="text-muted small mb-0">Record new drug deliveries — batch, expiry, supplier, quantity</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#bulkImportModal">
+      <i class="bi bi-cloud-upload me-1"></i>Bulk Import
+    </button>
+    <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Drug & Stock
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" id="receiveForm">
+  {% csrf_token %}
+  <input type="hidden" name="line_count" id="lineCount" value="0">
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+      <strong><i class="bi bi-box-seam me-2"></i>Stock Lines</strong>
+      <button type="button" class="btn btn-sm btn-primary" id="addLineBtn">
+        <i class="bi bi-plus-circle me-1"></i>Add Line
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0" id="linesTable">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width:200px">Drug <span class="text-danger">*</span></th>
+              <th style="width:120px">Batch #</th>
+              <th style="width:90px">Qty <span class="text-danger">*</span></th>
+              <th style="width:130px">Expiry Date</th>
+              <th style="width:130px">Mfg Date</th>
+              <th style="width:120px">Cost Price</th>
+              <th style="min-width:150px">Supplier</th>
+              <th style="width:150px">Notes</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody id="linesBody">
+            <tr id="emptyRow">
+              <td colspan="9" class="text-center text-muted py-4">
+                Click <strong>"Add Line"</strong> to add stock entries.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 mb-4">
+    <button type="submit" class="btn btn-success fw-bold" id="submitBtn" disabled>
+      <i class="bi bi-check-lg me-1"></i>Receive Stock
+    </button>
+    <button type="button" class="btn btn-outline-primary" id="addLineBtn2">
+      <i class="bi bi-plus-circle me-1"></i>Add Another Line
+    </button>
+  </div>
+</form>
+
+{# ── Recent Receipts ── #}
+{% if recent %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light py-2">
+    <strong><i class="bi bi-clock-history me-2 text-muted"></i>Recent Stock Receipts (last 7 days)</strong>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Drug</th>
+          <th>Batch #</th>
+          <th class="text-end">Qty</th>
+          <th>Expiry</th>
+          <th>Supplier</th>
+          <th>Received</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in recent %}
+        <tr>
+          <td class="fw-semibold">{{ s.drug.name }}{% if s.drug.strength %} <small class="text-muted">{{ s.drug.strength }}</small>{% endif %}</td>
+          <td class="small">{{ s.batch_number }}</td>
+          <td class="text-end fw-bold text-success">+{{ s.quantity_received }}</td>
+          <td class="small text-muted">{{ s.expiry_date|date:"d M Y"|default:"--" }}</td>
+          <td class="small">{{ s.supplier|default:"--" }}</td>
+          <td class="small text-muted">{{ s.received_date|date:"d M Y" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# Drug select template (hidden) #}
+<select id="drugTemplate" class="d-none">
+  <option value="">-- Select Drug --</option>
+  {% for d in drugs %}
+  <option value="{{ d.id }}" data-cost="{{ d.cost_price|floatformat:2 }}">{{ d.name }}{% if d.strength %} ({{ d.strength }}){% endif %}</option>
+  {% endfor %}
+</select>
+
+{# Supplier datalist #}
+<datalist id="supplierList">
+  {% for s in suppliers %}
+  <option value="{{ s.name }}">
+  {% endfor %}
+</datalist>
+
+<script>
+var lineCount = 0;
+function addLine() {
+  var tbody = document.getElementById('linesBody');
+  var empty = document.getElementById('emptyRow');
+  if (empty) empty.remove();
+  var idx = lineCount;
+  lineCount++;
+  document.getElementById('lineCount').value = lineCount;
+
+  var drugSel = document.getElementById('drugTemplate').cloneNode(true);
+  drugSel.removeAttribute('id');
+  drugSel.name = 'lines-' + idx + '-drug_id';
+  drugSel.classList.remove('d-none');
+  drugSel.classList.add('form-select', 'form-select-sm');
+
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td></td>' +
+    '<td><input type="text" name="lines-' + idx + '-batch_number" class="form-control form-control-sm" placeholder="Batch #"></td>' +
+    '<td><input type="number" name="lines-' + idx + '-quantity" class="form-control form-control-sm" min="1" value="1" required></td>' +
+    '<td><input type="date" name="lines-' + idx + '-expiry_date" class="form-control form-control-sm"></td>' +
+    '<td><input type="date" name="lines-' + idx + '-manufacture_date" class="form-control form-control-sm"></td>' +
+    '<td><input type="number" name="lines-' + idx + '-purchase_price" class="form-control form-control-sm" step="0.01" min="0" value="0"></td>' +
+    '<td><input type="text" name="lines-' + idx + '-supplier" class="form-control form-control-sm" list="supplierList" placeholder="Supplier"></td>' +
+    '<td><input type="text" name="lines-' + idx + '-notes" class="form-control form-control-sm" placeholder="Notes"></td>' +
+    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLine(this)"><i class="bi bi-trash"></i></button></td>';
+  tr.cells[0].appendChild(drugSel);
+
+  // Auto-fill cost price on drug selection
+  drugSel.addEventListener('change', function() {
+    var opt = this.options[this.selectedIndex];
+    var cost = opt.getAttribute('data-cost');
+    if (cost) tr.querySelector('[name$="-purchase_price"]').value = cost;
+  });
+
+  tbody.appendChild(tr);
+  updateSubmitBtn();
+  drugSel.focus();
+}
+
+function removeLine(btn) {
+  btn.closest('tr').remove();
+  updateSubmitBtn();
+}
+
+function updateSubmitBtn() {
+  var rows = document.querySelectorAll('#linesBody tr:not(#emptyRow)');
+  document.getElementById('submitBtn').disabled = rows.length === 0;
+  if (rows.length === 0) {
+    var tbody = document.getElementById('linesBody');
+    tbody.innerHTML = '<tr id="emptyRow"><td colspan="9" class="text-center text-muted py-4">Click <strong>"Add Line"</strong> to add stock entries.</td></tr>';
+  }
+}
+
+document.getElementById('addLineBtn').addEventListener('click', addLine);
+document.getElementById('addLineBtn2').addEventListener('click', addLine);
+
+// Start with one line
+addLine();
+</script>
+
+{# ── Bulk Import Modal ── #}
+<div class="modal fade" id="bulkImportModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-primary text-white py-2">
+        <h6 class="modal-title fw-bold"><i class="bi bi-cloud-upload me-2"></i>Bulk Stock Import</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{% url 'pharmacy:stock_bulk_import' %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="alert alert-info small py-2 mb-3">
+            <i class="bi bi-info-circle me-1"></i>
+            Upload an Excel (.xlsx) or CSV file to receive multiple stock batches at once.
+            Drugs must already exist in the formulary.
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-7">
+              <label class="form-label fw-semibold small">Select File</label>
+              <input type="file" name="import_file" accept=".xlsx,.xls,.csv" class="form-control form-control-sm" required>
+              <div class="form-text">Accepted formats: .xlsx, .csv</div>
+            </div>
+            <div class="col-md-5 d-flex align-items-end">
+              <a href="{% url 'pharmacy:stock_import_template' %}" class="btn btn-sm btn-outline-success w-100">
+                <i class="bi bi-download me-1"></i>Download Template
+              </a>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <p class="fw-semibold small mb-2">Template Columns:</p>
+            <div class="table-responsive">
+              <table class="table table-sm small mb-0 border">
+                <thead class="table-light">
+                  <tr><th>Column</th><th>Required</th><th>Example</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="fw-semibold">drug_name</td><td><span class="badge bg-danger-subtle text-danger">Required</span></td><td>Ciprofloxacin 500mg</td></tr>
+                  <tr><td>batch_number</td><td><span class="badge bg-secondary-subtle text-secondary">Optional</span></td><td>BATCH-2026-001</td></tr>
+                  <tr><td class="fw-semibold">quantity</td><td><span class="badge bg-danger-subtle text-danger">Required</span></td><td>100</td></tr>
+                  <tr><td>expiry_date</td><td><span class="badge bg-secondary-subtle text-secondary">Optional</span></td><td>31/12/2027</td></tr>
+                  <tr><td>manufacture_date</td><td><span class="badge bg-secondary-subtle text-secondary">Optional</span></td><td>01/01/2026</td></tr>
+                  <tr><td>cost_price</td><td><span class="badge bg-secondary-subtle text-secondary">Optional</span></td><td>1400</td></tr>
+                  <tr><td>supplier</td><td><span class="badge bg-secondary-subtle text-secondary">Optional</span></td><td>PharmaCo Ltd</td></tr>
+                  <tr><td>notes</td><td><span class="badge bg-secondary-subtle text-secondary">Optional</span></td><td>Donation batch</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="form-text mt-1">
+              <i class="bi bi-exclamation-triangle text-warning me-1"></i>
+              Row 2 in the template is a hint row — data starts from row 3. The sample row should be deleted.
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary fw-bold">
+            <i class="bi bi-upload me-1"></i>Import Stock
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
