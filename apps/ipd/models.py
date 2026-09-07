@@ -977,3 +977,72 @@ class FluidBalance(TimeStampedModel):
         }
         self.is_intake = self.entry_type not in output_types
         super().save(*args, **kwargs)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Medication Reconciliation  (JCI MMU.4 — Med Rec at every transition of care)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MedRecPhase(models.TextChoices):
+    ADMISSION  = 'ADMISSION',  'On Admission'
+    TRANSFER   = 'TRANSFER',   'On Transfer'
+    DISCHARGE  = 'DISCHARGE',  'On Discharge'
+
+
+class MedRecAction(models.TextChoices):
+    CONTINUE     = 'CONTINUE',     'Continue'
+    MODIFY       = 'MODIFY',       'Modify Dose / Route'
+    HOLD         = 'HOLD',         'Hold (Temporary)'
+    DISCONTINUE  = 'DISCONTINUE',  'Discontinue'
+    NEW          = 'NEW',          'New Order'
+
+
+class MedicationReconciliation(AuditModel):
+    """
+    Master reconciliation record — one per transition of care.
+    Contains individual MedRecItem entries for each home medication.
+    """
+    admission = models.ForeignKey(
+        Admission, on_delete=models.CASCADE, related_name='med_reconciliations',
+    )
+    patient = models.ForeignKey('patients.Patient', on_delete=models.CASCADE, related_name='med_reconciliations')
+    phase = models.CharField(max_length=12, choices=MedRecPhase.choices)
+    reconciled_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, related_name='med_reconciliations_done',
+    )
+    reconciled_at = models.DateTimeField(null=True, blank=True)
+    is_complete = models.BooleanField(default=False, help_text='Marked complete when pharmacist verifies')
+    verified_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='med_reconciliations_verified',
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Medication Reconciliation'
+
+    def __str__(self):
+        return f"MedRec {self.get_phase_display()} — {self.patient.full_name}"
+
+
+class MedRecItem(TimeStampedModel):
+    """Individual medication line within a reconciliation."""
+    reconciliation = models.ForeignKey(
+        MedicationReconciliation, on_delete=models.CASCADE, related_name='items',
+    )
+    medication_name = models.CharField(max_length=255, help_text='Drug name as reported by patient')
+    dose = models.CharField(max_length=100, blank=True)
+    route = models.CharField(max_length=50, blank=True, help_text='PO, IV, topical, etc.')
+    frequency = models.CharField(max_length=100, blank=True)
+    action = models.CharField(max_length=15, choices=MedRecAction.choices, default=MedRecAction.CONTINUE)
+    new_dose = models.CharField(max_length=100, blank=True, help_text='If action=MODIFY, new dose')
+    new_frequency = models.CharField(max_length=100, blank=True)
+    reason = models.TextField(blank=True, help_text='Reason for change/discontinuation')
+    source = models.CharField(max_length=50, blank=True, help_text='Patient report, pharmacy record, referral letter')
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.medication_name} → {self.get_action_display()}"

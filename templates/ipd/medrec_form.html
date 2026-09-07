@@ -1,0 +1,115 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}New Medication Reconciliation — {{ admission.patient.full_name }} — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.med-row { background: #f8f9fa; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+.med-row .form-control, .med-row .form-select { font-size: .82rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-3" style="max-width:1000px;">
+  <h5 class="fw-semibold mb-1">
+    <i class="bi bi-capsule me-2 text-warning"></i>New Medication Reconciliation
+  </h5>
+  <div class="text-muted small mb-3">{{ admission.patient.full_name }} &middot; Admission #{{ admission.admission_number }}</div>
+
+  <form method="post" id="medrecForm">
+    {% csrf_token %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Phase <span class="text-danger">*</span></label>
+            <select name="phase" class="form-select" required>
+              {% for val, label in phases %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label small fw-semibold">Notes</label>
+            <input type="text" name="notes" class="form-control" placeholder="e.g. Patient brought medication list from previous hospital">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold small"><i class="bi bi-list-check me-1"></i>Medications</h6>
+        <button type="button" class="btn btn-sm btn-outline-success" onclick="addMedRow()">
+          <i class="bi bi-plus-lg me-1"></i>Add Medication
+        </button>
+      </div>
+      <div class="card-body" id="medRows">
+        {# First row added by default #}
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-warning"><i class="bi bi-check-lg me-1"></i>Save Reconciliation</button>
+      <a href="{% url 'ipd:medrec_list' admission_id=admission.pk %}" class="btn btn-light border">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let medRowIdx = 0;
+const actions = [
+  {% for val, label in actions %}
+  {v:'{{ val }}', l:'{{ label }}'},
+  {% endfor %}
+];
+function actionOpts() {
+  return actions.map(a => `<option value="${a.v}">${a.l}</option>`).join('');
+}
+function addMedRow() {
+  medRowIdx++;
+  const html = `
+  <div class="med-row" id="medRow${medRowIdx}">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="fw-semibold small text-muted">Medication #${medRowIdx}</span>
+      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="document.getElementById('medRow${medRowIdx}').remove()">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-4">
+        <input type="text" name="med_name" class="form-control" placeholder="Medication name *" required>
+      </div>
+      <div class="col-md-2">
+        <input type="text" name="med_dose" class="form-control" placeholder="Dose">
+      </div>
+      <div class="col-md-2">
+        <input type="text" name="med_route" class="form-control" placeholder="Route (PO, IV...)">
+      </div>
+      <div class="col-md-2">
+        <input type="text" name="med_freq" class="form-control" placeholder="Frequency">
+      </div>
+      <div class="col-md-2">
+        <select name="med_action" class="form-select">${actionOpts()}</select>
+      </div>
+      <div class="col-md-3">
+        <input type="text" name="med_new_dose" class="form-control" placeholder="New dose (if modified)">
+      </div>
+      <div class="col-md-3">
+        <input type="text" name="med_new_freq" class="form-control" placeholder="New frequency">
+      </div>
+      <div class="col-md-3">
+        <input type="text" name="med_source" class="form-control" placeholder="Source (patient, referral...)">
+      </div>
+      <div class="col-md-3">
+        <input type="text" name="med_reason" class="form-control" placeholder="Reason for change">
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('medRows').insertAdjacentHTML('beforeend', html);
+}
+// Start with one row
+addMedRow();
+</script>
+{% endblock %}

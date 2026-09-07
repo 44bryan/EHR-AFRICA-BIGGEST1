@@ -378,6 +378,11 @@
           <i class="bi bi-clipboard2-heart me-1"></i>Clinical Examination — {{ consultation.department.name }}
         </h6>
         <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-xs btn-outline-info py-0 px-2" style="font-size:.72rem;"
+                  onclick="event.stopPropagation();openMacroPanel()"
+                  title="Insert clinical template">
+            <i class="bi bi-file-earmark-text me-1"></i>Macros
+          </button>
           <button type="button" class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:.72rem;"
                   onclick="event.stopPropagation();saveDraftEdit('clinical')">
             <i class="bi bi-cloud-check me-1"></i>Save
@@ -496,6 +501,27 @@
 </form>
 
 {% endwith %}
+
+{# ── Clinical Macro Insert Panel (offcanvas) ── #}
+<div class="offcanvas offcanvas-end" tabindex="-1" id="macroPanel" style="max-width:380px;">
+  <div class="offcanvas-header py-2 border-bottom">
+    <h6 class="offcanvas-title fw-semibold"><i class="bi bi-file-earmark-text me-2 text-info"></i>Clinical Macros</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body p-2">
+    <input type="text" id="macroSearchInput" class="form-control form-control-sm mb-2" placeholder="Search macros...">
+    <select id="macroTypeFilter" class="form-select form-select-sm mb-2">
+      <option value="">All Types</option>
+      <option value="EXAM">Examination</option>
+      <option value="HISTORY">History</option>
+      <option value="PLAN">Plan</option>
+      <option value="DIAG">Diagnosis</option>
+      <option value="PROC">Procedure Note</option>
+    </select>
+    <div id="macroResults" style="max-height:calc(100vh - 200px);overflow-y:auto;"></div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -571,5 +597,54 @@ function saveDraftEdit(section) {
     btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save';
   });
 }
+
+// ── Clinical Macros Panel ────────────────────────────────────────────────────
+var _macroPanel;
+function openMacroPanel() {
+  if (!_macroPanel) _macroPanel = new bootstrap.Offcanvas(document.getElementById('macroPanel'));
+  _macroPanel.show();
+  searchMacros();
+}
+function searchMacros() {
+  var q = (document.getElementById('macroSearchInput').value || '').trim();
+  var ttype = document.getElementById('macroTypeFilter').value;
+  var dept = '{{ consultation.department.code|default:"" }}';
+  var url = '{% url "consultations:template_search" %}?q=' + encodeURIComponent(q) + '&type=' + ttype + '&dept=' + dept;
+  fetch(url).then(function(r){ return r.json(); }).then(function(data) {
+    var div = document.getElementById('macroResults');
+    if (!data.results.length) { div.innerHTML = '<div class="text-muted small py-3 text-center">No macros found.</div>'; return; }
+    div.innerHTML = data.results.map(function(m) {
+      var typeColors = {EXAM:'success',HISTORY:'primary',PLAN:'warning',DIAG:'info',PROC:'danger'};
+      var c = typeColors[m.template_type] || 'secondary';
+      return '<div class="border rounded p-2 mb-2" style="font-size:.82rem;cursor:pointer;" onclick="insertMacro('+JSON.stringify(m.content)+')">'
+        + '<div class="d-flex justify-content-between align-items-center mb-1">'
+        + '<span class="fw-semibold">' + m.title + '</span>'
+        + '<span class="badge bg-'+c+'-subtle text-'+c+'-emphasis" style="font-size:.65rem;">' + m.template_type + '</span>'
+        + '</div>'
+        + '<div class="text-muted" style="font-size:.75rem;white-space:pre-wrap;max-height:60px;overflow:hidden;">' + m.content.substring(0,150) + '</div>'
+        + '<div class="text-end mt-1"><span class="text-info small"><i class="bi bi-plus-circle me-1"></i>Click to insert</span></div>'
+        + '</div>';
+    }).join('');
+  });
+}
+function insertMacro(text) {
+  // Find the currently focused or last active textarea/input
+  var el = document.activeElement;
+  if (!el || (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT')) {
+    // Fallback: find exam_findings or first textarea in the exam section
+    el = document.querySelector('#bodyExam textarea, #bodyExam input[type="text"]');
+  }
+  if (el) {
+    var start = el.selectionStart || el.value.length;
+    var before = el.value.substring(0, start);
+    var after = el.value.substring(el.selectionEnd || start);
+    el.value = before + (before && !before.endsWith('\n') && !before.endsWith(' ') ? '\n' : '') + text + after;
+    el.focus();
+    showEditToast('<i class="bi bi-check-circle me-1"></i>Macro inserted');
+  }
+  if (_macroPanel) _macroPanel.hide();
+}
+document.getElementById('macroSearchInput').addEventListener('input', function() { clearTimeout(this._d); this._d = setTimeout(searchMacros, 300); });
+document.getElementById('macroTypeFilter').addEventListener('change', searchMacros);
 </script>
 {% endblock %}

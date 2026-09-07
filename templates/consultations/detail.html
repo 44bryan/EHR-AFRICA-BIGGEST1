@@ -125,7 +125,7 @@
         <span class="text-muted small"><i class="bi bi-building me-1"></i>{{ consultation.department }}</span>
         <span class="text-muted small"><i class="bi bi-person-badge me-1"></i>Dr. {{ consultation.consulting_doctor.full_name|default:"Unknown" }}</span>
         <span class="text-muted small"><i class="bi bi-calendar3 me-1"></i>{{ consultation.consultation_date|date:"d M Y, H:i" }}</span>
-        <span class="badge {% if consultation.status == 'COMPLETED' %}bg-success{% elif consultation.status == 'IN_PROGRESS' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+        <span class="badge {% if consultation.status == 'COMPLETED' %}bg-success{% elif consultation.status == 'IN_PROGRESS' %}bg-primary{% elif consultation.status == 'PAUSED' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
           {{ consultation.get_status_display }}
         </span>
       </div>
@@ -143,6 +143,11 @@
             <i class="bi bi-check-circle me-1"></i>Complete only
           </button>
         </form>
+        {% endif %}
+        {% if consultation.status == 'PAUSED' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
+        <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-sm btn-warning">
+          <i class="bi bi-play-circle me-1"></i>Resume Consultation
+        </a>
         {% endif %}
         {% if consultation.status == 'COMPLETED' and consultation.consulting_doctor == request.user or request.user.is_medical_director or request.user.is_super_admin %}
         <form method="post" action="{% url 'consultations:delete' pk=consultation.pk %}" class="d-inline" hx-boost="false">
@@ -218,17 +223,17 @@
         {% endif %}
         {# ── Route button — opens unified EhrRoute modal ── #}
         <button type="button"
-                class="btn btn-sm {% if consultation.status == 'IN_PROGRESS' %}btn-success{% else %}btn-dark{% endif %}"
+                class="btn btn-sm {% if consultation.status == 'IN_PROGRESS' %}btn-success{% elif consultation.status == 'PAUSED' %}btn-warning{% else %}btn-dark{% endif %}"
                 onclick="EhrRoute.open(
                   '{{ consultation.visit.pk }}',
                   {
-                    completePk: '{% if consultation.status == 'IN_PROGRESS' %}{{ consultation.pk }}{% endif %}',
+                    completePk: '{% if consultation.status == 'IN_PROGRESS' or consultation.status == 'PAUSED' %}{{ consultation.pk }}{% endif %}',
                     tier: '{{ consultation.visit.service_tier|default:'STANDARD' }}',
                     patientName: '{{ consultation.patient.full_name|escapejs }}'
                   }
                 )">
           <i class="bi bi-signpost-split me-1"></i>
-          {% if consultation.status == 'IN_PROGRESS' %}Complete &amp; Route{% else %}Route Patient{% endif %}
+          {% if consultation.status == 'IN_PROGRESS' %}Complete &amp; Route{% elif consultation.status == 'PAUSED' %}Re-route Patient{% else %}Route Patient{% endif %}
         </button>
         {% endif %}
       </div>
@@ -258,7 +263,28 @@
     {% endif %}
   </div>
 </div>
+{% elif consultation.status == 'PAUSED' %}
+<div class="d-flex align-items-center gap-3 px-3 py-2 mb-3 rounded" style="background:#fffbeb;border:1px solid #d97706;border-left:4px solid #d97706;">
+  <i class="bi bi-pause-circle-fill text-warning flex-shrink-0 fs-4"></i>
+  <div class="small flex-grow-1">
+    <strong class="text-warning-emphasis">Consultation Paused</strong> — patient was sent for a service and will return.
+    {% if consultation.visit.referring_doctor %}
+    <span class="text-muted">Ordered by <strong>Dr. {{ consultation.consulting_doctor.last_name|default:"Unknown" }}</strong></span>
+    {% endif %}
+    <div class="text-muted mt-1">Click <strong>Resume Consultation</strong> when the patient returns to continue where you left off.</div>
+  </div>
+  <div class="d-flex gap-2 flex-shrink-0">
+    {% if consultation.consulting_doctor == request.user or request.user.is_medical_director %}
+    <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-warning btn-sm">
+      <i class="bi bi-play-circle me-1"></i>Resume
+    </a>
+    {% endif %}
+  </div>
+</div>
 {% endif %}
+
+{# ── Patient Journey Timeline ── #}
+{% include 'patients/partials/_journey_timeline.html' with stops=visit_stops %}
 
 {% with v=consultation.visit %}
 {% if v.billing_type == 'INSURANCE' or v.billing_type == 'HMO' %}
@@ -732,6 +758,48 @@
         {% endif %}
       </div>
     </div>
+
+    {# ── Patient Education Given ── #}
+    {% if education_given %}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-semibold mb-0 small"><i class="bi bi-book me-1 text-info"></i>Patient Education Given</h6>
+      </div>
+      <div class="card-body p-0">
+        {% for eg in education_given %}
+        <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+          <i class="bi bi-file-earmark-text text-info"></i>
+          <div class="flex-grow-1">
+            <div class="small fw-semibold">{{ eg.material.title }}</div>
+            <div class="text-muted" style="font-size:.72rem;">
+              {{ eg.material.get_category_display }} &middot; Given by {{ eg.given_by.get_full_name|default:"—" }} &middot; {{ eg.created_at|date:"d M Y H:i" }}
+            </div>
+            {% if eg.notes %}<div class="text-muted small fst-italic">{{ eg.notes }}</div>{% endif %}
+          </div>
+          <a href="{% url 'consultations:education_print' pk=eg.material.pk %}" target="_blank" class="btn btn-sm btn-outline-info py-0">
+            <i class="bi bi-printer"></i>
+          </a>
+          {% if consultation.status != 'COMPLETED' %}
+          {% if eg.given_by == request.user or request.user.is_medical_director %}
+          <form method="post" action="{% url 'consultations:education_remove' pk=consultation.pk eg_pk=eg.pk %}"
+                class="d-inline" onsubmit="return confirm('Remove this education record?')">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-x-lg"></i></button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# Give education button #}
+    {% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+    <button class="btn btn-sm btn-outline-info mt-2" data-bs-toggle="modal" data-bs-target="#giveEducationModal">
+      <i class="bi bi-book me-1"></i>Give Patient Education
+    </button>
+    {% endif %}
   </div>
 
   <!-- Prescriptions Tab -->
@@ -1409,6 +1477,36 @@
 </div>
 
 {# Room Board modal is now global — see EhrRoute in base_authenticated.html #}
+
+{# ── Give Patient Education Modal ── #}
+{% if consultation.status != 'COMPLETED' and request.user.can_create_consultation %}
+<div class="modal fade" id="giveEducationModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header py-2">
+        <h6 class="modal-title fw-semibold"><i class="bi bi-book me-2 text-info"></i>Give Patient Education</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="eduSearchInput" class="form-control form-control-sm mb-2"
+               placeholder="Search education materials..." autofocus>
+        <div id="eduSearchResults" style="max-height:250px;overflow-y:auto;"></div>
+        <div id="eduSelectedRow" class="d-none alert alert-info py-2 mt-2 small">
+          <i class="bi bi-check-circle me-1"></i>Selected: <strong id="eduSelectedName"></strong>
+        </div>
+        <form method="post" action="{% url 'consultations:education_give' pk=consultation.pk %}" class="mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="material_pk" id="eduMaterialPk">
+          <textarea name="notes" rows="2" class="form-control form-control-sm mb-2"
+                    placeholder="Additional verbal instructions (optional)"></textarea>
+          <button type="submit" class="btn btn-sm btn-info w-100"><i class="bi bi-check-lg me-1"></i>Record Education Given</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# ══ end content block ══ #}
 
 {% endblock %}
@@ -1661,6 +1759,40 @@ window.addEventListener('ehrRouteSuccess', function(e) {
   }
 });
 
+
+// ── Give Education Modal — search + select ──────────────────────────────────
+(function(){
+  const searchInp = document.getElementById('eduSearchInput');
+  const resultsDiv = document.getElementById('eduSearchResults');
+  if (!searchInp) return;
+  let debounce;
+  searchInp.addEventListener('input', function() {
+    clearTimeout(debounce);
+    debounce = setTimeout(function() {
+      const q = searchInp.value.trim();
+      if (q.length < 2) { resultsDiv.innerHTML = ''; return; }
+      fetch('{% url "consultations:education_search" %}?q=' + encodeURIComponent(q))
+        .then(r => r.json()).then(data => {
+          if (!data.results.length) { resultsDiv.innerHTML = '<div class="text-muted small py-2">No materials found.</div>'; return; }
+          resultsDiv.innerHTML = data.results.map(m =>
+            `<div class="d-flex align-items-center gap-2 py-2 border-bottom" style="cursor:pointer;" onclick="selectEdu('${m.pk}','${m.title.replace(/'/g,"\\'")}')">
+              <i class="bi bi-file-earmark-text text-info"></i>
+              <div class="flex-grow-1">
+                <div class="small fw-semibold">${m.title}</div>
+                <div class="text-muted" style="font-size:.7rem;">${m.category}${m.summary ? ' — '+m.summary : ''}</div>
+              </div>
+              <i class="bi bi-plus-circle text-success"></i>
+            </div>`
+          ).join('');
+        });
+    }, 300);
+  });
+})();
+function selectEdu(pk, title) {
+  document.getElementById('eduMaterialPk').value = pk;
+  document.getElementById('eduSelectedName').textContent = title;
+  document.getElementById('eduSelectedRow').classList.remove('d-none');
+}
 
 // ── Auto-activate dept exam tab for refraction/specialty consultations ────────
 // If the consultation has department-specific data, switch to the Dept Exam tab

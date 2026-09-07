@@ -1,0 +1,62 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}{% if obj %}Edit{% else %}New{% endif %} Clinical Template — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container py-3" style="max-width:800px;">
+  <h5 class="fw-semibold mb-3">
+    <i class="bi bi-file-earmark-text me-2 text-success"></i>{% if obj %}Edit{% else %}New{% endif %} Clinical Template
+  </h5>
+
+  <form method="post" class="card border-0 shadow-sm">
+    {% csrf_token %}
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label small fw-semibold">Title <span class="text-danger">*</span></label>
+          <input type="text" name="title" class="form-control" required value="{{ obj.title|default:'' }}"
+                 placeholder="e.g. Normal anterior segment">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Type <span class="text-danger">*</span></label>
+          <select name="template_type" class="form-select" required>
+            {% for val, label in types %}
+            <option value="{{ val }}" {% if obj.template_type == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-8">
+          <label class="form-label small fw-semibold">Department <span class="text-muted fw-normal">(blank = all)</span></label>
+          <select name="department" class="form-select">
+            <option value="">All Departments</option>
+            {% for dept in departments %}
+            <option value="{{ dept.pk }}" {% if obj.department_id == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <div class="form-check">
+            <input type="checkbox" name="is_shared" class="form-check-input" id="isShared"
+                   {% if not obj or obj.is_shared %}checked{% endif %}>
+            <label class="form-check-label small" for="isShared">Shared (visible to all doctors)</label>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Template Content <span class="text-danger">*</span></label>
+          <textarea name="content" rows="8" class="form-control" required
+                    placeholder="Conjunctiva: white and quiet. Cornea: clear. AC: deep and quiet. Iris: normal. Pupil: round, reactive. Lens: clear."
+                    style="font-size:.9rem;">{{ obj.content|default:'' }}</textarea>
+          <div class="form-text">You can use placeholders like <code>{eye}</code>, <code>{iop}</code> that doctors fill in when inserting.</div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Tags <span class="text-muted fw-normal">(comma-separated)</span></label>
+          <input type="text" name="tags" class="form-control" placeholder="normal, anterior segment" value="{{ obj.tags|default:'' }}">
+        </div>
+      </div>
+    </div>
+    <div class="card-footer bg-white d-flex gap-2">
+      <button type="submit" class="btn btn-success"><i class="bi bi-check-lg me-1"></i>Save Template</button>
+      <a href="{% url 'consultations:template_list' %}" class="btn btn-light border">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -10,8 +10,11 @@ from .models import (
     TheatreSession, TheatreSessionStatus, TheatreProcedure, ProcedureOutcome, WardRound,
     WardType, VitalSigns, FluidBalance, FluidEntryType,
     SurgicalOutcome, OutcomeGrade,
+    MedicationReconciliation, MedRecItem, MedRecPhase, MedRecAction,
 )
+from django.views.decorators.http import require_POST
 from apps.core.context_processors import qms_active as _qms_active
+from apps.core.decorators import json_error_handler
 
 
 @login_required
@@ -2442,3 +2445,125 @@ def theatre_utilization_report(request):
         'from_date': from_date,
         'to_date': to_date,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Medication Reconciliation (JCI MMU.4)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _can_do_medrec(user):
+    return any([
+        user.is_pharmacist, user.is_head_pharmacist, user.is_medical_director,
+        user.is_super_admin, getattr(user, 'is_ward_nurse', False),
+        user.can_create_consultation,
+    ])
+
+
+@login_required
+def medrec_list(request, admission_id):
+    """List all medication reconciliations for an admission."""
+    admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
+    recs = admission.med_reconciliations.filter(is_deleted=False).select_related('reconciled_by', 'verified_by')
+    return render(request, 'ipd/medrec_list.html', {
+        'admission': admission,
+        'reconciliations': recs,
+        'phases': MedRecPhase.choices,
+    })
+
+
+@login_required
+def medrec_create(request, admission_id):
+    """Create a new medication reconciliation with items."""
+    admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
+    if not _can_do_medrec(request.user):
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        phase = request.POST.get('phase', 'ADMISSION')
+        notes = request.POST.get('notes', '').strip()
+        rec = MedicationReconciliation.objects.create(
+            admission=admission,
+            patient=admission.patient,
+            phase=phase,
+            reconciled_by=request.user,
+            reconciled_at=timezone.now(),
+            notes=notes,
+            created_by=request.user,
+        )
+        # Parse medication items from form
+        med_names = request.POST.getlist('med_name')
+        med_doses = request.POST.getlist('med_dose')
+        med_routes = request.POST.getlist('med_route')
+        med_freqs = request.POST.getlist('med_freq')
+        med_actions = request.POST.getlist('med_action')
+        med_new_doses = request.POST.getlist('med_new_dose')
+        med_new_freqs = request.POST.getlist('med_new_freq')
+        med_reasons = request.POST.getlist('med_reason')
+        med_sources = request.POST.getlist('med_source')
+        for i, name in enumerate(med_names):
+            if not name.strip():
+                continue
+            MedRecItem.objects.create(
+                reconciliation=rec,
+                medication_name=name.strip(),
+                dose=med_doses[i] if i < len(med_doses) else '',
+                route=med_routes[i] if i < len(med_routes) else '',
+                frequency=med_freqs[i] if i < len(med_freqs) else '',
+                action=med_actions[i] if i < len(med_actions) else 'CONTINUE',
+                new_dose=med_new_doses[i] if i < len(med_new_doses) else '',
+                new_frequency=med_new_freqs[i] if i < len(med_new_freqs) else '',
+                reason=med_reasons[i] if i < len(med_reasons) else '',
+                source=med_sources[i] if i < len(med_sources) else '',
+            )
+        messages.success(request, f'Medication reconciliation ({rec.get_phase_display()}) saved with {len([n for n in med_names if n.strip()])} medications.')
+        return redirect('ipd:medrec_detail', medrec_id=rec.pk)
+    return render(request, 'ipd/medrec_form.html', {
+        'admission': admission,
+        'phases': MedRecPhase.choices,
+        'actions': MedRecAction.choices,
+    })
+
+
+@login_required
+def medrec_detail(request, medrec_id):
+    """View a medication reconciliation and its items."""
+    rec = get_object_or_404(
+        MedicationReconciliation.objects.select_related('admission', 'patient', 'reconciled_by', 'verified_by'),
+        pk=medrec_id, is_deleted=False,
+    )
+    items = rec.items.all()
+    return render(request, 'ipd/medrec_detail.html', {
+        'rec': rec,
+        'items': items,
+        'admission': rec.admission,
+    })
+
+
+@login_required
+@require_POST
+def medrec_verify(request, medrec_id):
+    """Pharmacist verifies medication reconciliation."""
+    rec = get_object_or_404(MedicationReconciliation, pk=medrec_id, is_deleted=False)
+    if not (request.user.is_pharmacist or request.user.is_head_pharmacist or request.user.is_medical_director):
+        return HttpResponseForbidden()
+    rec.is_complete = True
+    rec.verified_by = request.user
+    rec.verified_at = timezone.now()
+    rec.save(update_fields=['is_complete', 'verified_by', 'verified_at'])
+    messages.success(request, 'Medication reconciliation verified.')
+    return redirect('ipd:medrec_detail', medrec_id=rec.pk)
+
+
+@login_required
+@require_POST
+def medrec_item_delete(request, item_id):
+    """Delete a single medication item from a reconciliation (before verification only)."""
+    item = get_object_or_404(MedRecItem, pk=item_id)
+    rec = item.reconciliation
+    if rec.is_complete:
+        messages.error(request, 'Cannot modify a verified reconciliation.')
+        return redirect('ipd:medrec_detail', medrec_id=rec.pk)
+    if not _can_do_medrec(request.user):
+        return HttpResponseForbidden()
+    item.delete()
+    messages.success(request, f'Medication "{item.medication_name}" removed.')
+    return redirect('ipd:medrec_detail', medrec_id=rec.pk)

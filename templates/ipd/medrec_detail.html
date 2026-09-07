@@ -1,0 +1,128 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}Medication Reconciliation — {{ rec.get_phase_display }} — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:1000px;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h5 class="fw-semibold mb-0">
+        <i class="bi bi-capsule me-2 text-warning"></i>Medication Reconciliation
+        <span class="badge {% if rec.phase == 'ADMISSION' %}bg-primary{% elif rec.phase == 'TRANSFER' %}bg-info{% else %}bg-success{% endif %} ms-2">
+          {{ rec.get_phase_display }}
+        </span>
+      </h5>
+      <div class="text-muted small">{{ rec.patient.full_name }} &middot; Admission #{{ rec.admission.admission_number }}</div>
+    </div>
+    <div class="d-flex gap-2">
+      {% if not rec.is_complete %}
+      {% if request.user.is_pharmacist or request.user.is_head_pharmacist or request.user.is_medical_director %}
+      <form method="post" action="{% url 'ipd:medrec_verify' medrec_id=rec.pk %}" onsubmit="return confirm('Verify this reconciliation?')">
+        {% csrf_token %}
+        <button class="btn btn-sm btn-success"><i class="bi bi-check-circle me-1"></i>Verify</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  {# Status bar #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+      <div class="row small">
+        <div class="col-md-3">
+          <span class="text-muted">Reconciled by:</span><br>
+          <strong>{{ rec.reconciled_by.get_full_name|default:"—" }}</strong>
+        </div>
+        <div class="col-md-3">
+          <span class="text-muted">Date:</span><br>
+          <strong>{{ rec.reconciled_at|date:"d M Y H:i"|default:"—" }}</strong>
+        </div>
+        <div class="col-md-3">
+          <span class="text-muted">Status:</span><br>
+          {% if rec.is_complete %}
+          <span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Verified</span>
+          {% else %}
+          <span class="text-warning fw-semibold"><i class="bi bi-clock-fill me-1"></i>Pending Verification</span>
+          {% endif %}
+        </div>
+        <div class="col-md-3">
+          <span class="text-muted">Verified by:</span><br>
+          <strong>{{ rec.verified_by.get_full_name|default:"—" }}</strong>
+          {% if rec.verified_at %}<br><span class="text-muted" style="font-size:.75rem;">{{ rec.verified_at|date:"d M Y H:i" }}</span>{% endif %}
+        </div>
+      </div>
+      {% if rec.notes %}
+      <div class="mt-2 small"><span class="text-muted">Notes:</span> {{ rec.notes }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Medication items table #}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-2">
+      <h6 class="mb-0 fw-semibold small"><i class="bi bi-list-check me-1"></i>Medications ({{ items|length }})</h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle" style="font-size:.82rem;">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Medication</th>
+            <th>Current Dose</th>
+            <th>Route</th>
+            <th>Frequency</th>
+            <th>Action</th>
+            <th>New Dose</th>
+            <th>Source</th>
+            <th>Reason</th>
+            {% if not rec.is_complete %}<th></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr class="{% if item.action == 'DISCONTINUE' %}table-danger{% elif item.action == 'MODIFY' %}table-warning{% elif item.action == 'NEW' %}table-success{% elif item.action == 'HOLD' %}table-info{% endif %}">
+            <td>{{ forloop.counter }}</td>
+            <td class="fw-semibold">{{ item.medication_name }}</td>
+            <td>{{ item.dose|default:"—" }}</td>
+            <td>{{ item.route|default:"—" }}</td>
+            <td>{{ item.frequency|default:"—" }}</td>
+            <td>
+              <span class="badge {% if item.action == 'CONTINUE' %}bg-success{% elif item.action == 'MODIFY' %}bg-warning text-dark{% elif item.action == 'HOLD' %}bg-info{% elif item.action == 'DISCONTINUE' %}bg-danger{% else %}bg-primary{% endif %}">
+                {{ item.get_action_display }}
+              </span>
+            </td>
+            <td>
+              {% if item.new_dose or item.new_frequency %}
+              {{ item.new_dose|default:"" }} {% if item.new_frequency %}({{ item.new_frequency }}){% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ item.source|default:"—" }}</td>
+            <td>{{ item.reason|default:"—" }}</td>
+            {% if not rec.is_complete %}
+            <td>
+              <form method="post" action="{% url 'ipd:medrec_item_delete' item_id=item.pk %}" class="d-inline"
+                    onsubmit="return confirm('Remove this medication?')">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-x-lg"></i></button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="{% if not rec.is_complete %}10{% else %}9{% endif %}" class="text-center text-muted py-3">No medications recorded.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mt-3 d-flex gap-2">
+    <a href="{% url 'ipd:medrec_list' admission_id=admission.pk %}" class="btn btn-sm btn-light border">
+      <i class="bi bi-arrow-left me-1"></i>All Reconciliations
+    </a>
+    <a href="{% url 'ipd:admission_detail' admission_id=admission.pk %}" class="btn btn-sm btn-light border">
+      <i class="bi bi-house me-1"></i>Admission
+    </a>
+  </div>
+</div>
+{% endblock %}

@@ -79,4 +79,11 @@ urlpatterns = [
 
     # 25002500 Theatre Utilization Report 25002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500
     path('theatre/utilization/', views.theatre_utilization_report, name='theatre_utilization'),
+
+    # ── Medication Reconciliation (JCI MMU.4) ───────────────────────────────
+    path('admissions/<uuid:admission_id>/medrec/', views.medrec_list, name='medrec_list'),
+    path('admissions/<uuid:admission_id>/medrec/create/', views.medrec_create, name='medrec_create'),
+    path('medrec/<uuid:medrec_id>/', views.medrec_detail, name='medrec_detail'),
+    path('medrec/<uuid:medrec_id>/verify/', views.medrec_verify, name='medrec_verify'),
+    path('medrec/item/<uuid:item_id>/delete/', views.medrec_item_delete, name='medrec_item_delete'),
 ]

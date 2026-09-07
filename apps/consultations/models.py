@@ -10,6 +10,7 @@ from apps.core.models import AuditModel, TimeStampedModel
 class ConsultationStatus(models.TextChoices):
     PENDING = 'PENDING', _('Pending')
     IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
+    PAUSED = 'PAUSED', _('Paused — Awaiting Service')
     COMPLETED = 'COMPLETED', _('Completed')
     REFERRED = 'REFERRED', _('Referred')
 
@@ -365,3 +366,97 @@ class SurgicalRequest(AuditModel):
 
     def __str__(self):
         return f"{self.get_surgery_type_display()} — {self.patient.full_name} [{self.get_status_display()}]"
+
+
+class PatientEducationMaterial(AuditModel):
+    """
+    Library of printable patient education sheets.
+    Doctors attach these to consultations with one click.
+    """
+
+    class Category(models.TextChoices):
+        PRE_OP       = 'PRE_OP',       _('Pre-Operative Instructions')
+        POST_OP      = 'POST_OP',      _('Post-Operative Care')
+        MEDICATION   = 'MEDICATION',   _('Medication Instructions')
+        DISEASE_INFO = 'DISEASE_INFO', _('Disease Information')
+        LIFESTYLE    = 'LIFESTYLE',    _('Lifestyle & Prevention')
+        EMERGENCY    = 'EMERGENCY',    _('When to Seek Emergency Care')
+
+    class Language(models.TextChoices):
+        EN = 'EN', _('English')
+        FR = 'FR', _('French')
+        BOTH = 'BOTH', _('Bilingual (EN/FR)')
+
+    title = models.CharField(max_length=200)
+    category = models.CharField(max_length=15, choices=Category.choices)
+    language = models.CharField(max_length=5, choices=Language.choices, default=Language.EN)
+    content = models.TextField(help_text='Rich text content — printed as patient handout')
+    summary = models.CharField(max_length=300, blank=True, help_text='One-line summary shown in selection list')
+    is_active = models.BooleanField(default=True)
+    # Tags for quick filtering (comma-separated: "cataract,phaco,post-op")
+    tags = models.CharField(max_length=300, blank=True, help_text='Comma-separated tags for filtering')
+
+    class Meta:
+        ordering = ['category', 'title']
+        verbose_name = 'Patient Education Material'
+        verbose_name_plural = 'Patient Education Materials'
+
+    def __str__(self):
+        return f"{self.title} [{self.get_category_display()}]"
+
+    @property
+    def tag_list(self):
+        return [t.strip() for t in self.tags.split(',') if t.strip()] if self.tags else []
+
+
+class PatientEducationGiven(TimeStampedModel):
+    """Records that a specific education material was given to a patient during a consultation."""
+    consultation = models.ForeignKey(
+        Consultation, on_delete=models.CASCADE, related_name='education_given',
+    )
+    patient = models.ForeignKey('patients.Patient', on_delete=models.CASCADE, related_name='education_received')
+    material = models.ForeignKey(PatientEducationMaterial, on_delete=models.CASCADE, related_name='given_records')
+    given_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, related_name='education_given')
+    notes = models.TextField(blank=True, help_text='Additional verbal instructions given')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Education Given'
+
+    def __str__(self):
+        return f"{self.material.title} → {self.patient.full_name}"
+
+
+class ClinicalTemplate(AuditModel):
+    """
+    Pre-built text snippets (macros) for common clinical findings.
+    Doctors insert these into consultation forms with one click.
+    """
+
+    class TemplateType(models.TextChoices):
+        EXAMINATION  = 'EXAM',    _('Examination Findings')
+        HISTORY      = 'HISTORY', _('History Template')
+        PLAN         = 'PLAN',    _('Management Plan')
+        DIAGNOSIS    = 'DIAG',    _('Diagnosis Description')
+        PROCEDURE    = 'PROC',    _('Procedure Note')
+
+    title = models.CharField(max_length=200)
+    template_type = models.CharField(max_length=10, choices=TemplateType.choices)
+    department = models.ForeignKey(
+        'departments.Department', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='clinical_templates',
+        help_text='Leave blank for templates available to all departments',
+    )
+    content = models.TextField(help_text='Template text — can include placeholders like {eye}, {iop}')
+    is_active = models.BooleanField(default=True)
+    # Who created it — personal templates vs shared
+    is_shared = models.BooleanField(default=True, help_text='Shared = visible to all doctors in department')
+    tags = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ['template_type', 'title']
+        verbose_name = 'Clinical Template'
+        verbose_name_plural = 'Clinical Templates'
+
+    def __str__(self):
+        return f"{self.title} [{self.get_template_type_display()}]"

@@ -1,0 +1,54 @@
+{# ══════════════════════════════════════════════════════════════════════════════
+   Patient Journey Timeline — shows all VisitStops for the current visit.
+   Include with: {% include 'patients/partials/_journey_timeline.html' with stops=visit_stops %}
+   ══════════════════════════════════════════════════════════════════════════════ #}
+{% if stops %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold small">
+      <i class="bi bi-geo-alt me-1 text-primary"></i>Patient Journey
+    </h6>
+    <span class="badge bg-primary-subtle text-primary-emphasis">{{ stops|length }} stop{{ stops|length|pluralize }}</span>
+  </div>
+  <div class="card-body py-2 px-3">
+    <div class="position-relative" style="padding-left:24px;">
+      {# Vertical line #}
+      <div class="position-absolute" style="left:11px;top:8px;bottom:8px;width:2px;background:#e2e8f0;"></div>
+      {% for stop in stops %}
+      <div class="d-flex align-items-start gap-2 mb-2 position-relative">
+        {# Dot #}
+        <div class="position-absolute flex-shrink-0 rounded-circle border border-2"
+             style="left:-17px;top:4px;width:14px;height:14px;z-index:1;
+               {% if stop.status == 'COMPLETED' %}background:#22c55e;border-color:#22c55e!important;
+               {% elif stop.status == 'IN_PROGRESS' %}background:#3b82f6;border-color:#3b82f6!important;
+               {% elif stop.status == 'WAITING' %}background:#fff;border-color:#f59e0b!important;
+               {% else %}background:#e2e8f0;border-color:#cbd5e1!important;{% endif %}">
+        </div>
+        {# Content #}
+        <div class="flex-grow-1" style="min-width:0;">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="fw-semibold small">{{ stop.destination_label|default:stop.get_stop_type_display }}</span>
+            <span class="badge {% if stop.status == 'COMPLETED' %}bg-success-subtle text-success-emphasis{% elif stop.status == 'IN_PROGRESS' %}bg-primary-subtle text-primary-emphasis{% elif stop.status == 'WAITING' %}bg-warning-subtle text-warning-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}"
+                  style="font-size:.65rem;">
+              {{ stop.get_status_display }}
+            </span>
+            {% if stop.return_to_stop %}
+            <span class="badge bg-info-subtle text-info-emphasis" style="font-size:.6rem;">
+              <i class="bi bi-arrow-return-left me-1"></i>Returns to {{ stop.return_to_stop.destination_label|default:"doctor" }}
+            </span>
+            {% endif %}
+          </div>
+          <div class="text-muted" style="font-size:.7rem;">
+            {{ stop.arrived_at|time:"H:i" }}
+            {% if stop.assigned_to %} &middot; {{ stop.assigned_to.get_full_name }}{% endif %}
+            {% if stop.wait_time_minutes != None %} &middot; Wait: {{ stop.wait_time_minutes }}min{% endif %}
+            {% if stop.service_time_minutes != None %} &middot; Service: {{ stop.service_time_minutes }}min{% endif %}
+          </div>
+          {% if stop.notes %}<div class="text-muted fst-italic" style="font-size:.7rem;">{{ stop.notes|truncatewords:20 }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}

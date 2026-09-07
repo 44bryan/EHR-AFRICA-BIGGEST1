@@ -72,6 +72,61 @@
   </div>
 </div>
 
+{# ── Returning Patients — came back from service, resume consultation ── #}
+{% if returning_patients %}
+<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #f59e0b!important;">
+  <div class="card-header bg-warning-subtle border-bottom py-2 d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-bold small text-warning-emphasis">
+      <i class="bi bi-arrow-return-left me-1"></i>Returning Patients ({{ returning_patients|length }})
+    </h6>
+    <span class="badge bg-warning text-dark">Resume needed</span>
+  </div>
+  <div class="list-group list-group-flush">
+    {% for pc in returning_patients %}
+    <div class="list-group-item d-flex align-items-center gap-3 py-2 px-3">
+      <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+           style="width:36px;height:36px;background:#fef3c7;border:2px solid #f59e0b;">
+        <i class="bi bi-person-check text-warning"></i>
+      </div>
+      <div class="flex-grow-1" style="min-width:0;">
+        <div class="fw-semibold small text-truncate">{{ pc.patient.full_name }}</div>
+        <div class="text-muted" style="font-size:.72rem;">
+          {{ pc.patient.patient_id }} &middot;
+          Paused at {{ pc.consultation_date|time:"H:i" }} &middot;
+          {{ pc.department|default:"General" }}
+        </div>
+      </div>
+      <a href="{% url 'consultations:edit' pk=pc.pk %}" class="btn btn-warning btn-sm flex-shrink-0">
+        <i class="bi bi-play-circle me-1"></i>Resume
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Paused Consultations — still waiting for patient to return ── #}
+{% if paused_consultations and not returning_patients %}
+<div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center gap-2 small">
+  <i class="bi bi-pause-circle me-1"></i>
+  <strong>{{ paused_consultations|length }} paused consultation{{ paused_consultations|length|pluralize }}</strong>
+  — patient{{ paused_consultations|length|pluralize }} sent for service, awaiting return.
+  {% for pc in paused_consultations %}
+  <span class="badge bg-warning-subtle text-warning-emphasis ms-1">{{ pc.patient.full_name }}</span>
+  {% endfor %}
+</div>
+{% elif paused_consultations and returning_patients and paused_consultations|length > returning_patients|length %}
+<div class="alert alert-light py-2 px-3 mb-3 d-flex align-items-center gap-2 small border">
+  <i class="bi bi-pause-circle text-muted me-1"></i>
+  More patients still out for service —
+  {% for pc in paused_consultations %}
+    {% if pc not in returning_patients %}
+    <span class="badge bg-light text-dark border ms-1">{{ pc.patient.full_name }}</span>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
 {# ── Refraction counter / room info ── #}
 {% if is_refrac %}
 <div class="card border-0 shadow-sm mb-3">

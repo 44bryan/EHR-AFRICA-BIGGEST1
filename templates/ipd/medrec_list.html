@@ -1,0 +1,69 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}Medication Reconciliation — {{ admission.patient.full_name }} — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h5 class="fw-semibold mb-0"><i class="bi bi-capsule me-2 text-warning"></i>Medication Reconciliation</h5>
+      <div class="text-muted small">{{ admission.patient.full_name }} &middot; Admission #{{ admission.admission_number }}</div>
+    </div>
+    <a href="{% url 'ipd:medrec_create' admission_id=admission.pk %}" class="btn btn-sm btn-warning">
+      <i class="bi bi-plus-lg me-1"></i>New Reconciliation
+    </a>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle" style="font-size:.85rem;">
+        <thead class="table-light">
+          <tr>
+            <th>Phase</th>
+            <th>Reconciled By</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Verified By</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rec in reconciliations %}
+          <tr>
+            <td>
+              <span class="badge {% if rec.phase == 'ADMISSION' %}bg-primary{% elif rec.phase == 'TRANSFER' %}bg-info{% else %}bg-success{% endif %}">
+                {{ rec.get_phase_display }}
+              </span>
+            </td>
+            <td>{{ rec.reconciled_by.get_full_name|default:"—" }}</td>
+            <td>{{ rec.reconciled_at|date:"d M Y H:i"|default:"—" }}</td>
+            <td>
+              {% if rec.is_complete %}
+              <span class="badge bg-success-subtle text-success-emphasis"><i class="bi bi-check-circle me-1"></i>Verified</span>
+              {% else %}
+              <span class="badge bg-warning-subtle text-warning-emphasis"><i class="bi bi-clock me-1"></i>Pending Verification</span>
+              {% endif %}
+            </td>
+            <td>{{ rec.verified_by.get_full_name|default:"—" }}</td>
+            <td>
+              <a href="{% url 'ipd:medrec_detail' medrec_id=rec.pk %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              No medication reconciliation records yet.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <a href="{% url 'ipd:admission_detail' admission_id=admission.pk %}" class="btn btn-sm btn-light border">
+      <i class="bi bi-arrow-left me-1"></i>Back to Admission
+    </a>
+  </div>
+</div>
+{% endblock %}

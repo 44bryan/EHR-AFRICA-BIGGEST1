@@ -40,4 +40,16 @@ urlpatterns = [
     # ── Specialist Unit Nurse Queue (Rooming / Pre-screening) ───────────────
     path('unit-queue/', views.unit_nurse_queue_view, name='unit_queue'),
     path('unit-queue/prescreen/<uuid:visit_pk>/', views.unit_prescreen_save_view, name='unit_prescreen'),
+    # ── Patient Education Library ─────────────────────────────────────────
+    path('education/', views.education_library_view, name='education_library'),
+    path('education/create/', views.education_material_create_view, name='education_create'),
+    path('education/<uuid:pk>/print/', views.education_material_print_view, name='education_print'),
+    path('education/search/', views.education_search_ajax, name='education_search'),
+    path('<uuid:pk>/education/give/', views.education_give_view, name='education_give'),
+    path('<uuid:pk>/education/<uuid:eg_pk>/remove/', views.education_remove_view, name='education_remove'),
+    # ── Clinical Templates / Macros ───────────────────────────────────────
+    path('templates/', views.clinical_template_list_view, name='template_list'),
+    path('templates/create/', views.clinical_template_create_view, name='template_create'),
+    path('templates/<uuid:pk>/delete/', views.clinical_template_delete_view, name='template_delete'),
+    path('templates/search/', views.clinical_template_search_ajax, name='template_search'),
 ]

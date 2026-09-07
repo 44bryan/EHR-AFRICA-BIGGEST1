@@ -575,6 +575,118 @@ class VisitTierChange(TimeStampedModel):
         return f'{self.visit.visit_number}: {self.old_tier} → {self.new_tier} ({self.changed_by})'
 
 
+class VisitStop(TimeStampedModel):
+    """
+    Patient journey tracking — records every station a patient visits.
+    FHIR-aligned: maps to Encounter.location history.
+    Enables: real-time tracking, pause/resume consultations, auto-return routing.
+    """
+
+    class StopType(models.TextChoices):
+        REGISTRATION   = 'REGISTRATION',   _('Registration')
+        CASHIER        = 'CASHIER',         _('Cashier / Billing')
+        TRIAGE         = 'TRIAGE',          _('Triage / Parameters')
+        CONSULTATION   = 'CONSULTATION',    _('Consultation')
+        REFRACTION     = 'REFRACTION',      _('Refraction / Optometry')
+        VA_CHECK       = 'VA_CHECK',        _('Visual Acuity Check')
+        INVESTIGATION  = 'INVESTIGATION',   _('Investigation / Diagnostics')
+        LABORATORY     = 'LABORATORY',      _('Laboratory')
+        SUB_SPECIALTY  = 'SUB_SPECIALTY',   _('Sub-Specialty Consultation')
+        PHARMACY       = 'PHARMACY',        _('Pharmacy')
+        OPTICAL        = 'OPTICAL',         _('Optical Shop')
+        COUNSELING     = 'COUNSELING',      _('Surgical Counseling')
+        THEATRE        = 'THEATRE',         _('Theatre / Surgery')
+        DISCHARGE      = 'DISCHARGE',       _('Discharge')
+
+    class StopStatus(models.TextChoices):
+        WAITING     = 'WAITING',     _('Waiting')
+        IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
+        COMPLETED   = 'COMPLETED',   _('Completed')
+        SKIPPED     = 'SKIPPED',     _('Skipped')
+
+    visit = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name='stops')
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='visit_stops')
+    sequence = models.PositiveIntegerField(
+        default=0,
+        help_text='Order of this stop within the visit journey (1, 2, 3…)'
+    )
+    stop_type = models.CharField(max_length=20, choices=StopType.choices)
+    department = models.ForeignKey(
+        'departments.Department', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='visit_stops',
+    )
+    status = models.CharField(
+        max_length=15, choices=StopStatus.choices,
+        default=StopStatus.WAITING,
+    )
+
+    # Who is handling this stop
+    assigned_to = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='assigned_stops',
+    )
+    routed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='routed_stops',
+    )
+
+    # Timestamps
+    arrived_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    # Return-to: after this stop, route patient back to a previous stop's doctor
+    return_to_stop = models.ForeignKey(
+        'self', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='return_stops',
+        help_text='After completing this stop, auto-return patient to this earlier stop.',
+    )
+    # Link to the paused consultation (so we can resume it)
+    paused_consultation = models.ForeignKey(
+        'consultations.Consultation', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='service_stops',
+        help_text='The consultation that was paused to order this service.',
+    )
+    notes = models.TextField(blank=True)
+    destination_label = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ['visit', 'sequence']
+        verbose_name = 'Visit Stop'
+        verbose_name_plural = 'Visit Stops'
+        indexes = [
+            models.Index(fields=['visit', 'status'], name='visitstop_visit_status_idx'),
+            models.Index(fields=['patient', '-created_at'], name='visitstop_patient_idx'),
+        ]
+
+    def __str__(self):
+        return f"Stop #{self.sequence} — {self.get_stop_type_display()} [{self.get_status_display()}]"
+
+    def start(self):
+        from django.utils import timezone
+        self.status = self.StopStatus.IN_PROGRESS
+        self.started_at = timezone.now()
+        self.save(update_fields=['status', 'started_at', 'updated_at'])
+
+    def complete(self):
+        from django.utils import timezone
+        self.status = self.StopStatus.COMPLETED
+        self.completed_at = timezone.now()
+        self.save(update_fields=['status', 'completed_at', 'updated_at'])
+
+    @property
+    def wait_time_minutes(self):
+        if not self.started_at or not self.arrived_at:
+            return None
+        return int((self.started_at - self.arrived_at).total_seconds() / 60)
+
+    @property
+    def service_time_minutes(self):
+        if not self.completed_at or not self.started_at:
+            return None
+        return int((self.completed_at - self.started_at).total_seconds() / 60)
+
+
 class PreRegistration(models.Model):
     """
     Stores patient pre-registration data submitted online BEFORE arrival.

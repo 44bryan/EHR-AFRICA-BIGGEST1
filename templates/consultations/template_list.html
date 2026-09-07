@@ -1,0 +1,78 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}Clinical Templates — {{ HOSPITAL_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-semibold mb-0"><i class="bi bi-file-earmark-text me-2 text-success"></i>Clinical Templates / Macros</h5>
+    {% if request.user.can_create_consultation or request.user.is_medical_director or request.user.is_super_admin %}
+    <a href="{% url 'consultations:template_create' %}" class="btn btn-sm btn-success">
+      <i class="bi bi-plus-lg me-1"></i>New Template
+    </a>
+    {% endif %}
+  </div>
+
+  <form method="get" class="d-flex gap-2 mb-3">
+    <select name="type" class="form-select form-select-sm" style="max-width:220px;" onchange="this.form.submit()">
+      <option value="">All Types</option>
+      {% for val, label in types %}
+      <option value="{{ val }}" {% if filter_type == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    {% if filter_type %}
+    <a href="{% url 'consultations:template_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    {% endif %}
+  </form>
+
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle" style="font-size:.85rem;">
+        <thead class="table-light">
+          <tr>
+            <th>Title</th>
+            <th>Type</th>
+            <th>Department</th>
+            <th>Shared</th>
+            <th style="width:120px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in templates %}
+          <tr>
+            <td class="fw-semibold">{{ t.title }}</td>
+            <td><span class="badge bg-success-subtle text-success-emphasis">{{ t.get_template_type_display }}</span></td>
+            <td>{{ t.department.name|default:"All Departments" }}</td>
+            <td>
+              {% if t.is_shared %}
+              <i class="bi bi-globe text-success"></i>
+              {% else %}
+              <i class="bi bi-lock text-muted"></i>
+              {% endif %}
+            </td>
+            <td class="d-flex gap-1">
+              <a href="{% url 'consultations:template_create' %}?edit={{ t.pk }}" class="btn btn-sm btn-outline-secondary py-0">
+                <i class="bi bi-pencil"></i>
+              </a>
+              <form method="post" action="{% url 'consultations:template_delete' pk=t.pk %}" class="d-inline"
+                    onsubmit="return confirm('Delete this template?')">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">
+              No templates yet.
+              {% if request.user.can_create_consultation %}
+              <a href="{% url 'consultations:template_create' %}">Create one</a>.
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

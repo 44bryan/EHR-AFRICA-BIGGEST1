@@ -7,7 +7,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.db.models import Q
-from .models import Consultation, ConsultationDiagnosis, ConsultationNote, Diagnosis, ConsultationStatus
+from .models import Consultation, ConsultationDiagnosis, ConsultationNote, Diagnosis, ConsultationStatus, SurgicalRequest
 from apps.patients.models import Patient, Visit, VisitStatus
 from apps.departments.models import Department
 from .forms import ConsultationForm, ConsultationNoteForm, DiagnosisForm
@@ -698,6 +698,19 @@ def consultation_detail_view(request, pk):
         .order_by('-consultation_date')[:8]
     )
 
+    # Patient journey stops for this visit
+    visit_stops = []
+    if consultation.visit:
+        try:
+            from apps.patients.models import VisitStop
+            visit_stops = list(
+                VisitStop.objects.filter(visit=consultation.visit, is_deleted=False)
+                .select_related('assigned_to', 'routed_by', 'return_to_stop')
+                .order_by('sequence')
+            )
+        except Exception:
+            pass
+
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
         'note_form': note_form,
@@ -713,7 +726,9 @@ def consultation_detail_view(request, pk):
         'prev_consultations': prev_consultations,
         'procedure_types': ProcedureRecord.ProcedureType.choices,
         'surgical_requests': list(consultation.surgical_requests.filter(is_deleted=False).select_related('requested_by').order_by('-created_at')),
-        'surgery_types': __import__('apps.consultations.models', fromlist=['SurgicalRequest']).SurgicalRequest.SurgeryType.choices,
+        'surgery_types': SurgicalRequest.SurgeryType.choices,
+        'visit_stops': visit_stops,
+        'education_given': list(consultation.education_given.select_related('material', 'given_by').order_by('-created_at')),
     })
 
 
@@ -738,6 +753,13 @@ def consultation_edit_view(request, pk):
     ):
         messages.error(request, 'Completed consultations cannot be edited.')
         return redirect('consultations:detail', pk=pk)
+
+    # Resume a PAUSED consultation — set back to IN_PROGRESS
+    _was_paused = consultation.status == ConsultationStatus.PAUSED
+    if _was_paused:
+        consultation.status = ConsultationStatus.IN_PROGRESS
+        consultation.save(update_fields=['status', 'updated_at'])
+        messages.info(request, 'Consultation resumed — patient has returned from service.')
 
     if request.method == 'POST':
         form = ConsultationForm(request.POST, instance=consultation)
@@ -946,18 +968,69 @@ def consultation_complete_view(request, pk):
         except Exception:
             pass
 
+    # ── Auto-return: check if this visit has a pending return-to-stop ──────
+    _auto_returned = False
+    if visit and not request.POST.get('next_destination', '').strip():
+        try:
+            from apps.patients.models import VisitStop
+            # Find the VisitStop for this consultation that has a return_to_stop
+            _current_stop = VisitStop.objects.filter(
+                visit=visit,
+                return_to_stop__isnull=False,
+                status__in=['WAITING', 'IN_PROGRESS'],
+                is_deleted=False,
+            ).select_related('return_to_stop', 'return_to_stop__paused_consultation').first()
+
+            if _current_stop and _current_stop.return_to_stop:
+                _current_stop.complete()
+                _return_stop = _current_stop.return_to_stop
+                _paused_consult = _return_stop.paused_consultation
+
+                if _paused_consult and _paused_consult.consulting_doctor:
+                    # Route patient back to the original doctor
+                    _doc = _paused_consult.consulting_doctor
+                    _doc_dept_code = getattr(_doc, 'role_department_code', 'GEN_OPH')
+
+                    # Map dept_code to route map key
+                    _DEPT_TO_ROUTE = {
+                        'GEN_OPH': 'GENERAL', 'RETINA': 'RETINA', 'GLAUC': 'GLAUCOMA',
+                        'PEDS_OPH': 'PEDIATRIC', 'CORNEA': 'CORNEA', 'UVEITIS': 'UVEITIS',
+                        'NEURO_OPH': 'NEURO', 'OCULOPLASTY': 'OCULOPLASTY',
+                        'CATARACT': 'CATARACT', 'LOW_VIS': 'LOW_VISION',
+                        'GEN_PHYS': 'GEN_PHYS',
+                    }
+                    _route_key = _DEPT_TO_ROUTE.get(_doc_dept_code, 'GENERAL')
+                    routed, label = _inline_route_visit(
+                        visit, _route_key, request.user,
+                        routing_note=f'Returning from {consultation.department or "service"} — resume consultation with Dr. {_doc.last_name}',
+                        return_to_me=False,
+                    )
+                    if routed:
+                        # Set the visit's attending doctor back to original
+                        visit.attending_doctor = _doc
+                        visit.referring_doctor = None
+                        visit.save(update_fields=['attending_doctor', 'referring_doctor', 'updated_at'])
+                        messages.success(
+                            request,
+                            f'Consultation complete — patient auto-returned to Dr. {_doc.last_name} for resumed consultation.'
+                        )
+                        _auto_returned = True
+        except Exception:
+            pass
+
     # Route patient to next destination if selected by the doctor
-    next_dest = request.POST.get('next_destination', '').strip().upper()
-    _route_counter_id = request.POST.get('counter_id', '').strip() or None
-    _route_room_id = request.POST.get('room_id', '').strip() or None
-    if next_dest and visit:
-        routed, label = _inline_route_visit(visit, next_dest, request.user, room_id=_route_room_id, counter_id=_route_counter_id)
-        if routed:
-            messages.success(request, f'Consultation complete — patient sent to {label}.')
+    if not _auto_returned:
+        next_dest = request.POST.get('next_destination', '').strip().upper()
+        _route_counter_id = request.POST.get('counter_id', '').strip() or None
+        _route_room_id = request.POST.get('room_id', '').strip() or None
+        if next_dest and visit:
+            routed, label = _inline_route_visit(visit, next_dest, request.user, room_id=_route_room_id, counter_id=_route_counter_id)
+            if routed:
+                messages.success(request, f'Consultation complete — patient sent to {label}.')
+            else:
+                messages.success(request, 'Consultation marked as completed.')
         else:
             messages.success(request, 'Consultation marked as completed.')
-    else:
-        messages.success(request, 'Consultation marked as completed.')
     return redirect('consultations:detail', pk=pk)
 
 
@@ -1445,7 +1518,7 @@ def workstation_view(request):
                 for c in Consultation.objects.filter(
                     consulting_doctor=user,
                     visit_id__in=_visit_ids,
-                    status=ConsultationStatus.IN_PROGRESS,
+                    status__in=[ConsultationStatus.IN_PROGRESS, ConsultationStatus.PAUSED],
                     is_deleted=False,
                 ).only('id', 'visit_id', 'status')
             }
@@ -1631,6 +1704,32 @@ def workstation_view(request):
         except Exception:
             pass
 
+    # ── PAUSED consultations — patients sent for service, awaiting return ────
+    paused_consultations = list(
+        Consultation.objects.filter(
+            consulting_doctor=user,
+            status=ConsultationStatus.PAUSED,
+            is_deleted=False,
+        ).select_related('patient', 'department', 'visit').order_by('-consultation_date')
+    )
+
+    # ── Returning patients — patients who came back from service (PAUSED → now in queue) ──
+    returning_patients = []
+    if paused_consultations:
+        _paused_visit_ids = [c.visit_id for c in paused_consultations if c.visit_id]
+        if _paused_visit_ids:
+            _returning_visits = {
+                v.id: v for v in Visit.objects.filter(
+                    id__in=_paused_visit_ids,
+                    status__in=['WAITING', 'IN_CONSULTATION'],
+                    is_deleted=False,
+                ).select_related('patient')
+            }
+            for pc in paused_consultations:
+                if pc.visit_id in _returning_visits:
+                    pc.returning_visit = _returning_visits[pc.visit_id]
+                    returning_patients.append(pc)
+
     # ── Incoming referrals to this doctor's department ───────────────────────
     # Consultations from another doctor that set referral_department = this dept
     incoming_referrals = []
@@ -1676,6 +1775,8 @@ def workstation_view(request):
         'ready_to_route_doctor': ready_to_route_doctor,
         'incoming_referrals': incoming_referrals,
         'active_counters': active_counters,
+        'paused_consultations': paused_consultations,
+        'returning_patients': returning_patients,
     })
 
 
@@ -2625,7 +2726,7 @@ def clinic_call_patient_view(request, visit_pk):
 
 
 # ── Shared routing helper — used by complete_consultation_view AND nurse_route_patient_view ──
-def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=None, routing_note=None, return_to_me=False):
+def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=None, routing_note=None, return_to_me=False, paused_consultation=None):
     """
     Route a visit to its next destination.
     Returns (success: bool, label: str).
@@ -2786,6 +2887,71 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
             except Exception:
                 pass
 
+        # ── VisitStop: record this routing in the patient journey ──────────
+        try:
+            from apps.patients.models import VisitStop
+            # Map destination → stop_type
+            _DEST_TO_STOP_TYPE = {
+                'PHARMACY': 'PHARMACY', 'CASHIER': 'CASHIER', 'LAB': 'LABORATORY',
+                'IMAGING': 'INVESTIGATION', 'OPTICAL': 'OPTICAL', 'COUNSELING': 'COUNSELING',
+                'REFRACTION': 'REFRACTION', 'CYCLO': 'REFRACTION',
+                'GENERAL': 'CONSULTATION', 'DOCTOR': 'CONSULTATION',
+                'RETINA': 'SUB_SPECIALTY', 'GLAUCOMA': 'SUB_SPECIALTY',
+                'CATARACT': 'SUB_SPECIALTY', 'CORNEA': 'SUB_SPECIALTY',
+                'OCULOPLASTY': 'SUB_SPECIALTY', 'PEDIATRIC': 'SUB_SPECIALTY',
+                'PEDS_OPH': 'SUB_SPECIALTY', 'NEURO': 'SUB_SPECIALTY',
+                'UVEITIS': 'SUB_SPECIALTY', 'LOW_VISION': 'SUB_SPECIALTY',
+                'GEN_PHYS': 'CONSULTATION', 'INSUR_CONSULT': 'CONSULTATION',
+                'TRIAGE': 'TRIAGE', 'DISCHARGE': 'DISCHARGE',
+                'INVEST': 'INVESTIGATION', 'EXP_CONSULT': 'CONSULTATION',
+                'VIP_CONSULT': 'CONSULTATION', 'COUNSEL': 'COUNSELING',
+            }
+            stop_type = _DEST_TO_STOP_TYPE.get(destination.upper(), 'CONSULTATION')
+
+            # Get next sequence number for this visit
+            last_seq = VisitStop.objects.filter(
+                visit=visit, is_deleted=False
+            ).order_by('-sequence').values_list('sequence', flat=True).first() or 0
+
+            # Find the current consultation stop to link return_to
+            _return_to = None
+            if return_to_me and paused_consultation:
+                _return_to = VisitStop.objects.filter(
+                    visit=visit,
+                    stop_type='CONSULTATION',
+                    paused_consultation=paused_consultation,
+                    is_deleted=False,
+                ).first()
+                # If no existing consultation stop, create one for the paused consultation
+                if not _return_to:
+                    _return_to = VisitStop.objects.create(
+                        visit=visit,
+                        patient=visit.patient,
+                        sequence=last_seq + 1,
+                        stop_type='CONSULTATION',
+                        status=VisitStop.StopStatus.IN_PROGRESS,
+                        assigned_to=routed_by,
+                        routed_by=routed_by,
+                        paused_consultation=paused_consultation,
+                        destination_label=f'Consultation — Dr. {routed_by.last_name}',
+                        notes='Paused — awaiting service return.',
+                    )
+                    last_seq += 1
+
+            VisitStop.objects.create(
+                visit=visit,
+                patient=visit.patient,
+                sequence=last_seq + 1,
+                stop_type=stop_type,
+                routed_by=routed_by,
+                return_to_stop=_return_to,
+                paused_consultation=paused_consultation,
+                destination_label=label,
+                notes=routing_note or '',
+            )
+        except Exception:
+            pass
+
         return True, label
     except Exception:
         return False, ''
@@ -2821,6 +2987,7 @@ _NURSE_ROUTE_MAP = {
     'LASER':       ('WAITING',           'LASER',      'Laser Clinic'),
     'INJECTION':   ('WAITING',           'INJECTION',  'Injection Clinic'),
     'DISCHARGE':   ('COMPLETED',         None,         'Discharge / Done'),
+    'TRIAGE':      ('PARAMETERS',        'PARAMETERS', 'Triage / Re-dispatch'),
     # Aliases — service_type codes from ServiceCounter used as routing destinations
     'EXP_CONSULT':  ('WAITING',          'EXP_CONSULT',  'Express Consultation'),
     'VIP_CONSULT':  ('WAITING',          'VIP_CONSULT',  'VIP Consultation'),
@@ -3157,12 +3324,18 @@ def smart_route_view(request):
     except Exception:
         return JsonResponse({'error': 'Visit not found'}, status=404)
 
-    # Optionally complete a consultation before routing
+    # Optionally complete or pause a consultation before routing
     redirect_url = None
+    _paused_consultation = None
     if complete_pk:
         try:
             consult = Consultation.objects.get(pk=complete_pk, is_deleted=False)
-            if consult.status != ConsultationStatus.COMPLETED:
+            if return_to_me and consult.status in (ConsultationStatus.IN_PROGRESS, ConsultationStatus.PENDING):
+                # PAUSE — doctor expects patient back after this service
+                consult.status = ConsultationStatus.PAUSED
+                consult.save(update_fields=['status', 'updated_at'])
+                _paused_consultation = consult
+            elif consult.status != ConsultationStatus.COMPLETED:
                 consult.status = ConsultationStatus.COMPLETED
                 if hasattr(consult, 'completed_at'):
                     consult.completed_at = timezone.now()
@@ -3173,7 +3346,11 @@ def smart_route_view(request):
         except Exception:
             pass
 
-    routed, label = _inline_route_visit(visit, destination, user, room_id=room_id, counter_id=counter_id, routing_note=routing_note, return_to_me=return_to_me)
+    routed, label = _inline_route_visit(
+        visit, destination, user, room_id=room_id, counter_id=counter_id,
+        routing_note=routing_note, return_to_me=return_to_me,
+        paused_consultation=_paused_consultation,
+    )
     if not routed:
         return JsonResponse({'error': f'Unknown destination: {destination}'}, status=400)
 
@@ -3739,3 +3916,196 @@ def procedure_delete_view(request, pk, proc_pk):
     proc.save(update_fields=['is_deleted'])
     messages.success(request, 'Procedure removed.')
     return redirect('consultations:detail', pk=pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Patient Education Library
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def education_library_view(request):
+    """List all active education materials — filterable by category/language."""
+    from .models import PatientEducationMaterial
+    qs = PatientEducationMaterial.objects.filter(is_deleted=False, is_active=True)
+    cat = request.GET.get('category', '')
+    lang = request.GET.get('language', '')
+    q = request.GET.get('q', '')
+    if cat:
+        qs = qs.filter(category=cat)
+    if lang:
+        qs = qs.filter(language=lang)
+    if q:
+        qs = qs.filter(Q(title__icontains=q) | Q(tags__icontains=q) | Q(summary__icontains=q))
+    return render(request, 'consultations/education_library.html', {
+        'materials': qs,
+        'categories': PatientEducationMaterial.Category.choices,
+        'languages': PatientEducationMaterial.Language.choices,
+        'filter_cat': cat, 'filter_lang': lang, 'filter_q': q,
+    })
+
+
+@login_required
+def education_material_create_view(request):
+    """Create or edit an education material."""
+    from .models import PatientEducationMaterial
+    if not (request.user.can_create_consultation or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+    pk = request.GET.get('edit')
+    obj = get_object_or_404(PatientEducationMaterial, pk=pk, is_deleted=False) if pk else None
+    if request.method == 'POST':
+        data = request.POST
+        if obj is None:
+            obj = PatientEducationMaterial(created_by=request.user)
+        obj.title = data.get('title', '').strip()
+        obj.category = data.get('category', '')
+        obj.language = data.get('language', 'EN')
+        obj.content = data.get('content', '').strip()
+        obj.summary = data.get('summary', '').strip()
+        obj.tags = data.get('tags', '').strip()
+        obj.is_active = data.get('is_active') == 'on'
+        obj.updated_by = request.user
+        obj.save()
+        messages.success(request, f'Education material "{obj.title}" saved.')
+        return redirect('consultations:education_library')
+    return render(request, 'consultations/education_form.html', {
+        'obj': obj,
+        'categories': PatientEducationMaterial.Category.choices,
+        'languages': PatientEducationMaterial.Language.choices,
+    })
+
+
+@login_required
+def education_material_print_view(request, pk):
+    """Printable view of a single education material."""
+    from .models import PatientEducationMaterial
+    mat = get_object_or_404(PatientEducationMaterial, pk=pk, is_deleted=False)
+    return render(request, 'consultations/education_print.html', {'material': mat})
+
+
+@login_required
+@require_POST
+def education_give_view(request, pk):
+    """Record that education material was given to patient during consultation."""
+    from .models import PatientEducationMaterial, PatientEducationGiven
+    consult = get_object_or_404(Consultation, pk=pk, is_deleted=False)
+    mat_pk = request.POST.get('material_pk')
+    mat = get_object_or_404(PatientEducationMaterial, pk=mat_pk, is_deleted=False)
+    PatientEducationGiven.objects.create(
+        consultation=consult,
+        patient=consult.patient,
+        material=mat,
+        given_by=request.user,
+        notes=request.POST.get('notes', '').strip(),
+    )
+    messages.success(request, f'Recorded: "{mat.title}" given to patient.')
+    return redirect('consultations:detail', pk=pk)
+
+
+@login_required
+@require_POST
+def education_remove_view(request, pk, eg_pk):
+    """Remove an education-given record (own records or medical director)."""
+    from .models import PatientEducationGiven
+    eg = get_object_or_404(PatientEducationGiven, pk=eg_pk, consultation__pk=pk)
+    if eg.given_by != request.user and not request.user.is_medical_director:
+        return HttpResponseForbidden()
+    eg.delete()
+    messages.success(request, 'Education record removed.')
+    return redirect('consultations:detail', pk=pk)
+
+
+@login_required
+def education_search_ajax(request):
+    """AJAX search for education materials — used in consultation detail give-modal."""
+    from .models import PatientEducationMaterial
+    q = request.GET.get('q', '').strip()
+    qs = PatientEducationMaterial.objects.filter(is_deleted=False, is_active=True)
+    if q:
+        qs = qs.filter(Q(title__icontains=q) | Q(tags__icontains=q))
+    results = list(qs.values('pk', 'title', 'category', 'summary')[:20])
+    return JsonResponse({'results': results})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Clinical Templates / Macros
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def clinical_template_list_view(request):
+    """List clinical templates — admin/management view."""
+    from .models import ClinicalTemplate
+    qs = ClinicalTemplate.objects.filter(is_deleted=False, is_active=True)
+    ttype = request.GET.get('type', '')
+    if ttype:
+        qs = qs.filter(template_type=ttype)
+    return render(request, 'consultations/template_list.html', {
+        'templates': qs,
+        'types': ClinicalTemplate.TemplateType.choices,
+        'filter_type': ttype,
+    })
+
+
+@login_required
+def clinical_template_create_view(request):
+    """Create or edit a clinical template."""
+    from .models import ClinicalTemplate
+    if not (request.user.can_create_consultation or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+    pk = request.GET.get('edit')
+    obj = get_object_or_404(ClinicalTemplate, pk=pk, is_deleted=False) if pk else None
+    if request.method == 'POST':
+        data = request.POST
+        if obj is None:
+            obj = ClinicalTemplate(created_by=request.user)
+        obj.title = data.get('title', '').strip()
+        obj.template_type = data.get('template_type', '')
+        dept_pk = data.get('department')
+        obj.department = get_object_or_404(Department, pk=dept_pk) if dept_pk else None
+        obj.content = data.get('content', '').strip()
+        obj.is_shared = data.get('is_shared') == 'on'
+        obj.tags = data.get('tags', '').strip()
+        obj.is_active = True
+        obj.updated_by = request.user
+        obj.save()
+        messages.success(request, f'Template "{obj.title}" saved.')
+        return redirect('consultations:template_list')
+    departments = Department.objects.filter(is_deleted=False, is_active=True)
+    return render(request, 'consultations/template_form.html', {
+        'obj': obj,
+        'types': ClinicalTemplate.TemplateType.choices,
+        'departments': departments,
+    })
+
+
+@login_required
+@require_POST
+def clinical_template_delete_view(request, pk):
+    """Soft-delete a clinical template."""
+    from .models import ClinicalTemplate
+    if not (request.user.can_create_consultation or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+    obj = get_object_or_404(ClinicalTemplate, pk=pk, is_deleted=False)
+    obj.is_deleted = True
+    obj.save(update_fields=['is_deleted'])
+    messages.success(request, f'Template "{obj.title}" deleted.')
+    return redirect('consultations:template_list')
+
+
+@login_required
+def clinical_template_search_ajax(request):
+    """AJAX endpoint — returns matching templates for insertion into consultation forms."""
+    from .models import ClinicalTemplate
+    q = request.GET.get('q', '').strip()
+    ttype = request.GET.get('type', '')
+    dept_code = request.GET.get('dept', '')
+    qs = ClinicalTemplate.objects.filter(is_deleted=False, is_active=True)
+    if ttype:
+        qs = qs.filter(template_type=ttype)
+    if dept_code:
+        qs = qs.filter(Q(department__code=dept_code) | Q(department__isnull=True))
+    else:
+        qs = qs.filter(Q(department__isnull=True) | Q(is_shared=True))
+    if q:
+        qs = qs.filter(Q(title__icontains=q) | Q(tags__icontains=q) | Q(content__icontains=q))
+    results = list(qs.values('pk', 'title', 'template_type', 'content')[:20])
+    return JsonResponse({'results': results})
