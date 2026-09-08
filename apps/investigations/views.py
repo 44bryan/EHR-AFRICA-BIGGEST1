@@ -300,6 +300,8 @@ def investigation_order_view(request, consultation_pk):
     _qs = InvestigationType.objects.filter(is_active=True)
     if is_optometry:
         _qs = _qs.filter(category__in=OPTOMETRY_CATS)
+    else:
+        _qs = _qs.exclude(category__in=OPTOMETRY_CATS)
     _all_types = _qs.order_by('category', 'name')
     _grouped = []
     _cat_labels = dict(InvestigationCategory.choices)
