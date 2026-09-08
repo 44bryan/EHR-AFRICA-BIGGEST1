@@ -173,6 +173,14 @@ class InvestigationType(TimeStampedModel):
     result_template = models.JSONField(default=dict, blank=True,
                                         help_text='JSON schema for structured result entry')
 
+    # ── Critical value rules ──
+    critical_value_rules = models.JSONField(default=dict, blank=True,
+        help_text='Rules for auto-flagging critical values, e.g. {"iop_high": 40, "oct_cmt_low": 150}')
+
+    # ── Protocol choices (what the technician selects at acquisition) ──
+    available_protocols = models.JSONField(default=list, blank=True,
+        help_text='List of protocol options e.g. ["SITA Standard 24-2", "SITA Fast 10-2"]')
+
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -333,6 +341,15 @@ class AcquisitionRecord(AuditModel):
     # ── OCT specific quality ──
     signal_strength = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
 
+    # ── Technician observations ──
+    cooperation_level = models.CharField(
+        max_length=15, blank=True,
+        choices=[('GOOD', 'Good'), ('FAIR', 'Fair'), ('POOR', 'Poor'), ('UNABLE', 'Unable to complete')],
+        help_text='Patient cooperation during acquisition'
+    )
+    technician_observations = models.TextField(blank=True,
+        help_text='Positioning difficulties, fixation issues, media opacity, etc.')
+
     # ── Repeat info ──
     is_repeat = models.BooleanField(default=False)
     repeat_reason = models.CharField(max_length=255, blank=True)
@@ -368,6 +385,9 @@ class InvestigationResult(AuditModel):
     result_data = models.JSONField(default=dict, help_text='Structured result per investigation type')
     interpretation = models.TextField(blank=True)
     is_normal = models.BooleanField(null=True, blank=True)
+    is_critical = models.BooleanField(default=False, help_text='Auto-flagged or manually marked as critical value')
+    critical_value_text = models.CharField(max_length=255, blank=True,
+        help_text='Description of the critical finding')
 
     # ── Report workflow ──
     reported_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,

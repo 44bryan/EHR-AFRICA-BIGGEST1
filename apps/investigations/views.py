@@ -548,16 +548,43 @@ def add_result_view(request, pk):
             # Structured result fields
             structured = {}
             structured_keys = [
-                'vf_type', 'vf_md_od', 'vf_md_os', 'vf_psd_od', 'vf_psd_os',
-                'vf_ght_od', 'vf_ght_os', 'vf_progression', 'vf_comments',
-                'rnfl_avg_od', 'rnfl_avg_os', 'rnfl_inf_od', 'rnfl_inf_os',
-                'rnfl_interp', 'rim_area_od', 'rim_area_os',
-                'fundus_photo_od', 'fundus_photo_os',
-                'bscan_od', 'bscan_os',
+                # Visual field
+                'vf_md_od', 'vf_md_os', 'vf_psd_od', 'vf_psd_os',
+                'vf_vfi_od', 'vf_vfi_os', 'vf_ght_od', 'vf_ght_os',
+                'vf_fixation', 'vf_false_pos', 'vf_false_neg', 'vf_reliability',
+                'vf_progression', 'vf_comments',
+                # OCT
+                'cmt_od', 'cmt_os', 'cube_vol_od', 'cube_vol_os',
+                'rnfl_avg_od', 'rnfl_avg_os', 'rnfl_sup_od', 'rnfl_sup_os',
+                'rnfl_inf_od', 'rnfl_inf_os', 'rnfl_nas_od', 'rnfl_temp_od',
+                'gcc_avg_od', 'gcc_avg_os', 'cd_ratio_od', 'cd_ratio_os',
+                'rim_area_od', 'rim_area_os', 'signal_strength', 'scan_quality',
+                # Fundus photo
+                'cdr_od', 'cdr_os', 'disc_colour_od', 'disc_colour_os',
+                'macula_od', 'macula_os', 'vessels_od', 'vessels_os',
+                'periphery_od', 'periphery_os',
+                # FFA
+                'ffa_arterial', 'ffa_av', 'ffa_venous', 'ffa_late',
+                'ffa_od', 'ffa_os', 'ffa_leakage', 'ffa_ischaemia', 'ffa_reaction',
+                # B-Scan
+                'bscan_vitreous', 'bscan_retina', 'bscan_od', 'bscan_os',
+                'bscan_globe', 'bscan_choroid', 'bscan_axial',
+                # Biometry
                 'axial_length_od', 'axial_length_os', 'k1_od', 'k1_os',
-                'k2_od', 'k2_os', 'iol_od', 'iol_os', 'biometry_notes',
-                'pachymetry_od', 'pachymetry_os',
-                'other_findings',
+                'k2_od', 'k2_os', 'acd_od', 'acd_os', 'iol_od', 'iol_os',
+                'target_ref_od', 'target_ref_os', 'biometry_formula',
+                'iol_model', 'a_constant', 'biometry_notes',
+                # Pachymetry
+                'cct_od', 'cct_os', 'pachy_method', 'iop_correction',
+                # Topography
+                'simk1_od', 'simk2_od', 'simk1_os', 'simk2_os',
+                'astig_od', 'axis_od', 'astig_os', 'axis_os',
+                'topo_pattern', 'thinnest_od', 'thinnest_os',
+                # Specular microscopy
+                'ecd_od', 'ecd_os', 'cv_od', 'cv_os', 'hex_od', 'hex_os',
+                'spec_cct_od', 'spec_cct_os',
+                # Generic
+                'findings_od', 'findings_os', 'other_findings',
             ]
             for key in structured_keys:
                 val = request.POST.get(key, '').strip()
@@ -570,6 +597,47 @@ def add_result_view(request, pk):
             result.reported_by = request.user
             result.reported_at = timezone.now()
             result.save()
+
+            # ── Critical value auto-check ──
+            rules = order.investigation_type.critical_value_rules or {}
+            if rules and structured:
+                critical_flags = []
+                for field_key, rule in rules.items():
+                    val_str = structured.get(field_key)
+                    if not val_str:
+                        continue
+                    try:
+                        val = float(val_str)
+                    except (ValueError, TypeError):
+                        continue
+                    lo = rule.get('min')
+                    hi = rule.get('max')
+                    label = rule.get('label', field_key)
+                    if lo is not None and val < float(lo):
+                        critical_flags.append(f'{label}={val} (min {lo})')
+                    if hi is not None and val > float(hi):
+                        critical_flags.append(f'{label}={val} (max {hi})')
+                if critical_flags:
+                    result.is_critical = True
+                    result.critical_value_text = '; '.join(critical_flags)[:255]
+                    result.save(update_fields=['is_critical', 'critical_value_text'])
+
+            # ── Save acquisition record fields ──
+            protocol = request.POST.get('protocol_used', '').strip()
+            cooperation = request.POST.get('cooperation_level', '').strip()
+            tech_obs = request.POST.get('technician_observations', '').strip()
+            if protocol or cooperation or tech_obs:
+                acq, _ = AcquisitionRecord.objects.get_or_create(
+                    order=order,
+                    defaults={'performed_by': request.user, 'created_by': request.user},
+                )
+                if protocol:
+                    acq.protocol_used = protocol
+                if cooperation:
+                    acq.cooperation_level = cooperation
+                if tech_obs:
+                    acq.technician_observations = tech_obs
+                acq.save()
 
             order.status = InvestigationOrder.Status.COMPLETED
             order.report_status = ReportStatus.REPORTED
@@ -592,17 +660,20 @@ def add_result_view(request, pk):
                 from apps.notifications.utils import notify
                 from apps.notifications.models import NotificationType, NotificationPriority
                 if order.ordered_by:
+                    priority = NotificationPriority.URGENT if result.is_critical else NotificationPriority.HIGH
+                    prefix = 'CRITICAL — ' if result.is_critical else ''
                     notify(
                         recipient=order.ordered_by,
-                        title=f'Result ready: {order.investigation_type.name} — {order.patient.full_name}',
+                        title=f'{prefix}Result ready: {order.investigation_type.name} — {order.patient.full_name}',
                         message=(
                             f'{order.investigation_type.name} ({order.get_eye_display()}) result entered by '
                             f'{request.user.get_full_name() or request.user.username}. '
                             f'Patient: {order.patient.full_name} ({order.patient.patient_id})'
+                            f'{" — " + result.critical_value_text if result.is_critical else ""}'
                         ),
                         link=f'/investigations/{order.pk}/',
                         notification_type=NotificationType.GENERAL,
-                        priority=NotificationPriority.HIGH,
+                        priority=priority,
                     )
             except Exception:
                 pass
@@ -612,11 +683,18 @@ def add_result_view(request, pk):
     else:
         form = InvestigationResultForm()
 
-    # Imaging subtype for conditional fields
-    imaging_subtype = 'GENERIC'
-    if order.investigation_type.category == 'IMAGING':
-        code_up = order.investigation_type.code.upper()
-        name_up = order.investigation_type.name.upper()
+    # Imaging subtype for conditional fields — map category then refine by code/name
+    cat = order.investigation_type.category
+    code_up = order.investigation_type.code.upper()
+    name_up = order.investigation_type.name.upper()
+    CATEGORY_SUBTYPE_MAP = {
+        'OCT': 'OCT', 'BIOMETRY': 'BIOMETRY', 'PACHYMETRY': 'PACHYMETRY',
+        'TOPOGRAPHY': 'TOPOGRAPHY', 'SPECULAR': 'SPECULAR',
+        'VISUAL_FIELD': 'VF', 'PERIMETRY': 'VF', 'ANGIOGRAPHY': 'FFA',
+        'FUNDUS_PHOTO': 'FUNDUS',
+    }
+    imaging_subtype = CATEGORY_SUBTYPE_MAP.get(cat, 'GENERIC')
+    if imaging_subtype == 'GENERIC' and cat == 'IMAGING':
         if 'OCT' in code_up or 'OCT' in name_up:
             imaging_subtype = 'OCT'
         elif 'BSCAN' in code_up or 'B_SCAN' in code_up or 'B-SCAN' in name_up or 'BSCAN' in name_up:
@@ -638,11 +716,14 @@ def add_result_view(request, pk):
         .order_by('-created_at')[:5]
     )
 
+    protocols = order.investigation_type.available_protocols or []
+
     return render(request, 'investigations/result_form.html', {
         'form': form,
         'order': order,
         'imaging_subtype': imaging_subtype,
         'prev_results': prev_results,
+        'protocols': protocols,
     })
 
 
