@@ -38,11 +38,14 @@
 <script>
 // ══════════════════════════════════════════════════════════════════════
 // EhrRoute — Unified patient routing singleton
-// The modal is built on-demand by JS and removed from DOM after close.
-// Zero route-modal HTML in the page source until Route Patient is clicked.
+// Destinations are loaded from RouteDestination DB config (single source of truth).
+// Modal is built on-demand and removed from DOM after close.
 // ══════════════════════════════════════════════════════════════════════
 (function() {
   'use strict';
+
+  // ── Route config from DB (injected by context processor) ──
+  var _ROUTE_CONFIG = {{ route_destinations_json|safe }};
 
   var _CSRF_TOKEN = '{{ csrf_token }}';
   function _getCsrf() {
@@ -73,82 +76,119 @@
     bootstrap.Toast.getOrCreateInstance(toast, {delay:4500}).show();
   }
 
-  // ── Build modal HTML string ───────────────────────────────────────────
+  // ── Build intermediate set from config ──────────────────────────────
+  var _INTERMEDIATE_CODES = {};
+  _ROUTE_CONFIG.forEach(function(d) { if (d.is_intermediate) _INTERMEDIATE_CODES[d.code] = true; });
+
+  // ── Build modal HTML from DB config ─────────────────────────────────
   function _buildModal(tier, patientName) {
-    var QUICK = [
-      ['LAB','bi-eyedropper','Laboratory'],['IMAGING','bi-camera','Investigations'],
-      ['PHARMACY','bi-capsule','Pharmacy'],['CASHIER','bi-cash-stack','Cashier'],
-      ['REFRACTION','bi-eyeglasses','Refraction'],['OPTICAL','bi-eye','Optical Shop'],
-      ['COUNSELING','bi-chat-heart','Counseling'],['GEN_PHYS','bi-heart-pulse','Gen. Physician'],
-      ['TRIAGE','bi-arrow-repeat','Triage (Re-dispatch)'],
-    ];
-    var SPEC = [
-      ['RETINA','Retina'],['GLAUCOMA','Glaucoma'],['CATARACT','Cataract'],
-      ['CORNEA','Cornea'],['OCULOPLASTY','Oculoplastics'],['PEDIATRIC','Paediatric Oph.'],
-      ['NEURO','Neuro-Oph.'],['UVEITIS','Uveitis'],['LOW_VISION','Low Vision'],
-      ['INSUR_CONSULT','Insurance Consult'],
-    ];
-    var qBtns = QUICK.map(function(q){
-      return '<div class="col-6"><button class="btn btn-outline-secondary w-100 text-start ehr-route-dest py-2"' +
-        ' data-dest="'+q[0]+'" style="font-size:.82rem;"><i class="bi '+q[1]+' me-1"></i>'+q[2]+'</button></div>';
-    }).join('');
-    var sBtns = SPEC.map(function(s){
-      return '<div class="col-6"><button class="btn btn-outline-secondary w-100 text-start ehr-route-dest py-1"' +
-        ' data-dest="'+s[0]+'" style="font-size:.78rem;">'+s[1]+'</button></div>';
-    }).join('');
+    // Group config entries (skip TRIAGE which is internal-only)
+    var groups = {TEST:[], SPECIALIST:[], SERVICE:[], FINISH:[]};
+    _ROUTE_CONFIG.forEach(function(d) {
+      if (d.code === 'TRIAGE') return;
+      if (groups[d.group]) groups[d.group].push(d);
+    });
+
+    // Group styles
+    var G = {
+      TEST:       {icon:'bi-clipboard2-pulse', title:'Order a Test',          color:'#3b82f6', cls:'btn-outline-primary',  tag:'patient returns', collapsed:false},
+      SPECIALIST: {icon:'bi-person-badge',     title:'Refer to Specialist',   color:'#d97706', cls:'btn-outline-warning',  tag:'patient returns', collapsed:true},
+      SERVICE:    {icon:'bi-building',         title:'Send to Service',       color:'#16a34a', cls:'btn-outline-success',  tag:'',               collapsed:false},
+      FINISH:     {icon:'bi-x-circle',         title:'',                      color:'#dc2626', cls:'btn-outline-danger',   tag:'',               collapsed:false},
+    };
+
+    // Button builder
+    function _btn(d, cls) {
+      var badge = '';
+      if (d.group === 'SERVICE') {
+        badge = d.is_intermediate
+          ? '<span class="badge bg-info-subtle text-info-emphasis ms-auto" style="font-size:.6rem;">returns</span>'
+          : '<span class="badge bg-secondary-subtle text-secondary-emphasis ms-auto" style="font-size:.6rem;">visit ends</span>';
+      }
+      return '<div class="col-6"><button class="btn '+cls+' w-100 text-start ehr-route-dest py-2 d-flex align-items-center"' +
+        ' data-dest="'+d.code+'" style="font-size:.82rem;">' +
+        '<i class="bi '+d.icon+' me-1"></i>'+d.label+badge+'</button></div>';
+    }
+
+    // Section builder
+    function _section(grp, items) {
+      var g = G[grp];
+      if (!items.length) return '';
+      var btns = items.map(function(d){ return _btn(d, g.cls); }).join('');
+      if (grp === 'FINISH') {
+        return '<div class="px-3 py-2"><div class="row g-2">'+btns+'</div></div>';
+      }
+      if (g.collapsed) {
+        return '<div class="border-bottom"><details class="px-3 py-2">' +
+          '<summary class="d-flex align-items-center gap-2 fw-semibold small" style="cursor:pointer;list-style:none;user-select:none;color:'+g.color+';">' +
+          '<i class="bi '+g.icon+'" style="font-size:.85rem;"></i>'+g.title+
+          '<i class="bi bi-chevron-down ms-auto" style="font-size:.65rem;opacity:.5;"></i></summary>' +
+          '<div class="row g-2 mt-2 pb-2">'+btns+'</div></details></div>';
+      }
+      var tagHtml = g.tag ? '<span class="badge rounded-pill ms-auto" style="font-size:.55rem;background:'+g.color+'18;color:'+g.color+';">'+g.tag+'</span>' : '';
+      return '<div class="border-bottom">' +
+        '<div class="px-3 py-2 d-flex align-items-center gap-2" style="background:'+g.color+'08;">' +
+        '<i class="bi '+g.icon+'" style="color:'+g.color+';font-size:.85rem;"></i>' +
+        '<span class="fw-semibold small" style="color:'+g.color+';">'+g.title+'</span>'+tagHtml+'</div>' +
+        '<div class="px-3 py-2"><div class="row g-2">'+btns+'</div></div></div>';
+    }
+
     return '<div class="modal fade" id="ehrRouteModal" tabindex="-1" aria-labelledby="ehrRouteModalLabel">' +
-      '<div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-md-down" style="max-width:940px;">' +
+      '<div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-md-down" style="max-width:960px;">' +
       '<div class="modal-content border-0 shadow">' +
+      // Header
       '<div class="modal-header border-bottom py-3 px-4 bg-white">' +
       '<div><h5 class="modal-title fw-semibold mb-0 text-dark" id="ehrRouteModalLabel">' +
       '<i class="bi bi-signpost-split me-2 text-secondary"></i>Route Patient</h5>' +
-      '<div class="text-muted small mt-1">'+( patientName || '')+'&nbsp;<span class="badge bg-light text-secondary border ms-1 small fw-normal">'+tier+'</span></div></div>' +
+      '<div class="text-muted small mt-1">'+(patientName||'')+'&nbsp;<span class="badge bg-light text-secondary border ms-1 small fw-normal">'+tier+'</span></div></div>' +
       '<button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>' +
+      // Hint bar (populated by suggest API)
+      '<div id="ehrRouteHintBar" class="d-none px-4 py-2 border-bottom" style="background:#fffbeb;">' +
+      '<small class="text-dark"><i class="bi bi-lightbulb text-warning me-1"></i><span id="ehrRouteHintText"></span></small></div>' +
+      // Body: two columns
       '<div class="modal-body p-0 bg-white"><div class="row g-0">' +
-      // Left: Room Board
-      '<div class="col-md-7 border-end" style="max-height:65vh;overflow-y:auto;">' +
+      // ── LEFT: Room Board (Send to Doctor) ──
+      '<div class="col-md-7 border-end" style="max-height:70vh;overflow-y:auto;">' +
       '<div class="px-3 py-2 border-bottom d-flex align-items-center gap-2" style="background:#f8f9fa;">' +
-      '<i class="bi bi-grid-3x3-gap text-secondary"></i><span class="fw-semibold small text-dark">Send to Doctor</span></div>' +
+      '<i class="bi bi-person-workspace text-secondary"></i><span class="fw-semibold small text-dark">Send to Doctor</span></div>' +
       '<div id="ehrRouteAnyCard" class="d-flex align-items-center gap-3 px-3 py-3 border-bottom"' +
-      ' style="cursor:pointer;transition:background .1s;" onmouseover="this.style.background=\'#f8f9fa\'" onmouseout="this.style.background=\'\'">' +
+      ' style="cursor:pointer;transition:background .15s;" onmouseover="this.style.background=\'#f0f4ff\'" onmouseout="this.style.background=\'\'">' +
       '<div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 border"' +
       ' style="width:44px;height:44px;background:#fff;"><i class="bi bi-people text-secondary fs-5"></i></div>' +
       '<div class="flex-grow-1"><div class="fw-semibold small">Any Available Doctor</div>' +
       '<div class="text-muted" style="font-size:.75rem;">System places patient in the next available queue</div></div>' +
       '<i class="bi bi-chevron-right text-muted"></i></div>' +
       '<div id="ehrRouteRoomBoard" class="p-3">' +
-      '<div class="text-center py-4 text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Loading rooms\u2026</div></div>' +
-      '</div>' +
-      // Right: Quick destinations
-      '<div class="col-md-5" style="max-height:65vh;overflow-y:auto;">' +
-      '<div class="px-3 py-2 border-bottom d-flex align-items-center gap-2" style="background:#f8f9fa;">' +
-      '<i class="bi bi-lightning text-secondary"></i><span class="fw-semibold small text-dark">Quick Destinations</span></div>' +
-      '<div class="p-3 border-bottom"><div class="row g-2">'+qBtns+'</div></div>' +
-      '<div class="p-3 border-bottom"><details>' +
-      '<summary class="fw-semibold small text-dark" style="cursor:pointer;list-style:none;user-select:none;">' +
-      '<i class="bi bi-chevron-right me-1" style="font-size:.7rem;"></i>Specialist Clinics</summary>' +
-      '<div class="row g-1 mt-2">'+sBtns+'</div></details></div>' +
-      '<div class="p-3"><button class="btn btn-outline-danger w-100 ehr-route-dest" data-dest="DISCHARGE" style="font-size:.82rem;">' +
-      '<i class="bi bi-door-open me-2"></i>Discharge / Done</button></div>' +
+      '<div class="text-center py-4 text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Loading rooms\u2026</div></div></div>' +
+      // ── RIGHT: Grouped destinations (from DB config) ──
+      '<div class="col-md-5" style="max-height:70vh;overflow-y:auto;">' +
+      _section('TEST', groups.TEST) +
+      _section('SPECIALIST', groups.SPECIALIST) +
+      _section('SERVICE', groups.SERVICE) +
+      _section('FINISH', groups.FINISH) +
       '</div>' +
       '</div></div>' +
-      // ── Return-to-me + routing note (below the two-column layout) ──
+      // ── Bottom: Note + Advanced toggle ──
       '<div class="border-top px-4 py-3 bg-white">' +
       '<div class="d-flex align-items-start gap-3 flex-wrap">' +
-      '<div class="form-check form-switch mt-1">' +
-      '<input class="form-check-input" type="checkbox" id="ehrReturnToMe">' +
-      '<label class="form-check-label small fw-semibold" for="ehrReturnToMe">' +
-      '<i class="bi bi-arrow-return-left me-1 text-success"></i>Return patient to me after</label>' +
-      '<div class="text-muted" style="font-size:.68rem;margin-left:.15rem;">Receiving dept will see a banner to send the patient back to you.</div>' +
-      '</div>' +
       '<div class="flex-grow-1" style="min-width:200px;">' +
       '<label class="form-label small fw-semibold mb-1" for="ehrRoutingNote">' +
-      '<i class="bi bi-chat-left-text me-1"></i>Note <span class="text-muted fw-normal">(optional)</span></label>' +
+      '<i class="bi bi-chat-left-text me-1"></i>Note for receiving staff <span class="text-muted fw-normal">(optional)</span></label>' +
       '<textarea id="ehrRoutingNote" class="form-control form-control-sm" rows="1" maxlength="300"' +
-      ' placeholder="e.g. Please do full refraction \u2014 mixed astigmatism suspected"></textarea>' +
-      '</div></div></div>' +
+      ' placeholder="e.g. Please do full refraction \u2014 mixed astigmatism suspected"></textarea></div>' +
+      '<div><details style="margin-top:1.4rem;">' +
+      '<summary class="text-muted small" style="cursor:pointer;font-size:.72rem;user-select:none;">' +
+      '<i class="bi bi-gear me-1"></i>Advanced</summary>' +
+      '<div class="form-check form-switch mt-2">' +
+      '<input class="form-check-input" type="checkbox" id="ehrReturnToMe">' +
+      '<label class="form-check-label small" for="ehrReturnToMe">' +
+      'Override: Return patient to me</label>' +
+      '<div class="text-muted" style="font-size:.65rem;">Auto-set by destination type. Only change if needed.</div>' +
+      '</div></details></div>' +
+      '</div></div>' +
+      // Footer
       '<div class="modal-footer border-top bg-white py-2 px-4">' +
-      '<small class="text-muted me-auto"><i class="bi bi-info-circle me-1"></i>Same-tier rooms listed first.</small>' +
+      '<small class="text-muted me-auto"><i class="bi bi-info-circle me-1"></i>Same-tier rooms listed first. <span style="color:#3b82f6;">Blue</span> = patient returns &middot; <span style="color:#dc2626;">Red</span> = visit ends</small>' +
       '<button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Cancel</button>' +
       '</div></div></div></div>';
   }
@@ -190,7 +230,11 @@
     if (!html) html = '<p class="text-muted small text-center py-3">No rooms with assigned doctors found.</p>';
     board.innerHTML = html;
     board.querySelectorAll('.ehr-room-card').forEach(function(card) {
-      card.addEventListener('click', function() { EhrRoute.execute(this.dataset.dest || 'GENERAL', '', this.dataset.counterId); });
+      card.addEventListener('click', function() {
+        var dest = this.dataset.dest || 'GENERAL';
+        if (typeof _autoToggleReturn === 'function') _autoToggleReturn(dest);
+        EhrRoute.execute(dest, '', this.dataset.counterId);
+      });
     });
   }
 
@@ -220,12 +264,29 @@
       var modalEl = wrap.firstElementChild;
       document.body.appendChild(modalEl);
 
+      // Auto-toggle "Return to me" based on DB config intermediate flag
+      function _autoToggleReturn(dest) {
+        var chk = document.getElementById('ehrReturnToMe');
+        if (!chk || chk._userOverride) return;
+        chk.checked = !!_INTERMEDIATE_CODES[dest];
+      }
+
       // Bind quick-dest + any-card buttons
       modalEl.querySelectorAll('.ehr-route-dest').forEach(function(btn) {
-        btn.addEventListener('click', function() { EhrRoute.execute(this.dataset.dest, ''); });
+        btn.addEventListener('click', function() {
+          _autoToggleReturn(this.dataset.dest);
+          EhrRoute.execute(this.dataset.dest, '');
+        });
       });
       var anyCard = document.getElementById('ehrRouteAnyCard');
-      if (anyCard) anyCard.addEventListener('click', function() { EhrRoute.execute('GENERAL', ''); });
+      if (anyCard) anyCard.addEventListener('click', function() {
+        _autoToggleReturn('GENERAL');
+        EhrRoute.execute('GENERAL', '');
+      });
+
+      // Track manual toggle so auto-toggle doesn't override user choice
+      var _retChkEl = document.getElementById('ehrReturnToMe');
+      if (_retChkEl) _retChkEl.addEventListener('change', function() { this._userOverride = true; });
 
       // Show
       this._bsModal = new bootstrap.Modal(modalEl);
@@ -238,7 +299,7 @@
         EhrRoute._bsModal = null;
       });
 
-      // Load rooms (include session slot so MultiSessionMiddleware uses correct session)
+      // Load rooms
       var _pageSlot = new URLSearchParams(window.location.search).get('s') || '1';
       fetch('/consultations/route/rooms/?tier=' + this._tier + '&s=' + _pageSlot, {headers:{'X-Requested-With':'XMLHttpRequest'}})
         .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
@@ -247,6 +308,37 @@
           var b = document.getElementById('ehrRouteRoomBoard');
           if (b) b.innerHTML = '<p class="text-muted small text-center py-3">Could not load rooms.</p>';
         });
+
+      // ── Smart hints: highlight suggested buttons + show hint text ──
+      if (opts.completePk) {
+        fetch('/consultations/route/suggest/?consultation_pk=' + opts.completePk + '&s=' + _pageSlot, {headers:{'X-Requested-With':'XMLHttpRequest'}})
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(data) {
+            if (!data || !data.highlight || !data.highlight.length) return;
+            // Show hint text bar
+            var hintBar = document.getElementById('ehrRouteHintBar');
+            var hintText = document.getElementById('ehrRouteHintText');
+            if (hintBar && hintText && data.hint_text) {
+              hintText.textContent = data.hint_text;
+              hintBar.classList.remove('d-none');
+            }
+            // Highlight suggested buttons (subtle glow + "suggested" badge)
+            data.highlight.forEach(function(code) {
+              var btn = modalEl.querySelector('.ehr-route-dest[data-dest="'+code+'"]');
+              if (!btn) return;
+              btn.style.borderWidth = '2px';
+              btn.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.15)';
+              btn.style.fontWeight = '600';
+              // Add small "suggested" dot
+              var dot = document.createElement('span');
+              dot.className = 'badge bg-primary ms-auto';
+              dot.style.cssText = 'font-size:.55rem;padding:2px 5px;';
+              dot.textContent = '\u2713';
+              btn.appendChild(dot);
+            });
+          })
+          .catch(function() { /* hints are advisory — fail silently */ });
+      }
     },
 
     execute: function(destination, roomId, counterId) {
@@ -268,7 +360,7 @@
       var _noteEl = document.getElementById('ehrRoutingNote');
       if (_noteEl && _noteEl.value.trim()) payload.append('routing_note', _noteEl.value.trim());
       var _retEl = document.getElementById('ehrReturnToMe');
-      if (_retEl && _retEl.checked) payload.append('return_to_me', '1');
+      payload.append('return_to_me', (_retEl && _retEl.checked) ? '1' : '0');
 
       var self = this;
       fetch('/consultations/route/', {
@@ -288,10 +380,7 @@
         self._busy = false;
         if (data.success) {
           if (self._bsModal) self._bsModal.hide();
-          var _msg = data.message || ('Sent to '+data.label);
-          var _retChk = document.getElementById('ehrReturnToMe');
-          if (_retChk && _retChk.checked) _msg += ' (will return to you)';
-          _showToast(_msg, false);
+          _showToast(data.message || ('Sent to '+data.label), false);
           window.dispatchEvent(new CustomEvent('ehrRouteSuccess', {detail:data}));
           if (self._completePk && data.redirect_url) {
             setTimeout(function() { window.location.href = data.redirect_url; }, 900);

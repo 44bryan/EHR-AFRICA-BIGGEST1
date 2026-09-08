@@ -10,7 +10,7 @@ from .models import (
     Device, DeviceDowntime, AcquisitionRecord, BiometryRecord,
     ImagingStudy, ImagingModality, InvestigationResultAmendment,
     VisitInvestigationPlan, VisitInvestigationStep, ContrastReactionLog,
-    PaymentStatus, AcquisitionStatus, ReportStatus, Laterality,
+    InvestigationCategory, PaymentStatus, AcquisitionStatus, ReportStatus, Laterality,
 )
 from .forms import InvestigationOrderForm, InvestigationResultForm
 from apps.consultations.models import Consultation
@@ -302,8 +302,9 @@ def investigation_order_view(request, consultation_pk):
         _qs = _qs.filter(category__in=OPTOMETRY_CATS)
     _all_types = _qs.order_by('category', 'name')
     _grouped = []
+    _cat_labels = dict(InvestigationCategory.choices)
     for cat, items in groupby(_all_types, key=lambda t: t.category):
-        label = (cat or 'Other').replace('_', ' ').title()
+        label = _cat_labels.get(cat, (cat or 'Other').replace('_', ' ').title())
         _grouped.append((label, list(items)))
 
     # Prior studies for this patient

@@ -2891,22 +2891,26 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
         try:
             from apps.patients.models import VisitStop
             # Map destination → stop_type
-            _DEST_TO_STOP_TYPE = {
-                'PHARMACY': 'PHARMACY', 'CASHIER': 'CASHIER', 'LAB': 'LABORATORY',
-                'IMAGING': 'INVESTIGATION', 'OPTICAL': 'OPTICAL', 'COUNSELING': 'COUNSELING',
-                'REFRACTION': 'REFRACTION', 'CYCLO': 'REFRACTION',
-                'GENERAL': 'CONSULTATION', 'DOCTOR': 'CONSULTATION',
-                'RETINA': 'SUB_SPECIALTY', 'GLAUCOMA': 'SUB_SPECIALTY',
-                'CATARACT': 'SUB_SPECIALTY', 'CORNEA': 'SUB_SPECIALTY',
-                'OCULOPLASTY': 'SUB_SPECIALTY', 'PEDIATRIC': 'SUB_SPECIALTY',
-                'PEDS_OPH': 'SUB_SPECIALTY', 'NEURO': 'SUB_SPECIALTY',
-                'UVEITIS': 'SUB_SPECIALTY', 'LOW_VISION': 'SUB_SPECIALTY',
-                'GEN_PHYS': 'CONSULTATION', 'INSUR_CONSULT': 'CONSULTATION',
-                'TRIAGE': 'TRIAGE', 'DISCHARGE': 'DISCHARGE',
-                'INVEST': 'INVESTIGATION', 'EXP_CONSULT': 'CONSULTATION',
-                'VIP_CONSULT': 'CONSULTATION', 'COUNSEL': 'COUNSELING',
-            }
-            stop_type = _DEST_TO_STOP_TYPE.get(destination.upper(), 'CONSULTATION')
+            # Read stop_type mapping from RouteDestination config (cached)
+            _dest_stop_map = _cache.get('dest_to_stop_type_map')
+            if _dest_stop_map is None:
+                try:
+                    from apps.patients.models import RouteDestination as _RD
+                    _dest_stop_map = dict(
+                        _RD.objects.filter(is_active=True).values_list('code', 'stop_type')
+                    )
+                except Exception:
+                    _dest_stop_map = {}
+                # Add common aliases not in the config table
+                _dest_stop_map.setdefault('GENERAL', 'CONSULTATION')
+                _dest_stop_map.setdefault('DOCTOR', 'CONSULTATION')
+                _dest_stop_map.setdefault('INVEST', 'INVESTIGATION')
+                _dest_stop_map.setdefault('EXP_CONSULT', 'CONSULTATION')
+                _dest_stop_map.setdefault('VIP_CONSULT', 'CONSULTATION')
+                _dest_stop_map.setdefault('PEDS_OPH', 'SUB_SPECIALTY')
+                _dest_stop_map.setdefault('COUNSEL', 'COUNSELING')
+                _cache.set('dest_to_stop_type_map', _dest_stop_map, 300)
+            stop_type = _dest_stop_map.get(destination.upper(), 'CONSULTATION')
 
             # Get next sequence number for this visit
             last_seq = VisitStop.objects.filter(
@@ -3291,6 +3295,25 @@ def route_rooms_view(request):
     })
 
 
+@login_required
+def route_suggest_view(request):
+    """
+    GET /consultations/route/suggest/?consultation_pk=<uuid>
+    Returns hint data for the route modal: which buttons to highlight
+    and a one-line hint text. Advisory only — never blocks anything.
+    """
+    from .route_engine import suggest_hints
+    consultation_pk = request.GET.get('consultation_pk', '').strip()
+    if not consultation_pk:
+        return JsonResponse({'highlight': [], 'hint_text': '', 'reasons': {}})
+    try:
+        consult = Consultation.objects.get(pk=consultation_pk, is_deleted=False)
+    except Consultation.DoesNotExist:
+        return JsonResponse({'highlight': [], 'hint_text': '', 'reasons': {}})
+    hints = suggest_hints(consult)
+    return JsonResponse(hints)
+
+
 @csrf_exempt
 @json_error_handler
 @login_required
@@ -3300,8 +3323,32 @@ def smart_route_view(request):
     POST /consultations/route/
     Unified routing endpoint used by EhrRoute JS singleton.
     Accepts: visit_pk, destination, room_id (opt), complete_pk (opt)
-    If complete_pk is provided, marks that consultation COMPLETED before routing.
+
+    IHE PAM compliant — destination type determines pause vs complete:
+      Intermediate (patient returns): REFRACTION, CYCLO, LAB, IMAGING, VA_CHECK,
+        ORTHOPTICS, CONTACT_LENS, OPTICAL, COUNSELING,
+        sub-specialty consults (RETINA, GLAUCOMA, etc.), GEN_PHYS
+      Terminal (consultation done): PHARMACY, CASHIER, DISCHARGE, THEATRE, TRIAGE
+    The "return_to_me" toggle overrides: if explicitly checked on a terminal
+    destination, the consultation is paused instead of completed.
     """
+    # ── Intermediate destinations from RouteDestination config (cached 5 min) ──
+    from django.core.cache import cache as _cache
+    _INTERMEDIATE_DESTS = _cache.get('intermediate_dest_codes')
+    if _INTERMEDIATE_DESTS is None:
+        try:
+            from apps.patients.models import RouteDestination
+            _INTERMEDIATE_DESTS = set(
+                RouteDestination.objects.filter(
+                    is_active=True, is_intermediate=True
+                ).values_list('code', flat=True)
+            )
+        except Exception:
+            _INTERMEDIATE_DESTS = set()
+        # Fallback: include INVESTIGATION which is used as alias
+        _INTERMEDIATE_DESTS.add('INVESTIGATION')
+        _cache.set('intermediate_dest_codes', _INTERMEDIATE_DESTS, 300)
+
     user = request.user
     if not (user.can_dispatch_patient() or user.is_medical_director or
             user.is_super_admin or user.is_doctor):
@@ -3313,7 +3360,7 @@ def smart_route_view(request):
     counter_id = request.POST.get('counter_id', '').strip() or None
     complete_pk = request.POST.get('complete_pk', '').strip() or None
     routing_note = request.POST.get('routing_note', '').strip() or None
-    return_to_me = request.POST.get('return_to_me') == '1'
+    return_to_me_override = request.POST.get('return_to_me')  # '1', '0', or absent
 
     if not visit_pk or not destination:
         return JsonResponse({'error': 'Missing visit_pk or destination'}, status=400)
@@ -3324,18 +3371,28 @@ def smart_route_view(request):
     except Exception:
         return JsonResponse({'error': 'Visit not found'}, status=404)
 
-    # Optionally complete or pause a consultation before routing
+    # Auto-determine pause vs complete from destination type (IHE PAM)
+    is_intermediate = destination in _INTERMEDIATE_DESTS
+    # "Return to me" toggle overrides the auto-decision
+    if return_to_me_override == '1':
+        should_pause = True
+    elif return_to_me_override == '0':
+        should_pause = False
+    else:
+        # No explicit override — use destination type
+        should_pause = is_intermediate
+
+    # Apply pause or complete to the consultation
     redirect_url = None
     _paused_consultation = None
     if complete_pk:
         try:
             consult = Consultation.objects.get(pk=complete_pk, is_deleted=False)
-            if return_to_me and consult.status in (ConsultationStatus.IN_PROGRESS, ConsultationStatus.PENDING):
-                # PAUSE — doctor expects patient back after this service
+            if should_pause and consult.status in (ConsultationStatus.IN_PROGRESS, ConsultationStatus.PENDING):
                 consult.status = ConsultationStatus.PAUSED
                 consult.save(update_fields=['status', 'updated_at'])
                 _paused_consultation = consult
-            elif consult.status != ConsultationStatus.COMPLETED:
+            elif not should_pause and consult.status != ConsultationStatus.COMPLETED:
                 consult.status = ConsultationStatus.COMPLETED
                 if hasattr(consult, 'completed_at'):
                     consult.completed_at = timezone.now()
@@ -3348,18 +3405,20 @@ def smart_route_view(request):
 
     routed, label = _inline_route_visit(
         visit, destination, user, room_id=room_id, counter_id=counter_id,
-        routing_note=routing_note, return_to_me=return_to_me,
+        routing_note=routing_note, return_to_me=should_pause,
         paused_consultation=_paused_consultation,
     )
     if not routed:
         return JsonResponse({'error': f'Unknown destination: {destination}'}, status=400)
 
+    action = 'paused — patient will return' if should_pause else 'completed'
     return JsonResponse({
         'success': True,
         'patient': visit.patient.full_name,
         'destination': destination,
         'label': label,
-        'message': f'{visit.patient.full_name} sent to {label}.',
+        'paused': should_pause,
+        'message': f'{visit.patient.full_name} sent to {label}. Consultation {action}.',
         'redirect_url': redirect_url,
     })
 
@@ -4069,7 +4128,7 @@ def clinical_template_create_view(request):
         obj.save()
         messages.success(request, f'Template "{obj.title}" saved.')
         return redirect('consultations:template_list')
-    departments = Department.objects.filter(is_deleted=False, is_active=True)
+    departments = Department.objects.filter(is_active=True)
     return render(request, 'consultations/template_form.html', {
         'obj': obj,
         'types': ClinicalTemplate.TemplateType.choices,

@@ -122,6 +122,7 @@ TEMPLATES = [
                 'apps.core.context_processors.user_notifications',
                 'apps.core.context_processors.session_slot',
                 'apps.core.context_processors.doctor_assigned_room',
+                'apps.core.context_processors.route_config',
             ],
             'builtins': [
                 'apps.core.templatetags.ehr_tags',

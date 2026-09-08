@@ -1,6 +1,7 @@
 """
 Global template context processors.
 """
+import json
 from django.conf import settings
 from django.core.cache import cache
 
@@ -123,3 +124,24 @@ def doctor_assigned_room(request):
         return {'my_room': room}
     except Exception:
         return {'my_room': None}
+
+
+def route_config(request):
+    """
+    Serve RouteDestination config as JSON for the EhrRoute modal.
+    Cached for 5 min — destinations rarely change.
+    """
+    cached = cache.get('route_destinations_json')
+    if cached is None:
+        try:
+            from apps.patients.models import RouteDestination
+            dests = RouteDestination.objects.filter(
+                is_active=True
+            ).order_by('group', 'sort_order').values(
+                'code', 'label', 'icon', 'group', 'is_intermediate', 'sort_order',
+            )
+            cached = json.dumps(list(dests))
+        except Exception:
+            cached = '[]'
+        cache.set('route_destinations_json', cached, 300)
+    return {'route_destinations_json': cached}

@@ -221,19 +221,11 @@
           <i class="bi bi-house-check me-1"></i>Patient Going Home
         </button>
         {% endif %}
-        {# ── Route button — opens unified EhrRoute modal ── #}
+        {# ── Route — one button, "Return to me" toggle in modal decides pause vs complete ── #}
         <button type="button"
-                class="btn btn-sm {% if consultation.status == 'IN_PROGRESS' %}btn-success{% elif consultation.status == 'PAUSED' %}btn-warning{% else %}btn-dark{% endif %}"
-                onclick="EhrRoute.open(
-                  '{{ consultation.visit.pk }}',
-                  {
-                    completePk: '{% if consultation.status == 'IN_PROGRESS' or consultation.status == 'PAUSED' %}{{ consultation.pk }}{% endif %}',
-                    tier: '{{ consultation.visit.service_tier|default:'STANDARD' }}',
-                    patientName: '{{ consultation.patient.full_name|escapejs }}'
-                  }
-                )">
-          <i class="bi bi-signpost-split me-1"></i>
-          {% if consultation.status == 'IN_PROGRESS' %}Complete &amp; Route{% elif consultation.status == 'PAUSED' %}Re-route Patient{% else %}Route Patient{% endif %}
+                class="btn btn-sm {% if consultation.status == 'IN_PROGRESS' %}btn-primary{% elif consultation.status == 'PAUSED' %}btn-warning{% else %}btn-dark{% endif %}"
+                onclick="EhrRoute.open('{{ consultation.visit.pk }}', { {% if consultation.status != 'COMPLETED' %}completePk:'{{ consultation.pk }}',{% endif %} tier:'{{ consultation.visit.service_tier|default:"STANDARD" }}', patientName:'{{ consultation.patient.full_name|escapejs }}'})">
+          <i class="bi bi-signpost-split me-1"></i>Route
         </button>
         {% endif %}
       </div>
@@ -244,13 +236,13 @@
 
 {% block content %}
 
-{# ── In-Progress notice (simplified — routing is in the green Complete & Route button above) ── #}
+{# ── In-Progress notice ── #}
 {% if consultation.status == 'IN_PROGRESS' %}
 <div class="d-flex align-items-center gap-3 px-3 py-2 mb-3 rounded" style="background:#f0fdf4;border:1px solid #16a34a;border-left:4px solid #16a34a;">
   <i class="bi bi-info-circle-fill text-success flex-shrink-0"></i>
   <div class="text-success-emphasis small flex-grow-1">
     Draft in progress — saved {{ consultation.consultation_date|time:"H:i" }}.
-    Use the <strong>Complete &amp; Route</strong> button above to finish and send the patient to the next destination.
+    Click <strong>Route</strong> to send the patient somewhere. Toggle <strong>"Return to me"</strong> if you need them back.
   </div>
   <div class="d-flex gap-2 flex-shrink-0">
     <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-outline-success btn-sm">

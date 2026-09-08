@@ -16,21 +16,24 @@ from apps.core.models import AuditModel, TimeStampedModel
 # ══════════════════════════════════════════════════════════════════════════════
 
 class InvestigationCategory(models.TextChoices):
-    REFRACTION = 'REFRACTION', _('Refraction / Autorefraction')
-    TONOMETRY = 'TONOMETRY', _('Tonometry')
     IMAGING = 'IMAGING', _('Imaging')
-    ELECTROPHYSIOLOGY = 'ELECTROPHYSIOLOGY', _('Electrophysiology')
-    VISUAL_FIELD = 'VISUAL_FIELD', _('Visual Field / Perimetry')
     BIOMETRY = 'BIOMETRY', _('Biometry / IOL Calculation')
+    VISUAL_FIELD = 'VISUAL_FIELD', _('Visual Field / Perimetry')
     PACHYMETRY = 'PACHYMETRY', _('Pachymetry')
-    ANTERIOR_SEGMENT = 'ANT_SEG', _('Anterior Segment')
-    TOPOGRAPHY = 'TOPOGRAPHY', _('Corneal Topography / Tomography')
+    TOPOGRAPHY = 'TOPOGRAPHY', _('Corneal Topography')
     SPECULAR = 'SPECULAR', _('Specular Microscopy')
-    ANGIOGRAPHY = 'ANGIOGRAPHY', _('FFA / ICG Angiography')
+    REFRACTION = 'REFRACTION', _('Refraction')
     ORTHOPTICS = 'ORTHOPTICS', _('Orthoptics / Binocular Vision')
     LOW_VISION = 'LOW_VISION', _('Low Vision')
+    TONOMETRY = 'TONOMETRY', _('Tonometry')
+    ELECTROPHYSIOLOGY = 'ELECTROPHYSIOLOGY', _('Electrophysiology')
+    ANTERIOR_SEGMENT = 'ANT_SEG', _('Anterior Segment')
+    ANGIOGRAPHY = 'ANGIOGRAPHY', _('FFA / ICG Angiography')
     DRY_EYE = 'DRY_EYE', _('Dry Eye / Meibography')
-    EXTERNAL = 'EXTERNAL', _('Referred-out CT / MRI')
+    EXTERNAL = 'EXTERNAL', _('External Lab / CT / MRI')
+    FUNDUS_PHOTO = 'FUNDUS_PHOTO', _('Fundus Photography')
+    OCT = 'OCT', _('OCT')
+    PERIMETRY = 'PERIMETRY', _('Perimetry')
     OTHER = 'OTHER', _('Other')
 
 

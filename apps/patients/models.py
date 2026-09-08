@@ -588,12 +588,15 @@ class VisitStop(TimeStampedModel):
         TRIAGE         = 'TRIAGE',          _('Triage / Parameters')
         CONSULTATION   = 'CONSULTATION',    _('Consultation')
         REFRACTION     = 'REFRACTION',      _('Refraction / Optometry')
+        CYCLO          = 'CYCLO',           _('Cycloplegic Refraction')
         VA_CHECK       = 'VA_CHECK',        _('Visual Acuity Check')
         INVESTIGATION  = 'INVESTIGATION',   _('Investigation / Diagnostics')
         LABORATORY     = 'LABORATORY',      _('Laboratory')
+        ORTHOPTICS     = 'ORTHOPTICS',      _('Orthoptics Assessment')
         SUB_SPECIALTY  = 'SUB_SPECIALTY',   _('Sub-Specialty Consultation')
         PHARMACY       = 'PHARMACY',        _('Pharmacy')
         OPTICAL        = 'OPTICAL',         _('Optical Shop')
+        CONTACT_LENS   = 'CONTACT_LENS',    _('Contact Lens Fitting')
         COUNSELING     = 'COUNSELING',      _('Surgical Counseling')
         THEATRE        = 'THEATRE',         _('Theatre / Surgery')
         DISCHARGE      = 'DISCHARGE',       _('Discharge')
@@ -685,6 +688,43 @@ class VisitStop(TimeStampedModel):
         if not self.completed_at or not self.started_at:
             return None
         return int((self.completed_at - self.started_at).total_seconds() / 60)
+
+
+class RouteDestination(TimeStampedModel):
+    """
+    Single source of truth for all routing destinations.
+    Replaces hardcoded destination lists in views, JS, and templates.
+    Hospital admin can enable/disable destinations without code changes.
+    """
+
+    class Group(models.TextChoices):
+        TEST       = 'TEST',       _('Order a Test')
+        SPECIALIST = 'SPECIALIST', _('Refer to Specialist')
+        SERVICE    = 'SERVICE',    _('Send to Service')
+        FINISH     = 'FINISH',     _('Finish Visit')
+
+    code = models.CharField(max_length=30, unique=True, db_index=True)
+    label = models.CharField(max_length=100)
+    icon = models.CharField(max_length=50, default='bi-circle')
+    group = models.CharField(max_length=15, choices=Group.choices)
+    is_intermediate = models.BooleanField(
+        default=True,
+        help_text='If True, consultation pauses and patient returns to doctor after this stop.',
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    # Maps this route destination to a VisitStop.StopType for journey tracking
+    stop_type = models.CharField(
+        max_length=20, choices=VisitStop.StopType.choices,
+        default=VisitStop.StopType.CONSULTATION,
+    )
+
+    class Meta:
+        ordering = ['group', 'sort_order']
+        verbose_name = 'Route Destination'
+
+    def __str__(self):
+        return f'{self.label} ({self.code})'
 
 
 class PreRegistration(models.Model):

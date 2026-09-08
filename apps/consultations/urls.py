@@ -23,6 +23,7 @@ urlpatterns = [
     path('<uuid:pk>/procedure/<uuid:proc_pk>/delete/', views.procedure_delete_view, name='procedure_delete'),
     path('route/', views.smart_route_view, name='smart_route'),
     path('route/rooms/', views.route_rooms_view, name='route_rooms'),
+    path('route/suggest/', views.route_suggest_view, name='route_suggest'),
     path('autosave/', views.consultation_autosave_view, name='autosave'),
     path('diagnoses/search/', views.diagnosis_search_view, name='diagnosis_search'),
     path('clinic-nurse/', views.clinic_nurse_view, name='clinic_nurse'),
