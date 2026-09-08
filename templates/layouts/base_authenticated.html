@@ -641,10 +641,25 @@
   var _hiddenAt = 0;
   var _formTouched = false;
 
-  // Track if user has touched any form field (reset on each page swap)
+  // Pages that should NEVER auto-reload (data entry pages)
+  var NEVER_RELOAD_PATHS = [
+    '/patients/register', '/patients/prereg',
+    '/consultations/new/', '/consultations/edit/',
+    '/prescriptions/', '/triage/',
+  ];
+  function _isDataEntryPage() {
+    var p = window.location.pathname;
+    return NEVER_RELOAD_PATHS.some(function(x) { return p.includes(x); })
+        || !!document.querySelector('form[method="post"], form[method="POST"]');
+  }
+
+  // Track if user has touched any form field
   document.addEventListener('input',  function () { _formTouched = true; _formDirty = true; }, true);
   document.addEventListener('change', function () { _formTouched = true; _formDirty = true; }, true);
-  document.addEventListener('htmx:afterSettle', function () { _formTouched = false; _formDirty = false; });
+  // Only reset _formTouched on HTMX settle if the new page has NO post form
+  document.addEventListener('htmx:afterSettle', function () {
+    if (!_isDataEntryPage()) { _formTouched = false; _formDirty = false; }
+  });
 
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') {
@@ -652,9 +667,8 @@
     } else if (document.visibilityState === 'visible' && _hiddenAt > 0) {
       var away = Date.now() - _hiddenAt;
       _hiddenAt = 0;
-      // Don't reload if user is mid-form, or if the page has a POST form (data-entry pages)
-      var _hasPostForm = !!document.querySelector('form[method="post"], form[method="POST"]');
-      if (!_formTouched && !_hasPostForm && away >= IDLE_RELOAD_MS) {
+      // Never reload data-entry pages or pages where user has interacted with a form
+      if (!_formTouched && !_isDataEntryPage() && away >= IDLE_RELOAD_MS) {
         window.location.reload();
       }
     }
@@ -937,9 +951,11 @@
   function reinitBootstrap(root) {
     if (typeof bootstrap === 'undefined') return;
     var el = root || document;
-    // Dropdowns
+    // Dropdowns — dispose stale instances then re-create
     el.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function (n) {
-      if (!bootstrap.Dropdown.getInstance(n)) new bootstrap.Dropdown(n);
+      var old = bootstrap.Dropdown.getInstance(n);
+      if (old) { try { old.dispose(); } catch(e){} }
+      new bootstrap.Dropdown(n);
     });
     // Collapses
     el.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function (n) {

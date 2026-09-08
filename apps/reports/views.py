@@ -101,10 +101,11 @@ window.addEventListener('load', function() {
 
 @login_required
 def consultation_pdf_view(request, pk):
-    from apps.consultations.models import Consultation
+    from apps.consultations.models import Consultation, ConsultationDiagnosis, ProcedureRecord
+    from apps.investigations.models import InvestigationOrder
     consultation = get_object_or_404(
         Consultation.objects.select_related(
-            'patient', 'department', 'consulting_doctor', 'visit'
+            'patient', 'department', 'consulting_doctor', 'co_signed_by', 'visit'
         ).prefetch_related(
             'consultation_diagnoses__diagnosis',
             'drug_prescriptions__items',
@@ -112,12 +113,29 @@ def consultation_pdf_view(request, pk):
         ),
         pk=pk
     )
+
+    # Format department_specific_data into clean (label, value) pairs
+    dept_data = []
+    raw = consultation.department_specific_data or {}
+    for key, val in raw.items():
+        if val and str(val).strip():
+            label = key.replace('_', ' ').replace(' od', ' OD').replace(' os', ' OS').title()
+            dept_data.append((label, val))
+
     context = {
         'consultation': consultation,
         'patient': consultation.patient,
-        'hospital_name': settings.HOSPITAL_NAME,
-        'hospital_address': settings.HOSPITAL_ADDRESS,
-        'hospital_phone': settings.HOSPITAL_PHONE,
+        'diagnoses': consultation.consultation_diagnoses.select_related('diagnosis').all(),
+        'drug_rxs': consultation.drug_prescriptions.prefetch_related('items').filter(is_deleted=False),
+        'optical_rxs': consultation.optical_prescriptions.filter(is_deleted=False),
+        'investigation_orders': InvestigationOrder.objects.filter(
+            consultation=consultation, is_deleted=False
+        ).select_related('investigation_type').order_by('created_at'),
+        'procedures': ProcedureRecord.objects.filter(
+            consultation=consultation, is_deleted=False
+        ).order_by('procedure_date'),
+        'dept_data': dept_data,
+        'doctor_signature': _sig_b64(consultation.consulting_doctor),
         'pdf_filename': f'consultation_{consultation.patient.patient_id}_{consultation.consultation_date:%Y%m%d}.pdf',
     }
     return render_pdf('reports/pdf/consultation_report.html', context)
