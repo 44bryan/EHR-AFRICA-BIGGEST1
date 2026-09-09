@@ -1734,11 +1734,14 @@ def investigation_stats_view(request):
         return render(request, 'investigations/stats.html', _cached)
     _cache_ttl = 300 if (year == today.year and month == today.month) else 86400
 
+    # Imaging-only categories (exclude optometry: REFRACTION, ORTHOPTICS, LOW_VISION)
+    _OPTOMETRY_CATS = ['REFRACTION', 'ORTHOPTICS', 'LOW_VISION']
+
     base = InvestigationOrder.objects.filter(
         is_deleted=False,
         created_at__date__gte=month_start,
         created_at__date__lte=month_end,
-    )
+    ).exclude(investigation_type__category__in=_OPTOMETRY_CATS)
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
     total_orders    = base.count()
@@ -1748,6 +1751,48 @@ def investigation_stats_view(request):
     urgent_count    = base.filter(urgency__in=['URGENT', 'EMERGENCY', 'STAT']).count()
     abnormal_count  = base.filter(result__is_normal=False).count()
     completion_rate = round(completed_count / total_orders * 100, 1) if total_orders else 0
+
+    # ── Patient Flow Funnel ───────────────────────────────────────────────────
+    _paid_statuses = ['PAID', 'INSURED', 'WAIVED', 'PACKAGE', 'STAT_OVERRIDE', 'BILL_LATER', 'FREE_REPEAT']
+    prescribed_count = total_orders
+    paid_count       = base.filter(payment_status__in=_paid_statuses).count()
+    unpaid_count     = base.filter(payment_status='UNPAID').count()
+    showed_up_count  = base.filter(checked_in_at__isnull=False).count()
+    paid_no_show     = base.filter(payment_status__in=_paid_statuses, checked_in_at__isnull=True).exclude(status__in=['COMPLETED', 'CANCELLED']).count()
+    show_rate        = round(showed_up_count / paid_count * 100, 1) if paid_count else 0
+
+    # ── Average TAT (order → result) ─────────────────────────────────────────
+    from django.db.models import Avg, F, ExpressionWrapper, DurationField
+    tat_qs = base.filter(
+        status='COMPLETED', result__isnull=False,
+        result__result_date__isnull=False,
+    ).annotate(
+        tat=ExpressionWrapper(
+            F('result__result_date') - F('created_at'),
+            output_field=DurationField()
+        )
+    ).aggregate(avg_tat=Avg('tat'))
+    avg_tat = tat_qs['avg_tat']
+    if avg_tat:
+        avg_tat_mins = int(avg_tat.total_seconds() / 60)
+        if avg_tat_mins < 60:
+            avg_tat_str = f'{avg_tat_mins}min'
+        elif avg_tat_mins < 1440:
+            avg_tat_str = f'{avg_tat_mins // 60}h {avg_tat_mins % 60}min'
+        else:
+            avg_tat_str = f'{avg_tat_mins // 1440}d {(avg_tat_mins % 1440) // 60}h'
+    else:
+        avg_tat_mins = 0
+        avg_tat_str = '\u2014'
+
+    # ── Repeat / Quality ──────────────────────────────────────────────────────
+    repeat_count_val   = base.filter(is_repeat=True).count()
+    quality_fail_count = base.filter(acquisition_status='QUALITY_FAILED').count()
+    repeat_rate = round(repeat_count_val / total_orders * 100, 1) if total_orders else 0
+
+    # ── Laterality breakdown ─────────────────────────────────────────────────
+    lat_raw = base.values('eye').annotate(count=Count('id')).order_by('-count')
+    laterality_table = [{'label': r['eye'] or 'Not specified', 'count': r['count']} for r in lat_raw]
 
     # ── By category ───────────────────────────────────────────────────────────
     cat_raw = (
@@ -1995,10 +2040,7 @@ def investigation_stats_view(request):
         'data':   [r['total'] for r in tier_table],
     })
 
-    # ── Laterality breakdown ──────────────────────────────────────────────────
-    lat_raw = base.values('eye').annotate(count=Count('id')).order_by('-count')
-    laterality_data = [{'label': r['eye'], 'count': r['count']} for r in lat_raw]
-    laterality_json = json.dumps(laterality_data)
+    laterality_json = json.dumps([{'label': r['label'], 'count': r['count']} for r in laterality_table])
 
     ctx = {
         'month_start': month_start, 'month_end': month_end,
@@ -2010,6 +2052,16 @@ def investigation_stats_view(request):
         'completed_count': completed_count, 'cancelled_count': cancelled_count,
         'urgent_count': urgent_count, 'abnormal_count': abnormal_count,
         'completion_rate': completion_rate,
+        # Patient Flow Funnel
+        'prescribed_count': prescribed_count, 'paid_count': paid_count,
+        'unpaid_count': unpaid_count, 'showed_up_count': showed_up_count,
+        'paid_no_show': paid_no_show, 'show_rate': show_rate,
+        # TAT + Quality
+        'avg_tat_str': avg_tat_str, 'avg_tat_mins': avg_tat_mins,
+        'repeat_count_val': repeat_count_val, 'quality_fail_count': quality_fail_count,
+        'repeat_rate': repeat_rate,
+        # Laterality
+        'laterality_table': laterality_table, 'laterality_json': laterality_json,
         # Tables
         'top_tests': top_tests, 'abnormal_by_test': abnormal_by_test,
         'dept_table': dept_table, 'tier_table': tier_table,
@@ -2023,7 +2075,6 @@ def investigation_stats_view(request):
         'status_json': status_json, 'daily_json': daily_json,
         'gender_json': gender_json, 'age_json': age_json,
         'dept_json': dept_json, 'tier_json': tier_json,
-        'laterality_json': laterality_json,
         'is_current_month': (year == today.year and month == today.month),
         'today': timezone.now(),
         # 12-month trend
