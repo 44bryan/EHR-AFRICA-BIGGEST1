@@ -363,6 +363,33 @@ def investigation_detail_view(request, pk):
     })
 
 
+@login_required
+def print_request_slip_view(request, pk):
+    """Print a request slip for the patient to carry to the investigation room."""
+    order = get_object_or_404(
+        InvestigationOrder.objects.select_related(
+            'patient', 'investigation_type', 'ordered_by', 'consultation',
+        ),
+        pk=pk, is_deleted=False,
+    )
+    # Fetch other pending orders for same patient/visit to print all at once
+    sibling_orders = list(
+        InvestigationOrder.objects.filter(
+            patient=order.patient,
+            consultation=order.consultation,
+            status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+            is_deleted=False,
+        ).exclude(pk=pk).select_related('investigation_type').order_by('created_at')
+    )
+    from apps.accounts.models import HospitalConfig
+    hospital = HospitalConfig.get()
+    return render(request, 'investigations/request_slip.html', {
+        'order': order,
+        'sibling_orders': sibling_orders,
+        'hospital': hospital,
+    })
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ACQUISITION WORKFLOW — Quality gating at the chair
 # ══════════════════════════════════════════════════════════════════════════════

@@ -1653,6 +1653,9 @@ def workstation_view(request):
             # results_ready = at least one result done AND no more pending
             c.results_ready = bool(c.invest_completed) and not pending_by_consult.get(cid)
 
+    # ── Results ready count (for badge) ──────────────────────────────────────
+    results_ready_count = sum(1 for c in in_progress_consultations if getattr(c, 'results_ready', False))
+
     # ── Lab orders for this doctor's today consultations ─────────────────────
     from apps.laboratory.models import LabOrder
     lab_orders_today = list(
@@ -1777,6 +1780,7 @@ def workstation_view(request):
         'active_counters': active_counters,
         'paused_consultations': paused_consultations,
         'returning_patients': returning_patients,
+        'results_ready_count': results_ready_count,
     })
 
 

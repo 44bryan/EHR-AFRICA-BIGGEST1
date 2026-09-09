@@ -8,6 +8,7 @@ urlpatterns = [
     path('workstation/', views.investigation_workstation_view, name='workstation'),
     path('order/<uuid:consultation_pk>/', views.investigation_order_view, name='order'),
     path('<uuid:pk>/', views.investigation_detail_view, name='detail'),
+    path('<uuid:pk>/print-slip/', views.print_request_slip_view, name='print_slip'),
     path('<uuid:pk>/result/', views.add_result_view, name='add_result'),
     path('<uuid:pk>/verify/', views.verify_result_view, name='verify'),
     path('<uuid:pk>/cancel/', views.cancel_investigation_order, name='cancel'),

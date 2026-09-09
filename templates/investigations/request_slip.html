@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Investigation Request — {{ order.patient.full_name }}</title>
+<style>
+  @page { size: A5 landscape; margin: 8mm; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; }
+  .slip { width: 100%; border: 2px solid #333; padding: 10px; page-break-after: always; }
+  .slip:last-child { page-break-after: auto; }
+
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 6px; margin-bottom: 8px; }
+  .hospital-name { font-size: 14px; font-weight: bold; text-transform: uppercase; }
+  .hospital-sub { font-size: 9px; color: #555; }
+  .slip-title { font-size: 13px; font-weight: bold; text-align: center; text-transform: uppercase; letter-spacing: 1px; background: #333; color: #fff; padding: 3px 12px; border-radius: 3px; }
+
+  .patient-info { display: flex; justify-content: space-between; margin-bottom: 8px; border: 1px solid #999; padding: 6px 8px; border-radius: 3px; background: #f9f9f9; }
+  .patient-info .col { flex: 1; }
+  .label { font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: .5px; }
+  .value { font-size: 12px; font-weight: bold; }
+  .value-sm { font-size: 11px; }
+
+  .orders-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  .orders-table th { background: #eee; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; padding: 4px 6px; border: 1px solid #999; text-align: left; }
+  .orders-table td { padding: 4px 6px; border: 1px solid #ccc; font-size: 11px; }
+  .orders-table tr.primary { background: #fff9e6; font-weight: bold; }
+  .orders-table tr.sibling { background: #fff; }
+
+  .eye-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; color: #fff; }
+  .eye-od { background: #2563eb; }
+  .eye-os { background: #16a34a; }
+  .eye-ou { background: #7c3aed; }
+  .eye-na { background: #6b7280; }
+
+  .urgent-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; background: #dc2626; color: #fff; }
+
+  .barcode-area { text-align: center; margin: 8px 0; }
+  .barcode-area svg { max-width: 200px; }
+  .order-id-text { font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
+
+  .footer { display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px dashed #999; padding-top: 6px; margin-top: 6px; }
+  .footer .col { flex: 1; }
+  .sign-line { border-bottom: 1px solid #333; width: 120px; margin-top: 16px; }
+  .sign-label { font-size: 8px; color: #666; margin-top: 2px; }
+
+  .instructions { font-size: 9px; color: #555; border: 1px dashed #ccc; padding: 4px 8px; border-radius: 3px; margin-top: 6px; }
+
+  .dilation-warn { background: #fef3c7; border: 1px solid #f59e0b; padding: 4px 8px; border-radius: 3px; font-size: 10px; font-weight: bold; color: #92400e; margin-bottom: 6px; text-align: center; }
+
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none !important; }
+  }
+  .print-btn { position: fixed; top: 10px; right: 10px; padding: 8px 20px; font-size: 14px; background: #2563eb; color: #fff; border: none; border-radius: 5px; cursor: pointer; z-index: 9999; }
+  .print-btn:hover { background: #1d4ed8; }
+</style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">Print Slip</button>
+
+<div class="slip">
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="hospital-name">{{ hospital.name|default:"EHR Africa Eye Hospital" }}</div>
+      <div class="hospital-sub">{{ hospital.address|default:"" }}</div>
+      <div class="hospital-sub">Tel: {{ hospital.phone|default:"" }}</div>
+    </div>
+    <div class="slip-title">Investigation Request</div>
+  </div>
+
+  <!-- Patient Info -->
+  <div class="patient-info">
+    <div class="col">
+      <div class="label">Patient Name</div>
+      <div class="value">{{ order.patient.full_name }}</div>
+    </div>
+    <div class="col">
+      <div class="label">Patient ID</div>
+      <div class="value">{{ order.patient.patient_id }}</div>
+    </div>
+    <div class="col">
+      <div class="label">Age / Sex</div>
+      <div class="value-sm">{{ order.patient.age|default:"—" }} / {{ order.patient.get_gender_display|default:"—" }}</div>
+    </div>
+    <div class="col">
+      <div class="label">Date</div>
+      <div class="value-sm">{{ order.created_at|date:"d M Y, H:i" }}</div>
+    </div>
+  </div>
+
+  <!-- Dilation warning if needed -->
+  {% if order.investigation_type.dilation_requirement == 'BEFORE' %}
+  <div class="dilation-warn">DO NOT DILATE — This test must be performed BEFORE dilation</div>
+  {% elif order.investigation_type.dilation_requirement == 'AFTER' %}
+  <div class="dilation-warn">DILATION REQUIRED — Ensure pupil is dilated before acquisition</div>
+  {% endif %}
+
+  <!-- Orders Table -->
+  <table class="orders-table">
+    <thead>
+      <tr>
+        <th style="width:5%;">#</th>
+        <th style="width:30%;">Investigation</th>
+        <th style="width:15%;">Category</th>
+        <th style="width:10%;">Eye</th>
+        <th style="width:10%;">Urgency</th>
+        <th style="width:30%;">Clinical Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="primary">
+        <td>1</td>
+        <td>{{ order.investigation_type.name }}</td>
+        <td>{{ order.investigation_type.get_category_display }}</td>
+        <td>
+          <span class="eye-badge {% if order.eye == 'OD' %}eye-od{% elif order.eye == 'OS' %}eye-os{% elif order.eye == 'OU' %}eye-ou{% else %}eye-na{% endif %}">
+            {{ order.get_eye_display }}
+          </span>
+        </td>
+        <td>
+          {% if order.is_urgent %}<span class="urgent-badge">URGENT</span>{% else %}Routine{% endif %}
+        </td>
+        <td style="font-size:10px;">{{ order.clinical_notes|default:"—"|truncatechars:80 }}</td>
+      </tr>
+      {% for sib in sibling_orders %}
+      <tr class="sibling">
+        <td>{{ forloop.counter|add:1 }}</td>
+        <td>{{ sib.investigation_type.name }}</td>
+        <td>{{ sib.investigation_type.get_category_display }}</td>
+        <td>
+          <span class="eye-badge {% if sib.eye == 'OD' %}eye-od{% elif sib.eye == 'OS' %}eye-os{% elif sib.eye == 'OU' %}eye-ou{% else %}eye-na{% endif %}">
+            {{ sib.get_eye_display }}
+          </span>
+        </td>
+        <td>
+          {% if sib.is_urgent %}<span class="urgent-badge">URGENT</span>{% else %}Routine{% endif %}
+        </td>
+        <td style="font-size:10px;">{{ sib.clinical_notes|default:"—"|truncatechars:80 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Barcode area -->
+  <div class="barcode-area">
+    <svg id="barcodeSvg"></svg>
+    <div class="order-id-text">{{ order.pk }}</div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="col">
+      <div class="label">Ordered By</div>
+      <div class="value-sm">Dr. {{ order.ordered_by.get_full_name|default:order.ordered_by.username }}</div>
+    </div>
+    <div class="col">
+      <div class="label">Department</div>
+      <div class="value-sm">{{ order.consultation.department.name|default:"—" }}</div>
+    </div>
+    <div class="col" style="text-align:right;">
+      <div class="sign-line"></div>
+      <div class="sign-label">Technician Signature</div>
+    </div>
+  </div>
+
+  <!-- Instructions -->
+  <div class="instructions">
+    <strong>Instructions:</strong> Present this slip at the Investigation/Imaging reception.
+    Technician: verify patient identity, confirm laterality before acquisition.
+    File this slip in the patient folder after all tests are completed.
+  </div>
+</div>
+
+<!-- JsBarcode CDN for barcode generation -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+  try {
+    // Use short ID (last 12 chars of UUID) for barcode readability
+    var fullId = "{{ order.pk }}";
+    var shortId = fullId.replace(/-/g, '').slice(-12).toUpperCase();
+    JsBarcode("#barcodeSvg", shortId, {
+      format: "CODE128",
+      width: 1.5,
+      height: 40,
+      displayValue: false,
+      margin: 2,
+    });
+  } catch(e) {
+    // Fallback: just show the text
+    document.getElementById('barcodeSvg').style.display = 'none';
+  }
+</script>
+</body>
+</html>
