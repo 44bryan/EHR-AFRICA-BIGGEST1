@@ -2,237 +2,204 @@
 {% load static %}
 {% block title %}Staff Throughput Report{% endblock %}
 
+{% block extra_css %}
+<style>
+  .kpi-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 20px 16px; text-align: center;
+  }
+  .kpi-card .kpi-icon { width: 44px; height: 44px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.15rem; margin-bottom: 10px; }
+  .kpi-card .kpi-num { font-size: 1.8rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+  .kpi-card .kpi-lbl { font-size: .8rem; color: #64748b; font-weight: 500; }
+
+  .staff-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 16px; display: flex; align-items: center; gap: 14px;
+  }
+  .staff-rank {
+    width: 32px; height: 32px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-weight: 800;
+    font-size: .85rem; flex-shrink: 0;
+  }
+  .rank-1 { background: #fef3c7; color: #b45309; }
+  .rank-2 { background: #e2e8f0; color: #475569; }
+  .rank-3 { background: #fed7aa; color: #c2410c; }
+  .rank-other { background: #f1f5f9; color: #94a3b8; }
+  .staff-info { flex: 1; min-width: 0; }
+  .staff-name { font-weight: 700; font-size: .92rem; color: #1e293b; }
+  .staff-meta { font-size: .78rem; color: #64748b; }
+  .staff-bar-wrap { flex: 0 0 120px; }
+  .staff-bar { height: 8px; border-radius: 4px; background: #f1f5f9; overflow: hidden; }
+  .staff-bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+  .staff-total { font-size: 1.1rem; font-weight: 800; text-align: right; min-width: 48px; }
+  .staff-badges { display: flex; gap: 6px; margin-top: 4px; }
+  .staff-badges .sb { font-size: .72rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+
+  .section-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+  .section-hdr { padding: 12px 16px; font-size: .88rem; font-weight: 600; color: #475569; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+
+  @media print {
+    .btn, .btn-group { display: none !important; }
+    .section-card, .kpi-card, .staff-card { break-inside: avoid; }
+  }
+</style>
+{% endblock %}
+
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-  <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-people-fill text-primary fs-4"></i>
-    <div>
-      <h5 class="mb-0 fw-bold">Staff Throughput Report</h5>
-      <div class="text-muted small">Exams completed per technician — ISO 15189 §5.1 / JCI AOP.5.3</div>
-    </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Staff Throughput</h5>
+    <div class="text-muted small">{{ since|date:"d M Y" }} &mdash; {{ today|date:"d M Y" }} ({{ days }} days)</div>
   </div>
   <div class="d-flex gap-2 align-items-center flex-wrap">
-    {# Period filter #}
     <div class="btn-group btn-group-sm">
-      {% for d in "7,14,30,60,90"|split:"," %}
-      {% endfor %}
       <a href="?days=7"  class="btn btn-outline-secondary {% if days == 7 %}active{% endif %}">7d</a>
       <a href="?days=14" class="btn btn-outline-secondary {% if days == 14 %}active{% endif %}">14d</a>
       <a href="?days=30" class="btn btn-outline-secondary {% if days == 30 %}active{% endif %}">30d</a>
       <a href="?days=60" class="btn btn-outline-secondary {% if days == 60 %}active{% endif %}">60d</a>
       <a href="?days=90" class="btn btn-outline-secondary {% if days == 90 %}active{% endif %}">90d</a>
     </div>
-    <a href="{% url 'investigations:staff_throughput_csv' %}?days={{ days }}" class="btn btn-sm btn-success">
-      <i class="bi bi-filetype-csv me-1"></i>CSV
-    </a>
-    <a href="{% url 'investigations:staff_throughput_pdf' %}?days={{ days }}" target="_blank" class="btn btn-sm btn-danger">
-      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
-    </a>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Print
-    </button>
-    <a href="{% url 'investigations:stats' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Stats
-    </a>
+    <a href="{% url 'investigations:staff_throughput_csv' %}?days={{ days }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
+    <a href="{% url 'investigations:staff_throughput_pdf' %}?days={{ days }}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i>Print</button>
+    <a href="{% url 'investigations:workstation' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
 
-{# ── Summary KPIs ── #}
+{# ── KPI Cards ── #}
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-primary">{{ today_total }}</div>
-        <div class="small text-muted">Exams Today</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#dbeafe;color:#2563eb;"><i class="bi bi-eye"></i></div>
+      <div class="kpi-num" style="color:#2563eb;">{{ today_total }}</div>
+      <div class="kpi-lbl">Exams Today</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-success">{{ grand_total }}</div>
-        <div class="small text-muted">Total (last {{ days }} days)</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#dcfce7;color:#16a34a;"><i class="bi bi-bar-chart-line"></i></div>
+      <div class="kpi-num" style="color:#16a34a;">{{ grand_total }}</div>
+      <div class="kpi-lbl">Total ({{ days }}d)</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-info">{{ staff_summary|length }}</div>
-        <div class="small text-muted">Active Staff</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#ede9fe;color:#7c3aed;"><i class="bi bi-people"></i></div>
+      <div class="kpi-num" style="color:#7c3aed;">{{ staff_summary|length }}</div>
+      <div class="kpi-lbl">Active Staff</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-warning">
-          {% if staff_summary %}{{ staff_summary.0.avg_per_day }}{% else %}0{% endif %}
-        </div>
-        <div class="small text-muted">Best Avg / Day</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#fef3c7;color:#d97706;"><i class="bi bi-trophy"></i></div>
+      <div class="kpi-num" style="color:#d97706;">{% if staff_summary %}{{ staff_summary.0.avg_per_day }}{% else %}0{% endif %}</div>
+      <div class="kpi-lbl">Best Avg/Day</div>
     </div>
   </div>
 </div>
 
-{# ── Today's Leaderboard ── #}
+{# ── Leaderboard + Daily Volume Chart ── #}
 <div class="row g-3 mb-4">
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-trophy-fill text-warning me-2"></i>Today's Leaderboard
-        <span class="badge bg-warning-subtle text-warning ms-2 small">{{ today|date:"d M Y" }}</span>
+  <div class="col-md-5">
+    <div class="section-card h-100">
+      <div class="section-hdr">
+        <span><i class="bi bi-trophy-fill text-warning me-2"></i>Today's Leaderboard</span>
+        <span class="text-muted small fw-normal">{{ today|date:"d M Y" }}</span>
       </div>
-      <div class="card-body p-0">
+      <div class="p-3">
         {% if today_board %}
-        <div class="list-group list-group-flush">
+          <div class="d-flex flex-column gap-2">
           {% for s in today_board %}
-          <div class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
-            <div class="d-flex align-items-center gap-2">
-              <span class="fw-bold text-muted" style="min-width:20px;">{{ forloop.counter }}</span>
-              <span class="fw-semibold small">{{ s.name }}</span>
+            <div class="d-flex align-items-center gap-3">
+              <div class="staff-rank {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}rank-other{% endif %}">{{ forloop.counter }}</div>
+              <div class="flex-grow-1">
+                <div class="fw-semibold" style="font-size:.88rem;">{{ s.name }}</div>
+                <div class="staff-bar mt-1">
+                  <div class="staff-bar-fill" style="width:{% if today_board.0.count %}{% widthratio s.count today_board.0.count 100 %}{% else %}0{% endif %}%;background:{% if forloop.counter == 1 %}#d97706{% elif forloop.counter == 2 %}#6366f1{% elif forloop.counter == 3 %}#c2410c{% else %}#94a3b8{% endif %};"></div>
+                </div>
+              </div>
+              <div class="fw-bold" style="font-size:1rem;min-width:40px;text-align:right;{% if forloop.counter == 1 %}color:#d97706{% elif forloop.counter == 2 %}color:#6366f1{% elif forloop.counter == 3 %}color:#c2410c{% else %}color:#64748b{% endif %}">{{ s.count }}</div>
             </div>
-            <span class="badge {% if forloop.first %}bg-warning text-dark{% else %}bg-primary{% endif %} rounded-pill">
-              {{ s.count }} exam{{ s.count|pluralize }}
-            </span>
-          </div>
           {% endfor %}
-        </div>
+          </div>
         {% else %}
-        <div class="text-center text-muted py-5 small">
-          <i class="bi bi-hourglass fs-3 d-block mb-2 opacity-25"></i>
-          No exams recorded today yet.
-        </div>
+          <div class="text-center text-muted py-4 small"><i class="bi bi-hourglass d-block fs-4 mb-2 opacity-25"></i>No exams recorded today yet</div>
         {% endif %}
       </div>
     </div>
   </div>
 
-  {# Daily totals chart #}
-  <div class="col-md-8">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold border-bottom py-2">
-        <i class="bi bi-bar-chart-line text-primary me-2"></i>Daily Exam Volume — Last {{ days }} Days
-      </div>
-      <div class="card-body">
-        <canvas id="dailyChart" height="120"></canvas>
-      </div>
+  <div class="col-md-7">
+    <div class="section-card h-100">
+      <div class="section-hdr"><span><i class="bi bi-bar-chart-line me-2" style="color:#6366f1;"></i>Daily Exam Volume</span></div>
+      <div class="p-3"><canvas id="dailyChart" height="130"></canvas></div>
     </div>
   </div>
 </div>
 
 {# ── Per-Staff Trend Chart ── #}
 {% if staff_summary %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2">
-    <i class="bi bi-graph-up text-primary me-2"></i>Per-Technician Daily Trend (Top 5)
-    <span class="badge bg-light border text-muted small fw-normal ms-2">Last {{ days }} days</span>
+<div class="section-card mb-4">
+  <div class="section-hdr">
+    <span><i class="bi bi-graph-up me-2" style="color:#2563eb;"></i>Per-Technician Daily Trend (Top 5)</span>
+    <span class="text-muted small fw-normal">Last {{ days }} days</span>
   </div>
-  <div class="card-body">
-    <canvas id="staffChart" height="100"></canvas>
-  </div>
+  <div class="p-3"><canvas id="staffChart" height="100"></canvas></div>
 </div>
 {% endif %}
 
-{# ── Staff Summary Table ── #}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-table text-primary me-2"></i>Staff Performance Summary — Last {{ days }} Days</span>
-    <span class="text-muted small fw-normal">{{ since|date:"d M Y" }} → {{ today|date:"d M Y" }}</span>
+{# ── Staff Performance Cards ── #}
+<h6 class="fw-semibold text-muted small text-uppercase mb-3">Staff Performance — Last {{ days }} Days</h6>
+{% if staff_summary %}
+<div class="d-flex flex-column gap-2 mb-4">
+  {% for s in staff_summary %}
+  <div class="staff-card">
+    <div class="staff-rank {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}rank-other{% endif %}">{{ forloop.counter }}</div>
+    <div class="staff-info">
+      <div class="staff-name">{{ s.name }}</div>
+      <div class="staff-badges">
+        <span class="sb" style="background:#dbeafe;color:#2563eb;">{{ s.avg_per_day }} avg/day</span>
+        {% if s.verified_pct >= 90 %}
+          <span class="sb" style="background:#dcfce7;color:#16a34a;">{{ s.verified_pct }}% verified</span>
+        {% elif s.verified_pct >= 70 %}
+          <span class="sb" style="background:#fef3c7;color:#d97706;">{{ s.verified_pct }}% verified</span>
+        {% else %}
+          <span class="sb" style="background:#fee2e2;color:#dc2626;">{{ s.verified_pct }}% verified</span>
+        {% endif %}
+        {% if s.abnormal %}<span class="sb" style="background:#fef3c7;color:#d97706;">{{ s.abnormal }} abnormal</span>{% endif %}
+        {% if s.tat_mins > 0 %}
+          {% if s.tat_mins < 120 %}
+            <span class="sb" style="background:#dcfce7;color:#16a34a;">TAT {{ s.tat_str }}</span>
+          {% elif s.tat_mins < 240 %}
+            <span class="sb" style="background:#fef3c7;color:#d97706;">TAT {{ s.tat_str }}</span>
+          {% else %}
+            <span class="sb" style="background:#fee2e2;color:#dc2626;">TAT {{ s.tat_str }}</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    <div class="staff-bar-wrap d-none d-md-block">
+      <div class="staff-bar">
+        <div class="staff-bar-fill" style="width:{% if grand_total %}{% widthratio s.total grand_total 100 %}{% else %}0{% endif %}%;background:{% if forloop.counter == 1 %}#d97706{% elif forloop.counter == 2 %}#6366f1{% elif forloop.counter == 3 %}#c2410c{% else %}#94a3b8{% endif %};"></div>
+      </div>
+      <div class="text-muted text-end" style="font-size:.7rem;margin-top:2px;">{% if grand_total %}{% widthratio s.total grand_total 100 %}% of total{% endif %}</div>
+    </div>
+    <div class="staff-total" style="{% if forloop.counter == 1 %}color:#d97706{% elif forloop.counter == 2 %}color:#6366f1{% elif forloop.counter == 3 %}color:#c2410c{% else %}color:#334155{% endif %}">{{ s.total }}</div>
   </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr>
-          <th>#</th>
-          <th>Technician</th>
-          <th class="text-end">Total</th>
-          <th class="text-end">Avg/Day</th>
-          <th class="text-end">Verified</th>
-          <th class="text-end">Ver%</th>
-          <th class="text-end">Abnormal</th>
-          <th class="text-end">Abn%</th>
-          <th class="text-end">Avg TAT</th>
-          <th style="min-width:140px;">Volume</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in staff_summary %}
-        <tr>
-          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
-          <td class="fw-semibold">{{ s.name }}</td>
-          <td class="text-end fw-bold text-primary">{{ s.total }}</td>
-          <td class="text-end text-muted">{{ s.avg_per_day }}</td>
-          <td class="text-end text-success fw-semibold">{{ s.verified }}</td>
-          <td class="text-end">
-            {% if s.verified_pct >= 90 %}
-              <span class="badge bg-success-subtle text-success border border-success-subtle small">{{ s.verified_pct }}%</span>
-            {% elif s.verified_pct >= 70 %}
-              <span class="badge bg-warning-subtle text-warning border border-warning-subtle small">{{ s.verified_pct }}%</span>
-            {% else %}
-              <span class="badge bg-danger-subtle text-danger border border-danger-subtle small">{{ s.verified_pct }}%</span>
-            {% endif %}
-          </td>
-          <td class="text-end {% if s.abnormal %}text-warning fw-semibold{% else %}text-muted{% endif %}">{{ s.abnormal }}</td>
-          <td class="text-end text-muted small">{{ s.abnormal_pct }}%</td>
-          <td class="text-end">
-            {% if s.tat_mins > 0 %}
-              {% if s.tat_mins < 120 %}
-                <span class="badge bg-success-subtle text-success border border-success-subtle small">{{ s.tat_str }}</span>
-              {% elif s.tat_mins < 240 %}
-                <span class="badge bg-warning-subtle text-warning border border-warning-subtle small">{{ s.tat_str }}</span>
-              {% else %}
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle small">{{ s.tat_str }}</span>
-              {% endif %}
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if grand_total %}
-            <div class="d-flex align-items-center gap-2">
-              <div class="flex-grow-1">
-                <div class="progress" style="height:8px;">
-                  <div class="progress-bar bg-primary"
-                       style="width:{% widthratio s.total grand_total 100 %}%;"></div>
-                </div>
-              </div>
-              <span class="text-muted small" style="min-width:35px;text-align:right;">
-                {% widthratio s.total grand_total 100 %}%
-              </span>
-            </div>
-            {% endif %}
-          </td>
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="10" class="text-center text-muted py-5">
-            <i class="bi bi-people fs-2 d-block mb-2 opacity-25"></i>
-            No exam results recorded in the last {{ days }} days.
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-      {% if staff_summary %}
-      <tfoot class="table-light fw-bold">
-        <tr>
-          <td colspan="2">Total</td>
-          <td class="text-end">{{ grand_total }}</td>
-          <td colspan="7"></td>
-        </tr>
-      </tfoot>
-      {% endif %}
-    </table>
-  </div>
-  <div class="card-footer bg-white text-muted small py-2">
-    <i class="bi bi-info-circle me-1"></i>
-    <strong>Avg/Day</strong> = total exams ÷ {{ days }} days.
-    <strong>Verified</strong> = results signed off by the technician.
-    ISO 15189 §5.1 requires competence monitoring of all examination personnel.
-  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center text-muted py-5"><i class="bi bi-people fs-2 d-block mb-2 opacity-25"></i>No exam results recorded in the last {{ days }} days.</div>
+{% endif %}
+
+<div class="text-muted small mb-3">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>Avg/Day</strong> = total ÷ {{ days }}d.
+  <strong>TAT</strong> = average turnaround time.
+  ISO 15189 §5.1 requires competence monitoring.
 </div>
 
 {% endblock %}
@@ -240,19 +207,18 @@
 {% block extra_js %}
 <script>
 (function(){
-  const COLORS = ['#6366f1','#0d6efd','#198754','#ffc107','#dc3545'];
+  var COLORS = ['#6366f1','#2563eb','#16a34a','#d97706','#dc3545'];
 
-  // Daily bar chart
-  const dv = {{ daily_json|safe }};
+  var dv = {{ daily_json|safe }};
   if (dv.length && document.getElementById('dailyChart')) {
     new Chart(document.getElementById('dailyChart'), {
       type: 'bar',
       data: {
         labels: dv.map(function(d){ return d.day.slice(5); }),
         datasets: [{
-          label: 'Exams completed',
+          label: 'Exams',
           data: dv.map(function(d){ return d.count; }),
-          backgroundColor: 'rgba(99,102,241,0.65)',
+          backgroundColor: 'rgba(99,102,241,0.6)',
           borderColor: '#6366f1',
           borderWidth: 1,
           borderRadius: 4
@@ -261,37 +227,32 @@
       options: {
         responsive: true,
         plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { ticks: { font: { size: 10 }, maxRotation: 45 } } }
       }
     });
   }
 
-  // Per-staff line chart
-  const sc = {{ staff_chart_json|safe }};
-  if (sc.datasets.length && document.getElementById('staffChart')) {
+  var sc = {{ staff_chart_json|safe }};
+  if (sc.datasets && sc.datasets.length && document.getElementById('staffChart')) {
+    sc.datasets.forEach(function(ds, i) {
+      ds.borderColor = COLORS[i % COLORS.length];
+      ds.backgroundColor = COLORS[i % COLORS.length] + '22';
+      ds.borderWidth = 2;
+      ds.pointRadius = 3;
+      ds.tension = 0.3;
+      ds.fill = true;
+    });
     new Chart(document.getElementById('staffChart'), {
       type: 'line',
       data: sc,
       options: {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
-        },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1 } },
-          x: { ticks: { font: { size: 10 }, maxRotation: 45 } }
-        }
+        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { ticks: { font: { size: 10 }, maxRotation: 45 } } }
       }
     });
   }
 }());
 </script>
-
-<style>
-@media print {
-  .btn, .btn-group { display: none !important; }
-  .card { break-inside: avoid; }
-}
-</style>
 {% endblock %}

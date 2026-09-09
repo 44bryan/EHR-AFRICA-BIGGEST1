@@ -76,7 +76,7 @@
   .print-header { display: none; }
   </style>
 
-  {% block extra_css %}{% endblock %}
+  <!-- ehr-page-css -->{% block extra_css %}{% endblock %}<!-- /ehr-page-css -->
 
   <!-- Chart.js — loaded in <head> so inline chart scripts in body run after it -->
   <script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
@@ -149,6 +149,33 @@ document.addEventListener('htmx:afterSettle', function () {
     fn();
   }
 });
+</script>
+
+<!-- Fix HTMX boost: extract page-specific CSS from response <head> on soft navigation -->
+<script>
+(function(){
+  var START='<!-- ehr-page-css -->',END='<!-- /ehr-page-css -->';
+  document.addEventListener('htmx:beforeSwap',function(evt){
+    // Remove old page-specific styles
+    document.querySelectorAll('[data-ehr-pagecss]').forEach(function(s){s.remove();});
+    var xhr=evt.detail.xhr;
+    if(!xhr||!xhr.responseText) return;
+    var html=xhr.responseText;
+    var si=html.indexOf(START);
+    var ei=html.indexOf(END);
+    if(si===-1||ei===-1) return;
+    var fragment=html.substring(si+START.length,ei);
+    if(!fragment.trim()) return;
+    // Parse and inject page styles
+    var tmp=document.createElement('div');
+    tmp.innerHTML=fragment;
+    tmp.querySelectorAll('style').forEach(function(s){
+      var clone=s.cloneNode(true);
+      clone.setAttribute('data-ehr-pagecss','1');
+      document.head.appendChild(clone);
+    });
+  });
+})();
 </script>
 
 </body>
