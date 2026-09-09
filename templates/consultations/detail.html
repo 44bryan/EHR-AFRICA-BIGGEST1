@@ -58,13 +58,12 @@
 {% if patient_allergies %}
 <div class="alert alert-danger py-2 px-3 mb-3" data-tip-init="1">
   <div class="d-flex align-items-center gap-2 mb-1">
-    <i class="bi bi-exclamation-octagon-fill text-danger fs-5"></i>
     <strong class="small text-uppercase">Known Allergies ({{ patient_allergies|length }})</strong>
   </div>
   <div class="d-flex flex-wrap gap-2 small">
     {% for a in patient_allergies %}
     <span class="badge {% if a.severity == 'SEVERE' or a.severity == 'ANAPHYLAXIS' %}bg-danger{% elif a.severity == 'MODERATE' %}bg-warning text-dark{% else %}bg-secondary{% endif %} px-2 py-1">
-      <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ a.allergen }}{% if a.reaction %} ({{ a.reaction }}){% endif %} — {{ a.get_severity_display }}
+      {{ a.allergen }}{% if a.reaction %} ({{ a.reaction }}){% endif %} — {{ a.get_severity_display }}
     </span>
     {% endfor %}
   </div>
@@ -74,7 +73,6 @@
 {% if patient_medications %}
 <div class="alert alert-warning py-2 px-3 mb-3" data-tip-init="1">
   <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-capsule-pill text-warning fs-5"></i>
     <strong class="small text-uppercase">Chronic Medications ({{ patient_medications|length }})</strong>
     <div class="d-flex flex-wrap gap-2 ms-2">
       {% for med in patient_medications %}
@@ -89,7 +87,6 @@
 
 {% if consultation.needs_cosign %}
 <div class="alert alert-warning border-warning d-flex align-items-center gap-3 mb-3" role="alert">
-  <i class="bi bi-exclamation-triangle-fill fs-4 text-warning flex-shrink-0"></i>
   <div class="flex-grow-1">
     <strong>Intern Note — Awaiting Supervisor Co-Signature</strong>
     <div class="small mt-1">
@@ -102,14 +99,13 @@
     {% csrf_token %}
     <button type="submit" class="btn btn-warning btn-sm"
             onclick="return confirm('Co-sign and countersign this intern consultation?')">
-      <i class="bi bi-pen me-1"></i>Co-Sign Now
+      Co-Sign Now
     </button>
   </form>
   {% endif %}
 </div>
 {% elif consultation.co_signed_by %}
 <div class="alert alert-success border-success d-flex align-items-center gap-2 mb-3 py-2" role="alert">
-  <i class="bi bi-patch-check-fill text-success"></i>
   <div class="small">
     Countersigned by <strong>Dr. {{ consultation.co_signed_by.get_full_name }}</strong>
     on {{ consultation.co_signed_at|date:"d M Y, H:i" }}
@@ -122,9 +118,9 @@
   <div class="card-body py-2">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
       <div class="d-flex flex-wrap gap-3">
-        <span class="text-muted small"><i class="bi bi-building me-1"></i>{{ consultation.department }}</span>
-        <span class="text-muted small"><i class="bi bi-person-badge me-1"></i>Dr. {{ consultation.consulting_doctor.full_name|default:"Unknown" }}</span>
-        <span class="text-muted small"><i class="bi bi-calendar3 me-1"></i>{{ consultation.consultation_date|date:"d M Y, H:i" }}</span>
+        <span class="text-muted small">{{ consultation.department }}</span>
+        <span class="text-muted small">Dr. {{ consultation.consulting_doctor.full_name|default:"Unknown" }}</span>
+        <span class="text-muted small">{{ consultation.consultation_date|date:"d M Y, H:i" }}</span>
         <span class="badge {% if consultation.status == 'COMPLETED' %}bg-success{% elif consultation.status == 'IN_PROGRESS' %}bg-primary{% elif consultation.status == 'PAUSED' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
           {{ consultation.get_status_display }}
         </span>
@@ -132,7 +128,7 @@
       <div class="d-flex gap-2 flex-wrap">
         {% if request.user.can_create_consultation and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
         <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-sm btn-outline-primary">
-          <i class="bi bi-pencil me-1"></i>Edit Notes
+          Edit Notes
         </a>
         {% endif %}
         {% if consultation.status == 'IN_PROGRESS' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
@@ -140,13 +136,13 @@
           {% csrf_token %}
           <button type="submit" class="btn btn-sm btn-outline-success"
                   onclick="return confirm('Mark complete without routing?')">
-            <i class="bi bi-check-circle me-1"></i>Complete only
+            Complete only
           </button>
         </form>
         {% endif %}
         {% if consultation.status == 'PAUSED' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
         <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-sm btn-warning">
-          <i class="bi bi-play-circle me-1"></i>Resume Consultation
+          Resume Consultation
         </a>
         {% endif %}
         {% if consultation.status == 'COMPLETED' and consultation.consulting_doctor == request.user or request.user.is_medical_director or request.user.is_super_admin %}
@@ -154,7 +150,7 @@
           {% csrf_token %}
           <button type="submit" class="btn btn-sm btn-outline-danger"
                   onclick="return confirm('Delete this consultation and start fresh? This cannot be undone.')">
-            <i class="bi bi-trash me-1"></i>Delete &amp; Restart
+            Delete &amp; Restart
           </button>
         </form>
         {% endif %}
@@ -162,18 +158,18 @@
         {% if request.user.can_create_consultation or request.user.can_order_investigations %}
         <div class="dropdown">
           <button class="btn btn-sm btn-outline-info dropdown-toggle" type="button" data-bs-toggle="dropdown">
-            <i class="bi bi-plus-circle me-1"></i>Order / Prescribe
+            Order / Prescribe
           </button>
           <ul class="dropdown-menu">
             {% if request.user.can_create_consultation %}
             <li>
               <a class="dropdown-item" href="{% url 'prescriptions:drug_new' consultation_pk=consultation.pk %}">
-                <i class="bi bi-capsule me-2 text-primary"></i>Prescribe Drug
+                Prescribe Drug
               </a>
             </li>
             <li>
               <a class="dropdown-item" href="{% url 'prescriptions:optical_new' consultation_pk=consultation.pk %}">
-                <i class="bi bi-eyeglasses me-2 text-purple"></i>Optical Prescription
+                Optical Prescription
               </a>
             </li>
             {% endif %}
@@ -181,17 +177,17 @@
             <li><hr class="dropdown-divider"></li>
             <li>
               <a class="dropdown-item" href="{% url 'investigations:order' consultation_pk=consultation.pk %}">
-                <i class="bi bi-search-heart me-2 text-danger"></i>Order Eye Investigation
+                Order Eye Investigation
               </a>
             </li>
             <li>
               <a class="dropdown-item" href="{% url 'investigations:order' consultation_pk=consultation.pk %}?cat=optometry">
-                <i class="bi bi-eye me-2 text-info"></i>Order Optometry Examination
+                Order Optometry Examination
               </a>
             </li>
             <li>
               <a class="dropdown-item" href="{% url 'laboratory:order' consultation_pk=consultation.pk %}">
-                <i class="bi bi-droplet me-2 text-warning"></i>Order Lab Test
+                Order Lab Test
               </a>
             </li>
             {% endif %}
@@ -200,15 +196,15 @@
         {% endif %}
         <div class="dropdown">
           <button class="btn btn-sm btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">
-            <i class="bi bi-file-pdf me-1"></i>PDF
+            PDF
           </button>
           <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="{% url 'reports:consultation_pdf' pk=consultation.pk %}" target="_blank"><i class="bi bi-file-earmark-text me-2"></i>Consultation Report</a></li>
+            <li><a class="dropdown-item" href="{% url 'reports:consultation_pdf' pk=consultation.pk %}" target="_blank">Consultation Report</a></li>
             {% if request.user.is_doctor or request.user.is_super_admin or request.user.is_medical_director %}
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="{% url 'consultations:discharge_summary' pk=consultation.pk %}" target="_blank"><i class="bi bi-house-check me-2 text-success"></i>Discharge Summary</a></li>
-            <li><a class="dropdown-item" href="{% url 'reports:medical_certificate' consultation_pk=consultation.pk %}" target="_blank"><i class="bi bi-file-earmark-medical me-2"></i>Medical Certificate</a></li>
-            <li><a class="dropdown-item" href="{% url 'reports:referral_letter' consultation_pk=consultation.pk %}" target="_blank"><i class="bi bi-envelope-paper me-2"></i>Referral Letter</a></li>
+            <li><a class="dropdown-item" href="{% url 'consultations:discharge_summary' pk=consultation.pk %}" target="_blank">Discharge Summary</a></li>
+            <li><a class="dropdown-item" href="{% url 'reports:medical_certificate' consultation_pk=consultation.pk %}" target="_blank">Medical Certificate</a></li>
+            <li><a class="dropdown-item" href="{% url 'reports:referral_letter' consultation_pk=consultation.pk %}" target="_blank">Referral Letter</a></li>
             {% endif %}
           </ul>
         </div>
@@ -218,14 +214,14 @@
         <button type="button" class="btn btn-sm btn-success" id="doneGoHomeBtn"
                 onclick="dischargePatient('{{ consultation.visit.pk }}')"
                 title="Mark this patient as done — they go home from here">
-          <i class="bi bi-house-check me-1"></i>Patient Going Home
+          Patient Going Home
         </button>
         {% endif %}
         {# ── Route — one button, "Return to me" toggle in modal decides pause vs complete ── #}
         <button type="button"
                 class="btn btn-sm {% if consultation.status == 'IN_PROGRESS' %}btn-primary{% elif consultation.status == 'PAUSED' %}btn-warning{% else %}btn-dark{% endif %}"
                 onclick="EhrRoute.open('{{ consultation.visit.pk }}', { {% if consultation.status != 'COMPLETED' %}completePk:'{{ consultation.pk }}',{% endif %} tier:'{{ consultation.visit.service_tier|default:"STANDARD" }}', patientName:'{{ consultation.patient.full_name|escapejs }}'})">
-          <i class="bi bi-signpost-split me-1"></i>Route
+          Route
         </button>
         {% endif %}
       </div>

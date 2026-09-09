@@ -4,40 +4,35 @@
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-  <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-graph-up-arrow text-primary fs-4"></i>
-    <div>
-      <h5 class="mb-0 fw-bold">Laboratory Statistics</h5>
-      <div class="text-muted small">{{ month_start|date:"F Y" }} — WHO-standard monthly report</div>
-    </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Laboratory Statistics</h5>
+    <div class="text-muted small">{{ month_start|date:"F Y" }} — WHO-standard monthly report</div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
     {# ── Month navigation ── #}
     <div class="btn-group btn-group-sm">
       <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary">
-        <i class="bi bi-chevron-left"></i>
       </a>
       <span class="btn btn-outline-secondary disabled px-3">{{ month_start|date:"M Y" }}</span>
       <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary">
-        <i class="bi bi-chevron-right"></i>
       </a>
     </div>
     <button onclick="window.open('{{ request.path }}?year='+this.dataset.year+'&month='+this.dataset.month+'&pdf=1','_blank')"
             data-year="{{ month_start|date:'Y' }}" data-month="{{ month_start|date:'n' }}"
             class="btn btn-sm btn-danger">
-      <i class="bi bi-file-earmark-pdf me-1"></i>Export Data PDF
+      Export Data PDF
     </button>
     <a href="{% url 'laboratory:stats_csv' %}?year={{ month_start|date:'Y' }}&amp;month={{ month_start|date:'n' }}" class="btn btn-sm btn-success">
-      <i class="bi bi-filetype-csv me-1"></i>CSV Export
+      CSV Export
     </a>
     <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
-      <i class="bi bi-printer-fill me-1"></i>Print with Charts
+      Print with Charts
     </button>
     <a href="{% url 'laboratory:staff_throughput' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-people-fill me-1"></i>Staff Throughput
+      Staff Throughput
     </a>
     <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Workstation
+      Workstation
     </a>
   </div>
 </div>
@@ -124,6 +119,63 @@
       </div>
       <div class="card-body d-flex align-items-center justify-content-center">
         <canvas id="categoryChart" style="max-height:220px;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Patient Flow Funnel ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-funnel text-primary"></i>
+    <span>Patient Flow Funnel</span>
+    <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_start|date:"F Y" }}</span>
+  </div>
+  <div class="card-body">
+    <div class="row align-items-start g-4">
+      <div class="col-md-4">
+        <canvas id="funnelChart" style="max-height:220px;"></canvas>
+      </div>
+      <div class="col-md-8">
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr><th>Stage</th><th class="text-end">Count</th><th class="text-end">% of Prescribed</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><i class="bi bi-prescription2 me-2 text-primary"></i>Prescribed (Ordered)</td>
+                <td class="text-end fw-bold">{{ prescribed_count }}</td>
+                <td class="text-end text-muted">100%</td>
+              </tr>
+              <tr>
+                <td><i class="bi bi-credit-card me-2 text-success"></i>Paid / Cleared</td>
+                <td class="text-end fw-bold">{{ paid_count }}</td>
+                <td class="text-end text-muted">{% if prescribed_count %}{% widthratio paid_count prescribed_count 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+              <tr>
+                <td><i class="bi bi-droplet me-2" style="color:#7c3aed;"></i>Sample Collected</td>
+                <td class="text-end fw-bold">{{ sample_collected_count }}</td>
+                <td class="text-end text-muted">{% if prescribed_count %}{% widthratio sample_collected_count prescribed_count 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+              <tr>
+                <td><i class="bi bi-check-circle me-2" style="color:#0d9488;"></i>Completed</td>
+                <td class="text-end fw-bold">{{ completed_count }}</td>
+                <td class="text-end text-muted">{% if prescribed_count %}{% widthratio completed_count prescribed_count 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+            </tbody>
+            <tfoot class="table-light">
+              <tr class="small text-muted">
+                <td colspan="3">
+                  <strong>Drop-offs:</strong>
+                  Unpaid: <strong class="{% if unpaid_count %}text-danger{% endif %}">{{ unpaid_count }}</strong> &bull;
+                  Collection rate: <strong>{{ show_rate }}%</strong> &bull;
+                  Cancelled: <strong class="{% if cancelled_count %}text-danger{% endif %}">{{ cancelled_count }}</strong>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -652,6 +704,31 @@ if (tierLab.data.some(v => v > 0)) {
     options: {
       responsive: true,
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } }
+    }
+  });
+}
+
+// Patient flow funnel (horizontal bar)
+const funnelData = [{{ prescribed_count }}, {{ paid_count }}, {{ sample_collected_count }}, {{ completed_count }}];
+if (funnelData[0] > 0 && document.getElementById('funnelChart')) {
+  new Chart(document.getElementById('funnelChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Prescribed','Paid','Sample Collected','Completed'],
+      datasets: [{
+        data: funnelData,
+        backgroundColor: ['#0d6efd','#198754','#7c3aed','#0d9488'],
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1 } },
+        y: { ticks: { font: { size: 11 } } }
+      }
     }
   });
 }

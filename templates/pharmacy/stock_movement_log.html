@@ -1,0 +1,106 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Stock Movement Log — Pharmacy{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Stock Movement Log</h4>
+    <p class="text-muted small mb-0">Audit trail — all stock movements in one place ({{ total_count }} records)</p>
+  </div>
+  <button onclick="window.print()" class="btn btn-sm btn-outline-dark">
+    Print
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filters ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-2 col-6">
+        <label class="form-label small mb-0 fw-semibold">Movement Type</label>
+        <select name="type" class="form-select form-select-sm">
+          {% for val, label in movement_types %}
+          <option value="{{ val }}" {% if movement_type == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 col-6">
+        <label class="form-label small mb-0 fw-semibold">Period</label>
+        <select name="days" class="form-select form-select-sm">
+          <option value="7" {% if days == 7 %}selected{% endif %}>Last 7 days</option>
+          <option value="14" {% if days == 14 %}selected{% endif %}>Last 14 days</option>
+          <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 days</option>
+          <option value="60" {% if days == 60 %}selected{% endif %}>Last 60 days</option>
+          <option value="90" {% if days == 90 %}selected{% endif %}>Last 90 days</option>
+        </select>
+      </div>
+      <div class="col-md-3 col-8">
+        <label class="form-label small mb-0 fw-semibold">Search Drug</label>
+        <input type="text" name="q" value="{{ drug_search }}" class="form-control form-control-sm" placeholder="Drug name or generic...">
+      </div>
+      <div class="col-md-1 col-4">
+        <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-funnel me-1"></i>Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Movement Table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date & Time</th>
+            <th>Type</th>
+            <th>Drug</th>
+            <th>Batch</th>
+            <th class="text-end">Qty</th>
+            <th>Detail</th>
+            <th>User</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in movements %}
+          <tr>
+            <td class="small text-muted text-nowrap">{{ m.date|date:"d M Y" }}<br>{{ m.date|date:"H:i" }}</td>
+            <td>
+              <span class="badge bg-{{ m.type_class }}{% if m.type_class == 'warning' %} text-dark{% endif %}">
+                {{ m.type }}
+              </span>
+            </td>
+            <td class="fw-semibold">
+              {{ m.drug }}
+              {% if m.drug_strength %}<small class="text-muted ms-1">{{ m.drug_strength }}</small>{% endif %}
+            </td>
+            <td class="small text-muted">{{ m.batch }}</td>
+            <td class="text-end fw-bold {% if '+' in m.qty %}text-success{% else %}text-danger{% endif %}">
+              {{ m.qty }}
+            </td>
+            <td class="small text-muted">{{ m.detail }}</td>
+            <td class="small">{{ m.user }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">
+              No stock movements found for the selected period.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if movements %}
+<div class="text-muted small mt-2">
+  Showing {{ movements|length }} movement{{ movements|length|pluralize }} — max 500 per query.
+</div>
+{% endif %}
+{% endblock %}

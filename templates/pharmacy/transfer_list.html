@@ -3,26 +3,53 @@
 {% block title %}Stock Transfers{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
-    <h1 class="h3 mb-1 fw-bold">
-      <i class="bi bi-arrow-left-right me-2 text-primary"></i>Stock Transfers
+    <h1 class="h3 mb-1 fw-bold">Stock Transfers
     </h1>
     <div class="text-muted small">Inter-store stock transfer management</div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <form method="get" class="d-inline">
-      <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:140px;">
-        <option value="">All Statuses</option>
-        {% for val, label in statuses %}
-        <option value="{{ val }}" {% if request.GET.status == val %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </form>
-    <a href="{% url 'pharmacy:transfer_create' %}" class="btn btn-primary btn-sm">
-      <i class="bi bi-plus-lg me-1"></i>New Transfer
+  <a href="{% url 'pharmacy:transfer_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Transfer
+  </a>
+</div>
+
+{# ── Direction Tabs ── #}
+<ul class="nav nav-pills mb-3 gap-1">
+  <li class="nav-item">
+    <a class="nav-link {% if not direction %}active{% endif %} py-1 px-3"
+       href="{% url 'pharmacy:transfer_list' %}{% if status_filter %}?status={{ status_filter }}{% endif %}">
+      All
     </a>
-  </div>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if direction == 'outgoing' %}active{% endif %} py-1 px-3"
+       href="{% url 'pharmacy:transfer_list' %}?direction=outgoing{% if status_filter %}&status={{ status_filter }}{% endif %}">
+      <i class="bi bi-box-arrow-up-right me-1"></i>Outgoing
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if direction == 'incoming' %}active{% endif %} py-1 px-3"
+       href="{% url 'pharmacy:transfer_list' %}?direction=incoming{% if status_filter %}&status={{ status_filter }}{% endif %}">
+      <i class="bi bi-box-arrow-in-down me-1"></i>Incoming
+      {% if pending_incoming_count %}
+      <span class="badge bg-danger ms-1">{{ pending_incoming_count }}</span>
+      {% endif %}
+    </a>
+  </li>
+</ul>
+
+{# ── Status Filter ── #}
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <form method="get" class="d-inline">
+    {% if direction %}<input type="hidden" name="direction" value="{{ direction }}">{% endif %}
+    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:160px;">
+      <option value="">All Statuses</option>
+      {% for val, label in statuses %}
+      <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </form>
 </div>
 
 {% if not transfers %}
@@ -64,10 +91,20 @@
           </td>
           <td class="small">{{ t.initiated_by.get_full_name|default:"--" }}</td>
           <td class="text-muted small">{{ t.created_at|date:"d M Y" }}<br>{{ t.created_at|date:"H:i" }}</td>
-          <td class="text-end">
+          <td class="text-end text-nowrap">
+            {% if t.status == 'PENDING' and direction == 'incoming' %}
+            <form method="post" action="{% url 'pharmacy:transfer_action' transfer_id=t.id %}" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="receive">
+              <button type="submit" class="btn btn-sm btn-success py-0"
+                      onclick="return confirm('Receive transfer {{ t.transfer_number }}?');">
+                <i class="bi bi-check-lg me-1"></i>Receive
+              </button>
+            </form>
+            {% endif %}
             <a href="{% url 'pharmacy:transfer_detail' transfer_id=t.id %}"
-               class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-eye me-1"></i>View
+               class="btn btn-sm {% if t.status == 'PENDING' %}btn-primary{% else %}btn-outline-primary{% endif %} py-0">
+              {% if t.status == 'PENDING' %}<i class="bi bi-eye me-1"></i>View / Act{% else %}<i class="bi bi-eye me-1"></i>View{% endif %}
             </a>
           </td>
         </tr>

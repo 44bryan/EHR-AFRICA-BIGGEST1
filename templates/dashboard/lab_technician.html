@@ -3,18 +3,41 @@
 
 {% block extra_css %}
 <style>
-  .ws-section { margin-bottom: 12px; }
-  .ws-section-hdr {
-    font-size: .9rem; font-weight: 600; color: #334155;
-    padding: 10px 16px; background: #fff;
-    border-bottom: 1px solid #e2e8f0;
-    display: flex; align-items: center; justify-content: space-between;
+  .pipeline-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 20px 16px; text-align: center; transition: box-shadow .2s;
   }
-  .ws-section-hdr .badge { font-size: .78rem; font-weight: 600; }
-  .pt-row { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; }
-  .pt-row:last-child { border-bottom: none; }
-  .stat-num { font-size: 1.4rem; font-weight: 700; color: #1e293b; }
-  .stat-label { font-size: .78rem; color: #64748b; }
+  .pipeline-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+  .pipeline-card .icon { width: 40px; height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.1rem; margin-bottom: 10px; }
+  .pipeline-card .num { font-size: 1.8rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+  .pipeline-card .lbl { font-size: .8rem; color: #64748b; font-weight: 500; }
+
+  .icon-blue { background: #dbeafe; color: #2563eb; }
+  .icon-amber { background: #fef3c7; color: #d97706; }
+  .icon-green { background: #dcfce7; color: #16a34a; }
+  .icon-purple { background: #ede9fe; color: #7c3aed; }
+  .icon-teal { background: #ccfbf1; color: #0d9488; }
+  .icon-red { background: #fee2e2; color: #dc2626; }
+  .num-blue { color: #2563eb; }
+  .num-amber { color: #d97706; }
+  .num-green { color: #16a34a; }
+  .num-purple { color: #7c3aed; }
+  .num-teal { color: #0d9488; }
+
+  .quick-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-radius: 10px; text-decoration: none;
+    color: #334155; font-size: .88rem; font-weight: 500;
+    background: #fff; border: 1px solid #e2e8f0; transition: all .15s;
+  }
+  .quick-link:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+  .quick-link .ql-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: .95rem; flex-shrink: 0; }
+
+  .summary-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+  .summary-hdr { padding: 12px 16px; font-size: .88rem; font-weight: 600; color: #475569; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px; }
+  .summary-row { padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f8fafc; font-size: .88rem; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .val { font-weight: 700; font-size: 1rem; }
 </style>
 {% endblock %}
 
@@ -23,74 +46,150 @@
 {# -- Header -- #}
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
-    <h5 class="fw-bold mb-0">Laboratory Dashboard</h5>
-    <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"d M Y" }}</div>
+    <h5 class="fw-bold mb-1">Laboratory Dashboard</h5>
+    <div class="text-muted small">{{ user.full_name }} &mdash; {{ today|date:"l, d M Y" }}</div>
   </div>
-  <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-primary">
-    <i class="bi bi-play-circle me-1"></i>Open Workstation
+  <a href="{% url 'laboratory:dashboard' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-display me-1"></i>Open Workstation
   </a>
 </div>
 
-{# -- Pipeline Stats -- #}
-<div class="row g-2 mb-3">
-  <div class="col"><div class="card border text-center py-2 px-1"><div class="stat-num">{{ pending_lab_count }}</div><div class="stat-label">Pending</div></div></div>
-  <div class="col"><div class="card border text-center py-2 px-1"><div class="stat-num">{{ pending_inv_count }}</div><div class="stat-label">Investigations</div></div></div>
-</div>
-
-{# -- Quick Actions -- #}
-<div class="d-flex gap-2 mb-3 flex-wrap">
-  <a href="{% url 'laboratory:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-display me-1"></i>Workstation</a>
-  <a href="{% url 'laboratory:stats' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-graph-up me-1"></i>Stats</a>
-  <a href="{% url 'laboratory:list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list-ul me-1"></i>All Orders</a>
-  <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-search-heart me-1"></i>Eye Investigations</a>
-</div>
-
-{# -- Pending Lab Orders -- #}
-<div class="card border mb-3">
-  <div class="ws-section-hdr">
-    <span><i class="bi bi-droplet me-2"></i>Pending Lab Orders</span>
-    <span class="badge bg-secondary">{{ pending_lab_count }}</span>
+{# -- Pipeline Cards -- #}
+<div class="row g-3 mb-4">
+  <div class="col">
+    <div class="pipeline-card">
+      <div class="icon icon-blue"><i class="bi bi-person-walking"></i></div>
+      <div class="num num-blue">{{ expected_count }}</div>
+      <div class="lbl">Expected</div>
+    </div>
   </div>
-  {% for order in pending_labs %}
-  <div class="pt-row d-flex align-items-center justify-content-between flex-wrap gap-2">
-    <div>
-      <div class="fw-semibold" style="font-size:.92rem;">{{ order.patient.full_name }}</div>
-      <div class="text-muted" style="font-size:.82rem;">
-        {{ order.items.count }} test{{ order.items.count|pluralize }} &bull; {{ order.created_at|timesince }} ago
+  <div class="col">
+    <div class="pipeline-card">
+      <div class="icon icon-amber"><i class="bi bi-person-check"></i></div>
+      <div class="num num-amber">{{ checked_in_count }}</div>
+      <div class="lbl">Checked In</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="pipeline-card">
+      <div class="icon icon-purple"><i class="bi bi-collection"></i></div>
+      <div class="num num-purple">{{ sample_collected_count }}</div>
+      <div class="lbl">Samples</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="pipeline-card">
+      <div class="icon icon-teal"><i class="bi bi-activity"></i></div>
+      <div class="num num-teal">{{ processing_count }}</div>
+      <div class="lbl">Processing</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="pipeline-card">
+      <div class="icon icon-green"><i class="bi bi-check-circle"></i></div>
+      <div class="num num-green">{{ completed_today }}</div>
+      <div class="lbl">Done Today</div>
+    </div>
+  </div>
+  {% if critical_count %}
+  <div class="col">
+    <div class="pipeline-card" style="border-color:#fca5a5;">
+      <div class="icon icon-red"><i class="bi bi-exclamation-octagon"></i></div>
+      <div class="num" style="color:#dc2626;">{{ critical_count }}</div>
+      <div class="lbl">Critical</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# -- Quick Actions + Today's Summary -- #}
+<div class="row g-3 mb-4">
+  <div class="col-md-5">
+    <h6 class="fw-semibold text-muted small text-uppercase mb-2">Quick Actions</h6>
+    <div class="d-flex flex-column gap-2">
+      <a href="{% url 'laboratory:dashboard' %}" class="quick-link">
+        <span class="ql-icon icon-blue"><i class="bi bi-display"></i></span>
+        <span>Workstation<span class="text-muted ms-1 fw-normal">— Patient queue</span></span>
+      </a>
+      <a href="{% url 'laboratory:stats' %}" class="quick-link">
+        <span class="ql-icon icon-green"><i class="bi bi-graph-up"></i></span>
+        <span>Monthly Statistics</span>
+      </a>
+      <a href="{% url 'laboratory:staff_throughput' %}" class="quick-link">
+        <span class="ql-icon icon-purple"><i class="bi bi-people"></i></span>
+        <span>Staff Throughput</span>
+      </a>
+      <a href="{% url 'laboratory:tat_report' %}" class="quick-link">
+        <span class="ql-icon icon-amber"><i class="bi bi-stopwatch"></i></span>
+        <span>TAT Report</span>
+      </a>
+      <a href="{% url 'laboratory:qc_dashboard' %}" class="quick-link">
+        <span class="ql-icon icon-teal"><i class="bi bi-shield-check"></i></span>
+        <span>Quality Control</span>
+      </a>
+      <a href="{% url 'laboratory:list' %}" class="quick-link">
+        <span class="ql-icon" style="background:#f1f5f9;color:#64748b;"><i class="bi bi-list-ul"></i></span>
+        <span>All Orders</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <h6 class="fw-semibold text-muted small text-uppercase mb-2">Today's Summary</h6>
+    <div class="summary-card">
+      <div class="summary-hdr"><i class="bi bi-bar-chart"></i>Pipeline Status</div>
+      <div class="summary-row">
+        <span><i class="bi bi-person-walking me-2 text-muted"></i>Expected Arrivals</span>
+        <span class="val num-blue">{{ expected_count }}</span>
+      </div>
+      <div class="summary-row">
+        <span><i class="bi bi-person-check me-2 text-muted"></i>Checked In</span>
+        <span class="val num-amber">{{ checked_in_count }}</span>
+      </div>
+      <div class="summary-row">
+        <span><i class="bi bi-collection me-2 text-muted"></i>Samples Collected</span>
+        <span class="val" style="color:#7c3aed;">{{ sample_collected_count }}</span>
+      </div>
+      <div class="summary-row">
+        <span><i class="bi bi-activity me-2 text-muted"></i>Processing</span>
+        <span class="val num-teal">{{ processing_count }}</span>
+      </div>
+      <div class="summary-row">
+        <span><i class="bi bi-check-circle me-2 text-muted"></i>Completed Today</span>
+        <span class="val num-green">{{ completed_today }}</span>
+      </div>
+      <div class="summary-row">
+        <span><i class="bi bi-clock me-2 text-muted"></i>Awaiting Payment</span>
+        <span class="val" style="color:#dc3545;">{{ unpaid_count }}</span>
       </div>
     </div>
-    <div class="d-flex align-items-center gap-2">
-      <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span>
-      <span class="badge bg-{% if order.status == 'PROCESSING' %}warning text-dark{% elif order.status == 'SAMPLE_COLLECTED' %}info{% else %}secondary{% endif %}">{{ order.get_status_display }}</span>
-    </div>
-  </div>
-  {% empty %}
-  <div class="text-center py-4 text-muted small">No pending lab orders</div>
-  {% endfor %}
-</div>
 
-{# -- Pending Investigations -- #}
-<div class="card border">
-  <div class="ws-section-hdr">
-    <span><i class="bi bi-search-heart me-2"></i>Pending Eye Investigations</span>
-    <span class="badge bg-secondary">{{ pending_inv_count }}</span>
-  </div>
-  {% for order in pending_investigations %}
-  <div class="pt-row d-flex align-items-center justify-content-between flex-wrap gap-2">
-    <div>
-      <div class="fw-semibold" style="font-size:.92rem;">{{ order.patient.full_name }}</div>
-      <div class="text-muted" style="font-size:.82rem;">
-        {{ order.investigation_type.name }} &bull; {{ order.created_at|timesince }} ago
+    <div class="summary-card mt-3">
+      <div class="summary-hdr"><i class="bi bi-calendar3"></i>Monthly &amp; Daily Totals</div>
+      <div class="summary-row">
+        <span>Ordered Today</span>
+        <span class="val" style="color:#334155;">{{ ordered_today }}</span>
       </div>
-    </div>
-    <div class="d-flex align-items-center gap-2">
-      <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span>
-      <a href="{% url 'investigations:add_result' pk=order.pk %}" class="btn btn-sm btn-primary" style="font-size:.8rem;">Enter Result</a>
+      <div class="summary-row">
+        <span>My Results Today</span>
+        <span class="val num-teal">{{ my_results_today }}</span>
+      </div>
+      <div class="summary-row">
+        <span>Completed This Month</span>
+        <span class="val" style="color:#334155;">{{ completed_this_month }}</span>
+      </div>
+      <div class="summary-row">
+        <span>Abnormal Results (Month)</span>
+        <span class="val {% if abnormal_count %}text-warning{% endif %}">{{ abnormal_count }}</span>
+      </div>
+      {% if critical_count %}
+      <div class="summary-row">
+        <span><i class="bi bi-exclamation-octagon me-2 text-danger"></i>Critical Unverified</span>
+        <span class="val text-danger">{{ critical_count }}</span>
+      </div>
+      {% endif %}
     </div>
   </div>
-  {% empty %}
-  <div class="text-center py-4 text-muted small">No pending investigations</div>
-  {% endfor %}
 </div>
 
 {% endblock %}

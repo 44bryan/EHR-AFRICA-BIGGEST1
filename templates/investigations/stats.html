@@ -2,25 +2,6 @@
 {% load static %}
 {% block title %}Imaging Investigation Statistics — {{ month_start|date:"F Y" }}{% endblock %}
 
-{% block extra_css %}
-<style>
-  .kpi-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 12px; text-align: center; }
-  .kpi-card .kpi-icon { width: 40px; height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem; margin-bottom: 8px; }
-  .kpi-card .kpi-num { font-size: 1.6rem; font-weight: 800; line-height: 1; margin-bottom: 3px; }
-  .kpi-card .kpi-lbl { font-size: .78rem; color: #64748b; font-weight: 500; }
-
-  .section-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-  .section-hdr { padding: 12px 16px; font-size: .88rem; font-weight: 600; color: #475569; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px; }
-
-  .funnel-step { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #f8fafc; }
-  .funnel-step:last-child { border-bottom: none; }
-  .funnel-bar { flex: 1; height: 10px; background: #f1f5f9; border-radius: 5px; overflow: hidden; }
-  .funnel-bar-fill { height: 100%; border-radius: 5px; transition: width .4s ease; }
-  .funnel-lbl { font-size: .85rem; color: #334155; font-weight: 500; min-width: 120px; }
-  .funnel-val { font-size: .92rem; font-weight: 700; min-width: 55px; text-align: right; }
-</style>
-{% endblock %}
-
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
   <div>
@@ -29,200 +10,138 @@
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
     <div class="btn-group btn-group-sm">
-      <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
+      <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary"></a>
       <span class="btn btn-outline-secondary disabled px-3">{{ month_start|date:"M Y" }}</span>
-      <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+      <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary"></a>
     </div>
-    {% if is_current_month %}
-    <span class="badge bg-light border text-muted small d-flex align-items-center gap-1" title="Auto-refreshes every 60s">
-      <i class="bi bi-arrow-clockwise"></i> <span id="statsCountdown">60s</span>
-    </span>
-    {% endif %}
-    <button onclick="exportStatsPDF()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
-    <button onclick="downloadStatsCSV()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv me-1"></i>CSV</button>
-    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i>Print</button>
-    <a href="{% url 'investigations:workstation' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    <button onclick="window.open('{{ request.path }}?year='+this.dataset.year+'&month='+this.dataset.month+'&pdf=1','_blank')"
+            data-year="{{ month_start|date:'Y' }}" data-month="{{ month_start|date:'n' }}"
+            class="btn btn-sm btn-danger">
+      Export Data PDF
+    </button>
+    <a href="{% url 'investigations:stats_csv' %}?year={{ month_start|date:'Y' }}&amp;month={{ month_start|date:'n' }}" class="btn btn-sm btn-success">
+      CSV Export
+    </a>
+    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
+      Print with Charts
+    </button>
+    <a href="{% url 'investigations:staff_throughput' %}" class="btn btn-sm btn-outline-secondary">
+      Staff Throughput
+    </a>
+    <a href="{% url 'investigations:workstation' %}" class="btn btn-sm btn-outline-secondary">
+      Workstation
+    </a>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
 
-{# ── Print-only letterhead ── #}
 <div class="print-only" style="display:none;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0d6efd;padding-bottom:10px;margin-bottom:14px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #0d6efd;">
     <div>
-      <div style="font-size:18px;font-weight:800;color:#0d6efd;">Imaging Investigation Statistics</div>
-      <div style="font-size:11px;color:#555;margin-top:4px;">
-        Period: {{ month_start|date:"F Y" }} &bull; Ref: INV-{{ month_start|date:"Y-m" }} &bull; Generated: {% now "d M Y H:i" %}
-      </div>
+      <div style="font-size:20px;font-weight:800;color:#0d6efd;">{{ HOSPITAL_NAME }}</div>
+      <div style="font-size:13px;font-weight:700;color:#333;margin-top:2px;">Imaging Investigation Statistics Dashboard</div>
+      <div style="font-size:10px;color:#555;margin-top:2px;">Period: {{ month_start|date:"F Y" }} &bull; Ref: IMG-STATS-{{ month_start|date:"Y-m" }} &bull; Generated: {% now "d M Y H:i" %}</div>
+      <div style="font-size:9px;color:#888;margin-top:1px;">Monthly Imaging Statistics Report — Excludes optometry</div>
     </div>
-    <div style="text-align:right;font-size:9px;color:#888;line-height:1.6;">CONFIDENTIAL<br><em>Imaging only — excludes optometry</em></div>
+    <div style="text-align:right;font-size:10px;color:#6c757d;">
+      CONFIDENTIAL — INTERNAL USE ONLY<br>
+      <em>For management review. Not for patient distribution.</em>
+    </div>
+  </div>
+  <div style="background:#0d6efd;color:#fff;padding:5px 12px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;letter-spacing:.5px;">
+    {{ HOSPITAL_NAME }} — Imaging Investigation Department Monthly Report
   </div>
 </div>
 
-{# ── KPI Cards ── #}
-<div class="row g-2 mb-4">
-  <div class="col-6 col-md">
-    <div class="kpi-card">
-      <div class="kpi-icon" style="background:#dbeafe;color:#2563eb;"><i class="bi bi-clipboard2-pulse"></i></div>
-      <div class="kpi-num" style="color:#2563eb;">{{ total_orders }}</div>
-      <div class="kpi-lbl">Total Prescribed</div>
-    </div>
-  </div>
-  <div class="col-6 col-md">
-    <div class="kpi-card">
-      <div class="kpi-icon" style="background:#dcfce7;color:#16a34a;"><i class="bi bi-check-circle"></i></div>
-      <div class="kpi-num" style="color:#16a34a;">{{ completed_count }}</div>
-      <div class="kpi-lbl">Completed</div>
-    </div>
-  </div>
-  <div class="col-6 col-md">
-    <div class="kpi-card">
-      <div class="kpi-icon" style="background:#fef3c7;color:#d97706;"><i class="bi bi-hourglass-split"></i></div>
-      <div class="kpi-num" style="color:#d97706;">{{ pending_count }}</div>
-      <div class="kpi-lbl">Pending</div>
-    </div>
-  </div>
-  <div class="col-6 col-md">
-    <div class="kpi-card">
-      <div class="kpi-icon" style="background:#fee2e2;color:#dc2626;"><i class="bi bi-exclamation-triangle"></i></div>
-      <div class="kpi-num" style="color:#dc2626;">{{ abnormal_count }}</div>
-      <div class="kpi-lbl">Abnormal</div>
-    </div>
-  </div>
-  <div class="col-6 col-md">
-    <div class="kpi-card">
-      <div class="kpi-icon" style="background:#ede9fe;color:#7c3aed;"><i class="bi bi-speedometer2"></i></div>
-      <div class="kpi-num" style="color:#7c3aed;">{{ avg_tat_str }}</div>
-      <div class="kpi-lbl">Avg TAT</div>
-    </div>
-  </div>
-  <div class="col-6 col-md">
-    <div class="kpi-card">
-      <div class="kpi-icon" style="background:#ccfbf1;color:#0d9488;"><i class="bi bi-percent"></i></div>
-      <div class="kpi-num" style="color:#0d9488;">{{ completion_rate }}%</div>
-      <div class="kpi-lbl">Completion Rate</div>
-    </div>
-  </div>
-</div>
-
-{# ── Patient Flow Funnel ── #}
-<div class="section-card mb-4">
-  <div class="section-hdr">
-    <i class="bi bi-funnel" style="color:#6366f1;"></i>
-    <span>Patient Flow Funnel</span>
-    <span class="ms-auto text-muted small fw-normal">{{ month_start|date:"F Y" }}</span>
-  </div>
-  <div class="funnel-step">
-    <span class="funnel-lbl"><i class="bi bi-prescription2 me-2 text-muted"></i>Prescribed</span>
-    <div class="funnel-bar"><div class="funnel-bar-fill" style="width:100%;background:#2563eb;"></div></div>
-    <span class="funnel-val" style="color:#2563eb;">{{ prescribed_count }}</span>
-  </div>
-  <div class="funnel-step">
-    <span class="funnel-lbl"><i class="bi bi-credit-card me-2 text-muted"></i>Paid</span>
-    <div class="funnel-bar"><div class="funnel-bar-fill" style="width:{% if prescribed_count %}{% widthratio paid_count prescribed_count 100 %}{% else %}0{% endif %}%;background:#16a34a;"></div></div>
-    <span class="funnel-val" style="color:#16a34a;">{{ paid_count }}</span>
-  </div>
-  <div class="funnel-step">
-    <span class="funnel-lbl"><i class="bi bi-person-check me-2 text-muted"></i>Showed Up</span>
-    <div class="funnel-bar"><div class="funnel-bar-fill" style="width:{% if prescribed_count %}{% widthratio showed_up_count prescribed_count 100 %}{% else %}0{% endif %}%;background:#7c3aed;"></div></div>
-    <span class="funnel-val" style="color:#7c3aed;">{{ showed_up_count }}</span>
-  </div>
-  <div class="funnel-step">
-    <span class="funnel-lbl"><i class="bi bi-check-circle me-2 text-muted"></i>Completed</span>
-    <div class="funnel-bar"><div class="funnel-bar-fill" style="width:{% if prescribed_count %}{% widthratio completed_count prescribed_count 100 %}{% else %}0{% endif %}%;background:#0d9488;"></div></div>
-    <span class="funnel-val" style="color:#0d9488;">{{ completed_count }}</span>
-  </div>
-  <div class="px-3 py-2 d-flex gap-4 flex-wrap" style="background:#f8fafc;border-top:1px solid #f1f5f9;">
-    <div class="small">
-      <span class="text-muted">Unpaid:</span>
-      <strong class="{% if unpaid_count %}text-danger{% else %}text-muted{% endif %}">{{ unpaid_count }}</strong>
-    </div>
-    <div class="small">
-      <span class="text-muted">Paid but didn't show:</span>
-      <strong class="{% if paid_no_show %}text-warning{% else %}text-muted{% endif %}">{{ paid_no_show }}</strong>
-    </div>
-    <div class="small">
-      <span class="text-muted">Show-up rate:</span>
-      <strong>{{ show_rate }}%</strong>
-    </div>
-    <div class="small">
-      <span class="text-muted">Cancelled:</span>
-      <strong class="{% if cancelled_count %}text-danger{% else %}text-muted{% endif %}">{{ cancelled_count }}</strong>
-    </div>
-  </div>
-</div>
-
-{# ── Quality & TAT Metrics ── #}
+{# ── KPI Row ── #}
 <div class="row g-3 mb-4">
-  <div class="col-md-4">
-    <div class="section-card h-100">
-      <div class="section-hdr"><i class="bi bi-shield-check" style="color:#16a34a;"></i>Quality Metrics</div>
-      <div class="p-3">
-        <div class="d-flex justify-content-between mb-2 small"><span class="text-muted">Repeats / Redos</span><strong class="{% if repeat_count_val %}text-warning{% endif %}">{{ repeat_count_val }}</strong></div>
-        <div class="d-flex justify-content-between mb-2 small"><span class="text-muted">Quality Failures</span><strong class="{% if quality_fail_count %}text-danger{% endif %}">{{ quality_fail_count }}</strong></div>
-        <div class="d-flex justify-content-between mb-2 small"><span class="text-muted">Repeat Rate</span><strong>{{ repeat_rate }}%</strong></div>
-        <div class="d-flex justify-content-between small"><span class="text-muted">Urgent / Emergency</span><strong class="{% if urgent_count %}text-danger{% endif %}">{{ urgent_count }}</strong></div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ total_orders }}</div>
+        <div class="small text-muted">Total Prescribed</div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="section-card h-100">
-      <div class="section-hdr"><i class="bi bi-eye" style="color:#7c3aed;"></i>Laterality (OD/OS/OU)</div>
-      <div class="p-3">
-        {% for lat in laterality_table %}
-        <div class="d-flex justify-content-between mb-2 small">
-          <span class="text-muted">{{ lat.label }}</span>
-          <strong>{{ lat.count }}</strong>
-        </div>
-        {% empty %}
-        <div class="text-muted small text-center py-2">No data</div>
-        {% endfor %}
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success">{{ completed_count }}</div>
+        <div class="small text-muted">Completed</div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="section-card h-100">
-      <div class="section-hdr"><i class="bi bi-geo-alt" style="color:#0d9488;"></i>Clinic vs Outreach</div>
-      <div class="p-3 d-flex flex-column align-items-center justify-content-center gap-2">
-        <canvas id="locationChart" style="max-height:150px;"></canvas>
-        <div class="d-flex gap-4 text-center">
-          <div><div class="fw-bold" style="color:#2563eb;">{{ clinic_count }}</div><div class="small text-muted">Clinic</div></div>
-          <div><div class="fw-bold" style="color:#16a34a;">{{ outreach_count }}</div><div class="small text-muted">Outreach</div></div>
-        </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-warning">{{ pending_count }}</div>
+        <div class="small text-muted">Pending</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-danger">{{ abnormal_count }}</div>
+        <div class="small text-muted">Abnormal Results</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md col-lg">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary">{{ completion_rate }}%</div>
+        <div class="small text-muted">Completion Rate</div>
       </div>
     </div>
   </div>
 </div>
 
-{# ── Charts Row ── #}
+{# ── Daily Volume + Category ── #}
 <div class="row g-3 mb-4">
   <div class="col-md-8">
-    <div class="section-card h-100">
-      <div class="section-hdr"><i class="bi bi-bar-chart-line" style="color:#6366f1;"></i>Daily Orders — {{ month_start|date:"F Y" }}</div>
-      <div class="p-3"><canvas id="dailyChart" height="110"></canvas></div>
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-bar-chart-line text-primary me-2"></i>Daily Orders — {{ month_start|date:"F Y" }}
+      </div>
+      <div class="card-body">
+        <canvas id="dailyChart" height="110"></canvas>
+      </div>
     </div>
   </div>
   <div class="col-md-4">
-    <div class="section-card h-100">
-      <div class="section-hdr"><i class="bi bi-pie-chart" style="color:#2563eb;"></i>By Category</div>
-      <div class="p-3 d-flex align-items-center justify-content-center"><canvas id="categoryChart" style="max-height:220px;"></canvas></div>
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-pie-chart text-primary me-2"></i>By Category
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="categoryChart" style="max-height:220px;"></canvas>
+      </div>
     </div>
   </div>
 </div>
 
-{# ── WHO Patient Demographics ── #}
-<div class="section-card mb-4">
-  <div class="section-hdr"><i class="bi bi-people-fill" style="color:#2563eb;"></i>Patient Demographics — WHO Standard</div>
+{# ── Patient Demographics — WHO Standard ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-people-fill text-primary"></i>
+    <span>Patient Demographics — WHO Standard</span>
+    <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_start|date:"F Y" }}</span>
+  </div>
   <div class="card-body">
     <div class="row g-4">
-      <div class="col-md-6">
-        <h6 class="fw-semibold mb-3 text-muted small text-uppercase"><i class="bi bi-gender-ambiguous me-1"></i>Sex Distribution</h6>
+
+      {# Gender #}
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase letter-spacing-1">
+          <i class="bi bi-gender-ambiguous me-1"></i>Sex Distribution
+        </h6>
         <div class="d-flex gap-4 justify-content-center mb-3">
           <div class="text-center">
-            <div class="h3 fw-bold" style="color:#2563eb;">{{ male_count }}</div>
-            <div class="small text-muted"><i class="bi bi-gender-male me-1" style="color:#2563eb;"></i>Male</div>
+            <div class="h3 fw-bold text-primary">{{ male_count }}</div>
+            <div class="small text-muted"><i class="bi bi-gender-male text-primary me-1"></i>Male</div>
           </div>
           <div class="text-center">
             <div class="h3 fw-bold" style="color:#e83e8c;">{{ female_count }}</div>
@@ -232,26 +151,142 @@
         {% if male_count or female_count %}
         <canvas id="genderChart" height="160"></canvas>
         {% else %}
-        <div class="text-center text-muted small py-3">No patient gender data</div>
+        <div class="text-center text-muted small py-3">No patient gender data available</div>
         {% endif %}
         <div class="d-flex justify-content-between mt-3 small">
-          <div><span class="badge bg-light text-dark border me-1"><i class="bi bi-person-fill text-success me-1"></i>Paediatric (0–14)</span><strong>{{ paed_count }}</strong></div>
-          <div><span class="badge bg-light text-dark border me-1"><i class="bi bi-person-fill text-primary me-1"></i>Adult (15+)</span><strong>{{ adult_count }}</strong></div>
+          <div>
+            <span class="badge bg-light text-dark border me-1">
+              <i class="bi bi-person-fill text-success me-1"></i>Paediatric (0–14 yrs)
+            </span>
+            <strong>{{ paed_count }}</strong>
+          </div>
+          <div>
+            <span class="badge bg-light text-dark border me-1">
+              <i class="bi bi-person-fill text-primary me-1"></i>Adult (15+ yrs)
+            </span>
+            <strong>{{ adult_count }}</strong>
+          </div>
         </div>
       </div>
-      <div class="col-md-6">
-        <h6 class="fw-semibold mb-3 text-muted small text-uppercase"><i class="bi bi-bar-chart-steps me-1"></i>WHO Age Groups</h6>
+
+      {# WHO Age Groups #}
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-bar-chart-steps me-1"></i>WHO Age Groups
+        </h6>
         <canvas id="ageChart" height="200"></canvas>
         <div class="mt-2">
           <table class="table table-sm small mb-0">
-            <thead class="table-light"><tr><th>Age Band</th><th class="text-end">Patients</th><th class="text-end">%</th></tr></thead>
+            <thead class="table-light">
+              <tr><th>Age Band</th><th class="text-end">Patients</th><th class="text-end">%</th></tr>
+            </thead>
             <tbody>
               {% for band, cnt in age_counts.items %}
               {% with total=male_count|add:female_count %}
-              <tr><td>{{ band }} yrs</td><td class="text-end fw-semibold">{{ cnt }}</td><td class="text-end text-muted">{% if total %}{% widthratio cnt total 100 %}%{% else %}—{% endif %}</td></tr>
+              <tr>
+                <td>{{ band }} yrs</td>
+                <td class="text-end fw-semibold">{{ cnt }}</td>
+                <td class="text-end text-muted">
+                  {% if total %}{% widthratio cnt total 100 %}%{% else %}—{% endif %}
+                </td>
+              </tr>
               {% endwith %}
               {% endfor %}
             </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# Laterality + Location #}
+      <div class="col-md-4">
+        <h6 class="fw-semibold mb-3 text-muted small text-uppercase">
+          <i class="bi bi-eye me-1"></i>Laterality (OD/OS/OU)
+        </h6>
+        {% if laterality_table %}
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr><th>Eye</th><th class="text-end">Count</th></tr>
+            </thead>
+            <tbody>
+              {% for lat in laterality_table %}
+              <tr>
+                <td>{{ lat.label }}</td>
+                <td class="text-end fw-semibold">{{ lat.count }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted small py-4">No laterality data</div>
+        {% endif %}
+
+        <h6 class="fw-semibold mb-3 mt-4 text-muted small text-uppercase">
+          <i class="bi bi-geo-alt me-1"></i>Clinic vs Outreach
+        </h6>
+        <canvas id="locationChart" height="140"></canvas>
+        <div class="d-flex gap-4 justify-content-center mt-2 small">
+          <div class="text-center"><strong class="text-primary">{{ clinic_count }}</strong> <span class="text-muted">Clinic</span></div>
+          <div class="text-center"><strong class="text-success">{{ outreach_count }}</strong> <span class="text-muted">Outreach</span></div>
+        </div>
+      </div>
+
+    </div>{# /row #}
+  </div>
+</div>
+
+{# ── Patient Flow Funnel ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-funnel text-primary"></i>
+    <span>Patient Flow Funnel</span>
+    <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_start|date:"F Y" }}</span>
+  </div>
+  <div class="card-body">
+    <div class="row align-items-start g-4">
+      <div class="col-md-4">
+        <canvas id="funnelChart" style="max-height:220px;"></canvas>
+      </div>
+      <div class="col-md-8">
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr><th>Stage</th><th class="text-end">Count</th><th class="text-end">% of Prescribed</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><i class="bi bi-prescription2 me-2 text-primary"></i>Prescribed</td>
+                <td class="text-end fw-bold">{{ prescribed_count }}</td>
+                <td class="text-end text-muted">100%</td>
+              </tr>
+              <tr>
+                <td><i class="bi bi-credit-card me-2 text-success"></i>Paid</td>
+                <td class="text-end fw-bold">{{ paid_count }}</td>
+                <td class="text-end text-muted">{% if prescribed_count %}{% widthratio paid_count prescribed_count 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+              <tr>
+                <td><i class="bi bi-person-check me-2" style="color:#7c3aed;"></i>Showed Up</td>
+                <td class="text-end fw-bold">{{ showed_up_count }}</td>
+                <td class="text-end text-muted">{% if prescribed_count %}{% widthratio showed_up_count prescribed_count 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+              <tr>
+                <td><i class="bi bi-check-circle me-2" style="color:#0d9488;"></i>Completed</td>
+                <td class="text-end fw-bold">{{ completed_count }}</td>
+                <td class="text-end text-muted">{% if prescribed_count %}{% widthratio completed_count prescribed_count 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+            </tbody>
+            <tfoot class="table-light">
+              <tr class="small text-muted">
+                <td colspan="3">
+                  <strong>Drop-offs:</strong>
+                  Unpaid: <strong class="{% if unpaid_count %}text-danger{% endif %}">{{ unpaid_count }}</strong> &bull;
+                  Paid no-show: <strong class="{% if paid_no_show %}text-warning{% endif %}">{{ paid_no_show }}</strong> &bull;
+                  Show-up rate: <strong>{{ show_rate }}%</strong> &bull;
+                  Cancelled: <strong class="{% if cancelled_count %}text-danger{% endif %}">{{ cancelled_count }}</strong>
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -261,166 +296,259 @@
 
 {# ── Abnormal Results by Test ── #}
 {% if abnormal_by_test %}
-<div class="section-card mb-4">
-  <div class="section-hdr"><i class="bi bi-exclamation-triangle" style="color:#dc2626;"></i>Abnormal Results by Investigation Type</div>
-  <div class="table-responsive">
-    <table class="table table-hover small mb-0">
-      <thead class="table-light">
-        <tr><th>Investigation</th><th class="text-end">Total Done</th><th class="text-end">Abnormal</th><th style="min-width:180px;">Abnormal Rate</th></tr>
-      </thead>
-      <tbody>
-        {% for t in abnormal_by_test %}
-        <tr>
-          <td class="fw-semibold">{{ t.name }}</td>
-          <td class="text-end">{{ t.total }}</td>
-          <td class="text-end fw-bold {% if t.abn_rate > 30 %}text-danger{% elif t.abn_rate > 10 %}text-warning{% else %}text-success{% endif %}">{{ t.abnormal }}</td>
-          <td>
-            <div class="d-flex align-items-center gap-2">
-              <div class="flex-grow-1"><div class="progress" style="height:8px;"><div class="progress-bar {% if t.abn_rate > 30 %}bg-danger{% elif t.abn_rate > 10 %}bg-warning{% else %}bg-success{% endif %}" style="width:{{ t.abn_rate }}%;"></div></div></div>
-              <span class="fw-bold {% if t.abn_rate > 30 %}text-danger{% elif t.abn_rate > 10 %}text-warning{% else %}text-success{% endif %}" style="min-width:40px;text-align:right;">{{ t.abn_rate }}%</span>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-exclamation-triangle text-danger me-2"></i>
+    Abnormal Results by Investigation Type
+    <span class="badge bg-danger-subtle text-danger small ms-2">Quality</span>
   </div>
-  <div class="px-3 py-2 small text-muted" style="background:#f8fafc;border-top:1px solid #f1f5f9;">
-    <i class="bi bi-info-circle me-1"></i>Red (&gt;30%) = Alert. Orange (&gt;10%) = Monitor.
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover small mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Investigation</th>
+            <th class="text-end">Total Done</th>
+            <th class="text-end">Abnormal</th>
+            <th style="min-width:180px;">Abnormal Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in abnormal_by_test %}
+          <tr>
+            <td class="fw-semibold">{{ t.name }}</td>
+            <td class="text-end">{{ t.total }}</td>
+            <td class="text-end fw-bold {% if t.abn_rate > 30 %}text-danger{% elif t.abn_rate > 10 %}text-warning{% else %}text-success{% endif %}">
+              {{ t.abnormal }}
+            </td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="flex-grow-1">
+                  <div class="progress" style="height:8px;">
+                    <div class="progress-bar {% if t.abn_rate > 30 %}bg-danger{% elif t.abn_rate > 10 %}bg-warning{% else %}bg-success{% endif %}"
+                         role="progressbar"
+                         style="width:{{ t.abn_rate }}%;"
+                         aria-valuenow="{{ t.abn_rate }}" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                  </div>
+                </div>
+                <span class="fw-bold {% if t.abn_rate > 30 %}text-danger{% elif t.abn_rate > 10 %}text-warning{% else %}text-success{% endif %}" style="min-width:40px;text-align:right;">
+                  {{ t.abn_rate }}%
+                </span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="px-3 py-2 bg-light border-top small text-muted">
+      <i class="bi bi-info-circle me-1"></i>
+      Abnormal rate = Abnormal results / Total completed x 100.
+      Red (&gt;30%) = Alert threshold. Orange (&gt;10%) = Monitor.
+    </div>
   </div>
 </div>
 {% endif %}
 
-{# ── Top Tests + Urgency/Status ── #}
+{# ── Top Tests + Quality Metrics ── #}
 <div class="row g-3 mb-4">
   <div class="col-md-6">
-    <div class="section-card h-100">
-      <div class="section-hdr"><i class="bi bi-trophy" style="color:#d97706;"></i>Top 10 Most Ordered</div>
-      <div class="table-responsive">
-        <table class="table table-sm table-hover small mb-0">
-          <thead class="table-light"><tr><th>#</th><th>Investigation</th><th>Category</th><th class="text-end">Orders</th><th style="min-width:90px;">Volume</th></tr></thead>
-          <tbody>
-            {% for t in top_tests %}
-            <tr>
-              <td class="text-muted">{{ forloop.counter }}</td>
-              <td class="fw-semibold">{{ t.name }}</td>
-              <td><span class="badge bg-light text-dark fw-normal">{{ t.category_display|default:"—" }}</span></td>
-              <td class="text-end fw-bold">{{ t.count }}</td>
-              <td>{% if total_orders %}<div class="progress" style="height:6px;margin-top:6px;"><div class="progress-bar bg-primary" style="width:{% widthratio t.count total_orders 100 %}%;"></div></div>{% endif %}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="5" class="text-center text-muted py-3">No data yet</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-list-ol text-primary me-2"></i>Top 10 Most Ordered
       </div>
-    </div>
-  </div>
-  <div class="col-md-6">
-    <div class="section-card h-100">
-      <div class="section-hdr"><i class="bi bi-lightning" style="color:#d97706;"></i>Urgency &amp; Status</div>
-      <div class="card-body">
-        <div class="row g-3 align-items-center">
-          <div class="col-6">
-            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Urgency</h6>
-            <canvas id="urgencyChart" style="max-height:180px;"></canvas>
-          </div>
-          <div class="col-6">
-            <h6 class="small text-muted fw-semibold text-uppercase mb-2">Status</h6>
-            <canvas id="statusChart" style="max-height:180px;"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ── Orders by Requesting Dept ── #}
-<div class="section-card mb-4">
-  <div class="section-hdr"><i class="bi bi-stethoscope" style="color:#2563eb;"></i>Orders by Requesting Department</div>
-  <div class="card-body">
-    {% if dept_table %}
-    <div class="row">
-      <div class="col-md-4"><canvas id="deptChart" style="max-height:220px;"></canvas></div>
-      <div class="col-md-8">
+      <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-sm small mb-0">
-            <thead class="table-light"><tr><th>Department</th><th class="text-end">Orders</th><th class="text-end">%</th></tr></thead>
+            <thead class="table-light">
+              <tr><th>#</th><th>Investigation</th><th>Category</th><th class="text-end">Orders</th></tr>
+            </thead>
             <tbody>
-              {% for row in dept_table %}
-              <tr><td class="fw-semibold">{{ row.name }}</td><td class="text-end">{{ row.count }}</td><td class="text-end text-muted">{{ row.pct }}%</td></tr>
+              {% for t in top_tests %}
+              <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td>{{ t.name }}</td>
+                <td><span class="badge bg-light text-dark fw-normal border">{{ t.category_display|default:"—" }}</span></td>
+                <td class="text-end fw-bold">{{ t.count }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-3">No data yet</td></tr>
               {% endfor %}
-              <tr class="table-light fw-bold"><td>Total</td><td class="text-end">{{ total_orders }}</td><td class="text-end">—</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-shield-check text-warning me-2"></i>Quality Metrics &amp; Urgency
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <h6 class="small text-muted fw-semibold text-uppercase mb-3">Quality</h6>
+            <div class="d-flex justify-content-between mb-2 small"><span class="text-muted">Repeats / Redos</span><strong class="{% if repeat_count_val %}text-warning{% endif %}">{{ repeat_count_val }}</strong></div>
+            <div class="d-flex justify-content-between mb-2 small"><span class="text-muted">Quality Failures</span><strong class="{% if quality_fail_count %}text-danger{% endif %}">{{ quality_fail_count }}</strong></div>
+            <div class="d-flex justify-content-between mb-2 small"><span class="text-muted">Repeat Rate</span><strong>{{ repeat_rate }}%</strong></div>
+            <div class="d-flex justify-content-between mb-2 small"><span class="text-muted">Avg TAT</span><strong style="color:#7c3aed;">{{ avg_tat_str }}</strong></div>
+            <div class="d-flex justify-content-between small"><span class="text-muted">Urgent / Emergency</span><strong class="{% if urgent_count %}text-danger{% endif %}">{{ urgent_count }}</strong></div>
+          </div>
+          <div class="col-6">
+            <h6 class="small text-muted fw-semibold text-uppercase mb-3">Urgency</h6>
+            <canvas id="urgencyChart" style="max-height:180px;"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Orders by Requesting Dept + Status ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-stethoscope text-primary me-2"></i>Orders by Requesting Department
+        <span class="badge bg-primary-subtle text-primary small ms-2">{{ month_start|date:"F Y" }}</span>
+      </div>
+      <div class="card-body">
+        {% if dept_table %}
+        <div class="row">
+          <div class="col-md-5">
+            <canvas id="deptChart" style="max-height:220px;"></canvas>
+          </div>
+          <div class="col-md-7">
+            <div class="table-responsive">
+              <table class="table table-sm small mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Department</th>
+                    <th class="text-end">Orders</th>
+                    <th class="text-end">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in dept_table %}
+                  <tr>
+                    <td class="fw-semibold">{{ row.name }}</td>
+                    <td class="text-end">{{ row.count }}</td>
+                    <td class="text-end text-muted">{{ row.pct }}%</td>
+                  </tr>
+                  {% endfor %}
+                  <tr class="table-light fw-bold">
+                    <td>Total</td>
+                    <td class="text-end">{{ total_orders }}</td>
+                    <td class="text-end">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">No investigation orders this month</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold border-bottom py-2">
+        <i class="bi bi-lightning text-warning me-2"></i>Orders by Status
+      </div>
+      <div class="card-body d-flex flex-column align-items-center justify-content-center gap-3">
+        <canvas id="statusChart" style="max-height:180px;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Service Tier x WHO Age ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-layers text-primary"></i>
+    <span>Completed by Service Tier &amp; WHO Age Group</span>
+    <span class="badge bg-primary-subtle text-primary small ms-1">{{ month_start|date:"F Y" }}</span>
+    <span class="ms-auto text-muted small fw-normal">Total completed: <strong>{{ total_completed }}</strong></span>
+  </div>
+  <div class="card-body">
+    {% if tier_table %}
+    <div class="row align-items-start g-4">
+      <div class="col-md-4">
+        <canvas id="tierChart" style="max-height:220px;"></canvas>
+      </div>
+      <div class="col-md-8">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Service Tier</th>
+                <th class="text-center"><i class="bi bi-person-fill text-success me-1"></i>Children<br><small class="text-muted fw-normal">0–14 yrs</small></th>
+                <th class="text-center"><i class="bi bi-person-fill text-primary me-1"></i>Adults<br><small class="text-muted fw-normal">15–59 yrs</small></th>
+                <th class="text-center"><i class="bi bi-person-fill text-warning me-1"></i>Elderly<br><small class="text-muted fw-normal">60+ yrs</small></th>
+                <th class="text-center fw-bold">Total</th>
+                <th class="text-end">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in tier_table %}
+              <tr>
+                <td>
+                  {% if row.key == 'VIP' %}<span class="badge" style="background:#7c3aed;">VIP</span>
+                  {% elif row.key == 'EXPRESS' %}<span class="badge bg-warning text-dark">Express</span>
+                  {% elif row.key == 'FAST_TRACK' %}<span class="badge bg-info text-dark">Fast Track</span>
+                  {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
+                </td>
+                <td class="text-center text-success fw-semibold">{{ row.children }}</td>
+                <td class="text-center text-primary fw-semibold">{{ row.adults }}</td>
+                <td class="text-center fw-semibold" style="color:#d97706;">{{ row.elderly }}</td>
+                <td class="text-center fw-bold">{{ row.total }}</td>
+                <td class="text-end text-muted small">{{ row.pct }}%</td>
+              </tr>
+              {% endfor %}
+              <tr class="table-light fw-bold border-top">
+                <td>All Tiers</td>
+                <td class="text-center">—</td>
+                <td class="text-center">—</td>
+                <td class="text-center">—</td>
+                <td class="text-center">{{ total_completed }}</td>
+                <td class="text-end">100%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-2 small text-muted">
+          <i class="bi bi-info-circle me-1"></i>Based on <strong>completed</strong> imaging investigations only. Children = 0–14 yrs, Adults = 15–59 yrs, Elderly = 60+ yrs (WHO standard).
+        </div>
+      </div>
+    </div>
     {% else %}
-    <div class="text-center text-muted py-4">No investigation orders this month</div>
+    <div class="text-center text-muted py-4">No completed investigations for this period</div>
     {% endif %}
   </div>
 </div>
 
-{# ── 12-Month Trend ── #}
-<div class="section-card mb-4">
-  <div class="section-hdr"><i class="bi bi-graph-up" style="color:#6366f1;"></i>12-Month Volume Trend</div>
-  <div class="p-3"><canvas id="trend12Chart" height="110"></canvas></div>
-</div>
-
-{# ── Service Tier × WHO Age ── #}
-{% if tier_table %}
-<div class="section-card mb-4">
-  <div class="section-hdr">
-    <i class="bi bi-layers" style="color:#2563eb;"></i>
-    <span>Completed by Service Tier &amp; Age Group</span>
-    <span class="ms-auto text-muted small fw-normal">Total: <strong>{{ total_completed }}</strong></span>
+{# ── 12-Month Volume Trend ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2">
+    <i class="bi bi-graph-up text-primary me-2"></i>12-Month Volume Trend
   </div>
-  <div class="table-responsive">
-    <table class="table table-sm table-hover mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Service Tier</th>
-          <th class="text-center"><i class="bi bi-person-fill text-success me-1"></i>Children<br><small class="text-muted fw-normal">0–14</small></th>
-          <th class="text-center"><i class="bi bi-person-fill text-primary me-1"></i>Adults<br><small class="text-muted fw-normal">15–59</small></th>
-          <th class="text-center"><i class="bi bi-person-fill text-warning me-1"></i>Elderly<br><small class="text-muted fw-normal">60+</small></th>
-          <th class="text-center fw-bold">Total</th>
-          <th class="text-end">%</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in tier_table %}
-        <tr>
-          <td>
-            {% if row.key == 'VIP' %}<span class="badge" style="background:#7c3aed;">VIP</span>
-            {% elif row.key == 'EXPRESS' %}<span class="badge bg-warning text-dark">Express</span>
-            {% elif row.key == 'FAST_TRACK' %}<span class="badge bg-info text-dark">Fast Track</span>
-            {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
-          </td>
-          <td class="text-center text-success fw-semibold">{{ row.children }}</td>
-          <td class="text-center text-primary fw-semibold">{{ row.adults }}</td>
-          <td class="text-center fw-semibold" style="color:#d97706;">{{ row.elderly }}</td>
-          <td class="text-center fw-bold">{{ row.total }}</td>
-          <td class="text-end text-muted small">{{ row.pct }}%</td>
-        </tr>
-        {% endfor %}
-        <tr class="table-light fw-bold border-top">
-          <td>All Tiers</td><td class="text-center">—</td><td class="text-center">—</td><td class="text-center">—</td>
-          <td class="text-center">{{ total_completed }}</td><td class="text-end">100%</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="px-3 py-2 small text-muted" style="background:#f8fafc;border-top:1px solid #f1f5f9;">
-    <i class="bi bi-info-circle me-1"></i>Based on <strong>completed</strong> investigations only. WHO age bands.
+  <div class="card-body">
+    <canvas id="trend12Chart" height="110"></canvas>
   </div>
 </div>
-{% endif %}
 
-{# ── Exam Type × Sex × Age Group ── #}
+{# ── Exam Types by Sex & Age Group ── #}
 {% if type_breakdown_list %}
-<div class="section-card mb-4">
-  <div class="section-hdr"><i class="bi bi-table" style="color:#2563eb;"></i>Exam Types by Sex &amp; Age Group</div>
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold border-bottom py-2 d-flex align-items-center gap-2">
+    <i class="bi bi-table text-primary"></i>
+    <span>Exam Types by Sex &amp; Age Group — {{ month_start|date:"F Y" }}</span>
+    <span class="ms-auto badge bg-primary-subtle text-primary small fw-normal">WHO Standard</span>
+  </div>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle mb-0 small">
       <thead class="table-light">
@@ -442,7 +570,9 @@
         {% for t in type_breakdown_list %}
         <tr>
           <td class="fw-semibold">{{ t.name }}</td>
-          <td class="text-center"><span class="badge bg-light text-dark fw-normal border">{{ t.category|default:"—" }}</span></td>
+          <td class="text-center">
+            <span class="badge bg-light text-dark fw-normal border">{{ t.category|default:"—" }}</span>
+          </td>
           <td class="text-center text-primary fw-semibold" style="background:#f4f7fe;">{{ t.male_adult }}</td>
           <td class="text-center text-primary" style="background:#eef3fe;">{{ t.child_male }}</td>
           <td class="text-center fw-semibold" style="background:#fdf0f7;color:#c2185b;">{{ t.female_adult }}</td>
@@ -454,15 +584,18 @@
       <tfoot class="table-light fw-bold border-top">
         <tr>
           <td colspan="2">Total</td>
-          <td class="text-center text-primary">—</td><td class="text-center text-primary">—</td>
-          <td class="text-center" style="color:#c2185b;">—</td><td class="text-center" style="color:#880e4f;">—</td>
+          <td class="text-center text-primary">—</td>
+          <td class="text-center text-primary">—</td>
+          <td class="text-center" style="color:#c2185b;">—</td>
+          <td class="text-center" style="color:#880e4f;">—</td>
           <td class="text-center">{{ total_orders }}</td>
         </tr>
       </tfoot>
     </table>
   </div>
-  <div class="px-3 py-2 small text-muted" style="background:#f8fafc;border-top:1px solid #f1f5f9;">
-    <i class="bi bi-info-circle me-1"></i>Children = 0–14 yrs. Imaging categories only.
+  <div class="card-footer bg-white text-muted small py-2">
+    <i class="bi bi-info-circle me-1"></i>
+    Children = 0–14 yrs. Male/Female from patient registration. Imaging categories only.
   </div>
 </div>
 {% endif %}
@@ -470,40 +603,133 @@
 {% endblock %}
 
 {% block extra_js %}
+{# ── Charts ── #}
 <script>
 function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[id]")){return;}window.__ehrChartInit=null;
-var COLORS = ['#6366f1','#2563eb','#0dcaf0','#16a34a','#d97706','#dc3545','#6c757d','#fd7e14','#0d9488','#e83e8c'];
+var COLORS = ['#6366f1','#0d6efd','#0dcaf0','#198754','#ffc107','#dc3545','#6c757d','#fd7e14','#20c997'];
 
-// Daily bar
+// Daily volume bar chart
 var dv = {{ daily_json|safe }};
 new Chart(document.getElementById('dailyChart'), {
   type: 'bar',
-  data: { labels: dv.map(function(d){return d.day.slice(5);}), datasets: [{ label:'Orders', data:dv.map(function(d){return d.count;}), backgroundColor:'rgba(99,102,241,0.6)', borderColor:'#6366f1', borderWidth:1, borderRadius:4 }] },
-  options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{stepSize:1}}} }
+  data: {
+    labels: dv.map(function(d){return d.day.slice(5);}),
+    datasets: [{
+      label: 'Orders',
+      data: dv.map(function(d){return d.count;}),
+      backgroundColor: 'rgba(99,102,241,0.6)',
+      borderColor: '#6366f1',
+      borderWidth: 1, borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+  }
 });
 
 // Category doughnut
+{% if category_json %}
 var catData = {{ category_json|safe }};
 if (catData.length) new Chart(document.getElementById('categoryChart'), {
-  type:'doughnut', data:{labels:catData.map(function(c){return c.label;}),datasets:[{data:catData.map(function(c){return c.count;}),backgroundColor:COLORS,borderWidth:2}]},
-  options:{responsive:true,cutout:'58%',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}
-});
-
-// Gender doughnut
-{% if male_count or female_count %}
-var gd = {{ gender_json|safe }};
-new Chart(document.getElementById('genderChart'), {
-  type:'doughnut', data:{labels:gd.map(function(g){return g.label;}),datasets:[{data:gd.map(function(g){return g.count;}),backgroundColor:['#2563eb','#e83e8c'],borderWidth:2}]},
-  options:{responsive:true,cutout:'55%',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}
+  type: 'doughnut',
+  data: {
+    labels: catData.map(function(c){return c.label;}),
+    datasets: [{ data: catData.map(function(c){return c.count;}), backgroundColor: COLORS, borderWidth: 2 }]
+  },
+  options: {
+    responsive: true, cutout: '58%',
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+  }
 });
 {% endif %}
 
-// WHO Age bar
+// Gender doughnut
+{% if gender_json %}
+{% if male_count or female_count %}
+var genderData = {{ gender_json|safe }};
+if (document.getElementById('genderChart')) {
+  new Chart(document.getElementById('genderChart'), {
+    type: 'doughnut',
+    data: {
+      labels: genderData.map(function(g){return g.label;}),
+      datasets: [{
+        data: genderData.map(function(g){return g.count;}),
+        backgroundColor: ['#0d6efd', '#e83e8c', '#6c757d'],
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, cutout: '55%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+    }
+  });
+}
+{% endif %}
+{% endif %}
+
+// WHO Age group bar chart
+{% if age_json %}
 var ageData = {{ age_json|safe }};
 if (document.getElementById('ageChart')) {
   new Chart(document.getElementById('ageChart'), {
-    type:'bar', data:{labels:ageData.map(function(a){return a.label+' yrs';}),datasets:[{label:'Patients',data:ageData.map(function(a){return a.count;}),backgroundColor:['#16a34a','#0d9488','#0dcaf0','#2563eb','#6366f1','#fd7e14','#6c757d','#e83e8c'],borderWidth:1,borderRadius:4}]},
-    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
+    type: 'bar',
+    data: {
+      labels: ageData.map(function(a){return a.label+' yrs';}),
+      datasets: [{
+        label: 'Patients',
+        data: ageData.map(function(a){return a.count;}),
+        backgroundColor: ['#198754','#20c997','#0dcaf0','#0d6efd','#6366f1','#6c757d'],
+        borderWidth: 1, borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+  });
+}
+{% endif %}
+
+// Clinic vs Outreach doughnut
+{% if clinic_count or outreach_count %}
+new Chart(document.getElementById('locationChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Clinic','Outreach'],
+    datasets: [{data:[{{ clinic_count }},{{ outreach_count }}],backgroundColor:['#0d6efd','#198754'],borderWidth:2,borderColor:'#fff'}]
+  },
+  options: {
+    responsive: true, cutout: '55%',
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+  }
+});
+{% endif %}
+
+// Funnel horizontal bar
+var funnelData = [{{ prescribed_count }}, {{ paid_count }}, {{ showed_up_count }}, {{ completed_count }}];
+if (funnelData[0] > 0 && document.getElementById('funnelChart')) {
+  new Chart(document.getElementById('funnelChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Prescribed','Paid','Showed Up','Completed'],
+      datasets: [{
+        data: funnelData,
+        backgroundColor: ['#0d6efd','#198754','#7c3aed','#0d9488'],
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1 } },
+        y: { ticks: { font: { size: 11 } } }
+      }
+    }
   });
 }
 
@@ -511,8 +737,19 @@ if (document.getElementById('ageChart')) {
 var urgData = {{ urgency_json|safe }};
 if (urgData.data.some(function(v){return v>0;})) {
   new Chart(document.getElementById('urgencyChart'), {
-    type:'doughnut', data:{labels:urgData.labels,datasets:[{data:urgData.data,backgroundColor:['#16a34a','#d97706','#dc3545','#7c3aed'],borderWidth:2,borderColor:'#fff'}]},
-    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8,font:{size:10}}}}}
+    type: 'doughnut',
+    data: {
+      labels: urgData.labels,
+      datasets: [{
+        data: urgData.data,
+        backgroundColor: ['#198754', '#ffc107', '#dc3545', '#7c3aed'],
+        borderWidth: 2, borderColor: '#fff',
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8 } } }
+    }
   });
 }
 
@@ -520,8 +757,19 @@ if (urgData.data.some(function(v){return v>0;})) {
 var stData = {{ status_json|safe }};
 if (stData.some(function(v){return v.count>0;})) {
   new Chart(document.getElementById('statusChart'), {
-    type:'doughnut', data:{labels:stData.map(function(s){return s.label;}),datasets:[{data:stData.map(function(s){return s.count;}),backgroundColor:['#d97706','#2563eb','#16a34a','#6c757d'],borderWidth:2,borderColor:'#fff'}]},
-    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8,font:{size:10}}}}}
+    type: 'doughnut',
+    data: {
+      labels: stData.map(function(s){return s.label;}),
+      datasets: [{
+        data: stData.map(function(s){return s.count;}),
+        backgroundColor: ['#ffc107','#0d6efd','#198754','#6c757d'],
+        borderWidth: 2, borderColor: '#fff',
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8 } } }
+    }
   });
 }
 
@@ -529,71 +777,115 @@ if (stData.some(function(v){return v.count>0;})) {
 var deptData = {{ dept_json|safe }};
 if (deptData.data.some(function(v){return v>0;})) {
   new Chart(document.getElementById('deptChart'), {
-    type:'bar', data:{labels:deptData.labels,datasets:[{data:deptData.data,backgroundColor:COLORS,borderRadius:4}]},
-    options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}},y:{ticks:{font:{size:11}}}}}
+    type: 'bar',
+    data: {
+      labels: deptData.labels,
+      datasets: [{
+        data: deptData.data,
+        backgroundColor: COLORS,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1 } },
+        y: { ticks: { font: { size: 11 } } }
+      }
+    }
   });
 }
+
+// Tier doughnut
+{% if tier_table %}
+var tierLabels = [{% for row in tier_table %}'{{ row.key }}'{% if not forloop.last %},{% endif %}{% endfor %}];
+var tierVals = [{% for row in tier_table %}{{ row.total }}{% if not forloop.last %},{% endif %}{% endfor %}];
+if (tierVals.some(function(v){return v>0;}) && document.getElementById('tierChart')) {
+  new Chart(document.getElementById('tierChart'), {
+    type: 'doughnut',
+    data: {
+      labels: tierLabels,
+      datasets: [{ data: tierVals, backgroundColor: ['#7c3aed','#f59e0b','#06b6d4','#6c757d'], borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } }
+    }
+  });
+}
+{% endif %}
 
 // 12-month trend
 var t12 = {{ trend_12m_json|safe }};
 if (t12.length && document.getElementById('trend12Chart')) {
   new Chart(document.getElementById('trend12Chart'), {
-    type:'line', data:{labels:t12.map(function(d){return d.label;}),datasets:[{label:'Orders',data:t12.map(function(d){return d.count;}),borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.12)',borderWidth:2.5,pointRadius:4,pointBackgroundColor:'#6366f1',fill:true,tension:0.35}]},
-    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}},x:{ticks:{font:{size:11}}}}}
+    type: 'line',
+    data: {
+      labels: t12.map(function(d){return d.label;}),
+      datasets: [{
+        label: 'Orders',
+        data: t12.map(function(d){return d.count;}),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.12)',
+        borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#6366f1',
+        fill: true, tension: 0.35
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { ticks: { font: { size: 11 } } } }
+    }
   });
 }
 
-// Clinic vs Outreach doughnut
-{% if clinic_count or outreach_count %}
-new Chart(document.getElementById('locationChart'), {
-  type:'doughnut', data:{labels:['Clinic','Outreach'],datasets:[{data:[{{ clinic_count }},{{ outreach_count }}],backgroundColor:['#2563eb','#16a34a'],borderWidth:2,borderColor:'#fff'}]},
-  options:{responsive:true,cutout:'55%',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}
-});
-{% endif %}
-
-// Auto-refresh countdown
-{% if is_current_month %}
-(function(){
-  var countdown=60,el=document.getElementById('statsCountdown');
-  if(!el) return;
-  var timer=setInterval(function(){countdown--;el.textContent=countdown+'s';if(countdown<=0){clearInterval(timer);location.reload();}},1000);
-}());
-{% endif %}
 }window.__ehrChartInit=_c;_c();
+</script>
+
+<script>
+function printWithCharts() {
+  var pairs = [];
+  document.querySelectorAll('canvas').forEach(function(canvas) {
+    var chart = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+    if (!chart) return;
+    var img = new Image();
+    img.src = chart.toBase64Image('image/png', 1.0);
+    img.className = 'print-chart-img';
+    img.style.maxWidth = canvas.offsetWidth + 'px';
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = 'none';
+    pairs.push({ canvas: canvas, img: img });
+  });
+  window.print();
+  setTimeout(function() {
+    pairs.forEach(function(p) {
+      p.canvas.style.display = '';
+      if (p.img.parentNode) p.img.parentNode.removeChild(p.img);
+    });
+  }, 2000);
+}
 </script>
 
 <style>
 @media print {
-  #sidebar,nav.navbar,.btn,.btn-group,.btn-toolbar,.dropdown-menu,.breadcrumb,.no-print,#statsCountdown,.badge.bg-light.border{display:none!important;}
-  #page-content-wrapper{margin-left:0!important;width:100%!important;padding:0 6px!important;}
-  #wrapper{display:block;}body{padding:0;background:#fff!important;}
-  .print-only{display:block!important;}
-  @page{size:A4 landscape;margin:10mm 12mm;}
-  .section-card,.kpi-card{break-inside:avoid;border:1px solid #dee2e6!important;box-shadow:none!important;margin-bottom:8px!important;}
-  .row.g-3,.row.g-2{display:flex;flex-wrap:wrap;gap:8px;}
-  .col-md-8{width:64%!important;flex:none;}.col-md-4{width:33%!important;flex:none;}.col-md-6{width:48%!important;flex:none;}
-  .print-chart-img{width:100%!important;height:auto!important;display:block;}
-  table{font-size:9pt!important;}.table-responsive{overflow:visible!important;}
-  .progress{border:1px solid #dee2e6;height:6px!important;}.progress-bar{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .badge{-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid #dee2e6;}
-  .funnel-bar-fill{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+  .print-only { display: block !important; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  .row.g-3 { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-md-8 { width: 64% !important; flex: none; }
+  .col-md-4 { width: 33% !important; flex: none; }
+  .col-md-6 { width: 48% !important; flex: none; }
+  .print-chart-img { width: 100% !important; height: auto !important; display: block; }
+  .progress-bar, .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
-<script>
-function exportStatsPDF(){window.open('{{ request.path }}?year={{ month_start|date:"Y" }}&month={{ month_start|date:"n" }}&pdf=1','_blank');}
-function downloadStatsCSV(){window.location.href='{% url "investigations:stats_csv" %}?year={{ month_start|date:"Y" }}&month={{ month_start|date:"n" }}';}
-function printWithCharts(){
-  var pairs=[];
-  document.querySelectorAll('canvas').forEach(function(canvas){
-    var chart=typeof Chart!=='undefined'&&Chart.getChart?Chart.getChart(canvas):null;
-    if(!chart) return;
-    var img=new Image();img.src=chart.toBase64Image('image/png',1.0);img.className='print-chart-img';img.style.maxWidth=canvas.offsetWidth+'px';
-    canvas.parentNode.insertBefore(img,canvas);canvas.style.display='none';pairs.push({canvas:canvas,img:img});
-  });
-  window.print();
-  setTimeout(function(){pairs.forEach(function(p){p.canvas.style.display='';if(p.img.parentNode)p.img.parentNode.removeChild(p.img);});},2000);
-}
-</script>
 
 <script>
 window._AI_STATS = {

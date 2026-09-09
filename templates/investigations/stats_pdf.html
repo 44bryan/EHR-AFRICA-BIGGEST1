@@ -70,8 +70,31 @@
   <div class="kpi-card"><div class="kpi-val purple">{{ paed_count }}</div><div class="kpi-label">Paediatric (0–14)</div></div>
 </div>
 
-{# ── 2. Demographics, Status & Quality ── #}
-<div class="section-title">2. Patient Demographics, Order Status &amp; Quality</div>
+{# ── 2. Patient Flow Funnel ── #}
+<div class="section-title">2. Patient Flow Funnel</div>
+<div class="three-col">
+  <div>
+    <div class="stat-row"><span><span class="dot" style="background:#0d6efd;"></span>Prescribed</span><strong>{{ prescribed_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Paid</span><strong>{{ paid_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#7c3aed;"></span>Showed Up</span><strong>{{ showed_up_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#0d9488;"></span>Completed</span><strong>{{ completed_count }}</strong></div>
+  </div>
+  <div>
+    <div class="col-head">Conversion Rates</div>
+    <div class="stat-row"><span>Payment Rate</span><strong>{% if prescribed_count %}{% widthratio paid_count prescribed_count 100 %}%{% else %}—{% endif %}</strong></div>
+    <div class="stat-row"><span>Show-up Rate</span><strong>{{ show_rate }}%</strong></div>
+    <div class="stat-row"><span>Completion Rate</span><strong>{{ completion_rate }}%</strong></div>
+  </div>
+  <div>
+    <div class="col-head">Drop-offs</div>
+    <div class="stat-row"><span>Unpaid</span><strong style="{% if unpaid_count %}color:#dc3545;{% endif %}">{{ unpaid_count }}</strong></div>
+    <div class="stat-row"><span>Paid No-show</span><strong style="{% if paid_no_show %}color:#fd7e14;{% endif %}">{{ paid_no_show }}</strong></div>
+    <div class="stat-row"><span>Cancelled</span><strong style="{% if cancelled_count %}color:#dc3545;{% endif %}">{{ cancelled_count }}</strong></div>
+  </div>
+</div>
+
+{# ── 3. Demographics, Status & Quality ── #}
+<div class="section-title">3. Patient Demographics, Order Status &amp; Quality</div>
 <div class="three-col">
   <div>
     <div class="col-head">Patient Sex</div>
@@ -128,7 +151,7 @@
 
 {# ── 3. Abnormal Results by Test ── #}
 {% if abnormal_by_test %}
-<div class="section-title">3. Abnormal Results by Investigation Type</div>
+<div class="section-title">4. Abnormal Results by Investigation Type</div>
 <table>
   <thead>
     <tr>
@@ -156,7 +179,7 @@
 {% endif %}
 
 {# ── 4. Top 10 Investigations ── #}
-<div class="section-title">{% if abnormal_by_test %}4{% else %}3{% endif %}. Top 10 Investigations &mdash; {{ month_start|date:"F Y" }}</div>
+<div class="section-title">5. Top 10 Investigations &mdash; {{ month_start|date:"F Y" }}</div>
 {% if top_tests %}
 <table>
   <thead>
@@ -196,7 +219,7 @@
 </div>
 
 {# ── 5. Exam Types by Sex & Age Group ── #}
-<div class="section-title">5. Exam Types by Sex &amp; Age Group (WHO Standard) &mdash; {{ month_start|date:"F Y" }}</div>
+<div class="section-title">6. Exam Types by Sex &amp; Age Group (WHO Standard) &mdash; {{ month_start|date:"F Y" }}</div>
 {% if type_breakdown_list %}
 <table>
   <thead>
@@ -240,7 +263,7 @@
 
 {# ── 6. Requesting Departments ── #}
 {% if dept_table %}
-<div class="section-title">6. Orders by Requesting Department</div>
+<div class="section-title">7. Orders by Requesting Department</div>
 <table>
   <thead>
     <tr>
@@ -261,8 +284,50 @@
 </table>
 {% endif %}
 
-{# ── 7. Monthly Performance Statement ── #}
-<div class="section-title">7. Monthly Performance Statement</div>
+{# ── 8. Completed by Service Tier ── #}
+{% if tier_table %}
+<div class="section-title">8. Completed by Service Tier &amp; WHO Age Group</div>
+<table>
+  <thead>
+    <tr>
+      <th>Service Tier</th>
+      <th style="text-align:center;">Children (0–14)</th>
+      <th style="text-align:center;">Adults (15–59)</th>
+      <th style="text-align:center;">Elderly (60+)</th>
+      <th style="text-align:center;">Total</th>
+      <th style="text-align:center;">%</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in tier_table %}
+    <tr>
+      <td style="font-weight:600;">
+        {% if row.key == 'VIP' %}VIP{% elif row.key == 'EXPRESS' %}Express{% elif row.key == 'FAST_TRACK' %}Fast Track{% else %}Standard{% endif %}
+      </td>
+      <td style="text-align:center;color:#198754;">{{ row.children }}</td>
+      <td style="text-align:center;color:#0d6efd;">{{ row.adults }}</td>
+      <td style="text-align:center;color:#d97706;">{{ row.elderly }}</td>
+      <td style="text-align:center;font-weight:700;">{{ row.total }}</td>
+      <td style="text-align:center;color:#6c757d;">{{ row.pct }}%</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td>All Tiers</td>
+      <td colspan="3"></td>
+      <td style="text-align:center;">{{ total_completed }}</td>
+      <td style="text-align:center;">100%</td>
+    </tr>
+  </tfoot>
+</table>
+<p style="font-size:8px;color:#6c757d;margin-top:3px;">
+  Based on completed investigations only. Children = 0–14 yrs, Adults = 15–59 yrs, Elderly = 60+ (WHO standard).
+</p>
+{% endif %}
+
+{# ── 9. Monthly Performance Statement ── #}
+<div class="section-title">9. Monthly Performance Statement</div>
 <table>
   <thead>
     <tr>

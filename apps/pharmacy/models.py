@@ -159,7 +159,9 @@ class Drug(AuditModel):
     @property
     def current_stock(self):
         return self.stock_items.filter(
-            is_deleted=False, expiry_date__gte=timezone.localdate()
+            is_deleted=False,
+        ).filter(
+            models.Q(expiry_date__gte=timezone.localdate()) | models.Q(expiry_date__isnull=True)
         ).aggregate(total=models.Sum('quantity_remaining'))['total'] or 0
 
     @property
@@ -264,6 +266,11 @@ class Dispensing(AuditModel):
     is_otc = models.BooleanField(
         default=False,
         help_text='True for over-the-counter / walk-in sales without a prescription'
+    )
+    service_tier = models.CharField(
+        max_length=20, blank=True,
+        help_text='Service tier for walk-in OTC pricing (STANDARD, EXPRESS, VIP). '
+                  'If blank, resolved from patient visit.',
     )
     # JCI MMU.6.1 — pharmacist verification and patient counseling
     verified_by_pharmacist = models.ForeignKey(

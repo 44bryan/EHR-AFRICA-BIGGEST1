@@ -1800,10 +1800,12 @@ def investigation_stats_view(request):
         .annotate(count=Count('id'))
         .order_by('-count')
     )
+    # Exclude generic 'IMAGING' — redundant since page is imaging-only
     category_data = [
         {'label': (r['investigation_type__category'] or '').replace('_', ' ').title(),
          'count': r['count']}
-        for r in cat_raw if r['investigation_type__category']
+        for r in cat_raw
+        if r['investigation_type__category'] and r['investigation_type__category'] != 'IMAGING'
     ]
     category_json = json.dumps(category_data)
 

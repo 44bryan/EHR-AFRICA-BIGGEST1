@@ -264,6 +264,13 @@ def pharmacy_dashboard(request):
         'colors': ['#16a34a', '#f59e0b', '#3b82f6', '#6b7280', '#dc2626'],
     })
 
+    # Revenue/financial data: only head pharmacist and management can see
+    _can_see_revenue = (
+        request.user.is_head_pharmacist or request.user.is_super_admin
+        or request.user.is_admin_director or request.user.is_finance_director
+        or request.user.is_ceo or request.user.is_medical_director
+    )
+
     context = {
         'low_stock_count': len(low_stock_drugs),
         'low_stock_drugs': low_stock_drugs[:15],
@@ -273,7 +280,7 @@ def pharmacy_dashboard(request):
         'expiring_notice': expiring_notice,
         'expired_in_stock': expired_in_stock,
         'today_dispensings': today_count,
-        'today_revenue': pharmacy_billed_today,
+        'today_revenue': pharmacy_billed_today if _can_see_revenue else None,
         'pending_dispensings': pending_count,
         'total_drugs': Drug.objects.filter(is_active=True, is_deleted=False).count(),
         'pharmacy_work_orders': pharmacy_work_orders,
@@ -283,25 +290,26 @@ def pharmacy_dashboard(request):
         'unavailable_today': unavailable_today,
         'otc_today': otc_today,
         'confirmed_at_cashier': confirmed_at_cashier,
-        'stock_value': stock_value,
+        'stock_value': stock_value if _can_see_revenue else None,
         'top_drugs_today': top_drugs_today,
         'avg_wait_minutes': avg_wait_minutes,
         'fulfilment_rate': fulfilment_rate,
         'daily_trend_json': daily_trend_json,
         'status_chart_json': status_chart_json,
+        'can_see_revenue': _can_see_revenue,
     }
     return render(request, 'pharmacy/dashboard.html', context)
 
 
 @login_required
 def pharmacy_stats_view(request):
-    """Monthly pharmacy statistics — dispensings, top drugs, revenue, gender breakdown."""
-    if not (request.user.is_pharmacist or request.user.is_medical_director
-            or request.user.is_admin_staff or request.user.is_super_admin
-            or request.user.is_ceo or request.user.is_admin_director
-            or request.user.is_finance_director):
+    """Monthly pharmacy statistics — dispensings, top drugs, revenue, gender breakdown.
+    Revenue/financial data restricted to head pharmacist and management only."""
+    if not (request.user.is_head_pharmacist or request.user.is_medical_director
+            or request.user.is_super_admin or request.user.is_ceo
+            or request.user.is_admin_director or request.user.is_finance_director):
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return HttpResponseForbidden('Access denied — Head Pharmacist or management only.')
 
     import json, calendar
     from datetime import date as _date
@@ -1516,8 +1524,12 @@ def drug_stock_ajax(request):
 
 
 def _get_dispensing_tier_info(dispensing):
-    """Resolve service_tier and billing_type from the patient's active visit."""
+    """Resolve service_tier and billing_type from the patient's active visit.
+    Walk-in OTC: use dispensing.service_tier if set (pharmacist picks on OTC form)."""
     tier, billing_type, insurance_copay = 'STANDARD', 'SELF_PAY', None
+    # Walk-in tier override (set on OTC form)
+    if dispensing.service_tier:
+        return dispensing.service_tier, billing_type, insurance_copay
     if dispensing.patient:
         try:
             from apps.patients.models import Visit
@@ -1592,6 +1604,12 @@ def confirm_dispensing(request, dispensing_id):
 
     if not dispensing.items.exists():
         messages.error(request, 'Add at least one item before confirming.')
+        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+
+    # Walk-in OTC sales cannot use the 2-step confirm→cashier flow — redirect
+    # to the single-step complete_dispensing flow instead.
+    if not dispensing.patient:
+        messages.info(request, 'Walk-in sales use direct payment. Use the "Collect Payment & Dispense" button.')
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
     # Bill the dispensing items to the patient's invoice
@@ -1744,22 +1762,29 @@ def complete_dispensing(request, dispensing_id):
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
     # Step 1: Bill — add dispensing items to patient invoice
-    try:
-        invoice = get_or_create_today_invoice(dispensing.patient, created_by=request.user)
-        bill_dispensing(dispensing, created_by=request.user)
-    except Exception as e:
-        messages.error(request, f'Billing failed: {e}')
-        return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+    # Walk-in OTC sales (no patient) skip the formal invoice pipeline and
+    # record payment directly on the Dispensing record.
+    if dispensing.patient:
+        try:
+            invoice = get_or_create_today_invoice(dispensing.patient, created_by=request.user)
+            bill_dispensing(dispensing, created_by=request.user)
+        except Exception as e:
+            messages.error(request, f'Billing failed: {e}')
+            return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
-    # Step 2: Record payment at pharmacy counter
-    Payment.objects.create(
-        invoice=invoice,
-        payment_method=payment_method,
-        amount=amount,
-        reference=request.POST.get('reference', '').strip(),
-        received_by=request.user,
-        created_by=request.user,
-    )
+        # Step 2: Record payment at pharmacy counter
+        Payment.objects.create(
+            invoice=invoice,
+            payment_method=payment_method,
+            amount=amount,
+            reference=request.POST.get('reference', '').strip(),
+            received_by=request.user,
+            created_by=request.user,
+        )
+    else:
+        # Walk-in OTC — no patient account, no invoice. Payment tracked on
+        # the Dispensing record itself (amount_paid field).
+        pass
 
     # Step 3: Mark dispensing as DISPENSED and record amount paid
     dispensing.status = DispensingStatus.DISPENSED
@@ -1773,24 +1798,21 @@ def complete_dispensing(request, dispensing_id):
         dispensing.prescription.dispensed_at = timezone.now()
         dispensing.prescription.save(update_fields=['is_dispensed', 'dispensed_by', 'dispensed_at'])
 
-    # Step 4: Move patient visit from PHARMACY → WAITING_DISCHARGE so they
-    # can be routed back to reception/exit. Do NOT mark COMPLETED — the visit
-    # may still have other pending stops (cashier, etc.)
-    try:
-        from apps.patients.models import Visit
-        visit = Visit.objects.filter(
-            patient=dispensing.patient,
-            status='PHARMACY',
-            is_deleted=False,
-        ).order_by('-visit_date').first()
-        if visit:
-            # Move to BILLING so reception/cashier can confirm any remaining
-            # outstanding items before final discharge. Do NOT mark COMPLETED
-            # here — the central cashier decides when the visit is fully done.
-            visit.status = 'BILLING'
-            visit.save(update_fields=['status', 'updated_at'])
-    except Exception:
-        pass
+    # Step 4: Move patient visit from PHARMACY → BILLING so cashier can
+    # confirm any remaining outstanding items. Skip for walk-in (no visit).
+    if dispensing.patient:
+        try:
+            from apps.patients.models import Visit
+            visit = Visit.objects.filter(
+                patient=dispensing.patient,
+                status='PHARMACY',
+                is_deleted=False,
+            ).order_by('-visit_date').first()
+            if visit:
+                visit.status = 'BILLING'
+                visit.save(update_fields=['status', 'updated_at'])
+        except Exception:
+            pass
 
     messages.success(
         request,
@@ -2309,12 +2331,18 @@ def direct_sale(request):
             messages.error(request, 'Please select a patient or enter a walk-in customer name.')
             return redirect('pharmacy:direct_sale')
 
+        # Walk-in tier selection — defaults to STANDARD
+        otc_tier = request.POST.get('service_tier', 'STANDARD').strip()
+        if otc_tier not in ('STANDARD', 'EXPRESS', 'FAST_TRACK', 'VIP'):
+            otc_tier = 'STANDARD'
+
         dispensing = Dispensing.objects.create(
             patient=patient,
             walk_in_name=walk_in_name if not patient else '',
             prescription=None,
             dispensed_by=request.user,
             is_otc=True,
+            service_tier=otc_tier if not patient else '',
             notes=request.POST.get('notes', '') or 'OTC / Walk-in sale',
             created_by=request.user,
         )

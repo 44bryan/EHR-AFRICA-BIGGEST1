@@ -71,8 +71,31 @@
   <div class="kpi-card"><div class="kpi-val purple">{{ paed_count }}</div><div class="kpi-label">Paediatric (0–14)</div></div>
 </div>
 
-{# ── 2. Demographics, Category & Quality ── #}
-<div class="section-title">2. Patient Demographics, Test Distribution &amp; Quality</div>
+{# ── 2. Patient Flow Funnel ── #}
+<div class="section-title">2. Patient Flow Funnel</div>
+<div class="three-col">
+  <div>
+    <div class="stat-row"><span><span class="dot" style="background:#0d6efd;"></span>Prescribed (Ordered)</span><strong>{{ prescribed_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#198754;"></span>Paid / Cleared</span><strong>{{ paid_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#7c3aed;"></span>Sample Collected</span><strong>{{ sample_collected_count }}</strong></div>
+    <div class="stat-row"><span><span class="dot" style="background:#0d9488;"></span>Completed</span><strong>{{ completed_count }}</strong></div>
+  </div>
+  <div>
+    <div class="col-head">Conversion Rates</div>
+    <div class="stat-row"><span>Payment Rate</span><strong>{{ payment_rate }}%</strong></div>
+    <div class="stat-row"><span>Collection Rate</span><strong>{{ show_rate }}%</strong></div>
+    <div class="stat-row"><span>Completion Rate</span><strong>{{ funnel_completion_rate }}%</strong></div>
+  </div>
+  <div>
+    <div class="col-head">Drop-offs</div>
+    <div class="stat-row"><span>Unpaid</span><strong style="{% if unpaid_count %}color:#dc3545;{% endif %}">{{ unpaid_count }}</strong></div>
+    <div class="stat-row"><span>Cancelled</span><strong style="{% if cancelled_count %}color:#dc3545;{% endif %}">{{ cancelled_count }}</strong></div>
+    <div class="stat-row"><span>Not Collected</span><strong>{{ not_collected_count }}</strong></div>
+  </div>
+</div>
+
+{# ── 3. Demographics, Category & Quality ── #}
+<div class="section-title">3. Patient Demographics, Test Distribution &amp; Quality</div>
 <div class="three-col">
   <div>
     <div class="col-head">Patient Sex</div>
@@ -130,7 +153,7 @@
 </div>
 
 {# ── 3. Top 10 Tests ── #}
-<div class="section-title">3. Top 10 Tests &mdash; {{ month_start|date:"F Y" }}</div>
+<div class="section-title">4. Top 10 Tests &mdash; {{ month_start|date:"F Y" }}</div>
 {% if top_tests %}
 <table>
   <thead>
@@ -172,7 +195,7 @@
 </div>
 
 {# ── 4. Tests by Sex & Age Group ── #}
-<div class="section-title">4. Lab Tests by Sex &amp; Age Group (WHO Standard) &mdash; {{ month_start|date:"F Y" }}</div>
+<div class="section-title">5. Lab Tests by Sex &amp; Age Group (WHO Standard) &mdash; {{ month_start|date:"F Y" }}</div>
 {% if type_breakdown_list %}
 <table>
   <thead>
@@ -213,8 +236,78 @@
 <p style="color:#6c757d;font-style:italic;padding:8px 0;">No test type data available for this period.</p>
 {% endif %}
 
-{# ── 5. Summary Statement ── #}
-<div class="section-title">5. Monthly Performance Statement</div>
+{# ── 6. Orders by Requesting Department ── #}
+{% if dept_lab_table %}
+<div class="section-title">6. Lab Orders by Requesting Department</div>
+<table>
+  <thead>
+    <tr>
+      <th>Department / Specialty</th>
+      <th style="text-align:center;">Orders</th>
+      <th style="text-align:center;">Share %</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in dept_lab_table %}
+    <tr>
+      <td style="font-weight:600;">{{ row.name }}</td>
+      <td style="text-align:center;font-weight:700;color:#0d6efd;">{{ row.count }}</td>
+      <td style="text-align:center;color:#6c757d;">{{ row.pct }}%</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td>Total</td>
+      <td style="text-align:center;">{{ total_orders }}</td>
+      <td style="text-align:center;">100%</td>
+    </tr>
+  </tfoot>
+</table>
+{% endif %}
+
+{# ── 7. Completed by Service Tier ── #}
+{% if tier_age_table %}
+<div class="section-title">7. Completed Tests by Service Tier &amp; WHO Age Group</div>
+<table>
+  <thead>
+    <tr>
+      <th>Service Tier</th>
+      <th style="text-align:center;">Children (0–14)</th>
+      <th style="text-align:center;">Adults (15–59)</th>
+      <th style="text-align:center;">Elderly (60+)</th>
+      <th style="text-align:center;">Total</th>
+      <th style="text-align:center;">%</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in tier_age_table %}
+    <tr>
+      <td style="font-weight:600;">{{ row.tier }}</td>
+      <td style="text-align:center;color:#198754;">{{ row.children }}</td>
+      <td style="text-align:center;color:#0d6efd;">{{ row.adults }}</td>
+      <td style="text-align:center;color:#d97706;">{{ row.elderly }}</td>
+      <td style="text-align:center;font-weight:700;">{{ row.total }}</td>
+      <td style="text-align:center;color:#6c757d;">{{ row.pct }}%</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td>All Tiers</td>
+      <td colspan="3"></td>
+      <td style="text-align:center;">{{ total_completed_items }}</td>
+      <td style="text-align:center;">100%</td>
+    </tr>
+  </tfoot>
+</table>
+<p style="font-size:8px;color:#6c757d;margin-top:3px;">
+  Based on completed tests only. Children = 0–14 yrs, Adults = 15–59 yrs, Elderly = 60+ (WHO standard).
+</p>
+{% endif %}
+
+{# ── 8. Summary Statement ── #}
+<div class="section-title">8. Monthly Performance Statement</div>
 <table class="summary-table">
   <thead>
     <tr>

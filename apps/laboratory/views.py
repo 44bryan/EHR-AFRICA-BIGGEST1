@@ -506,6 +506,23 @@ def lab_stats_view(request):
         'data':   [r['count'] for r in urgency_raw],
     })
 
+    # ── Patient Flow Funnel ────────────────────────────────────────────────
+    prescribed_count = total_orders
+    paid_count = base_orders.filter(payment_status__in=[
+        PaymentStatus.PAID, PaymentStatus.INSURED, PaymentStatus.WAIVED,
+        PaymentStatus.STAT_OVERRIDE, PaymentStatus.PREPAID, PaymentStatus.BILL_LATER,
+    ]).count()
+    sample_collected_count = base_orders.filter(
+        status__in=['SAMPLE_COLLECTED', 'PROCESSING', 'COMPLETED']
+    ).count()
+    completed_count = base_orders.filter(status='COMPLETED').count()
+    cancelled_count = base_orders.filter(status='CANCELLED').count()
+    unpaid_count = prescribed_count - paid_count
+    not_collected_count = prescribed_count - sample_collected_count
+    show_rate = round(sample_collected_count / prescribed_count * 100) if prescribed_count else 0
+    payment_rate = round(paid_count / prescribed_count * 100) if prescribed_count else 0
+    funnel_completion_rate = round(completed_count / prescribed_count * 100) if prescribed_count else 0
+
     # Category totals for donut chart
     category_labels = {
         'HAEMATOLOGY': 'Haematology', 'BIOCHEMISTRY': 'Biochemistry',
@@ -608,6 +625,17 @@ def lab_stats_view(request):
         'total_completed_items': total_completed_items,
         'urgency_json': urgency_json,
         'type_breakdown_list': type_breakdown_list,
+        # Funnel
+        'prescribed_count': prescribed_count,
+        'paid_count': paid_count,
+        'sample_collected_count': sample_collected_count,
+        'completed_count': completed_count,
+        'cancelled_count': cancelled_count,
+        'unpaid_count': unpaid_count,
+        'not_collected_count': not_collected_count,
+        'show_rate': show_rate,
+        'payment_rate': payment_rate,
+        'funnel_completion_rate': funnel_completion_rate,
     }
     cache.set(_cache_key, context, _cache_ttl)
     if request.GET.get('pdf'):
