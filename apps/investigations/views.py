@@ -142,10 +142,24 @@ def investigation_workstation_view(request):
         for order in pending_orders:
             order.is_paid = None
 
+    # ── Separate by urgency AND status ──────────────────────────────────────
     urgent = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY', 'STAT')]
     routine = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY', 'STAT')]
-    in_progress_count = sum(1 for o in pending_orders if o.status == InvestigationOrder.Status.IN_PROGRESS)
+    in_progress = [o for o in pending_orders if o.status == InvestigationOrder.Status.IN_PROGRESS]
+    in_progress_count = len(in_progress)
     ordered_count = sum(1 for o in pending_orders if o.status == InvestigationOrder.Status.ORDERED)
+
+    # ── Dilation info for each pending order ─────────────────────────────────
+    for o in pending_orders:
+        o.dilation_req = getattr(o.investigation_type, 'dilation_requirement', 'INDIFFERENT') or 'INDIFFERENT'
+
+    # ── TAT for completed orders ─────────────────────────────────────────────
+    for o in completed_today:
+        if hasattr(o, 'result') and o.result and o.result.result_date:
+            delta = o.result.result_date - o.created_at
+            o.tat_minutes = int(delta.total_seconds() / 60)
+        else:
+            o.tat_minutes = None
 
     # ── Quality-failed orders needing repeat ─────────────────────────────────
     quality_failed = list(
@@ -157,10 +171,14 @@ def investigation_workstation_view(request):
         .order_by('-updated_at')[:20]
     )
 
+    # ── Unpaid count for stat card ───────────────────────────────────────────
+    unpaid_count = sum(1 for o in pending_orders if getattr(o, 'is_paid', None) is False)
+
     return render(request, 'investigations/workstation.html', {
         'queued_no_order': queued_no_order,
         'urgent_orders': urgent,
         'routine_orders': routine,
+        'in_progress_orders': in_progress,
         'completed_today': completed_today,
         'quality_failed': quality_failed,
         'queued_count': len(queued_no_order),
@@ -168,6 +186,8 @@ def investigation_workstation_view(request):
         'in_progress_count': in_progress_count,
         'ordered_count': ordered_count,
         'completed_count': len(completed_today),
+        'quality_failed_count': len(quality_failed),
+        'unpaid_count': unpaid_count,
         'today': today,
     })
 
