@@ -838,35 +838,49 @@ def home_view(request):
     if user.is_investigation_tech:
         from apps.investigations.models import InvestigationOrder, InvestigationResult
         today_local = timezone.localdate()
-        base_pending = InvestigationOrder.objects.select_related(
-            'patient', 'investigation_type', 'consultation__department'
-        ).filter(is_deleted=False, status__in=['ORDERED', 'IN_PROGRESS'])
+        _paid = ['PAID', 'INSURED', 'WAIVED', 'PACKAGE', 'STAT_OVERRIDE', 'BILL_LATER', 'FREE_REPEAT']
 
-        urgent_orders  = base_pending.filter(urgency__in=['URGENT', 'EMERGENCY']).order_by('-created_at')
-        routine_orders = base_pending.filter(urgency='ROUTINE').order_by('created_at')
-        pending_count  = base_pending.count()
-        urgent_count   = urgent_orders.count()
+        paid_base = InvestigationOrder.objects.select_related(
+            'patient', 'investigation_type', 'ordered_by'
+        ).filter(is_deleted=False, payment_status__in=_paid)
 
-        # Today's completed (all staff)
+        # Pipeline counts
+        expected_count  = paid_base.filter(acquisition_status='SCHEDULED').count()
+        checked_in_count = paid_base.filter(acquisition_status='CHECKED_IN').count()
+        preparing_count = paid_base.filter(acquisition_status='PATIENT_PREPARED').count()
+        in_progress_count = paid_base.filter(acquisition_status='IN_PROGRESS').count()
+
+        # Completed today
         completed_today = InvestigationOrder.objects.filter(
             is_deleted=False, status='COMPLETED',
             updated_at__date=today_local,
         ).count()
 
-        # My exams today (this tech)
+        # My exams today
         my_today = InvestigationResult.objects.filter(
-            is_deleted=False,
-            performed_by=user,
+            is_deleted=False, performed_by=user,
             result_date__date=today_local,
         ).count()
 
+        # Ordered but not paid (for stats tracking)
+        unpaid_count = InvestigationOrder.objects.filter(
+            is_deleted=False, status='ORDERED',
+        ).exclude(payment_status__in=_paid).count()
+
+        # Total ordered today (prescribed)
+        prescribed_today = InvestigationOrder.objects.filter(
+            is_deleted=False, created_at__date=today_local,
+        ).count()
+
         ctx.update({
-            'urgent_orders':   urgent_orders,
-            'routine_orders':  routine_orders,
-            'pending_count':   pending_count,
-            'urgent_count':    urgent_count,
-            'completed_today': completed_today,
-            'my_today':        my_today,
+            'expected_count':   expected_count,
+            'checked_in_count': checked_in_count,
+            'preparing_count':  preparing_count,
+            'in_progress_count': in_progress_count,
+            'completed_today':  completed_today,
+            'my_today':         my_today,
+            'unpaid_count':     unpaid_count,
+            'prescribed_today': prescribed_today,
         })
         return render(request, 'dashboard/investigation_tech.html', ctx)
 
