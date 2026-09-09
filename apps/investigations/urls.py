@@ -13,6 +13,9 @@ urlpatterns = [
     path('<uuid:pk>/verify/', views.verify_result_view, name='verify'),
     path('<uuid:pk>/cancel/', views.cancel_investigation_order, name='cancel'),
     path('<uuid:pk>/start/', views.start_investigation_view, name='start'),
+    path('<uuid:pk>/check-in/', views.check_in_view, name='check_in'),
+    path('<uuid:pk>/prepare/', views.prepare_patient_view, name='prepare'),
+    path('bulk-check-in/', views.bulk_check_in_view, name='bulk_check_in'),
     path('bulk-start/', views.bulk_start_view, name='bulk_start'),
 
     # ── Acquisition Workflow ───────────────────────────────────────────────────

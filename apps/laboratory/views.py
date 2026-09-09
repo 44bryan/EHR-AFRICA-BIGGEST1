@@ -26,28 +26,78 @@ def _log_tat(order, event, user=None, notes=''):
 
 @login_required
 def lab_dashboard(request):
-    """Lab technician workstation dashboard."""
+    """
+    Lab technician workstation — Clinical Pipeline.
+    Only shows PAID orders. Pipeline: Checked In → Sample Collected → Processing → Done.
+    """
     if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_admin_staff):
         return HttpResponseForbidden()
 
     today = timezone.localdate()
+    now_dt = timezone.now()
     month_start = today.replace(day=1)
-
-    # Pending work — last 7 days only (avoids pulling historical backlog)
     week_ago = today - timedelta(days=7)
-    pending_orders = LabOrder.objects.filter(
-        is_deleted=False,
-        status__in=['ORDERED', 'SAMPLE_COLLECTED', 'PROCESSING'],
-        created_at__date__gte=week_ago,
-    ).select_related('patient', 'ordered_by').order_by('-created_at')[:200]
 
-    # Today's completed
-    completed_today = LabOrder.objects.filter(
-        status='COMPLETED', is_deleted=False,
-        updated_at__date=today,
-    ).count()
+    # ── Only paid orders are actionable ──────────────────────────────────────
+    _paid_statuses = ['PAID', 'INSURED', 'WAIVED', 'STAT_OVERRIDE', 'PREPAID', 'BILL_LATER']
 
-    # Critical results this month (unverified) — also exclude soft-deleted orders/items
+    _base_qs = LabOrder.objects.filter(
+        is_deleted=False, created_at__date__gte=week_ago,
+    ).select_related('patient', 'ordered_by').prefetch_related('items__test_type')
+
+    # ── Pipeline stages ──────────────────────────────────────────────────────
+    # 1. Checked In — patient arrived, waiting for phlebotomy
+    checked_in_orders = list(
+        _base_qs.filter(
+            payment_status__in=_paid_statuses,
+            checked_in_at__isnull=False,
+            status='ORDERED',
+        ).order_by('urgency', 'checked_in_at')
+    )
+
+    # 2. Sample Collected — sample taken, waiting for processing
+    sample_collected_orders = list(
+        _base_qs.filter(
+            payment_status__in=_paid_statuses,
+            status='SAMPLE_COLLECTED',
+        ).order_by('urgency', 'updated_at')
+    )
+
+    # 3. Processing — analysis in progress
+    processing_orders = list(
+        _base_qs.filter(
+            payment_status__in=_paid_statuses,
+            status='PROCESSING',
+        ).order_by('urgency', 'updated_at')
+    )
+
+    # 4. Expected Arrivals — paid but NOT yet checked in
+    expected_arrivals = list(
+        _base_qs.filter(
+            payment_status__in=_paid_statuses,
+            checked_in_at__isnull=True,
+            status='ORDERED',
+        ).order_by('urgency', 'created_at')
+    )
+
+    # ── Elapsed time annotations ─────────────────────────────────────────────
+    for o in checked_in_orders:
+        if o.checked_in_at:
+            delta = now_dt - o.checked_in_at
+            o.wait_minutes = int(delta.total_seconds() / 60)
+        else:
+            o.wait_minutes = 0
+
+    for o in (sample_collected_orders + processing_orders):
+        delta = now_dt - o.created_at
+        total_mins = int(delta.total_seconds() // 60)
+        if total_mins < 60:
+            o.elapsed = f'{total_mins}m'
+        else:
+            o.elapsed = f'{total_mins // 60}h {total_mins % 60}m'
+        o.elapsed_mins = total_mins
+
+    # ── Critical results (unverified) ────────────────────────────────────────
     critical_unverified = LabResult.objects.filter(
         is_critical=True, is_verified=False,
         is_deleted=False,
@@ -55,13 +105,32 @@ def lab_dashboard(request):
         order_item__order__is_deleted=False,
     ).select_related('order_item__order__patient', 'order_item__test_type')
 
-    # Abnormal this month
+    # ── Completed today ──────────────────────────────────────────────────────
+    completed_today_count = LabOrder.objects.filter(
+        status='COMPLETED', is_deleted=False,
+        updated_at__date=today,
+    ).count()
+
+    completed_today_list = list(
+        LabOrder.objects.filter(
+            status='COMPLETED', is_deleted=False,
+            updated_at__date=today,
+        ).select_related('patient', 'ordered_by')
+        .prefetch_related('items__test_type', 'items__result')
+        .order_by('-updated_at')[:30]
+    )
+
+    # ── Month summary stats ──────────────────────────────────────────────────
+    completed_this_month = LabOrder.objects.filter(
+        status='COMPLETED', is_deleted=False,
+        updated_at__date__gte=month_start,
+    ).count()
+
     abnormal_count = LabResult.objects.filter(
         is_abnormal=True, is_deleted=False,
         created_at__date__gte=month_start,
     ).count()
 
-    # Stats by category this month
     category_stats = (
         LabOrderItem.objects.filter(
             order__is_deleted=False,
@@ -72,82 +141,16 @@ def lab_dashboard(request):
         .order_by('-count')
     )
 
-    # Turnaround time (ordered → completed, last 30 days)
-    # We approximate using created_at vs updated_at for completed orders
-    completed_this_month = LabOrder.objects.filter(
-        status='COMPLETED', is_deleted=False,
-        updated_at__date__gte=month_start,
-    ).count()
-
-    # Patients waiting at lab (visit status = LABORATORY, today)
-    from apps.patients.models import Visit
-    from django.db.models import Case, When, IntegerField, Value as _V
-    _tier_order = Case(When(service_tier='VIP', then=_V(3)), When(service_tier='FAST_TRACK', then=_V(2)),
-                       When(service_tier='EXPRESS', then=_V(1)), default=_V(0), output_field=IntegerField())
-    _pt = getattr(request.user, 'patient_tier', 'ALL')
-    _lab_qs = Visit.objects.filter(visit_date__date=today, status='LABORATORY', is_deleted=False)
-    if _pt == 'VIP':
-        _lab_qs = _lab_qs.filter(service_tier='VIP')
-    elif _pt == 'EXPRESS':
-        _lab_qs = _lab_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
-    elif _pt == 'STANDARD':
-        _lab_qs = _lab_qs.filter(service_tier='STANDARD')
-    # _pt == 'ALL' → no filter
-    waiting_visits = list(_lab_qs.select_related('patient', 'attending_doctor')
-                          .annotate(_tier_order=_tier_order).order_by('-_tier_order', 'visit_date'))
-
-    # Annotate each pending order with payment status and elapsed time
-    pending_orders = list(pending_orders)
-    now_dt = timezone.now()
-    try:
-        from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
-        # Per-test payment: find which lab_order_items have an ACTIVE (PENDING/DONE) work order
-        active_item_ids = set(
-            ServiceWorkOrder.objects.filter(
-                category=ServiceCategory.LABORATORY,
-                status__in=[WorkOrderStatus.PENDING, WorkOrderStatus.DONE],
-                lab_order_item__isnull=False,
-                is_deleted=False,
-            ).values_list('lab_order_item__order_id', flat=True)
-        )
-        for order in pending_orders:
-            order.is_paid = order.id in active_item_ids
-            # Elapsed time since order was placed
-            delta = now_dt - order.created_at
-            total_mins = int(delta.total_seconds() // 60)
-            if total_mins < 60:
-                order.elapsed = f'{total_mins}m'
-            else:
-                order.elapsed = f'{total_mins // 60}h {total_mins % 60}m'
-            order.elapsed_mins = total_mins
-    except Exception:
-        for order in pending_orders:
-            order.is_paid = None
-            order.elapsed = ''
-            order.elapsed_mins = 0
-
-    # ── Split into urgent vs routine (matches investigation workstation) ─────
-    urgent_orders = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY')]
-    routine_orders = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY')]
-    in_progress_count = sum(1 for o in pending_orders if o.status == 'PROCESSING')
-
-    # ── Completed today — full list (not just count) ──────────────────────────
-    completed_today_list = list(
-        LabOrder.objects.filter(
-            status='COMPLETED', is_deleted=False,
-            updated_at__date=today,
-        ).select_related('patient', 'ordered_by')
-        .prefetch_related('items__test_type', 'items__result')
-        .order_by('-updated_at')[:30]
-    )
-
     context = {
-        'pending_orders': pending_orders,
-        'urgent_orders': urgent_orders,
-        'routine_orders': routine_orders,
-        'pending_count': len(pending_orders),
-        'in_progress_count': in_progress_count,
-        'completed_today': completed_today,
+        'checked_in_orders': checked_in_orders,
+        'sample_collected_orders': sample_collected_orders,
+        'processing_orders': processing_orders,
+        'expected_arrivals': expected_arrivals,
+        'checked_in_count': len(checked_in_orders),
+        'sample_collected_count': len(sample_collected_orders),
+        'processing_count': len(processing_orders),
+        'expected_count': len(expected_arrivals),
+        'completed_today': completed_today_count,
         'completed_today_list': completed_today_list,
         'completed_this_month': completed_this_month,
         'critical_unverified': critical_unverified,
@@ -155,9 +158,45 @@ def lab_dashboard(request):
         'abnormal_count': abnormal_count,
         'category_stats': category_stats,
         'today': today,
-        'waiting_visits': waiting_visits,
     }
     return render(request, 'laboratory/dashboard.html', context)
+
+
+@login_required
+@require_POST
+def lab_check_in_view(request, pk):
+    """Check in patient — they have physically arrived at the lab."""
+    if not (request.user.is_lab_tech or request.user.is_admin_staff):
+        return HttpResponseForbidden()
+    order = get_object_or_404(LabOrder, pk=pk, is_deleted=False)
+    if not order.checked_in_at:
+        order.checked_in_at = timezone.now()
+        order.checked_in_by = request.user
+        order.save(update_fields=['checked_in_at', 'checked_in_by', 'updated_at'])
+        messages.success(request, f'{order.patient.full_name} checked in at lab.')
+    return redirect('laboratory:dashboard')
+
+
+@login_required
+@require_POST
+def lab_bulk_check_in_view(request):
+    """Bulk check-in multiple patients at once."""
+    if not (request.user.is_lab_tech or request.user.is_admin_staff):
+        return HttpResponseForbidden()
+    order_ids = request.POST.getlist('order_ids')
+    if order_ids:
+        now = timezone.now()
+        updated = LabOrder.objects.filter(
+            pk__in=order_ids,
+            checked_in_at__isnull=True,
+            is_deleted=False,
+        ).update(
+            checked_in_at=now,
+            checked_in_by=request.user,
+            updated_at=now,
+        )
+        messages.success(request, f'{updated} patient(s) checked in at lab.')
+    return redirect('laboratory:dashboard')
 
 
 @login_required

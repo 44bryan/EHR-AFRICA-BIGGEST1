@@ -239,6 +239,14 @@ class LabOrder(AuditModel):
     payment_authorization_reason = models.TextField(blank=True)
     payment_authorized_at = models.DateTimeField(null=True, blank=True)
 
+    # ── Check-in tracking ─────────────────────────────────────────────
+    checked_in_at = models.DateTimeField(null=True, blank=True,
+        help_text='When patient physically arrived at lab for sample collection')
+    checked_in_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='lab_checkins',
+    )
+
     # ── Specimen state machine (independent of order status) ─────────────
     specimen_status = models.CharField(
         max_length=15, choices=SpecimenStatus.choices, default=SpecimenStatus.PENDING,

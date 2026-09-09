@@ -38,68 +38,79 @@ def _is_invest_viewer(user):
 @login_required
 def investigation_workstation_view(request):
     """
-    Investigation Technician Workstation.
-    Shows:
-      - Patients routed here via QMS (queued)
-      - Pending/in-progress investigation orders with 4-state info
-      - Completed today
+    Investigation Technician Workstation — Clinical Pipeline.
+    Only shows PAID orders. Pipeline: Checked In → Preparing → In Progress → Done.
     """
-    from apps.patients.models import Visit
-
     today = timezone.localdate()
+    now_dt = timezone.now()
 
-    # ── Patients queued via QMS ──────────────────────────────────────────────
-    if _qms_active():
-        try:
-            from apps.qms.models import QueueToken, TokenStatus
-            _invest_qs = QueueToken.objects.filter(
-                service_type='INVEST',
-                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
-                token_date=today,
-            )
-            _pt = getattr(request.user, 'patient_tier', 'ALL')
-            if _pt == 'VIP':
-                _invest_qs = _invest_qs.filter(service_tier='VIP')
-            elif _pt == 'EXPRESS':
-                _invest_qs = _invest_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
-            elif _pt == 'STANDARD':
-                _invest_qs = _invest_qs.filter(service_tier='STANDARD')
-            queued_tokens = list(
-                _invest_qs.select_related('visit__patient', 'visit__attending_doctor')
-                .order_by('-priority', 'issued_at')
-            )
-        except Exception:
-            queued_tokens = []
-    else:
-        queued_tokens = []
+    # ── All active orders (paid only — unpaid are not the tech's concern) ─────
+    _base_qs = InvestigationOrder.objects.filter(
+        is_deleted=False,
+    ).select_related(
+        'patient', 'investigation_type', 'ordered_by', 'device', 'checked_in_by',
+    )
 
-    if queued_tokens:
-        pending_by_patient = {}
-        patient_ids = [t.visit.patient_id for t in queued_tokens if t.visit and t.visit.patient_id]
-        for order in InvestigationOrder.objects.filter(
-            patient__patient_id__in=patient_ids,
-            status__in=[InvestigationOrder.Status.ORDERED, InvestigationOrder.Status.IN_PROGRESS],
-            is_deleted=False,
-        ).select_related('patient').order_by('urgency', 'created_at'):
-            pid = order.patient.patient_id
-            if pid not in pending_by_patient:
-                pending_by_patient[pid] = order
-        for token in queued_tokens:
-            if token.visit and token.visit.patient_id:
-                token.pending_order = pending_by_patient.get(token.visit.patient_id)
-            else:
-                token.pending_order = None
-    queued_no_order = queued_tokens
+    # Only paid orders are actionable — filter by payment_status
+    _paid_statuses = [
+        'PAID', 'INSURED', 'WAIVED', 'PACKAGE', 'STAT_OVERRIDE', 'BILL_LATER', 'FREE_REPEAT',
+    ]
 
-    pending_orders = list(
-        InvestigationOrder.objects.filter(
-            status__in=[InvestigationOrder.Status.ORDERED, InvestigationOrder.Status.IN_PROGRESS],
-            is_deleted=False,
-        ).select_related(
-            'patient', 'investigation_type', 'ordered_by', 'consultation', 'device'
+    # ── Pipeline stages ──────────────────────────────────────────────────────
+    # 1. Checked In — patient arrived, waiting for exam
+    checked_in_orders = list(
+        _base_qs.filter(
+            acquisition_status=AcquisitionStatus.CHECKED_IN,
+            payment_status__in=_paid_statuses,
+            status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+        ).order_by('urgency', 'checked_in_at')
+    )
+
+    # 2. Preparing — dilation / prep in progress
+    preparing_orders = list(
+        _base_qs.filter(
+            acquisition_status=AcquisitionStatus.PATIENT_PREPARED,
+            payment_status__in=_paid_statuses,
+            status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+        ).order_by('urgency', 'updated_at')
+    )
+    # Estimate ready time for dilating patients (dilation ~25min)
+    for o in preparing_orders:
+        if o.dilation_time:
+            from datetime import timedelta
+            o.est_ready = o.dilation_time + timedelta(minutes=25)
+            o.mins_remaining = max(0, int((o.est_ready - now_dt).total_seconds() / 60))
+        else:
+            o.est_ready = None
+            o.mins_remaining = None
+
+    # 3. In Progress — exam happening now
+    in_progress_orders = list(
+        _base_qs.filter(
+            acquisition_status=AcquisitionStatus.IN_PROGRESS,
+            payment_status__in=_paid_statuses,
+            status=InvestigationOrder.Status.IN_PROGRESS,
+        ).order_by('updated_at')
+    )
+
+    # 4. Paid but NOT yet checked in — "Expected Arrivals"
+    expected_arrivals = list(
+        _base_qs.filter(
+            acquisition_status=AcquisitionStatus.SCHEDULED,
+            payment_status__in=_paid_statuses,
+            status__in=['ORDERED', 'SCHEDULED'],
         ).order_by('urgency', 'created_at')
     )
 
+    # 5. Quality failed — needs repeat
+    quality_failed = list(
+        _base_qs.filter(
+            acquisition_status=AcquisitionStatus.QUALITY_FAILED,
+            status__in=['IN_PROGRESS', 'ORDERED'],
+        ).order_by('-updated_at')[:20]
+    )
+
+    # 6. Completed today
     completed_today = list(
         InvestigationOrder.objects.filter(
             status=InvestigationOrder.Status.COMPLETED,
@@ -110,48 +121,17 @@ def investigation_workstation_view(request):
         ).prefetch_related('result__files').order_by('-updated_at')[:30]
     )
 
-    # ── Payment status via ServiceWorkOrder ──────────────────────────────────
-    try:
-        from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
-        patient_ids = [o.patient_id for o in pending_orders]
-        paid_patient_ids = set(
-            ServiceWorkOrder.objects.filter(
-                patient_id__in=patient_ids,
-                category=ServiceCategory.INVESTIGATION,
-                status=WorkOrderStatus.PENDING,
-                is_deleted=False,
-            ).values_list('patient_id', flat=True)
-        )
-        unpaid_patient_ids = set(
-            ServiceWorkOrder.objects.filter(
-                patient_id__in=patient_ids,
-                category=ServiceCategory.INVESTIGATION,
-                status=WorkOrderStatus.PENDING_PAYMENT,
-                is_deleted=False,
-            ).values_list('patient_id', flat=True)
-        )
-        for order in pending_orders:
-            pid = order.patient_id
-            if pid in paid_patient_ids:
-                order.is_paid = True
-            elif pid in unpaid_patient_ids:
-                order.is_paid = False
-            else:
-                order.is_paid = None
-    except Exception:
-        for order in pending_orders:
-            order.is_paid = None
-
-    # ── Separate by urgency AND status ──────────────────────────────────────
-    urgent = [o for o in pending_orders if o.urgency in ('URGENT', 'EMERGENCY', 'STAT')]
-    routine = [o for o in pending_orders if o.urgency not in ('URGENT', 'EMERGENCY', 'STAT')]
-    in_progress = [o for o in pending_orders if o.status == InvestigationOrder.Status.IN_PROGRESS]
-    in_progress_count = len(in_progress)
-    ordered_count = sum(1 for o in pending_orders if o.status == InvestigationOrder.Status.ORDERED)
-
-    # ── Dilation info for each pending order ─────────────────────────────────
-    for o in pending_orders:
+    # ── Dilation info for pipeline orders ────────────────────────────────────
+    for o in (checked_in_orders + preparing_orders + in_progress_orders + expected_arrivals):
         o.dilation_req = getattr(o.investigation_type, 'dilation_requirement', 'INDIFFERENT') or 'INDIFFERENT'
+
+    # ── Elapsed time since check-in ──────────────────────────────────────────
+    for o in checked_in_orders:
+        if o.checked_in_at:
+            delta = now_dt - o.checked_in_at
+            o.wait_minutes = int(delta.total_seconds() / 60)
+        else:
+            o.wait_minutes = 0
 
     # ── TAT for completed orders ─────────────────────────────────────────────
     for o in completed_today:
@@ -161,35 +141,93 @@ def investigation_workstation_view(request):
         else:
             o.tat_minutes = None
 
-    # ── Quality-failed orders needing repeat ─────────────────────────────────
-    quality_failed = list(
-        InvestigationOrder.objects.filter(
-            acquisition_status=AcquisitionStatus.QUALITY_FAILED,
-            status__in=[InvestigationOrder.Status.IN_PROGRESS, InvestigationOrder.Status.ORDERED],
-            is_deleted=False,
-        ).select_related('patient', 'investigation_type', 'device')
-        .order_by('-updated_at')[:20]
-    )
-
-    # ── Unpaid count for stat card ───────────────────────────────────────────
-    unpaid_count = sum(1 for o in pending_orders if getattr(o, 'is_paid', None) is False)
-
+    # ── Stat counts ──────────────────────────────────────────────────────────
     return render(request, 'investigations/workstation.html', {
-        'queued_no_order': queued_no_order,
-        'urgent_orders': urgent,
-        'routine_orders': routine,
-        'in_progress_orders': in_progress,
-        'completed_today': completed_today,
+        'checked_in_orders': checked_in_orders,
+        'preparing_orders': preparing_orders,
+        'in_progress_orders': in_progress_orders,
+        'expected_arrivals': expected_arrivals,
         'quality_failed': quality_failed,
-        'queued_count': len(queued_no_order),
-        'pending_count': len(pending_orders),
-        'in_progress_count': in_progress_count,
-        'ordered_count': ordered_count,
-        'completed_count': len(completed_today),
+        'completed_today': completed_today,
+        'checked_in_count': len(checked_in_orders),
+        'preparing_count': len(preparing_orders),
+        'in_progress_count': len(in_progress_orders),
+        'expected_count': len(expected_arrivals),
         'quality_failed_count': len(quality_failed),
-        'unpaid_count': unpaid_count,
+        'completed_count': len(completed_today),
         'today': today,
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHECK-IN & PREPARATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def check_in_view(request, pk):
+    """Check in patient — they have physically arrived at imaging/investigation."""
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    if order.acquisition_status == AcquisitionStatus.SCHEDULED:
+        order.acquisition_status = AcquisitionStatus.CHECKED_IN
+        order.checked_in_at = timezone.now()
+        order.checked_in_by = request.user
+        order.save(update_fields=['acquisition_status', 'checked_in_at', 'checked_in_by', 'updated_at'])
+        messages.success(request, f'{order.patient.full_name} checked in for {order.investigation_type.name}.')
+    return redirect('investigations:workstation')
+
+
+@login_required
+@require_POST
+def prepare_patient_view(request, pk):
+    """Move patient to PATIENT_PREPARED — dilation started or other prep."""
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+    if order.acquisition_status in (AcquisitionStatus.CHECKED_IN, AcquisitionStatus.SCHEDULED):
+        order.acquisition_status = AcquisitionStatus.PATIENT_PREPARED
+        if not order.checked_in_at:
+            order.checked_in_at = timezone.now()
+            order.checked_in_by = request.user
+        # Record dilation start if applicable
+        dilation_agent = request.POST.get('dilation_agent', '').strip()
+        if dilation_agent:
+            order.dilation_status = 'dilating'
+            order.dilation_time = timezone.now()
+            order.dilation_agent = dilation_agent
+            order.save(update_fields=[
+                'acquisition_status', 'checked_in_at', 'checked_in_by',
+                'dilation_status', 'dilation_time', 'dilation_agent', 'updated_at',
+            ])
+        else:
+            order.save(update_fields=['acquisition_status', 'checked_in_at', 'checked_in_by', 'updated_at'])
+        messages.success(request, f'{order.patient.full_name} — preparation started.')
+    return redirect('investigations:workstation')
+
+
+@login_required
+@require_POST
+def bulk_check_in_view(request):
+    """Bulk check-in multiple patients at once."""
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+    order_ids = request.POST.getlist('order_ids')
+    if order_ids:
+        now = timezone.now()
+        updated = InvestigationOrder.objects.filter(
+            pk__in=order_ids,
+            acquisition_status=AcquisitionStatus.SCHEDULED,
+            is_deleted=False,
+        ).update(
+            acquisition_status=AcquisitionStatus.CHECKED_IN,
+            checked_in_at=now,
+            checked_in_by=request.user,
+            updated_at=now,
+        )
+        messages.success(request, f'{updated} patient(s) checked in.')
+    return redirect('investigations:workstation')
 
 
 # ══════════════════════════════════════════════════════════════════════════════

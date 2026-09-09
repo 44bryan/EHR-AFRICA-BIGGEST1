@@ -56,6 +56,7 @@ class PaymentStatus(models.TextChoices):
 
 class AcquisitionStatus(models.TextChoices):
     SCHEDULED = 'SCHEDULED', _('Scheduled')
+    CHECKED_IN = 'CHECKED_IN', _('Checked In')
     PATIENT_PREPARED = 'PATIENT_PREPARED', _('Patient Prepared')
     IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
     ACQUIRED = 'ACQUIRED', _('Acquired')
@@ -257,6 +258,14 @@ class InvestigationOrder(AuditModel):
     acquisition_status = models.CharField(
         max_length=20, choices=AcquisitionStatus.choices,
         default=AcquisitionStatus.SCHEDULED, db_index=True,
+    )
+
+    # ── Check-in tracking ──
+    checked_in_at = models.DateTimeField(null=True, blank=True,
+        help_text='When patient physically arrived at investigation room')
+    checked_in_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='investigation_checkins',
     )
 
     # ── Scheduling ──

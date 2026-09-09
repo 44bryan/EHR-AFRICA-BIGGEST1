@@ -11,6 +11,10 @@ urlpatterns = [
     path('order/<uuid:consultation_pk>/', views.lab_order_view, name='order'),
     path('<uuid:pk>/', views.lab_detail_view, name='detail'),
 
+    # ── Patient check-in ─────────────────────────────────────────────────
+    path('<uuid:pk>/check-in/', views.lab_check_in_view, name='check_in'),
+    path('bulk-check-in/', views.lab_bulk_check_in_view, name='bulk_check_in'),
+
     # ── Specimen collection & receipt ────────────────────────────────────
     path('bulk-collect/', views.bulk_collect_sample_view, name='bulk_collect'),
     path('<uuid:pk>/collect-sample/', views.collect_sample_view, name='collect_sample'),
