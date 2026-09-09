@@ -1853,8 +1853,9 @@ def investigation_stats_view(request):
         })
 
     # ── Daily trend ───────────────────────────────────────────────────────────
+    from django.db.models.functions import TruncDate
     daily_raw = (
-        base.extra(select={'day': 'DATE(created_at)'})
+        base.annotate(day=TruncDate('created_at'))
         .values('day').annotate(count=Count('id')).order_by('day')
     )
     daily_json = json.dumps([{'day': str(r['day']), 'count': r['count']} for r in daily_raw])
