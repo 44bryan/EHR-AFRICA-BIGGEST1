@@ -834,9 +834,55 @@ def home_view(request):
         })
         return render(request, 'dashboard/theatre_nurse.html', ctx)
 
-    # ── Investigation Technician → straight to workstation ───────────────
+    # ── Investigation Technician ─────────────────────────────────────────
     if user.is_investigation_tech:
-        return redirect('investigations:workstation')
+        from apps.investigations.models import InvestigationOrder, InvestigationResult
+        today_local = timezone.localdate()
+        _paid = ['PAID', 'INSURED', 'WAIVED', 'PACKAGE', 'STAT_OVERRIDE', 'BILL_LATER', 'FREE_REPEAT']
+
+        paid_base = InvestigationOrder.objects.select_related(
+            'patient', 'investigation_type', 'ordered_by'
+        ).filter(is_deleted=False, payment_status__in=_paid)
+
+        # Pipeline counts
+        expected_count  = paid_base.filter(acquisition_status='SCHEDULED').count()
+        checked_in_count = paid_base.filter(acquisition_status='CHECKED_IN').count()
+        preparing_count = paid_base.filter(acquisition_status='PATIENT_PREPARED').count()
+        in_progress_count = paid_base.filter(acquisition_status='IN_PROGRESS').count()
+
+        # Completed today
+        completed_today = InvestigationOrder.objects.filter(
+            is_deleted=False, status='COMPLETED',
+            updated_at__date=today_local,
+        ).count()
+
+        # My exams today
+        my_today = InvestigationResult.objects.filter(
+            is_deleted=False, performed_by=user,
+            result_date__date=today_local,
+        ).count()
+
+        # Ordered but not paid (for stats tracking)
+        unpaid_count = InvestigationOrder.objects.filter(
+            is_deleted=False, status='ORDERED',
+        ).exclude(payment_status__in=_paid).count()
+
+        # Total ordered today (prescribed)
+        prescribed_today = InvestigationOrder.objects.filter(
+            is_deleted=False, created_at__date=today_local,
+        ).count()
+
+        ctx.update({
+            'expected_count':   expected_count,
+            'checked_in_count': checked_in_count,
+            'preparing_count':  preparing_count,
+            'in_progress_count': in_progress_count,
+            'completed_today':  completed_today,
+            'my_today':         my_today,
+            'unpaid_count':     unpaid_count,
+            'prescribed_today': prescribed_today,
+        })
+        return render(request, 'dashboard/investigation_tech.html', ctx)
 
     # ── Lab Technician — blood/urine/micro only, no eye investigations ──
     if user.is_lab_tech:

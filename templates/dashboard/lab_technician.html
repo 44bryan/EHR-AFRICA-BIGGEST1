@@ -1,0 +1,96 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Lab Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+  .ws-section { margin-bottom: 12px; }
+  .ws-section-hdr {
+    font-size: .9rem; font-weight: 600; color: #334155;
+    padding: 10px 16px; background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .ws-section-hdr .badge { font-size: .78rem; font-weight: 600; }
+  .pt-row { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; }
+  .pt-row:last-child { border-bottom: none; }
+  .stat-num { font-size: 1.4rem; font-weight: 700; color: #1e293b; }
+  .stat-label { font-size: .78rem; color: #64748b; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# -- Header -- #}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0">Laboratory Dashboard</h5>
+    <div class="text-muted small">{{ user.full_name }} &bull; {{ today|date:"d M Y" }}</div>
+  </div>
+  <a href="{% url 'laboratory:dashboard' %}" class="btn btn-sm btn-primary">
+    <i class="bi bi-play-circle me-1"></i>Open Workstation
+  </a>
+</div>
+
+{# -- Pipeline Stats -- #}
+<div class="row g-2 mb-3">
+  <div class="col"><div class="card border text-center py-2 px-1"><div class="stat-num">{{ pending_lab_count }}</div><div class="stat-label">Pending</div></div></div>
+  <div class="col"><div class="card border text-center py-2 px-1"><div class="stat-num">{{ pending_inv_count }}</div><div class="stat-label">Investigations</div></div></div>
+</div>
+
+{# -- Quick Actions -- #}
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <a href="{% url 'laboratory:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-display me-1"></i>Workstation</a>
+  <a href="{% url 'laboratory:stats' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-graph-up me-1"></i>Stats</a>
+  <a href="{% url 'laboratory:list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list-ul me-1"></i>All Orders</a>
+  <a href="{% url 'investigations:list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-search-heart me-1"></i>Eye Investigations</a>
+</div>
+
+{# -- Pending Lab Orders -- #}
+<div class="card border mb-3">
+  <div class="ws-section-hdr">
+    <span><i class="bi bi-droplet me-2"></i>Pending Lab Orders</span>
+    <span class="badge bg-secondary">{{ pending_lab_count }}</span>
+  </div>
+  {% for order in pending_labs %}
+  <div class="pt-row d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <div class="fw-semibold" style="font-size:.92rem;">{{ order.patient.full_name }}</div>
+      <div class="text-muted" style="font-size:.82rem;">
+        {{ order.items.count }} test{{ order.items.count|pluralize }} &bull; {{ order.created_at|timesince }} ago
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span>
+      <span class="badge bg-{% if order.status == 'PROCESSING' %}warning text-dark{% elif order.status == 'SAMPLE_COLLECTED' %}info{% else %}secondary{% endif %}">{{ order.get_status_display }}</span>
+    </div>
+  </div>
+  {% empty %}
+  <div class="text-center py-4 text-muted small">No pending lab orders</div>
+  {% endfor %}
+</div>
+
+{# -- Pending Investigations -- #}
+<div class="card border">
+  <div class="ws-section-hdr">
+    <span><i class="bi bi-search-heart me-2"></i>Pending Eye Investigations</span>
+    <span class="badge bg-secondary">{{ pending_inv_count }}</span>
+  </div>
+  {% for order in pending_investigations %}
+  <div class="pt-row d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <div class="fw-semibold" style="font-size:.92rem;">{{ order.patient.full_name }}</div>
+      <div class="text-muted" style="font-size:.82rem;">
+        {{ order.investigation_type.name }} &bull; {{ order.created_at|timesince }} ago
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ order.urgency }}</span>
+      <a href="{% url 'investigations:add_result' pk=order.pk %}" class="btn btn-sm btn-primary" style="font-size:.8rem;">Enter Result</a>
+    </div>
+  </div>
+  {% empty %}
+  <div class="text-center py-4 text-muted small">No pending investigations</div>
+  {% endfor %}
+</div>
+
+{% endblock %}
