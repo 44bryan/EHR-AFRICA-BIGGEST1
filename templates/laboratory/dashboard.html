@@ -3,16 +3,70 @@
 
 {% block extra_css %}
 <style>
-  .ws-card { transition: box-shadow .15s; }
-  .ws-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
-  .pipeline-header { font-size: .78rem; letter-spacing: .3px; }
-  .wait-badge { font-size: .62rem; }
+  /* ── Kanban Board ─────────────────────────────────────────── */
+  .kb-board { display: flex; gap: 12px; min-height: 60vh; }
+  .kb-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .kb-col-header {
+    padding: 10px 14px; border-radius: 10px 10px 0 0;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: .82rem; font-weight: 700; letter-spacing: .2px;
+  }
+  .kb-col-body {
+    flex: 1; overflow-y: auto; max-height: calc(100vh - 320px);
+    background: #f8f9fa; border-radius: 0 0 10px 10px;
+    padding: 8px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .kb-col-body::-webkit-scrollbar { width: 4px; }
+  .kb-col-body::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+  /* ── Patient Card ─────────────────────────────────────────── */
+  .pt-card {
+    background: #fff; border-radius: 8px; padding: 12px;
+    border: 1px solid #e5e7eb; transition: box-shadow .15s, transform .1s;
+    cursor: default;
+  }
+  .pt-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,.08); transform: translateY(-1px); }
+  .pt-name { font-size: .88rem; font-weight: 600; color: #1e293b; }
+  .pt-id { font-size: .72rem; color: #94a3b8; }
+  .pt-test { font-size: .72rem; font-weight: 500; color: #475569; display: inline-block; background: #f1f5f9; padding: 1px 6px; border-radius: 3px; margin: 1px 2px 1px 0; }
+  .pt-meta { font-size: .7rem; color: #94a3b8; }
+  .pt-badge { font-size: .65rem; padding: 2px 7px; border-radius: 4px; font-weight: 600; }
+  .pt-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .pt-actions .btn { font-size: .72rem; padding: 3px 8px; border-radius: 5px; }
+
+  /* ── Column color themes ──────────────────────────────────── */
+  .kb-expected .kb-col-header { background: #f1f5f9; color: #64748b; }
+  .kb-expected .kb-col-body { background: #f8fafc; }
+  .kb-checkedin .kb-col-header { background: linear-gradient(135deg,#dbeafe,#eff6ff); color: #1d4ed8; }
+  .kb-checkedin .kb-col-body { background: #f0f6ff; }
+  .kb-processing .kb-col-header { background: linear-gradient(135deg,#fef3c7,#fffbeb); color: #b45309; }
+  .kb-processing .kb-col-body { background: #fffdf5; }
+  .kb-done .kb-col-header { background: linear-gradient(135deg,#d1fae5,#ecfdf5); color: #047857; }
+  .kb-done .kb-col-body { background: #f0fdf8; }
+
+  /* ── Wait badges ──────────────────────────────────────────── */
   .wait-ok { color: #16a34a; }
   .wait-warn { color: #d97706; }
   .wait-bad { color: #dc2626; font-weight: 600; }
-  @media (max-width:767px) {
-    .ws-stat-row .col { flex: 0 0 50%; max-width: 50%; }
+
+  /* ── Alert banner ─────────────────────────────────────────── */
+  .alert-banner {
+    background: linear-gradient(90deg,#fef2f2,#fff5f5);
+    border: 1px solid #fecaca; border-radius: 10px;
+    padding: 10px 16px; margin-bottom: 12px;
   }
+  .alert-banner .pt-card { border-color: #fca5a5; }
+
+  /* ── Responsive ───────────────────────────────────────────── */
+  @media (max-width: 991px) {
+    .kb-board { flex-direction: column; }
+    .kb-col-body { max-height: 300px; }
+  }
+  @media (max-width: 767px) {
+    .stat-row .col { flex: 0 0 50%; max-width: 50%; }
+  }
+  .kb-empty { text-align: center; padding: 30px 12px; color: #94a3b8; font-size: .8rem; }
+  .kb-empty i { font-size: 1.6rem; display: block; margin-bottom: 6px; }
 </style>
 {% endblock %}
 
@@ -26,8 +80,7 @@
     </div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
-    <span class="badge bg-light border text-muted d-flex align-items-center gap-1"
-          id="refreshCountdown" title="Auto-refreshes every 30 s">
+    <span class="badge bg-light border text-muted d-flex align-items-center gap-1" title="Auto-refreshes every 30s">
       <i class="bi bi-arrow-clockwise"></i><span id="countdownSec">30</span>s
     </span>
     <a href="{% url 'laboratory:stats' %}" class="btn btn-sm btn-outline-primary">
@@ -41,84 +94,75 @@
 {% endblock %}
 
 {% block content %}
-
 {% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up patient record..." %}
 
-{# -- Pipeline Stat Cards -- #}
-<div class="row g-2 mb-3 ws-stat-row">
+{# ── KPI Stat Cards ─────────────────────────────────────────────────── #}
+<div class="row g-2 mb-3 stat-row">
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-primary mb-0">{{ checked_in_count }}</div>
-      <div class="text-muted small"><i class="bi bi-person-check me-1"></i>Checked In</div>
+      <div class="h4 fw-bold text-muted mb-0">{{ expected_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-person-walking me-1"></i>Expected</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-info mb-0">{{ sample_collected_count }}</div>
-      <div class="text-muted small"><i class="bi bi-collection me-1"></i>Sample Taken</div>
+      <div class="h4 fw-bold text-primary mb-0">{{ checked_in_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-person-check me-1"></i>Checked In</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-warning mb-0">{{ processing_count }}</div>
-      <div class="text-muted small"><i class="bi bi-activity me-1"></i>Processing</div>
+      <div class="h4 fw-bold text-info mb-0">{{ sample_collected_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-collection me-1"></i>Sample Taken</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-success mb-0">{{ completed_today }}</div>
-      <div class="text-muted small"><i class="bi bi-check-circle me-1"></i>Done Today</div>
+      <div class="h4 fw-bold text-warning mb-0">{{ processing_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-activity me-1"></i>Processing</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold {% if critical_count %}text-danger{% else %}text-muted{% endif %} mb-0">{{ critical_count }}</div>
-      <div class="text-muted small"><i class="bi bi-exclamation-octagon me-1"></i>Critical</div>
+      <div class="h4 fw-bold text-success mb-0">{{ completed_today }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-check-circle me-1"></i>Done Today</div>
     </div>
   </div>
 </div>
 
-{# -- Patient Quick Search -- #}
+{# ── Patient Search ─────────────────────────────────────────────────── #}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2 px-3">
     <div class="input-group input-group-sm">
       <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
       <input type="text" id="labPatientSearch" class="form-control border-start-0"
-             placeholder="Search patient by name or ID to view their lab orders..." autocomplete="off">
-      <button class="btn btn-outline-secondary" type="button" id="labSearchClear" title="Clear">
-        <i class="bi bi-x"></i>
-      </button>
+             placeholder="Search patient by name or ID..." autocomplete="off">
+      <button class="btn btn-outline-secondary" type="button" id="labSearchClear" title="Clear"><i class="bi bi-x"></i></button>
     </div>
     <div id="labSearchResults" class="list-group mt-2" style="display:none;"></div>
   </div>
 </div>
 
-{# -- Live queue zone -- auto-refreshes via JS fetch -- #}
-<div id="lab-queue-live">
-
-{# ====================================================================== #}
-{# -- CRITICAL UNVERIFIED RESULTS -- urgent attention -- #}
-{# ====================================================================== #}
+{# ── Critical Results Alert Banner ──────────────────────────────────── #}
 {% if critical_unverified %}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #dc2626!important;">
-  <div class="card-header py-2 d-flex align-items-center justify-content-between" style="background:linear-gradient(90deg,#fef2f2,#fff);">
-    <h6 class="mb-0 fw-bold text-danger pipeline-header">
-      <i class="bi bi-exclamation-octagon-fill me-2"></i>CRITICAL RESULTS -- Requires Immediate Verification
-    </h6>
-    <span class="badge bg-danger">{{ critical_count }}</span>
+<div class="alert-banner">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-exclamation-octagon-fill text-danger"></i>
+    <span class="fw-bold text-danger" style="font-size:.85rem;">Critical Results &mdash; Immediate Verification Required</span>
+    <span class="badge bg-danger ms-1">{{ critical_count }}</span>
   </div>
-  <div class="list-group list-group-flush">
+  <div class="d-flex gap-2 flex-wrap">
     {% for r in critical_unverified %}
-    <div class="list-group-item py-2 px-3 ws-card">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ r.order_item.order.patient.full_name }}</span>
-        <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ r.order_item.test_type.name }}</span>
-        <span class="text-danger fw-bold" style="font-size:.8rem;">{{ r.result_value }} {{ r.result_unit }}</span>
-        <span class="text-muted" style="font-size:.68rem;">{{ r.performed_by|user_display }}</span>
-        <span class="ms-auto d-flex gap-1">
-          <a href="{% url 'laboratory:verify_result' r.id %}" class="btn btn-sm btn-danger py-0 px-2" style="font-size:.75rem;">Verify</a>
-          <a href="{% url 'laboratory:detail' r.order_item.order.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">View</a>
-        </span>
+    <div class="pt-card" style="flex:0 0 auto; min-width:240px;">
+      <div class="pt-name">{{ r.order_item.order.patient.full_name }}</div>
+      <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+        <span class="pt-test">{{ r.order_item.test_type.name }}</span>
+        <span class="fw-bold text-danger" style="font-size:.82rem;">{{ r.result_value }} {{ r.result_unit }}</span>
+      </div>
+      <div class="pt-meta mt-1">{{ r.performed_by|user_display }}</div>
+      <div class="pt-actions mt-2">
+        <a href="{% url 'laboratory:verify_result' r.id %}" class="btn btn-danger"><i class="bi bi-shield-check me-1"></i>Verify</a>
+        <a href="{% url 'laboratory:detail' r.order_item.order.pk %}" class="btn btn-outline-secondary"><i class="bi bi-eye"></i></a>
       </div>
     </div>
     {% endfor %}
@@ -126,271 +170,205 @@
 </div>
 {% endif %}
 
-{# ====================================================================== #}
-{# -- STAGE 1: CHECKED IN -- Patient is here, waiting for phlebotomy -- #}
-{# ====================================================================== #}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #2563eb!important;">
-  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:linear-gradient(90deg,#eff6ff,#fff);">
-    <h6 class="mb-0 fw-bold pipeline-header" style="color:#1d4ed8;">
-      <i class="bi bi-person-check me-2"></i>Checked In -- Waiting for Sample Collection
-    </h6>
-    <span class="badge bg-primary">{{ checked_in_count }}</span>
-  </div>
-  {% if checked_in_orders %}
-  <div class="list-group list-group-flush">
-    {% for order in checked_in_orders %}
-    <div class="list-group-item py-2 px-3 ws-card">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ order.patient.full_name }}</span>
-        <span class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</span>
-        {% if order.urgency != 'ROUTINE' %}
-          <span class="badge bg-danger" style="font-size:.6rem;">{{ order.get_urgency_display }}</span>
-        {% endif %}
-        {% if order.wait_minutes is not None %}
-        <span class="wait-badge {% if order.wait_minutes <= 15 %}wait-ok{% elif order.wait_minutes <= 30 %}wait-warn{% else %}wait-bad{% endif %}">
-          <i class="bi bi-clock me-1"></i>{{ order.wait_minutes }}min wait
-        </span>
-        {% endif %}
-        <span class="ms-auto text-muted" style="font-size:.68rem;">
-          Checked in {{ order.checked_in_at|time:"H:i" }}
-        </span>
-      </div>
-      <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-        {% for item in order.items.all %}
-        <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }} - {{ item.test_type.name }}</span>
-        {% endfor %}
-        <span class="text-muted" style="font-size:.68rem;">Dr. {{ order.ordered_by.last_name|default:order.ordered_by.get_full_name }}</span>
-      </div>
-      {% if order.clinical_indication %}<div class="text-muted fst-italic mt-1" style="font-size:.68rem;"><i class="bi bi-chat-left-text me-1"></i>{{ order.clinical_indication|truncatechars:70 }}</div>{% endif %}
-      <div class="d-flex gap-1 mt-2">
-        <a href="{% url 'laboratory:collect_sample' order.pk %}" class="btn btn-sm btn-primary py-0 px-2" style="font-size:.72rem;">
-          <i class="bi bi-collection me-1"></i>Collect Sample
-        </a>
-        <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
-          <i class="bi bi-eye me-1"></i>Detail
-        </a>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="card-body text-center text-muted py-3 small">
-    <i class="bi bi-inbox d-block mb-1 fs-5"></i>No patients checked in yet.
-  </div>
-  {% endif %}
-</div>
+{# ── KANBAN BOARD ────────────────────────────────────────────────────── #}
+<div id="lab-queue-live">
+<div class="kb-board">
 
-{# ====================================================================== #}
-{# -- STAGE 2: SAMPLE COLLECTED -- Waiting for processing -- #}
-{# ====================================================================== #}
-{% if sample_collected_orders %}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #0ea5e9!important;">
-  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:linear-gradient(90deg,#e0f7ff,#f0faff);">
-    <h6 class="mb-0 fw-bold pipeline-header" style="color:#0284c7;">
-      <i class="bi bi-collection me-2"></i>Sample Collected -- Ready for Processing
-    </h6>
-    <span class="badge bg-info text-white">{{ sample_collected_count }}</span>
-  </div>
-  <div class="list-group list-group-flush">
-    {% for order in sample_collected_orders %}
-    <div class="list-group-item py-2 px-3 ws-card">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ order.patient.full_name }}</span>
-        <span class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</span>
-        {% if order.urgency != 'ROUTINE' %}
-          <span class="badge bg-danger" style="font-size:.6rem;">{{ order.get_urgency_display }}</span>
-        {% endif %}
-        {% if order.elapsed %}
-        <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning fw-semibold{% else %}text-muted{% endif %}"
-              style="font-size:.72rem;">
-          {% if order.elapsed_mins > 240 %}<i class="bi bi-exclamation-triangle-fill me-1"></i>{% endif %}
-          {{ order.elapsed }}
-        </span>
-        {% endif %}
-        <span class="ms-auto text-muted" style="font-size:.7rem;">{{ order.updated_at|time:"H:i" }}</span>
-      </div>
-      <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-        {% for item in order.items.all %}
-        <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
-        {% endfor %}
-      </div>
-      <div class="d-flex gap-1 mt-2">
-        <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-sm btn-info text-white py-0 px-2" style="font-size:.75rem;">
-          <i class="bi bi-pencil-square me-1"></i>Enter Results
-        </a>
-        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.72rem;"
-                data-bs-toggle="modal" data-bs-target="#rejectSampleModal"
-                data-order-id="{{ order.pk }}" data-patient="{{ order.patient.full_name }}">
-          <i class="bi bi-x-circle me-1"></i>Reject
-        </button>
-        <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
-          <i class="bi bi-eye me-1"></i>Detail
-        </a>
-      </div>
+  {# ── COL 1: Expected Arrivals ──────────────────────────────────────── #}
+  <div class="kb-col kb-expected">
+    <div class="kb-col-header">
+      <span><i class="bi bi-person-walking me-2"></i>Expected</span>
+      <span class="badge bg-secondary bg-opacity-25 text-dark">{{ expected_count }}</span>
     </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{# ====================================================================== #}
-{# -- STAGE 3: PROCESSING -- Analysis in progress -- #}
-{# ====================================================================== #}
-{% if processing_orders %}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #f59e0b!important;">
-  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:linear-gradient(90deg,#fffbeb,#fff);">
-    <h6 class="mb-0 fw-bold pipeline-header" style="color:#b45309;">
-      <i class="bi bi-activity me-2"></i>Processing -- Analysis Running
-    </h6>
-    <span class="badge bg-warning text-dark">{{ processing_count }}</span>
-  </div>
-  <div class="list-group list-group-flush">
-    {% for order in processing_orders %}
-    <div class="list-group-item py-2 px-3 ws-card" style="background:#fffef5;">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ order.patient.full_name }}</span>
-        <span class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</span>
-        {% if order.urgency != 'ROUTINE' %}<span class="badge bg-danger" style="font-size:.6rem;">{{ order.get_urgency_display }}</span>{% endif %}
-        {% if order.elapsed %}
-        <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning{% else %}text-muted{% endif %}"
-              style="font-size:.72rem;">{{ order.elapsed }}</span>
-        {% endif %}
-        <span class="ms-auto">
-          <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-sm btn-warning text-dark py-0 px-2" style="font-size:.75rem;">
-            <i class="bi bi-pencil-square me-1"></i>Enter Results
-          </a>
-        </span>
-      </div>
-      <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-        {% for item in order.items.all %}
-        <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
-        {% endfor %}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{# ====================================================================== #}
-{# -- EXPECTED ARRIVALS -- Paid but not yet checked in -- #}
-{# ====================================================================== #}
-{% if expected_arrivals %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center gap-2 flex-wrap">
-    <h6 class="mb-0 fw-semibold pipeline-header text-muted">
-      <i class="bi bi-person-walking me-2"></i>Expected Arrivals -- Paid, Awaiting Check-In
-    </h6>
-    <div class="d-flex align-items-center gap-2 ms-auto">
-      <span class="badge bg-secondary">{{ expected_count }}</span>
+    <div class="kb-col-body">
       {% if expected_arrivals %}
-      <form method="post" action="{% url 'laboratory:bulk_check_in' %}" id="labBulkCheckInAllForm">
-        {% csrf_token %}
-        {% for order in expected_arrivals %}<input type="hidden" name="order_ids" value="{{ order.pk }}">{% endfor %}
-        <button type="submit" class="btn btn-sm btn-outline-primary" onclick="return confirm('Check in ALL expected patients?')" style="font-size:.75rem;">
-          <i class="bi bi-person-check me-1"></i>Check In All
-        </button>
-      </form>
+        {% if expected_arrivals|length > 1 %}
+        <form method="post" action="{% url 'laboratory:bulk_check_in' %}" class="mb-1">
+          {% csrf_token %}
+          {% for order in expected_arrivals %}<input type="hidden" name="order_ids" value="{{ order.pk }}">{% endfor %}
+          <button type="submit" class="btn btn-sm btn-outline-primary w-100" style="font-size:.72rem;" onclick="return confirm('Check in ALL expected patients?')">
+            <i class="bi bi-person-check me-1"></i>Check In All ({{ expected_count }})
+          </button>
+        </form>
+        {% endif %}
+        {% for order in expected_arrivals %}
+        <div class="pt-card">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="pt-name">{{ order.patient.full_name }}</span>
+            {% if order.urgency != 'ROUTINE' %}<span class="pt-badge" style="background:#fee2e2;color:#dc2626;">{{ order.get_urgency_display }}</span>{% endif %}
+          </div>
+          <div class="pt-id">{{ order.patient.patient_id }}</div>
+          <div class="mt-1">
+            {% for item in order.items.all %}
+            <span class="pt-test">{{ item.test_type.code }}</span>
+            {% endfor %}
+          </div>
+          <div class="pt-meta mt-1">
+            <i class="bi bi-person-badge me-1"></i>Dr. {{ order.ordered_by.last_name|default:order.ordered_by.get_full_name }}
+            &bull; {{ order.created_at|time:"H:i" }}
+          </div>
+          <div class="pt-actions mt-2">
+            <form method="post" action="{% url 'laboratory:check_in' order.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary"><i class="bi bi-person-check me-1"></i>Check In</button>
+            </form>
+            <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-outline-secondary"><i class="bi bi-eye"></i></a>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="kb-empty"><i class="bi bi-inbox"></i>No expected arrivals</div>
       {% endif %}
     </div>
   </div>
-  <form method="post" action="{% url 'laboratory:bulk_check_in' %}" id="labBulkSelectForm">
-    {% csrf_token %}
-    <div id="labBulkBar" class="d-none align-items-center gap-2 px-3 py-2 border-bottom bg-light">
-      <span id="labBulkLabel" class="small fw-semibold text-primary"></span>
-      <button type="submit" class="btn btn-sm btn-primary" style="font-size:.75rem;"><i class="bi bi-person-check me-1"></i>Check In Selected</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="labBulkClear" style="font-size:.75rem;">Clear</button>
+
+  {# ── COL 2: Checked In ────────────────────────────────────────────── #}
+  <div class="kb-col kb-checkedin">
+    <div class="kb-col-header">
+      <span><i class="bi bi-person-check me-2"></i>Checked In</span>
+      <span class="badge bg-primary bg-opacity-25 text-primary">{{ checked_in_count }}</span>
     </div>
-    <div class="list-group list-group-flush">
-      {% for order in expected_arrivals %}
-      <div class="list-group-item py-2 px-3 ws-card">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <input type="checkbox" name="order_ids" value="{{ order.pk }}" class="lab-row-chk form-check-input" style="margin-top:0;">
-          <span class="fw-semibold" style="font-size:.88rem;">{{ order.patient.full_name }}</span>
-          <span class="text-muted" style="font-size:.7rem;">{{ order.patient.patient_id }}</span>
-          {% if order.urgency != 'ROUTINE' %}
-            <span class="badge bg-danger" style="font-size:.6rem;">{{ order.get_urgency_display }}</span>
+    <div class="kb-col-body">
+      {% if checked_in_orders %}
+        {% for order in checked_in_orders %}
+        <div class="pt-card">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="pt-name">{{ order.patient.full_name }}</span>
+            {% if order.wait_minutes is not None %}
+            <span class="{% if order.wait_minutes <= 15 %}wait-ok{% elif order.wait_minutes <= 30 %}wait-warn{% else %}wait-bad{% endif %}" style="font-size:.7rem;">
+              <i class="bi bi-clock"></i> {{ order.wait_minutes }}m
+            </span>
+            {% endif %}
+          </div>
+          <div class="pt-id">{{ order.patient.patient_id }}</div>
+          <div class="mt-1">
+            {% for item in order.items.all %}
+            <span class="pt-test">{{ item.test_type.code }} - {{ item.test_type.name }}</span>
+            {% endfor %}
+          </div>
+          {% if order.urgency != 'ROUTINE' %}<span class="pt-badge mt-1" style="background:#fee2e2;color:#dc2626;">{{ order.get_urgency_display }}</span>{% endif %}
+          {% if order.clinical_indication %}
+          <div class="pt-meta mt-1 fst-italic"><i class="bi bi-chat-left-text me-1"></i>{{ order.clinical_indication|truncatechars:50 }}</div>
           {% endif %}
-          <span class="badge bg-success" style="font-size:.55rem;"><i class="bi bi-check-circle"></i> Paid</span>
-          <span class="ms-auto text-muted" style="font-size:.7rem;">Ordered {{ order.created_at|time:"H:i" }}</span>
+          <div class="pt-meta mt-1">Checked in {{ order.checked_in_at|time:"H:i" }} &bull; Dr. {{ order.ordered_by.last_name|default:order.ordered_by.get_full_name }}</div>
+          <div class="pt-actions mt-2">
+            <a href="{% url 'laboratory:collect_sample' order.pk %}" class="btn btn-primary"><i class="bi bi-collection me-1"></i>Collect Sample</a>
+            <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-outline-secondary"><i class="bi bi-eye"></i></a>
+          </div>
         </div>
-        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-          {% for item in order.items.all %}
-          <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }} - {{ item.test_type.name }}</span>
-          {% endfor %}
-          <span class="text-muted" style="font-size:.68rem;">Dr. {{ order.ordered_by.last_name|default:order.ordered_by.get_full_name }}</span>
+        {% endfor %}
+      {% else %}
+        <div class="kb-empty"><i class="bi bi-person-check"></i>No patients checked in</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── COL 3: Sample Collected + Processing ──────────────────────────── #}
+  <div class="kb-col kb-processing">
+    <div class="kb-col-header">
+      <span><i class="bi bi-activity me-2"></i>Processing</span>
+      <span class="badge bg-warning bg-opacity-25 text-dark">{{ sample_collected_count|add:processing_count }}</span>
+    </div>
+    <div class="kb-col-body">
+      {% for order in sample_collected_orders %}
+      <div class="pt-card" style="border-left: 3px solid #0ea5e9;">
+        <div class="d-flex align-items-center justify-content-between">
+          <span class="pt-name">{{ order.patient.full_name }}</span>
+          {% if order.elapsed %}
+          <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning{% else %}text-muted{% endif %}" style="font-size:.7rem;">
+            {% if order.elapsed_mins > 240 %}<i class="bi bi-exclamation-triangle-fill"></i>{% endif %} {{ order.elapsed }}
+          </span>
+          {% endif %}
         </div>
-        <div class="d-flex gap-1 mt-2">
-          <form method="post" action="{% url 'laboratory:check_in' order.pk %}" class="d-inline">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:.72rem;">
-              <i class="bi bi-person-check me-1"></i>Check In
-            </button>
-          </form>
-          <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
-            <i class="bi bi-eye me-1"></i>Detail
-          </a>
+        <div class="mt-1">
+          {% for item in order.items.all %}<span class="pt-test">{{ item.test_type.code }}</span>{% endfor %}
+        </div>
+        <div class="pt-meta mt-1"><i class="bi bi-collection-fill me-1 text-info"></i>Sample collected &bull; {{ order.updated_at|time:"H:i" }}</div>
+        <div class="pt-actions mt-2">
+          <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-info text-white"><i class="bi bi-pencil-square me-1"></i>Enter Results</a>
+          <button type="button" class="btn btn-outline-danger"
+                  data-bs-toggle="modal" data-bs-target="#rejectSampleModal"
+                  data-order-id="{{ order.pk }}" data-patient="{{ order.patient.full_name }}">
+            <i class="bi bi-x-circle"></i>
+          </button>
         </div>
       </div>
       {% endfor %}
+      {% for order in processing_orders %}
+      <div class="pt-card" style="border-left: 3px solid #f59e0b;">
+        <div class="d-flex align-items-center justify-content-between">
+          <span class="pt-name">{{ order.patient.full_name }}</span>
+          {% if order.elapsed %}
+          <span class="{% if order.elapsed_mins > 240 %}text-danger fw-bold{% elif order.elapsed_mins > 120 %}text-warning{% else %}text-muted{% endif %}" style="font-size:.7rem;">
+            {{ order.elapsed }}
+          </span>
+          {% endif %}
+        </div>
+        <div class="mt-1">
+          {% for item in order.items.all %}<span class="pt-test">{{ item.test_type.code }}</span>{% endfor %}
+        </div>
+        <div class="pt-meta mt-1"><i class="bi bi-activity me-1 text-warning"></i>Analysis running</div>
+        <div class="pt-actions mt-2">
+          <a href="{% url 'laboratory:enter_results' order.pk %}" class="btn btn-warning text-dark"><i class="bi bi-pencil-square me-1"></i>Enter Results</a>
+        </div>
+      </div>
+      {% endfor %}
+      {% if not sample_collected_orders and not processing_orders %}
+        <div class="kb-empty"><i class="bi bi-activity"></i>No samples processing</div>
+      {% endif %}
     </div>
-  </form>
-</div>
-{% endif %}
+  </div>
 
+  {# ── COL 4: Completed Today ───────────────────────────────────────── #}
+  <div class="kb-col kb-done">
+    <div class="kb-col-header">
+      <span><i class="bi bi-check-circle me-2"></i>Done Today</span>
+      <span class="badge bg-success bg-opacity-25 text-success">{{ completed_today }}</span>
+    </div>
+    <div class="kb-col-body">
+      {% if completed_today_list %}
+        {% for order in completed_today_list %}
+        <div class="pt-card">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="pt-name">{{ order.patient.full_name }}</span>
+            <span class="pt-meta">{{ order.updated_at|time:"H:i" }}</span>
+          </div>
+          <div class="mt-1">
+            {% for item in order.items.all %}<span class="pt-test">{{ item.test_type.code }}</span>{% endfor %}
+          </div>
+          <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+            {% for item in order.items.all %}
+              {% if item.result %}
+                {% if item.result.is_critical %}<span class="pt-badge" style="background:#fee2e2;color:#dc2626;">Critical</span>
+                {% elif item.result.is_abnormal %}<span class="pt-badge" style="background:#fef3c7;color:#92400e;">Abnormal</span>
+                {% else %}<span class="pt-badge" style="background:#d1fae5;color:#047857;">Normal</span>{% endif %}
+              {% endif %}
+            {% endfor %}
+            {% with first_item=order.items.all.0 %}
+            {% if first_item and first_item.result and first_item.result.is_verified %}
+              <span class="pt-badge" style="background:#d1fae5;color:#047857;"><i class="bi bi-patch-check"></i> Verified</span>
+            {% else %}
+              <span class="pt-badge" style="background:#fef3c7;color:#92400e;">Unverified</span>
+            {% endif %}
+            {% endwith %}
+          </div>
+          <div class="pt-actions mt-2">
+            <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-outline-secondary"><i class="bi bi-eye"></i></a>
+            <a href="{% url 'laboratory:result_pdf' order.pk %}" class="btn btn-outline-danger" target="_blank"><i class="bi bi-printer"></i></a>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="kb-empty"><i class="bi bi-check-circle"></i>Nothing completed yet</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>{# /kb-board #}
 </div>{# /lab-queue-live #}
 
-{# ====================================================================== #}
-{# -- COMPLETED TODAY -- #}
-{# ====================================================================== #}
-{% if completed_today_list %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold pipeline-header">
-      <i class="bi bi-check-circle me-2 text-success"></i>Completed Today
-    </h6>
-    <span class="badge bg-success">{{ completed_today }}</span>
-  </div>
-  <div class="list-group list-group-flush">
-    {% for order in completed_today_list %}
-    <div class="list-group-item py-2 px-3 ws-card">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.85rem;">{{ order.patient.full_name }}</span>
-        {% for item in order.items.all %}
-        <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ item.test_type.code }}</span>
-        {% endfor %}
-        {% for item in order.items.all %}
-          {% if item.result %}
-            {% if item.result.is_critical %}<span class="badge bg-danger" style="font-size:.55rem;">Critical</span>
-            {% elif item.result.is_abnormal %}<span class="badge bg-warning text-dark" style="font-size:.55rem;">Abnormal</span>
-            {% else %}<span class="badge bg-success" style="font-size:.55rem;">Normal</span>{% endif %}
-          {% endif %}
-        {% endfor %}
-        {% with first_item=order.items.all.0 %}
-        {% if first_item and first_item.result and first_item.result.is_verified %}
-          <span class="badge bg-success" style="font-size:.5rem;"><i class="bi bi-patch-check"></i> Verified</span>
-        {% else %}
-          <span class="badge bg-outline-warning border text-warning" style="font-size:.5rem;">Unverified</span>
-        {% endif %}
-        {% endwith %}
-        <span class="ms-auto d-flex align-items-center gap-1">
-          <span class="text-muted" style="font-size:.68rem;">{{ order.updated_at|time:"H:i" }}</span>
-          <a href="{% url 'laboratory:detail' order.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:.72rem;">
-            <i class="bi bi-eye"></i>
-          </a>
-          <a href="{% url 'laboratory:result_pdf' order.pk %}" class="btn btn-sm btn-outline-danger py-0 px-1" target="_blank" style="font-size:.72rem;">
-            <i class="bi bi-printer"></i>
-          </a>
-        </span>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{# -- Month Summary -- #}
-<div class="row g-3 mb-4">
+{# ── Month Summary (below the board) ────────────────────────────────── #}
+<div class="row g-3 mt-3 mb-4">
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold border-bottom py-2 small">
@@ -439,18 +417,18 @@
   </div>
 </div>
 
-{# -- Sample Rejection Modal -- ISO 15189 -- #}
+{# ── Sample Rejection Modal ──────────────────────────────────────────── #}
 <div class="modal fade" id="rejectSampleModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header bg-danger text-white py-2">
-        <h6 class="modal-title"><i class="bi bi-x-circle me-2"></i>Reject Sample -- <span id="rejectPatientName"></span></h6>
+        <h6 class="modal-title"><i class="bi bi-x-circle me-2"></i>Reject Sample &mdash; <span id="rejectPatientName"></span></h6>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <form method="post" id="rejectSampleForm" action="">
         {% csrf_token %}
         <div class="modal-body">
-          <p class="small text-muted mb-3">ISO 15189 -- This will reset the order to <strong>ORDERED</strong> status and notify the requesting doctor.</p>
+          <p class="small text-muted mb-3">ISO 15189 &mdash; This will reset the order to <strong>ORDERED</strong> status and notify the requesting doctor.</p>
           <div class="mb-3">
             <label class="form-label fw-semibold small">Rejection Reason <span class="text-danger">*</span></label>
             <select name="rejection_reason" class="form-select form-select-sm" required>
@@ -473,9 +451,7 @@
         </div>
         <div class="modal-footer py-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-sm btn-danger">
-            <i class="bi bi-x-circle me-1"></i>Reject Sample
-          </button>
+          <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-x-circle me-1"></i>Reject Sample</button>
         </div>
       </form>
     </div>
@@ -486,20 +462,18 @@
 
 {% block extra_js %}
 <script>
-/* -- Sample rejection modal -- wire up order ID -- */
+/* ── Sample rejection modal wiring ────────────────────────────────────── */
 (function(){
   var modal = document.getElementById('rejectSampleModal');
   if (!modal) return;
   modal.addEventListener('show.bs.modal', function(e) {
     var btn = e.relatedTarget;
-    var orderId = btn.getAttribute('data-order-id');
-    var patient = btn.getAttribute('data-patient');
-    modal.querySelector('#rejectPatientName').textContent = patient;
-    modal.querySelector('#rejectSampleForm').action = '/laboratory/' + orderId + '/reject-sample/';
+    modal.querySelector('#rejectPatientName').textContent = btn.getAttribute('data-patient');
+    modal.querySelector('#rejectSampleForm').action = '/laboratory/' + btn.getAttribute('data-order-id') + '/reject-sample/';
   });
 })();
 
-/* -- WebSocket live refresh -- partial DOM swap -- */
+/* ── WebSocket live refresh ───────────────────────────────────────────── */
 (function(){
   var QID='lab-queue-live',ROOMS=['lab'],_busy=false,_pend=false,_fb;
   function isModal(){return !!document.querySelector('.modal.show');}
@@ -530,18 +504,14 @@
   startFb();
 })();
 
-/* -- Patient search (debounced AJAX) -- */
+/* ── Patient search ───────────────────────────────────────────────────── */
 (function () {
   var input = document.getElementById('labPatientSearch');
   var results = document.getElementById('labSearchResults');
   var clearBtn = document.getElementById('labSearchClear');
   if (!input || !results) return;
 
-  function clearSearch() {
-    input.value = '';
-    results.style.display = 'none';
-    results.innerHTML = '';
-  }
+  function clearSearch() { input.value = ''; results.style.display = 'none'; results.innerHTML = ''; }
   if (clearBtn) clearBtn.addEventListener('click', clearSearch);
 
   var timer;
@@ -573,40 +543,9 @@
     }, 280);
   });
 
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') clearSearch();
-  });
-
+  input.addEventListener('keydown', function (e) { if (e.key === 'Escape') clearSearch(); });
   document.addEventListener('click', function (e) {
-    if (!input.contains(e.target) && !results.contains(e.target)) {
-      results.style.display = 'none';
-    }
-  });
-})();
-
-/* -- Lab bulk check-in checkboxes -- */
-(function () {
-  var bar      = document.getElementById('labBulkBar');
-  var label    = document.getElementById('labBulkLabel');
-  var clearBtn = document.getElementById('labBulkClear');
-  if (!bar) return;
-
-  function syncBar() {
-    var checked = document.querySelectorAll('.lab-row-chk:checked');
-    if (checked.length > 0) {
-      label.textContent = checked.length + ' patient(s) selected';
-      bar.classList.remove('d-none'); bar.classList.add('d-flex');
-    } else {
-      bar.classList.add('d-none'); bar.classList.remove('d-flex');
-    }
-  }
-
-  document.addEventListener('change', function(e){
-    if (e.target.classList.contains('lab-row-chk')) syncBar();
-  });
-  if (clearBtn) clearBtn.addEventListener('click', function(){
-    document.querySelectorAll('.lab-row-chk').forEach(function(c){ c.checked = false; });
-    syncBar();
+    if (!input.contains(e.target) && !results.contains(e.target)) results.style.display = 'none';
   });
 })();
 </script>

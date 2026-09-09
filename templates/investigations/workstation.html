@@ -3,21 +3,78 @@
 
 {% block extra_css %}
 <style>
-  .ws-card { transition: box-shadow .15s; }
-  .ws-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
-  .dil-before { background: #fef3c7; border-color: #f59e0b !important; }
-  .dil-after { background: #dbeafe; border-color: #3b82f6 !important; }
-  .tat-good { color: #16a34a; }
-  .tat-warn { color: #d97706; }
-  .tat-bad { color: #dc2626; font-weight: 600; }
-  .pipeline-header { font-size: .78rem; letter-spacing: .3px; }
-  .wait-badge { font-size: .62rem; }
+  /* ── Kanban Board ─────────────────────────────────────────── */
+  .kb-board { display: flex; gap: 12px; min-height: 60vh; }
+  .kb-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .kb-col-header {
+    padding: 10px 14px; border-radius: 10px 10px 0 0;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: .82rem; font-weight: 700; letter-spacing: .2px;
+  }
+  .kb-col-body {
+    flex: 1; overflow-y: auto; max-height: calc(100vh - 320px);
+    background: #f8f9fa; border-radius: 0 0 10px 10px;
+    padding: 8px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .kb-col-body::-webkit-scrollbar { width: 4px; }
+  .kb-col-body::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+  /* ── Patient Card ─────────────────────────────────────────── */
+  .pt-card {
+    background: #fff; border-radius: 8px; padding: 12px;
+    border: 1px solid #e5e7eb; transition: box-shadow .15s, transform .1s;
+    cursor: default;
+  }
+  .pt-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,.08); transform: translateY(-1px); }
+  .pt-name { font-size: .88rem; font-weight: 600; color: #1e293b; }
+  .pt-id { font-size: .72rem; color: #94a3b8; }
+  .pt-exam { font-size: .76rem; font-weight: 500; color: #475569; }
+  .pt-meta { font-size: .7rem; color: #94a3b8; }
+  .pt-badge { font-size: .65rem; padding: 2px 7px; border-radius: 4px; font-weight: 600; }
+  .pt-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .pt-actions .btn { font-size: .72rem; padding: 3px 8px; border-radius: 5px; }
+
+  /* ── Column color themes ──────────────────────────────────── */
+  .kb-expected .kb-col-header { background: #f1f5f9; color: #64748b; }
+  .kb-expected .kb-col-body { background: #f8fafc; }
+  .kb-checkedin .kb-col-header { background: linear-gradient(135deg,#dbeafe,#eff6ff); color: #1d4ed8; }
+  .kb-checkedin .kb-col-body { background: #f0f6ff; }
+  .kb-preparing .kb-col-header { background: linear-gradient(135deg,#fef3c7,#fffbeb); color: #b45309; }
+  .kb-preparing .kb-col-body { background: #fffdf5; }
+  .kb-inprogress .kb-col-header { background: linear-gradient(135deg,#cffafe,#e0f7ff); color: #0369a1; }
+  .kb-inprogress .kb-col-body { background: #f0faff; }
+  .kb-done .kb-col-header { background: linear-gradient(135deg,#d1fae5,#ecfdf5); color: #047857; }
+  .kb-done .kb-col-body { background: #f0fdf8; }
+
+  /* ── Wait / dilation badges ───────────────────────────────── */
   .wait-ok { color: #16a34a; }
   .wait-warn { color: #d97706; }
   .wait-bad { color: #dc2626; font-weight: 600; }
-  @media (max-width:767px) {
-    .ws-stat-row .col { flex: 0 0 50%; max-width: 50%; }
+  .dil-tag { display: inline-flex; align-items: center; gap: 3px; font-size: .65rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+  .dil-before { background: #fef3c7; color: #92400e; }
+  .dil-after  { background: #dbeafe; color: #1e40af; }
+  .dil-ready  { background: #d1fae5; color: #047857; }
+
+  /* ── Alert banner ─────────────────────────────────────────── */
+  .alert-banner {
+    background: linear-gradient(90deg,#fef2f2,#fff5f5);
+    border: 1px solid #fecaca; border-radius: 10px;
+    padding: 10px 16px; margin-bottom: 12px;
   }
+  .alert-banner .pt-card { border-color: #fca5a5; }
+
+  /* ── Responsive: stack on small screens ───────────────────── */
+  @media (max-width: 991px) {
+    .kb-board { flex-direction: column; }
+    .kb-col-body { max-height: 300px; }
+  }
+  @media (max-width: 767px) {
+    .stat-row .col { flex: 0 0 50%; max-width: 50%; }
+  }
+
+  /* ── Empty state ──────────────────────────────────────────── */
+  .kb-empty { text-align: center; padding: 30px 12px; color: #94a3b8; font-size: .8rem; }
+  .kb-empty i { font-size: 1.6rem; display: block; margin-bottom: 6px; }
 </style>
 {% endblock %}
 
@@ -31,7 +88,7 @@
     </div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
-    <span class="badge bg-light border text-muted d-flex align-items-center gap-1" title="Auto-refreshes every 30 s">
+    <span class="badge bg-light border text-muted d-flex align-items-center gap-1" title="Auto-refreshes every 30s">
       <i class="bi bi-arrow-clockwise"></i><span id="wsRefreshCountdown">30s</span>
     </span>
     <a href="{% url 'investigations:stats' %}" class="btn btn-sm btn-outline-primary">
@@ -47,41 +104,41 @@
 {% block content %}
 {% include "components/qr_scan_bar.html" with placeholder="Scan patient card to pull up their investigation orders..." %}
 
-{# -- Pipeline Stat Cards -- #}
-<div class="row g-2 mb-3 ws-stat-row">
+{# ── KPI Stat Cards ─────────────────────────────────────────────────── #}
+<div class="row g-2 mb-3 stat-row">
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-primary mb-0">{{ checked_in_count }}</div>
-      <div class="text-muted small"><i class="bi bi-person-check me-1"></i>Checked In</div>
+      <div class="h4 fw-bold text-muted mb-0">{{ expected_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-person-walking me-1"></i>Expected</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-warning mb-0">{{ preparing_count }}</div>
-      <div class="text-muted small"><i class="bi bi-droplet-half me-1"></i>Preparing</div>
+      <div class="h4 fw-bold text-primary mb-0">{{ checked_in_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-person-check me-1"></i>Checked In</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-info mb-0">{{ in_progress_count }}</div>
-      <div class="text-muted small"><i class="bi bi-activity me-1"></i>In Progress</div>
+      <div class="h4 fw-bold text-warning mb-0">{{ preparing_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-droplet-half me-1"></i>Preparing</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-success mb-0">{{ completed_count }}</div>
-      <div class="text-muted small"><i class="bi bi-check-circle me-1"></i>Done Today</div>
+      <div class="h4 fw-bold text-info mb-0">{{ in_progress_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-activity me-1"></i>In Progress</div>
     </div>
   </div>
   <div class="col-6 col-md-3 col-lg">
     <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold {% if quality_failed_count %}text-danger{% else %}text-muted{% endif %} mb-0">{{ quality_failed_count }}</div>
-      <div class="text-muted small"><i class="bi bi-exclamation-triangle me-1"></i>Quality Fail</div>
+      <div class="h4 fw-bold text-success mb-0">{{ completed_count }}</div>
+      <div class="text-muted" style="font-size:.75rem;"><i class="bi bi-check-circle me-1"></i>Done Today</div>
     </div>
   </div>
 </div>
 
-{# -- Patient Quick Search -- #}
+{# ── Patient Search ─────────────────────────────────────────────────── #}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2 px-3">
     <div class="input-group input-group-sm">
@@ -94,155 +151,26 @@
   </div>
 </div>
 
-{# -- Live queue zone -- auto-refreshes via JS fetch -- #}
-<div id="inv-live-zone">
-
-{# ====================================================================== #}
-{# -- QUALITY FAILED -- Needs Repeat (top priority alert) -- #}
-{# ====================================================================== #}
+{# ── Quality Failed Alert Banner ────────────────────────────────────── #}
 {% if quality_failed %}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #dc2626!important;">
-  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:linear-gradient(90deg,#fef2f2,#fff);">
-    <h6 class="mb-0 fw-bold text-danger pipeline-header">
-      <i class="bi bi-arrow-repeat me-2"></i>Quality Failed -- Needs Repeat
-    </h6>
-    <span class="badge bg-danger">{{ quality_failed|length }}</span>
+<div class="alert-banner">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+    <span class="fw-bold text-danger" style="font-size:.85rem;">Quality Failed &mdash; Needs Repeat</span>
+    <span class="badge bg-danger ms-1">{{ quality_failed|length }}</span>
   </div>
-  <div class="list-group list-group-flush">
+  <div class="d-flex gap-2 flex-wrap">
     {% for o in quality_failed %}
-    <div class="list-group-item py-2 px-3 ws-card">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ o.patient.full_name }}</span>
-        <span class="badge bg-danger" style="font-size:.6rem;">QUALITY FAIL</span>
-        <span class="badge bg-light text-dark border" style="font-size:.6rem;">{{ o.investigation_type.name }}</span>
-        <span class="badge bg-secondary" style="font-size:.6rem;">{{ o.get_eye_display }}</span>
-        <span class="ms-auto">
-          <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-sm btn-danger py-0 px-2" style="font-size:.75rem;">
-            <i class="bi bi-arrow-repeat me-1"></i>Repeat
-          </a>
-        </span>
+    <div class="pt-card" style="flex:0 0 auto; min-width:220px;">
+      <div class="pt-name">{{ o.patient.full_name }}</div>
+      <div class="d-flex align-items-center gap-1 mt-1">
+        <span class="pt-badge" style="background:#fee2e2;color:#dc2626;">QUALITY FAIL</span>
+        <span class="pt-exam">{{ o.investigation_type.name }}</span>
+        <span class="pt-badge" style="background:#f1f5f9;color:#475569;">{{ o.get_eye_display }}</span>
       </div>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{# ====================================================================== #}
-{# -- STAGE 1: CHECKED IN -- Patient is here, waiting -- #}
-{# ====================================================================== #}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #2563eb!important;">
-  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:linear-gradient(90deg,#eff6ff,#fff);">
-    <h6 class="mb-0 fw-bold pipeline-header" style="color:#1d4ed8;">
-      <i class="bi bi-person-check me-2"></i>Checked In -- Waiting for Exam
-    </h6>
-    <span class="badge bg-primary">{{ checked_in_count }}</span>
-  </div>
-  {% if checked_in_orders %}
-  <div class="list-group list-group-flush">
-    {% for o in checked_in_orders %}
-    <div class="list-group-item py-2 px-3 ws-card">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ o.patient.full_name }}</span>
-        <span class="text-muted" style="font-size:.7rem;">{{ o.patient.patient_id }}</span>
-        {% if o.urgency != 'ROUTINE' %}
-          <span class="badge bg-danger" style="font-size:.6rem;">{{ o.get_urgency_display }}</span>
-        {% endif %}
-        {# Wait time #}
-        {% if o.wait_minutes is not None %}
-        <span class="wait-badge {% if o.wait_minutes <= 15 %}wait-ok{% elif o.wait_minutes <= 30 %}wait-warn{% else %}wait-bad{% endif %}">
-          <i class="bi bi-clock me-1"></i>{{ o.wait_minutes }}min wait
-        </span>
-        {% endif %}
-        <span class="ms-auto text-muted" style="font-size:.68rem;">
-          Checked in {{ o.checked_in_at|time:"H:i" }}
-        </span>
-      </div>
-      <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-        <span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ o.investigation_type.name }}</span>
-        <span class="badge bg-secondary" style="font-size:.65rem;">{{ o.get_eye_display }}</span>
-        <span class="badge bg-light text-muted border" style="font-size:.6rem;">{{ o.investigation_type.get_category_display }}</span>
-        {% if o.dilation_req == 'BEFORE' %}
-        <span class="badge dil-before" style="font-size:.6rem;"><i class="bi bi-exclamation-triangle me-1"></i>PRE-DILATION ONLY</span>
-        {% elif o.dilation_req == 'AFTER' %}
-        <span class="badge dil-after" style="font-size:.6rem;"><i class="bi bi-droplet-fill me-1"></i>Needs Dilation</span>
-        {% endif %}
-        <span class="text-muted" style="font-size:.68rem;">Dr. {{ o.ordered_by.last_name|default:o.ordered_by.get_full_name }}</span>
-      </div>
-      {% if o.clinical_indication %}<div class="text-muted fst-italic mt-1" style="font-size:.68rem;"><i class="bi bi-chat-left-text me-1"></i>{{ o.clinical_indication|truncatechars:70 }}</div>{% endif %}
-      <div class="d-flex gap-1 mt-2">
-        {% if o.dilation_req == 'AFTER' %}
-        <button type="button" class="btn btn-sm btn-outline-info py-0 px-2" style="font-size:.72rem;"
-                data-bs-toggle="modal" data-bs-target="#dilationModal" data-order-id="{{ o.pk }}" data-patient="{{ o.patient.full_name }}">
-          <i class="bi bi-droplet-fill me-1"></i>Start Dilation
-        </button>
-        {% endif %}
-        <form method="post" action="{% url 'investigations:start' pk=o.pk %}" class="d-inline">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-primary py-0 px-2" style="font-size:.72rem;">
-            <i class="bi bi-play-circle me-1"></i>Start Exam
-          </button>
-        </form>
-        <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.72rem;">
-          <i class="bi bi-pencil-square me-1"></i>Enter Result
-        </a>
-        <a href="{% url 'investigations:print_slip' pk=o.pk %}" class="btn btn-sm btn-outline-dark py-0 px-2" target="_blank" style="font-size:.72rem;">
-          <i class="bi bi-printer me-1"></i>Slip
-        </a>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="card-body text-center text-muted py-3 small">
-    <i class="bi bi-inbox d-block mb-1 fs-5"></i>No patients checked in yet.
-  </div>
-  {% endif %}
-</div>
-
-{# ====================================================================== #}
-{# -- STAGE 2: PREPARING -- Dilation / prep in progress -- #}
-{# ====================================================================== #}
-{% if preparing_orders %}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #f59e0b!important;">
-  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:linear-gradient(90deg,#fffbeb,#fff);">
-    <h6 class="mb-0 fw-bold pipeline-header" style="color:#b45309;">
-      <i class="bi bi-droplet-half me-2"></i>Preparing -- Dilation / Prep
-    </h6>
-    <span class="badge bg-warning text-dark">{{ preparing_count }}</span>
-  </div>
-  <div class="list-group list-group-flush">
-    {% for o in preparing_orders %}
-    <div class="list-group-item py-2 px-3 ws-card" style="background:#fffef5;">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ o.patient.full_name }}</span>
-        <span class="text-muted" style="font-size:.7rem;">{{ o.patient.patient_id }}</span>
-        <span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ o.investigation_type.name }}</span>
-        <span class="badge bg-secondary" style="font-size:.65rem;">{{ o.get_eye_display }}</span>
-        {% if o.dilation_agent %}
-        <span class="badge bg-warning text-dark" style="font-size:.6rem;">
-          <i class="bi bi-droplet-fill me-1"></i>{{ o.dilation_agent }}
-        </span>
-        {% endif %}
-        {% if o.mins_remaining is not None %}
-        <span class="ms-auto {% if o.mins_remaining <= 0 %}text-success fw-bold{% elif o.mins_remaining <= 5 %}text-warning{% else %}text-muted{% endif %}" style="font-size:.72rem;">
-          {% if o.mins_remaining <= 0 %}
-            <i class="bi bi-check-circle-fill me-1"></i>Ready!
-          {% else %}
-            <i class="bi bi-hourglass-split me-1"></i>~{{ o.mins_remaining }}min remaining
-          {% endif %}
-        </span>
-        {% endif %}
-      </div>
-      <div class="d-flex gap-1 mt-2">
-        <form method="post" action="{% url 'investigations:start' pk=o.pk %}" class="d-inline">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-primary py-0 px-2" style="font-size:.72rem;">
-            <i class="bi bi-play-circle me-1"></i>Start Exam
-          </button>
-        </form>
-        <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.72rem;">
-          <i class="bi bi-pencil-square me-1"></i>Enter Result
+      <div class="pt-actions mt-2">
+        <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-sm btn-danger">
+          <i class="bi bi-arrow-repeat me-1"></i>Repeat
         </a>
       </div>
     </div>
@@ -251,160 +179,217 @@
 </div>
 {% endif %}
 
-{# ====================================================================== #}
-{# -- STAGE 3: IN PROGRESS -- Exam happening now -- #}
-{# ====================================================================== #}
-{% if in_progress_orders %}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #0ea5e9!important;">
-  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:linear-gradient(90deg,#e0f7ff,#f0faff);">
-    <h6 class="mb-0 fw-bold pipeline-header" style="color:#0284c7;">
-      <i class="bi bi-activity me-2"></i>In Progress -- Exam Running
-    </h6>
-    <span class="badge bg-info text-white">{{ in_progress_count }}</span>
-  </div>
-  <div class="list-group list-group-flush">
-    {% for o in in_progress_orders %}
-    <div class="list-group-item py-2 px-3 ws-card" style="background:#f0faff;">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.88rem;">{{ o.patient.full_name }}</span>
-        <span class="text-muted" style="font-size:.7rem;">{{ o.patient.patient_id }}</span>
-        <span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ o.investigation_type.name }}</span>
-        <span class="badge bg-secondary" style="font-size:.65rem;">{{ o.get_eye_display }}</span>
-        {% if o.urgency != 'ROUTINE' %}<span class="badge bg-danger" style="font-size:.6rem;">{{ o.get_urgency_display }}</span>{% endif %}
-        <span class="ms-auto text-muted" style="font-size:.68rem;">Started {{ o.updated_at|timesince }} ago</span>
-      </div>
-      <div class="d-flex gap-1 mt-2">
-        <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-sm btn-info text-white py-0 px-2" style="font-size:.75rem;">
-          <i class="bi bi-pencil-square me-1"></i>Enter Result
-        </a>
-        <a href="{% url 'investigations:detail' pk=o.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
-          <i class="bi bi-eye me-1"></i>Detail
-        </a>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
+{# ── KANBAN BOARD ────────────────────────────────────────────────────── #}
+<div id="inv-live-zone">
+<div class="kb-board">
 
-{# ====================================================================== #}
-{# -- EXPECTED ARRIVALS -- Paid but not yet checked in -- #}
-{# ====================================================================== #}
-{% if expected_arrivals %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center gap-2 flex-wrap">
-    <h6 class="mb-0 fw-semibold pipeline-header text-muted">
-      <i class="bi bi-person-walking me-2"></i>Expected Arrivals -- Paid, Awaiting Check-In
-    </h6>
-    <div class="d-flex align-items-center gap-2 ms-auto">
-      <span class="badge bg-secondary">{{ expected_count }}</span>
+  {# ── COL 1: Expected Arrivals ──────────────────────────────────────── #}
+  <div class="kb-col kb-expected">
+    <div class="kb-col-header">
+      <span><i class="bi bi-person-walking me-2"></i>Expected</span>
+      <span class="badge bg-secondary bg-opacity-25 text-dark">{{ expected_count }}</span>
+    </div>
+    <div class="kb-col-body">
       {% if expected_arrivals %}
-      <form method="post" action="{% url 'investigations:bulk_check_in' %}" id="bulkCheckInAllForm">
-        {% csrf_token %}
-        {% for o in expected_arrivals %}<input type="hidden" name="order_ids" value="{{ o.pk }}">{% endfor %}
-        <button type="submit" class="btn btn-sm btn-outline-primary" onclick="return confirm('Check in ALL expected patients?')" style="font-size:.75rem;">
-          <i class="bi bi-person-check me-1"></i>Check In All
-        </button>
-      </form>
+        {% if expected_arrivals|length > 1 %}
+        <form method="post" action="{% url 'investigations:bulk_check_in' %}" class="mb-1">
+          {% csrf_token %}
+          {% for o in expected_arrivals %}<input type="hidden" name="order_ids" value="{{ o.pk }}">{% endfor %}
+          <button type="submit" class="btn btn-sm btn-outline-primary w-100" style="font-size:.72rem;" onclick="return confirm('Check in ALL expected patients?')">
+            <i class="bi bi-person-check me-1"></i>Check In All ({{ expected_count }})
+          </button>
+        </form>
+        {% endif %}
+        {% for o in expected_arrivals %}
+        <div class="pt-card">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="pt-name">{{ o.patient.full_name }}</span>
+            {% if o.urgency != 'ROUTINE' %}<span class="pt-badge" style="background:#fee2e2;color:#dc2626;">{{ o.get_urgency_display }}</span>{% endif %}
+          </div>
+          <div class="pt-id">{{ o.patient.patient_id }}</div>
+          <div class="pt-exam mt-1">
+            <i class="bi bi-search me-1"></i>{{ o.investigation_type.name }}
+            <span class="pt-badge ms-1" style="background:#f1f5f9;color:#475569;">{{ o.get_eye_display }}</span>
+          </div>
+          {% if o.dilation_req == 'BEFORE' %}
+            <span class="dil-tag dil-before mt-1"><i class="bi bi-exclamation-triangle"></i>Pre-dilation only</span>
+          {% elif o.dilation_req == 'AFTER' %}
+            <span class="dil-tag dil-after mt-1"><i class="bi bi-droplet-fill"></i>Needs dilation</span>
+          {% endif %}
+          <div class="pt-meta mt-1">
+            <i class="bi bi-person-badge me-1"></i>Dr. {{ o.ordered_by.last_name|default:o.ordered_by.get_full_name }}
+            &bull; {{ o.created_at|time:"H:i" }}
+          </div>
+          <div class="pt-actions mt-2">
+            <form method="post" action="{% url 'investigations:check_in' pk=o.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary"><i class="bi bi-person-check me-1"></i>Check In</button>
+            </form>
+            <a href="{% url 'investigations:print_slip' pk=o.pk %}" class="btn btn-outline-dark" target="_blank"><i class="bi bi-printer"></i></a>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="kb-empty"><i class="bi bi-inbox"></i>No expected arrivals</div>
       {% endif %}
     </div>
   </div>
-  <form method="post" action="{% url 'investigations:bulk_check_in' %}" id="bulkSelectForm">
-    {% csrf_token %}
-    <div id="bulkActionBar" class="d-none align-items-center gap-2 px-3 py-2 border-bottom bg-light">
-      <span id="bulkCountLabel" class="small fw-semibold text-primary"></span>
-      <button type="submit" class="btn btn-sm btn-primary" style="font-size:.75rem;"><i class="bi bi-person-check me-1"></i>Check In Selected</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSel" style="font-size:.75rem;">Clear</button>
+
+  {# ── COL 2: Checked In ────────────────────────────────────────────── #}
+  <div class="kb-col kb-checkedin">
+    <div class="kb-col-header">
+      <span><i class="bi bi-person-check me-2"></i>Checked In</span>
+      <span class="badge bg-primary bg-opacity-25 text-primary">{{ checked_in_count }}</span>
     </div>
-    <div class="list-group list-group-flush">
-      {% for o in expected_arrivals %}
-      <div class="list-group-item py-2 px-3 ws-card">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <input type="checkbox" name="order_ids" value="{{ o.pk }}" class="row-chk form-check-input" style="margin-top:0;">
-          <span class="fw-semibold" style="font-size:.88rem;">{{ o.patient.full_name }}</span>
-          <span class="text-muted" style="font-size:.7rem;">{{ o.patient.patient_id }}</span>
-          {% if o.urgency != 'ROUTINE' %}
-            <span class="badge bg-danger" style="font-size:.6rem;">{{ o.get_urgency_display }}</span>
+    <div class="kb-col-body">
+      {% if checked_in_orders %}
+        {% for o in checked_in_orders %}
+        <div class="pt-card">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="pt-name">{{ o.patient.full_name }}</span>
+            {% if o.wait_minutes is not None %}
+            <span class="{% if o.wait_minutes <= 15 %}wait-ok{% elif o.wait_minutes <= 30 %}wait-warn{% else %}wait-bad{% endif %}" style="font-size:.7rem;">
+              <i class="bi bi-clock"></i> {{ o.wait_minutes }}m
+            </span>
+            {% endif %}
+          </div>
+          <div class="pt-id">{{ o.patient.patient_id }}</div>
+          <div class="pt-exam mt-1">
+            <i class="bi bi-search me-1"></i>{{ o.investigation_type.name }}
+            <span class="pt-badge ms-1" style="background:#f1f5f9;color:#475569;">{{ o.get_eye_display }}</span>
+          </div>
+          {% if o.urgency != 'ROUTINE' %}<span class="pt-badge mt-1" style="background:#fee2e2;color:#dc2626;">{{ o.get_urgency_display }}</span>{% endif %}
+          {% if o.dilation_req == 'AFTER' %}
+            <span class="dil-tag dil-after mt-1"><i class="bi bi-droplet-fill"></i>Needs dilation</span>
+          {% elif o.dilation_req == 'BEFORE' %}
+            <span class="dil-tag dil-before mt-1"><i class="bi bi-exclamation-triangle"></i>Pre-dilation only</span>
           {% endif %}
-          <span class="badge bg-success" style="font-size:.55rem;"><i class="bi bi-check-circle"></i> Paid</span>
-          <span class="ms-auto text-muted" style="font-size:.7rem;">Ordered {{ o.created_at|time:"H:i" }}</span>
-        </div>
-        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-          <span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ o.investigation_type.name }}</span>
-          <span class="badge bg-secondary" style="font-size:.65rem;">{{ o.get_eye_display }}</span>
-          {% if o.dilation_req == 'BEFORE' %}
-          <span class="badge dil-before" style="font-size:.6rem;"><i class="bi bi-exclamation-triangle me-1"></i>PRE-DILATION ONLY</span>
-          {% elif o.dilation_req == 'AFTER' %}
-          <span class="badge dil-after" style="font-size:.6rem;"><i class="bi bi-droplet-fill me-1"></i>Needs Dilation</span>
+          {% if o.clinical_indication %}
+          <div class="pt-meta mt-1 fst-italic"><i class="bi bi-chat-left-text me-1"></i>{{ o.clinical_indication|truncatechars:50 }}</div>
           {% endif %}
-          <span class="text-muted" style="font-size:.68rem;">Dr. {{ o.ordered_by.last_name|default:o.ordered_by.get_full_name }}</span>
-        </div>
-        <div class="d-flex gap-1 mt-2">
-          <form method="post" action="{% url 'investigations:check_in' pk=o.pk %}" class="d-inline">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:.72rem;">
-              <i class="bi bi-person-check me-1"></i>Check In
+          <div class="pt-meta mt-1">Checked in {{ o.checked_in_at|time:"H:i" }} &bull; Dr. {{ o.ordered_by.last_name|default:o.ordered_by.get_full_name }}</div>
+          <div class="pt-actions mt-2">
+            {% if o.dilation_req == 'AFTER' %}
+            <button type="button" class="btn btn-outline-info"
+                    data-bs-toggle="modal" data-bs-target="#dilationModal" data-order-id="{{ o.pk }}" data-patient="{{ o.patient.full_name }}">
+              <i class="bi bi-droplet-fill me-1"></i>Dilate
             </button>
+            {% endif %}
+            <form method="post" action="{% url 'investigations:start' pk=o.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary"><i class="bi bi-play-circle me-1"></i>Start</button>
+            </form>
+            <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-outline-success"><i class="bi bi-pencil-square"></i></a>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="kb-empty"><i class="bi bi-person-check"></i>No patients checked in</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── COL 3: Preparing + In Progress ───────────────────────────────── #}
+  <div class="kb-col kb-inprogress">
+    <div class="kb-col-header">
+      <span><i class="bi bi-activity me-2"></i>In Progress</span>
+      <span class="badge bg-info bg-opacity-25 text-info">{{ preparing_count|add:in_progress_count }}</span>
+    </div>
+    <div class="kb-col-body">
+      {% for o in preparing_orders %}
+      <div class="pt-card" style="border-left: 3px solid #f59e0b;">
+        <div class="d-flex align-items-center justify-content-between">
+          <span class="pt-name">{{ o.patient.full_name }}</span>
+          {% if o.mins_remaining is not None %}
+          <span class="{% if o.mins_remaining <= 0 %}text-success fw-bold{% elif o.mins_remaining <= 5 %}text-warning{% else %}text-muted{% endif %}" style="font-size:.72rem;">
+            {% if o.mins_remaining <= 0 %}<i class="bi bi-check-circle-fill"></i> Ready!{% else %}<i class="bi bi-hourglass-split"></i> ~{{ o.mins_remaining }}m{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <div class="pt-exam mt-1">
+          <i class="bi bi-search me-1"></i>{{ o.investigation_type.name }}
+          <span class="pt-badge ms-1" style="background:#f1f5f9;color:#475569;">{{ o.get_eye_display }}</span>
+        </div>
+        {% if o.dilation_agent %}
+        <span class="dil-tag dil-after mt-1"><i class="bi bi-droplet-fill"></i>{{ o.dilation_agent }}</span>
+        {% endif %}
+        <div class="pt-actions mt-2">
+          <form method="post" action="{% url 'investigations:start' pk=o.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary"><i class="bi bi-play-circle me-1"></i>Start Exam</button>
           </form>
-          <a href="{% url 'investigations:print_slip' pk=o.pk %}" class="btn btn-sm btn-outline-dark py-0 px-2" target="_blank" style="font-size:.72rem;">
-            <i class="bi bi-printer me-1"></i>Slip
-          </a>
+          <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-outline-success"><i class="bi bi-pencil-square"></i></a>
         </div>
       </div>
       {% endfor %}
-    </div>
-  </form>
-</div>
-{% endif %}
-
-</div>{# end inv-live-zone #}
-
-{# ====================================================================== #}
-{# -- COMPLETED TODAY -- #}
-{# ====================================================================== #}
-{% if completed_today %}
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold pipeline-header">
-      <i class="bi bi-check-circle me-2 text-success"></i>Completed Today
-    </h6>
-    <span class="badge bg-success">{{ completed_count }}</span>
-  </div>
-  <div class="list-group list-group-flush">
-    {% for o in completed_today %}
-    <div class="list-group-item py-2 px-3 ws-card">
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="fw-semibold" style="font-size:.85rem;">{{ o.patient.full_name }}</span>
-        <span class="badge bg-light text-dark border" style="font-size:.68rem;">{{ o.investigation_type.name }}</span>
-        <span class="badge bg-secondary" style="font-size:.6rem;">{{ o.get_eye_display }}</span>
-        {% if o.result %}
-          {% if o.result.is_critical %}<span class="badge bg-danger" style="font-size:.6rem;"><i class="bi bi-exclamation-octagon-fill me-1"></i>CRITICAL</span>
-          {% elif o.result.is_normal %}<span class="badge bg-success" style="font-size:.6rem;">Normal</span>
-          {% elif o.result.is_normal == False %}<span class="badge bg-warning text-dark" style="font-size:.6rem;">Abnormal</span>
-          {% else %}<span class="badge bg-secondary" style="font-size:.6rem;">Recorded</span>{% endif %}
-          {% if o.result.is_verified %}<span class="badge bg-success" style="font-size:.55rem;"><i class="bi bi-patch-check"></i> Verified</span>
-          {% else %}<span class="badge bg-outline-warning border text-warning" style="font-size:.55rem;">Unverified</span>{% endif %}
-          {% if o.result.files.exists %}<span class="badge bg-info text-dark" style="font-size:.55rem;"><i class="bi bi-paperclip"></i> {{ o.result.files.count }}</span>{% endif %}
-        {% endif %}
-        {% if o.tat_minutes is not None %}
-        <span class="{% if o.tat_minutes <= 30 %}tat-good{% elif o.tat_minutes <= 60 %}tat-warn{% else %}tat-bad{% endif %}" style="font-size:.65rem;">
-          <i class="bi bi-stopwatch me-1"></i>{{ o.tat_minutes }}min
-        </span>
-        {% endif %}
-        <span class="ms-auto d-flex align-items-center gap-1">
-          <span class="text-muted" style="font-size:.68rem;">{{ o.updated_at|time:"H:i" }}</span>
-          <a href="{% url 'investigations:detail' pk=o.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:.72rem;">
-            <i class="bi bi-eye"></i>
-          </a>
-        </span>
+      {% for o in in_progress_orders %}
+      <div class="pt-card" style="border-left: 3px solid #0ea5e9;">
+        <div class="d-flex align-items-center justify-content-between">
+          <span class="pt-name">{{ o.patient.full_name }}</span>
+          <span class="pt-meta">{{ o.updated_at|timesince }} ago</span>
+        </div>
+        <div class="pt-exam mt-1">
+          <i class="bi bi-search me-1"></i>{{ o.investigation_type.name }}
+          <span class="pt-badge ms-1" style="background:#f1f5f9;color:#475569;">{{ o.get_eye_display }}</span>
+        </div>
+        {% if o.urgency != 'ROUTINE' %}<span class="pt-badge mt-1" style="background:#fee2e2;color:#dc2626;">{{ o.get_urgency_display }}</span>{% endif %}
+        <div class="pt-actions mt-2">
+          <a href="{% url 'investigations:add_result' pk=o.pk %}" class="btn btn-info text-white"><i class="bi bi-pencil-square me-1"></i>Enter Result</a>
+          <a href="{% url 'investigations:detail' pk=o.pk %}" class="btn btn-outline-secondary"><i class="bi bi-eye"></i></a>
+        </div>
       </div>
+      {% endfor %}
+      {% if not preparing_orders and not in_progress_orders %}
+        <div class="kb-empty"><i class="bi bi-activity"></i>No exams in progress</div>
+      {% endif %}
     </div>
-    {% endfor %}
   </div>
-</div>
-{% endif %}
 
-{# -- Dilation Modal -- #}
+  {# ── COL 4: Completed Today ───────────────────────────────────────── #}
+  <div class="kb-col kb-done">
+    <div class="kb-col-header">
+      <span><i class="bi bi-check-circle me-2"></i>Done Today</span>
+      <span class="badge bg-success bg-opacity-25 text-success">{{ completed_count }}</span>
+    </div>
+    <div class="kb-col-body">
+      {% if completed_today %}
+        {% for o in completed_today %}
+        <div class="pt-card">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="pt-name">{{ o.patient.full_name }}</span>
+            <span class="pt-meta">{{ o.updated_at|time:"H:i" }}</span>
+          </div>
+          <div class="pt-exam mt-1">{{ o.investigation_type.name }}</div>
+          <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+            {% if o.result %}
+              {% if o.result.is_critical %}<span class="pt-badge" style="background:#fee2e2;color:#dc2626;">CRITICAL</span>
+              {% elif o.result.is_normal %}<span class="pt-badge" style="background:#d1fae5;color:#047857;">Normal</span>
+              {% elif o.result.is_normal == False %}<span class="pt-badge" style="background:#fef3c7;color:#92400e;">Abnormal</span>
+              {% else %}<span class="pt-badge" style="background:#e2e8f0;color:#475569;">Recorded</span>{% endif %}
+              {% if o.result.is_verified %}<span class="pt-badge" style="background:#d1fae5;color:#047857;"><i class="bi bi-patch-check"></i> Verified</span>
+              {% else %}<span class="pt-badge" style="background:#fef3c7;color:#92400e;">Unverified</span>{% endif %}
+            {% endif %}
+            {% if o.tat_minutes is not None %}
+            <span class="pt-meta {% if o.tat_minutes <= 30 %}text-success{% elif o.tat_minutes <= 60 %}text-warning{% else %}text-danger{% endif %}">
+              <i class="bi bi-stopwatch"></i> {{ o.tat_minutes }}m
+            </span>
+            {% endif %}
+          </div>
+          <div class="pt-actions mt-2">
+            <a href="{% url 'investigations:detail' pk=o.pk %}" class="btn btn-outline-secondary"><i class="bi bi-eye"></i></a>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="kb-empty"><i class="bi bi-check-circle"></i>Nothing completed yet</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>{# /kb-board #}
+</div>{# /inv-live-zone #}
+
+{# ── Dilation Modal ──────────────────────────────────────────────────── #}
 <div class="modal fade" id="dilationModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-sm">
     <div class="modal-content">
@@ -429,9 +414,7 @@
         </div>
         <div class="modal-footer py-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-sm btn-info text-white">
-            <i class="bi bi-droplet-fill me-1"></i>Start Dilation
-          </button>
+          <button type="submit" class="btn btn-sm btn-info text-white"><i class="bi bi-droplet-fill me-1"></i>Start Dilation</button>
         </div>
       </form>
     </div>
@@ -442,20 +425,18 @@
 
 {% block extra_js %}
 <script>
-// -- Dilation modal -- wire up order ID --
+// ── Dilation modal wiring ───────────────────────────────────────────────
 (function(){
   var modal = document.getElementById('dilationModal');
   if (!modal) return;
   modal.addEventListener('show.bs.modal', function(e) {
     var btn = e.relatedTarget;
-    var orderId = btn.getAttribute('data-order-id');
-    var patient = btn.getAttribute('data-patient');
-    modal.querySelector('#dilPatientName').textContent = patient;
-    modal.querySelector('#dilationForm').action = '/investigations/' + orderId + '/prepare/';
+    modal.querySelector('#dilPatientName').textContent = btn.getAttribute('data-patient');
+    modal.querySelector('#dilationForm').action = '/investigations/' + btn.getAttribute('data-order-id') + '/prepare/';
   });
 })();
 
-// -- WebSocket live refresh -- partial DOM swap --
+// ── WebSocket live refresh ──────────────────────────────────────────────
 (function(){
   var QID='inv-live-zone',ROOMS=['invest'],_busy=false,_pend=false,_fb;
   function isModal(){return !!document.querySelector('.modal.show');}
@@ -486,41 +467,12 @@
   startFb();
 }());
 
-// -- Bulk-select checkboxes --
+// ── Patient search ──────────────────────────────────────────────────────
 (function() {
-  var actionBar = document.getElementById('bulkActionBar');
-  var countLabel = document.getElementById('bulkCountLabel');
-  var clearBtn = document.getElementById('btnClearSel');
-  if (!actionBar) return;
-
-  function updateBar() {
-    var checked = document.querySelectorAll('.row-chk:checked');
-    if (checked.length > 0) {
-      countLabel.textContent = checked.length + ' patient(s) selected';
-      actionBar.classList.remove('d-none');
-      actionBar.classList.add('d-flex');
-    } else {
-      actionBar.classList.add('d-none');
-      actionBar.classList.remove('d-flex');
-    }
-  }
-
-  document.addEventListener('change', function(e) {
-    if (e.target.classList.contains('row-chk')) updateBar();
-  });
-
-  if (clearBtn) clearBtn.addEventListener('click', function() {
-    document.querySelectorAll('.row-chk').forEach(function(c) { c.checked = false; });
-    updateBar();
-  });
-}());
-
-// -- Patient search --
-(function() {
-  var input    = document.getElementById('invPatientSearch');
-  var results  = document.getElementById('invSearchResults');
+  var input = document.getElementById('invPatientSearch');
+  var results = document.getElementById('invSearchResults');
   var clearBtn = document.getElementById('invSearchClear');
-  var _timer   = null;
+  var _timer;
   var _searchUrl = '{% url "patients:search" %}';
   var _ordersUrl = '{% url "investigations:list" %}';
 
