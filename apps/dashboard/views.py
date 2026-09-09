@@ -584,20 +584,22 @@ def home_view(request):
         else:
             queue_qs = queue_qs.none()
 
-        # Tier isolation: GEN_OPH doctors with a specific consultation_unit only
-        # see visits for their tier — prevents VIP doctors seeing Express patients
-        # and vice versa on the home dashboard, matching the workstation behaviour.
-        _CU_TIER_MAP = {
-            'VIP_CONSULT':   ['VIP'],
-            'VIP':           ['VIP'],
-            'EXP_CONSULT':   ['EXPRESS', 'FAST_TRACK'],
-            'EXPRESS':       ['EXPRESS', 'FAST_TRACK'],
-            'INSUR_CONSULT': ['STANDARD'],   # insured patients typically STANDARD tier
-            'INSURANCE':     ['STANDARD'],
-            'GENERAL':       ['STANDARD'],   # standard GEN_OPH doctors see only standard tier
-        }
-        if _cu in _CU_TIER_MAP:
-            queue_qs = queue_qs.filter(service_tier__in=_CU_TIER_MAP[_cu])
+        # Tier isolation: ONLY for GEN_OPH doctors — prevents VIP doctors seeing
+        # Express patients and vice versa. Other departments (GEN_PHYS, RETINA,
+        # GLAUC, etc.) see ALL tiers routed to them.
+        _dept_code = user.role_department_code or (dept_obj.code if dept_obj else '')
+        if _dept_code == 'GEN_OPH':
+            _CU_TIER_MAP = {
+                'VIP_CONSULT':   ['VIP'],
+                'VIP':           ['VIP'],
+                'EXP_CONSULT':   ['EXPRESS', 'FAST_TRACK'],
+                'EXPRESS':       ['EXPRESS', 'FAST_TRACK'],
+                'INSUR_CONSULT': ['STANDARD'],
+                'INSURANCE':     ['STANDARD'],
+                'GENERAL':       ['STANDARD'],
+            }
+            if _cu in _CU_TIER_MAP:
+                queue_qs = queue_qs.filter(service_tier__in=_CU_TIER_MAP[_cu])
 
         # Doctor isolation: only show this doctor's assigned visits + unassigned pool.
         # Prevents patients routed to a specific doctor's room from appearing on

@@ -1434,14 +1434,16 @@ def workstation_view(request):
                         elif 'STANDARD' not in _ctiers:
                             _token_qs = _token_qs.exclude(service_tier='STANDARD')
                     # else: no explicit tier restriction → show all refraction tokens
-                else:
-                    # All other departments: respect patient_tier on account
+                elif dept_code == 'GEN_OPH':
+                    # GEN_OPH (non-refraction): tier isolation — VIP doctors
+                    # see VIP only, standard doctors never see VIP patients
                     _pt = getattr(user, 'patient_tier', '') or ''
                     if _pt == 'VIP':
                         _token_qs = _token_qs.filter(service_tier='VIP')
                     else:
-                        # Default (STANDARD or unset): never show VIP patients
                         _token_qs = _token_qs.exclude(service_tier='VIP')
+                # else: all other departments (GEN_PHYS, RETINA, etc.)
+                # see ALL tiers routed to them — no tier filter
                 waiting_tokens = list(
                     _token_qs.select_related('patient', 'counter', 'assigned_doctor')
                     .order_by('-priority', 'issued_at')

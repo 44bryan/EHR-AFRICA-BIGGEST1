@@ -215,177 +215,104 @@
       </div>
 
       {% if qms_on %}
-        {# ── QMS ON: show queue tokens ── #}
+        {# ── QMS ON: card-based queue grouped by status ── #}
         {% if waiting_tokens %}
-        <div class="table-responsive">
-          <table class="table table-hover align-middle mb-0 small">
-            <thead class="table-light">
-              <tr>
-                <th>Token</th>
-                <th>Patient</th>
-                <th class="d-none d-md-table-cell">Type</th>
-                <th class="d-none d-md-table-cell">Tier</th>
-                {% if not selected_room %}<th class="d-none d-lg-table-cell">Room</th>{% endif %}
-                <th class="d-none d-sm-table-cell">Since</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for tok in waiting_tokens %}
-              {# Determine if patient is already assigned to a specific counter doctor (dept-wide view only) #}
-              {% if not selected_room and tok.counter_id and tok.counter_id != my_counter_id %}
-                <tr style="opacity:.55;">
-                  <td><span class="badge bg-secondary">{{ tok.display_token_number }}</span></td>
-                  <td class="fw-semibold text-muted">{{ tok.display_name }}</td>
-                  <td class="d-none d-md-table-cell">
-                    {% if tok.ws_visit_type == 'NEW' %}<span class="badge bg-primary">NEW</span>
-                    {% elif tok.ws_visit_type == 'FOLLOW_UP' %}<span class="badge bg-outline-secondary text-secondary border" style="background:transparent;">F/U</span>
-                    {% else %}<span class="text-muted small">—</span>{% endif %}
-                  </td>
-                  <td class="d-none d-md-table-cell">
-                    {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed">VIP</span>
-                    {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
-                    {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
-                    {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
-                  </td>
-                  <td class="d-none d-lg-table-cell">
-                    <span class="badge bg-secondary bg-opacity-25 text-secondary border" style="font-size:.7rem;">
-                      <i class="bi bi-person-check me-1"></i>{% if tok.counter %}{{ tok.counter.name }}{% else %}Assigned{% endif %}
-                    </span>
-                  </td>
-                  <td class="text-muted d-none d-sm-table-cell">{{ tok.issued_at|time:"H:i" }}</td>
-                  <td>
-                    {% if tok.status == 'WAITING' %}<span class="badge bg-warning text-dark">Waiting</span>
-                    {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark">Called</span>
-                    {% elif tok.status == 'SERVING' %}<span class="badge bg-primary">Serving</span>{% endif %}
-                  </td>
-                  <td><span class="text-muted small fst-italic d-none d-sm-inline">{% if tok.counter %}{{ tok.counter.name }}{% else %}Assigned elsewhere{% endif %}</span></td>
-                </tr>
-              {% else %}
-              <tr>
-                <td><span class="badge bg-primary">{{ tok.display_token_number }}</span></td>
-                <td class="fw-semibold">
-                  {{ tok.display_name }}
-                  {% if tok.ws_visit and tok.ws_visit.vital_signs %}
-                  {% with vs=tok.ws_visit.vital_signs %}
-                  <div class="d-flex gap-1 flex-wrap mt-1" style="font-size:.68rem;">
-                    {% if vs.intraocular_pressure_right %}<span class="badge border {{ vs.intraocular_pressure_right|vital_css:'iop'|default:'bg-light text-dark' }}" {% if vs.intraocular_pressure_right|vital_css:'iop' %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>IOP R: {{ vs.intraocular_pressure_right }}</span>{% endif %}
-                    {% if vs.intraocular_pressure_left %}<span class="badge border {{ vs.intraocular_pressure_left|vital_css:'iop'|default:'bg-light text-dark' }}" {% if vs.intraocular_pressure_left|vital_css:'iop' %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>IOP L: {{ vs.intraocular_pressure_left }}</span>{% endif %}
-                    {% if vs.visual_acuity_right %}<span class="badge border {{ vs.visual_acuity_right|va_css|default:'bg-light text-dark' }}" {% if vs.visual_acuity_right|va_css %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>VA R: {{ vs.visual_acuity_right }}</span>{% endif %}
-                    {% if vs.visual_acuity_left %}<span class="badge border {{ vs.visual_acuity_left|va_css|default:'bg-light text-dark' }}" {% if vs.visual_acuity_left|va_css %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>VA L: {{ vs.visual_acuity_left }}</span>{% endif %}
-                    {% if vs.blood_pressure %}<span class="badge border {{ vs.blood_pressure|bp_css|default:'bg-light text-dark' }}" {% if vs.blood_pressure|bp_css %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>BP: {{ vs.blood_pressure }}</span>{% endif %}
-                  </div>
-                  {% endwith %}
-                  {% endif %}
-                </td>
-                <td class="d-none d-md-table-cell">
-                  {% if tok.ws_visit_type == 'NEW' %}<span class="badge bg-primary">NEW</span>
-                  {% elif tok.ws_visit_type == 'FOLLOW_UP' %}<span class="badge bg-outline-secondary text-secondary border" style="background:transparent;">F/U</span>
-                  {% else %}<span class="text-muted small">—</span>{% endif %}
-                </td>
-                <td class="d-none d-md-table-cell">
-                  {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed">VIP</span>
-                  {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
-                  {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
-                  {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
-                  {% if tok.assigned_doctor_id %}
-                    {% if tok.assigned_doctor_id == request.user.pk %}
-                      <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;" title="Assigned directly to you"><i class="bi bi-person-check"></i> For You</span>
-                    {% endif %}
+        <div class="list-group list-group-flush" id="wsQueueCards">
+          {% for tok in waiting_tokens %}
+          {# Skip tokens assigned to another counter #}
+          {% if not selected_room and tok.counter_id and tok.counter_id != my_counter_id %}
+          <div class="list-group-item py-2 px-3" style="opacity:.5;background:#f8f9fa;">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-secondary" style="font-size:.7rem;">{{ tok.display_token_number }}</span>
+              <span class="text-muted small">{{ tok.display_name }}</span>
+              <span class="ms-auto text-muted small fst-italic">{% if tok.counter %}{{ tok.counter.name }}{% else %}Assigned{% endif %}</span>
+            </div>
+          </div>
+          {% else %}
+          <div class="list-group-item py-2 px-3 {% if tok.status == 'SERVING' %}border-start border-primary border-3{% elif tok.status == 'CALLED' %}border-start border-info border-3{% endif %}">
+            {# ── Row 1: Token + Name + Tier + Status + Time ── #}
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="badge bg-primary" style="font-size:.72rem;min-width:48px;">{{ tok.display_token_number }}</span>
+              <span class="fw-semibold" style="font-size:.88rem;">{{ tok.display_name }}</span>
+              {% if tok.ws_visit_type == 'NEW' %}<span class="badge bg-primary" style="font-size:.6rem;">NEW</span>
+              {% elif tok.ws_visit_type == 'FOLLOW_UP' %}<span class="badge border text-secondary" style="font-size:.6rem;background:transparent;">F/U</span>{% endif %}
+              {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed;font-size:.6rem;">VIP</span>
+              {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark" style="font-size:.6rem;">Fast Track</span>
+              {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark" style="font-size:.6rem;">Express</span>{% endif %}
+              {% if tok.assigned_doctor_id == request.user.pk %}<span class="badge bg-warning text-dark" style="font-size:.6rem;"><i class="bi bi-person-check"></i> For You</span>{% endif %}
+              <span class="ms-auto d-flex align-items-center gap-2">
+                {% if tok.status == 'SERVING' %}<span class="badge bg-primary" style="font-size:.65rem;">Serving</span>
+                {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark" style="font-size:.65rem;">Called</span>
+                {% else %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">Waiting</span>{% endif %}
+                <span class="text-muted" style="font-size:.7rem;">{{ tok.issued_at|time:"H:i" }}</span>
+              </span>
+            </div>
+
+            {# ── Row 2: Vitals (compact inline) ── #}
+            {% if tok.ws_visit and tok.ws_visit.vital_signs %}
+            {% with vs=tok.ws_visit.vital_signs %}
+            <div class="d-flex gap-1 flex-wrap mt-1" style="font-size:.65rem;">
+              {% if vs.intraocular_pressure_right %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_right|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP R:{{ vs.intraocular_pressure_right }}</span>{% endif %}
+              {% if vs.intraocular_pressure_left %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_left|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP L:{{ vs.intraocular_pressure_left }}</span>{% endif %}
+              {% if vs.visual_acuity_right %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_right|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA R:{{ vs.visual_acuity_right }}</span>{% endif %}
+              {% if vs.visual_acuity_left %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_left|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA L:{{ vs.visual_acuity_left }}</span>{% endif %}
+              {% if vs.blood_pressure %}<span class="badge border bg-light text-dark" {% if vs.blood_pressure|bp_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>BP:{{ vs.blood_pressure }}</span>{% endif %}
+            </div>
+            {% endwith %}
+            {% endif %}
+
+            {# ── Row 3: Referral/routing context ── #}
+            {% if tok.ws_visit.referring_doctor %}
+            <div class="mt-1"><span class="badge" style="font-size:.6rem;background:#0d9488;"><i class="bi bi-arrow-return-left me-1"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.last_name }}</span></div>
+            {% elif tok.notes and 'Returned from Refraction' in tok.notes %}
+            <div class="mt-1"><span class="badge" style="font-size:.6rem;background:#0d9488;"><i class="bi bi-arrow-return-left me-1"></i>From Refraction</span></div>
+            {% endif %}
+            {% if tok.ws_visit.routing_note %}
+            <div class="text-muted fst-italic mt-1" style="font-size:.68rem;"><i class="bi bi-chat-left-text me-1"></i>{{ tok.ws_visit.routing_note|truncatewords:12 }}</div>
+            {% endif %}
+
+            {# ── Row 4: Actions ── #}
+            <div class="d-flex gap-1 flex-wrap mt-2">
+              {% if tok.patient %}
+                {% if tok.ws_visit %}
+                  {% if tok.ws_draft %}
+                  <a href="{% url 'consultations:edit' pk=tok.ws_draft.pk %}" class="btn btn-sm btn-warning py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+                    <i class="bi bi-pencil-square me-1"></i>Resume
+                  </a>
+                  {% else %}
+                  <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+                    <i class="bi bi-person-lines-fill me-1"></i>Open Visit
+                  </a>
                   {% endif %}
                   {% if tok.ws_visit.referring_doctor %}
-                    <span class="badge ms-1" style="font-size:.65rem;background:#0d9488;" title="Return to {{ tok.ws_visit.referring_doctor.get_full_name }} after completion">
-                      <i class="bi bi-arrow-return-left me-1"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.last_name }}
-                    </span>
-                  {% elif 'Returned from Refraction' in tok.notes %}
-                    <span class="badge ms-1" style="font-size:.65rem;background:#0d9488;" title="Patient came back from Refraction"><i class="bi bi-arrow-return-left me-1"></i>From Refraction</span>
+                  <button class="btn btn-sm btn-outline-warning py-0 px-2 ws-return-btn" data-visit="{{ tok.ws_visit.pk }}" data-doctor="{{ tok.ws_visit.referring_doctor.get_full_name }}" style="font-size:.72rem;">
+                    <i class="bi bi-arrow-return-left me-1"></i>Return
+                  </button>
                   {% endif %}
-                  {% if tok.ws_visit.routing_note %}
-                    <div class="text-muted fst-italic d-block mt-1" style="font-size:.68rem;max-width:300px;" title="Note from referring doctor">
-                      <i class="bi bi-chat-left-text me-1"></i>{{ tok.ws_visit.routing_note|truncatewords:15 }}
-                    </div>
+                  <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="EhrRoute.open('{{ tok.ws_visit.pk }}', {tier:'{{ tok.ws_visit.service_tier|default:"STANDARD" }}', patientName:'{{ tok.display_name|escapejs }}'{% if tok.ws_draft %}, completePk:'{{ tok.ws_draft.pk }}'{% endif %}})" style="font-size:.72rem;">
+                    <i class="bi bi-signpost-2 me-1"></i>Route
+                  </button>
+                  {% if not tok.ws_draft %}
+                  <button class="btn btn-sm btn-outline-danger py-0 px-2 ws-reject-btn" data-visit="{{ tok.ws_visit.pk }}" data-referring-doctor="{% if tok.ws_visit.referring_doctor %}{{ tok.ws_visit.referring_doctor.get_full_name }}{% endif %}" style="font-size:.72rem;">
+                    <i class="bi bi-x-circle me-1"></i>Reject
+                  </button>
                   {% endif %}
-                </td>
-                {% if not selected_room %}
-                <td class="d-none d-lg-table-cell">
-                  <span class="badge bg-success bg-opacity-75" style="font-size:.7rem;">
-                    <i class="bi bi-unlock me-1"></i>Open
+                  <span class="ms-auto d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-info py-0 px-1 ws-iop-btn" data-visit="{{ tok.ws_visit.pk }}" data-patient="{{ tok.display_name }}" title="Quick IOP"><i class="bi bi-eye" style="font-size:.75rem;"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary py-0 px-1 ws-va-btn" data-visit="{{ tok.ws_visit.pk }}" data-patient="{{ tok.display_name }}" title="Quick VA" style="font-size:.7rem;">VA</button>
                   </span>
-                </td>
+                {% else %}
+                  <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+                    <i class="bi bi-person-plus me-1"></i>See Patient
+                  </a>
                 {% endif %}
-                <td class="text-muted d-none d-sm-table-cell">{{ tok.issued_at|time:"H:i" }}</td>
-                <td>
-                  {% if tok.status == 'WAITING' %}<span class="badge bg-warning text-dark">Waiting</span>
-                  {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark">Called</span>
-                  {% elif tok.status == 'SERVING' %}<span class="badge bg-primary">Serving</span>{% endif %}
-                </td>
-                <td>
-                  <div class="d-flex gap-1 flex-wrap align-items-center">
-                  {% if tok.patient %}
-                    {% if tok.ws_visit %}
-                      {% if tok.ws_draft %}
-                      <a href="{% url 'consultations:edit' pk=tok.ws_draft.pk %}" class="btn btn-sm btn-warning" hx-boost="false" title="Resume your in-progress consultation">
-                        <i class="bi bi-pencil-square me-1"></i>Resume
-                      </a>
-                      {% else %}
-                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success" hx-boost="false">
-                        <i class="bi bi-person-lines-fill me-1"></i>Open Visit
-                      </a>
-                      {% endif %}
-                      {% if tok.ws_visit.referring_doctor %}
-                      <button class="btn btn-sm btn-warning ws-return-btn"
-                              data-visit="{{ tok.ws_visit.pk }}"
-                              data-doctor="{{ tok.ws_visit.referring_doctor.get_full_name }}"
-                              title="Send back to referring doctor"
-                              style="font-size:.75rem;">
-                        <i class="bi bi-arrow-return-left me-1"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.get_full_name }}
-                      </button>
-                      {% endif %}
-                      {# ── Route Patient — single button, modal handles pause vs complete via "Return to me" toggle ── #}
-                      <button class="btn btn-sm btn-outline-primary"
-                              onclick="EhrRoute.open('{{ tok.ws_visit.pk }}', {tier:'{{ tok.ws_visit.service_tier|default:"STANDARD" }}', patientName:'{{ tok.display_name|escapejs }}'{% if tok.ws_draft %}, completePk:'{{ tok.ws_draft.pk }}'{% endif %}})"
-                              title="Route patient to another department"
-                              style="font-size:.72rem;padding:.2rem .5rem;">
-                        <i class="bi bi-signpost-2 me-1"></i>Route
-                      </button>
-                      {# ── Reject & Re-route: only show if no consultation started yet ── #}
-                      {% if not tok.ws_draft %}
-                      <button class="btn btn-sm btn-outline-danger ws-reject-btn"
-                              data-visit="{{ tok.ws_visit.pk }}"
-                              data-referring-doctor="{% if tok.ws_visit.referring_doctor %}{{ tok.ws_visit.referring_doctor.get_full_name }}{% endif %}"
-                              title="Wrong department — re-route patient without consulting"
-                              style="font-size:.72rem;padding:.2rem .5rem;">
-                        <i class="bi bi-x-circle me-1"></i>Reject
-                      </button>
-                      {% endif %}
-                      <button class="btn btn-sm btn-outline-info ws-iop-btn"
-                              data-visit="{{ tok.ws_visit.pk }}"
-                              data-patient="{{ tok.display_name }}"
-                              title="Quick IOP Entry" style="padding:.2rem .45rem;">
-                        <i class="bi bi-eye" style="font-size:.8rem;"></i>
-                      </button>
-                      <button class="btn btn-sm btn-outline-secondary ws-va-btn"
-                              data-visit="{{ tok.ws_visit.pk }}"
-                              data-patient="{{ tok.display_name }}"
-                              title="Quick VA Entry" style="padding:.2rem .45rem;font-size:.75rem;">
-                        VA
-                      </button>
-                    {% else %}
-                      <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success" hx-boost="false">
-                        <i class="bi bi-person-plus me-1"></i>See Patient
-                      </a>
-                    {% endif %}
-                  {% else %}
-                    <span class="text-muted small">Walk-in</span>
-                  {% endif %}
-                  </div>
-                </td>
-              </tr>
+              {% else %}
+                <span class="text-muted small">Walk-in</span>
               {% endif %}
-              {% endfor %}
-            </tbody>
-          </table>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
         </div>
         {% else %}
         <div class="card-body text-center text-muted py-5">
@@ -394,76 +321,48 @@
         {% endif %}
 
       {% else %}
-        {# ── QMS OFF: show active visits for this department ── #}
+        {# ── QMS OFF: card-based visit list ── #}
         {% if waiting_visits %}
-        <div class="table-responsive">
-          <table class="table table-hover align-middle mb-0 small">
-            <thead class="table-light">
-              <tr>
-                <th class="d-none d-sm-table-cell">#</th>
-                <th>Patient</th>
-                <th class="d-none d-sm-table-cell">Type</th>
-                <th class="d-none d-md-table-cell">Complaint</th>
-                <th class="d-none d-md-table-cell">Arrived</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for v in waiting_visits %}
-              <tr>
-                <td class="text-muted fw-bold d-none d-sm-table-cell">{{ forloop.counter }}</td>
-                <td>
-                  <div class="fw-semibold">{{ v.patient.full_name }}</div>
-                  <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
-                  {% if v.vital_signs %}
-                  {% with vs=v.vital_signs %}
-                  <div class="d-flex gap-1 flex-wrap mt-1" style="font-size:.68rem;">
-                    {% if vs.intraocular_pressure_right %}<span class="badge border {{ vs.intraocular_pressure_right|vital_css:'iop'|default:'bg-light text-dark' }}" {% if vs.intraocular_pressure_right|vital_css:'iop' %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>IOP R: {{ vs.intraocular_pressure_right }}</span>{% endif %}
-                    {% if vs.intraocular_pressure_left %}<span class="badge border {{ vs.intraocular_pressure_left|vital_css:'iop'|default:'bg-light text-dark' }}" {% if vs.intraocular_pressure_left|vital_css:'iop' %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>IOP L: {{ vs.intraocular_pressure_left }}</span>{% endif %}
-                    {% if vs.visual_acuity_right %}<span class="badge border {{ vs.visual_acuity_right|va_css|default:'bg-light text-dark' }}" {% if vs.visual_acuity_right|va_css %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>VA R: {{ vs.visual_acuity_right }}</span>{% endif %}
-                    {% if vs.visual_acuity_left %}<span class="badge border {{ vs.visual_acuity_left|va_css|default:'bg-light text-dark' }}" {% if vs.visual_acuity_left|va_css %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>VA L: {{ vs.visual_acuity_left }}</span>{% endif %}
-                    {% if vs.blood_pressure %}<span class="badge border {{ vs.blood_pressure|bp_css|default:'bg-light text-dark' }}" {% if vs.blood_pressure|bp_css %}style="background:#fee2e2;border-color:#fca5a5!important;"{% endif %}>BP: {{ vs.blood_pressure }}</span>{% endif %}
-                  </div>
-                  {% endwith %}
-                  {% endif %}
-                </td>
-                <td class="d-none d-sm-table-cell">
-                  {% if v.visit_type == 'NEW' %}<span class="badge bg-primary">New</span>
-                  {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge bg-outline-secondary text-secondary border" style="background:transparent;">F/U</span>
-                  {% elif v.visit_type == 'EMERGENCY' %}<span class="badge bg-danger">Emergency</span>
-                  {% else %}<span class="badge bg-secondary">{{ v.get_visit_type_display }}</span>{% endif %}
-                </td>
-                <td class="text-muted d-none d-md-table-cell" style="max-width:130px;">{{ v.chief_complaint|truncatechars:45 }}</td>
-                <td class="text-muted d-none d-md-table-cell">{{ v.visit_date|time:"H:i" }}</td>
-                <td>
-                  {% if v.status == 'IN_CONSULTATION' %}<span class="badge bg-primary">In Consult</span>
-                  {% elif v.status == 'PARAMETERS' %}<span class="badge bg-info text-dark">Triage</span>
-                  {% else %}<span class="badge bg-warning text-dark">Waiting</span>{% endif %}
-                </td>
-                <td>
-                  <div class="d-flex gap-1 align-items-center flex-wrap">
-                    <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success" hx-boost="false">
-                      <i class="bi bi-journal-plus me-1"></i>Consult
-                    </a>
-                    <button class="btn btn-sm btn-outline-info ws-iop-btn"
-                            data-visit="{{ v.pk }}"
-                            data-patient="{{ v.patient.full_name }}"
-                            title="Quick IOP Entry" style="padding:.2rem .45rem;">
-                      <i class="bi bi-eye" style="font-size:.8rem;"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary ws-va-btn"
-                            data-visit="{{ v.pk }}"
-                            data-patient="{{ v.patient.full_name }}"
-                            title="Quick VA Entry" style="padding:.2rem .45rem;font-size:.75rem;">
-                      VA
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="list-group list-group-flush">
+          {% for v in waiting_visits %}
+          <div class="list-group-item py-2 px-3 {% if v.status == 'IN_CONSULTATION' %}border-start border-primary border-3{% endif %}">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="badge bg-secondary" style="font-size:.7rem;min-width:24px;">{{ forloop.counter }}</span>
+              <span class="fw-semibold" style="font-size:.88rem;">{{ v.patient.full_name }}</span>
+              <span class="text-muted" style="font-size:.7rem;">{{ v.patient.patient_id }}</span>
+              {% if v.visit_type == 'NEW' %}<span class="badge bg-primary" style="font-size:.6rem;">NEW</span>
+              {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge border text-secondary" style="font-size:.6rem;background:transparent;">F/U</span>
+              {% elif v.visit_type == 'EMERGENCY' %}<span class="badge bg-danger" style="font-size:.6rem;">Emergency</span>{% endif %}
+              <span class="ms-auto d-flex align-items-center gap-2">
+                {% if v.status == 'IN_CONSULTATION' %}<span class="badge bg-primary" style="font-size:.65rem;">In Consult</span>
+                {% elif v.status == 'PARAMETERS' %}<span class="badge bg-info text-dark" style="font-size:.65rem;">Triage</span>
+                {% else %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">Waiting</span>{% endif %}
+                <span class="text-muted" style="font-size:.7rem;">{{ v.visit_date|time:"H:i" }}</span>
+              </span>
+            </div>
+            {% if v.vital_signs %}
+            {% with vs=v.vital_signs %}
+            <div class="d-flex gap-1 flex-wrap mt-1" style="font-size:.65rem;">
+              {% if vs.intraocular_pressure_right %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_right|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP R:{{ vs.intraocular_pressure_right }}</span>{% endif %}
+              {% if vs.intraocular_pressure_left %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_left|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP L:{{ vs.intraocular_pressure_left }}</span>{% endif %}
+              {% if vs.visual_acuity_right %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_right|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA R:{{ vs.visual_acuity_right }}</span>{% endif %}
+              {% if vs.visual_acuity_left %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_left|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA L:{{ vs.visual_acuity_left }}</span>{% endif %}
+              {% if vs.blood_pressure %}<span class="badge border bg-light text-dark" {% if vs.blood_pressure|bp_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>BP:{{ vs.blood_pressure }}</span>{% endif %}
+            </div>
+            {% endwith %}
+            {% endif %}
+            {% if v.chief_complaint %}<div class="text-muted mt-1" style="font-size:.7rem;">{{ v.chief_complaint|truncatechars:60 }}</div>{% endif %}
+            <div class="d-flex gap-1 flex-wrap mt-2">
+              <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+                <i class="bi bi-journal-plus me-1"></i>Consult
+              </a>
+              <span class="ms-auto d-flex gap-1">
+                <button class="btn btn-sm btn-outline-info py-0 px-1 ws-iop-btn" data-visit="{{ v.pk }}" data-patient="{{ v.patient.full_name }}" title="Quick IOP"><i class="bi bi-eye" style="font-size:.75rem;"></i></button>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1 ws-va-btn" data-visit="{{ v.pk }}" data-patient="{{ v.patient.full_name }}" title="Quick VA" style="font-size:.7rem;">VA</button>
+              </span>
+            </div>
+          </div>
+          {% endfor %}
         </div>
         {% else %}
         <div class="card-body text-center text-muted py-5">
