@@ -1786,7 +1786,7 @@ def investigation_stats_view(request):
         avg_tat_str = '\u2014'
 
     # ── Repeat / Quality ──────────────────────────────────────────────────────
-    repeat_count_val   = base.filter(is_repeat=True).count()
+    repeat_count_val   = base.filter(acquisition__is_repeat=True).count()
     quality_fail_count = base.filter(acquisition_status='QUALITY_FAILED').count()
     repeat_rate = round(repeat_count_val / total_orders * 100, 1) if total_orders else 0
 

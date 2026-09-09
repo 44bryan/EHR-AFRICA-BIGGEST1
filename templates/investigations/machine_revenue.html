@@ -2,247 +2,300 @@
 {% load static %}
 {% block title %}Machine Revenue Report {{ year }}{% endblock %}
 
+{% block extra_css %}
+<style>
+  .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 12px; text-align:center; }
+  .kpi-card .kpi-icon { width:40px; height:40px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; font-size:1.05rem; margin-bottom:8px; }
+  .kpi-card .kpi-num { font-size:1.6rem; font-weight:800; line-height:1; margin-bottom:3px; }
+  .kpi-card .kpi-lbl { font-size:.78rem; color:#64748b; font-weight:500; }
+
+  .section-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+  .section-hdr { padding:12px 16px; font-size:.88rem; font-weight:600; color:#475569; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; gap:8px; }
+
+  .rev-cat { display:flex; align-items:center; gap:14px; padding:12px 16px; border-bottom:1px solid #f8fafc; cursor:pointer; transition:background .15s; }
+  .rev-cat:hover { background:#f8fafc; }
+  .rev-cat:last-child { border-bottom:none; }
+  .rev-cat-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:.95rem; flex-shrink:0; }
+  .rev-cat-info { flex:1; min-width:0; }
+  .rev-cat-name { font-weight:600; font-size:.88rem; color:#1e293b; }
+  .rev-cat-meta { font-size:.78rem; color:#64748b; }
+  .rev-cat-bar { flex:0 0 100px; height:8px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
+  .rev-cat-bar-fill { height:100%; border-radius:4px; }
+  .rev-cat-val { font-size:1rem; font-weight:800; min-width:80px; text-align:right; }
+
+  .top-rev-row { display:flex; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid #f8fafc; }
+  .top-rev-row:last-child { border-bottom:none; }
+  .top-rev-rank { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.78rem; flex-shrink:0; }
+  .rank-gold { background:#fef3c7; color:#b45309; }
+  .rank-silver { background:#e2e8f0; color:#475569; }
+  .rank-bronze { background:#fed7aa; color:#c2410c; }
+  .rank-def { background:#f1f5f9; color:#94a3b8; }
+</style>
+{% endblock %}
+
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-  <div class="d-flex align-items-center gap-2">
-    <i class="bi bi-currency-exchange text-primary fs-4"></i>
-    <div>
-      <h5 class="mb-0 fw-bold">Machine Revenue Report</h5>
-      <div class="text-muted small">Financial performance per imaging machine / investigation type — {{ year }}</div>
-    </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Machine Revenue Report</h5>
+    <div class="text-muted small">Financial performance per investigation type — {{ year }}</div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
-    {# Year selector #}
     <form method="get" class="d-flex gap-1 align-items-center">
       <select name="year" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
-        <option value="{{ year }}">{{ year }} (current)</option>
-        {% for y in prev_years %}
-        <option value="{{ y }}">{{ y }}</option>
-        {% endfor %}
+        <option value="{{ year }}">{{ year }}</option>
+        {% for y in prev_years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
       </select>
     </form>
-    <button onclick="window.location.href='{% url "investigations:machine_revenue_csv" %}?year={{ year }}'" class="btn btn-sm btn-success">
-      <i class="bi bi-filetype-csv me-1"></i>CSV
-    </button>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Print
-    </button>
-    <a href="{% url 'investigations:stats' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Stats
-    </a>
+    <button onclick="window.location.href='{% url "investigations:machine_revenue_csv" %}?year={{ year }}'" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv me-1"></i>CSV</button>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i>Print</button>
+    <a href="{% url 'investigations:stats' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Stats</a>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
 
-{# ── Summary KPIs ── #}
-<div class="row g-3 mb-4">
+{# ── KPI Cards ── #}
+<div class="row g-2 mb-4">
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-primary">{{ grand_count }}</div>
-        <div class="small text-muted">Total Completed</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#dbeafe;color:#2563eb;"><i class="bi bi-clipboard2-pulse"></i></div>
+      <div class="kpi-num" style="color:#2563eb;">{{ grand_count }}</div>
+      <div class="kpi-lbl">Total Completed</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-success">{{ grand_revenue|floatformat:0 }}</div>
-        <div class="small text-muted">Total Revenue (FCFA)</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#dcfce7;color:#16a34a;"><i class="bi bi-cash-stack"></i></div>
+      <div class="kpi-num" style="color:#16a34a;">{{ grand_revenue|floatformat:0 }}</div>
+      <div class="kpi-lbl">Revenue (FCFA)</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-info">{{ categories|length }}</div>
-        <div class="small text-muted">Investigation Categories</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#ede9fe;color:#7c3aed;"><i class="bi bi-folder2-open"></i></div>
+      <div class="kpi-num" style="color:#7c3aed;">{{ categories|length }}</div>
+      <div class="kpi-lbl">Categories</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center">
-      <div class="card-body py-3">
-        <div class="h2 fw-bold text-warning">{{ modality_table|length }}</div>
-        <div class="small text-muted">Imaging Machines Used</div>
-      </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:#fef3c7;color:#d97706;"><i class="bi bi-display"></i></div>
+      <div class="kpi-num" style="color:#d97706;">{{ modality_table|length }}</div>
+      <div class="kpi-lbl">Machines Used</div>
     </div>
   </div>
 </div>
 
 {# ── 12-Month Revenue Trend ── #}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2">
-    <i class="bi bi-graph-up-arrow text-success me-2"></i>Monthly Revenue Trend (Last 12 Months)
-  </div>
-  <div class="card-body">
-    <canvas id="revenueTrendChart" height="90"></canvas>
-  </div>
+<div class="section-card mb-4">
+  <div class="section-hdr"><i class="bi bi-graph-up-arrow" style="color:#16a34a;"></i>Monthly Revenue Trend (12 Months)</div>
+  <div class="p-3"><canvas id="revenueTrendChart" height="90"></canvas></div>
 </div>
 
-{# ── Revenue by Category + Test ── #}
-{% for cat_name, cat_data in categories.items %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold">
-      <i class="bi bi-folder2 me-2 text-primary"></i>{{ cat_name }}
-    </h6>
-    <div class="d-flex gap-3 small">
-      <span class="text-muted">Orders: <strong>{{ cat_data.subtotal_count }}</strong></span>
-      <span class="text-success fw-semibold">Revenue: {{ cat_data.subtotal_rev|floatformat:0 }} FCFA</span>
+{# ── Top 10 Revenue Generators ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-5">
+    <div class="section-card h-100">
+      <div class="section-hdr"><i class="bi bi-trophy" style="color:#d97706;"></i>Top Revenue Generators</div>
+      {% for cat_name, cat_data in categories.items %}
+        {% for t in cat_data.tests %}
+          {% if forloop.parentloop.first or forloop.first %}{% endif %}
+        {% endfor %}
+      {% endfor %}
+      <div id="topRevList">
+        {# Populated by JS from category data #}
+      </div>
     </div>
   </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr>
-          <th>Investigation</th>
-          <th class="text-end">Unit Price (FCFA)</th>
-          <th class="text-center">Clinic</th>
-          <th class="text-center">Outreach</th>
-          <th class="text-end">Total Done</th>
-          <th class="text-end fw-semibold">Revenue (FCFA)</th>
-          <th style="min-width:120px;">Volume</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for t in cat_data.tests %}
-        <tr>
-          <td class="fw-semibold">{{ t.name }}</td>
-          <td class="text-end text-muted">{{ t.price|floatformat:0 }}</td>
-          <td class="text-center">{{ t.clinic }}</td>
-          <td class="text-center text-success">{{ t.outreach }}</td>
-          <td class="text-end fw-bold">{{ t.count }}</td>
-          <td class="text-end fw-bold text-success">{{ t.revenue|floatformat:0 }}</td>
-          <td>
-            {% if cat_data.subtotal_count %}
-            <div class="progress" style="height:6px;margin-top:6px;">
-              <div class="progress-bar bg-primary"
-                   style="width:{% widthratio t.count cat_data.subtotal_count 100 %}%;"></div>
-            </div>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-      <tfoot class="table-light fw-bold">
-        <tr>
-          <td colspan="4">Subtotal</td>
-          <td class="text-end">{{ cat_data.subtotal_count }}</td>
-          <td class="text-end text-success">{{ cat_data.subtotal_rev|floatformat:0 }}</td>
-          <td></td>
-        </tr>
-      </tfoot>
-    </table>
+  <div class="col-md-7">
+    <div class="section-card h-100">
+      <div class="section-hdr"><i class="bi bi-pie-chart" style="color:#6366f1;"></i>Revenue by Category</div>
+      <div class="p-3"><canvas id="catRevenueChart" style="max-height:260px;"></canvas></div>
+    </div>
   </div>
 </div>
-{% empty %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body text-center py-5 text-muted">
+
+{# ── Revenue by Category (summary cards) ── #}
+<div class="section-card mb-4">
+  <div class="section-hdr"><i class="bi bi-folder2" style="color:#2563eb;"></i>Revenue Breakdown by Category</div>
+  {% for cat_name, cat_data in categories.items %}
+  <div class="rev-cat" data-bs-toggle="collapse" data-bs-target="#cat-{{ forloop.counter }}">
+    <div class="rev-cat-icon" style="background:#dbeafe;color:#2563eb;"><i class="bi bi-folder2-open"></i></div>
+    <div class="rev-cat-info">
+      <div class="rev-cat-name">{{ cat_name }}</div>
+      <div class="rev-cat-meta">{{ cat_data.tests|length }} test{{ cat_data.tests|length|pluralize }} &bull; {{ cat_data.subtotal_count }} exams</div>
+    </div>
+    <div class="rev-cat-bar d-none d-md-block">
+      <div class="rev-cat-bar-fill" style="width:{% if grand_revenue %}{% widthratio cat_data.subtotal_rev grand_revenue 100 %}{% else %}0{% endif %}%;background:#2563eb;"></div>
+    </div>
+    <div class="rev-cat-val" style="color:#16a34a;">{{ cat_data.subtotal_rev|floatformat:0 }}</div>
+    <i class="bi bi-chevron-down text-muted"></i>
+  </div>
+  <div class="collapse" id="cat-{{ forloop.counter }}">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Investigation</th>
+            <th class="text-end">Price (FCFA)</th>
+            <th class="text-center">Clinic</th>
+            <th class="text-center">Outreach</th>
+            <th class="text-end">Total</th>
+            <th class="text-end fw-semibold">Revenue</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in cat_data.tests %}
+          <tr>
+            <td class="fw-semibold">{{ t.name }}</td>
+            <td class="text-end text-muted">{{ t.price|floatformat:0 }}</td>
+            <td class="text-center">{{ t.clinic }}</td>
+            <td class="text-center" style="color:#16a34a;">{{ t.outreach }}</td>
+            <td class="text-end fw-bold">{{ t.count }}</td>
+            <td class="text-end fw-bold" style="color:#16a34a;">{{ t.revenue|floatformat:0 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td colspan="4">Subtotal</td>
+            <td class="text-end">{{ cat_data.subtotal_count }}</td>
+            <td class="text-end" style="color:#16a34a;">{{ cat_data.subtotal_rev|floatformat:0 }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% empty %}
+  <div class="text-center text-muted py-5">
     <i class="bi bi-currency-exchange fs-2 d-block mb-3 opacity-25"></i>
     <p>No completed investigations recorded for {{ year }}.</p>
-    <div class="small">Set unit prices on Investigation Types in the admin panel to see revenue figures.</div>
   </div>
+  {% endfor %}
 </div>
-{% endfor %}
 
-{# ── Imaging Machine (Modality) Breakdown ── #}
+{# ── Machine Utilization ── #}
 {% if modality_table %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold border-bottom py-2">
-    <i class="bi bi-display me-2 text-primary"></i>Studies by Imaging Machine (DICOM)
-    <span class="text-muted small fw-normal ms-2">— Use this table to justify new equipment purchases</span>
+<div class="section-card mb-4">
+  <div class="section-hdr"><i class="bi bi-display" style="color:#d97706;"></i>Machine Utilization (DICOM)</div>
+  <div class="p-3">
+    {% for row in modality_table %}
+    <div class="d-flex align-items-center gap-3 mb-3">
+      <div class="top-rev-rank {% if forloop.counter == 1 %}rank-gold{% elif forloop.counter == 2 %}rank-silver{% elif forloop.counter == 3 %}rank-bronze{% else %}rank-def{% endif %}">{{ forloop.counter }}</div>
+      <div class="flex-grow-1">
+        <div class="fw-semibold" style="font-size:.88rem;">{{ row.label }}</div>
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <div class="flex-grow-1" style="height:10px;background:#f1f5f9;border-radius:5px;overflow:hidden;">
+            <div style="height:100%;border-radius:5px;background:{% if forloop.counter == 1 %}#d97706{% elif forloop.counter == 2 %}#6366f1{% elif forloop.counter == 3 %}#c2410c{% else %}#94a3b8{% endif %};width:{% if modality_table.0.count %}{% widthratio row.count modality_table.0.count 100 %}{% else %}0{% endif %}%;"></div>
+          </div>
+          <span class="fw-bold" style="min-width:50px;text-align:right;font-size:.92rem;">{{ row.count }}</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
   </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr>
-          <th>#</th>
-          <th>Machine / Modality</th>
-          <th class="text-end">Studies Done</th>
-          <th style="min-width:200px;">Volume</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% with total_modality=modality_table.0.count %}
-        {% for row in modality_table %}
-        <tr>
-          <td class="text-muted">{{ forloop.counter }}</td>
-          <td class="fw-semibold">{{ row.label }}</td>
-          <td class="text-end fw-bold">{{ row.count }}</td>
-          <td>
-            {% if modality_table %}
-            <div class="progress" style="height:8px;margin-top:4px;">
-              <div class="progress-bar bg-info"
-                   style="width:{% widthratio row.count modality_table.0.count 100 %}%;"></div>
-            </div>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-        {% endwith %}
-      </tbody>
-    </table>
-  </div>
-  <div class="card-footer bg-white text-muted small py-2">
-    <i class="bi bi-info-circle me-1"></i>
-    This report shows how much each machine is being utilised.
-    High utilisation = strong financial justification for upgrading or adding a second unit.
+  <div class="px-3 py-2 small text-muted" style="background:#f8fafc;border-top:1px solid #f1f5f9;">
+    <i class="bi bi-info-circle me-1"></i>High utilization = strong justification for upgrading or adding a second unit.
   </div>
 </div>
 {% endif %}
+
+{# ── Grand Total ── #}
+<div class="section-card mb-4">
+  <div class="d-flex justify-content-between align-items-center p-3">
+    <div>
+      <div class="fw-bold" style="font-size:1rem;">Grand Total — {{ year }}</div>
+      <div class="text-muted small">All imaging categories combined</div>
+    </div>
+    <div class="text-end">
+      <div class="fw-bold" style="font-size:.88rem;color:#64748b;">{{ grand_count }} exams</div>
+      <div class="fw-bold" style="font-size:1.4rem;color:#16a34a;">{{ grand_revenue|floatformat:0 }} FCFA</div>
+    </div>
+  </div>
+</div>
 
 {% endblock %}
 
 {% block extra_js %}
 <style>
 @media print {
-  .btn, .btn-group, form select { display: none !important; }
-  .card { break-inside: avoid; }
+  .btn,.btn-group,form select{display:none!important;}
+  .section-card,.kpi-card{break-inside:avoid;border:1px solid #dee2e6!important;}
+  .collapse{display:block!important;}
+  .rev-cat-bar-fill,.progress-bar{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 }
 </style>
 <script>
 (function(){
-  const td = {{ trend_json|safe }};
-  if (!td.length) return;
-  new Chart(document.getElementById('revenueTrendChart'), {
-    type: 'line',
-    data: {
-      labels: td.map(function(d){ return d.label; }),
-      datasets: [
-        {
-          label: 'Orders',
-          data: td.map(function(d){ return d.count; }),
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.08)',
-          borderWidth: 2, pointRadius: 4, fill: true, tension: 0.35,
-          yAxisID: 'yCount'
-        },
-        {
-          label: 'Revenue (FCFA)',
-          data: td.map(function(d){ return d.revenue; }),
-          borderColor: '#198754',
-          backgroundColor: 'rgba(25,135,84,0.08)',
-          borderWidth: 2, pointRadius: 4, fill: true, tension: 0.35,
-          yAxisID: 'yRev'
+  // Revenue trend chart (dual axis: orders + revenue)
+  var td = {{ trend_json|safe }};
+  if (td.length && document.getElementById('revenueTrendChart')) {
+    new Chart(document.getElementById('revenueTrendChart'), {
+      type: 'line',
+      data: {
+        labels: td.map(function(d){return d.label;}),
+        datasets: [
+          { label:'Orders', data:td.map(function(d){return d.count;}),
+            borderColor:'#6366f1', backgroundColor:'rgba(99,102,241,0.08)',
+            borderWidth:2, pointRadius:4, fill:true, tension:0.35, yAxisID:'yCount' },
+          { label:'Revenue (FCFA)', data:td.map(function(d){return d.revenue;}),
+            borderColor:'#16a34a', backgroundColor:'rgba(22,163,106,0.08)',
+            borderWidth:2, pointRadius:4, fill:true, tension:0.35, yAxisID:'yRev' }
+        ]
+      },
+      options: {
+        responsive:true, interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'top',labels:{boxWidth:14,font:{size:11}}}},
+        scales: {
+          yCount:{type:'linear',position:'left',beginAtZero:true,title:{display:true,text:'Orders',font:{size:11}}},
+          yRev:{type:'linear',position:'right',beginAtZero:true,title:{display:true,text:'Revenue (FCFA)',font:{size:11}},grid:{drawOnChartArea:false}}
         }
-      ]
-    },
-    options: {
-      responsive: true,
-      interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } } },
-      scales: {
-        yCount: { type: 'linear', position: 'left', beginAtZero: true,
-                   title: { display: true, text: 'Orders' } },
-        yRev:   { type: 'linear', position: 'right', beginAtZero: true,
-                   title: { display: true, text: 'Revenue (FCFA)' },
-                   grid: { drawOnChartArea: false } }
       }
-    }
-  });
+    });
+  }
+
+  // Build top revenue generators list + category revenue chart from Django data
+  var cats = {};
+  var allTests = [];
+  {% for cat_name, cat_data in categories.items %}
+  cats['{{ cat_name|escapejs }}'] = { rev: {{ cat_data.subtotal_rev|floatformat:0 }}, count: {{ cat_data.subtotal_count }} };
+  {% for t in cat_data.tests %}
+  allTests.push({ name:'{{ t.name|escapejs }}', rev:{{ t.revenue|floatformat:0 }}, count:{{ t.count }} });
+  {% endfor %}
+  {% endfor %}
+
+  // Top 10 by revenue
+  allTests.sort(function(a,b){return b.rev-a.rev;});
+  var top10 = allTests.slice(0,10);
+  var listEl = document.getElementById('topRevList');
+  if (listEl && top10.length) {
+    var html = '';
+    var rankClasses = ['rank-gold','rank-silver','rank-bronze'];
+    top10.forEach(function(t,i){
+      var rc = i < 3 ? rankClasses[i] : 'rank-def';
+      html += '<div class="top-rev-row">' +
+        '<div class="top-rev-rank '+rc+'">'+(i+1)+'</div>' +
+        '<div class="flex-grow-1"><div class="fw-semibold" style="font-size:.85rem;">'+t.name+'</div>' +
+        '<div style="font-size:.75rem;color:#64748b;">'+t.count+' exams</div></div>' +
+        '<div class="fw-bold" style="color:#16a34a;font-size:.92rem;">'+t.rev.toLocaleString()+' FCFA</div></div>';
+    });
+    listEl.innerHTML = html;
+  } else if (listEl) {
+    listEl.innerHTML = '<div class="text-center text-muted py-4 small">No data</div>';
+  }
+
+  // Category revenue doughnut
+  var catNames = Object.keys(cats);
+  var catRevs = catNames.map(function(k){return cats[k].rev;});
+  var COLORS = ['#6366f1','#2563eb','#16a34a','#d97706','#dc3545','#0d9488','#e83e8c','#fd7e14','#6c757d','#0dcaf0'];
+  if (catNames.length && document.getElementById('catRevenueChart')) {
+    new Chart(document.getElementById('catRevenueChart'), {
+      type:'doughnut',
+      data:{labels:catNames, datasets:[{data:catRevs, backgroundColor:COLORS, borderWidth:2}]},
+      options:{responsive:true, cutout:'55%', plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}
+    });
+  }
 }());
 </script>
 {% endblock %}
