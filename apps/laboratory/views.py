@@ -647,14 +647,19 @@ def lab_stats_view(request):
 
 @login_required
 def verify_result(request, result_id):
-    """Lab senior / director verifies a result."""
-    if not (request.user.is_medical_director or request.user.is_lab_tech):
+    """Lab senior / director verifies a result (ISO 15189 — tech who performed cannot verify)."""
+    if not (request.user.is_medical_director or request.user.is_super_admin):
         return HttpResponseForbidden()
     result = get_object_or_404(LabResult, pk=result_id, is_deleted=False)
+    if result.performed_by and result.performed_by == request.user:
+        messages.error(request, 'ISO 15189: The person who performed the test cannot verify the result.')
+        return redirect('laboratory:detail', pk=result.order_item.order.pk)
     result.is_verified = True
     result.verified_by = request.user
     result.verified_at = timezone.now()
-    result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'updated_at'])
+    result.result_status = ResultStatus.TECH_VALID
+    result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'result_status', 'updated_at'])
+    _log_tat(result.order_item.order, TATTimestamp.Event.TECH_VALIDATED, request.user)
     messages.success(request, 'Result verified.')
     # Check if all results are done — auto-return patient to doctor queue
     try:
@@ -662,8 +667,11 @@ def verify_result(request, result_id):
         if visit:
             from apps.core.patient_flow import check_and_autoreturn_to_doctor
             check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger('ehr.laboratory').warning(
+            'Auto-return to doctor failed for lab order %s: %s', result.order_item.order.pk, exc,
+        )
     return redirect('laboratory:detail', pk=result.order_item.order.pk)
 
 
@@ -805,11 +813,16 @@ def bulk_collect_sample_view(request):
     if not pks:
         messages.warning(request, 'No orders selected.')
         return redirect('laboratory:dashboard')
-    updated = LabOrder.objects.filter(
+    orders_to_update = list(LabOrder.objects.filter(
         pk__in=pks,
         status=LabOrder.Status.ORDERED,
         is_deleted=False,
-    ).update(status=LabOrder.Status.SAMPLE_COLLECTED)
+    ))
+    updated = LabOrder.objects.filter(pk__in=[o.pk for o in orders_to_update]).update(
+        status=LabOrder.Status.SAMPLE_COLLECTED,
+    )
+    for o in orders_to_update:
+        _log_tat(o, TATTimestamp.Event.COLLECTED, request.user, notes='Bulk collection')
     messages.success(request, f'{updated} order(s) marked as Sample Collected.')
     return redirect('laboratory:dashboard')
 
@@ -833,6 +846,7 @@ def collect_sample_view(request, pk):
             sc.save()
             order.status = LabOrder.Status.SAMPLE_COLLECTED
             order.save(update_fields=['status'])
+            _log_tat(order, TATTimestamp.Event.COLLECTED, request.user)
             messages.success(request, 'Sample collection recorded.')
             return redirect('laboratory:detail', pk=pk)
     else:
@@ -877,6 +891,8 @@ def enter_results_view(request, pk):
                         amended_by=request.user,
                         reason=amendment_reason or 'Corrected by technician',
                     )
+                    _log_tat(order, TATTimestamp.Event.AMENDED, request.user,
+                             notes=f'{item.test_type.name}: {result.result_value} → {value}')
                 result.result_value = value
                 result.result_unit = request.POST.get(f'result_unit_{item.pk}', '')
                 result.reference_range = request.POST.get(f'ref_range_{item.pk}', '')
@@ -885,18 +901,41 @@ def enter_results_view(request, pk):
                 result.comment = request.POST.get(f'comment_{item.pk}', '')
                 result.performed_by = request.user
                 result.save()
+                # Auto-verification — check if result passes auto-release rules
+                if not result.is_verified:
+                    try:
+                        rule = AutoverificationRule.objects.get(
+                            test_type=item.test_type, is_active=True,
+                        )
+                        if rule.check_result(result):
+                            result.is_verified = True
+                            result.auto_verified = True
+                            result.verified_at = timezone.now()
+                            result.result_status = ResultStatus.TECH_VALID
+                            result.save(update_fields=[
+                                'is_verified', 'auto_verified', 'verified_at',
+                                'result_status', 'updated_at',
+                            ])
+                            _log_tat(order, TATTimestamp.Event.TECH_VALIDATED,
+                                     notes=f'Auto-verified: {item.test_type.name}')
+                    except AutoverificationRule.DoesNotExist:
+                        pass
                 if result.is_critical:
                     try:
                         from apps.notifications.utils import notify_critical_lab_result
                         notify_critical_lab_result(result)
                         _had_critical = True
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        import logging as _logging
+                        _logging.getLogger('ehr.laboratory').error(
+                            'Critical lab notification failed for result %s: %s', result.pk, exc,
+                        )
                 item.status = LabOrder.Status.COMPLETED
                 item.save(update_fields=['status'])
 
         order.status = LabOrder.Status.COMPLETED
         order.save(update_fields=['status'])
+        _log_tat(order, TATTimestamp.Event.RESULT_ENTERED, request.user)
         # Notify ordering doctor — only send general "ready" notification when no
         # critical notification was already sent (avoids duplicate alerts to the doctor)
         try:
@@ -916,8 +955,11 @@ def enter_results_view(request, pk):
                         notification_type=NotificationType.LAB_RESULT,
                         priority=NotificationPriority.NORMAL,
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger('ehr.laboratory').error(
+                'Lab result notification failed for order %s: %s', order.pk, exc,
+            )
         messages.success(request, 'Results saved successfully.')
         return redirect('laboratory:detail', pk=pk)
 

@@ -52,9 +52,7 @@ def investigation_workstation_view(request):
     )
 
     # Only paid orders are actionable — filter by payment_status
-    _paid_statuses = [
-        'PAID', 'INSURED', 'WAIVED', 'PACKAGE', 'STAT_OVERRIDE', 'BILL_LATER', 'FREE_REPEAT',
-    ]
+    _paid_statuses = PaymentStatus.actionable_statuses()
 
     # ── Pipeline stages ──────────────────────────────────────────────────────
     # 1. Checked In — patient arrived, waiting for exam
@@ -284,6 +282,19 @@ def investigation_order_view(request, consultation_pk):
                 order.ordered_by = request.user
                 order.created_by = request.user
 
+                # Laterality enforcement — block NA when investigation type requires it
+                inv_type = order.investigation_type
+                if inv_type.laterality_required and order.eye == Laterality.NA:
+                    messages.error(
+                        request,
+                        f'{inv_type.name} requires laterality (OD/OS/OU). '
+                        f'"Not Applicable" is not allowed for this investigation type.'
+                    )
+                    return render(request, 'investigations/order_form.html', {
+                        'form': form, 'consultation': consultation,
+                        'types': InvestigationType.objects.filter(is_active=True).order_by('category', 'name'),
+                    })
+
                 # Payment status from waiver
                 if payment_waived:
                     order.payment_status = PaymentStatus.WAIVED
@@ -318,29 +329,41 @@ def investigation_order_view(request, consultation_pk):
 
                 order.save()
 
-                # ServiceWorkOrder for billing
+                # ServiceWorkOrder for billing — include price for cashier reference
                 try:
                     from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+                    import logging as _logging
+                    _log = _logging.getLogger('ehr.investigations')
                     wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
-                    wo_notes = f'Payment waived — {waive_reason}' if payment_waived else ''
+                    # Calculate quantity: ×2 for OU when billed_per_eye
+                    qty = 2 if (inv_type.billed_per_eye and order.eye == Laterality.OU) else 1
+                    total_price = inv_type.unit_price * qty
+                    price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' × 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
+                    wo_notes = f'Payment waived — {waive_reason}' if payment_waived else price_note
                     ServiceWorkOrder.objects.create(
                         patient=consultation.patient,
                         consultation=consultation,
                         category=ServiceCategory.INVESTIGATION,
-                        description=f'Investigation: {inv_type.name} ({order.get_eye_display()})',
+                        description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
                         status=wo_status,
                         notes=wo_notes,
                         created_by=request.user,
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    import logging as _logging
+                    _logging.getLogger('ehr.investigations').error(
+                        'ServiceWorkOrder creation failed for investigation %s: %s', order.pk, exc,
+                    )
 
                 # Auto-route to investigation queue
                 try:
                     from apps.core.patient_flow import auto_route_to_investigation
                     auto_route_to_investigation(consultation, ordered_by=request.user)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    import logging as _logging
+                    _logging.getLogger('ehr.investigations').warning(
+                        'Auto-route to investigation failed for order %s: %s', order.pk, exc,
+                    )
 
                 messages.success(
                     request,
@@ -570,6 +593,16 @@ def repeat_acquisition_view(request, pk):
     repeat_count = 0
     if old_acq:
         repeat_count = old_acq.repeat_count + 1
+        # Preserve previous attempt data in order notes before deleting
+        prev_summary = (
+            f'[Repeat #{repeat_count}] Previous acquisition by {old_acq.performed_by} '
+            f'at {old_acq.started_at:%d %b %Y %H:%M if old_acq.started_at else "?"}'
+            f' — Quality: {"PASS" if old_acq.quality_passed else "FAIL"}'
+            f' (metric: {old_acq.quality_metric_value or "N/A"})'
+            f' — Notes: {old_acq.quality_notes or "none"}'
+        )
+        order.notes = (order.notes or '') + f'\n{prev_summary}'
+        order.save(update_fields=['notes', 'updated_at'])
         old_acq.delete()
 
     # Create fresh acquisition record
@@ -844,8 +877,11 @@ def verify_result_view(request, pk):
         if visit:
             from apps.core.patient_flow import check_and_autoreturn_to_doctor
             check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger('ehr.investigations').warning(
+            'Auto-return to doctor failed for order %s: %s', order.pk, exc,
+        )
     return redirect('investigations:detail', pk=pk)
 
 
@@ -1753,12 +1789,11 @@ def investigation_stats_view(request):
     completion_rate = round(completed_count / total_orders * 100, 1) if total_orders else 0
 
     # ── Patient Flow Funnel ───────────────────────────────────────────────────
-    _paid_statuses = ['PAID', 'INSURED', 'WAIVED', 'PACKAGE', 'STAT_OVERRIDE', 'BILL_LATER', 'FREE_REPEAT']
     prescribed_count = total_orders
-    paid_count       = base.filter(payment_status__in=_paid_statuses).count()
+    paid_count       = base.filter(payment_status__in=PaymentStatus.actionable_statuses()).count()
     unpaid_count     = base.filter(payment_status='UNPAID').count()
     showed_up_count  = base.filter(checked_in_at__isnull=False).count()
-    paid_no_show     = base.filter(payment_status__in=_paid_statuses, checked_in_at__isnull=True).exclude(status__in=['COMPLETED', 'CANCELLED']).count()
+    paid_no_show     = base.filter(payment_status__in=PaymentStatus.actionable_statuses(), checked_in_at__isnull=True).exclude(status__in=['COMPLETED', 'CANCELLED']).count()
     show_rate        = round(showed_up_count / paid_count * 100, 1) if paid_count else 0
 
     # ── Average TAT (order → result) ─────────────────────────────────────────

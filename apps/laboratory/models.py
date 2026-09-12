@@ -498,6 +498,13 @@ class LabResult(AuditModel):
         flag = ' [CRITICAL]' if self.is_critical else (' [ABNORMAL]' if self.is_abnormal else '')
         return f"{self.order_item.test_type.name}: {self.result_value} {self.result_unit}{flag}"
 
+    def save(self, **kwargs):
+        # Auto-invoke delta check and critical flag before saving
+        if self.result_value and self.order_item_id:
+            self.perform_delta_check()
+            self.auto_flag_critical()
+        super().save(**kwargs)
+
     def perform_delta_check(self):
         """Compare with most recent previous result for same test + patient."""
         test = self.order_item.test_type

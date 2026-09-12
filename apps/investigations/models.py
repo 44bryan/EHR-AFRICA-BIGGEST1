@@ -53,6 +53,12 @@ class PaymentStatus(models.TextChoices):
     STAT_OVERRIDE = 'STAT_OVERRIDE', _('Emergency Override')
     FREE_REPEAT = 'FREE_REPEAT', _('Free Repeat (quality failure)')
 
+    @classmethod
+    def actionable_statuses(cls):
+        """Statuses that allow investigation to proceed (paid or authorized)."""
+        return [cls.PAID, cls.INSURED, cls.WAIVED, cls.PACKAGE,
+                cls.STAT_OVERRIDE, cls.BILL_LATER, cls.FREE_REPEAT]
+
 
 class AcquisitionStatus(models.TextChoices):
     SCHEDULED = 'SCHEDULED', _('Scheduled')
