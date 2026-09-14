@@ -101,6 +101,12 @@ class InventoryItem(AuditModel):
         return self.max_stock_level > 0 and self.current_stock > self.max_stock_level
 
     @property
+    def excess_qty(self):
+        if self.is_overstocked:
+            return self.current_stock - self.max_stock_level
+        return 0
+
+    @property
     def stock_status(self):
         if self.current_stock == 0:
             return 'OUT_OF_STOCK'
@@ -743,3 +749,100 @@ class StockTakeSchedule(AuditModel):
     @property
     def days_until_due(self):
         return (self.next_due - timezone.localdate()).days
+
+
+# ── Supplier Quotation (ISO 9001 §8.4 — Vendor Selection) ───────────────────
+
+class QuotationStatus(models.TextChoices):
+    REQUESTED = 'REQUESTED', 'Requested'
+    RECEIVED  = 'RECEIVED',  'Received'
+    ACCEPTED  = 'ACCEPTED',  'Accepted'
+    REJECTED  = 'REJECTED',  'Rejected'
+    EXPIRED   = 'EXPIRED',   'Expired'
+
+
+class SupplierQuotation(AuditModel):
+    """Request for Quotation (RFQ) from a vendor."""
+    rfq_number      = models.CharField(max_length=30, unique=True, blank=True)
+    vendor          = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='quotations')
+    status          = models.CharField(max_length=15, choices=QuotationStatus.choices,
+                                        default=QuotationStatus.REQUESTED)
+    requested_date  = models.DateField(default=timezone.localdate)
+    valid_until     = models.DateField(null=True, blank=True)
+    total_amount    = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    linked_po       = models.ForeignKey(
+        PurchaseOrder, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='quotations', help_text='PO created from this quotation',
+    )
+    notes           = models.TextField(blank=True)
+    requested_by    = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='store_quotations_requested',
+    )
+
+    class Meta:
+        ordering = ['-requested_date']
+
+    def __str__(self):
+        return f"RFQ-{self.rfq_number} ({self.vendor.name})"
+
+    def save(self, *args, **kwargs):
+        if not self.rfq_number:
+            today = timezone.localdate()
+            count = SupplierQuotation.objects.filter(requested_date__year=today.year).count() + 1
+            self.rfq_number = f"RFQ-{today.year}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        return self.valid_until and self.valid_until < timezone.localdate()
+
+
+class QuotationItem(TimeStampedModel):
+    quotation      = models.ForeignKey(SupplierQuotation, on_delete=models.CASCADE, related_name='items')
+    item           = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
+    quantity       = models.PositiveIntegerField()
+    quoted_price   = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes          = models.CharField(max_length=200, blank=True)
+
+    @property
+    def subtotal(self):
+        return self.quantity * self.quoted_price
+
+    def __str__(self):
+        return f"{self.item.name} × {self.quantity} @ {self.quoted_price}"
+
+
+# ── Store Budget (ISO 9001 §7.1 — Resource Management) ──────────────────────
+
+class StoreBudget(AuditModel):
+    """Annual or periodic budget for store procurement."""
+    name          = models.CharField(max_length=100)
+    fiscal_year   = models.PositiveIntegerField()
+    category      = models.CharField(max_length=20, choices=ItemCategory.choices, blank=True,
+                                      help_text='Budget for specific category (blank = all)')
+    allocated     = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                         help_text='Total budget allocated')
+    spent         = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                         help_text='Amount spent (auto-updated from POs)')
+    notes         = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-fiscal_year', 'name']
+        unique_together = [('fiscal_year', 'category')]
+
+    def __str__(self):
+        return f"{self.name} — {self.fiscal_year}"
+
+    @property
+    def remaining(self):
+        return self.allocated - self.spent
+
+    @property
+    def utilization_pct(self):
+        if self.allocated == 0:
+            return 0
+        return round(float(self.spent) / float(self.allocated) * 100, 1)
+
+    @property
+    def is_over_budget(self):
+        return self.spent > self.allocated

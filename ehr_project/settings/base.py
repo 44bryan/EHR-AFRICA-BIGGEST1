@@ -213,7 +213,8 @@ REST_FRAMEWORK = {
 }
 
 # Celery
-CELERY_BROKER_URL = env('REDIS_URL', default='redis://127.0.0.1:6379/0')
+CELERY_BROKER_URL = env('REDIS_URL', default='memory://')
+CELERY_TASK_ALWAYS_EAGER = not env('REDIS_URL', default='')
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_CACHE_BACKEND = 'django-cache'
 CELERY_ACCEPT_CONTENT = ['json']
@@ -223,24 +224,39 @@ CELERY_TIMEZONE = 'Africa/Douala'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Cache
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': env('REDIS_URL', default='redis://127.0.0.1:6379/1'),
+_redis_url = env('REDIS_URL', default='')
+if _redis_url:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': _redis_url,
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
 
 # Django Channels — always use db=2, isolated from Celery (db=0) and cache (db=1)
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            'hosts': ['redis://127.0.0.1:6379/2'],
-            'capacity': 1500,
-            'expiry': 10,
+if _redis_url:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [_redis_url.replace('/1', '/2')],
+                'capacity': 1500,
+                'expiry': 10,
+            },
         },
-    },
-}
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 # Axes (brute force protection)
 AXES_FAILURE_LIMIT = 5

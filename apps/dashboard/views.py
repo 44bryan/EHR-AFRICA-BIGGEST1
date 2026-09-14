@@ -884,9 +884,74 @@ def home_view(request):
         })
         return render(request, 'dashboard/investigation_tech.html', ctx)
 
-    # ── Lab Technician — blood/urine/micro only, no eye investigations ──
+    # ── Lab Technician — blood/urine/micro dashboard ──
     if user.is_lab_tech:
-        return redirect('laboratory:dashboard')
+        from apps.laboratory.models import LabOrder, LabResult, LabOrderItem
+        from django.db.models import Count
+
+        today_local = today
+        month_start = today.replace(day=1)
+        _paid_lab = ['PAID', 'INSURED', 'WAIVED', 'STAT_OVERRIDE', 'PREPAID', 'BILL_LATER']
+
+        lab_base = LabOrder.objects.filter(
+            is_deleted=False, created_at__date__gte=today_local - timedelta(days=7),
+        )
+
+        expected_count = lab_base.filter(
+            payment_status__in=_paid_lab, checked_in_at__isnull=True, status='ORDERED',
+        ).count()
+        checked_in_count = lab_base.filter(
+            payment_status__in=_paid_lab, checked_in_at__isnull=False, status='ORDERED',
+        ).count()
+        sample_collected_count = lab_base.filter(
+            payment_status__in=_paid_lab, status='SAMPLE_COLLECTED',
+        ).count()
+        processing_count = lab_base.filter(
+            payment_status__in=_paid_lab, status='PROCESSING',
+        ).count()
+
+        completed_today = LabOrder.objects.filter(
+            status='COMPLETED', is_deleted=False, updated_at__date=today_local,
+        ).count()
+
+        completed_this_month = LabOrder.objects.filter(
+            status='COMPLETED', is_deleted=False, updated_at__date__gte=month_start,
+        ).count()
+
+        my_results_today = LabResult.objects.filter(
+            is_deleted=False, performed_by=user, created_at__date=today_local,
+        ).count()
+
+        critical_count = LabResult.objects.filter(
+            is_critical=True, is_verified=False, is_deleted=False,
+        ).count()
+
+        abnormal_count = LabResult.objects.filter(
+            is_abnormal=True, is_deleted=False, created_at__date__gte=month_start,
+        ).count()
+
+        unpaid_count = LabOrder.objects.filter(
+            is_deleted=False, status='ORDERED',
+        ).exclude(payment_status__in=_paid_lab).count()
+
+        ordered_today = LabOrder.objects.filter(
+            is_deleted=False, created_at__date=today_local,
+        ).count()
+
+        ctx.update({
+            'expected_count': expected_count,
+            'checked_in_count': checked_in_count,
+            'sample_collected_count': sample_collected_count,
+            'processing_count': processing_count,
+            'completed_today': completed_today,
+            'completed_this_month': completed_this_month,
+            'my_results_today': my_results_today,
+            'critical_count': critical_count,
+            'abnormal_count': abnormal_count,
+            'unpaid_count': unpaid_count,
+            'ordered_today': ordered_today,
+        })
+        return render(request, 'dashboard/lab_technician.html', ctx)
 
     # ── Pharmacist ────────────────────────────────────────────────────────
     if user.is_pharmacist:

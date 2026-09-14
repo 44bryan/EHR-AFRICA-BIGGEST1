@@ -86,4 +86,41 @@ urlpatterns = [
     path('reports/expiry/', views.report_expiry_alert, name='report_expiry'),
     path('reports/vendors/', views.report_vendor_performance, name='report_vendors'),
     path('reports/abc/', views.report_abc_analysis, name='report_abc'),
+
+    # ── NEW: Stats / Analytics ───────────────────────────────────────
+    path('stats/', views.stats, name='stats'),
+
+    # ── NEW: Movement Log ────────────────────────────────────────────
+    path('movement-log/', views.movement_log, name='movement_log'),
+
+    # ── NEW: Receive Stock (walk-in) ─────────────────────────────────
+    path('receive-stock/', views.receive_stock, name='receive_stock'),
+
+    # ── NEW: Alerts ──────────────────────────────────────────────────
+    path('alerts/', views.alerts, name='alerts'),
+
+    # ── NEW: Barcode Scan ────────────────────────────────────────────
+    path('barcode/', views.barcode_scan, name='barcode_scan'),
+    path('barcode/lookup/', views.barcode_lookup_ajax, name='barcode_lookup'),
+
+    # ── NEW: Consignment Stock ───────────────────────────────────────
+    path('consignment/', views.consignment_dashboard, name='consignment_dashboard'),
+
+    # ── NEW: Supplier Quotations ─────────────────────────────────────
+    path('quotations/', views.quotation_list, name='quotation_list'),
+    path('quotations/create/', views.quotation_create, name='quotation_create'),
+    path('quotations/compare/', views.quotation_compare, name='quotation_compare'),
+    path('quotations/<uuid:rfq_id>/', views.quotation_detail, name='quotation_detail'),
+    path('quotations/<uuid:rfq_id>/update/', views.quotation_update, name='quotation_update'),
+
+    # ── NEW: Budget ──────────────────────────────────────────────────
+    path('budget/', views.budget_list, name='budget_list'),
+    path('budget/create/', views.budget_create, name='budget_create'),
+    path('budget/<uuid:budget_id>/edit/', views.budget_edit, name='budget_edit'),
+
+    # ── Stock Entry / Exit ─────────────────────────────────────────
+    path('stock-exit/', views.stock_exit_list, name='stock_exit_list'),
+    path('stock-exit/create/', views.stock_exit_create, name='stock_exit_create'),
+    path('stock-entry/', views.stock_entry_list, name='stock_entry_list'),
+    path('stock-entry/create/', views.stock_entry_create, name='stock_entry_create'),
 ]

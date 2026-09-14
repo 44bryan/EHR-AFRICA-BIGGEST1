@@ -17,6 +17,8 @@ from .models import (
     GoodsReceivedNote, GRNItem, GRNStatus,
     DisposalRecord, DisposalItem, DisposalStatus,
     StockTakeSchedule, ABCClass, VENClass,
+    SupplierQuotation, QuotationItem, QuotationStatus,
+    StoreBudget,
 )
 
 
@@ -1604,4 +1606,922 @@ def report_abc_analysis(request):
         'class_a_count': class_a_count, 'class_a_value': class_a_value,
         'class_b_count': class_b_count, 'class_b_value': class_b_value,
         'class_c_count': class_c_count, 'class_c_value': class_c_value,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STATS / ANALYTICS (WHO / ISO 9001)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def stats(request):
+    """Comprehensive store analytics — consumption trends, KPIs, charts."""
+    if not _can_view_reports(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    from django.db.models.functions import TruncMonth, TruncDate
+
+    today = timezone.localdate()
+    month_start = today.replace(day=1)
+
+    # ── Period filter ────────────────────────────────────────────────
+    period = request.GET.get('period', 'month')
+    if period == 'year':
+        cutoff = today.replace(month=1, day=1)
+        period_label = f'Year {today.year}'
+    elif period == 'quarter':
+        q_month = ((today.month - 1) // 3) * 3 + 1
+        cutoff = today.replace(month=q_month, day=1)
+        period_label = f'Q{(today.month - 1) // 3 + 1} {today.year}'
+    else:
+        cutoff = month_start
+        period_label = today.strftime('%B %Y')
+
+    # ── KPIs ─────────────────────────────────────────────────────────
+    all_items = InventoryItem.objects.filter(is_active=True, is_deleted=False)
+    total_items = all_items.count()
+    low_stock = all_items.filter(current_stock__lte=F('reorder_level')).count()
+    out_of_stock = all_items.filter(current_stock=0).count()
+    overstocked = all_items.filter(max_stock_level__gt=0, current_stock__gt=F('max_stock_level')).count()
+
+    stock_value = all_items.aggregate(
+        total=Sum(F('current_stock') * F('unit_cost'), output_field=FloatField())
+    )['total'] or 0
+
+    # Stockout rate
+    stockout_rate = round(out_of_stock / total_items * 100, 1) if total_items else 0
+
+    # PO spend this period
+    po_spend = PurchaseOrder.objects.filter(
+        status='RECEIVED', is_deleted=False, received_date__gte=cutoff,
+    ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+
+    # Requisition stats
+    reqs_period = DepartmentRequisition.objects.filter(
+        is_deleted=False, created_at__date__gte=cutoff,
+    )
+    total_reqs = reqs_period.count()
+    fulfilled_reqs = reqs_period.filter(status='ISSUED').count()
+    fulfillment_rate = round(fulfilled_reqs / total_reqs * 100, 1) if total_reqs else 0
+
+    # Average lead time (POs with expected_date and received_date)
+    from django.db.models.functions import Cast
+    lead_time_pos = PurchaseOrder.objects.filter(
+        status='RECEIVED', is_deleted=False,
+        expected_date__isnull=False, received_date__isnull=False,
+        received_date__gte=cutoff,
+    )
+    lead_times = []
+    for po in lead_time_pos[:100]:
+        lead_times.append((po.received_date - po.ordered_date).days)
+    avg_lead_time = round(sum(lead_times) / len(lead_times), 1) if lead_times else 0
+
+    # Expiry risk
+    near_expiry = BatchStock.objects.filter(
+        quantity_remaining__gt=0, expiry_date__lte=today + datetime.timedelta(days=90),
+        expiry_date__gte=today,
+    ).count()
+    expired = BatchStock.objects.filter(
+        quantity_remaining__gt=0, expiry_date__lt=today,
+    ).count()
+    expiry_value = BatchStock.objects.filter(
+        quantity_remaining__gt=0, expiry_date__lte=today + datetime.timedelta(days=90),
+    ).aggregate(
+        val=Sum(F('quantity_remaining') * F('unit_cost'), output_field=FloatField())
+    )['val'] or 0
+
+    # ── 12-month trend (movements) ───────────────────────────────────
+    twelve_months_ago = today - datetime.timedelta(days=365)
+    monthly_in = (
+        StockMovement.objects.filter(
+            movement_type='IN', created_at__date__gte=twelve_months_ago,
+        ).annotate(month=TruncMonth('created_at'))
+        .values('month').annotate(total=Sum('quantity')).order_by('month')
+    )
+    monthly_out = (
+        StockMovement.objects.filter(
+            movement_type__in=['OUT', 'ISSUE'], created_at__date__gte=twelve_months_ago,
+        ).annotate(month=TruncMonth('created_at'))
+        .values('month').annotate(total=Sum('quantity')).order_by('month')
+    )
+    # Build month labels
+    trend_labels, trend_in, trend_out = [], [], []
+    in_dict = {m['month'].strftime('%Y-%m'): m['total'] for m in monthly_in}
+    out_dict = {m['month'].strftime('%Y-%m'): abs(m['total']) for m in monthly_out}
+    for i in range(12):
+        d = today - datetime.timedelta(days=(11 - i) * 30)
+        key = d.strftime('%Y-%m')
+        label = d.strftime('%b %y')
+        trend_labels.append(label)
+        trend_in.append(in_dict.get(key, 0))
+        trend_out.append(out_dict.get(key, 0))
+
+    # ── Daily movements (last 30 days) ───────────────────────────────
+    thirty_ago = today - datetime.timedelta(days=30)
+    daily_moves = (
+        StockMovement.objects.filter(created_at__date__gte=thirty_ago)
+        .annotate(day=TruncDate('created_at'))
+        .values('day').annotate(count=Count('id')).order_by('day')
+    )
+    daily_labels = []
+    daily_data = []
+    d_dict = {m['day'].strftime('%d/%m'): m['count'] for m in daily_moves}
+    for i in range(30):
+        d = thirty_ago + datetime.timedelta(days=i)
+        key = d.strftime('%d/%m')
+        daily_labels.append(key)
+        daily_data.append(d_dict.get(key, 0))
+
+    # ── Category distribution ────────────────────────────────────────
+    cat_data = (
+        all_items.values('category').annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    cat_labels = [ItemCategory(c['category']).label for c in cat_data]
+    cat_counts = [c['count'] for c in cat_data]
+
+    # ── Top 10 consumed items ────────────────────────────────────────
+    top_consumed = (
+        StockMovement.objects.filter(
+            movement_type__in=['OUT', 'ISSUE'], created_at__date__gte=cutoff,
+        ).values('item__name', 'item__item_code')
+        .annotate(total_qty=Sum('quantity'))
+        .order_by('total_qty')[:10]
+    )
+    top_consumed = [{'name': t['item__name'], 'code': t['item__item_code'],
+                     'qty': abs(t['total_qty'])} for t in top_consumed]
+
+    # ── Department consumption ───────────────────────────────────────
+    dept_consumption = (
+        DepartmentRequisition.objects.filter(
+            status__in=['ISSUED', 'PARTIAL'], is_deleted=False,
+            issued_at__date__gte=cutoff,
+        ).values('department')
+        .annotate(total_items=Sum('items__quantity_issued'))
+        .order_by('-total_items')
+    )
+    dept_labels = [d['department'] for d in dept_consumption]
+    dept_values = [d['total_items'] or 0 for d in dept_consumption]
+
+    # ── Vendor performance summary ───────────────────────────────────
+    vendors = Vendor.objects.filter(
+        is_active=True, is_deleted=False, total_orders__gt=0,
+    ).order_by('-on_time_deliveries')[:10]
+
+    # ── ABC class summary ────────────────────────────────────────────
+    abc_counts = all_items.exclude(abc_class='').values('abc_class').annotate(
+        count=Count('id'),
+        value=Sum(F('current_stock') * F('unit_cost'), output_field=FloatField()),
+    ).order_by('abc_class')
+
+    # ── VEN class summary ────────────────────────────────────────────
+    ven_counts = all_items.exclude(ven_class='').values('ven_class').annotate(
+        count=Count('id'),
+    ).order_by('ven_class')
+
+    # ── Stock turn rate ──────────────────────────────────────────────
+    annual_consumption = StockMovement.objects.filter(
+        movement_type__in=['OUT', 'ISSUE'],
+        created_at__date__gte=twelve_months_ago,
+    ).aggregate(total=Sum('quantity'))['total'] or 0
+    stock_turn_rate = round(abs(annual_consumption) / (float(stock_value) / max(1, float(all_items.aggregate(
+        avg_cost=Coalesce(Sum(F('unit_cost')), 0, output_field=FloatField()))['avg_cost'] or 1))) * 12, 1) if stock_value else 0
+
+    import json
+    context = {
+        'period': period, 'period_label': period_label,
+        'total_items': total_items, 'low_stock': low_stock,
+        'out_of_stock': out_of_stock, 'overstocked': overstocked,
+        'stock_value': int(stock_value), 'stockout_rate': stockout_rate,
+        'po_spend': int(po_spend), 'total_reqs': total_reqs,
+        'fulfilled_reqs': fulfilled_reqs, 'fulfillment_rate': fulfillment_rate,
+        'avg_lead_time': avg_lead_time,
+        'near_expiry': near_expiry, 'expired': expired, 'expiry_value': int(expiry_value),
+        'stock_turn_rate': stock_turn_rate,
+        # Charts
+        'trend_labels': json.dumps(trend_labels), 'trend_in': json.dumps(trend_in),
+        'trend_out': json.dumps(trend_out),
+        'daily_labels': json.dumps(daily_labels), 'daily_data': json.dumps(daily_data),
+        'cat_labels': json.dumps(cat_labels), 'cat_counts': json.dumps(cat_counts),
+        'dept_labels': json.dumps(dept_labels), 'dept_values': json.dumps(dept_values),
+        'top_consumed': top_consumed,
+        'vendors': vendors,
+        'abc_counts': abc_counts, 'ven_counts': ven_counts,
+    }
+    return render(request, 'inventory/stats.html', context)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MOVEMENT LOG (Unified Audit Trail)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def movement_log(request):
+    """Unified stock movement audit trail with filters."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    days = int(request.GET.get('days', 30))
+    move_type = request.GET.get('type', '')
+    q = request.GET.get('q', '')
+    cutoff = timezone.localdate() - datetime.timedelta(days=days)
+
+    movements = StockMovement.objects.filter(
+        created_at__date__gte=cutoff,
+    ).select_related('item', 'performed_by', 'batch')
+
+    if move_type:
+        movements = movements.filter(movement_type=move_type)
+    if q:
+        movements = movements.filter(
+            Q(item__name__icontains=q) | Q(item__item_code__icontains=q) | Q(reference__icontains=q)
+        )
+
+    movements = movements.order_by('-created_at')[:500]
+
+    # Summary counts
+    period_moves = StockMovement.objects.filter(created_at__date__gte=cutoff)
+    summary = period_moves.values('movement_type').annotate(count=Count('id'))
+    type_map = {s['movement_type']: s['count'] for s in summary}
+
+    move_types = [('IN', 'Stock In'), ('OUT', 'Stock Out'), ('ADJUST', 'Adjustment'),
+                  ('RETURN', 'Return'), ('EXPIRE', 'Expiry Write-off'), ('ISSUE', 'Dept. Issue')]
+
+    return render(request, 'inventory/movement_log.html', {
+        'movements': movements, 'days': days, 'move_type': move_type,
+        'search': q, 'type_map': type_map, 'move_types': move_types,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECEIVE STOCK (Standalone — Walk-in Deliveries)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def receive_stock(request):
+    """Receive stock directly without a PO — for walk-in deliveries."""
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        vendor_name = request.POST.get('vendor_name', '').strip()
+        delivery_note = request.POST.get('delivery_note', '').strip()
+
+        item_ids = request.POST.getlist('item_id[]')
+        quantities = request.POST.getlist('quantity[]')
+        lot_numbers = request.POST.getlist('lot_number[]')
+        expiry_dates = request.POST.getlist('expiry_date[]')
+        unit_costs = request.POST.getlist('unit_cost[]')
+
+        received_count = 0
+        for i, item_id in enumerate(item_ids):
+            if not item_id:
+                continue
+            qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+            if qty <= 0:
+                continue
+
+            try:
+                inv_item = InventoryItem.objects.get(id=item_id, is_deleted=False)
+            except InventoryItem.DoesNotExist:
+                continue
+
+            lot = lot_numbers[i].strip() if i < len(lot_numbers) else ''
+            exp = expiry_dates[i] if i < len(expiry_dates) and expiry_dates[i] else None
+            cost = Decimal(unit_costs[i]) if i < len(unit_costs) and unit_costs[i] else inv_item.unit_cost
+
+            inv_item.current_stock += qty
+            inv_item.save(update_fields=['current_stock'])
+
+            batch = None
+            if inv_item.requires_expiry_tracking and exp:
+                batch = BatchStock.objects.create(
+                    item=inv_item, lot_number=lot or f'WLK-{timezone.localdate().strftime("%Y%m%d")}',
+                    expiry_date=exp, quantity_received=qty, quantity_remaining=qty,
+                    unit_cost=cost,
+                )
+
+            StockMovement.objects.create(
+                item=inv_item, movement_type='IN', quantity=qty,
+                balance_after=inv_item.current_stock,
+                reference=f'Walk-in: {vendor_name}' if vendor_name else 'Direct Receipt',
+                notes=f'DN: {delivery_note}' if delivery_note else '',
+                performed_by=request.user, batch=batch,
+            )
+            received_count += 1
+
+        if received_count:
+            messages.success(request, f'{received_count} item(s) received successfully.')
+        return redirect('inventory:receive_stock')
+
+    # Recent receipts (last 7 days)
+    import datetime
+    recent = StockMovement.objects.filter(
+        movement_type='IN',
+        created_at__date__gte=timezone.localdate() - datetime.timedelta(days=7),
+    ).select_related('item', 'performed_by').order_by('-created_at')[:20]
+
+    return render(request, 'inventory/receive_stock.html', {
+        'items': items, 'vendors': vendors, 'recent': recent,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ALERTS — Low Stock + Expiry + Reorder
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def alerts(request):
+    """Consolidated alerts dashboard — low stock, expiry, overstock, auto-reorder."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    today = timezone.localdate()
+
+    # Low stock items
+    low_stock_items = InventoryItem.objects.filter(
+        is_active=True, is_deleted=False,
+        current_stock__lte=F('reorder_level'), current_stock__gt=0,
+    ).order_by('current_stock')
+
+    # Out of stock
+    out_of_stock_items = InventoryItem.objects.filter(
+        is_active=True, is_deleted=False, current_stock=0,
+    ).order_by('name')
+
+    # Overstocked
+    overstocked_items = InventoryItem.objects.filter(
+        is_active=True, is_deleted=False, max_stock_level__gt=0,
+        current_stock__gt=F('max_stock_level'),
+    ).order_by('-current_stock')
+
+    # Expiring in 30 days
+    expiring_30 = BatchStock.objects.filter(
+        quantity_remaining__gt=0,
+        expiry_date__gte=today, expiry_date__lte=today + datetime.timedelta(days=30),
+    ).select_related('item').order_by('expiry_date')
+
+    # Expiring in 90 days
+    expiring_90 = BatchStock.objects.filter(
+        quantity_remaining__gt=0,
+        expiry_date__gt=today + datetime.timedelta(days=30),
+        expiry_date__lte=today + datetime.timedelta(days=90),
+    ).select_related('item').order_by('expiry_date')
+
+    # Already expired
+    expired_batches = BatchStock.objects.filter(
+        quantity_remaining__gt=0, expiry_date__lt=today,
+    ).select_related('item').order_by('expiry_date')
+
+    # Pending auto-reorder POs
+    auto_pos = PurchaseOrder.objects.filter(
+        is_deleted=False, status='DRAFT', is_auto_generated=True,
+    ).select_related('vendor')
+
+    # Quarantined batches
+    quarantined = BatchStock.objects.filter(
+        is_quarantined=True, quantity_remaining__gt=0,
+    ).select_related('item')
+
+    # Overdue stock counts
+    overdue_schedules = StockTakeSchedule.objects.filter(
+        is_active=True, is_deleted=False, next_due__lt=today,
+    )
+
+    context = {
+        'low_stock_items': low_stock_items, 'out_of_stock_items': out_of_stock_items,
+        'overstocked_items': overstocked_items,
+        'expiring_30': expiring_30, 'expiring_90': expiring_90,
+        'expired_batches': expired_batches,
+        'auto_pos': auto_pos, 'quarantined': quarantined,
+        'overdue_schedules': overdue_schedules,
+        'today': today,
+    }
+    return render(request, 'inventory/alerts.html', context)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BARCODE SCAN (Quick Lookup / Issue)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def barcode_scan(request):
+    """Barcode scan page — look up items by scanning barcode."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    scanned_item = None
+    if request.GET.get('code'):
+        code = request.GET['code'].strip()
+        scanned_item = InventoryItem.objects.filter(
+            Q(barcode=code) | Q(item_code=code), is_deleted=False,
+        ).first()
+    return render(request, 'inventory/barcode_scan.html', {
+        'scanned_item': scanned_item,
+        'code': request.GET.get('code', ''),
+    })
+
+
+@login_required
+def barcode_lookup_ajax(request):
+    """AJAX barcode lookup — returns JSON item data."""
+    code = request.GET.get('code', '').strip()
+    if not code:
+        return JsonResponse({'found': False})
+    item = InventoryItem.objects.filter(
+        Q(barcode=code) | Q(item_code=code), is_deleted=False,
+    ).first()
+    if not item:
+        return JsonResponse({'found': False})
+    batches = list(item.batches.filter(
+        quantity_remaining__gt=0, is_quarantined=False,
+    ).order_by('expiry_date').values('lot_number', 'expiry_date', 'quantity_remaining')[:5])
+    return JsonResponse({
+        'found': True,
+        'id': str(item.id),
+        'name': item.name,
+        'item_code': item.item_code,
+        'category': item.get_category_display(),
+        'current_stock': item.current_stock,
+        'reorder_level': item.reorder_level,
+        'unit': item.unit,
+        'unit_cost': float(item.unit_cost),
+        'stock_status': item.stock_status,
+        'barcode': item.barcode or '',
+        'batches': batches,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONSIGNMENT STOCK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def consignment_dashboard(request):
+    """Track consignment stock separately — items not paid until used."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+
+    consignment_items = InventoryItem.objects.filter(
+        is_active=True, is_deleted=False, is_consignment=True,
+    ).order_by('name')
+
+    total_value = sum(float(i.current_stock) * float(i.unit_cost) for i in consignment_items)
+    total_items = consignment_items.count()
+    in_stock = consignment_items.filter(current_stock__gt=0).count()
+
+    # Usage in last 30 days
+    import datetime
+    cutoff = timezone.localdate() - datetime.timedelta(days=30)
+    usage = StockMovement.objects.filter(
+        item__is_consignment=True,
+        movement_type__in=['OUT', 'ISSUE'],
+        created_at__date__gte=cutoff,
+    ).aggregate(total=Sum('quantity'))['total'] or 0
+
+    return render(request, 'inventory/consignment_dashboard.html', {
+        'items': consignment_items,
+        'total_value': int(total_value), 'total_items': total_items,
+        'in_stock': in_stock, 'usage_30d': abs(usage),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUPPLIER QUOTATION (ISO 9001 §8.4 — Vendor Selection)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def quotation_list(request):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    status = request.GET.get('status', '')
+    qs = SupplierQuotation.objects.filter(is_deleted=False).select_related('vendor', 'requested_by')
+    if status:
+        qs = qs.filter(status=status)
+    return render(request, 'inventory/quotation_list.html', {
+        'quotations': qs[:200], 'status_filter': status,
+        'status_choices': QuotationStatus.choices,
+    })
+
+
+@login_required
+def quotation_create(request):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        vendor = get_object_or_404(Vendor, id=request.POST.get('vendor_id'), is_deleted=False)
+        valid_until = request.POST.get('valid_until') or None
+        q = SupplierQuotation.objects.create(
+            vendor=vendor, valid_until=valid_until,
+            notes=request.POST.get('notes', '').strip(),
+            requested_by=request.user, created_by=request.user,
+        )
+        item_ids = request.POST.getlist('item_id[]')
+        quantities = request.POST.getlist('quantity[]')
+        prices = request.POST.getlist('price[]')
+        total = Decimal('0')
+        for item_id, qty_str, price_str in zip(item_ids, quantities, prices):
+            if not item_id or not qty_str:
+                continue
+            try:
+                qty = int(qty_str)
+                price = Decimal(price_str or '0')
+                QuotationItem.objects.create(
+                    quotation=q, item_id=item_id,
+                    quantity=qty, quoted_price=price,
+                )
+                total += qty * price
+            except (ValueError, InventoryItem.DoesNotExist):
+                continue
+        q.total_amount = total
+        q.save(update_fields=['total_amount'])
+        messages.success(request, f'Quotation {q.rfq_number} created.')
+        return redirect('inventory:quotation_detail', rfq_id=q.pk)
+
+    return render(request, 'inventory/quotation_form.html', {
+        'vendors': vendors, 'items': items, 'action': 'Create',
+    })
+
+
+@login_required
+def quotation_detail(request, rfq_id):
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    q = get_object_or_404(SupplierQuotation, pk=rfq_id, is_deleted=False)
+    # Find competing quotations for same items
+    item_ids = list(q.items.values_list('item_id', flat=True))
+    competitors = SupplierQuotation.objects.filter(
+        is_deleted=False, status__in=['RECEIVED', 'REQUESTED'],
+        items__item_id__in=item_ids,
+    ).exclude(pk=q.pk).select_related('vendor').distinct()[:10]
+
+    return render(request, 'inventory/quotation_detail.html', {
+        'quotation': q,
+        'quotation_items': q.items.select_related('item').all(),
+        'competitors': competitors,
+    })
+
+
+@login_required
+def quotation_update(request, rfq_id):
+    """Update quotation with received prices."""
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    q = get_object_or_404(SupplierQuotation, pk=rfq_id, is_deleted=False)
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        if action == 'update_prices':
+            total = Decimal('0')
+            for qi in q.items.all():
+                price_key = f'price_{qi.pk}'
+                if price_key in request.POST:
+                    qi.quoted_price = Decimal(request.POST[price_key] or '0')
+                    qi.save(update_fields=['quoted_price'])
+                    total += qi.quantity * qi.quoted_price
+            q.total_amount = total
+            q.status = QuotationStatus.RECEIVED
+            q.save(update_fields=['total_amount', 'status'])
+            messages.success(request, f'Quotation {q.rfq_number} prices updated.')
+        elif action == 'accept':
+            q.status = QuotationStatus.ACCEPTED
+            q.save(update_fields=['status'])
+            messages.success(request, f'Quotation {q.rfq_number} accepted.')
+        elif action == 'reject':
+            q.status = QuotationStatus.REJECTED
+            q.save(update_fields=['status'])
+            messages.warning(request, f'Quotation {q.rfq_number} rejected.')
+        elif action == 'create_po':
+            # Create PO from accepted quotation
+            po = PurchaseOrder.objects.create(
+                vendor=q.vendor, status='SUBMITTED',
+                notes=f'From quotation {q.rfq_number}',
+                created_by=request.user,
+            )
+            total = Decimal('0')
+            for qi in q.items.select_related('item').all():
+                sub = qi.quantity * qi.quoted_price
+                PurchaseOrderItem.objects.create(
+                    purchase_order=po, item=qi.item,
+                    quantity_ordered=qi.quantity, unit_price=qi.quoted_price,
+                    subtotal=sub,
+                )
+                total += sub
+            po.total_amount = total
+            po.save(update_fields=['total_amount'])
+            q.linked_po = po
+            q.save(update_fields=['linked_po'])
+            messages.success(request, f'PO {po.po_number} created from quotation {q.rfq_number}.')
+            return redirect('inventory:po_detail', po_id=po.pk)
+        return redirect('inventory:quotation_detail', rfq_id=q.pk)
+    return redirect('inventory:quotation_detail', rfq_id=q.pk)
+
+
+@login_required
+def quotation_compare(request):
+    """Compare quotations for the same items side-by-side."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    rfq_ids = request.GET.getlist('rfq')
+    quotations = SupplierQuotation.objects.filter(
+        pk__in=rfq_ids, is_deleted=False,
+    ).select_related('vendor').prefetch_related('items__item')
+
+    # Build comparison matrix: item → {vendor: price}
+    all_items = {}
+    for q in quotations:
+        for qi in q.items.all():
+            key = str(qi.item_id)
+            if key not in all_items:
+                all_items[key] = {'item': qi.item, 'quotes': {}}
+            all_items[key]['quotes'][str(q.pk)] = {
+                'price': qi.quoted_price, 'qty': qi.quantity,
+                'subtotal': qi.subtotal, 'vendor': q.vendor.name,
+            }
+
+    return render(request, 'inventory/quotation_compare.html', {
+        'quotations': quotations,
+        'comparison': all_items.values(),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STORE BUDGET (ISO 9001 §7.1 — Resource Management)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def budget_list(request):
+    if not _can_view_reports(request.user):
+        return HttpResponseForbidden('Access denied.')
+    year = int(request.GET.get('year', timezone.localdate().year))
+    budgets = StoreBudget.objects.filter(is_deleted=False, fiscal_year=year)
+    total_allocated = budgets.aggregate(total=Sum('allocated'))['total'] or Decimal('0')
+    total_spent = budgets.aggregate(total=Sum('spent'))['total'] or Decimal('0')
+    total_remaining = total_allocated - total_spent
+    return render(request, 'inventory/budget_list.html', {
+        'budgets': budgets, 'year': year,
+        'total_allocated': total_allocated, 'total_spent': total_spent,
+        'total_remaining': total_remaining,
+        'years': range(timezone.localdate().year - 2, timezone.localdate().year + 2),
+    })
+
+
+@login_required
+def budget_create(request):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    if request.method == 'POST':
+        StoreBudget.objects.create(
+            name=request.POST.get('name', '').strip(),
+            fiscal_year=int(request.POST.get('fiscal_year', timezone.localdate().year)),
+            category=request.POST.get('category', ''),
+            allocated=Decimal(request.POST.get('allocated', '0')),
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        messages.success(request, 'Budget created.')
+        return redirect('inventory:budget_list')
+    return render(request, 'inventory/budget_form.html', {
+        'categories': ItemCategory.choices,
+        'current_year': timezone.localdate().year,
+        'action': 'Create',
+    })
+
+
+@login_required
+def budget_edit(request, budget_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    budget = get_object_or_404(StoreBudget, pk=budget_id, is_deleted=False)
+    if request.method == 'POST':
+        budget.name = request.POST.get('name', budget.name).strip()
+        budget.allocated = Decimal(request.POST.get('allocated', budget.allocated))
+        budget.notes = request.POST.get('notes', '').strip()
+        budget.save()
+        messages.success(request, f'Budget "{budget.name}" updated.')
+        return redirect('inventory:budget_list')
+    return render(request, 'inventory/budget_form.html', {
+        'budget': budget, 'categories': ItemCategory.choices,
+        'current_year': timezone.localdate().year, 'action': 'Edit',
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STOCK EXIT / ISSUE (ISO 9001 §8.5.2 — Controlled Stock Release)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+EXIT_REASONS = [
+    ('DEPT_ISSUE', 'Department Issue'),
+    ('PATIENT_USE', 'Patient Use'),
+    ('MAINTENANCE', 'Maintenance / Repair'),
+    ('EXPIRED', 'Expired — Write-Off'),
+    ('DAMAGED', 'Damaged — Write-Off'),
+    ('SAMPLE', 'Sample / Demo'),
+    ('DONATION', 'Donation'),
+    ('RETURN_VENDOR', 'Return to Vendor'),
+    ('LOSS', 'Loss / Shrinkage'),
+    ('OTHER', 'Other'),
+]
+
+
+@login_required
+def stock_exit_list(request):
+    """List all stock exit/issue records."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    days = int(request.GET.get('days', 30))
+    cutoff = timezone.localdate() - datetime.timedelta(days=days)
+    exits = StockMovement.objects.filter(
+        movement_type__in=['OUT', 'ISSUE', 'EXPIRE'],
+        created_at__date__gte=cutoff,
+    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')[:500]
+    return render(request, 'inventory/stock_exit_list.html', {
+        'exits': exits, 'days': days,
+    })
+
+
+@login_required
+def stock_exit_create(request):
+    """Create a stock exit / issue note — multi-line, batch optional."""
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        department = request.POST.get('department', '').strip()
+        reason = request.POST.get('reason', 'DEPT_ISSUE')
+        reference = request.POST.get('reference', '').strip()
+        notes = request.POST.get('notes', '').strip()
+        authorized_by = request.POST.get('authorized_by', '').strip()
+
+        item_ids = request.POST.getlist('item_id[]')
+        quantities = request.POST.getlist('quantity[]')
+
+        issued_count = 0
+        for i, item_id in enumerate(item_ids):
+            if not item_id:
+                continue
+            qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+            if qty <= 0:
+                continue
+            try:
+                inv_item = InventoryItem.objects.get(id=item_id, is_deleted=False)
+            except InventoryItem.DoesNotExist:
+                continue
+
+            actual_qty = min(qty, inv_item.current_stock)
+            if actual_qty <= 0:
+                continue
+
+            inv_item.current_stock -= actual_qty
+            inv_item.save(update_fields=['current_stock'])
+
+            # FEFO batch consumption (optional)
+            batch_ref = None
+            if inv_item.requires_expiry_tracking:
+                remaining = actual_qty
+                for batch in inv_item.batches.filter(
+                    quantity_remaining__gt=0, is_quarantined=False,
+                ).order_by('expiry_date'):
+                    if remaining <= 0:
+                        break
+                    take = min(remaining, batch.quantity_remaining)
+                    batch.quantity_remaining -= take
+                    batch.save(update_fields=['quantity_remaining'])
+                    remaining -= take
+                    if not batch_ref:
+                        batch_ref = batch
+
+            StockMovement.objects.create(
+                item=inv_item, movement_type='OUT', quantity=-actual_qty,
+                balance_after=inv_item.current_stock,
+                reference=f'{reason}: {department}' if department else reason,
+                notes=f'Auth: {authorized_by} | {notes}'.strip(' |') if authorized_by else notes,
+                performed_by=request.user, batch=batch_ref,
+            )
+            _trigger_auto_reorder(inv_item, request.user)
+            issued_count += 1
+
+        if issued_count:
+            messages.success(request, f'{issued_count} item(s) issued successfully.')
+        else:
+            messages.warning(request, 'No items were issued — check stock availability.')
+        return redirect('inventory:stock_exit_list')
+
+    return render(request, 'inventory/stock_exit_form.html', {
+        'items': items, 'departments': DEPARTMENTS,
+        'reasons': EXIT_REASONS,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STOCK ENTRY NOTE (ISO 9001 §8.5.1 — Controlled Stock Receipt)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ENTRY_SOURCES = [
+    ('PURCHASE', 'Purchase / PO Delivery'),
+    ('DONATION', 'Donation'),
+    ('TRANSFER_IN', 'Transfer In (from other store)'),
+    ('RETURN', 'Department Return'),
+    ('FOUND', 'Found / Adjustment (+)'),
+    ('OPENING', 'Opening Stock'),
+    ('OTHER', 'Other'),
+]
+
+
+@login_required
+def stock_entry_list(request):
+    """List all stock entry records."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    days = int(request.GET.get('days', 30))
+    cutoff = timezone.localdate() - datetime.timedelta(days=days)
+    entries = StockMovement.objects.filter(
+        movement_type='IN',
+        created_at__date__gte=cutoff,
+    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')[:500]
+    return render(request, 'inventory/stock_entry_list.html', {
+        'entries': entries, 'days': days,
+    })
+
+
+@login_required
+def stock_entry_create(request):
+    """Create a stock entry note — multi-line, batch optional."""
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        source = request.POST.get('source', 'PURCHASE')
+        vendor_name = request.POST.get('vendor_name', '').strip()
+        delivery_note = request.POST.get('delivery_note', '').strip()
+        invoice_number = request.POST.get('invoice_number', '').strip()
+        notes = request.POST.get('notes', '').strip()
+
+        item_ids = request.POST.getlist('item_id[]')
+        quantities = request.POST.getlist('quantity[]')
+        lot_numbers = request.POST.getlist('lot_number[]')
+        expiry_dates = request.POST.getlist('expiry_date[]')
+        unit_costs = request.POST.getlist('unit_cost[]')
+
+        received_count = 0
+        for i, item_id in enumerate(item_ids):
+            if not item_id:
+                continue
+            qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 0
+            if qty <= 0:
+                continue
+            try:
+                inv_item = InventoryItem.objects.get(id=item_id, is_deleted=False)
+            except InventoryItem.DoesNotExist:
+                continue
+
+            lot = lot_numbers[i].strip() if i < len(lot_numbers) else ''
+            exp = expiry_dates[i] if i < len(expiry_dates) and expiry_dates[i] else None
+            cost = Decimal(unit_costs[i]) if i < len(unit_costs) and unit_costs[i] else inv_item.unit_cost
+
+            inv_item.current_stock += qty
+            if cost and cost != inv_item.unit_cost:
+                inv_item.unit_cost = cost
+            inv_item.save(update_fields=['current_stock', 'unit_cost'])
+
+            batch = None
+            if exp or lot:
+                batch = BatchStock.objects.create(
+                    item=inv_item,
+                    lot_number=lot or f'SEN-{timezone.localdate().strftime("%Y%m%d")}',
+                    expiry_date=exp, quantity_received=qty, quantity_remaining=qty,
+                    unit_cost=cost,
+                )
+
+            ref_parts = [source]
+            if vendor_name:
+                ref_parts.append(vendor_name)
+            if delivery_note:
+                ref_parts.append(f'DN:{delivery_note}')
+
+            StockMovement.objects.create(
+                item=inv_item, movement_type='IN', quantity=qty,
+                balance_after=inv_item.current_stock,
+                reference=' | '.join(ref_parts),
+                notes=f'INV:{invoice_number} {notes}'.strip() if invoice_number else notes,
+                performed_by=request.user, batch=batch,
+            )
+            received_count += 1
+
+        if received_count:
+            messages.success(request, f'{received_count} item(s) received successfully.')
+        return redirect('inventory:stock_entry_list')
+
+    return render(request, 'inventory/stock_entry_form.html', {
+        'items': items, 'vendors': vendors,
+        'sources': ENTRY_SOURCES,
     })
