@@ -1144,6 +1144,7 @@ def save_dept_clinical_view(request, pk):
 
 
 @login_required
+@csrf_exempt
 @require_POST
 def consultation_autosave_view(request):
     """

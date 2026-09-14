@@ -559,11 +559,13 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-function showEditToast(msg) {
+function showEditToast(msg, isError) {
   var el = document.querySelector('#editDraftToast .toast');
   if (!el) return;
   document.getElementById('editDraftToastMsg').innerHTML = msg;
-  bootstrap.Toast.getOrCreateInstance(el, {delay:2500}).show();
+  el.classList.toggle('text-bg-danger', !!isError);
+  el.classList.toggle('text-bg-success', !isError);
+  bootstrap.Toast.getOrCreateInstance(el, {delay: isError ? 5000 : 2500}).show();
 }
 
 // Prevent HTMX (#wrapper hx-boost=true) from intercepting form submit via delegation
@@ -589,12 +591,17 @@ function saveDraftEdit(section) {
       btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Saved ✓';
       showEditToast('<i class="bi bi-check-circle me-1"></i>Section saved successfully.');
       setTimeout(function(){ btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save'; }, 3000);
+    } else if (r.status === 403) {
+      btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save';
+      showEditToast('<i class="bi bi-exclamation-triangle me-1"></i>Save failed (403) — try again or refresh the page.', true);
     } else {
       btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save';
+      showEditToast('<i class="bi bi-exclamation-triangle me-1"></i>Save failed (HTTP ' + r.status + '). Try again.', true);
     }
   }).catch(function() {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-cloud-check me-1"></i>Save';
+    showEditToast('<i class="bi bi-exclamation-triangle me-1"></i>Network error — draft not saved.', true);
   });
 }
 
