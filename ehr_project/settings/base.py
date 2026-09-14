@@ -245,7 +245,7 @@ if _redis_url:
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                'hosts': [_redis_url.replace('/1', '/2')],
+                'hosts': [_redis_url.rsplit('/', 1)[0] + '/2'],
                 'capacity': 1500,
                 'expiry': 10,
             },

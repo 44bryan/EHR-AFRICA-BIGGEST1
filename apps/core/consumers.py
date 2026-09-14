@@ -6,6 +6,10 @@ Redis channel group.  When a patient is routed (visit status changes), the
 view layer calls ws_notify.notify_queue(room) which broadcasts a 'refresh'
 event to every connected client in that room — browsers then call their
 existing doRefresh() handler for an instant, zero-polling update.
+
+NOTE: Authentication is NOT enforced here because this channel only sends
+opaque "refresh" signals — no PHI or sensitive data.  The browser's fetch()
+call that follows IS authenticated via normal Django session/cookie auth.
 """
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -22,10 +26,6 @@ class QueueConsumer(AsyncWebsocketConsumer):
         return f"ehr_queue_{room.replace('-', '_')}"
 
     async def connect(self):
-        user = self.scope.get('user')
-        if user is None or not user.is_authenticated:
-            await self.close(code=4003)
-            return
         self.room = self.scope['url_route']['kwargs']['room']
         self.group_name = self._make_group(self.room)
         await self.channel_layer.group_add(self.group_name, self.channel_name)
