@@ -457,6 +457,40 @@
   <div class="collapse show" id="cfm_gen_oph_body">
   <div class="p-3">
 
+    {# --- SECTION: VISUAL ACUITY SC/CC (Doctor's own VA check) --- #}
+    <div class="mb-0 pb-3">
+      <div class="fw-bold text-uppercase text-dark cfm-hdr" style="font-size:.85rem;letter-spacing:.04em;"
+           data-bs-toggle="collapse" data-bs-target="#cfm_gen_va_sccc" aria-expanded="true">
+        <span><i class="bi bi-eye me-1"></i>Visual Acuity — SC / CC</span>
+        <i class="bi bi-chevron-up cfm-chev"></i>
+      </div>
+      <div class="collapse show mt-2" id="cfm_gen_va_sccc">
+      <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle mb-0" style="min-width:360px;">
+          <thead class="table-primary">
+            <tr>
+              <th style="width:85px;">Eye</th>
+              <th>SC <span class="fw-normal text-muted" style="font-size:.7rem;">(without glasses)</span></th>
+              <th>CC <span class="fw-normal text-muted" style="font-size:.7rem;">(with glasses)</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="fw-semibold text-primary small">OD (Right)</td>
+              <td><select name="dept_dr_va_sc_od" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.dr_va_sc_od|default:'' }}"></select></td>
+              <td><select name="dept_dr_va_cc_od" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.dr_va_cc_od|default:'' }}"></select></td>
+            </tr>
+            <tr>
+              <td class="fw-semibold text-success small">OS (Left)</td>
+              <td><select name="dept_dr_va_sc_os" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.dr_va_sc_os|default:'' }}"></select></td>
+              <td><select name="dept_dr_va_cc_os" class="form-select form-select-sm" data-rftype="va_dist" data-rfval="{{ d.dr_va_cc_os|default:'' }}"></select></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      </div>
+    </div>
+
     {# --- SECTION 3: COVER TEST & MOTILITY --- #}
     <div class="mb-0 pt-3 pb-3 border-top">
       <div class="fw-bold text-uppercase text-dark cfm-hdr collapsed" style="font-size:.85rem;letter-spacing:.04em;"
@@ -1343,27 +1377,6 @@
       </div>
     </div>
 
-    {# --- SECTION 10: TREATMENT ACTIONS --- #}
-    <div class="mb-0 pt-3 pb-3 border-top">
-      <div class="fw-bold text-uppercase text-secondary" style="font-size:.85rem;letter-spacing:.04em;">
-        <i class="bi bi-list-check me-1"></i>9. Ophthalmic Treatment Actions
-        <span class="text-muted fw-normal ms-1" style="font-size:.7rem;font-weight:400;text-transform:none;">(quick-select — separate from Management &amp; Plan below)</span>
-      </div>
-      {% with MGT_LIST="Refer for cataract surgery,Refer to retina clinic,Refer to glaucoma clinic,Refer to cornea clinic,Refer to oculoplastics,Refer to low vision clinic,Refer to orthoptic clinic,Refer to pediatric ophthalmology,Start IOP-lowering drops,Start lubricating eye drops,Start antibiotic eye drops,Start steroid eye drops,Start antihistamine drops,Laser treatment (YAG),Continue current treatment,Review in 1 week,Review in 2 weeks,Review in 1 month,Review in 3 months,Review in 6 months,Annual review,Discharge — no further action,Urgent referral same day,Hospital admission" %}
-      <input type="hidden" name="dept_management_plan" id="mgt_hidden" value="{{ d.management_plan|default:'' }}">
-      <div id="mgt_chips" class="d-flex flex-wrap gap-1 mt-2 mb-1">
-        {% for v in MGT_LIST|split:"," %}
-        <button type="button" class="btn btn-sm py-0 px-2 {% if d.management_plan and v in d.management_plan %}btn-success{% else %}btn-outline-secondary{% endif %}"
-                style="font-size:.75rem;" onclick="toggleMgtChip('{{ v|escapejs }}',this)">{{ v }}</button>
-        {% endfor %}
-      </div>
-      <div class="input-group input-group-sm mt-1" style="max-width:400px;">
-        <input type="text" id="mgt_other" class="form-control" placeholder="Other plan — type and press Add">
-        <button type="button" class="btn btn-outline-success" onclick="addMgtOther()">Add</button>
-      </div>
-      {% endwith %}
-    </div>
-
   </div>{# /doctor zone inner #}
   </div>{# /collapse cfm_gen_oph_body #}
 </div>{# /doctor zone #}
@@ -1515,48 +1528,6 @@ function addDxOther(eye) {
   inp.value = '';
 }
 
-/* ── Management plan chip multi-select ── */
-function _getMgtList() {
-  var h = document.getElementById('mgt_hidden');
-  return h && h.value ? h.value.split('|') : [];
-}
-function _setMgtList(arr) {
-  var h = document.getElementById('mgt_hidden');
-  if (h) h.value = arr.join('|');
-}
-function toggleMgtChip(val, btn) {
-  var list = _getMgtList();
-  var idx = list.indexOf(val);
-  if (idx === -1) {
-    list.push(val);
-    btn.classList.remove('btn-outline-secondary');
-    btn.classList.add('btn-success');
-  } else {
-    list.splice(idx, 1);
-    btn.classList.remove('btn-success');
-    btn.classList.add('btn-outline-secondary');
-  }
-  _setMgtList(list);
-}
-function addMgtOther() {
-  var inp = document.getElementById('mgt_other');
-  var val = inp.value.trim();
-  if (!val) return;
-  var list = _getMgtList();
-  if (list.indexOf(val) === -1) {
-    list.push(val);
-    _setMgtList(list);
-    var chips = document.getElementById('mgt_chips');
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn-sm py-0 px-2 btn-success';
-    btn.style.fontSize = '.75rem';
-    btn.textContent = val;
-    btn.onclick = function() { toggleMgtChip(val, btn); };
-    chips.appendChild(btn);
-  }
-  inp.value = '';
-}
 </script>
 
 <script>
