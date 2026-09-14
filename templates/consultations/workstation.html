@@ -4,308 +4,325 @@
 
 {% block extra_css %}
 <style>
-/* ── Portrait tablet: stack columns ──────────────────────────────────── */
-@media (max-width:991px) {
-  .ws-queue-col, .ws-consult-col { width:100% !important; max-width:100% !important; flex:0 0 100%; }
-  .ws-queue-col { margin-bottom:1rem; }
-  .ws-header-row { flex-direction:column !important; gap:.5rem !important; align-items:flex-start !important; }
-  .ws-header-row .d-flex.gap-2 { width:100%; }
-  .ws-header-row .btn { flex:1; text-align:center; }
-}
+  #ws-queue-live { transition: opacity .15s ease; }
+  @media (max-width:991px) {
+    .ws-queue-col, .ws-consult-col { width:100%!important; max-width:100%!important; flex:0 0 100%; }
+    .ws-queue-col { margin-bottom:1rem; }
+  }
+  .ws-patient { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; }
+  .ws-patient:last-child { border-bottom: none; }
+  .ws-patient:hover { background: #f8fafc; }
+  .ws-name { font-weight: 600; font-size: .88rem; color: #1e293b; }
+  .ws-sub { font-size: .75rem; color: #64748b; }
+  .ws-pill { font-size: .65rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; display: inline-block; }
+  .ws-pill-new { background: #dbeafe; color: #1d4ed8; }
+  .ws-pill-fu { background: #f1f5f9; color: #475569; }
+  .ws-pill-vip { background: #ede9fe; color: #6d28d9; }
+  .ws-pill-express { background: #e0f2fe; color: #0369a1; }
+  .ws-pill-fasttrack { background: #fef3c7; color: #92400e; }
+  .ws-pill-waiting { background: #fef3c7; color: #92400e; }
+  .ws-pill-serving { background: #dbeafe; color: #1d4ed8; }
+  .ws-pill-called { background: #e0f2fe; color: #0369a1; }
+  .ws-pill-done { background: #dcfce7; color: #166534; }
+  .ws-pill-ip { background: #e0e7ff; color: #4338ca; }
+  .ws-pill-referred { background: #fef3c7; color: #92400e; }
+  .ws-pill-paused { background: #fef3c7; color: #92400e; }
+  .ws-pill-results { background: #dcfce7; color: #166534; }
+  .ws-pill-pending { background: #fef3c7; color: #92400e; }
+  .ws-pill-assigned { background: #fef3c7; color: #92400e; }
+  .ws-btn { font-size: .78rem; padding: 4px 12px; border-radius: 6px; }
+  .ws-vital { font-size: .62rem; font-weight: 500; padding: 2px 6px; border-radius: 4px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; display: inline-block; }
+  .ws-vital-warn { background: #fee2e2!important; border-color: #fca5a5!important; color: #991b1b!important; }
+  .ws-stat { text-align: center; padding: 12px 6px; }
+  .ws-stat-num { font-size: 1.4rem; font-weight: 700; color: #1e293b; line-height: 1; }
+  .ws-stat-label { font-size: .68rem; color: #94a3b8; margin-top: 3px; }
+  .ws-empty { text-align: center; color: #94a3b8; padding: 40px 16px; font-size: .85rem; }
+  .ws-empty i { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+  .ws-alert-strip { border-radius: 8px; padding: 8px 14px; font-size: .8rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ws-section-hdr { font-size: .82rem; font-weight: 600; color: #334155; padding: 8px 14px; background: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; }
+  /* Dropdown menu for secondary actions */
+  .ws-more-menu { min-width: 160px; }
+  .ws-more-menu .dropdown-item { font-size: .78rem; padding: 6px 12px; }
+  .ws-more-menu .dropdown-item i { width: 16px; text-align: center; margin-right: 6px; }
+  .ws-room-info { font-size: .75rem; color: #64748b; }
+  .ws-room-badge { font-size: .72rem; font-weight: 600; background: #eff6ff; color: #1d4ed8; padding: 2px 10px; border-radius: 12px; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 ws-header-row">
+{# -- Header -- #}
+<div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
   <div>
-    <h5 class="fw-bold mb-0">{% if is_refrac %}Refraction Workstation{% else %}Clinical Workstation{% endif %}
-    </h5>
+    <h5 class="fw-bold mb-0">{% if is_refrac %}Refraction Workstation{% else %}Clinical Workstation{% endif %}</h5>
     <div class="text-muted small">
       {% if is_refrac %}{{ request.user.full_name }}{% else %}Dr. {{ request.user.full_name }}{% endif %}
       &bull; {{ request.user.get_role_display }}
       {% if dept %}&bull; {{ dept.name }}{% endif %}
       &bull; {{ today|date:"d M Y" }}
+      {% if is_refrac and refrac_counter %}
+        &bull; <span class="ws-room-badge"><i class="bi bi-door-open me-1"></i>{{ refrac_counter.name }}</span>
+        {% if refrac_counter.serves_tiers %}
+          {% for tier in refrac_counter.get_serves_tiers %}
+            {% if tier == 'VIP' %}<span class="ws-pill ws-pill-vip">VIP</span>{% elif tier == 'EXPRESS' %}<span class="ws-pill ws-pill-express">Express</span>{% endif %}
+          {% endfor %}
+        {% endif %}
+      {% elif my_assigned_room %}
+        &bull; <span class="ws-room-badge"><i class="bi bi-door-open me-1"></i>Room {{ my_assigned_room.room_number }}</span>
+      {% endif %}
     </div>
   </div>
-  <div class="d-flex gap-2 flex-wrap align-items-center">
-    <a href="{% url 'consultations:list' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-list-ul me-1"></i>Consultations
-    </a>
-  </div>
+  <a href="{% url 'consultations:list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-list-ul me-1"></i>All Consultations
+  </a>
 </div>
 
-{# ── Quick patient search ── #}
-<div class="card border-0 shadow-sm mb-3 position-relative">
+{# -- Quick search -- #}
+<div class="card border-0 shadow-sm mb-2 position-relative">
   <div class="card-body py-2 px-3">
     <div class="d-flex align-items-center gap-2">
-      <i class="bi bi-search text-muted" style="font-size:.9rem;"></i>
+      <i class="bi bi-search text-muted" style="font-size:.85rem;"></i>
       <input type="text" id="wsPatientSearch" class="form-control form-control-sm border-0 shadow-none"
-             placeholder="Quick search — patient name or ID..." autocomplete="off" style="font-size:.85rem;">
-      <kbd class="text-muted" style="font-size:.7rem;background:none;">ESC to clear</kbd>
+             placeholder="Quick search — patient name or ID..." autocomplete="off" style="font-size:.82rem;">
+      <kbd class="text-muted" style="font-size:.65rem;background:none;">ESC</kbd>
     </div>
     <div id="wsSearchResults" class="list-group shadow-sm position-absolute start-0 end-0 mt-1 mx-3"
          style="display:none;z-index:1050;top:100%;"></div>
   </div>
 </div>
 
-{# ── Stat cards ── #}
-<div class="row g-2 mb-3" id="ws-stat-cards">
+{# -- Stat cards -- #}
+<div class="row g-2 mb-2" id="ws-stat-cards">
   <div class="col-3">
-    <div class="card border-0 shadow-sm text-center py-3 h-100">
-      <div class="h2 fw-bold text-warning mb-0">{{ waiting_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-hourglass-split me-1"></i>Waiting</div>
+    <div class="card border-0 shadow-sm">
+      <div class="ws-stat">
+        <div class="ws-stat-num text-warning">{{ waiting_count }}</div>
+        <div class="ws-stat-label">Waiting</div>
+      </div>
     </div>
   </div>
   <div class="col-3">
-    <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-primary mb-0">{{ in_progress_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-person-check me-1"></i>Serving</div>
+    <div class="card border-0 shadow-sm">
+      <div class="ws-stat">
+        <div class="ws-stat-num text-primary">{{ in_progress_count }}</div>
+        <div class="ws-stat-label">Serving</div>
+      </div>
     </div>
   </div>
   <div class="col-3">
-    <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold {% if results_ready_count %}text-success{% else %}text-muted{% endif %} mb-0">{{ results_ready_count }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-clipboard-check me-1"></i>Results Ready</div>
+    <div class="card border-0 shadow-sm">
+      <div class="ws-stat">
+        <div class="ws-stat-num {% if results_ready_count %}text-success{% else %}text-muted{% endif %}">{{ results_ready_count }}</div>
+        <div class="ws-stat-label">Results</div>
+      </div>
     </div>
   </div>
   <div class="col-3">
-    <div class="card border-0 shadow-sm text-center py-2 h-100">
-      <div class="h3 fw-bold text-success mb-0">{{ completed_today }}</div>
-      <div class="text-muted small mt-1"><i class="bi bi-check-circle me-1"></i>Done Today</div>
+    <div class="card border-0 shadow-sm">
+      <div class="ws-stat">
+        <div class="ws-stat-num text-success">{{ completed_today }}</div>
+        <div class="ws-stat-label">Done</div>
+      </div>
     </div>
   </div>
 </div>
 
-{# ── Returning Patients — came back from service, resume consultation ── #}
-{% if returning_patients %}
-<div class="card border-0 shadow-sm mb-3" style="border-left:4px solid #f59e0b!important;">
-  <div class="card-header bg-warning-subtle border-bottom py-2 d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-bold small text-warning-emphasis">
-      <i class="bi bi-arrow-return-left me-1"></i>Returning Patients ({{ returning_patients|length }})
-    </h6>
-    <span class="badge bg-warning text-dark">Resume needed</span>
-  </div>
-  <div class="list-group list-group-flush">
+{# -- Returning + Paused: compact alert strip -- #}
+{% if returning_patients or paused_consultations %}
+<div class="ws-alert-strip mb-2" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;">
+  <i class="bi bi-arrow-return-left"></i>
+  {% if returning_patients %}
+    <strong>{{ returning_patients|length }} returning</strong> &mdash;
     {% for pc in returning_patients %}
-    <div class="list-group-item d-flex align-items-center gap-3 py-2 px-3">
-      <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-           style="width:36px;height:36px;background:#fef3c7;border:2px solid #f59e0b;">
-        <i class="bi bi-person-check text-warning"></i>
-      </div>
-      <div class="flex-grow-1" style="min-width:0;">
-        <div class="fw-semibold small text-truncate">{{ pc.patient.full_name }}</div>
-        <div class="text-muted" style="font-size:.72rem;">
-          {{ pc.patient.patient_id }} &middot;
-          Paused at {{ pc.consultation_date|time:"H:i" }} &middot;
-          {{ pc.department|default:"General" }}
-        </div>
-      </div>
-      <a href="{% url 'consultations:edit' pk=pc.pk %}" class="btn btn-warning btn-sm flex-shrink-0">
-        <i class="bi bi-play-circle me-1"></i>Resume
+      <a href="{% url 'consultations:edit' pk=pc.pk %}" class="btn btn-sm btn-warning ws-btn me-1" hx-boost="false">
+        <i class="bi bi-play-circle me-1"></i>{{ pc.patient.full_name|truncatewords:2 }}
       </a>
+    {% endfor %}
+  {% endif %}
+  {% if paused_consultations %}
+    {% if not returning_patients %}
+      <strong>{{ paused_consultations|length }} paused</strong> — patient{{ paused_consultations|length|pluralize }} out for service
+    {% elif paused_consultations|length > returning_patients|length %}
+      &bull; more patients still out for service
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+{# -- Incoming referrals: compact alert -- #}
+{% if incoming_referrals %}
+<div class="ws-alert-strip mb-2" style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;">
+  <i class="bi bi-arrow-down-circle-fill"></i>
+  <strong>{{ incoming_referrals|length }} referral{{ incoming_referrals|length|pluralize }}</strong> to {{ dept.name }}
+  <button class="btn btn-sm btn-outline-warning ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#wsReferralsList">View</button>
+</div>
+<div class="collapse mb-2" id="wsReferralsList">
+  <div class="card border-warning">
+    {% for ref in incoming_referrals %}
+    <div class="ws-patient">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+          <span class="ws-name">{{ ref.patient.full_name }}</span>
+          <span class="ws-sub ms-1">{{ ref.patient.patient_id }}</span>
+          {% with tier=ref.visit.service_tier|default:'STANDARD' %}
+            {% if tier == 'VIP' %}<span class="ws-pill ws-pill-vip">VIP</span>{% endif %}
+          {% endwith %}
+          <div class="ws-sub mt-1">
+            From <strong>Dr. {{ ref.consulting_doctor.last_name|default:ref.consulting_doctor.full_name }}</strong>
+            ({{ ref.department.name }}) &bull; {{ ref.consultation_date|date:"d M H:i" }}
+          </div>
+          {% if ref.referral_reason %}
+          <div class="ws-sub fst-italic mt-1"><i class="bi bi-chat-right-text me-1"></i>{{ ref.referral_reason|truncatechars:80 }}</div>
+          {% endif %}
+        </div>
+        <a href="{% url 'consultations:create' patient_id=ref.patient.patient_id %}?visit_id={{ ref.visit.pk }}"
+           class="btn btn-sm btn-warning ws-btn" hx-boost="false">
+          <i class="bi bi-person-lines-fill me-1"></i>See Patient
+        </a>
+      </div>
     </div>
     {% endfor %}
   </div>
 </div>
 {% endif %}
 
-{# ── Paused Consultations — still waiting for patient to return ── #}
-{% if paused_consultations and not returning_patients %}
-<div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center gap-2 small">
-  <i class="bi bi-pause-circle me-1"></i>
-  <strong>{{ paused_consultations|length }} paused consultation{{ paused_consultations|length|pluralize }}</strong>
-  — patient{{ paused_consultations|length|pluralize }} sent for service, awaiting return.
-  {% for pc in paused_consultations %}
-  <span class="badge bg-warning-subtle text-warning-emphasis ms-1">{{ pc.patient.full_name }}</span>
-  {% endfor %}
-</div>
-{% elif paused_consultations and returning_patients and paused_consultations|length > returning_patients|length %}
-<div class="alert alert-light py-2 px-3 mb-3 d-flex align-items-center gap-2 small border">
-  <i class="bi bi-pause-circle text-muted me-1"></i>
-  More patients still out for service —
-  {% for pc in paused_consultations %}
-    {% if pc not in returning_patients %}
-    <span class="badge bg-light text-dark border ms-1">{{ pc.patient.full_name }}</span>
-    {% endif %}
-  {% endfor %}
-</div>
-{% endif %}
-
-{# ── Refraction counter / room info ── #}
-{% if is_refrac %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
-    <span class="fw-semibold small text-muted flex-shrink-0">
-      <i class="bi bi-grid-3x3-gap me-1"></i>My Counter:
-    </span>
-    {% if refrac_counter %}
-      <span class="badge bg-primary px-3 py-2" style="font-size:.82rem;letter-spacing:.02em;">
-        <i class="bi bi-door-open me-1"></i>{{ refrac_counter.name }}
-      </span>
-      {% if refrac_counter.serves_tiers %}
-      <span class="ms-1">
-        {% for tier in refrac_counter.get_serves_tiers %}
-          {% if tier == 'VIP' %}<span class="badge fw-bold" style="background:#7c3aed;">VIP</span>
-          {% elif tier == 'EXPRESS' %}<span class="badge bg-info text-dark">Express</span>
-          {% elif tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark">Fast Track</span>
-          {% else %}<span class="badge bg-secondary">Standard</span>{% endif %}
-        {% endfor %}
-      </span>
-      {% else %}
-      <span class="badge bg-light text-dark border" style="font-size:.75rem;">All Tiers</span>
-      {% endif %}
-      <span class="text-muted small">
-        <i class="bi bi-check-circle-fill text-success me-1"></i>
-        Queue is filtered to your counter's tier.
-      </span>
-    {% else %}
-      <span class="text-warning small">
-        <i class="bi bi-exclamation-triangle me-1"></i>
-        No counter assigned — contact administrator. Showing all refraction patients.
-      </span>
-    {% endif %}
-  </div>
-</div>
-{% endif %}
-
-{# ── My Room (read-only — set by administrator via Consultation Rooms) ── #}
-{% if dept_rooms %}
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
-    <span class="fw-semibold small text-muted flex-shrink-0">
-      <i class="bi bi-door-open me-1"></i>My Room:
-    </span>
-    {% if my_assigned_room %}
-      <span class="badge bg-primary px-3 py-2" style="font-size:.82rem;letter-spacing:.02em;">
-        <i class="bi bi-door-open me-1"></i>Room {{ my_assigned_room.room_number }}
-        <span class="ms-2 opacity-75" style="font-size:.72rem;">{{ my_assigned_room.get_room_tier_display }}</span>
-      </span>
-      <span class="text-muted small">
-        <i class="bi bi-check-circle-fill text-success me-1"></i>
-        Queue is filtered to your room. Triage nurse sees
-        <strong>Room {{ my_assigned_room.room_number }} — Dr. {{ request.user.last_name }}</strong> when dispatching.
-      </span>
-    {% else %}
-      <span class="text-warning small">
-        <i class="bi bi-exclamation-triangle me-1"></i>
-        No room assigned — contact your administrator to be assigned to a room.
-      </span>
-    {% endif %}
-  </div>
-</div>
-{% endif %}
-
 <div class="row g-3">
 
-  {# ── Left column: patient queue — live auto-refresh ── #}
+  {# ================================================================ #}
+  {# LEFT COLUMN: PATIENT QUEUE                                       #}
+  {# ================================================================ #}
   <div class="col-lg-6 ws-queue-col" id="ws-queue-live">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <h6 class="mb-0 fw-semibold">
-          <i class="bi bi-people-fill me-2 text-warning"></i>Waiting Queue
-          {% if selected_room %}
-            <span class="text-muted fw-normal small">&mdash; Room {{ selected_room.room_number }}</span>
-          {% elif dept %}
-            <span class="text-muted fw-normal small">&mdash; {{ dept.name }}</span>
-          {% endif %}
-        </h6>
+      <div class="ws-section-hdr">
+        <span>
+          <i class="bi bi-people-fill me-1 text-warning"></i>Waiting Queue
+          {% if selected_room %}<span class="ws-sub ms-1">&mdash; Room {{ selected_room.room_number }}</span>
+          {% elif dept %}<span class="ws-sub ms-1">&mdash; {{ dept.name }}</span>{% endif %}
+        </span>
         <span class="badge bg-warning text-dark">{% if qms_on %}{{ waiting_tokens|length }}{% else %}{{ waiting_visits|length }}{% endif %}</span>
       </div>
 
       {% if qms_on %}
-        {# ── QMS ON: card-based queue grouped by status ── #}
         {% if waiting_tokens %}
         <div class="list-group list-group-flush" id="wsQueueCards">
           {% for tok in waiting_tokens %}
-          {# Skip tokens assigned to another counter #}
           {% if not selected_room and tok.counter_id and tok.counter_id != my_counter_id %}
-          <div class="list-group-item py-2 px-3" style="opacity:.5;background:#f8f9fa;">
+          {# Token assigned to another counter — dim #}
+          <div class="ws-patient" style="opacity:.4;background:#fafbfc;">
             <div class="d-flex align-items-center gap-2">
-              <span class="badge bg-secondary" style="font-size:.7rem;">{{ tok.display_token_number }}</span>
-              <span class="text-muted small">{{ tok.display_name }}</span>
-              <span class="ms-auto text-muted small fst-italic">{% if tok.counter %}{{ tok.counter.name }}{% else %}Assigned{% endif %}</span>
+              <span class="ws-pill" style="background:#e2e8f0;color:#64748b;">{{ tok.display_token_number }}</span>
+              <span class="ws-sub">{{ tok.display_name }}</span>
+              <span class="ms-auto ws-sub fst-italic">{% if tok.counter %}{{ tok.counter.name }}{% endif %}</span>
             </div>
           </div>
           {% else %}
-          <div class="list-group-item py-2 px-3 {% if tok.status == 'SERVING' %}border-start border-primary border-3{% elif tok.status == 'CALLED' %}border-start border-info border-3{% endif %}">
-            {# ── Row 1: Token + Name + Tier + Status + Time ── #}
+          <div class="ws-patient {% if tok.status == 'SERVING' %}border-start border-3 border-primary{% elif tok.status == 'CALLED' %}border-start border-3 border-info{% endif %}">
+            {# Row 1: Token + Name + Status pills #}
             <div class="d-flex align-items-center gap-2 flex-wrap">
-              <span class="badge bg-primary" style="font-size:.72rem;min-width:48px;">{{ tok.display_token_number }}</span>
-              <span class="fw-semibold" style="font-size:.88rem;">{{ tok.display_name }}</span>
-              {% if tok.ws_visit_type == 'NEW' %}<span class="badge bg-primary" style="font-size:.6rem;">NEW</span>
-              {% elif tok.ws_visit_type == 'FOLLOW_UP' %}<span class="badge border text-secondary" style="font-size:.6rem;background:transparent;">F/U</span>{% endif %}
-              {% if tok.service_tier == 'VIP' %}<span class="badge" style="background:#7c3aed;font-size:.6rem;">VIP</span>
-              {% elif tok.service_tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark" style="font-size:.6rem;">Fast Track</span>
-              {% elif tok.service_tier == 'EXPRESS' %}<span class="badge bg-info text-dark" style="font-size:.6rem;">Express</span>{% endif %}
-              {% if tok.assigned_doctor_id == request.user.pk %}<span class="badge bg-warning text-dark" style="font-size:.6rem;"><i class="bi bi-person-check"></i> For You</span>{% endif %}
-              <span class="ms-auto d-flex align-items-center gap-2">
-                {% if tok.status == 'SERVING' %}<span class="badge bg-primary" style="font-size:.65rem;">Serving</span>
-                {% elif tok.status == 'CALLED' %}<span class="badge bg-info text-dark" style="font-size:.65rem;">Called</span>
-                {% else %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">Waiting</span>{% endif %}
-                <span class="text-muted" style="font-size:.7rem;">{{ tok.issued_at|time:"H:i" }}</span>
+              <span class="badge bg-primary" style="font-size:.7rem;min-width:44px;">{{ tok.display_token_number }}</span>
+              <span class="ws-name">{{ tok.display_name }}</span>
+              {% if tok.ws_visit_type == 'NEW' %}<span class="ws-pill ws-pill-new">NEW</span>
+              {% elif tok.ws_visit_type == 'FOLLOW_UP' %}<span class="ws-pill ws-pill-fu">F/U</span>{% endif %}
+              {% if tok.service_tier == 'VIP' %}<span class="ws-pill ws-pill-vip">VIP</span>
+              {% elif tok.service_tier == 'FAST_TRACK' %}<span class="ws-pill ws-pill-fasttrack">Fast Track</span>
+              {% elif tok.service_tier == 'EXPRESS' %}<span class="ws-pill ws-pill-express">Express</span>{% endif %}
+              {% if tok.assigned_doctor_id == request.user.pk %}<span class="ws-pill ws-pill-assigned"><i class="bi bi-person-check"></i> For You</span>{% endif %}
+              <span class="ms-auto d-flex align-items-center gap-1">
+                {% if tok.status == 'SERVING' %}<span class="ws-pill ws-pill-serving">Serving</span>
+                {% elif tok.status == 'CALLED' %}<span class="ws-pill ws-pill-called">Called</span>
+                {% else %}<span class="ws-pill ws-pill-waiting">Waiting</span>{% endif %}
+                <span class="ws-sub">{{ tok.issued_at|time:"H:i" }}</span>
               </span>
             </div>
 
-            {# ── Row 2: Vitals (compact inline) ── #}
+            {# Row 2: Vitals (compact) #}
             {% if tok.ws_visit and tok.ws_visit.vital_signs %}
             {% with vs=tok.ws_visit.vital_signs %}
-            <div class="d-flex gap-1 flex-wrap mt-1" style="font-size:.65rem;">
-              {% if vs.intraocular_pressure_right %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_right|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP R:{{ vs.intraocular_pressure_right }}</span>{% endif %}
-              {% if vs.intraocular_pressure_left %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_left|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP L:{{ vs.intraocular_pressure_left }}</span>{% endif %}
-              {% if vs.visual_acuity_right %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_right|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA R:{{ vs.visual_acuity_right }}</span>{% endif %}
-              {% if vs.visual_acuity_left %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_left|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA L:{{ vs.visual_acuity_left }}</span>{% endif %}
-              {% if vs.blood_pressure %}<span class="badge border bg-light text-dark" {% if vs.blood_pressure|bp_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>BP:{{ vs.blood_pressure }}</span>{% endif %}
+            <div class="d-flex gap-1 flex-wrap mt-1">
+              {% if vs.intraocular_pressure_right %}<span class="ws-vital {% if vs.intraocular_pressure_right|vital_css:'iop' %}ws-vital-warn{% endif %}">IOP R:{{ vs.intraocular_pressure_right }}</span>{% endif %}
+              {% if vs.intraocular_pressure_left %}<span class="ws-vital {% if vs.intraocular_pressure_left|vital_css:'iop' %}ws-vital-warn{% endif %}">IOP L:{{ vs.intraocular_pressure_left }}</span>{% endif %}
+              {% if vs.visual_acuity_right %}<span class="ws-vital {% if vs.visual_acuity_right|va_css %}ws-vital-warn{% endif %}">VA R:{{ vs.visual_acuity_right }}</span>{% endif %}
+              {% if vs.visual_acuity_left %}<span class="ws-vital {% if vs.visual_acuity_left|va_css %}ws-vital-warn{% endif %}">VA L:{{ vs.visual_acuity_left }}</span>{% endif %}
+              {% if vs.blood_pressure %}<span class="ws-vital {% if vs.blood_pressure|bp_css %}ws-vital-warn{% endif %}">BP:{{ vs.blood_pressure }}</span>{% endif %}
             </div>
             {% endwith %}
             {% endif %}
 
-            {# ── Row 3: Referral/routing context ── #}
+            {# Row 3: Referral context #}
             {% if tok.ws_visit.referring_doctor %}
-            <div class="mt-1"><span class="badge" style="font-size:.6rem;background:#0d9488;"><i class="bi bi-arrow-return-left me-1"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.last_name }}</span></div>
+            <div class="mt-1"><span class="ws-pill" style="background:#ccfbf1;color:#0d9488;"><i class="bi bi-arrow-return-left me-1"></i>From Dr. {{ tok.ws_visit.referring_doctor.last_name }}</span></div>
             {% elif tok.notes and 'Returned from Refraction' in tok.notes %}
-            <div class="mt-1"><span class="badge" style="font-size:.6rem;background:#0d9488;"><i class="bi bi-arrow-return-left me-1"></i>From Refraction</span></div>
+            <div class="mt-1"><span class="ws-pill" style="background:#ccfbf1;color:#0d9488;"><i class="bi bi-arrow-return-left me-1"></i>From Refraction</span></div>
             {% endif %}
             {% if tok.ws_visit.routing_note %}
-            <div class="text-muted fst-italic mt-1" style="font-size:.68rem;"><i class="bi bi-chat-left-text me-1"></i>{{ tok.ws_visit.routing_note|truncatewords:12 }}</div>
+            <div class="ws-sub fst-italic mt-1"><i class="bi bi-chat-left-text me-1"></i>{{ tok.ws_visit.routing_note|truncatewords:10 }}</div>
             {% endif %}
 
-            {# ── Row 4: Actions ── #}
-            <div class="d-flex gap-1 flex-wrap mt-2">
+            {# Row 4: Primary action + More dropdown #}
+            <div class="d-flex align-items-center gap-1 mt-2">
               {% if tok.patient %}
                 {% if tok.ws_visit %}
+                  {# PRIMARY BUTTON #}
                   {% if tok.ws_draft %}
-                  <a href="{% url 'consultations:edit' pk=tok.ws_draft.pk %}" class="btn btn-sm btn-warning py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+                  <a href="{% url 'consultations:edit' pk=tok.ws_draft.pk %}" class="btn btn-sm btn-warning ws-btn" hx-boost="false">
                     <i class="bi bi-pencil-square me-1"></i>Resume
                   </a>
                   {% else %}
-                  <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+                  <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}?visit_id={{ tok.ws_visit.pk }}" class="btn btn-sm btn-success ws-btn" hx-boost="false">
                     <i class="bi bi-person-lines-fill me-1"></i>Open Visit
                   </a>
                   {% endif %}
-                  {% if tok.ws_visit.referring_doctor %}
-                  <button class="btn btn-sm btn-outline-warning py-0 px-2 ws-return-btn" data-visit="{{ tok.ws_visit.pk }}" data-doctor="{{ tok.ws_visit.referring_doctor.get_full_name }}" style="font-size:.72rem;">
-                    <i class="bi bi-arrow-return-left me-1"></i>Return
-                  </button>
-                  {% endif %}
-                  <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="EhrRoute.open('{{ tok.ws_visit.pk }}', {tier:'{{ tok.ws_visit.service_tier|default:"STANDARD" }}', patientName:'{{ tok.display_name|escapejs }}'{% if tok.ws_draft %}, completePk:'{{ tok.ws_draft.pk }}'{% endif %}})" style="font-size:.72rem;">
-                    <i class="bi bi-signpost-2 me-1"></i>Route
-                  </button>
-                  {% if not tok.ws_draft %}
-                  <button class="btn btn-sm btn-outline-danger py-0 px-2 ws-reject-btn" data-visit="{{ tok.ws_visit.pk }}" data-referring-doctor="{% if tok.ws_visit.referring_doctor %}{{ tok.ws_visit.referring_doctor.get_full_name }}{% endif %}" style="font-size:.72rem;">
-                    <i class="bi bi-x-circle me-1"></i>Reject
-                  </button>
-                  {% endif %}
-                  <span class="ms-auto d-flex gap-1">
-                    <button class="btn btn-sm btn-outline-info py-0 px-1 ws-iop-btn" data-visit="{{ tok.ws_visit.pk }}" data-patient="{{ tok.display_name }}" title="Quick IOP"><i class="bi bi-eye" style="font-size:.75rem;"></i></button>
-                    <button class="btn btn-sm btn-outline-secondary py-0 px-1 ws-va-btn" data-visit="{{ tok.ws_visit.pk }}" data-patient="{{ tok.display_name }}" title="Quick VA" style="font-size:.7rem;">VA</button>
-                  </span>
+
+                  {# MORE DROPDOWN #}
+                  <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary ws-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" style="padding:4px 8px;">
+                      <i class="bi bi-three-dots"></i>
+                    </button>
+                    <ul class="dropdown-menu ws-more-menu">
+                      <li>
+                        <a class="dropdown-item" href="javascript:void(0)"
+                           onclick="EhrRoute.open('{{ tok.ws_visit.pk }}', {tier:'{{ tok.ws_visit.service_tier|default:"STANDARD" }}', patientName:'{{ tok.display_name|escapejs }}'{% if tok.ws_draft %}, completePk:'{{ tok.ws_draft.pk }}'{% endif %}})">
+                          <i class="bi bi-signpost-2"></i>Route Patient
+                        </a>
+                      </li>
+                      {% if tok.ws_visit.referring_doctor %}
+                      <li>
+                        <a class="dropdown-item ws-return-btn" href="javascript:void(0)"
+                           data-visit="{{ tok.ws_visit.pk }}" data-doctor="{{ tok.ws_visit.referring_doctor.get_full_name }}">
+                          <i class="bi bi-arrow-return-left"></i>Return to Dr. {{ tok.ws_visit.referring_doctor.last_name }}
+                        </a>
+                      </li>
+                      {% endif %}
+                      <li><hr class="dropdown-divider"></li>
+                      <li>
+                        <a class="dropdown-item ws-iop-btn" href="javascript:void(0)"
+                           data-visit="{{ tok.ws_visit.pk }}" data-patient="{{ tok.display_name }}">
+                          <i class="bi bi-eye"></i>Quick IOP
+                        </a>
+                      </li>
+                      <li>
+                        <a class="dropdown-item ws-va-btn" href="javascript:void(0)"
+                           data-visit="{{ tok.ws_visit.pk }}" data-patient="{{ tok.display_name }}">
+                          <i class="bi bi-eye-fill"></i>Quick VA
+                        </a>
+                      </li>
+                      {% if not tok.ws_draft %}
+                      <li><hr class="dropdown-divider"></li>
+                      <li>
+                        <a class="dropdown-item text-danger ws-reject-btn" href="javascript:void(0)"
+                           data-visit="{{ tok.ws_visit.pk }}" data-referring-doctor="{% if tok.ws_visit.referring_doctor %}{{ tok.ws_visit.referring_doctor.get_full_name }}{% endif %}">
+                          <i class="bi bi-x-circle"></i>Reject & Re-route
+                        </a>
+                      </li>
+                      {% endif %}
+                    </ul>
+                  </div>
                 {% else %}
-                  <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+                  <a href="{% url 'consultations:create' patient_id=tok.patient.patient_id %}" class="btn btn-sm btn-outline-success ws-btn" hx-boost="false">
                     <i class="bi bi-person-plus me-1"></i>See Patient
                   </a>
                 {% endif %}
               {% else %}
-                <span class="text-muted small">Walk-in</span>
+                <span class="ws-sub">Walk-in</span>
               {% endif %}
             </div>
           </div>
@@ -313,125 +330,106 @@
           {% endfor %}
         </div>
         {% else %}
-        <div class="card-body text-center text-muted py-5">
-          <i class="bi bi-inbox fs-2 d-block mb-2"></i>No patients in queue.
+        <div class="ws-empty">
+          <i class="bi bi-inbox"></i>No patients in queue.
+          {% if not dept_code %}
+          <div class="mt-2 small text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No department assigned.</div>
+          {% endif %}
         </div>
         {% endif %}
 
       {% else %}
-        {# ── QMS OFF: card-based visit list ── #}
+        {# QMS OFF: Visit-based queue #}
         {% if waiting_visits %}
         <div class="list-group list-group-flush">
           {% for v in waiting_visits %}
-          <div class="list-group-item py-2 px-3 {% if v.status == 'IN_CONSULTATION' %}border-start border-primary border-3{% endif %}">
+          <div class="ws-patient {% if v.status == 'IN_CONSULTATION' %}border-start border-3 border-primary{% endif %}">
             <div class="d-flex align-items-center gap-2 flex-wrap">
-              <span class="badge bg-secondary" style="font-size:.7rem;min-width:24px;">{{ forloop.counter }}</span>
-              <span class="fw-semibold" style="font-size:.88rem;">{{ v.patient.full_name }}</span>
-              <span class="text-muted" style="font-size:.7rem;">{{ v.patient.patient_id }}</span>
-              {% if v.visit_type == 'NEW' %}<span class="badge bg-primary" style="font-size:.6rem;">NEW</span>
-              {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge border text-secondary" style="font-size:.6rem;background:transparent;">F/U</span>
-              {% elif v.visit_type == 'EMERGENCY' %}<span class="badge bg-danger" style="font-size:.6rem;">Emergency</span>{% endif %}
-              <span class="ms-auto d-flex align-items-center gap-2">
-                {% if v.status == 'IN_CONSULTATION' %}<span class="badge bg-primary" style="font-size:.65rem;">In Consult</span>
-                {% elif v.status == 'PARAMETERS' %}<span class="badge bg-info text-dark" style="font-size:.65rem;">Triage</span>
-                {% else %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">Waiting</span>{% endif %}
-                <span class="text-muted" style="font-size:.7rem;">{{ v.visit_date|time:"H:i" }}</span>
+              <span class="badge bg-secondary" style="font-size:.68rem;">{{ forloop.counter }}</span>
+              <span class="ws-name">{{ v.patient.full_name }}</span>
+              <span class="ws-sub">{{ v.patient.patient_id }}</span>
+              {% if v.visit_type == 'NEW' %}<span class="ws-pill ws-pill-new">NEW</span>
+              {% elif v.visit_type == 'FOLLOW_UP' %}<span class="ws-pill ws-pill-fu">F/U</span>
+              {% elif v.visit_type == 'EMERGENCY' %}<span class="ws-pill" style="background:#fee2e2;color:#991b1b;">Emergency</span>{% endif %}
+              <span class="ms-auto d-flex align-items-center gap-1">
+                {% if v.status == 'IN_CONSULTATION' %}<span class="ws-pill ws-pill-serving">In Consult</span>
+                {% elif v.status == 'PARAMETERS' %}<span class="ws-pill ws-pill-called">Triage</span>
+                {% else %}<span class="ws-pill ws-pill-waiting">Waiting</span>{% endif %}
+                <span class="ws-sub">{{ v.visit_date|time:"H:i" }}</span>
               </span>
             </div>
             {% if v.vital_signs %}
             {% with vs=v.vital_signs %}
-            <div class="d-flex gap-1 flex-wrap mt-1" style="font-size:.65rem;">
-              {% if vs.intraocular_pressure_right %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_right|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP R:{{ vs.intraocular_pressure_right }}</span>{% endif %}
-              {% if vs.intraocular_pressure_left %}<span class="badge border bg-light text-dark" {% if vs.intraocular_pressure_left|vital_css:'iop' %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>IOP L:{{ vs.intraocular_pressure_left }}</span>{% endif %}
-              {% if vs.visual_acuity_right %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_right|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA R:{{ vs.visual_acuity_right }}</span>{% endif %}
-              {% if vs.visual_acuity_left %}<span class="badge border bg-light text-dark" {% if vs.visual_acuity_left|va_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>VA L:{{ vs.visual_acuity_left }}</span>{% endif %}
-              {% if vs.blood_pressure %}<span class="badge border bg-light text-dark" {% if vs.blood_pressure|bp_css %}style="background:#fee2e2!important;border-color:#fca5a5!important;"{% endif %}>BP:{{ vs.blood_pressure }}</span>{% endif %}
+            <div class="d-flex gap-1 flex-wrap mt-1">
+              {% if vs.intraocular_pressure_right %}<span class="ws-vital {% if vs.intraocular_pressure_right|vital_css:'iop' %}ws-vital-warn{% endif %}">IOP R:{{ vs.intraocular_pressure_right }}</span>{% endif %}
+              {% if vs.intraocular_pressure_left %}<span class="ws-vital {% if vs.intraocular_pressure_left|vital_css:'iop' %}ws-vital-warn{% endif %}">IOP L:{{ vs.intraocular_pressure_left }}</span>{% endif %}
+              {% if vs.visual_acuity_right %}<span class="ws-vital {% if vs.visual_acuity_right|va_css %}ws-vital-warn{% endif %}">VA R:{{ vs.visual_acuity_right }}</span>{% endif %}
+              {% if vs.visual_acuity_left %}<span class="ws-vital {% if vs.visual_acuity_left|va_css %}ws-vital-warn{% endif %}">VA L:{{ vs.visual_acuity_left }}</span>{% endif %}
+              {% if vs.blood_pressure %}<span class="ws-vital {% if vs.blood_pressure|bp_css %}ws-vital-warn{% endif %}">BP:{{ vs.blood_pressure }}</span>{% endif %}
             </div>
             {% endwith %}
             {% endif %}
-            {% if v.chief_complaint %}<div class="text-muted mt-1" style="font-size:.7rem;">{{ v.chief_complaint|truncatechars:60 }}</div>{% endif %}
-            <div class="d-flex gap-1 flex-wrap mt-2">
-              <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success py-0 px-2" hx-boost="false" style="font-size:.75rem;">
+            {% if v.chief_complaint %}<div class="ws-sub mt-1">{{ v.chief_complaint|truncatechars:50 }}</div>{% endif %}
+            <div class="d-flex align-items-center gap-1 mt-2">
+              <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success ws-btn" hx-boost="false">
                 <i class="bi bi-journal-plus me-1"></i>Consult
               </a>
-              <span class="ms-auto d-flex gap-1">
-                <button class="btn btn-sm btn-outline-info py-0 px-1 ws-iop-btn" data-visit="{{ v.pk }}" data-patient="{{ v.patient.full_name }}" title="Quick IOP"><i class="bi bi-eye" style="font-size:.75rem;"></i></button>
-                <button class="btn btn-sm btn-outline-secondary py-0 px-1 ws-va-btn" data-visit="{{ v.pk }}" data-patient="{{ v.patient.full_name }}" title="Quick VA" style="font-size:.7rem;">VA</button>
-              </span>
+              <div class="dropdown">
+                <button class="btn btn-sm btn-outline-secondary ws-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" style="padding:4px 8px;">
+                  <i class="bi bi-three-dots"></i>
+                </button>
+                <ul class="dropdown-menu ws-more-menu">
+                  <li><a class="dropdown-item ws-iop-btn" href="javascript:void(0)" data-visit="{{ v.pk }}" data-patient="{{ v.patient.full_name }}"><i class="bi bi-eye"></i>Quick IOP</a></li>
+                  <li><a class="dropdown-item ws-va-btn" href="javascript:void(0)" data-visit="{{ v.pk }}" data-patient="{{ v.patient.full_name }}"><i class="bi bi-eye-fill"></i>Quick VA</a></li>
+                </ul>
+              </div>
             </div>
           </div>
           {% endfor %}
         </div>
         {% else %}
-        <div class="card-body text-center text-muted py-5">
-          <i class="bi bi-inbox fs-2 d-block mb-2"></i>
-          No patients waiting in your department.
-          {% if not dept_code %}
-          <div class="mt-2 small text-warning">
-            <i class="bi bi-exclamation-triangle me-1"></i>
-            Your account has no department assigned. Ask the administrator.
-          </div>
-          {% endif %}
+        <div class="ws-empty">
+          <i class="bi bi-inbox"></i>No patients waiting.
+          {% if not dept_code %}<div class="mt-2 small text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No department assigned.</div>{% endif %}
         </div>
         {% endif %}
       {% endif %}
     </div>
   </div>
 
-  {# ── Right column: today's consultations ── #}
+  {# ================================================================ #}
+  {# RIGHT COLUMN: MY CONSULTATIONS (merged)                          #}
+  {# ================================================================ #}
   <div class="col-lg-6 ws-consult-col">
 
-    {# ── Awaiting Results / Needs Resume ── #}
+    {# -- Active / In Progress consultations -- #}
     {% if in_progress_consultations %}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <h6 class="mb-0 fw-semibold text-warning">
-          <i class="bi bi-hourglass-split me-2"></i>Pending Consultations — Awaiting / Resume
-        </h6>
+      <div class="ws-section-hdr">
+        <span><i class="bi bi-hourglass-split me-1 text-warning"></i>Active Consultations</span>
         <span class="badge bg-warning text-dark">{{ in_progress_consultations|length }}</span>
       </div>
       <div class="list-group list-group-flush">
         {% for c in in_progress_consultations %}
-        <div class="list-group-item py-2 px-3 {% if c.results_ready %}list-group-item-success{% endif %}">
+        <div class="ws-patient {% if c.results_ready %}border-start border-3 border-success{% endif %}">
           <div class="d-flex justify-content-between align-items-start gap-2">
-            <div class="flex-grow-1">
+            <div class="flex-grow-1" style="min-width:0;">
               <div class="d-flex align-items-center gap-2 flex-wrap">
-                <span class="fw-semibold small">{{ c.patient.full_name }}</span>
+                <span class="ws-name">{{ c.patient.full_name }}</span>
                 {% if c.results_ready %}
-                <span class="badge bg-success" style="font-size:.65rem;">
-                  <i class="bi bi-check-circle-fill me-1"></i>Results Ready
-                </span>
+                  <span class="ws-pill ws-pill-results"><i class="bi bi-check-circle-fill me-1"></i>Results Ready</span>
                 {% elif c.invest_pending %}
-                <span class="badge bg-warning text-dark" style="font-size:.65rem;">
-                  <i class="bi bi-hourglass me-1"></i>{{ c.invest_pending|length }} test{{ c.invest_pending|length|pluralize }} pending
-                </span>
-                {% elif c.invest_completed %}
-                <span class="badge bg-success" style="font-size:.65rem;">
-                  <i class="bi bi-check-circle-fill me-1"></i>Results Ready
-                </span>
+                  <span class="ws-pill ws-pill-pending"><i class="bi bi-hourglass me-1"></i>{{ c.invest_pending|length }} pending</span>
                 {% endif %}
               </div>
-              <div class="text-muted" style="font-size:.72rem;">
-                {{ c.department.name|default:"—" }} &bull; Started {{ c.consultation_date|time:"H:i" }}
+              <div class="ws-sub mt-1">
+                {{ c.department.name|default:"\u2014" }} &bull; Started {{ c.consultation_date|time:"H:i" }}
+                {% if c.presenting_complaint %}&bull; {{ c.presenting_complaint|truncatechars:40 }}{% endif %}
               </div>
-              {% if c.presenting_complaint %}
-              <div class="text-secondary" style="font-size:.72rem;">{{ c.presenting_complaint|truncatechars:60 }}</div>
-              {% endif %}
             </div>
-            <div class="d-flex flex-column gap-1 flex-shrink-0">
-              {% if c.results_ready or c.invest_completed %}
-              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-success py-0 px-2" style="font-size:.72rem;" hx-boost="false">
-                <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit
-              </a>
-              {% else %}
-              <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm btn-warning py-0 px-2" style="font-size:.72rem;" hx-boost="false">
-                <i class="bi bi-pencil-fill me-1"></i>Resume &amp; Edit
-              </a>
-              {% endif %}
-              <a href="{% url 'consultations:detail' pk=c.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;" hx-boost="false">
-                <i class="bi bi-eye me-1"></i>View / Order More
-              </a>
-            </div>
+            <a href="{% url 'consultations:edit' pk=c.pk %}" class="btn btn-sm {% if c.results_ready %}btn-success{% else %}btn-warning{% endif %} ws-btn flex-shrink-0" hx-boost="false">
+              <i class="bi bi-pencil-fill me-1"></i>Resume
+            </a>
           </div>
         </div>
         {% endfor %}
@@ -439,209 +437,68 @@
     </div>
     {% endif %}
 
-    {# ── Route Patient — doctor can send patient to next destination ── #}
+    {# -- Route Patient (completed consults needing routing) -- #}
     {% if ready_to_route_doctor %}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <h6 class="mb-0 fw-semibold">
-          <i class="bi bi-arrow-right-circle me-2 text-secondary"></i>Route Patient — Where to next?
-        </h6>
+      <div class="ws-section-hdr">
+        <span><i class="bi bi-signpost-2 me-1 text-secondary"></i>Route Patient</span>
         <span class="badge bg-secondary">{{ ready_to_route_doctor|length }}</span>
       </div>
-      <div class="card-body p-0">
-        <div class="px-3 pt-2 pb-1">
-          <small class="text-muted">Consultation done. Select next destination for the patient.</small>
+      {% for v in ready_to_route_doctor %}
+      <div class="ws-patient" id="ws-route-row-{{ v.pk }}">
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div>
+            <span class="ws-name">{{ v.patient.full_name }}</span>
+            {% with tier=v.service_tier|default:'STANDARD' %}
+              {% if tier == 'VIP' %}<span class="ws-pill ws-pill-vip">VIP</span>{% endif %}
+            {% endwith %}
+            <span class="ws-sub ms-1">{{ v.patient.patient_id }}</span>
+          </div>
+          <button class="btn btn-sm btn-primary ws-btn"
+                  onclick="EhrRoute.open('{{ v.pk }}', {tier:'{{ v.service_tier|default:"STANDARD" }}', patientName:'{{ v.patient.full_name|escapejs }}'})">
+            <i class="bi bi-signpost-2 me-1"></i>Route
+          </button>
         </div>
-        {% for v in ready_to_route_doctor %}
-        {% with tier=v.service_tier|default:'STANDARD' %}
-        <div class="px-3 py-3 border-bottom" id="ws-route-row-{{ v.pk }}">
-          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-            <span class="fw-semibold">{{ v.patient.full_name }}</span>
-            {% if tier == 'VIP' %}<span class="badge bg-secondary" style="font-size:.7rem;">VIP</span>
-            {% elif tier == 'EXPRESS' %}<span class="badge bg-secondary" style="font-size:.7rem;">Express</span>
-            {% elif tier == 'FAST_TRACK' %}<span class="badge bg-secondary" style="font-size:.7rem;">Fast Track</span>
-            {% else %}<span class="badge bg-secondary" style="font-size:.7rem;">Standard</span>
-            {% endif %}
-            <span class="text-muted small">{{ v.patient.patient_id }}</span>
-          </div>
-          <div class="d-flex flex-wrap gap-1" id="ws-route-btns-{{ v.pk }}">
-            {# ── Tests (blue) — patient returns ── #}
-            <button class="btn btn-sm btn-outline-primary ws-route-btn" data-visit="{{ v.pk }}" data-dest="LAB">
-              <i class="bi bi-droplet me-1"></i>Lab
-            </button>
-            <button class="btn btn-sm btn-outline-primary ws-route-btn" data-visit="{{ v.pk }}" data-dest="IMAGING">
-              <i class="bi bi-camera me-1"></i>Investigations
-            </button>
-            <button class="btn btn-sm btn-outline-primary ws-route-btn" data-visit="{{ v.pk }}" data-dest="REFRACTION">
-              <i class="bi bi-eyeglasses me-1"></i>Refraction
-            </button>
-            <button class="btn btn-sm btn-outline-primary ws-route-btn" data-visit="{{ v.pk }}" data-dest="VA_CHECK">
-              <i class="bi bi-eye me-1"></i>VA Check
-            </button>
-            {# ── Specialist referrals (amber) — patient returns ── #}
-            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="GLAUCOMA" data-label="Glaucoma" data-patient="{{ v.patient.full_name }}">
-              Glaucoma
-            </button>
-            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="RETINA" data-label="Retina" data-patient="{{ v.patient.full_name }}">
-              Retina
-            </button>
-            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="CORNEA" data-label="Cornea" data-patient="{{ v.patient.full_name }}">
-              Cornea
-            </button>
-            <button class="btn btn-sm btn-outline-warning ws-referral-btn" data-visit="{{ v.pk }}" data-dest="NEURO" data-label="Neuro-Ophthalmology" data-patient="{{ v.patient.full_name }}">
-              Neuro
-            </button>
-            {# ── Services (green) ── #}
-            <button class="btn btn-sm btn-outline-success ws-route-btn" data-visit="{{ v.pk }}" data-dest="OPTICAL">
-              <i class="bi bi-shop me-1"></i>Optical
-            </button>
-            <button class="btn btn-sm btn-outline-success ws-route-btn" data-visit="{{ v.pk }}" data-dest="COUNSELING">
-              <i class="bi bi-chat-heart me-1"></i>Counseling
-            </button>
-            <button class="btn btn-sm btn-outline-success ws-route-btn" data-visit="{{ v.pk }}" data-dest="PHARMACY">
-              <i class="bi bi-capsule me-1"></i>Pharmacy
-            </button>
-            <button class="btn btn-sm btn-outline-success ws-route-btn" data-visit="{{ v.pk }}" data-dest="CASHIER">
-              <i class="bi bi-cash me-1"></i>Cashier
-            </button>
-            {# ── Finish (red) ── #}
-            <button class="btn btn-sm btn-outline-danger ws-route-btn" data-visit="{{ v.pk }}" data-dest="DISCHARGE">
-              <i class="bi bi-door-open me-1"></i>Done
-            </button>
-          </div>
-          {# Counter picker — active counters checked in today #}
-          {% if active_counters %}
-          <div class="mt-2 d-flex align-items-center gap-2 flex-wrap" id="ws-counter-row-{{ v.pk }}">
-            <span class="text-muted small">Send to:</span>
-            <button class="btn btn-xs btn-outline-secondary ws-room-any py-0 px-2 active" data-visit="{{ v.pk }}" style="font-size:.75rem;">
-              Any
-            </button>
-            {% for ctr in active_counters %}
-            <button class="btn btn-xs btn-outline-secondary ws-room-pick py-0 px-2"
-                    data-visit="{{ v.pk }}"
-                    data-room="{{ ctr.id }}"
-                    data-service="{{ ctr.service_type }}"
-                    title="{{ ctr.name }}{% if ctr.staff_assigned %} — Dr. {{ ctr.staff_assigned.last_name }}{% endif %}"
-                    style="font-size:.75rem;">
-              {{ ctr.name|truncatechars:20 }}{% if ctr.staff_assigned %} <span class="text-muted">({{ ctr.staff_assigned.last_name }})</span>{% endif %}
-            </button>
-            {% endfor %}
-          </div>
-          {% endif %}
-        </div>
-        {% endwith %}
-        {% endfor %}
       </div>
+      {% endfor %}
     </div>
     {% endif %}
 
-    {# ── Incoming Referrals ── #}
-    {% if incoming_referrals %}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <h6 class="mb-0 fw-semibold text-warning">
-          <i class="bi bi-arrow-down-circle-fill me-2 text-warning"></i>Referred to {{ dept.name }}
-        </h6>
-        <span class="badge bg-warning text-dark">{{ incoming_referrals|length }}</span>
-      </div>
-      <div class="list-group list-group-flush">
-        {% for ref in incoming_referrals %}
-        <div class="list-group-item py-2 px-3 border-start border-4 border-warning">
-          <div class="d-flex justify-content-between align-items-start gap-2">
-            <div class="flex-grow-1">
-              <div class="d-flex align-items-center gap-2 flex-wrap">
-                <span class="fw-semibold small">{{ ref.patient.full_name }}</span>
-                <span class="text-muted small">{{ ref.patient.patient_id }}</span>
-                {% with tier=ref.visit.service_tier|default:'STANDARD' %}
-                  {% if tier == 'VIP' %}<span class="badge" style="background:#7c3aed;font-size:.65rem;">VIP</span>
-                  {% elif tier == 'EXPRESS' or tier == 'FAST_TRACK' %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">Express</span>{% endif %}
-                {% endwith %}
-              </div>
-              <div class="text-muted" style="font-size:.72rem;">
-                Referred by <strong>Dr. {{ ref.consulting_doctor.last_name|default:ref.consulting_doctor.full_name }}</strong>
-                ({{ ref.department.name }}) &bull; {{ ref.consultation_date|date:"d M Y H:i" }}
-              </div>
-              {% if ref.referral_reason %}
-              <div class="text-secondary mt-1" style="font-size:.72rem;">
-                <i class="bi bi-chat-right-text me-1"></i>{{ ref.referral_reason|truncatechars:100 }}
-              </div>
-              {% endif %}
-              {% with pd=ref.consultation_diagnoses.all %}
-              {% if pd %}
-              <div class="mt-1">
-                {% for cd in pd|slice:":2" %}
-                <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ cd.diagnosis.code }} — {{ cd.diagnosis.description|truncatechars:40 }}</span>
-                {% endfor %}
-              </div>
-              {% endif %}
-              {% endwith %}
-            </div>
-            <div class="flex-shrink-0">
-              <a href="{% url 'consultations:create' patient_id=ref.patient.patient_id %}?visit_id={{ ref.visit.pk }}"
-                 class="btn btn-sm btn-warning" hx-boost="false">
-                <i class="bi bi-person-lines-fill me-1"></i>See Patient
-              </a>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
+    {# -- Today's Consultations (completed list) -- #}
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-        <h6 class="mb-0 fw-semibold">
-          <i class="bi bi-journal-medical me-2 text-primary"></i>Today's Consultations
-        </h6>
+      <div class="ws-section-hdr">
+        <span><i class="bi bi-journal-medical me-1 text-primary"></i>Today's Consultations</span>
         <span class="badge bg-primary">{{ my_consultations|length }}</span>
       </div>
-
       {% if my_consultations %}
       <div class="list-group list-group-flush">
         {% for c in my_consultations %}
-        <a href="{% url 'consultations:detail' pk=c.pk %}"
-           class="list-group-item list-group-item-action py-2 px-3" hx-boost="false">
+        <a href="{% url 'consultations:detail' pk=c.pk %}" class="list-group-item list-group-item-action py-2 px-3" hx-boost="false" style="border:none;border-bottom:1px solid #f1f5f9;">
           <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <div class="fw-semibold small">{{ c.patient.full_name }}</div>
-              <div class="text-muted" style="font-size:0.72rem;">
+            <div style="min-width:0;">
+              <div class="ws-name">{{ c.patient.full_name }}</div>
+              <div class="ws-sub">
                 {{ c.department.name }} &bull; {{ c.consultation_date|time:"H:i" }}
+                {% if c.presenting_complaint %}&bull; {{ c.presenting_complaint|truncatechars:40 }}{% endif %}
               </div>
-              {% if c.presenting_complaint %}
-              <div class="text-secondary" style="font-size:0.72rem;">
-                {{ c.presenting_complaint|truncatechars:60 }}
-              </div>
-              {% endif %}
             </div>
             <div class="d-flex align-items-center gap-1 ms-2 flex-shrink-0">
-              <span class="badge
-                {% if c.status == 'COMPLETED' %}bg-success
-                {% elif c.status == 'IN_PROGRESS' %}bg-primary
-                {% elif c.status == 'REFERRED' %}bg-warning text-dark
-                {% else %}bg-secondary{% endif %}">
+              <span class="ws-pill {% if c.status == 'COMPLETED' %}ws-pill-done{% elif c.status == 'IN_PROGRESS' %}ws-pill-ip{% elif c.status == 'REFERRED' %}ws-pill-referred{% elif c.status == 'PAUSED' %}ws-pill-paused{% else %}ws-pill-fu{% endif %}">
                 {{ c.get_status_display }}
               </span>
-              {# Quick order buttons — visible on today's open consultations #}
               {% if c.status != 'COMPLETED' %}
-              {% if is_refrac %}
-              <a href="{% url 'prescriptions:optical_new' consultation_pk=c.pk %}"
-                 class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.68rem;"
-                 title="Write Optical Prescription" onclick="event.stopPropagation();">
-                <i class="bi bi-eyeglasses"></i>
-              </a>
-              {% else %}
-              <a href="{% url 'investigations:order' consultation_pk=c.pk %}"
-                 class="btn btn-sm btn-outline-info py-0 px-1" style="font-size:0.68rem;"
-                 title="Order Eye Investigation" onclick="event.stopPropagation();">
-                <i class="bi bi-search-heart"></i>
-              </a>
-              <a href="{% url 'laboratory:order' consultation_pk=c.pk %}"
-                 class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:0.68rem;"
-                 title="Order Lab Test" onclick="event.stopPropagation();">
-                <i class="bi bi-droplet"></i>
-              </a>
-              {% endif %}
+                {% if is_refrac %}
+                <span class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:.65rem;" title="Optical Rx" onclick="event.stopPropagation();event.preventDefault();location.href='{% url 'prescriptions:optical_new' consultation_pk=c.pk %}';">
+                  <i class="bi bi-eyeglasses"></i>
+                </span>
+                {% else %}
+                <span class="btn btn-sm btn-outline-info py-0 px-1" style="font-size:.65rem;" title="Order Investigation" onclick="event.stopPropagation();event.preventDefault();location.href='{% url 'investigations:order' consultation_pk=c.pk %}';">
+                  <i class="bi bi-search-heart"></i>
+                </span>
+                <span class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:.65rem;" title="Order Lab" onclick="event.stopPropagation();event.preventDefault();location.href='{% url 'laboratory:order' consultation_pk=c.pk %}';">
+                  <i class="bi bi-droplet"></i>
+                </span>
+                {% endif %}
               {% endif %}
             </div>
           </div>
@@ -649,127 +506,91 @@
         {% endfor %}
       </div>
       {% else %}
-      <div class="card-body text-center text-muted py-5">
-        <i class="bi bi-journal fs-2 d-block mb-2"></i>
-        No consultations recorded today.
-      </div>
+      <div class="ws-empty"><i class="bi bi-journal"></i>No consultations today.</div>
       {% endif %}
     </div>
 
-    {# ── Results Ready — compact alerts for abnormal/completed results ── #}
-    {% if not is_refrac %}
-    {% with lab_ready=lab_orders_today inv_ready=investigation_orders_today %}
-    {% if lab_ready or inv_ready %}
-    <div class="card border-0 shadow-sm mt-3">
-      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
-        <span class="fw-semibold small">
-          <i class="bi bi-bell-fill me-2 text-warning"></i>Orders &amp; Results — Today
-        </span>
-        <span class="badge bg-secondary">{{ lab_ready|length|add:inv_ready|length }}</span>
-      </div>
-      <div class="list-group list-group-flush">
-        {# Lab orders #}
-        {% for order in lab_ready %}
-        <div class="list-group-item py-2 px-3 {% if order.status == 'COMPLETED' %}list-group-item-success{% elif order.status == 'PROCESSING' or order.status == 'SAMPLE_COLLECTED' %}list-group-item-info{% endif %}">
-          <div class="d-flex justify-content-between align-items-start gap-2">
-            <div>
-              <div class="fw-semibold small">
-                <i class="bi bi-droplet-fill text-danger me-1"></i>{{ order.patient.full_name }}
-                <span class="text-muted fw-normal ms-1" style="font-size:.72rem;">{{ order.patient.patient_id }}</span>
-              </div>
-              <div class="mt-1 d-flex flex-wrap gap-1">
-                {% for item in order.items.all %}
-                  {% if item.result %}
-                    <span class="badge {% if item.result.is_abnormal %}bg-danger{% else %}bg-success{% endif %} px-2">
-                      {{ item.test_type.code }}: {{ item.result.result_value }} {{ item.result.result_unit }}
-                      {% if item.result.is_abnormal %}<i class="bi bi-exclamation-triangle-fill ms-1"></i>{% endif %}
-                    </span>
-                  {% else %}
-                    <span class="badge bg-light text-dark border">{{ item.test_type.code }}</span>
-                  {% endif %}
-                {% endfor %}
-              </div>
-            </div>
-            <div class="flex-shrink-0">
-              {% if order.status == 'COMPLETED' %}<span class="badge bg-success">Done</span>
-              {% elif order.status == 'PROCESSING' %}<span class="badge bg-primary">Processing</span>
-              {% elif order.status == 'SAMPLE_COLLECTED' %}<span class="badge bg-info text-dark">Sample Taken</span>
-              {% else %}<span class="badge bg-warning text-dark">Ordered</span>{% endif %}
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-        {# Eye investigation orders #}
-        {% for order in inv_ready %}
-        <div class="list-group-item py-2 px-3 {% if order.status == 'COMPLETED' %}list-group-item-success{% endif %}">
-          <div class="d-flex justify-content-between align-items-start gap-2">
-            <div>
-              <div class="fw-semibold small">
-                <i class="bi bi-search-heart text-info me-1"></i>{{ order.patient.full_name }}
-                <span class="text-muted fw-normal ms-1" style="font-size:.72rem;">{{ order.patient.patient_id }}</span>
-              </div>
-              <div class="text-muted mt-1" style="font-size:.75rem;">
-                {{ order.investigation_type.name }}
-                <span class="badge bg-secondary ms-1">{{ order.eye }}</span>
-                {% if order.result and order.result.interpretation %}
-                — {{ order.result.interpretation|truncatechars:60 }}
-                {% endif %}
-                {% if order.result and order.result.files.exists %}
-                {% for f in order.result.files.all %}
-                <a href="{{ f.file.url }}" target="_blank" class="badge bg-info text-dark text-decoration-none ms-1" style="font-size:.65rem;">
-                  <i class="bi bi-file-earmark-pdf me-1"></i>Report
-                </a>
-                {% endfor %}
-                {% endif %}
-              </div>
-            </div>
-            <div class="d-flex gap-1 flex-shrink-0 align-items-center">
-              {% if order.status == 'COMPLETED' %}<span class="badge bg-success">Done</span>
-              {% elif order.status == 'IN_PROGRESS' %}<span class="badge bg-primary">Running</span>
-              {% else %}<span class="badge bg-warning text-dark">Ordered</span>{% endif %}
-              <a href="{% url 'investigations:detail' pk=order.pk %}"
-                 class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.68rem;">
-                <i class="bi bi-eye"></i>
-              </a>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% else %}
-    <div class="card border-0 shadow-sm mt-3">
-      <div class="card-body py-2 text-center text-muted small">
-        <i class="bi bi-check-circle me-1 text-success"></i>No orders pending today.
-      </div>
-    </div>
-    {% endif %}
-    {% endwith %}
-    {% endif %}{# end not is_refrac #}
-
   </div>
-
 </div>
 {% endblock %}
 
-{# ── Referral Modal ── #}
-<div class="modal fade" id="wsReferralModal" tabindex="-1" aria-labelledby="wsReferralModalLabel">
+{# ── Modals ── #}
+
+{# Quick VA Modal #}
+<div class="modal fade" id="wsVaModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold"><i class="bi bi-eye-fill me-2 text-secondary"></i>Quick VA</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 small text-muted">Patient: <strong id="vaModalPatient"></strong></div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">VA OD</label>
+            <input type="text" id="vaModalOD" class="form-control form-control-sm text-center" placeholder="e.g. 6/6">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">VA OS</label>
+            <input type="text" id="vaModalOS" class="form-control form-control-sm text-center" placeholder="e.g. 6/18">
+          </div>
+        </div>
+        <div id="vaModalMsg" class="mt-2 small" style="display:none;"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-dark btn-sm" id="vaModalSave"><i class="bi bi-save me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Quick IOP Modal #}
+<div class="modal fade" id="wsIopModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold"><i class="bi bi-eye me-2 text-info"></i>Quick IOP</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 small text-muted">Patient: <strong id="iopModalPatient"></strong></div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">OD (mmHg)</label>
+            <input type="number" id="iopModalOD" class="form-control form-control-sm text-center" step="0.5" min="0" max="80" placeholder="16">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold mb-1">OS (mmHg)</label>
+            <input type="number" id="iopModalOS" class="form-control form-control-sm text-center" step="0.5" min="0" max="80" placeholder="14">
+          </div>
+        </div>
+        <div id="iopModalMsg" class="mt-2 small" style="display:none;"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-info btn-sm text-white" id="iopModalSave"><i class="bi bi-save me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Referral Modal (for specialist referrals from Route modal) #}
+<div class="modal fade" id="wsReferralModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header" style="background:#f8f9fa;">
-        <h6 class="modal-title fw-bold" id="wsReferralModalLabel">
-          <i class="bi bi-arrow-right-circle me-2 text-warning"></i>
-          Refer to <span id="refModalDestLabel" class="text-warning"></span>
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-arrow-right-circle me-2 text-warning"></i>Refer to <span id="refModalDestLabel" class="text-warning"></span>
         </h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="mb-3 small text-muted">
-          Patient: <strong id="refModalPatientName"></strong>
-        </div>
+        <div class="mb-3 small text-muted">Patient: <strong id="refModalPatientName"></strong></div>
         <label class="form-label small fw-semibold">Referral Reason <span class="text-danger">*</span></label>
         <textarea id="refModalReason" class="form-control form-control-sm" rows="3"
-                  placeholder="Why are you referring this patient? Summarise clinical findings and reason for specialist review..."></textarea>
+                  placeholder="Clinical findings and reason for specialist review..."></textarea>
         <div id="refModalError" class="text-danger small mt-1" style="display:none;">Please provide a referral reason.</div>
       </div>
       <div class="modal-footer">
@@ -782,79 +603,35 @@
   </div>
 </div>
 
-{# ── Quick VA Modal ── #}
-<div class="modal fade" id="wsVaModal" tabindex="-1" aria-labelledby="wsVaModalLabel">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content">
-      <div class="modal-header" style="background:#f8f9fa;">
-        <h6 class="modal-title fw-bold" id="wsVaModalLabel">
-          <i class="bi bi-eye-fill me-2 text-secondary"></i>Quick VA Entry
-        </h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+{# Reject & Re-route Modal #}
+<div class="modal fade" id="rejectRerouteModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white py-2">
+        <h6 class="modal-title mb-0"><i class="bi bi-x-circle me-1"></i>Reject & Re-route</h6>
+        <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="mb-3 small text-muted">Patient: <strong id="vaModalPatient"></strong></div>
-        <div class="row g-2 mb-2">
-          <div class="col-6">
-            <label class="form-label small fw-semibold mb-1">VA OD (Unaided)</label>
-            <input type="text" id="vaModalOD" class="form-control form-control-sm text-center"
-                   placeholder="e.g. 6/6" autocomplete="off">
+        <p class="small text-muted mb-2">Remove from your queue without consultation.</p>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold mb-1">Send to:</label>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="reject-dest" id="dest-referring" value="referring_doctor" checked>
+            <label class="form-check-label small" for="dest-referring" id="reject-referring-label">Back to referring doctor</label>
           </div>
-          <div class="col-6">
-            <label class="form-label small fw-semibold mb-1">VA OS (Unaided)</label>
-            <input type="text" id="vaModalOS" class="form-control form-control-sm text-center"
-                   placeholder="e.g. 6/18" autocomplete="off">
-          </div>
-        </div>
-        <div class="text-muted" style="font-size:.72rem;">
-          <i class="bi bi-info-circle me-1"></i>Saved to the patient's active consultation exam findings.
-        </div>
-        <div id="vaModalMsg" class="mt-2 small" style="display:none;"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-dark btn-sm" id="vaModalSave">
-          <i class="bi bi-save me-1"></i>Save VA
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ── Quick IOP Modal ── #}
-<div class="modal fade" id="wsIopModal" tabindex="-1" aria-labelledby="wsIopModalLabel">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content">
-      <div class="modal-header" style="background:#f8f9fa;">
-        <h6 class="modal-title fw-bold" id="wsIopModalLabel">
-          <i class="bi bi-eye me-2 text-info"></i>Quick IOP Entry
-        </h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-3 small text-muted">Patient: <strong id="iopModalPatient"></strong></div>
-        <div class="row g-2 mb-2">
-          <div class="col-6">
-            <label class="form-label small fw-semibold mb-1">OD (mmHg)</label>
-            <input type="number" id="iopModalOD" class="form-control form-control-sm text-center"
-                   step="0.5" min="0" max="80" placeholder="e.g. 16">
-          </div>
-          <div class="col-6">
-            <label class="form-label small fw-semibold mb-1">OS (mmHg)</label>
-            <input type="number" id="iopModalOS" class="form-control form-control-sm text-center"
-                   step="0.5" min="0" max="80" placeholder="e.g. 14">
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="reject-dest" id="dest-triage" value="triage">
+            <label class="form-check-label small" for="dest-triage">Triage / OPD Nurse</label>
           </div>
         </div>
-        <div class="text-muted" style="font-size:.72rem;">
-          <i class="bi bi-info-circle me-1"></i>Saved to the patient's active consultation exam findings.
+        <div>
+          <label class="form-label small fw-semibold mb-1">Reason <span class="text-muted fw-normal">(optional)</span></label>
+          <input type="text" id="reject-reason" class="form-control form-control-sm" placeholder="e.g. Not a uveitis case" maxlength="120">
         </div>
-        <div id="iopModalMsg" class="mt-2 small" style="display:none;"></div>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-info btn-sm text-white" id="iopModalSave">
-          <i class="bi bi-save me-1"></i>Save IOP
-        </button>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-danger" id="reject-confirm-btn"><i class="bi bi-arrow-right-circle me-1"></i>Confirm</button>
       </div>
     </div>
   </div>
@@ -862,9 +639,7 @@
 
 {% block extra_js %}
 <script>
-// qfPick — used by clinical form selects to append picked value to a text input
-
-// qfAppend — used by combo-box dropdowns to append picked value to a text input
+// Helper functions used by clinical forms
 function qfAppend(id, val) {
   var inp = document.getElementById(id);
   if (!inp || !val) return;
@@ -875,15 +650,11 @@ function qfPick(fieldId, sel) {
   var val = sel.value;
   if (!val || val === 'Other') { sel.value = ''; return; }
   var ta = document.getElementById(fieldId);
-  if (ta) {
-    var cur = ta.value.trim();
-    ta.value = cur ? cur + '. ' + val : val;
-    ta.focus();
-  }
+  if (ta) { var cur = ta.value.trim(); ta.value = cur ? cur + '. ' + val : val; ta.focus(); }
   sel.value = '';
 }
 
-// WebSocket live refresh — partial DOM swap on workstation + opd rooms
+// ── WebSocket live refresh ──
 (function(){
   var QID='ws-queue-live',ROOMS=['workstation','opd'],_busy=false,_pend=false,_fb;
   function isModal(){return !!document.querySelector('.modal.show');}
@@ -914,7 +685,7 @@ function qfPick(fieldId, sel) {
   startFb();
 })();
 
-// ── Quick Patient Search ──────────────────────────────────────────────────────
+// ── Quick Patient Search ──
 (function() {
   const inp = document.getElementById('wsPatientSearch');
   const results = document.getElementById('wsSearchResults');
@@ -926,132 +697,30 @@ function qfPick(fieldId, sel) {
     if (q.length < 2) { results.style.display = 'none'; results.innerHTML = ''; return; }
     _debounce = setTimeout(function() {
       fetch('/patients/search/?q=' + encodeURIComponent(q))
-        .then(function(r){ return r.json(); })
+        .then(r => r.json())
         .then(function(data) {
           const pts = data.results || data.patients || [];
           if (!pts.length) { results.innerHTML = '<div class="list-group-item text-muted small py-2">No patients found</div>'; results.style.display = 'block'; return; }
           results.innerHTML = pts.slice(0,8).map(function(p) {
             const name = p.full_name || p.name || '';
-            const pid  = p.patient_id || p.id || '';
-            const url  = '/patients/' + pid + '/';
-            return '<a href="' + url + '" class="list-group-item list-group-item-action py-2 px-3 small">'
-              + '<span class="fw-semibold">' + name + '</span>'
-              + ' <span class="text-muted ms-2" style="font-size:.75rem;">' + pid + '</span>'
-              + '</a>';
+            const pid = p.patient_id || p.id || '';
+            return '<a href="/patients/' + pid + '/" class="list-group-item list-group-item-action py-2 px-3 small"><span class="fw-semibold">' + name + '</span> <span class="text-muted ms-2" style="font-size:.75rem;">' + pid + '</span></a>';
           }).join('');
           results.style.display = 'block';
         }).catch(function(){ results.style.display = 'none'; });
     }, 280);
   });
-  inp.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') { inp.value = ''; results.style.display = 'none'; inp.blur(); }
-  });
-  document.addEventListener('click', function(e) {
-    if (!inp.contains(e.target) && !results.contains(e.target)) results.style.display = 'none';
-  });
+  inp.addEventListener('keydown', function(e) { if (e.key === 'Escape') { inp.value = ''; results.style.display = 'none'; inp.blur(); } });
+  document.addEventListener('click', function(e) { if (!inp.contains(e.target) && !results.contains(e.target)) results.style.display = 'none'; });
 })();
 
-// ── Referral Modal ────────────────────────────────────────────────────────────
-(function() {
-  const _wsRouteUrl = '{% url "consultations:nurse_route" visit_pk="00000000-0000-0000-0000-000000000000" %}';
-  const modal = document.getElementById('wsReferralModal');
-  if (!modal) return;
-  const bsModal = new bootstrap.Modal(modal);
-  let _pendingVisit = null, _pendingDest = null;
-
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.ws-referral-btn');
-    if (!btn) return;
-    _pendingVisit = btn.dataset.visit;
-    _pendingDest  = btn.dataset.dest;
-    document.getElementById('refModalDestLabel').textContent  = btn.dataset.label || btn.dataset.dest;
-    document.getElementById('refModalPatientName').textContent = btn.dataset.patient || '';
-    document.getElementById('refModalReason').value = '';
-    document.getElementById('refModalError').style.display = 'none';
-    bsModal.show();
-  });
-
-  document.getElementById('refModalSubmit').addEventListener('click', function() {
-    const reason = document.getElementById('refModalReason').value.trim();
-    if (!reason) { document.getElementById('refModalError').style.display = ''; return; }
-    const submitBtn = document.getElementById('refModalSubmit');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-    const fd = new FormData();
-    fd.append('destination', _pendingDest);
-    fd.append('referral_reason', reason);
-    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-    const url = _wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', _pendingVisit);
-    fetch(url, { method: 'POST', body: fd })
-      .then(function(r){ return r.json(); })
-      .then(function(data) {
-        bsModal.hide();
-        if (data.success) {
-          const btns = document.getElementById('ws-route-btns-' + _pendingVisit);
-          if (btns) btns.innerHTML = '<span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Referred to ' + data.destination + '</span>';
-          _formDirty = false;
-          setTimeout(function(){ location.reload(); }, 2000);
-        } else {
-          alert(data.error || 'Referral failed.');
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral';
-        }
-      }).catch(function(){
-        bsModal.hide();
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral';
-      });
-  });
-})();
-
-// ── Return to Referring Doctor ────────────────────────────────────────────────
-(function() {
-  const _returnUrl = '{% url "consultations:return_to_doctor" %}';
-  const csrfToken = document.cookie.match(/csrftoken=([^;]+)/);
-  const csrf = csrfToken ? csrfToken[1] : '';
-
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.ws-return-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const visitId = btn.dataset.visit;
-    const drName = btn.dataset.doctor;
-    if (!confirm('Send patient back to Dr. ' + drName + '?')) return;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
-    fetch(_returnUrl, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrf},
-      body: 'visit_id=' + encodeURIComponent(visitId),
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.success) {
-        btn.closest('tr').style.opacity = '.4';
-        btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Sent (' + (data.token_number || '') + ')';
-        btn.classList.replace('btn-warning', 'btn-success');
-      } else {
-        alert(data.message || 'Failed to route patient.');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-arrow-return-left me-1"></i>Return to Dr. ' + drName;
-      }
-    })
-    .catch(() => {
-      alert('Network error — please try again.');
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-arrow-return-left me-1"></i>Return to Dr. ' + drName;
-    });
-  });
-})();
-
-// ── Quick VA Modal ────────────────────────────────────────────────────────────
+// ── Quick VA Modal ──
 (function() {
   const _vaUrl = '{% url "consultations:workstation_quick_va" %}';
   const modal = document.getElementById('wsVaModal');
   if (!modal) return;
   const bsModal = new bootstrap.Modal(modal);
   let _pendingVisit = null;
-
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.ws-va-btn');
     if (!btn) return;
@@ -1064,56 +733,29 @@ function qfPick(fieldId, sel) {
     bsModal.show();
     setTimeout(function(){ document.getElementById('vaModalOD').focus(); }, 400);
   });
-
   document.getElementById('vaModalSave').addEventListener('click', function() {
     const od = document.getElementById('vaModalOD').value.trim();
     const os = document.getElementById('vaModalOS').value.trim();
-    if (!od && !os) {
-      const msg = document.getElementById('vaModalMsg');
-      msg.className = 'text-danger small mt-2';
-      msg.textContent = 'Enter at least one VA value.';
-      msg.style.display = '';
-      return;
-    }
-    const saveBtn = document.getElementById('vaModalSave');
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-    const fd = new FormData();
-    fd.append('visit_pk', _pendingVisit);
-    fd.append('va_re', od);
-    fd.append('va_le', os);
-    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    if (!od && !os) { var msg = document.getElementById('vaModalMsg'); msg.className = 'text-danger small mt-2'; msg.textContent = 'Enter at least one VA value.'; msg.style.display = ''; return; }
+    var saveBtn = this; saveBtn.disabled = true; saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    var fd = new FormData(); fd.append('visit_pk', _pendingVisit); fd.append('va_re', od); fd.append('va_le', os); fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
     fetch(_vaUrl, { method: 'POST', body: fd })
-      .then(function(r){ return r.json(); })
+      .then(r => r.json())
       .then(function(data) {
-        const msg = document.getElementById('vaModalMsg');
-        msg.style.display = '';
-        if (data.success) {
-          msg.className = 'text-success small mt-2';
-          msg.textContent = '\u2713 ' + (data.message || 'VA saved.');
-          saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Saved';
-          setTimeout(function(){ bsModal.hide(); }, 1500);
-        } else {
-          msg.className = 'text-danger small mt-2';
-          msg.textContent = data.error || 'Failed to save VA.';
-          saveBtn.disabled = false;
-          saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save VA';
-        }
-      }).catch(function(){
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save VA';
-      });
+        var msg = document.getElementById('vaModalMsg'); msg.style.display = '';
+        if (data.success) { msg.className = 'text-success small mt-2'; msg.textContent = '\u2713 ' + (data.message || 'VA saved.'); saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Saved'; setTimeout(function(){ bsModal.hide(); }, 1200); }
+        else { msg.className = 'text-danger small mt-2'; msg.textContent = data.error || 'Failed.'; saveBtn.disabled = false; saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save'; }
+      }).catch(function(){ saveBtn.disabled = false; saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save'; });
   });
 })();
 
-// ── Quick IOP Modal ───────────────────────────────────────────────────────────
+// ── Quick IOP Modal ──
 (function() {
   const _iopUrl = '{% url "consultations:workstation_quick_iop" %}';
   const modal = document.getElementById('wsIopModal');
   if (!modal) return;
   const bsModal = new bootstrap.Modal(modal);
   let _pendingVisit = null;
-
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.ws-iop-btn');
     if (!btn) return;
@@ -1126,244 +768,127 @@ function qfPick(fieldId, sel) {
     bsModal.show();
     setTimeout(function(){ document.getElementById('iopModalOD').focus(); }, 400);
   });
-
   document.getElementById('iopModalSave').addEventListener('click', function() {
     const od = document.getElementById('iopModalOD').value.trim();
     const os = document.getElementById('iopModalOS').value.trim();
-    if (!od && !os) {
-      const msg = document.getElementById('iopModalMsg');
-      msg.className = 'text-danger small mt-2';
-      msg.textContent = 'Enter at least one IOP value.';
-      msg.style.display = '';
-      return;
-    }
-    const saveBtn = document.getElementById('iopModalSave');
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-    const fd = new FormData();
-    fd.append('visit_pk', _pendingVisit);
-    fd.append('iop_re', od);
-    fd.append('iop_le', os);
-    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    if (!od && !os) { var msg = document.getElementById('iopModalMsg'); msg.className = 'text-danger small mt-2'; msg.textContent = 'Enter at least one IOP value.'; msg.style.display = ''; return; }
+    var saveBtn = this; saveBtn.disabled = true; saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    var fd = new FormData(); fd.append('visit_pk', _pendingVisit); fd.append('iop_re', od); fd.append('iop_le', os); fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
     fetch(_iopUrl, { method: 'POST', body: fd })
-      .then(function(r){ return r.json(); })
+      .then(r => r.json())
       .then(function(data) {
-        const msg = document.getElementById('iopModalMsg');
-        msg.style.display = '';
-        if (data.success) {
-          msg.className = 'text-success small mt-2';
-          msg.textContent = '\u2713 ' + (data.message || 'IOP saved.');
-          saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Saved';
-          setTimeout(function(){ bsModal.hide(); }, 1500);
-        } else {
-          msg.className = 'text-danger small mt-2';
-          msg.textContent = data.error || 'Failed to save IOP.';
-          saveBtn.disabled = false;
-          saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save IOP';
-        }
-      }).catch(function(){
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save IOP';
-      });
+        var msg = document.getElementById('iopModalMsg'); msg.style.display = '';
+        if (data.success) { msg.className = 'text-success small mt-2'; msg.textContent = '\u2713 ' + (data.message || 'IOP saved.'); saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Saved'; setTimeout(function(){ bsModal.hide(); }, 1200); }
+        else { msg.className = 'text-danger small mt-2'; msg.textContent = data.error || 'Failed.'; saveBtn.disabled = false; saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save'; }
+      }).catch(function(){ saveBtn.disabled = false; saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save'; });
   });
 })();
 
-// ── Doctor self-routing ─────────────────────────────────────────────────────
-(function () {
+// ── Return to Referring Doctor ──
+(function() {
+  const _returnUrl = '{% url "consultations:return_to_doctor" %}';
+  const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.ws-return-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const visitId = btn.dataset.visit, drName = btn.dataset.doctor;
+    if (!confirm('Send patient back to Dr. ' + drName + '?')) return;
+    btn.style.opacity = '.5';
+    fetch(_returnUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrf},
+      body: 'visit_id=' + encodeURIComponent(visitId),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) { btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Sent'; setTimeout(function(){ location.reload(); }, 1500); }
+      else { alert(data.message || 'Failed.'); btn.style.opacity = '1'; }
+    })
+    .catch(() => { alert('Network error.'); btn.style.opacity = '1'; });
+  });
+})();
+
+// ── Referral Modal ──
+(function() {
   const _wsRouteUrl = '{% url "consultations:nurse_route" visit_pk="00000000-0000-0000-0000-000000000000" %}';
-  // Track selected room per visit
-  const _selectedRoom = {};
-
-  // Room picker buttons — event delegation so they survive DOM swap
+  const modal = document.getElementById('wsReferralModal');
+  if (!modal) return;
+  const bsModal = new bootstrap.Modal(modal);
+  let _pendingVisit = null, _pendingDest = null;
   document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.ws-room-pick');
+    var btn = e.target.closest('.ws-referral-btn');
     if (!btn) return;
-    var vPk = btn.dataset.visit;
-    _selectedRoom[vPk] = btn.dataset.room;
-    document.querySelectorAll('.ws-room-pick[data-visit="' + vPk + '"], .ws-room-any[data-visit="' + vPk + '"]').forEach(function(b){
-      b.classList.remove('btn-secondary', 'active');
-      b.classList.add('btn-outline-secondary');
-    });
-    btn.classList.remove('btn-outline-secondary');
-    btn.classList.add('btn-secondary', 'active');
+    _pendingVisit = btn.dataset.visit; _pendingDest = btn.dataset.dest;
+    document.getElementById('refModalDestLabel').textContent = btn.dataset.label || btn.dataset.dest;
+    document.getElementById('refModalPatientName').textContent = btn.dataset.patient || '';
+    document.getElementById('refModalReason').value = '';
+    document.getElementById('refModalError').style.display = 'none';
+    bsModal.show();
   });
-
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.ws-room-any');
-    if (!btn) return;
-    var vPk = btn.dataset.visit;
-    _selectedRoom[vPk] = '';
-    document.querySelectorAll('.ws-room-pick[data-visit="' + vPk + '"], .ws-room-any[data-visit="' + vPk + '"]').forEach(function(b){
-      b.classList.remove('btn-secondary', 'active');
-      b.classList.add('btn-outline-secondary');
-    });
-    btn.classList.remove('btn-outline-secondary');
-    btn.classList.add('btn-secondary', 'active');
-  });
-
-  // Route buttons — event delegation so they survive DOM swap
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.ws-route-btn');
-    if (!btn) return;
-    var vPk = btn.dataset.visit;
-    var dest = btn.dataset.dest;
-    var roomId = _selectedRoom[vPk] || '';
-    var row = document.getElementById('ws-route-row-' + vPk);
-    row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = true; });
-    var origHtml = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-    var fd = new FormData();
-    fd.append('destination', dest);
-    if (roomId) fd.append('counter_id', roomId);
-    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-    fetch(_wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', vPk), {
-      method: 'POST', body: fd,
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(data) {
-      if (data.success) {
-        var btns = document.getElementById('ws-route-btns-' + vPk);
-        if (btns) btns.innerHTML = '<span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Sent to ' + data.destination + '</span>';
-        row.style.opacity = '0.5';
-        _formDirty = false;
-        setTimeout(function() { location.reload(); }, 2000);
-      } else {
-        btn.innerHTML = origHtml;
-        row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = false; });
-        alert(data.error || 'Routing failed. Please try again.');
-      }
-    })
-    .catch(function(){
-      btn.innerHTML = origHtml;
-      row.querySelectorAll('.ws-route-btn').forEach(function(b){ b.disabled = false; });
-    });
+  document.getElementById('refModalSubmit').addEventListener('click', function() {
+    const reason = document.getElementById('refModalReason').value.trim();
+    if (!reason) { document.getElementById('refModalError').style.display = ''; return; }
+    var submitBtn = this; submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    var fd = new FormData(); fd.append('destination', _pendingDest); fd.append('referral_reason', reason); fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch(_wsRouteUrl.replace('00000000-0000-0000-0000-000000000000', _pendingVisit), { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(function(data) {
+        bsModal.hide();
+        if (data.success) { setTimeout(function(){ location.reload(); }, 1500); }
+        else { alert(data.error || 'Failed.'); submitBtn.disabled = false; submitBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral'; }
+      }).catch(function(){ bsModal.hide(); submitBtn.disabled = false; submitBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm Referral'; });
   });
 })();
 
-// Live refresh now handled by WebSocket above
-
-// ── Reject & Re-route Modal ───────────────────────────────────────────────────
+// ── Reject & Re-route ──
 (function() {
   const _rejectUrl = '{% url "consultations:reject_reroute" %}';
   const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
-  let _activeBtn = null, _visitId = null;
-
-  // Open modal when Reject button clicked
+  let _visitId = null;
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.ws-reject-btn');
     if (!btn) return;
     e.stopPropagation();
-    _activeBtn = btn;
     _visitId = btn.dataset.visit;
     var drName = btn.dataset.referringDoctor;
-
-    document.getElementById('reject-referring-label').textContent =
-      drName ? 'Back to Dr. ' + drName : 'Back to Triage / OPD Nurse';
+    document.getElementById('reject-referring-label').textContent = drName ? 'Back to Dr. ' + drName : 'Back to Triage / OPD Nurse';
     document.querySelector('input[name="reject-dest"][value="referring_doctor"]').disabled = !drName;
-    if (!drName) {
-      document.querySelector('input[name="reject-dest"][value="triage"]').checked = true;
-    } else {
-      document.querySelector('input[name="reject-dest"][value="referring_doctor"]').checked = true;
-    }
+    if (!drName) document.querySelector('input[name="reject-dest"][value="triage"]').checked = true;
+    else document.querySelector('input[name="reject-dest"][value="referring_doctor"]').checked = true;
     document.getElementById('reject-reason').value = '';
     new bootstrap.Modal(document.getElementById('rejectRerouteModal')).show();
   });
-
-  // Submit rejection
   document.getElementById('reject-confirm-btn').addEventListener('click', function() {
     if (!_visitId) return;
-    const destination = document.querySelector('input[name="reject-dest"]:checked').value;
-    const reason = document.getElementById('reject-reason').value.trim();
-    this.disabled = true;
-    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+    var dest = document.querySelector('input[name="reject-dest"]:checked').value;
+    var reason = document.getElementById('reject-reason').value.trim();
+    this.disabled = true; this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
     fetch(_rejectUrl, {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrf},
-      body: 'visit_id=' + encodeURIComponent(_visitId)
-           + '&destination=' + encodeURIComponent(destination)
-           + '&reason=' + encodeURIComponent(reason),
+      body: 'visit_id=' + encodeURIComponent(_visitId) + '&destination=' + encodeURIComponent(dest) + '&reason=' + encodeURIComponent(reason),
     })
     .then(r => r.json())
     .then(data => {
       bootstrap.Modal.getInstance(document.getElementById('rejectRerouteModal')).hide();
-      if (data.success) {
-        if (_activeBtn) {
-          var row = _activeBtn.closest('tr');
-          if (row) row.style.opacity = '.35';
-          _activeBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Re-routed';
-          _activeBtn.classList.replace('btn-outline-danger', 'btn-danger');
-          _activeBtn.disabled = true;
-        }
-      } else {
-        alert(data.message || 'Failed to re-route patient.');
-      }
+      if (data.success) { setTimeout(function(){ location.reload(); }, 1200); }
+      else { alert(data.message || 'Failed.'); }
       document.getElementById('reject-confirm-btn').disabled = false;
       document.getElementById('reject-confirm-btn').innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm';
     })
     .catch(() => {
-      alert('Network error — please try again.');
+      alert('Network error.');
       document.getElementById('reject-confirm-btn').disabled = false;
       document.getElementById('reject-confirm-btn').innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Confirm';
     });
   });
 })();
-</script>
 
-{# ── Reject & Re-route Modal ─────────────────────────────────────────────── #}
-<div class="modal fade" id="rejectRerouteModal" tabindex="-1" aria-labelledby="rejectRerouteLabel" aria-hidden="true">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content border-danger">
-      <div class="modal-header bg-danger text-white py-2">
-        <h6 class="modal-title mb-0"><i class="bi bi-x-circle me-1"></i>Reject &amp; Re-route</h6>
-        <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="small text-muted mb-2">This patient will be removed from your queue without a consultation.</p>
-        <div class="mb-2">
-          <label class="form-label small fw-semibold mb-1">Send to:</label>
-          <div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="reject-dest" id="dest-referring" value="referring_doctor" checked>
-              <label class="form-check-label small" for="dest-referring" id="reject-referring-label">Back to referring doctor</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="reject-dest" id="dest-triage" value="triage">
-              <label class="form-check-label small" for="dest-triage">Triage / OPD Nurse</label>
-            </div>
-          </div>
-        </div>
-        <div>
-          <label class="form-label small fw-semibold mb-1">Reason <span class="text-muted fw-normal">(optional)</span></label>
-          <input type="text" id="reject-reason" class="form-control form-control-sm" placeholder="e.g. Not a uveitis case" maxlength="120">
-        </div>
-      </div>
-      <div class="modal-footer py-2">
-        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-sm btn-danger" id="reject-confirm-btn">
-          <i class="bi bi-arrow-right-circle me-1"></i>Confirm
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# Route Patient now uses global EhrRoute singleton from base_authenticated.html #}
-<script>
-// When EhrRoute succeeds, fade out the patient row and reload after a moment
+// ── EhrRoute success handler ──
 window.addEventListener('ehrRouteSuccess', function(e) {
-  var visitPk = e.detail && e.detail.visit_pk ? e.detail.visit_pk : (EhrRoute._visitPk || '');
-  if (!visitPk) { setTimeout(function(){ location.reload(); }, 1200); return; }
-  // Find the row containing this visit's Route button
-  var btns = document.querySelectorAll('button[onclick*="' + visitPk + '"]');
-  btns.forEach(function(btn) {
-    var row = btn.closest('tr');
-    if (row) { row.style.transition='opacity .4s'; row.style.opacity='.2'; setTimeout(function(){ row.remove(); }, 500); }
-  });
-  // If this was a complete+route, redirect will happen from EhrRoute itself
-  if (!e.detail.redirect_url) {
-    setTimeout(function(){ location.reload(); }, 2000);
-  }
+  var visitPk = e.detail && e.detail.visit_pk ? e.detail.visit_pk : '';
+  if (!e.detail.redirect_url) { setTimeout(function(){ location.reload(); }, 1500); }
 });
 </script>
-
 {% endblock %}
