@@ -288,7 +288,7 @@ def walk_in(request):
 def confirmation(request, token_pk):
     """Show confirmation screen with token slip after successful walk-in."""
     from apps.qms.models import QueueToken
-    token = get_object_or_404(QueueToken, pk=token_pk)
+    token = get_object_or_404(QueueToken, pk=token_pk, is_deleted=False)
     # Get the visit created in this session
     visit = None
     appt = None

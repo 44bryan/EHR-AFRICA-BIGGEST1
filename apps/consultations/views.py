@@ -123,7 +123,7 @@ def consultation_create_view(request, patient_id):
     # Get active visit — require explicit confirmation for walk-ins (no silent billing bypass)
     visit_id = request.GET.get('visit_id')
     if visit_id:
-        visit = get_object_or_404(Visit, pk=visit_id, patient=patient)
+        visit = get_object_or_404(Visit, pk=visit_id, patient=patient, is_deleted=False)
     else:
         visit = patient.visits.filter(
             is_deleted=False,
@@ -936,7 +936,7 @@ def consultation_edit_view(request, pk):
 @login_required
 @require_POST
 def consultation_complete_view(request, pk):
-    consultation = get_object_or_404(Consultation, pk=pk)
+    consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
     if consultation.consulting_doctor != request.user and not request.user.is_medical_director:
         return HttpResponseForbidden()
     # Idempotency guard — already completed/referred, just redirect
@@ -1055,7 +1055,7 @@ def consultation_complete_view(request, pk):
 def cosign_consultation_view(request, pk):
     """Supervisor co-signs an intern's consultation (JCI ACC.3 / COP)."""
     from django.utils import timezone as tz
-    consultation = get_object_or_404(Consultation, pk=pk)
+    consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
     # Only doctors (non-intern) and medical director can co-sign
     u = request.user
     can_cosign = (u.is_doctor or u.is_medical_director) and getattr(u, 'role', None) != 'intern'
@@ -1076,7 +1076,12 @@ def cosign_consultation_view(request, pk):
 @login_required
 @require_POST
 def add_note_view(request, pk):
-    consultation = get_object_or_404(Consultation, pk=pk)
+    consultation = get_object_or_404(Consultation, pk=pk, is_deleted=False)
+    # Only the consulting doctor, medical director, or super admin can add notes
+    u = request.user
+    if not (u == consultation.consulting_doctor or u.is_medical_director or u.is_super_admin):
+        messages.error(request, 'You do not have permission to add notes to this consultation.')
+        return redirect('consultations:detail', pk=pk)
     form = ConsultationNoteForm(request.POST)
     if form.is_valid():
         note = form.save(commit=False)

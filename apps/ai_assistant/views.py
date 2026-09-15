@@ -276,7 +276,7 @@ def voice_transcribe_view(request, consultation_id):
     from apps.consultations.models import Consultation
     from .voice_emr import transcribe_audio_file, transcribe_voice_to_consultation
 
-    consultation = get_object_or_404(Consultation, pk=consultation_id)
+    consultation = get_object_or_404(Consultation, pk=consultation_id, is_deleted=False)
     transcription = ''
 
     # ── Path A: audio file upload (Whisper) ───────────────────────────────
@@ -348,7 +348,7 @@ def voice_approve_view(request, consultation_id):
     from apps.consultations.models import Consultation
     from .voice_emr import apply_voice_data_to_consultation
 
-    consultation = get_object_or_404(Consultation, pk=consultation_id)
+    consultation = get_object_or_404(Consultation, pk=consultation_id, is_deleted=False)
 
     try:
         body = json.loads(request.body)
@@ -799,7 +799,7 @@ def ai_triage_view(request):
 def ai_imaging_analysis_view(request, result_id):
     """Run AI analysis on an investigation result."""
     from apps.investigations.models import InvestigationResult
-    inv_result = get_object_or_404(InvestigationResult, pk=result_id)
+    inv_result = get_object_or_404(InvestigationResult, pk=result_id, is_deleted=False)
 
     result = ai_analyze_investigation(
         investigation_type=inv_result.order.investigation_type.name,

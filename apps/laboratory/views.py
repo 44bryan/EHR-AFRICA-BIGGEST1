@@ -680,7 +680,7 @@ def lab_order_view(request, consultation_pk):
     if not request.user.can_order_investigations():
         return HttpResponseForbidden()
 
-    consultation = get_object_or_404(Consultation, pk=consultation_pk)
+    consultation = get_object_or_404(Consultation, pk=consultation_pk, is_deleted=False)
     test_types = LabTestType.objects.filter(is_active=True).order_by('category', 'name')
     order_sets = OrderSet.objects.filter(is_active=True).prefetch_related('tests')
 
@@ -831,7 +831,7 @@ def bulk_collect_sample_view(request):
 def collect_sample_view(request, pk):
     if not (request.user.is_lab_tech or request.user.is_medical_director):
         return HttpResponseForbidden()
-    order = get_object_or_404(LabOrder, pk=pk)
+    order = get_object_or_404(LabOrder, pk=pk, is_deleted=False)
     if hasattr(order, 'sample_collection'):
         messages.info(request, 'Sample already collected.')
         return redirect('laboratory:detail', pk=pk)
@@ -1619,7 +1619,7 @@ def reject_sample_view(request, pk):
 @require_POST
 def acknowledge_critical_view(request, result_id):
     """JCI IPSG.2 — Doctor acknowledges a critical lab result (read-back confirmation)."""
-    result = get_object_or_404(LabResult, pk=result_id, is_critical=True)
+    result = get_object_or_404(LabResult, pk=result_id, is_critical=True, is_deleted=False)
     # Only the ordering doctor or medical director can acknowledge
     if not (request.user == result.order_item.order.ordered_by
             or request.user.is_medical_director or request.user.is_super_admin):
@@ -1751,7 +1751,7 @@ def specimen_receive_view(request, pk):
 @require_POST
 def authorize_result_view(request, result_id):
     """Biologist / pathologist authorizes result for release to clinician."""
-    result = get_object_or_404(LabResult, pk=result_id)
+    result = get_object_or_404(LabResult, pk=result_id, is_deleted=False)
     if not (request.user.is_medical_director or request.user.is_super_admin):
         return HttpResponseForbidden()
 
@@ -1774,7 +1774,7 @@ def authorize_result_view(request, result_id):
 @require_POST
 def release_result_view(request, result_id):
     """Release authorized result to clinician dashboard."""
-    result = get_object_or_404(LabResult, pk=result_id)
+    result = get_object_or_404(LabResult, pk=result_id, is_deleted=False)
     if not (request.user.is_lab_tech or request.user.is_medical_director or request.user.is_super_admin):
         return HttpResponseForbidden()
 
@@ -1816,7 +1816,7 @@ def release_result_view(request, result_id):
 @require_POST
 def acknowledge_result_view(request, result_id):
     """Doctor marks a result as seen/acknowledged."""
-    result = get_object_or_404(LabResult, pk=result_id)
+    result = get_object_or_404(LabResult, pk=result_id, is_deleted=False)
     ack, created = ResultAcknowledgment.objects.get_or_create(
         result=result,
         acknowledged_by=request.user,

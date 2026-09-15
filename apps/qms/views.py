@@ -931,7 +931,7 @@ def receptionist_complete_registration(request, token_id):
       at the receptionist. This prevents newly-registered patients jumping
       everyone who was already waiting at cashier.
     """
-    token = get_object_or_404(QueueToken, id=token_id, service_type=ServiceType.RECEPTIONIST)
+    token = get_object_or_404(QueueToken, id=token_id, service_type=ServiceType.RECEPTIONIST, is_deleted=False)
     patient_id_str = request.POST.get('patient_id', '').strip()
     visit_id_str = request.POST.get('visit_id', '').strip()
     INSERT_AFTER_POSITION = 3  # Insert after this many waiting cashier patients
@@ -1044,7 +1044,7 @@ def route_to_dept(request):
     if not visit_id or not service_type:
         return JsonResponse({'success': False, 'message': 'visit_id and service_type required'}, status=400)
 
-    visit = get_object_or_404(Visit, id=visit_id)
+    visit = get_object_or_404(Visit, id=visit_id, is_deleted=False)
     tier = visit.service_tier
 
     # Find entry token if not provided
@@ -1440,7 +1440,7 @@ def call_next(request, counter_id):
 @require_POST
 def complete_token(request, token_id):
     """Mark a token as completed and free the counter."""
-    token = get_object_or_404(QueueToken, id=token_id)
+    token = get_object_or_404(QueueToken, id=token_id, is_deleted=False)
     scope_err = _check_zone_scope(request, token)
     if scope_err:
         return scope_err
@@ -1471,7 +1471,7 @@ def clear_counter(request, counter_id):
 @require_POST
 def skip_token(request, token_id):
     """Skip/re-queue a token (moves to back of queue)."""
-    token = get_object_or_404(QueueToken, id=token_id)
+    token = get_object_or_404(QueueToken, id=token_id, is_deleted=False)
     scope_err = _check_zone_scope(request, token)
     if scope_err:
         return scope_err
@@ -1488,7 +1488,7 @@ def skip_token(request, token_id):
 @require_POST
 def no_show(request, token_id):
     """Mark a token as no-show."""
-    token = get_object_or_404(QueueToken, id=token_id)
+    token = get_object_or_404(QueueToken, id=token_id, is_deleted=False)
     scope_err = _check_zone_scope(request, token)
     if scope_err:
         return scope_err

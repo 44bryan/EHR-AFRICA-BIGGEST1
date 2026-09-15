@@ -888,7 +888,7 @@ def medical_history_view(request, patient_id):
 @clinical_staff_required
 def visit_detail_view(request, visit_number):
     """9-step patient pathway journey for a single visit."""
-    visit = get_object_or_404(Visit, visit_number=visit_number)
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
     patient = visit.patient
 
     consultations = visit.consultations.select_related(
@@ -990,7 +990,7 @@ def visit_detail_view(request, visit_number):
 @login_required
 def vip_slip_view(request, visit_number):
     """Printable VIP welcome slip — shown at reception after VIP registration."""
-    visit = get_object_or_404(Visit, visit_number=visit_number)
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
     patient = visit.patient
     return render(request, 'patients/vip_slip.html', {
         'visit': visit,
@@ -1006,7 +1006,7 @@ def tier_change_log_view(request, visit_number):
             or u.is_admin_director or u.is_ceo or u.is_finance_director):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    visit = get_object_or_404(Visit, visit_number=visit_number)
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
     from .models import VisitTierChange
     changes = VisitTierChange.objects.filter(visit=visit).select_related('changed_by')
     return render(request, 'patients/tier_change_log.html', {
@@ -1027,7 +1027,7 @@ def change_visit_tier_view(request, visit_number):
         messages.error(request, "You do not have permission to change a patient's service tier.")
         return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
 
-    visit = get_object_or_404(Visit, visit_number=visit_number)
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
 
     from .models import ServiceTier
     new_tier = request.POST.get('service_tier', '').strip()
@@ -1114,7 +1114,7 @@ def triage_view(request, visit_number):
         _msg.error(request, 'Only nursing staff can record patient vitals. Check your account role.')
         return redirect('dashboard:home')
 
-    visit = get_object_or_404(Visit, visit_number=visit_number)
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
 
     # ── Cross-tier detection ─────────────────────────────────────────────────
     _nurse_tier = getattr(request.user, 'patient_tier', 'ALL')
@@ -1642,7 +1642,7 @@ def triage_view(request, visit_number):
 @login_required
 def discharge_view(request, visit_number):
     """Step 9: Discharge patient and record follow-up instructions."""
-    visit = get_object_or_404(Visit, visit_number=visit_number)
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
     patient = visit.patient
 
     from django.utils import timezone as tz
@@ -2914,7 +2914,7 @@ def consent_detail_view(request, patient_id, consent_id):
         return redirect('patients:detail', patient_id=patient_id)
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent
-    consent = get_object_or_404(PatientConsent, pk=consent_id, patient=patient)
+    consent = get_object_or_404(PatientConsent, pk=consent_id, patient=patient, is_deleted=False)
 
     if request.method == 'POST' and request.POST.get('action') == 'revoke':
         # Only the treating doctor or medical director can revoke (JCI PFR.5)
@@ -2944,7 +2944,7 @@ def consent_print_view(request, patient_id, consent_id):
     from django.utils import timezone as tz
     patient = get_object_or_404(Patient, patient_id=patient_id, is_active=True)
     from .models import PatientConsent
-    consent = get_object_or_404(PatientConsent, pk=consent_id, patient=patient)
+    consent = get_object_or_404(PatientConsent, pk=consent_id, patient=patient, is_deleted=False)
     context = {
         'patient': patient,
         'consent': consent,

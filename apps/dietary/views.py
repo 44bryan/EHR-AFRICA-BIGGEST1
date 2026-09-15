@@ -102,7 +102,7 @@ def order_create(request):
     if request.method == 'POST':
         admission_id = request.POST.get('admission')
         diet_type = request.POST.get('diet_type')
-        admission = get_object_or_404(Admission, pk=admission_id)
+        admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
 
         order = DietOrder(
             admission=admission,

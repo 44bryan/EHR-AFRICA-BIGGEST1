@@ -266,7 +266,7 @@ def investigation_order_view(request, consultation_pk):
     if not request.user.can_order_investigations():
         return HttpResponseForbidden()
 
-    consultation = get_object_or_404(Consultation, pk=consultation_pk)
+    consultation = get_object_or_404(Consultation, pk=consultation_pk, is_deleted=False)
 
     if request.method == 'POST':
         form = InvestigationOrderForm(request.POST)
@@ -651,7 +651,7 @@ def override_quality_view(request, pk):
 def add_result_view(request, pk):
     if not request.user.can_record_investigation_results():
         return HttpResponseForbidden("Only Investigation Technicians can enter results.")
-    order = get_object_or_404(InvestigationOrder, pk=pk)
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
     if hasattr(order, 'result'):
         messages.info(request, 'Result already recorded. Use edit instead.')
         return redirect('investigations:detail', pk=pk)
@@ -847,7 +847,7 @@ def add_result_view(request, pk):
 
 @login_required
 def verify_result_view(request, pk):
-    order = get_object_or_404(InvestigationOrder, pk=pk)
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
     can_verify = (
         request.user.can_record_investigation_results()
         or request.user.is_doctor
@@ -856,7 +856,7 @@ def verify_result_view(request, pk):
     if not can_verify:
         return HttpResponseForbidden()
 
-    result = get_object_or_404(InvestigationResult, order=order)
+    result = get_object_or_404(InvestigationResult, order=order, is_deleted=False)
     if result.is_verified:
         messages.info(request, 'This result has already been verified.')
         return redirect('investigations:detail', pk=pk)
@@ -890,7 +890,7 @@ def verify_result_view(request, pk):
 def acknowledge_result_view(request, pk):
     """Ordering doctor acknowledges they've seen the result."""
     order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
-    result = get_object_or_404(InvestigationResult, order=order)
+    result = get_object_or_404(InvestigationResult, order=order, is_deleted=False)
 
     if result.acknowledged_by:
         messages.info(request, 'Already acknowledged.')
@@ -908,7 +908,7 @@ def acknowledge_result_view(request, pk):
 def amend_result_view(request, pk):
     """Amend a verified result — creates version trail."""
     order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
-    result = get_object_or_404(InvestigationResult, order=order)
+    result = get_object_or_404(InvestigationResult, order=order, is_deleted=False)
 
     u = request.user
     if not (u.is_medical_director or u.is_super_admin or u.can_record_investigation_results()):

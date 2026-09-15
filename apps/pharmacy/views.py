@@ -2595,7 +2595,7 @@ def ward_return_create(request):
         qty = request.POST.get('quantity_returned')
         reason = request.POST.get('reason', '')
 
-        admission = get_object_or_404(Admission, id=admission_id)
+        admission = get_object_or_404(Admission, id=admission_id, is_deleted=False)
         drug = get_object_or_404(Drug, id=drug_id)
         batch = DrugStock.objects.filter(id=batch_id).first() if batch_id else None
 

@@ -78,7 +78,7 @@ def drug_prescription_new(request, consultation_pk):
     if not request.user.can_create_consultation():
         return HttpResponseForbidden()
 
-    consultation = get_object_or_404(Consultation, pk=consultation_pk)
+    consultation = get_object_or_404(Consultation, pk=consultation_pk, is_deleted=False)
 
     patient = consultation.patient
     allergies = list(patient.allergies.all())
@@ -146,7 +146,7 @@ def optical_prescription_new(request, consultation_pk):
     if not request.user.can_create_consultation():
         return HttpResponseForbidden()
 
-    consultation = get_object_or_404(Consultation, pk=consultation_pk)
+    consultation = get_object_or_404(Consultation, pk=consultation_pk, is_deleted=False)
     refraction_hint = None
 
     if request.method == 'POST':
@@ -309,7 +309,7 @@ def inline_drug_prescribe(request, consultation_pk):
     if not request.user.can_create_consultation():
         return HttpResponseForbidden()
 
-    consultation = get_object_or_404(Consultation, pk=consultation_pk)
+    consultation = get_object_or_404(Consultation, pk=consultation_pk, is_deleted=False)
 
     if request.method != 'POST':
         return redirect('consultations:detail', pk=consultation_pk)
