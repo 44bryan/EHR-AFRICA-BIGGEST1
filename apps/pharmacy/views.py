@@ -35,14 +35,28 @@ def _can_access_pharmacy(user):
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.ADMIN,
         UserRole.STORE_KEEPER, UserRole.FINANCE_DIRECTOR,
+        UserRole.PHARMACY_TECHNICIAN,
     ) or user.can_dispense_pharmacy()
+
+
+def _pharmacy_forbidden(request):
+    """Return a proper 403 page with helpful info instead of raw text."""
+    from django.http import HttpResponseForbidden
+    role = getattr(request.user, 'get_role_display', lambda: 'Unknown')()
+    return HttpResponseForbidden(
+        f'<h3>Access Denied</h3>'
+        f'<p>Your role <b>{role}</b> does not have access to the Pharmacy module.</p>'
+        f'<p>Required: Pharmacist, Head Pharmacist, or management role.</p>'
+        f'<p><a href="/dashboard/">Go to your dashboard</a></p>',
+        content_type='text/html',
+    )
 
 
 @login_required
 def pharmacy_dashboard(request):
     if not _can_access_pharmacy(request.user):
         from django.http import HttpResponseForbidden
-        return HttpResponseForbidden('Access denied — pharmacy roles only.')
+        return _pharmacy_forbidden(request)
     from django.core.cache import cache
     today = timezone.localdate()
     # ── Stock & expiry data — cached 90s (changes infrequently, auto-refresh is 30s) ──
@@ -305,11 +319,8 @@ def pharmacy_dashboard(request):
 def pharmacy_stats_view(request):
     """Monthly pharmacy statistics — dispensings, top drugs, revenue, gender breakdown.
     Revenue/financial data restricted to head pharmacist and management only."""
-    if not (request.user.is_head_pharmacist or request.user.is_medical_director
-            or request.user.is_super_admin or request.user.is_ceo
-            or request.user.is_admin_director or request.user.is_finance_director):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden('Access denied — Head Pharmacist or management only.')
+    if not _can_access_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
 
     import json, calendar
     from datetime import date as _date
@@ -843,8 +854,7 @@ def pharmacy_stats_csv(request):
             or request.user.is_admin_staff or request.user.is_super_admin
             or request.user.is_ceo or request.user.is_admin_director
             or request.user.is_finance_director):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     import csv, calendar
     from datetime import date as _date
@@ -913,8 +923,7 @@ def pharmacy_stats_csv(request):
 @login_required
 def drug_list(request):
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     q = request.GET.get('q', '')
     category = request.GET.get('category', '')
     drug_form = request.GET.get('form', '')
@@ -976,8 +985,7 @@ def drug_list(request):
 @login_required
 def drug_detail(request, drug_id):
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     drug = get_object_or_404(Drug, id=drug_id, is_deleted=False)
     stocks = drug.stock_items.filter(is_deleted=False).order_by('expiry_date')
     dispensings = DispensingItem.objects.filter(drug=drug).select_related(
@@ -991,8 +999,7 @@ def drug_detail(request, drug_id):
 @login_required
 def drug_create(request):
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     form = DrugCreateForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         drug = form.save(commit=False)
@@ -1019,8 +1026,7 @@ def drug_create(request):
 @login_required
 def drug_edit(request, drug_id):
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     drug = get_object_or_404(Drug, id=drug_id, is_deleted=False)
     _price_fields = [
         'cost_price', 'selling_price', 'price_express', 'price_vip',
@@ -1047,8 +1053,7 @@ def drug_edit(request, drug_id):
 @login_required
 def add_stock(request, drug_id):
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     drug = get_object_or_404(Drug, id=drug_id, is_deleted=False)
     form = AddStockForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
@@ -1062,8 +1067,7 @@ def add_stock(request, drug_id):
 def dispense(request):
     """Create a new dispensing record"""
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     if request.method == 'POST':
         patient_id = request.POST.get('patient_id')
         if not patient_id:
@@ -1105,8 +1109,7 @@ def add_dispensing_item(request, dispensing_id):
     """Add a drug item to an open dispensing record."""
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
     if not (request.user.can_dispense_pharmacy() or request.user == dispensing.dispensed_by):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
         messages.error(request, 'Cannot add items to a completed or cancelled dispensing.')
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
@@ -1558,8 +1561,7 @@ def _get_dispensing_tier_info(dispensing):
 @login_required
 def dispensing_detail(request, dispensing_id):
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     dispensing = get_object_or_404(
         Dispensing.objects.prefetch_related('items__drug', 'items__stock_batch'),
         id=dispensing_id, is_deleted=False
@@ -1594,8 +1596,7 @@ def confirm_dispensing(request, dispensing_id):
     After cashier collects payment, pharmacist clicks 'Dispense' to hand out drugs.
     """
     if not request.user.can_dispense_pharmacy():
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
     if dispensing.status not in (DispensingStatus.PENDING, DispensingStatus.PARTIAL):
@@ -1654,8 +1655,7 @@ def finalize_dispensing(request, dispensing_id):
     Marks dispensing as DISPENSED and marks the linked Rx as dispensed.
     """
     if not request.user.can_dispense_pharmacy():
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
     if dispensing.status != DispensingStatus.CONFIRMED:
@@ -1688,8 +1688,7 @@ def complete_dispensing(request, dispensing_id):
     (Legacy single-step flow — still available for OTC sales and when pharmacist collects directly.)
     """
     if not request.user.can_dispense_pharmacy():
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
 
@@ -1832,8 +1831,7 @@ def cancel_dispensing(request, dispensing_id):
     Only pharmacists and admins can cancel.
     """
     if not request.user.can_dispense_pharmacy():
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
 
@@ -1860,8 +1858,7 @@ def cancel_dispensing(request, dispensing_id):
 @login_required
 def dispensing_list(request):
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     status_filter = request.GET.get('status', '')
     qs = Dispensing.objects.filter(is_deleted=False).select_related(
         'patient', 'dispensed_by'
@@ -2316,8 +2313,7 @@ def direct_sale(request):
     Patient lookup is optional — can sell to anonymous walk-in.
     """
     if not request.user.can_dispense_pharmacy():
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     if request.method == 'POST':
         patient_id = request.POST.get('patient_id', '').strip()
@@ -2413,8 +2409,7 @@ def unmark_line_unavailable_ajax(request):
 def unavailable_lines_view(request):
     """Report: all prescription lines marked unavailable — filterable by date, reason."""
     if not _can_access_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     today = timezone.localdate()
     date_from = request.GET.get('from', today.isoformat())
@@ -2567,8 +2562,7 @@ def ward_return_list(request):
     """List all ward drug returns — pharmacist view."""
     if not (request.user.is_pharmacist or request.user.is_super_admin or request.user.is_medical_director
             or request.user.is_ward_nurse or request.user.is_nurse_director):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     status_filter = request.GET.get('status', '')
     returns = WardDrugReturn.objects.select_related(
@@ -2664,8 +2658,7 @@ def chronic_rx_list(request):
     """List all chronic prescriptions — highlight overdue refills."""
     if not (request.user.is_pharmacist or request.user.is_super_admin
             or request.user.is_medical_director or request.user.is_nurse_director):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     today = timezone.localdate()
     rxs = ChronicPrescription.objects.filter(is_active=True, is_deleted=False).select_related(
@@ -2753,8 +2746,7 @@ def drug_expiry_alerts(request):
             or request.user.is_admin_staff or request.user.is_super_admin
             or request.user.is_ceo or request.user.is_admin_director
             or request.user.is_finance_director):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     today = timezone.localdate()
     base_qs = DrugStock.objects.filter(is_deleted=False, quantity_remaining__gt=0, expiry_date__isnull=False).select_related('drug')
@@ -2795,8 +2787,7 @@ def _can_edit_drug_prices(user):
 @login_required
 def supplier_list(request):
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     suppliers = Supplier.objects.filter(is_deleted=False).order_by('name')
     return render(request, 'pharmacy/supplier_list.html', {'suppliers': suppliers})
 
@@ -2804,8 +2795,7 @@ def supplier_list(request):
 @login_required
 def supplier_create(request):
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     if request.method == 'POST':
         form = SupplierForm(request.POST)
         if form.is_valid():
@@ -2822,8 +2812,7 @@ def supplier_create(request):
 @login_required
 def supplier_edit(request, supplier_id):
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     supplier = get_object_or_404(Supplier, id=supplier_id, is_deleted=False)
     if request.method == 'POST':
         form = SupplierForm(request.POST, instance=supplier)
@@ -2843,8 +2832,7 @@ def supplier_edit(request, supplier_id):
 @login_required
 def purchase_order_list(request):
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     orders = PurchaseOrder.objects.filter(is_deleted=False).select_related('supplier', 'created_by').order_by('-order_date')[:100]
     return render(request, 'pharmacy/purchase_order_list.html', {'orders': orders, 'statuses': PurchaseOrderStatus})
 
@@ -2852,8 +2840,7 @@ def purchase_order_list(request):
 @login_required
 def purchase_order_create(request):
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     if request.method == 'POST':
         form = PurchaseOrderForm(request.POST)
         if form.is_valid():
@@ -2908,8 +2895,7 @@ def purchase_order_create(request):
 @login_required
 def purchase_order_detail(request, po_id):
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
     items = po.items.select_related('drug', 'stock_created').all()
     return render(request, 'pharmacy/purchase_order_detail.html', {
@@ -2921,8 +2907,7 @@ def purchase_order_detail(request, po_id):
 @require_POST
 def purchase_order_approve(request, po_id):
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
     if po.status not in (PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SUBMITTED):
         messages.error(request, 'Only DRAFT or SUBMITTED orders can be approved.')
@@ -2940,8 +2925,7 @@ def purchase_order_approve(request, po_id):
 def receive_purchase_order(request, po_id):
     """Record goods receipt for one or more items. Creates DrugStock batches."""
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
     if po.status not in (PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.PARTIAL):
         messages.error(request, 'Order must be APPROVED or PARTIAL to receive goods.')
@@ -2999,8 +2983,7 @@ def receive_purchase_order(request, po_id):
 def quick_reorder(request):
     """Show low/out-of-stock drugs with checkboxes; POST creates a PO pre-filled."""
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
 
     today = timezone.localdate()
     valid_stock = Q(
@@ -3073,8 +3056,7 @@ def quick_reorder(request):
 def dispensing_return_create(request, dispensing_id):
     """Record a return of dispensed drugs back to pharmacy stock."""
     if not (request.user.can_dispense_pharmacy() or request.user.is_super_admin):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
     if request.method == 'POST':
         form = DispensingReturnForm(request.POST, dispensing=dispensing)
@@ -3106,8 +3088,7 @@ def dispensing_return_create(request, dispensing_id):
 def dispensing_verify(request, dispensing_id):
     """Pharmacist final verification + counseling confirmation before handout."""
     if not request.user.can_dispense_pharmacy():
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     dispensing = get_object_or_404(Dispensing, id=dispensing_id, is_deleted=False)
     if dispensing.verified_by_pharmacist_id:
         messages.info(request, 'Already verified.')
@@ -3131,8 +3112,7 @@ def dispensing_verify(request, dispensing_id):
 def dispensing_label_pdf(request, dispensing_id):
     """Generate a printed dispensing label for each item in the dispensing."""
     if not (request.user.can_dispense_pharmacy() or request.user.is_super_admin):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     dispensing = get_object_or_404(
         Dispensing.objects.select_related('prescription'),
         id=dispensing_id, is_deleted=False,
@@ -3180,8 +3160,7 @@ def dispensing_label_pdf(request, dispensing_id):
 def controlled_register_pdf(request):
     """Daily/period controlled drug balance sheet as PDF."""
     if not _can_manage_pharmacy(request.user):
-        from django.http import HttpResponseForbidden
-        return HttpResponseForbidden()
+        return _pharmacy_forbidden(request)
     from datetime import date as date_cls
     date_str = request.GET.get('date', timezone.localdate().isoformat())
     try:
