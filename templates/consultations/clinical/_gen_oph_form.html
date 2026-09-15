@@ -771,13 +771,13 @@
         <div id="asd_view_cross" class="row g-3 mb-3 d-none">
           <div class="col-lg-6 text-center">
             <div class="fw-semibold small text-primary mb-1">OD — Right Eye (Cross-Section)</div>
-            <canvas id="asd_canvas_cross_od" width="340" height="280"
-                    style="border-radius:10px;cursor:default;background:transparent;touch-action:auto;width:100%;max-width:440px;border:1px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
+            <canvas id="asd_canvas_cross_od" width="500" height="400"
+                    style="border-radius:10px;cursor:default;background:transparent;touch-action:auto;width:100%;max-width:560px;border:1px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
           </div>
           <div class="col-lg-6 text-center">
             <div class="fw-semibold small text-danger mb-1">OS — Left Eye (Cross-Section)</div>
-            <canvas id="asd_canvas_cross_os" width="340" height="280"
-                    style="border-radius:10px;cursor:default;background:transparent;touch-action:auto;width:100%;max-width:440px;border:1px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
+            <canvas id="asd_canvas_cross_os" width="500" height="400"
+                    style="border-radius:10px;cursor:default;background:transparent;touch-action:auto;width:100%;max-width:560px;border:1px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
           </div>
         </div>
 
@@ -1097,7 +1097,7 @@
   }, true);
 
   // ── Cross-Section view ──────────────────────────────────────────────
-  var CROSS_W = 340, CROSS_H = 280;
+  var CROSS_W = 500, CROSS_H = 400;
   var _crossOverlayC = {}, _crossOverlayX = {}, _crossLabels = { od: [], os: [] }, _crossHistory = { od: [], os: [] };
   var _activeView = 'front';  // 'front' or 'cross'
 
@@ -1114,137 +1114,144 @@
     var W = CROSS_W, H = CROSS_H;
     var CX = W / 2, CY = H / 2;
     var S = '#222';  // stroke color
+    // Scale factor: diagram drawn at ~70% of canvas, centered with padding
+    var SC = 1.3;  // scale up the anatomy from the old 340x280 sizes
 
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, W, H);
 
+    // Helper: scale offset from center
+    function sx(v) { return CX + v * SC; }
+    function sy(v) { return CY + v * SC; }
+
     // ── Sclera / globe outline ──
-    ctx.strokeStyle = S; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(CX, CY, 148, 112, 0, 0, 2*Math.PI); ctx.stroke();
+    ctx.strokeStyle = S; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(CX, CY, 148 * SC, 112 * SC, 0, 0, 2 * Math.PI); ctx.stroke();
 
     // ── Cornea — outer epithelial surface (prominent anterior bulge) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 2;
+    ctx.strokeStyle = S; ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(CX - 128, CY - 54);
-    ctx.bezierCurveTo(CX - 175, CY - 28, CX - 175, CY + 28, CX - 128, CY + 54);
+    ctx.moveTo(sx(-128), sy(-54));
+    ctx.bezierCurveTo(sx(-175), sy(-28), sx(-175), sy(28), sx(-128), sy(54));
     ctx.stroke();
 
     // ── Cornea — inner endothelial surface ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1;
+    ctx.strokeStyle = S; ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.moveTo(CX - 122, CY - 46);
-    ctx.bezierCurveTo(CX - 160, CY - 22, CX - 160, CY + 22, CX - 122, CY + 46);
+    ctx.moveTo(sx(-122), sy(-46));
+    ctx.bezierCurveTo(sx(-160), sy(-22), sx(-160), sy(22), sx(-122), sy(46));
     ctx.stroke();
 
     // ── Iris — upper leaf (tapers toward pupil) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1.8;
+    ctx.strokeStyle = S; ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(CX - 122, CY - 46);
-    ctx.lineTo(CX - 28, CY - 18);
+    ctx.moveTo(sx(-122), sy(-46));
+    ctx.lineTo(sx(-28), sy(-18));
     ctx.stroke();
     // Iris thickness line (upper)
-    ctx.lineWidth = 0.8;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(CX - 118, CY - 40);
-    ctx.lineTo(CX - 30, CY - 14);
+    ctx.moveTo(sx(-118), sy(-40));
+    ctx.lineTo(sx(-30), sy(-14));
     ctx.stroke();
 
     // ── Iris — lower leaf ──
-    ctx.lineWidth = 1.8;
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(CX - 122, CY + 46);
-    ctx.lineTo(CX - 28, CY + 18);
+    ctx.moveTo(sx(-122), sy(46));
+    ctx.lineTo(sx(-28), sy(18));
     ctx.stroke();
     // Iris thickness line (lower)
-    ctx.lineWidth = 0.8;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(CX - 118, CY + 40);
-    ctx.lineTo(CX - 30, CY + 14);
+    ctx.moveTo(sx(-118), sy(40));
+    ctx.lineTo(sx(-30), sy(14));
     ctx.stroke();
 
     // ── Pupil (narrow slit between iris tips) ──
     ctx.fillStyle = '#000';
     ctx.beginPath();
-    ctx.moveTo(CX - 28, CY - 18);
-    ctx.lineTo(CX - 24, CY - 10);
-    ctx.lineTo(CX - 24, CY + 10);
-    ctx.lineTo(CX - 28, CY + 18);
+    ctx.moveTo(sx(-28), sy(-18));
+    ctx.lineTo(sx(-24), sy(-10));
+    ctx.lineTo(sx(-24), sy(10));
+    ctx.lineTo(sx(-28), sy(18));
     ctx.closePath();
     ctx.fill();
 
     // ── Lens — biconvex (anterior + posterior curves) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = S; ctx.lineWidth = 1.8;
     // Anterior lens surface
     ctx.beginPath();
-    ctx.moveTo(CX - 18, CY - 34);
-    ctx.bezierCurveTo(CX - 36, CY - 12, CX - 36, CY + 12, CX - 18, CY + 34);
+    ctx.moveTo(sx(-18), sy(-34));
+    ctx.bezierCurveTo(sx(-36), sy(-12), sx(-36), sy(12), sx(-18), sy(34));
     ctx.stroke();
     // Posterior lens surface
     ctx.beginPath();
-    ctx.moveTo(CX - 18, CY - 34);
-    ctx.bezierCurveTo(CX + 30, CY - 16, CX + 30, CY + 16, CX - 18, CY + 34);
+    ctx.moveTo(sx(-18), sy(-34));
+    ctx.bezierCurveTo(sx(30), sy(-16), sx(30), sy(16), sx(-18), sy(34));
     ctx.stroke();
 
     // ── Zonules (suspensory ligaments — fine lines from ciliary body to lens) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 0.5;
-    // Upper zonules
-    ctx.beginPath(); ctx.moveTo(CX - 108, CY - 56); ctx.lineTo(CX - 22, CY - 32); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(CX - 100, CY - 60); ctx.lineTo(CX - 18, CY - 34); ctx.stroke();
-    // Lower zonules
-    ctx.beginPath(); ctx.moveTo(CX - 108, CY + 56); ctx.lineTo(CX - 22, CY + 32); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(CX - 100, CY + 60); ctx.lineTo(CX - 18, CY + 34); ctx.stroke();
+    ctx.strokeStyle = S; ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(sx(-108), sy(-56)); ctx.lineTo(sx(-22), sy(-32)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(-100), sy(-60)); ctx.lineTo(sx(-18), sy(-34)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(-108), sy(56)); ctx.lineTo(sx(-22), sy(32)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(-100), sy(60)); ctx.lineTo(sx(-18), sy(34)); ctx.stroke();
 
     // ── Ciliary body (wedge shapes at iridocorneal angle) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1.2;
-    // Upper ciliary body
+    ctx.strokeStyle = S; ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.moveTo(CX - 122, CY - 46);
-    ctx.lineTo(CX - 112, CY - 62);
-    ctx.lineTo(CX - 96, CY - 52);
-    ctx.lineTo(CX - 108, CY - 44);
-    ctx.closePath();
-    ctx.stroke();
-    // Lower ciliary body
+    ctx.moveTo(sx(-122), sy(-46));
+    ctx.lineTo(sx(-112), sy(-62));
+    ctx.lineTo(sx(-96), sy(-52));
+    ctx.lineTo(sx(-108), sy(-44));
+    ctx.closePath(); ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(CX - 122, CY + 46);
-    ctx.lineTo(CX - 112, CY + 62);
-    ctx.lineTo(CX - 96, CY + 52);
-    ctx.lineTo(CX - 108, CY + 44);
-    ctx.closePath();
-    ctx.stroke();
+    ctx.moveTo(sx(-122), sy(46));
+    ctx.lineTo(sx(-112), sy(62));
+    ctx.lineTo(sx(-96), sy(52));
+    ctx.lineTo(sx(-108), sy(44));
+    ctx.closePath(); ctx.stroke();
 
     // ── Trabecular meshwork / angle (small hatching at angle recess) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 0.5;
-    for (var i = 0; i < 4; i++) {
-      var t = i / 3;
-      // Upper angle hatch marks
-      var ax = CX - 126 + t * 6, ay = CY - 49 + t * 4;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - 3, ay - 5); ctx.stroke();
-      // Lower angle hatch marks
-      ax = CX - 126 + t * 6; ay = CY + 49 - t * 4;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - 3, ay + 5); ctx.stroke();
+    ctx.strokeStyle = S; ctx.lineWidth = 0.6;
+    for (var i = 0; i < 5; i++) {
+      var t = i / 4;
+      var ax = -126 + t * 7, ay = -49 + t * 4;
+      ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(ax - 3), sy(ay - 6)); ctx.stroke();
+      ax = -126 + t * 7; ay = 49 - t * 4;
+      ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(ax - 3), sy(ay + 6)); ctx.stroke();
     }
 
     // ── Schlemm's canal (tiny arc at the angle) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 0.7;
+    ctx.strokeStyle = S; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(sx(-130), sy(-50), 7 * SC, -0.8, 0.3); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx(-130), sy(50), 7 * SC, -0.3, 0.8); ctx.stroke();
+
+    // ── Vitreous cavity indicator (light dashed line) ──
+    ctx.strokeStyle = '#bbb'; ctx.lineWidth = 0.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.ellipse(sx(40), CY, 60 * SC, 70 * SC, 0, 0, 2 * Math.PI); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // ── Retina (inner lining of posterior globe) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 0.8;
     ctx.beginPath();
-    ctx.arc(CX - 130, CY - 50, 6, -0.8, 0.3);
+    ctx.ellipse(CX, CY, 142 * SC, 106 * SC, 0, -0.9, 0.9);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(CX - 130, CY + 50, 6, -0.3, 0.8);
+    ctx.ellipse(CX, CY, 142 * SC, 106 * SC, 0, Math.PI - 0.9, Math.PI + 0.9);
     ctx.stroke();
 
     // ── Optic nerve (posterior) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(CX + 148, CY - 12);
-    ctx.lineTo(CX + 165, CY - 15);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(CX + 148, CY + 12);
-    ctx.lineTo(CX + 165, CY + 15);
-    ctx.stroke();
+    ctx.strokeStyle = S; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx(148), sy(-14)); ctx.lineTo(sx(172), sy(-18)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(148), sy(14)); ctx.lineTo(sx(172), sy(18)); ctx.stroke();
+    // Optic nerve sheath
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx(172), sy(-18)); ctx.lineTo(sx(178), sy(-20)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(172), sy(18)); ctx.lineTo(sx(178), sy(20)); ctx.stroke();
   }
 
   function crossComposite(ctx, eye) {
