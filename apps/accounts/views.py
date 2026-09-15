@@ -103,7 +103,7 @@ def user_list_view(request):
     return render(request, 'accounts/user_list.html', {
         'users': users,
         'departments': Department.objects.filter(is_active=True),
-        'roles': User.role.field.choices,
+        'roles': UserRole.choices,
         'role_filter': role_filter,
         'dept_filter': dept_filter,
     })
