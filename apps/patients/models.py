@@ -75,6 +75,7 @@ class Patient(AuditModel):
 
     # ── Additional contact / address fields ───────────────────────────────────
     postal_code = models.CharField(max_length=10, blank=True, help_text='Zip / Postal code (optional)')
+    phone_number_2 = models.CharField(max_length=30, blank=True, help_text='Secondary phone number')
     phone_is_whatsapp = models.BooleanField(default=False, help_text='Phone number is also a WhatsApp number')
 
     photo = models.ImageField(upload_to='patients/photos/', null=True, blank=True)

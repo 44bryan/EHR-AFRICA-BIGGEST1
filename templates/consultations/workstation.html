@@ -371,9 +371,15 @@
             {% endif %}
             {% if v.chief_complaint %}<div class="ws-sub mt-1">{{ v.chief_complaint|truncatechars:50 }}</div>{% endif %}
             <div class="d-flex align-items-center gap-1 mt-2">
+              {% if v.ws_draft %}
+              <a href="{% url 'consultations:edit' pk=v.ws_draft.pk %}" class="btn btn-sm btn-warning ws-btn" hx-boost="false">
+                <i class="bi bi-play-circle me-1"></i>Resume
+              </a>
+              {% else %}
               <a href="{% url 'consultations:create' patient_id=v.patient.patient_id %}?visit_id={{ v.pk }}" class="btn btn-sm btn-success ws-btn" hx-boost="false">
                 <i class="bi bi-journal-plus me-1"></i>Consult
               </a>
+              {% endif %}
               <div class="dropdown">
                 <button class="btn btn-sm btn-outline-secondary ws-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" style="padding:4px 8px;">
                   <i class="bi bi-three-dots"></i>
@@ -510,6 +516,97 @@
       {% endif %}
     </div>
 
+    {# ── My Day — Daily Summary ── #}
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
+           style="cursor:pointer;" onclick="toggleMyDay()">
+        <h6 class="mb-0 fw-bold" style="font-size:.92rem;">
+          <i class="bi bi-calendar-check me-2 text-success"></i>My Day — Daily Summary
+          <span class="badge bg-success ms-1">{{ myday_total }}</span>
+        </h6>
+        <div class="d-flex align-items-center gap-2">
+          <a href="{% url 'consultations:myday_export' %}" class="btn btn-sm btn-outline-success py-0 px-2"
+             style="font-size:.72rem;" onclick="event.stopPropagation();" title="Download Excel">
+            <i class="bi bi-file-earmark-excel me-1"></i>Excel
+          </a>
+          <i class="bi bi-chevron-down text-secondary" id="mydayChev"></i>
+        </div>
+      </div>
+      <div id="mydayBody" style="display:none;">
+        {# Stats row #}
+        <div class="row g-0 border-bottom" style="background:#fafbfc;">
+          <div class="col ws-stat">
+            <div class="ws-stat-num text-success">{{ myday_total }}</div>
+            <div class="ws-stat-label">Total Seen</div>
+          </div>
+          <div class="col ws-stat border-start">
+            <div class="ws-stat-num text-primary">{{ myday_new }}</div>
+            <div class="ws-stat-label">New</div>
+          </div>
+          <div class="col ws-stat border-start">
+            <div class="ws-stat-num text-info">{{ myday_followup }}</div>
+            <div class="ws-stat-label">Follow-up</div>
+          </div>
+          <div class="col ws-stat border-start">
+            <div class="ws-stat-num text-dark">{{ myday_male }}<span class="text-muted" style="font-size:.7rem;">/</span>{{ myday_female }}</div>
+            <div class="ws-stat-label">M / F</div>
+          </div>
+          <div class="col ws-stat border-start">
+            <div class="ws-stat-num text-warning">{{ myday_avg_minutes }}<span class="text-muted" style="font-size:.65rem;">m</span></div>
+            <div class="ws-stat-label">Avg Time</div>
+          </div>
+          {% for tier, count in myday_tiers.items %}
+          <div class="col ws-stat border-start">
+            <div class="ws-stat-num {% if tier == 'VIP' %}text-purple{% else %}text-secondary{% endif %}">{{ count }}</div>
+            <div class="ws-stat-label">{{ tier }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {# Patient list table #}
+        {% if myday_list %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem;">
+            <thead style="background:#f8f9fa;">
+              <tr>
+                <th class="fw-semibold text-muted" style="width:30px;">#</th>
+                <th class="fw-semibold text-muted">Patient</th>
+                <th class="fw-semibold text-muted">ID</th>
+                <th class="fw-semibold text-muted">Time</th>
+                <th class="fw-semibold text-muted">Department</th>
+                <th class="fw-semibold text-muted">Chief Complaint</th>
+                <th class="fw-semibold text-muted">Tier</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in myday_list %}
+              <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td>
+                  <a href="{% url 'consultations:detail' pk=c.pk %}" class="text-decoration-none fw-semibold" hx-boost="false">
+                    {{ c.patient.full_name }}
+                  </a>
+                  {% if c.patient.gender == 'M' %}<i class="bi bi-gender-male text-primary ms-1" style="font-size:.65rem;"></i>{% elif c.patient.gender == 'F' %}<i class="bi bi-gender-female text-danger ms-1" style="font-size:.65rem;"></i>{% endif %}
+                </td>
+                <td class="text-muted">{{ c.patient.patient_id }}</td>
+                <td>{{ c.consultation_date|time:"H:i" }}</td>
+                <td>{{ c.department.name|default:"-" }}</td>
+                <td class="text-truncate" style="max-width:200px;">{{ c.presenting_complaint|default:"-"|truncatechars:50 }}</td>
+                <td>
+                  {% with tier=c.visit.service_tier|default:"STANDARD" %}
+                  <span class="ws-pill {% if tier == 'VIP' %}ws-pill-vip{% elif tier == 'EXPRESS' %}ws-pill-express{% else %}ws-pill-fu{% endif %}">{{ tier }}</span>
+                  {% endwith %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="ws-empty py-3"><i class="bi bi-emoji-smile"></i>No completed consultations yet today.</div>
+        {% endif %}
+      </div>
+    </div>
+
   </div>
 </div>
 {% endblock %}
@@ -639,6 +736,15 @@
 
 {% block extra_js %}
 <script>
+// ── My Day toggle ──
+function toggleMyDay(){
+  var b=document.getElementById('mydayBody'),c=document.getElementById('mydayChev');
+  if(!b)return;
+  var show=b.style.display==='none';
+  b.style.display=show?'':'none';
+  if(c){c.classList.toggle('bi-chevron-up',show);c.classList.toggle('bi-chevron-down',!show);}
+}
+
 // Helper functions used by clinical forms
 function qfAppend(id, val) {
   var inp = document.getElementById(id);

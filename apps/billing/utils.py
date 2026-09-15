@@ -152,3 +152,105 @@ _DEFAULT_FEES = {
 
 def _get_default_fee(category):
     return _DEFAULT_FEES.get(category, 1000)
+
+
+# ── Route destination → ServicePrice billing code ────────────────────────
+# Maps routing destination codes to their ServicePrice.code in the CDM.
+# Only destinations listed here trigger auto-billing on routing.
+# Lab, investigation, pharmacy, and optical are NOT here — they have their own
+# billing hooks when orders are created (bill_lab_order, bill_investigation, etc.)
+_ROUTE_BILLING_CODES = {
+    'REFRACTION':   'SVC-REFRACTION',
+    'CYCLO':        'SVC-CYCLO',
+    'VA_CHECK':     'SVC-VA-CHECK',
+    'ORTHOPTICS':   'SVC-ORTHOPTICS',
+    'CONTACT_LENS': 'SVC-CONTACT-LENS',
+    'LOW_VISION':   'SVC-LOW-VISION',
+    'COUNSELING':   'SVC-COUNSELING',
+}
+
+
+def bill_routing_service(visit, destination, routed_by=None):
+    """
+    Auto-invoice a routing-triggered service fee (e.g. refraction).
+
+    Looks up ServicePrice by billing code. If no ServicePrice is configured
+    for this destination, billing is silently skipped (admin controls what's
+    billable via the Charge Description Master).
+
+    Duplicate prevention: won't bill the same destination twice on the same
+    invoice (handles re-routing scenarios).
+
+    Returns the InvoiceItem created, or None if not billable / duplicate.
+    """
+    billing_code = _ROUTE_BILLING_CODES.get(destination)
+    if not billing_code:
+        return None  # Not a billable routing destination
+
+    try:
+        from .models import ServicePrice, ServiceCategory, InvoiceItem
+
+        # Look up configured price — try tier-specific first, then any-tier
+        tier = getattr(visit, 'service_tier', '') or ''
+        svc = None
+        if tier:
+            svc = ServicePrice.objects.filter(
+                code=billing_code, is_active=True, tier=tier
+            ).first()
+        if not svc:
+            svc = ServicePrice.objects.filter(
+                code=billing_code, is_active=True
+            ).first()
+
+        if not svc:
+            return None  # No price configured — admin hasn't made this billable
+
+        # Get the consultation if available (for invoice linking)
+        consultation = None
+        try:
+            consultation = visit.consultations.filter(
+                is_deleted=False
+            ).order_by('-created_at').first()
+        except Exception:
+            pass
+
+        # Get or create today's invoice
+        invoice = get_or_create_today_invoice(
+            patient=visit.patient,
+            consultation=consultation,
+            created_by=routed_by,
+        )
+
+        # Duplicate prevention — check BOTH route marker AND description match
+        # Catches: (a) auto-billed via routing, (b) manually added by cashier at reception
+        from django.db.models import Q as _Q
+        already_billed = InvoiceItem.objects.filter(
+            invoice=invoice,
+            is_deleted=False,
+        ).filter(
+            _Q(notes__contains=f'route:{billing_code}') |
+            _Q(description__iexact=svc.name) |
+            _Q(notes__contains=billing_code)
+        ).exists()
+        if already_billed:
+            logger.info('Auto-billing skipped (duplicate): %s already on invoice %s',
+                        billing_code, invoice.invoice_number)
+            return None
+
+        # Create the billing item
+        item = InvoiceItem.objects.create(
+            invoice=invoice,
+            description=svc.name,
+            category=svc.category,
+            quantity=1,
+            unit_price=svc.price,
+            notes=f'route:{billing_code}',
+            created_by=routed_by,
+        )
+        logger.info('Auto-billing on route: %s @ %s FCFA → invoice %s (dest=%s)',
+                     svc.name, svc.price, invoice.invoice_number, destination)
+        return item
+
+    except Exception:
+        logger.exception('bill_routing_service failed for dest=%s', destination)
+        return None

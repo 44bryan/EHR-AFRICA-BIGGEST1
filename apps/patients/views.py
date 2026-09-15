@@ -122,6 +122,10 @@ def patient_register_view(request):
             _phone_code = request.POST.get('phone_country_code', '')
             if _phone_code and patient.phone_number and not patient.phone_number.startswith('+'):
                 patient.phone_number = _phone_code + patient.phone_number
+            # 2nd phone number
+            _phone2_code = request.POST.get('phone2_country_code', '')
+            if _phone2_code and patient.phone_number_2 and not patient.phone_number_2.startswith('+'):
+                patient.phone_number_2 = _phone2_code + patient.phone_number_2
 
             patient.registered_by = request.user
             patient.created_by = request.user

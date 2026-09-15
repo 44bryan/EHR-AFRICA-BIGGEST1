@@ -196,22 +196,36 @@ def groq_json(messages: list, system: str = None, model: str = None, max_tokens:
         return {'success': False, 'error': 'JSON parse failed', 'data': {}}
     except Exception as e:
         err_str = str(e).lower()
-        # JSON mode not supported by this model — retry without it
-        if 'json' in err_str or 'response_format' in err_str or 'model' in err_str or 'deprecated' in err_str or 'decommissioned' in err_str:
-            logger.warning(f"Groq JSON mode unsupported for model {model}, retrying without it: {e}")
-            fallback_model = getattr(settings, 'GROQ_FAST_MODEL', 'llama-3.1-8b-instant')
+        # JSON mode not supported by this model — retry WITHOUT response_format
+        if 'json' in err_str or 'response_format' in err_str or 'model' in err_str or 'deprecated' in err_str or 'decommissioned' in err_str or 'not supported' in err_str:
+            logger.warning(f"Groq JSON mode unsupported for model {model}, retrying in plain text mode: {e}")
             try:
                 response = client.chat.completions.create(
-                    model=fallback_model,
+                    model=model,
                     messages=chat_messages,
                     max_tokens=max_tokens,
                     temperature=0.1,
-                    response_format={'type': 'json_object'},
                 )
                 raw = response.choices[0].message.content or ''
                 text, _ = _split_reasoning(raw)
-                data = json.loads(text)
+                # Extract JSON from text response (may have markdown fences)
+                clean = text.strip()
+                if clean.startswith('```'):
+                    clean = _re.sub(r'^```(?:json)?\s*', '', clean)
+                    clean = _re.sub(r'```\s*$', '', clean)
+                data = json.loads(clean.strip())
                 return {'success': True, 'data': data, 'text': text}
+            except json.JSONDecodeError:
+                # Try extracting first { ... } block
+                match = _re.search(r'\{[\s\S]*\}', text or raw)
+                if match:
+                    try:
+                        data = json.loads(match.group())
+                        return {'success': True, 'data': data, 'text': text}
+                    except json.JSONDecodeError:
+                        pass
+                logger.error(f"Groq plain-text JSON parse failed: {text[:500] if text else raw[:500]}")
+                return {'success': False, 'error': 'AI returned non-JSON response', 'data': {}}
             except Exception as e2:
                 logger.error(f"Groq JSON fallback error: {e2}")
                 return {'success': False, 'error': str(e2), 'data': {}}

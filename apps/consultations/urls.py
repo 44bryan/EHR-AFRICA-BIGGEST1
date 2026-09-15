@@ -6,6 +6,7 @@ app_name = 'consultations'
 urlpatterns = [
     path('', views.consultation_list_view, name='list'),
     path('workstation/', views.workstation_view, name='workstation'),
+    path('workstation/myday-export/', views.myday_export_view, name='myday_export'),
     path('vip/', views.vip_dashboard_view, name='vip_dashboard'),
     path('triage/', views.triage_workstation_view, name='triage_workstation'),
     path('new/<str:patient_id>/', views.consultation_create_view, name='create'),

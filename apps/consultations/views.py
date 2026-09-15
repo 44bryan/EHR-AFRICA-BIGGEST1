@@ -154,17 +154,20 @@ def consultation_create_view(request, patient_id):
             else:
                 return render(request, 'consultations/walkin_confirm.html', {'patient': patient})
 
-    # ── Resume existing draft: if doctor already saved a draft for this visit, redirect to edit ──
+    # ── Resume existing draft or paused consultation for this visit ──
     if visit and request.method == 'GET':
         existing_draft = Consultation.objects.filter(
             patient=patient,
             visit=visit,
             consulting_doctor=request.user,
-            status=ConsultationStatus.IN_PROGRESS,
+            status__in=[ConsultationStatus.IN_PROGRESS, ConsultationStatus.PAUSED],
             is_deleted=False,
         ).order_by('-created_at').first()
         if existing_draft:
-            messages.info(request, 'Resuming your saved draft consultation.')
+            if existing_draft.status == ConsultationStatus.PAUSED:
+                messages.info(request, 'Resuming paused consultation — patient returned from service.')
+            else:
+                messages.info(request, 'Resuming your saved draft consultation.')
             return redirect('consultations:edit', pk=existing_draft.pk)
 
     # ── Claim mechanic: soft-assign this visit to the doctor's room if it's unclaimed ──
@@ -262,6 +265,19 @@ def consultation_create_view(request, patient_id):
             consultation.ocular_history = ', '.join(filter(None, request.POST.getlist('ocular_history')))
             consultation.systemic_history = ', '.join(filter(None, request.POST.getlist('systemic_history')))
             consultation.drug_history = ', '.join(filter(None, request.POST.getlist('drug_history')))
+            consultation.family_history = ', '.join(filter(None, request.POST.getlist('family_history')))
+            consultation.social_history = ', '.join(filter(None, request.POST.getlist('social_history')))
+            consultation.management_plan = ', '.join(filter(None, request.POST.getlist('management_plan')))
+            # Also save dept_ clinical exam data so nothing is lost on draft
+            _draft_dept = {
+                k[5:]: ', '.join(filter(None, [v.strip() for v in request.POST.getlist(k)]))
+                for k in request.POST
+                if k.startswith('dept_') and any(v.strip() for v in request.POST.getlist(k))
+            }
+            if _draft_dept:
+                existing_dept = consultation.department_specific_data or {}
+                existing_dept.update(_draft_dept)
+                consultation.department_specific_data = existing_dept
             consultation.save()
             visit.status = 'IN_CONSULTATION'
             visit.attending_doctor = request.user
@@ -1168,7 +1184,8 @@ def consultation_autosave_view(request):
         if draft_pk:
             consultation = Consultation.objects.filter(
                 pk=draft_pk, consulting_doctor=request.user,
-                status=ConsultationStatus.IN_PROGRESS, is_deleted=False
+                status__in=[ConsultationStatus.IN_PROGRESS, ConsultationStatus.PAUSED],
+                is_deleted=False,
             ).first()
             if consultation is None:
                 return JsonResponse({'ok': False, 'error': 'Draft not found or already completed.'}, status=404)
@@ -1614,6 +1631,21 @@ def workstation_view(request):
         waiting_count = sum(1 for v in waiting_visits if v.status not in ('IN_CONSULTATION',))
         in_progress_count = sum(1 for v in waiting_visits if v.status == 'IN_CONSULTATION')
 
+    # ── Detect existing drafts/paused consultations for non-QMS visit queue ──
+    if not _qms_active() and waiting_visits:
+        _wv_ids = [v.pk for v in waiting_visits]
+        _wv_drafts = {
+            c.visit_id: c
+            for c in Consultation.objects.filter(
+                consulting_doctor=user,
+                visit_id__in=_wv_ids,
+                status__in=[ConsultationStatus.IN_PROGRESS, ConsultationStatus.PAUSED],
+                is_deleted=False,
+            ).only('id', 'visit_id', 'status')
+        }
+        for v in waiting_visits:
+            v.ws_draft = _wv_drafts.get(v.pk)
+
     service_type_choices = []
     if _qms_active():
         try:
@@ -1754,6 +1786,34 @@ def workstation_view(request):
             ).order_by('-consultation_date')[:15]
         )
 
+    # ── "My Day" summary — completed consultations for the doctor today ────────
+    _myday_qs = Consultation.objects.filter(
+        consulting_doctor=user,
+        consultation_date__date=today,
+        status=ConsultationStatus.COMPLETED,
+        is_deleted=False,
+    ).select_related('patient', 'visit', 'department').order_by('-consultation_date')
+    myday_list = list(_myday_qs)
+    myday_total = len(myday_list)
+    myday_new = sum(1 for c in myday_list if c.visit and c.visit.visit_type == 'NEW')
+    myday_followup = myday_total - myday_new
+    # Tier breakdown
+    myday_tiers = {}
+    for c in myday_list:
+        tier = (c.visit.service_tier if c.visit else 'STANDARD') or 'STANDARD'
+        myday_tiers[tier] = myday_tiers.get(tier, 0) + 1
+    # Gender breakdown
+    myday_male = sum(1 for c in myday_list if c.patient and c.patient.gender == 'M')
+    myday_female = sum(1 for c in myday_list if c.patient and c.patient.gender == 'F')
+    # Average time (if consultations have created_at and updated_at)
+    _durations = []
+    for c in myday_list:
+        if c.created_at and c.updated_at and c.updated_at > c.created_at:
+            delta = (c.updated_at - c.created_at).total_seconds() / 60.0
+            if 1 < delta < 180:  # reasonable range
+                _durations.append(delta)
+    myday_avg_minutes = round(sum(_durations) / len(_durations)) if _durations else 0
+
     return render(request, 'consultations/workstation.html', {
         'waiting_tokens': waiting_tokens,
         'waiting_visits': waiting_visits,
@@ -1762,6 +1822,14 @@ def workstation_view(request):
         'waiting_count': waiting_count,
         'in_progress_count': in_progress_count,
         'completed_today': completed_today,
+        'myday_list': myday_list,
+        'myday_total': myday_total,
+        'myday_new': myday_new,
+        'myday_followup': myday_followup,
+        'myday_tiers': myday_tiers,
+        'myday_male': myday_male,
+        'myday_female': myday_female,
+        'myday_avg_minutes': myday_avg_minutes,
         'dept': dept,
         'dept_code': dept_code,
         'today': today,
@@ -1785,6 +1853,81 @@ def workstation_view(request):
         'returning_patients': returning_patients,
         'results_ready_count': results_ready_count,
     })
+
+
+# ── My Day — Excel Export ─────────────────────────────────────────────────────
+
+@login_required
+def myday_export_view(request):
+    """Download today's completed consultations as Excel."""
+    from django.utils.timezone import localdate
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    today = localdate()
+    qs = Consultation.objects.filter(
+        consulting_doctor=request.user,
+        consultation_date__date=today,
+        status=ConsultationStatus.COMPLETED,
+        is_deleted=False,
+    ).select_related('patient', 'visit', 'department').order_by('consultation_date')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'My Day'
+
+    # Styles
+    hdr_font = Font(bold=True, color='FFFFFF', size=10)
+    hdr_fill = PatternFill('solid', fgColor='198754')
+    thin = Side(style='thin', color='D0D0D0')
+    border = Border(bottom=thin)
+    center = Alignment(horizontal='center', vertical='center')
+
+    # Title row
+    ws.merge_cells('A1:G1')
+    title_cell = ws['A1']
+    title_cell.value = f"My Day — {request.user.get_full_name()} — {today.strftime('%d %b %Y')}"
+    title_cell.font = Font(bold=True, size=13, color='198754')
+    title_cell.alignment = Alignment(horizontal='center')
+    ws.row_dimensions[1].height = 30
+
+    # Summary row
+    total = qs.count()
+    new_count = sum(1 for c in qs if c.visit and c.visit.visit_type == 'NEW')
+    ws.merge_cells('A2:G2')
+    ws['A2'].value = f"Total: {total}  |  New: {new_count}  |  Follow-up: {total - new_count}"
+    ws['A2'].font = Font(size=9, italic=True, color='666666')
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    # Headers
+    headers = ['#', 'Patient Name', 'Patient ID', 'Time', 'Department', 'Chief Complaint', 'Tier']
+    col_widths = [5, 28, 14, 8, 20, 40, 10]
+    for col_idx, (hdr, w) in enumerate(zip(headers, col_widths), 1):
+        cell = ws.cell(row=4, column=col_idx, value=hdr)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = center
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = w
+
+    # Data rows
+    for i, c in enumerate(qs, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=i).alignment = center
+        ws.cell(row=row, column=2, value=c.patient.full_name if c.patient else '-')
+        ws.cell(row=row, column=3, value=c.patient.patient_id if c.patient else '-')
+        ws.cell(row=row, column=4, value=c.consultation_date.strftime('%H:%M') if c.consultation_date else '-').alignment = center
+        ws.cell(row=row, column=5, value=c.department.name if c.department else '-')
+        ws.cell(row=row, column=6, value=(c.presenting_complaint or '-')[:80])
+        tier = (c.visit.service_tier if c.visit else 'STANDARD') or 'STANDARD'
+        ws.cell(row=row, column=7, value=tier).alignment = center
+        for col_idx in range(1, 8):
+            ws.cell(row=row, column=col_idx).border = border
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    fname = f"MyDay_{today.strftime('%Y%m%d')}_{request.user.username}.xlsx"
+    response['Content-Disposition'] = f'attachment; filename="{fname}"'
+    wb.save(response)
+    return response
 
 
 # ── Reject & Re-route (specialist sends patient back — wrong dept) ────────────
@@ -2618,6 +2761,54 @@ def clinic_nurse_view(request):
                 _rtr_qs.select_related('patient', 'attending_doctor').order_by('visit_date')
             )
 
+    # ── Billing status for each ready-to-route patient ─────────────────────
+    # Shows which billable services are already paid vs pending on the invoice
+    if ready_to_route:
+        try:
+            from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus
+            from apps.billing.utils import _ROUTE_BILLING_CODES
+            _rtr_patient_ids = [v.patient_id for v in ready_to_route]
+            _invoices = {
+                inv.patient_id: inv
+                for inv in Invoice.objects.filter(
+                    patient_id__in=_rtr_patient_ids,
+                    issue_date=today,
+                    status__in=[InvoiceStatus.DRAFT, InvoiceStatus.ISSUED,
+                                InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID],
+                    is_deleted=False,
+                ).prefetch_related('items').order_by('-created_at')
+            }
+            # Build set of already-billed service codes per patient
+            _svc_codes_set = set(_ROUTE_BILLING_CODES.values())
+            for v in ready_to_route:
+                inv = _invoices.get(v.patient_id)
+                paid_services = set()
+                if inv:
+                    for item in inv.items.filter(is_deleted=False):
+                        for dest, code in _ROUTE_BILLING_CODES.items():
+                            if code in (item.notes or '') or item.description.lower() == inv.__class__.__name__.lower():
+                                paid_services.add(dest)
+                            # Also match by description containing the service name
+                            if 'refraction' in item.description.lower():
+                                paid_services.add('REFRACTION')
+                                paid_services.add('CYCLO')
+                            if 'orthop' in item.description.lower():
+                                paid_services.add('ORTHOPTICS')
+                            if 'contact lens' in item.description.lower():
+                                paid_services.add('CONTACT_LENS')
+                            if 'va ' in item.description.lower() or 'visual acuity' in item.description.lower():
+                                paid_services.add('VA_CHECK')
+                            if 'low vision' in item.description.lower():
+                                paid_services.add('LOW_VISION')
+                            if 'counseling' in item.description.lower() or 'counselling' in item.description.lower():
+                                paid_services.add('COUNSELING')
+                v.paid_services = paid_services
+                v.has_invoice = bool(inv)
+        except Exception:
+            for v in ready_to_route:
+                v.paid_services = set()
+                v.has_invoice = False
+
     # Active rooms (all depts) — for the room picker on route buttons
     from apps.departments.models import ConsultationRoom as _NurseRoom
     active_rooms = list(
@@ -3205,11 +3396,23 @@ def nurse_route_patient_view(request, visit_pk):
         except Exception:
             pass
 
+    # ── Auto-invoice billable routing services (same as smart_route_view) ──
+    billed_item = None
+    try:
+        from apps.billing.utils import bill_routing_service
+        billed_item = bill_routing_service(visit, destination, routed_by=user)
+    except Exception:
+        pass  # Billing failure must never block routing
+
+    billing_note = ''
+    if billed_item:
+        billing_note = f' Fee of {billed_item.unit_price:,.0f} FCFA auto-added to invoice.'
     return JsonResponse({
         'success': True,
         'patient': visit.patient.full_name,
         'destination': label,
-        'message': f'{visit.patient.full_name} routed to {label}.',
+        'billed': bool(billed_item),
+        'message': f'{visit.patient.full_name} routed to {label}.{billing_note}',
     })
 
 
@@ -3406,7 +3609,7 @@ def smart_route_view(request):
                     consult.save(update_fields=['status', 'completed_at', 'updated_at'])
                 else:
                     consult.save(update_fields=['status', 'updated_at'])
-            redirect_url = '/consultations/'
+            redirect_url = '/'
         except Exception:
             pass
 
@@ -3418,14 +3621,26 @@ def smart_route_view(request):
     if not routed:
         return JsonResponse({'error': f'Unknown destination: {destination}'}, status=400)
 
+    # ── Auto-invoice billable routing services (e.g. refraction fee) ────
+    billed_item = None
+    try:
+        from apps.billing.utils import bill_routing_service
+        billed_item = bill_routing_service(visit, destination, routed_by=user)
+    except Exception:
+        pass  # Billing failure must never block routing
+
     action = 'paused — patient will return' if should_pause else 'completed'
+    billing_note = ''
+    if billed_item:
+        billing_note = f' Fee of {billed_item.unit_price:,.0f} FCFA auto-added to invoice.'
     return JsonResponse({
         'success': True,
         'patient': visit.patient.full_name,
         'destination': destination,
         'label': label,
         'paused': should_pause,
-        'message': f'{visit.patient.full_name} sent to {label}. Consultation {action}.',
+        'billed': bool(billed_item),
+        'message': f'{visit.patient.full_name} sent to {label}. Consultation {action}.{billing_note}',
         'redirect_url': redirect_url,
     })
 

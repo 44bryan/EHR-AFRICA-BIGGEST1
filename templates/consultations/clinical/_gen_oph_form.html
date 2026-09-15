@@ -61,9 +61,17 @@
   .oph-eye-tbl .ehr-combo { margin-top: 2px; }
   .oph-eye-tbl .ehr-combo textarea { font-size: .88rem !important; padding: .3rem .5rem !important; min-height: 36px; }
 
-  /* Drawing toolbar: wrap nicely */
+  /* Drawing toolbar: wrap nicely on tablet */
   .oph-draw-toolbar { gap: .35rem !important; }
   .oph-draw-toolbar .ms-auto { margin-left: 0 !important; width: 100%; justify-content: flex-end; }
+  /* Color buttons: bigger tap targets on touch devices */
+  .oph-draw-toolbar button[onclick*="Color"] {
+    width: 32px !important; height: 32px !important; border-radius: 4px !important;
+    border-width: 2px !important;
+  }
+  .oph-draw-toolbar input[type="color"] {
+    width: 34px !important; height: 32px !important; border-radius: 4px !important;
+  }
 }
 </style>
 
@@ -735,8 +743,18 @@
           <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="setAsdTool('pen')"><i class="bi bi-pencil"></i> Draw</button>
         </div>
 
-        {# Canvases — OD and OS side by side (stacked on tablet) #}
-        <div class="row g-3 mb-3">
+        {# View toggle — Front View / Cross-Section #}
+        <div class="d-flex gap-1 mb-2">
+          <button type="button" class="btn btn-sm btn-primary" id="asd_tab_front" onclick="switchAsdView('front')">
+            <i class="bi bi-eye me-1"></i>Front View
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="asd_tab_cross" onclick="switchAsdView('cross')">
+            <i class="bi bi-layers me-1"></i>Cross-Section
+          </button>
+        </div>
+
+        {# Front View canvases — OD and OS side by side (stacked on tablet) #}
+        <div id="asd_view_front" class="row g-3 mb-3">
           <div class="col-lg-6 text-center">
             <div class="fw-semibold small text-primary mb-1">OD — Right Eye</div>
             <canvas id="asd_canvas_od" width="280" height="280"
@@ -749,9 +767,25 @@
           </div>
         </div>
 
+        {# Cross-Section canvases — hidden by default #}
+        <div id="asd_view_cross" class="row g-3 mb-3 d-none">
+          <div class="col-lg-6 text-center">
+            <div class="fw-semibold small text-primary mb-1">OD — Right Eye (Cross-Section)</div>
+            <canvas id="asd_canvas_cross_od" width="340" height="280"
+                    style="border-radius:10px;cursor:default;background:transparent;touch-action:auto;width:100%;max-width:440px;border:1px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
+          </div>
+          <div class="col-lg-6 text-center">
+            <div class="fw-semibold small text-danger mb-1">OS — Left Eye (Cross-Section)</div>
+            <canvas id="asd_canvas_cross_os" width="340" height="280"
+                    style="border-radius:10px;cursor:default;background:transparent;touch-action:auto;width:100%;max-width:440px;border:1px solid #dee2e6;box-shadow:0 1px 4px rgba(0,0,0,.1);"></canvas>
+          </div>
+        </div>
+
         {# Hidden data persistence #}
         <input type="hidden" name="dept_asd_od" id="asd_input_od" value="{{ d.asd_od|default:'' }}">
         <input type="hidden" name="dept_asd_os" id="asd_input_os" value="{{ d.asd_os|default:'' }}">
+        <input type="hidden" name="dept_asd_cross_od" id="asd_input_cross_od" value="{{ d.asd_cross_od|default:'' }}">
+        <input type="hidden" name="dept_asd_cross_os" id="asd_input_cross_os" value="{{ d.asd_cross_os|default:'' }}">
 
       </div>{# /drawing sub-section #}
 
@@ -1056,8 +1090,332 @@
       var cvs = document.getElementById('asd_canvas_' + eye);
       var inp = document.getElementById('asd_input_' + eye);
       if (cvs && inp) inp.value = cvs.toDataURL('image/png');
+      var ccvs = document.getElementById('asd_canvas_cross_' + eye);
+      var cinp = document.getElementById('asd_input_cross_' + eye);
+      if (ccvs && cinp) cinp.value = ccvs.toDataURL('image/png');
     });
   }, true);
+
+  // ── Cross-Section view ──────────────────────────────────────────────
+  var CROSS_W = 340, CROSS_H = 280;
+  var _crossOverlayC = {}, _crossOverlayX = {}, _crossLabels = { od: [], os: [] }, _crossHistory = { od: [], os: [] };
+  var _activeView = 'front';  // 'front' or 'cross'
+
+  ['od','os'].forEach(function(eye) {
+    var oc = document.createElement('canvas');
+    oc.width = CROSS_W; oc.height = CROSS_H;
+    _crossOverlayC[eye] = oc;
+    _crossOverlayX[eye] = oc.getContext('2d');
+  });
+
+  // Draw cross-section anatomy: cornea, anterior chamber, iris, lens, angle
+  // Pure black & white, no labels — clean clinical diagram
+  function drawCrossBase(ctx, eye) {
+    var W = CROSS_W, H = CROSS_H;
+    var CX = W / 2, CY = H / 2;
+    var S = '#222';  // stroke color
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
+
+    // ── Sclera / globe outline ──
+    ctx.strokeStyle = S; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(CX, CY, 148, 112, 0, 0, 2*Math.PI); ctx.stroke();
+
+    // ── Cornea — outer epithelial surface (prominent anterior bulge) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(CX - 128, CY - 54);
+    ctx.bezierCurveTo(CX - 175, CY - 28, CX - 175, CY + 28, CX - 128, CY + 54);
+    ctx.stroke();
+
+    // ── Cornea — inner endothelial surface ──
+    ctx.strokeStyle = S; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(CX - 122, CY - 46);
+    ctx.bezierCurveTo(CX - 160, CY - 22, CX - 160, CY + 22, CX - 122, CY + 46);
+    ctx.stroke();
+
+    // ── Iris — upper leaf (tapers toward pupil) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(CX - 122, CY - 46);
+    ctx.lineTo(CX - 28, CY - 18);
+    ctx.stroke();
+    // Iris thickness line (upper)
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(CX - 118, CY - 40);
+    ctx.lineTo(CX - 30, CY - 14);
+    ctx.stroke();
+
+    // ── Iris — lower leaf ──
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(CX - 122, CY + 46);
+    ctx.lineTo(CX - 28, CY + 18);
+    ctx.stroke();
+    // Iris thickness line (lower)
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(CX - 118, CY + 40);
+    ctx.lineTo(CX - 30, CY + 14);
+    ctx.stroke();
+
+    // ── Pupil (narrow slit between iris tips) ──
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.moveTo(CX - 28, CY - 18);
+    ctx.lineTo(CX - 24, CY - 10);
+    ctx.lineTo(CX - 24, CY + 10);
+    ctx.lineTo(CX - 28, CY + 18);
+    ctx.closePath();
+    ctx.fill();
+
+    // ── Lens — biconvex (anterior + posterior curves) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 1.5;
+    // Anterior lens surface
+    ctx.beginPath();
+    ctx.moveTo(CX - 18, CY - 34);
+    ctx.bezierCurveTo(CX - 36, CY - 12, CX - 36, CY + 12, CX - 18, CY + 34);
+    ctx.stroke();
+    // Posterior lens surface
+    ctx.beginPath();
+    ctx.moveTo(CX - 18, CY - 34);
+    ctx.bezierCurveTo(CX + 30, CY - 16, CX + 30, CY + 16, CX - 18, CY + 34);
+    ctx.stroke();
+
+    // ── Zonules (suspensory ligaments — fine lines from ciliary body to lens) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 0.5;
+    // Upper zonules
+    ctx.beginPath(); ctx.moveTo(CX - 108, CY - 56); ctx.lineTo(CX - 22, CY - 32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CX - 100, CY - 60); ctx.lineTo(CX - 18, CY - 34); ctx.stroke();
+    // Lower zonules
+    ctx.beginPath(); ctx.moveTo(CX - 108, CY + 56); ctx.lineTo(CX - 22, CY + 32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CX - 100, CY + 60); ctx.lineTo(CX - 18, CY + 34); ctx.stroke();
+
+    // ── Ciliary body (wedge shapes at iridocorneal angle) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 1.2;
+    // Upper ciliary body
+    ctx.beginPath();
+    ctx.moveTo(CX - 122, CY - 46);
+    ctx.lineTo(CX - 112, CY - 62);
+    ctx.lineTo(CX - 96, CY - 52);
+    ctx.lineTo(CX - 108, CY - 44);
+    ctx.closePath();
+    ctx.stroke();
+    // Lower ciliary body
+    ctx.beginPath();
+    ctx.moveTo(CX - 122, CY + 46);
+    ctx.lineTo(CX - 112, CY + 62);
+    ctx.lineTo(CX - 96, CY + 52);
+    ctx.lineTo(CX - 108, CY + 44);
+    ctx.closePath();
+    ctx.stroke();
+
+    // ── Trabecular meshwork / angle (small hatching at angle recess) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 0.5;
+    for (var i = 0; i < 4; i++) {
+      var t = i / 3;
+      // Upper angle hatch marks
+      var ax = CX - 126 + t * 6, ay = CY - 49 + t * 4;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - 3, ay - 5); ctx.stroke();
+      // Lower angle hatch marks
+      ax = CX - 126 + t * 6; ay = CY + 49 - t * 4;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - 3, ay + 5); ctx.stroke();
+    }
+
+    // ── Schlemm's canal (tiny arc at the angle) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.arc(CX - 130, CY - 50, 6, -0.8, 0.3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(CX - 130, CY + 50, 6, -0.3, 0.8);
+    ctx.stroke();
+
+    // ── Optic nerve (posterior) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(CX + 148, CY - 12);
+    ctx.lineTo(CX + 165, CY - 15);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(CX + 148, CY + 12);
+    ctx.lineTo(CX + 165, CY + 15);
+    ctx.stroke();
+  }
+
+  function crossComposite(ctx, eye) {
+    drawCrossBase(ctx, eye);
+    ctx.drawImage(_crossOverlayC[eye], 0, 0);
+    _crossLabels[eye].forEach(function(lb) {
+      ctx.font = 'bold ' + lb.size + 'px sans-serif';
+      ctx.fillStyle = lb.color;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(lb.text, lb.x, lb.y);
+    });
+  }
+
+  function saveCrossInput(eye) {
+    var cvs = document.getElementById('asd_canvas_cross_' + eye);
+    var inp = document.getElementById('asd_input_cross_' + eye);
+    if (cvs && inp) inp.value = cvs.toDataURL('image/png');
+  }
+
+  function pushCrossHistory(eye) {
+    _crossHistory[eye].push({
+      overlay: _crossOverlayC[eye].toDataURL(),
+      labels:  JSON.parse(JSON.stringify(_crossLabels[eye]))
+    });
+    if (_crossHistory[eye].length > MAX_HIST) _crossHistory[eye].shift();
+  }
+
+  function initCrossCanvas(eye) {
+    var cvs = document.getElementById('asd_canvas_cross_' + eye); if (!cvs) return;
+    var ctx = cvs.getContext('2d');
+    var inp = document.getElementById('asd_input_cross_' + eye);
+    if (inp && inp.value) {
+      var img = new Image();
+      img.onload = function() {
+        _crossOverlayX[eye].drawImage(img, 0, 0);
+        crossComposite(ctx, eye);
+      };
+      img.src = inp.value;
+    } else {
+      crossComposite(ctx, eye);
+    }
+
+    var drawing = false, dragLabel = null, dragOX = 0, dragOY = 0;
+
+    function getPos(e) {
+      var rect = cvs.getBoundingClientRect();
+      var src = e.touches ? e.touches[0] : e;
+      return { x: (src.clientX - rect.left) * (CROSS_W / rect.width),
+               y: (src.clientY - rect.top)  * (CROSS_H / rect.height) };
+    }
+
+    function onStart(e) {
+      if (!asdDrawMode || _activeView !== 'cross') return;
+      e.preventDefault();
+      var p = getPos(e);
+      if (asdTool === 'text') {
+        var txt = (document.getElementById('asd-label-text') || {}).value || '';
+        if (!txt.trim()) return;
+        pushCrossHistory(eye);
+        _crossLabels[eye].push({ text: txt, x: p.x, y: p.y, size: asdLabelFontSize, color: asdColor });
+        crossComposite(ctx, eye); saveCrossInput(eye); return;
+      }
+      for (var i = _crossLabels[eye].length - 1; i >= 0; i--) {
+        var lb = _crossLabels[eye][i];
+        ctx.font = 'bold ' + lb.size + 'px sans-serif';
+        var w = ctx.measureText(lb.text).width;
+        if (p.x >= lb.x && p.x <= lb.x + w && p.y >= lb.y && p.y <= lb.y + lb.size + 2) {
+          dragLabel = i; dragOX = p.x - lb.x; dragOY = p.y - lb.y; return;
+        }
+      }
+      pushCrossHistory(eye); drawing = true;
+      _crossOverlayX[eye].beginPath(); _crossOverlayX[eye].moveTo(p.x, p.y);
+    }
+
+    function onMove(e) {
+      if (!asdDrawMode || _activeView !== 'cross') return;
+      if (!drawing && dragLabel === null) return;
+      e.preventDefault();
+      var p = getPos(e);
+      if (dragLabel !== null) {
+        _crossLabels[eye][dragLabel].x = p.x - dragOX;
+        _crossLabels[eye][dragLabel].y = p.y - dragOY;
+        crossComposite(ctx, eye); return;
+      }
+      if (asdTool === 'eraser') {
+        _crossOverlayX[eye].globalCompositeOperation = 'destination-out';
+        _crossOverlayX[eye].lineWidth = asdSize * 4; _crossOverlayX[eye].lineCap = 'round';
+        _crossOverlayX[eye].lineTo(p.x, p.y); _crossOverlayX[eye].stroke();
+        _crossOverlayX[eye].globalCompositeOperation = 'source-over';
+        _crossOverlayX[eye].beginPath(); _crossOverlayX[eye].moveTo(p.x, p.y);
+      } else {
+        _crossOverlayX[eye].strokeStyle = asdColor;
+        _crossOverlayX[eye].lineWidth = asdSize; _crossOverlayX[eye].lineCap = 'round'; _crossOverlayX[eye].lineJoin = 'round';
+        _crossOverlayX[eye].lineTo(p.x, p.y); _crossOverlayX[eye].stroke();
+        _crossOverlayX[eye].beginPath(); _crossOverlayX[eye].moveTo(p.x, p.y);
+      }
+      crossComposite(ctx, eye);
+    }
+
+    function onEnd() {
+      if (drawing) { drawing = false; _crossOverlayX[eye].beginPath(); saveCrossInput(eye); }
+      if (dragLabel !== null) { dragLabel = null; saveCrossInput(eye); }
+    }
+
+    cvs.addEventListener('mousedown', onStart);
+    cvs.addEventListener('mousemove', onMove);
+    cvs.addEventListener('mouseup', onEnd);
+    cvs.addEventListener('mouseleave', onEnd);
+    cvs.addEventListener('touchstart', onStart, { passive: false });
+    cvs.addEventListener('touchmove',  onMove,  { passive: false });
+    cvs.addEventListener('touchend',   onEnd);
+  }
+
+  initCrossCanvas('od');
+  initCrossCanvas('os');
+
+  // ── View toggle ─────────────────────────────────────────────────────
+  window.switchAsdView = function(view) {
+    _activeView = view;
+    var frontDiv = document.getElementById('asd_view_front');
+    var crossDiv = document.getElementById('asd_view_cross');
+    var tabFront = document.getElementById('asd_tab_front');
+    var tabCross = document.getElementById('asd_tab_cross');
+    if (view === 'front') {
+      frontDiv.classList.remove('d-none'); crossDiv.classList.add('d-none');
+      tabFront.className = 'btn btn-sm btn-primary';
+      tabCross.className = 'btn btn-sm btn-outline-secondary';
+    } else {
+      frontDiv.classList.add('d-none'); crossDiv.classList.remove('d-none');
+      tabFront.className = 'btn btn-sm btn-outline-secondary';
+      tabCross.className = 'btn btn-sm btn-primary';
+    }
+    // Update undo/clear buttons to target the active view
+    var undoOD = document.querySelector('[onclick="undoAsdCanvas(\'od\')"]');
+    var undoOS = document.querySelector('[onclick="undoAsdCanvas(\'os\')"]');
+    var clearOD = document.querySelector('[onclick="clearAsdCanvas(\'od\')"]');
+    var clearOS = document.querySelector('[onclick="clearAsdCanvas(\'os\')"]');
+    if (view === 'cross') {
+      if (undoOD)  undoOD.setAttribute('onclick', "undoCrossCanvas('od')");
+      if (undoOS)  undoOS.setAttribute('onclick', "undoCrossCanvas('os')");
+      if (clearOD) clearOD.setAttribute('onclick', "clearCrossCanvas('od')");
+      if (clearOS) clearOS.setAttribute('onclick', "clearCrossCanvas('os')");
+    } else {
+      if (undoOD)  undoOD.setAttribute('onclick', "undoAsdCanvas('od')");
+      if (undoOS)  undoOS.setAttribute('onclick', "undoAsdCanvas('os')");
+      if (clearOD) clearOD.setAttribute('onclick', "clearAsdCanvas('od')");
+      if (clearOS) clearOS.setAttribute('onclick', "clearAsdCanvas('os')");
+    }
+  };
+
+  window.undoCrossCanvas = function(eye) {
+    if (!_crossHistory[eye].length) return;
+    var snap = _crossHistory[eye].pop();
+    _crossLabels[eye] = snap.labels;
+    var img = new Image();
+    img.onload = function() {
+      _crossOverlayX[eye].clearRect(0, 0, CROSS_W, CROSS_H);
+      _crossOverlayX[eye].drawImage(img, 0, 0);
+      var cvs = document.getElementById('asd_canvas_cross_' + eye);
+      if (cvs) { crossComposite(cvs.getContext('2d'), eye); saveCrossInput(eye); }
+    };
+    img.src = snap.overlay;
+  };
+
+  window.clearCrossCanvas = function(eye) {
+    pushCrossHistory(eye);
+    _crossLabels[eye] = [];
+    _crossOverlayX[eye].clearRect(0, 0, CROSS_W, CROSS_H);
+    var cvs = document.getElementById('asd_canvas_cross_' + eye);
+    if (cvs) { crossComposite(cvs.getContext('2d'), eye); saveCrossInput(eye); }
+  };
 })();
 </script>
 

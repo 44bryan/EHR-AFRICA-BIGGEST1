@@ -372,22 +372,23 @@
   <!-- ═══════ SECTION 2: CLINICAL EXAMINATION ═══════ -->
   <div class="col-12 mt-3">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
-           style="cursor:pointer;" onclick="toggleCard('bodyExam',this)">
-        <h6 class="mb-0 fw-semibold small text-uppercase text-secondary">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold small text-uppercase text-secondary flex-grow-1" style="cursor:pointer;"
+            onclick="toggleCard('bodyExam',this.closest('.card-header'))">
           <i class="bi bi-clipboard2-heart me-1"></i>Clinical Examination — {{ consultation.department.name }}
         </h6>
         <div class="d-flex align-items-center gap-2">
           <button type="button" class="btn btn-xs btn-outline-info py-0 px-2" style="font-size:.72rem;"
-                  onclick="event.stopPropagation();openMacroPanel()"
+                  onclick="openMacroPanel()"
                   title="Insert clinical template">
             <i class="bi bi-file-earmark-text me-1"></i>Macros
           </button>
           <button type="button" class="btn btn-xs btn-outline-success py-0 px-2" style="font-size:.72rem;"
-                  onclick="event.stopPropagation();saveDraftEdit('clinical')">
+                  onclick="saveDraftEdit('clinical')">
             <i class="bi bi-cloud-check me-1"></i>Save
           </button>
-          <i class="bi bi-chevron-up text-success"></i>
+          <i class="bi bi-chevron-up text-success" style="cursor:pointer;"
+             onclick="toggleCard('bodyExam',this.closest('.card-header'))"></i>
         </div>
       </div>
       <div id="bodyExam" class="card-body">
@@ -606,12 +607,21 @@ function saveDraftEdit(section) {
 }
 
 // ── Clinical Macros Panel ────────────────────────────────────────────────────
-var _macroPanel;
+var _macroPanel, _lastFocusedField = null;
+
+document.addEventListener('focusin', function(e) {
+  var t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text'))) {
+    if (t.id !== 'macroSearchInput') _lastFocusedField = t;
+  }
+});
+
 function openMacroPanel() {
   if (!_macroPanel) _macroPanel = new bootstrap.Offcanvas(document.getElementById('macroPanel'));
   _macroPanel.show();
   searchMacros();
 }
+
 function searchMacros() {
   var q = (document.getElementById('macroSearchInput').value || '').trim();
   var ttype = document.getElementById('macroTypeFilter').value;
@@ -619,38 +629,66 @@ function searchMacros() {
   var url = '{% url "consultations:template_search" %}?q=' + encodeURIComponent(q) + '&type=' + ttype + '&dept=' + dept;
   fetch(url).then(function(r){ return r.json(); }).then(function(data) {
     var div = document.getElementById('macroResults');
-    if (!data.results.length) { div.innerHTML = '<div class="text-muted small py-3 text-center">No macros found.</div>'; return; }
-    div.innerHTML = data.results.map(function(m) {
+    if (!data.results || !data.results.length) {
+      div.innerHTML = '<div class="text-muted small py-3 text-center">No macros found.</div>';
+      return;
+    }
+    window._macroData = data.results;
+    var targetName = _lastFocusedField ? (_lastFocusedField.name || _lastFocusedField.id || 'field') : 'auto';
+    div.innerHTML = '<div class="alert alert-light py-1 px-2 mb-2 small border">'
+      + '<i class="bi bi-info-circle text-info me-1"></i>Target field: <strong>' + targetName + '</strong>'
+      + '<br><span class="text-muted" style="font-size:.7rem;">Click a field on the form first to change target</span></div>'
+      + data.results.map(function(m, idx) {
       var typeColors = {EXAM:'success',HISTORY:'primary',PLAN:'warning',DIAG:'info',PROC:'danger'};
       var c = typeColors[m.template_type] || 'secondary';
-      return '<div class="border rounded p-2 mb-2" style="font-size:.82rem;cursor:pointer;" onclick="insertMacro('+JSON.stringify(m.content)+')">'
+      return '<div class="border rounded p-2 mb-2" style="font-size:.82rem;">'
         + '<div class="d-flex justify-content-between align-items-center mb-1">'
         + '<span class="fw-semibold">' + m.title + '</span>'
         + '<span class="badge bg-'+c+'-subtle text-'+c+'-emphasis" style="font-size:.65rem;">' + m.template_type + '</span>'
         + '</div>'
-        + '<div class="text-muted" style="font-size:.75rem;white-space:pre-wrap;max-height:60px;overflow:hidden;">' + m.content.substring(0,150) + '</div>'
-        + '<div class="text-end mt-1"><span class="text-info small"><i class="bi bi-plus-circle me-1"></i>Click to insert</span></div>'
+        + '<div class="text-muted mb-1" style="font-size:.75rem;white-space:pre-wrap;max-height:60px;overflow:hidden;">' + m.content.substring(0,150) + '</div>'
+        + '<button type="button" class="btn btn-sm btn-success py-0 px-2 w-100" style="font-size:.72rem;" onclick="insertMacro('+idx+')">'
+        + '<i class="bi bi-plus-circle me-1"></i>Insert into form</button>'
         + '</div>';
     }).join('');
   });
 }
-function insertMacro(text) {
-  // Find the currently focused or last active textarea/input
-  var el = document.activeElement;
-  if (!el || (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT')) {
-    // Fallback: find exam_findings or first textarea in the exam section
-    el = document.querySelector('#bodyExam textarea, #bodyExam input[type="text"]');
-  }
-  if (el) {
-    var start = el.selectionStart || el.value.length;
-    var before = el.value.substring(0, start);
-    var after = el.value.substring(el.selectionEnd || start);
-    el.value = before + (before && !before.endsWith('\n') && !before.endsWith(' ') ? '\n' : '') + text + after;
-    el.focus();
-    showEditToast('<i class="bi bi-check-circle me-1"></i>Macro inserted');
-  }
-  if (_macroPanel) _macroPanel.hide();
+
+function _getTargetField(macroType) {
+  if (_lastFocusedField && document.contains(_lastFocusedField)) return _lastFocusedField;
+  var map = {
+    'HISTORY': 'textarea[name="history_of_presenting_complaint"]',
+    'PLAN':    'textarea[name="follow_up_instructions"], #id_follow_up_instructions',
+    'DIAG':    'textarea[name="presenting_complaint"]',
+    'PROC':    'textarea[name="dept_surgical_notes"]',
+    'EXAM':    '#bodyExam textarea'
+  };
+  var sel = map[macroType] || '#bodyExam textarea, form textarea';
+  return document.querySelector(sel);
 }
+
+function insertMacro(idx) {
+  var macro = (window._macroData && window._macroData[idx]) ? window._macroData[idx] : null;
+  if (!macro || !macro.content) return;
+
+  var el = _getTargetField(macro.template_type);
+  if (!el) {
+    alert('Please click into a text field on the form first, then click Insert.');
+    return;
+  }
+
+  var cur = el.value.trim();
+  el.value = cur ? cur + '\n' + macro.content : macro.content;
+
+  if (_macroPanel) _macroPanel.hide();
+  el.focus();
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.style.transition = 'box-shadow 0.3s';
+  el.style.boxShadow = '0 0 0 3px rgba(25,135,84,0.4)';
+  setTimeout(function() { el.style.boxShadow = ''; }, 1500);
+  showEditToast('<i class="bi bi-check-circle me-1"></i>Macro inserted');
+}
+
 document.getElementById('macroSearchInput').addEventListener('input', function() { clearTimeout(this._d); this._d = setTimeout(searchMacros, 300); });
 document.getElementById('macroTypeFilter').addEventListener('change', searchMacros);
 </script>

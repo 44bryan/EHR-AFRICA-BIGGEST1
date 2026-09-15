@@ -15,6 +15,7 @@ urlpatterns = [
     path('sysadmin/settings/', views.sysadmin_settings, name='sysadmin_settings'),
     path('sysadmin/export/audit/', views.export_audit_log, name='export_audit_log'),
     path('sysadmin/export/patients/', views.export_patient_list, name='export_patient_list'),
+    path('sysadmin/export/data/', views.export_data_excel, name='export_data'),
     # Super Admin user management
     path('sysadmin/users/create/', views.sysadmin_user_create, name='sysadmin_user_create'),
     path('sysadmin/users/<str:username>/edit/', views.sysadmin_user_edit, name='sysadmin_user_edit'),

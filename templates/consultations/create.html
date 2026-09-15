@@ -446,13 +446,22 @@
   <div class="col-12 mt-3">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
-           style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#bodyExam" aria-expanded="true">
-        <h6 class="mb-0 fw-bold" style="font-size:.95rem;">
+           id="examHeader">
+        <h6 class="mb-0 fw-bold flex-grow-1" style="font-size:.95rem;cursor:pointer;"
+            onclick="toggleExam()">
           <i class="bi bi-clipboard2-heart me-2 text-secondary"></i>2. Clinical Examination — {{ request.user.get_role_display }}
         </h6>
-        <i class="bi bi-chevron-up text-secondary cfm-chev"></i>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-xs btn-outline-info py-0 px-2" style="font-size:.72rem;"
+                  onclick="event.stopPropagation();openMacroPanel()"
+                  title="Insert clinical template">
+            <i class="bi bi-file-earmark-text me-1"></i>Macros
+          </button>
+          <i class="bi bi-chevron-up text-secondary" id="examChev" style="cursor:pointer;"
+             onclick="event.stopPropagation();toggleExam()"></i>
+        </div>
       </div>
-      <div id="bodyExam" class="card-body collapse show">
+      <div id="bodyExam" class="card-body">
         {% if dept_code == 'GEN_OPH' %}
           {% include 'consultations/clinical/_gen_oph_form.html' with consultation=consultation_stub refraction_data=refraction_data refraction_consult=refraction_consult %}
         {% elif dept_code == 'RETINA' %}
@@ -687,11 +696,151 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 {% endif %}
 
+{# ── Clinical Macro Insert Panel (offcanvas) ── #}
+<div class="offcanvas offcanvas-end" tabindex="-1" id="macroPanel" style="max-width:380px;">
+  <div class="offcanvas-header border-bottom py-2">
+    <h6 class="offcanvas-title fw-semibold"><i class="bi bi-file-earmark-text me-2 text-info"></i>Clinical Macros</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body p-2">
+    <div class="d-flex gap-1 mb-2">
+      <input type="text" id="macroSearchInput" class="form-control form-control-sm" placeholder="Search macros...">
+      <select id="macroTypeFilter" class="form-select form-select-sm" style="max-width:110px;">
+        <option value="">All</option>
+        <option value="EXAM">Exam</option>
+        <option value="HISTORY">History</option>
+        <option value="PLAN">Plan</option>
+        <option value="DIAG">Diagnosis</option>
+        <option value="PROC">Procedure</option>
+      </select>
+    </div>
+    <div id="macroResults" class="small" style="max-height:75vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
 {% endwith %}
 {% endblock %}
 
 {% block extra_js %}
 <script>
+// ── Toggle Clinical Exam section (no Bootstrap collapse — avoids event conflicts) ──
+function toggleExam() {
+  var body = document.getElementById('bodyExam');
+  var chev = document.getElementById('examChev');
+  if (!body) return;
+  var hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  if (chev) {
+    chev.classList.toggle('bi-chevron-up', hidden);
+    chev.classList.toggle('bi-chevron-down', !hidden);
+  }
+}
+
+// ── Clinical Macros Panel ────────────────────────────────────────────────────
+// How macros work:
+// 1. Click into any text field on the form (e.g. "Cornea RE", "History", etc.)
+// 2. Click the "Macros" button — the side panel opens
+// 3. Browse or search for a saved template (filtered by type)
+// 4. Click the green "Insert" button on any macro
+// 5. The macro text is inserted into the field you clicked last
+//
+// Macro types auto-target these fields if no field was clicked:
+//   EXAM    → first slit-lamp or exam textarea
+//   HISTORY → history_of_presenting_complaint
+//   PLAN    → follow_up_instructions
+//   DIAG    → presenting_complaint
+//   PROC    → dept_surgical_notes
+
+var _macroPanel, _lastFocusedField = null;
+
+// Track the last textarea/input the doctor clicked into
+document.addEventListener('focusin', function(e) {
+  var t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text'))) {
+    // Don't track the macro search input itself
+    if (t.id !== 'macroSearchInput') _lastFocusedField = t;
+  }
+});
+
+function openMacroPanel() {
+  if (!_macroPanel) _macroPanel = new bootstrap.Offcanvas(document.getElementById('macroPanel'));
+  _macroPanel.show();
+  searchMacros();
+}
+
+function searchMacros() {
+  var q = (document.getElementById('macroSearchInput').value || '').trim();
+  var ttype = document.getElementById('macroTypeFilter').value;
+  var dept = '{{ dept_code|default:"" }}';
+  var url = '{% url "consultations:template_search" %}?q=' + encodeURIComponent(q) + '&type=' + ttype + '&dept=' + dept;
+  fetch(url).then(function(r){ return r.json(); }).then(function(data) {
+    var div = document.getElementById('macroResults');
+    if (!data.results || !data.results.length) {
+      div.innerHTML = '<div class="text-muted small py-3 text-center">No macros found.</div>';
+      return;
+    }
+    window._macroData = data.results;
+    var targetName = _lastFocusedField ? (_lastFocusedField.name || _lastFocusedField.id || 'field') : 'auto';
+    div.innerHTML = '<div class="alert alert-light py-1 px-2 mb-2 small border">'
+      + '<i class="bi bi-info-circle text-info me-1"></i>Target field: <strong>' + targetName + '</strong>'
+      + '<br><span class="text-muted" style="font-size:.7rem;">Click a field on the form first to change target</span></div>'
+      + data.results.map(function(m, idx) {
+      var typeColors = {EXAM:'success',HISTORY:'primary',PLAN:'warning',DIAG:'info',PROC:'danger'};
+      var c = typeColors[m.template_type] || 'secondary';
+      return '<div class="border rounded p-2 mb-2" style="font-size:.82rem;">'
+        + '<div class="d-flex justify-content-between align-items-center mb-1">'
+        + '<span class="fw-semibold">' + m.title + '</span>'
+        + '<span class="badge bg-'+c+'-subtle text-'+c+'-emphasis" style="font-size:.65rem;">' + m.template_type + '</span>'
+        + '</div>'
+        + '<div class="text-muted mb-1" style="font-size:.75rem;white-space:pre-line;max-height:60px;overflow:hidden;">' + m.content.slice(0,200) + (m.content.length > 200 ? '...' : '') + '</div>'
+        + '<button type="button" class="btn btn-sm btn-success py-0 px-2 w-100" style="font-size:.72rem;" onclick="insertMacro('+idx+')">'
+        + '<i class="bi bi-plus-circle me-1"></i>Insert into form</button>'
+        + '</div>';
+    }).join('');
+  });
+}
+
+function _getTargetField(macroType) {
+  // If doctor clicked a field before opening macros, use that
+  if (_lastFocusedField && document.contains(_lastFocusedField)) return _lastFocusedField;
+  // Otherwise auto-target based on macro type
+  var map = {
+    'HISTORY': 'textarea[name="history_of_presenting_complaint"]',
+    'PLAN':    'textarea[name="follow_up_instructions"], #id_follow_up_instructions',
+    'DIAG':    'textarea[name="presenting_complaint"]',
+    'PROC':    'textarea[name="dept_surgical_notes"]',
+    'EXAM':    '#bodyExam textarea'
+  };
+  var sel = map[macroType] || '#bodyExam textarea, #consultationForm textarea';
+  return document.querySelector(sel);
+}
+
+function insertMacro(idx) {
+  var macro = (window._macroData && window._macroData[idx]) ? window._macroData[idx] : null;
+  if (!macro || !macro.content) return;
+
+  var target = _getTargetField(macro.template_type);
+  if (!target) {
+    alert('Please click into a text field on the form first, then click Insert.');
+    return;
+  }
+
+  // Insert the text
+  var cur = target.value.trim();
+  target.value = cur ? cur + '\n' + macro.content : macro.content;
+
+  // Close panel and scroll to + highlight the field
+  if (_macroPanel) _macroPanel.hide();
+  target.focus();
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.style.transition = 'box-shadow 0.3s';
+  target.style.boxShadow = '0 0 0 3px rgba(25,135,84,0.4)';
+  setTimeout(function() { target.style.boxShadow = ''; }, 1500);
+}
+
+document.getElementById('macroSearchInput').addEventListener('input', function() { clearTimeout(this._d); this._d = setTimeout(searchMacros, 300); });
+document.getElementById('macroTypeFilter').addEventListener('change', searchMacros);
+
 /* ── Quick-fill select → textarea ─────────────────────── */
 
 // appendComboSel — called by onchange on a select; appends chosen value comma-separated to a text input

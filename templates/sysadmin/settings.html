@@ -65,10 +65,28 @@
           <span class="fw-semibold">Queue (QMS)</span>
         </a>
 
+        <a href="#sec-billing" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-billing', this)">
+          <i class="bi bi-cash-coin me-2" style="color:#059669;"></i>
+          <span class="fw-semibold">Billing &amp; Pricing</span>
+        </a>
+
         <a href="#sec-backup" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
            onclick="showSection('sec-backup', this)">
           <i class="bi bi-cloud-arrow-down me-2 text-secondary"></i>
           <span class="fw-semibold">Backup</span>
+        </a>
+
+        <a href="#sec-shortcuts" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-shortcuts', this)">
+          <i class="bi bi-signpost-split me-2 text-primary"></i>
+          <span class="fw-semibold">Quick Links</span>
+        </a>
+
+        <a href="#sec-export" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
+           onclick="showSection('sec-export', this)">
+          <i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i>
+          <span class="fw-semibold">Data Export</span>
         </a>
 
         <a href="#sec-reset" class="list-group-item list-group-item-action settings-nav-link border-0 py-3 px-3"
@@ -322,6 +340,206 @@
           </div>
         </div>
 
+        {# ── Billing & Pricing ─────────────────────────────────────────────── #}
+        <div id="sec-billing" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-cash-coin me-2" style="color:#059669;"></i>Billing &amp; Pricing</h5>
+          <p class="text-muted small mb-4">Manage service prices, auto-billing on routing, cash desks, and financial configuration.</p>
+
+          {# Auto-billing routing fees #}
+          <div class="card border-success border-opacity-25 mb-4">
+            <div class="card-header bg-white fw-semibold small">
+              <i class="bi bi-lightning-charge me-1 text-success"></i>Auto-Billing on Patient Routing
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">
+                When a doctor or nurse routes a patient to a billable service (e.g. Refraction, Cycloplegic Refraction, Orthoptics),
+                the system <strong>automatically adds the fee</strong> to the patient's invoice. Duplicate charges are prevented.
+                You control which services are billable and their prices from the <strong>Price Catalog</strong>.
+              </p>
+              <div class="table-responsive mb-3">
+                <table class="table table-sm table-bordered align-middle mb-0" style="font-size:.82rem;">
+                  <thead class="table-light">
+                    <tr><th>Routing Destination</th><th>Billing Code</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for rp in route_prices %}
+                    <tr>
+                      <td>{{ rp.name }}</td>
+                      <td><code>{{ rp.code }}</code></td>
+                      <td>
+                        {% if rp.is_active %}
+                          <span class="badge bg-success">Active &mdash; {{ rp.price|floatformat:0 }} FCFA</span>
+                        {% else %}
+                          <span class="badge bg-secondary">Disabled</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-muted text-center">No routing service prices configured. Run the seed migration or add them in the Price Catalog.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <a href="{% url 'billing:service_price_list' %}" class="btn btn-success btn-sm">
+                <i class="bi bi-tags me-1"></i>Open Price Catalog (Add / Edit / Disable)
+              </a>
+            </div>
+          </div>
+
+          {# Quick links #}
+          <div class="card border-0 bg-light">
+            <div class="card-body">
+              <div class="fw-semibold mb-3"><i class="bi bi-link-45deg me-1"></i>Financial Management</div>
+              <div class="row g-2">
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:service_price_list' %}" class="btn btn-outline-success btn-sm w-100 text-start">
+                    <i class="bi bi-tags me-1"></i>Price Catalog (CDM)
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:desk_list' %}" class="btn btn-outline-primary btn-sm w-100 text-start">
+                    <i class="bi bi-building-check me-1"></i>Cash Desk Configuration
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:corporate_list' %}" class="btn btn-outline-primary btn-sm w-100 text-start">
+                    <i class="bi bi-building me-1"></i>Corporate Accounts
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-primary btn-sm w-100 text-start">
+                    <i class="bi bi-receipt me-1"></i>Billing Dashboard
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:shift_day_open' %}" class="btn btn-outline-warning btn-sm w-100 text-start text-dark">
+                    <i class="bi bi-sun me-1"></i>Open Cashier Day
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:reconciliation' %}" class="btn btn-outline-primary btn-sm w-100 text-start">
+                    <i class="bi bi-calculator me-1"></i>Reconciliation
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:wallet_list' %}" class="btn btn-outline-primary btn-sm w-100 text-start">
+                    <i class="bi bi-wallet-fill me-1"></i>Patient Wallets
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:asset_list' %}" class="btn btn-outline-primary btn-sm w-100 text-start">
+                    <i class="bi bi-building-gear me-1"></i>Asset Register
+                  </a>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-outline-primary btn-sm w-100 text-start">
+                    <i class="bi bi-list-columns me-1"></i>Chart of Accounts
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# ── Quick Links — All Management Pages ──────────────────────────────── #}
+        <div id="sec-shortcuts" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-signpost-split me-2 text-primary"></i>Quick Links &mdash; All Management Pages</h5>
+          <p class="text-muted small mb-4">One-click access to every management area of the system.</p>
+
+          <div class="row g-3">
+            {# Staff & Organization #}
+            <div class="col-12">
+              <div class="card border-0 bg-light">
+                <div class="card-body pb-2">
+                  <div class="fw-semibold mb-2"><i class="bi bi-people me-1 text-primary"></i>Staff &amp; Organization</div>
+                  <div class="row g-2">
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'accounts:staff_hub' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-person-gear me-1"></i>Staff Hub</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'departments:dept_list' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-buildings me-1"></i>Departments</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'departments:room_list_all' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-grid-1x2 me-1"></i>Consultation Rooms</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'accounts:system_modules' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-toggles me-1"></i>System Modules</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {# Clinical #}
+            <div class="col-12">
+              <div class="card border-0 bg-light">
+                <div class="card-body pb-2">
+                  <div class="fw-semibold mb-2"><i class="bi bi-heart-pulse me-1 text-danger"></i>Clinical</div>
+                  <div class="row g-2">
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'patients:list' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-people me-1"></i>All Patients</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'consultations:workstation' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-pc-display me-1"></i>Doctor Workstation</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'laboratory:dashboard' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-droplet me-1"></i>Laboratory</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'investigations:workstation' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-clipboard2-pulse me-1"></i>Investigations</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'pharmacy:dashboard' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-capsule me-1"></i>Pharmacy</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-eyeglasses me-1"></i>Optical Shop</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'ipd:dashboard' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-hospital me-1"></i>IPD / Surgical</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'blood_bank:dashboard' %}" class="btn btn-outline-primary btn-sm w-100 text-start"><i class="bi bi-droplet-fill me-1 text-danger"></i>Blood Bank</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {# Finance & Billing #}
+            <div class="col-12">
+              <div class="card border-0 bg-light">
+                <div class="card-body pb-2">
+                  <div class="fw-semibold mb-2"><i class="bi bi-cash-coin me-1 text-success"></i>Finance &amp; Billing</div>
+                  <div class="row g-2">
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'billing:dashboard' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-receipt me-1"></i>Billing Dashboard</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'billing:service_price_list' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-tags me-1"></i>Price Catalog</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'leadership:finance_dashboard' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-graph-up me-1"></i>Finance Dashboard</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'billing:report_pl' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-file-earmark-bar-graph me-1"></i>P&amp;L Statement</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-list-columns me-1"></i>Chart of Accounts</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'billing:balance_sheet' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-bank me-1"></i>Balance Sheet</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'billing:expense_list' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-receipt-cutoff me-1"></i>Expenses</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'billing:budget_list' %}" class="btn btn-outline-success btn-sm w-100 text-start"><i class="bi bi-pie-chart me-1"></i>Budget vs Actual</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {# Operations #}
+            <div class="col-12">
+              <div class="card border-0 bg-light">
+                <div class="card-body pb-2">
+                  <div class="fw-semibold mb-2"><i class="bi bi-gear me-1 text-secondary"></i>Operations</div>
+                  <div class="row g-2">
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'inventory:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-boxes me-1"></i>Inventory / Store</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'hrms:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-people-fill me-1"></i>HR Management</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'cssd:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-shield-check me-1"></i>CSSD</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'mortuary:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-house-door me-1"></i>Mortuary</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'dietary:order_list' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-cup-hot me-1"></i>Dietary</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'infection_control:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-virus me-1"></i>Infection Control</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'hmo:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-card-checklist me-1"></i>HMO / Insurance</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'leads:dashboard' %}" class="btn btn-outline-secondary btn-sm w-100 text-start"><i class="bi bi-funnel me-1"></i>Lead Management</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {# Reports & Analytics #}
+            <div class="col-12">
+              <div class="card border-0 bg-light">
+                <div class="card-body pb-2">
+                  <div class="fw-semibold mb-2"><i class="bi bi-bar-chart-fill me-1 text-info"></i>Reports &amp; Analytics</div>
+                  <div class="row g-2">
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'leadership:dashboard' %}" class="btn btn-outline-info btn-sm w-100 text-start"><i class="bi bi-graph-up-arrow me-1"></i>Performance Hub</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'leadership:analytics_dashboard' %}" class="btn btn-outline-info btn-sm w-100 text-start"><i class="bi bi-bar-chart-fill me-1"></i>Analytics</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'leadership:monthly_stats' %}" class="btn btn-outline-info btn-sm w-100 text-start"><i class="bi bi-file-bar-graph me-1"></i>Monthly Stats</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'reports:disease_burden' %}" class="btn btn-outline-info btn-sm w-100 text-start"><i class="bi bi-virus2 me-1"></i>Disease Burden</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'reports:staff_performance' %}" class="btn btn-outline-info btn-sm w-100 text-start"><i class="bi bi-person-check-fill me-1"></i>Staff Performance</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'dashboard:sysadmin_audit' %}" class="btn btn-outline-info btn-sm w-100 text-start"><i class="bi bi-file-earmark-lock me-1"></i>Audit Log</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="{% url 'dashboard:recycle_bin' %}" class="btn btn-outline-danger btn-sm w-100 text-start"><i class="bi bi-trash3 me-1"></i>Recycle Bin</a></div>
+                    <div class="col-sm-6 col-lg-3"><a href="/admin/" target="_blank" class="btn btn-outline-dark btn-sm w-100 text-start"><i class="bi bi-gear-wide-connected me-1"></i>Django Admin</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {# ── Backup ────────────────────────────────────────────────────────── #}
         <div id="sec-backup" class="settings-section d-none">
           <h5 class="fw-bold mb-1"><i class="bi bi-cloud-arrow-down me-2 text-secondary"></i>Backup Configuration</h5>
@@ -371,6 +589,82 @@
         </div>
 
         {# ── System Reset ──────────────────────────────────────────────────── #}
+        <div id="sec-export" class="settings-section d-none">
+          <h5 class="fw-bold mb-1"><i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i>Data Export</h5>
+          <p class="text-muted small mb-4">Export patient and visit data as Excel spreadsheets. Select a date range and click Export.</p>
+
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom fw-semibold">
+              <i class="bi bi-funnel me-1 text-primary"></i>Date Range Filter
+            </div>
+            <div class="card-body">
+              <form id="exportForm" class="row g-3 align-items-end">
+                <div class="col-auto">
+                  <label class="form-label small fw-semibold mb-1">Quick Filter</label>
+                  <select class="form-select form-select-sm" id="exportQuickFilter" onchange="applyQuickFilter(this.value)">
+                    <option value="">Custom range</option>
+                    <option value="today" selected>Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="this_week">This Week</option>
+                    <option value="last_week">Last Week</option>
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="this_year">This Year</option>
+                    <option value="all">All Time</option>
+                  </select>
+                </div>
+                <div class="col-auto">
+                  <label class="form-label small fw-semibold mb-1">From</label>
+                  <input type="date" class="form-control form-control-sm" id="exportFrom" onchange="document.getElementById('exportQuickFilter').value=''">
+                </div>
+                <div class="col-auto">
+                  <label class="form-label small fw-semibold mb-1">To</label>
+                  <input type="date" class="form-control form-control-sm" id="exportTo" onchange="document.getElementById('exportQuickFilter').value=''">
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="card border-success h-100">
+                <div class="card-body text-center py-4">
+                  <i class="bi bi-person-plus fs-1 text-success"></i>
+                  <h6 class="fw-bold mt-2 mb-1">New Patients</h6>
+                  <p class="text-muted small mb-3">First-time registrations within the selected period</p>
+                  <button type="button" class="btn btn-success btn-sm" onclick="doExport('new_patients')">
+                    <i class="bi bi-download me-1"></i>Export Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card border-primary h-100">
+                <div class="card-body text-center py-4">
+                  <i class="bi bi-people fs-1 text-primary"></i>
+                  <h6 class="fw-bold mt-2 mb-1">All Patients</h6>
+                  <p class="text-muted small mb-3">Complete patient register (registered in period)</p>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="doExport('all_patients')">
+                    <i class="bi bi-download me-1"></i>Export Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card border-info h-100">
+                <div class="card-body text-center py-4">
+                  <i class="bi bi-calendar-check fs-1 text-info"></i>
+                  <h6 class="fw-bold mt-2 mb-1">Visits</h6>
+                  <p class="text-muted small mb-3">All visits (new + follow-up) within the selected period</p>
+                  <button type="button" class="btn btn-info text-white btn-sm" onclick="doExport('visits')">
+                    <i class="bi bi-download me-1"></i>Export Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div id="sec-reset" class="settings-section d-none">
           <h5 class="fw-bold mb-1"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>System Reset</h5>
           <p class="text-muted small mb-4">Dangerous operations. These cannot be undone. Always take a backup first.</p>
@@ -454,6 +748,50 @@ document.addEventListener('DOMContentLoaded', function() {
   {% if messages %}
   // keep current section active after save
   {% endif %}
+
+  // Default quick filter to "today"
+  applyQuickFilter('today');
 });
+
+function applyQuickFilter(val) {
+  var f = document.getElementById('exportFrom');
+  var t = document.getElementById('exportTo');
+  var now = new Date();
+  var fmt = function(d) { return d.toISOString().slice(0, 10); };
+  var monday = function(d) { var day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); return d; };
+
+  switch (val) {
+    case 'today':
+      f.value = t.value = fmt(now); break;
+    case 'yesterday':
+      var y = new Date(now); y.setDate(y.getDate() - 1);
+      f.value = t.value = fmt(y); break;
+    case 'this_week':
+      f.value = fmt(monday(new Date(now))); t.value = fmt(now); break;
+    case 'last_week':
+      var lw = new Date(now); lw.setDate(lw.getDate() - 7);
+      f.value = fmt(monday(new Date(lw)));
+      var lwEnd = new Date(f.value); lwEnd.setDate(lwEnd.getDate() + 6);
+      t.value = fmt(lwEnd); break;
+    case 'this_month':
+      f.value = fmt(new Date(now.getFullYear(), now.getMonth(), 1)); t.value = fmt(now); break;
+    case 'last_month':
+      f.value = fmt(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+      t.value = fmt(new Date(now.getFullYear(), now.getMonth(), 0)); break;
+    case 'this_year':
+      f.value = fmt(new Date(now.getFullYear(), 0, 1)); t.value = fmt(now); break;
+    case 'all':
+      f.value = '2020-01-01'; t.value = fmt(now); break;
+    default:
+      break;
+  }
+}
+
+function doExport(type) {
+  var from = document.getElementById('exportFrom').value;
+  var to = document.getElementById('exportTo').value;
+  if (!from || !to) { alert('Please select a date range.'); return; }
+  window.location.href = '{% url "dashboard:export_data" %}?type=' + type + '&from=' + from + '&to=' + to;
+}
 </script>
 {% endblock %}

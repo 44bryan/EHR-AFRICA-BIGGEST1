@@ -551,66 +551,120 @@ def home_view(request):
 
     # ── Doctors (all specialist types) ───────────────────────────────────
     if user.is_doctor:
-        # Build the patient queue for this doctor's department/unit
-        # Include all active visit statuses including specialist-routed ones
-        queue_qs = Visit.objects.select_related(
-            'patient', 'department'
-        ).filter(
-            visit_date__date=today,
-            status__in=[
-                'WAITING', 'TRIAGE', 'IN_CONSULTATION',
-                'REFRACTION', 'RETINA', 'GLAUCOMA', 'CATARACT',
-                'NEURO', 'OCULOPLASTY', 'CORNEA', 'PEDIATRIC',
-                'INVESTIGATION', 'UVEITIS',
-                # 'PARAMETERS' excluded — triage patients not dispatched yet
-            ],
-        ).order_by('visit_date')
+        # ── Use QMS tokens as source of truth (same as workstation) when QMS is on ──
+        # This ensures dashboard and workstation always show the same patients.
+        from apps.core.context_processors import qms_active as _dash_qms
+        # Inline copy of _DEPT_TO_SERVICE_TYPES to avoid importing the huge consultations.views module
+        _D2ST = {
+            'GEN_OPH':    ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
+            'RETINA':     ['RETINA'],
+            'GLAUC':      ['GLAUCOMA'],
+            'PEDS_OPH':   ['PEDIATRIC'],
+            'PEDS_REFRAC':['REFRACTION'],
+            'REFRAC':     ['REFRACTION'],
+            'CORNEA':     ['CORNEA'],
+            'OCULOPLASTY':['OCULOPLASTY'],
+            'NEURO_OPH':  ['NEURO'],
+            'CATARACT':   ['CATARACT'],
+            'UVEITIS':    ['UVEITIS'],
+            'LOW_VIS':    ['LOW_VISION'],
+            'GEN_PHYS':   ['GEN_PHYS', 'GENERAL'],
+            'INVEST':     ['INVEST'],
+        }
 
-        # Resolve consultation_unit first — used by both department and tier filters below.
+        _dept_code = user.role_department_code
+        dept_obj = user.department
+        if not dept_obj and _dept_code:
+            from apps.departments.models import Department as _Dept
+            dept_obj = _Dept.objects.filter(code=_dept_code).first()
+        if not _dept_code and dept_obj:
+            _dept_code = dept_obj.code
+
         _cu = (getattr(user, 'consultation_unit', '') or 'GENERAL').upper()
 
-        # Filter queue by department. VIP doctors also see visits with no department
-        # (VIP patients bypass triage → visit has department=NULL until consulted).
-        dept_obj = user.department
-        if not dept_obj and user.role_department_code:
-            from apps.departments.models import Department as _Dept
-            dept_obj = _Dept.objects.filter(code=user.role_department_code).first()
-        if dept_obj:
-            if _cu == 'VIP_CONSULT':
+        queue_list = []
+        if _dash_qms() and _dept_code:
+            # ── QMS ON: use tokens (mirrors workstation_view logic exactly) ──
+            try:
+                from apps.qms.models import QueueToken, TokenStatus
                 from django.db.models import Q as _DQ
-                queue_qs = queue_qs.filter(_DQ(department=dept_obj) | _DQ(department__isnull=True))
+                service_types = _D2ST.get(_dept_code, [])
+                if _dept_code == 'GEN_OPH':
+                    _unit_svc_map = {
+                        'GENERAL': ['GENERAL'], 'EXP_CONSULT': ['EXP_CONSULT'],
+                        'EXPRESS': ['EXP_CONSULT'], 'VIP_CONSULT': ['VIP_CONSULT'],
+                        'VIP': ['VIP_CONSULT'], 'INSUR_CONSULT': ['INSUR_CONSULT'],
+                        'INSURANCE': ['INSUR_CONSULT'],
+                        'ALL': ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
+                    }
+                    service_types = _unit_svc_map.get(_cu, ['GENERAL'])
+                if service_types:
+                    _tok_qs = QueueToken.objects.filter(
+                        _DQ(assigned_doctor=user) | _DQ(assigned_doctor__isnull=True),
+                        service_type__in=service_types,
+                        token_date=today,
+                        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                        is_deleted=False,
+                    ).select_related('patient', 'visit')
+                    # Collect patient IDs from tokens, then load visits
+                    _token_list = list(_tok_qs.order_by('-priority', 'issued_at'))
+                    _tok_patient_ids = [t.patient_id for t in _token_list if t.patient_id]
+                    if _tok_patient_ids:
+                        _visit_map = {
+                            v.patient_id: v
+                            for v in Visit.objects.filter(
+                                patient_id__in=_tok_patient_ids,
+                                visit_date__date=today,
+                                is_deleted=False,
+                            ).select_related('patient', 'department').order_by('-visit_date')
+                        }
+                        for t in _token_list:
+                            v = _visit_map.get(t.patient_id)
+                            if v and v not in queue_list:
+                                queue_list.append(v)
+            except Exception:
+                pass
+
+        if not queue_list:
+            # ── QMS OFF or fallback: use Visit queries ──
+            queue_qs = Visit.objects.select_related(
+                'patient', 'department'
+            ).filter(
+                visit_date__date=today,
+                status__in=[
+                    'WAITING', 'TRIAGE', 'IN_CONSULTATION',
+                    'REFRACTION', 'RETINA', 'GLAUCOMA', 'CATARACT',
+                    'NEURO', 'OCULOPLASTY', 'CORNEA', 'PEDIATRIC',
+                    'INVESTIGATION', 'UVEITIS',
+                ],
+            ).order_by('visit_date')
+
+            if dept_obj:
+                if _cu in ('VIP_CONSULT', 'VIP'):
+                    from django.db.models import Q as _DQ_f
+                    queue_qs = queue_qs.filter(_DQ_f(department=dept_obj) | _DQ_f(department__isnull=True))
+                else:
+                    queue_qs = queue_qs.filter(department=dept_obj)
             else:
-                queue_qs = queue_qs.filter(department=dept_obj)
-        else:
-            queue_qs = queue_qs.none()
+                queue_qs = queue_qs.none()
 
-        # Tier isolation: ONLY for GEN_OPH doctors — prevents VIP doctors seeing
-        # Express patients and vice versa. Other departments (GEN_PHYS, RETINA,
-        # GLAUC, etc.) see ALL tiers routed to them.
-        _dept_code = user.role_department_code or (dept_obj.code if dept_obj else '')
-        if _dept_code == 'GEN_OPH':
-            _CU_TIER_MAP = {
-                'VIP_CONSULT':   ['VIP'],
-                'VIP':           ['VIP'],
-                'EXP_CONSULT':   ['EXPRESS', 'FAST_TRACK'],
-                'EXPRESS':       ['EXPRESS', 'FAST_TRACK'],
-                'INSUR_CONSULT': ['STANDARD'],
-                'INSURANCE':     ['STANDARD'],
-                'GENERAL':       ['STANDARD'],
-            }
-            if _cu in _CU_TIER_MAP:
-                queue_qs = queue_qs.filter(service_tier__in=_CU_TIER_MAP[_cu])
+            if _dept_code == 'GEN_OPH':
+                _CU_TIER_MAP = {
+                    'VIP_CONSULT': ['VIP'], 'VIP': ['VIP'],
+                    'EXP_CONSULT': ['EXPRESS', 'FAST_TRACK'], 'EXPRESS': ['EXPRESS', 'FAST_TRACK'],
+                    'INSUR_CONSULT': ['STANDARD'], 'INSURANCE': ['STANDARD'],
+                    'GENERAL': ['STANDARD'],
+                }
+                if _cu in _CU_TIER_MAP:
+                    queue_qs = queue_qs.filter(service_tier__in=_CU_TIER_MAP[_cu])
 
-        # Doctor isolation: only show this doctor's assigned visits + unassigned pool.
-        # Prevents patients routed to a specific doctor's room from appearing on
-        # every other doctor's dashboard in the same department.
-        from django.db.models import Q as _DQ2
-        queue_qs = queue_qs.filter(
-            _DQ2(attending_doctor=user) | _DQ2(attending_doctor__isnull=True)
-        )
+            from django.db.models import Q as _DQ2
+            queue_qs = queue_qs.filter(
+                _DQ2(attending_doctor=user) | _DQ2(attending_doctor__isnull=True)
+            )
+            queue_list = list(queue_qs)
 
         # Annotate each queued visit with AI triage priority
-        queue_list = list(queue_qs)
         for v in queue_list:
             v.ai_priority, v.ai_priority_reason = _compute_ai_triage(v)
         # Sort: EMERGENCY first, then URGENT, then ROUTINE
@@ -2236,11 +2290,23 @@ def sysadmin_settings(request):
         return redirect('dashboard:sysadmin_settings')
 
     from apps.accounts.models import SystemTheme, QueueBoardType
+
+    # Fetch routing-billable service prices for Billing & Pricing section
+    route_prices = []
+    try:
+        from apps.billing.models import ServicePrice
+        from apps.billing.utils import _ROUTE_BILLING_CODES
+        route_codes = list(_ROUTE_BILLING_CODES.values())
+        route_prices = list(ServicePrice.objects.filter(code__in=route_codes).order_by('name'))
+    except Exception:
+        pass
+
     return render(request, 'sysadmin/settings.html', {
         'config': config,
         'editable_fields': EDITABLE_FIELDS,
         'theme_choices': SystemTheme.choices,
         'board_choices': QueueBoardType.choices,
+        'route_prices': route_prices,
         'today': timezone.localdate(),
     })
 
@@ -2309,4 +2375,170 @@ def export_patient_list(request):
             '',  # Patient has no tier; tier is on Visit
             p.created_at.strftime('%Y-%m-%d') if p.created_at else '',
         ])
+    return response
+
+
+@login_required
+def export_data_excel(request):
+    """Export patients or visits as Excel with date range filter."""
+    if not (request.user.is_super_admin or request.user.role in (
+        'admin_director', 'ceo', 'medical_director', 'medical_records',
+    )):
+        return redirect('dashboard:home')
+
+    from django.http import HttpResponse
+    from apps.patients.models import Patient, Visit
+    from datetime import datetime
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    export_type = request.GET.get('type', 'new_patients')
+    date_from = request.GET.get('from', '')
+    date_to = request.GET.get('to', '')
+
+    try:
+        dt_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+        dt_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        from django.contrib import messages as _msg
+        _msg.error(request, 'Invalid date range.')
+        return redirect('dashboard:sysadmin_settings')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+
+    # Styles
+    hdr_font = Font(bold=True, color='FFFFFF', size=11)
+    hdr_fill = PatternFill(start_color='0D6EFD', end_color='0D6EFD', fill_type='solid')
+    hdr_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    thin_border = Border(
+        left=Side(style='thin', color='DEE2E6'),
+        right=Side(style='thin', color='DEE2E6'),
+        top=Side(style='thin', color='DEE2E6'),
+        bottom=Side(style='thin', color='DEE2E6'),
+    )
+    alt_fill = PatternFill(start_color='F8F9FA', end_color='F8F9FA', fill_type='solid')
+
+    if export_type == 'visits':
+        ws.title = 'Visits'
+        headers = [
+            'Visit #', 'Patient ID', 'Patient Name', 'Gender', 'Age',
+            'Phone', 'Visit Date', 'Visit Type', 'Department',
+            'Chief Complaint', 'Service Tier', 'Status',
+        ]
+        qs = Visit.objects.filter(
+            is_deleted=False,
+            visit_date__date__gte=dt_from,
+            visit_date__date__lte=dt_to,
+        ).select_related('patient', 'department').order_by('visit_date')
+
+        # Write headers
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = hdr_font
+            cell.fill = hdr_fill
+            cell.alignment = hdr_align
+            cell.border = thin_border
+
+        for i, v in enumerate(qs, 2):
+            p = v.patient
+            row = [
+                v.visit_number,
+                p.patient_id if p else '',
+                p.full_name if p else '',
+                p.get_gender_display() if p and hasattr(p, 'get_gender_display') else (p.gender if p else ''),
+                p.age if p else '',
+                str(p.phone_number) if p and p.phone_number else '',
+                v.visit_date.strftime('%Y-%m-%d %H:%M') if v.visit_date else '',
+                v.get_visit_type_display() if hasattr(v, 'get_visit_type_display') else v.visit_type,
+                v.department.name if v.department else '',
+                v.chief_complaint or '',
+                v.service_tier or 'STANDARD',
+                v.get_status_display() if hasattr(v, 'get_status_display') else v.status,
+            ]
+            for col, val in enumerate(row, 1):
+                cell = ws.cell(row=i, column=col, value=val)
+                cell.border = thin_border
+                if i % 2 == 0:
+                    cell.fill = alt_fill
+
+        filename = f'visits_{date_from}_to_{date_to}.xlsx'
+        total_label = f'Total visits: {qs.count()}'
+
+    else:
+        # new_patients or all_patients
+        ws.title = 'Patients'
+        headers = [
+            '#', 'Patient ID', 'Full Name', 'Gender', 'Date of Birth', 'Age',
+            'Phone', 'Phone 2', 'Email', 'Quarter', 'Town', 'Region',
+            'Registration Date',
+        ]
+        qs = Patient.objects.filter(
+            is_deleted=False,
+            created_at__date__gte=dt_from,
+            created_at__date__lte=dt_to,
+        ).order_by('created_at')
+
+        if export_type == 'new_patients':
+            ws.title = 'New Patients'
+            filename = f'new_patients_{date_from}_to_{date_to}.xlsx'
+        else:
+            filename = f'all_patients_{date_from}_to_{date_to}.xlsx'
+
+        # Write headers
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = hdr_font
+            cell.fill = hdr_fill
+            cell.alignment = hdr_align
+            cell.border = thin_border
+
+        for i, p in enumerate(qs, 2):
+            row = [
+                i - 1,
+                p.patient_id,
+                p.full_name,
+                p.get_gender_display() if hasattr(p, 'get_gender_display') else p.gender,
+                p.date_of_birth.strftime('%Y-%m-%d') if p.date_of_birth else '',
+                p.age,
+                str(p.phone_number) if p.phone_number else '',
+                str(p.phone_number_2) if p.phone_number_2 else '',
+                p.email or '',
+                p.quarter or '',
+                p.village_town or '',
+                p.region or '',
+                p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else '',
+            ]
+            for col, val in enumerate(row, 1):
+                cell = ws.cell(row=i, column=col, value=val)
+                cell.border = thin_border
+                if i % 2 == 0:
+                    cell.fill = alt_fill
+
+        total_label = f'Total: {qs.count()}'
+
+    # Auto-size columns
+    for col in range(1, ws.max_column + 1):
+        max_len = max(
+            (len(str(ws.cell(row=r, column=col).value or '')) for r in range(1, min(ws.max_row + 1, 200))),
+            default=10,
+        )
+        ws.column_dimensions[get_column_letter(col)].width = min(max_len + 3, 40)
+
+    # Summary row
+    summary_row = ws.max_row + 2
+    cell = ws.cell(row=summary_row, column=1, value=total_label)
+    cell.font = Font(bold=True, size=11)
+    cell = ws.cell(row=summary_row, column=2, value=f'Period: {date_from} to {date_to}')
+    cell.font = Font(italic=True, color='666666')
+
+    # Freeze header row
+    ws.freeze_panes = 'A2'
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
     return response

@@ -200,7 +200,11 @@ def check_and_autoreturn_to_doctor(visit, triggered_by=None):
     """
     Called after a lab or investigation result is verified.
     Checks if ALL pending lab + investigation orders/results for this visit are done.
-    If so, automatically routes patient back to the doctor's queue (WAITING / GENERAL).
+    If so, automatically routes patient back to the doctor's queue.
+
+    Smart return logic:
+      - If visit.referring_doctor is set → return to THAT specific doctor's queue
+      - Otherwise → return to general doctor queue (tier-aware)
 
     Only triggers when visit.status is LABORATORY or INVESTIGATION.
     """
@@ -248,14 +252,83 @@ def check_and_autoreturn_to_doctor(visit, triggered_by=None):
         if total_pending > 0:
             return  # More results still expected
 
-        # All done — return patient to doctor queue
-        _auto_route_to_dept(
-            visit=visit,
-            visit_status='WAITING',
-            qms_service_type='GENERAL',
-            dept_code='OPD',
-            triggered_by=triggered_by,
-            notes='Auto-returned after all results verified.',
-        )
+        # ── Smart return: same doctor if referring_doctor is set ──────────
+        referring_doc = getattr(visit, 'referring_doctor', None)
+        tier = getattr(visit, 'service_tier', 'STANDARD') or 'STANDARD'
+
+        # Determine the right QMS service type based on tier
+        if tier == 'VIP':
+            qms_service = 'VIP_CONSULT'
+        elif tier in ('EXPRESS', 'FAST_TRACK'):
+            qms_service = 'EXP_CONSULT'
+        else:
+            qms_service = 'GENERAL'
+
+        notes = 'Auto-returned after all results verified.'
+        if referring_doc:
+            notes = f'Auto-returned to Dr. {referring_doc.last_name} after all results verified.'
+
+        # Close token for current stage
+        close_stage_token(visit.patient, prev_status=visit.status)
+
+        # Update visit status
+        from apps.departments.models import Department
+        dept = Department.objects.filter(code='OPD', is_active=True).first() or \
+               Department.objects.filter(code='GEN_OPH', is_active=True).first()
+
+        visit.status = 'WAITING'
+        update_fields = ['status', 'updated_at']
+        if dept:
+            visit.department = dept
+            update_fields.append('department')
+        # Set attending_doctor to the referring doctor so workstation shows them
+        if referring_doc:
+            visit.attending_doctor = referring_doc
+            update_fields.append('attending_doctor')
+        visit.save(update_fields=update_fields)
+
+        # Create QMS token — assign to referring doctor's counter if possible
+        if _qms_active():
+            try:
+                from apps.qms.models import (
+                    QueueToken, DailyTokenSequence, IssuancePoint,
+                    TokenStatus, ServiceCounter
+                )
+                from django.db import transaction as _pf_tx
+                from django.utils import timezone as _tz
+
+                # Try to find the referring doctor's active counter
+                target_counter = None
+                if referring_doc:
+                    target_counter = ServiceCounter.objects.filter(
+                        staff_assigned=referring_doc,
+                        is_active=True,
+                        checked_in_date=_tz.localdate(),
+                    ).first()
+
+                with _pf_tx.atomic():
+                    token_number = DailyTokenSequence.next_dept_token(qms_service)
+                    QueueToken.objects.create(
+                        token_number=token_number,
+                        service_type=qms_service,
+                        patient=visit.patient,
+                        visit=visit,
+                        service_tier=tier,
+                        issuance_point=IssuancePoint.SYSTEM,
+                        status=TokenStatus.WAITING,
+                        counter=target_counter,
+                        notes=notes,
+                        issued_by=triggered_by,
+                    )
+            except Exception:
+                pass
+
+        # Notify workstation + OPD
+        for _room in _STATUS_ROOMS.get('WAITING', []):
+            _ws_notify(_room)
+        # Also notify the specific doctor if we know them
+        if referring_doc:
+            _ws_notify(f'doctor-{referring_doc.pk}')
+
     except Exception:
         pass

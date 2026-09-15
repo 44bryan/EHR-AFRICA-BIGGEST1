@@ -4,7 +4,7 @@
 {% block body_class %}{% endblock %}
 
 {% block body %}
-<div id="wrapper" hx-boost="true" hx-target="#page-content-wrapper" hx-select="#page-content-wrapper" hx-swap="outerHTML show:window:top" hx-push-url="true">
+<div id="wrapper" hx-boost="true" hx-target="#page-content-wrapper" hx-select="#page-content-wrapper" hx-swap="outerHTML show:window:top" hx-push-url="true" hx-history="false">
 
   <!-- Sidebar -->
   {% include 'components/sidebar.html' %}
@@ -60,9 +60,9 @@
     var wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:9999;';
     wrap.innerHTML =
-      '<div id="ehrRouteToast" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true">' +
+      '<div id="ehrRouteToast" class="toast align-items-center border-0" role="alert" data-bs-autohide="true" data-bs-delay="3500">' +
       '<div class="d-flex"><div class="toast-body fw-semibold small" id="ehrRouteToastMsg"></div>' +
-      '<button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+      '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
     document.body.appendChild(wrap);
   }
   function _showToast(msg, isError) {
@@ -73,12 +73,119 @@
     msgEl.textContent = msg;
     toast.classList.remove('bg-success','bg-danger','text-white');
     toast.classList.add(isError ? 'bg-danger' : 'bg-success', 'text-white');
-    bootstrap.Toast.getOrCreateInstance(toast, {delay:4500}).show();
+    var inst = bootstrap.Toast.getOrCreateInstance(toast, {autohide:true, delay:3500});
+    inst.show();
   }
 
   // ── Build intermediate set from config ──────────────────────────────
   var _INTERMEDIATE_CODES = {};
   _ROUTE_CONFIG.forEach(function(d) { if (d.is_intermediate) _INTERMEDIATE_CODES[d.code] = true; });
+
+  // Auto-toggle "Return to me" checkbox based on whether destination is intermediate
+  // Must be at module level so both quick-dest buttons AND room card handlers can call it
+  function _autoToggleReturn(dest) {
+    var chk = document.getElementById('ehrReturnToMe');
+    if (!chk || chk._userOverride) return;
+    chk.checked = !!_INTERMEDIATE_CODES[dest];
+  }
+
+  // ── Map quick-dest codes to room service_type codes for filtering ─────
+  // Some dest codes differ from the ServiceCounter.service_type used on room cards
+  var _DEST_TO_ROOM_TYPES = {
+    'REFRACTION':  ['REFRACTION'],
+    'CYCLO':       ['REFRACTION'],      // cyclo uses refraction rooms
+    'RETINA':      ['RETINA'],
+    'GLAUCOMA':    ['GLAUCOMA'],
+    'CATARACT':    ['CATARACT'],
+    'CORNEA':      ['CORNEA'],
+    'UVEITIS':     ['UVEITIS'],
+    'NEURO':       ['NEURO'],
+    'OCULOPLASTY': ['OCULOPLASTY'],
+    'PEDIATRIC':   ['PEDIATRIC'],
+    'GEN_PHYS':    ['GEN_PHYS'],
+    'LOW_VISION':  ['LOW_VISION'],
+    'GENERAL':     ['GENERAL','EXP_CONSULT','VIP_CONSULT'],
+    'CONTACT_LENS':['CONTACT_LENS'],
+    'INSUR_CONSULT':['INSUR_CONSULT'],
+  };
+
+  // Stored room data so we can filter client-side without re-fetching
+  var _allRooms = null;
+  var _activeFilter = null;
+
+  // Filter room board to show only rooms matching a destination's service types
+  function _filterRoomBoard(dest, destLabel) {
+    var board = document.getElementById('ehrRouteRoomBoard');
+    if (!board || !_allRooms) return false;
+
+    var types = _DEST_TO_ROOM_TYPES[dest];
+    if (!types) return false;  // No room mapping — allow immediate route
+
+    // Filter rooms
+    var matchSame  = (_allRooms.same_tier || []).filter(function(r) { return types.indexOf(r.dept_code) !== -1; });
+    var matchOther = (_allRooms.other || []).filter(function(r) { return types.indexOf(r.dept_code) !== -1; });
+    var totalMatch = matchSame.length + matchOther.length;
+
+    if (totalMatch === 0) return false;  // No rooms available — allow immediate route
+
+    _activeFilter = dest;
+    _autoToggleReturn(dest);
+
+    // Build filtered view with header bar
+    var html = '';
+    html += '<div class="px-3 py-2 mb-2 rounded d-flex align-items-center justify-content-between" style="background:#e8f4fd;border:1px solid #b6d4e8;">';
+    html += '<div><i class="bi bi-funnel-fill text-primary me-1"></i>';
+    html += '<span class="fw-semibold small text-primary">Showing: ' + (destLabel || dest) + '</span>';
+    html += '<span class="badge bg-primary ms-2" style="font-size:.65rem;">' + totalMatch + ' room'+(totalMatch!==1?'s':'')+'</span></div>';
+    html += '<div class="d-flex gap-2">';
+    html += '<button class="btn btn-sm btn-outline-primary" id="ehrSendToQueue" style="font-size:.75rem;">';
+    html += '<i class="bi bi-people me-1"></i>Send to Queue</button>';
+    html += '<button class="btn btn-sm btn-outline-secondary" id="ehrClearFilter" style="font-size:.75rem;">';
+    html += '<i class="bi bi-x-circle me-1"></i>Show All</button>';
+    html += '</div></div>';
+
+    if (matchSame.length) {
+      html += '<div class="fw-semibold small text-muted mb-2" style="font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;">Same tier</div>';
+      html += '<div class="row g-2 mb-3">';
+      matchSame.forEach(function(r) { html += _roomCard(r); });
+      html += '</div>';
+    }
+    if (matchOther.length) {
+      html += '<div class="fw-semibold small text-muted mb-2" style="font-size:.72rem;">Other tiers</div>';
+      html += '<div class="row g-2">';
+      matchOther.forEach(function(r) { html += _roomCard(r); });
+      html += '</div>';
+    }
+
+    board.innerHTML = html;
+
+    // Bind room card clicks
+    board.querySelectorAll('.ehr-room-card').forEach(function(card) {
+      card.addEventListener('click', function() {
+        var d = this.dataset.dest || dest;
+        _autoToggleReturn(d);
+        EhrRoute.execute(dest, '', this.dataset.counterId);
+      });
+    });
+
+    // "Send to Queue" — route without specific room
+    var queueBtn = document.getElementById('ehrSendToQueue');
+    if (queueBtn) queueBtn.addEventListener('click', function() {
+      _autoToggleReturn(dest);
+      EhrRoute.execute(dest, '');
+    });
+
+    // "Show All" — reset filter
+    var clearBtn = document.getElementById('ehrClearFilter');
+    if (clearBtn) clearBtn.addEventListener('click', function() {
+      _activeFilter = null;
+      _renderRooms(_allRooms);
+    });
+
+    // Scroll room board into view
+    board.scrollIntoView({behavior:'smooth', block:'nearest'});
+    return true;
+  }
 
   // ── Build modal HTML from DB config ─────────────────────────────────
   function _buildModal(tier, patientName) {
@@ -168,24 +275,40 @@
       _section('FINISH', groups.FINISH) +
       '</div>' +
       '</div></div>' +
-      // ── Bottom: Note + Advanced toggle ──
+      // ── Bottom: Note select + Advanced toggle ──
       '<div class="border-top px-4 py-3 bg-white">' +
-      '<div class="d-flex align-items-start gap-3 flex-wrap">' +
-      '<div class="flex-grow-1" style="min-width:200px;">' +
-      '<label class="form-label small fw-semibold mb-1" for="ehrRoutingNote">' +
+      '<div class="row g-2 align-items-end">' +
+      '<div class="col-md-7">' +
+      '<label class="form-label small fw-semibold mb-1" for="ehrNoteSelect">' +
       '<i class="bi bi-chat-left-text me-1"></i>Note for receiving staff <span class="text-muted fw-normal">(optional)</span></label>' +
-      '<textarea id="ehrRoutingNote" class="form-control form-control-sm" rows="1" maxlength="300"' +
-      ' placeholder="e.g. Please do full refraction \u2014 mixed astigmatism suspected"></textarea></div>' +
-      '<div><details style="margin-top:1.4rem;">' +
-      '<summary class="text-muted small" style="cursor:pointer;font-size:.72rem;user-select:none;">' +
-      '<i class="bi bi-gear me-1"></i>Advanced</summary>' +
-      '<div class="form-check form-switch mt-2">' +
-      '<input class="form-check-input" type="checkbox" id="ehrReturnToMe">' +
-      '<label class="form-check-label small" for="ehrReturnToMe">' +
-      'Override: Return patient to me</label>' +
-      '<div class="text-muted" style="font-size:.65rem;">Auto-set by destination type. Only change if needed.</div>' +
-      '</div></details></div>' +
-      '</div></div>' +
+      '<select id="ehrNoteSelect" class="form-select form-select-sm" style="font-size:.82rem;">' +
+      '<option value="">-- Select a note --</option>' +
+      '<option value="Full refraction needed">Full refraction needed</option>' +
+      '<option value="Cycloplegic refraction \u2014 dilate first">Cycloplegic refraction \u2014 dilate first</option>' +
+      '<option value="Check IOP before consultation">Check IOP before consultation</option>' +
+      '<option value="Dilate and examine fundus">Dilate and examine fundus</option>' +
+      '<option value="Urgent \u2014 see immediately">Urgent \u2014 see immediately</option>' +
+      '<option value="Follow-up \u2014 review previous results">Follow-up \u2014 review previous results</option>' +
+      '<option value="Patient anxious \u2014 reassure">Patient anxious \u2014 reassure</option>' +
+      '<option value="Paediatric patient \u2014 parent present">Paediatric patient \u2014 parent present</option>' +
+      '<option value="VIP \u2014 priority attention">VIP \u2014 priority attention</option>' +
+      '<option value="Pre-op assessment needed">Pre-op assessment needed</option>' +
+      '<option value="Recheck VA after refraction">Recheck VA after refraction</option>' +
+      '<option value="Post-surgical review">Post-surgical review</option>' +
+      '<option value="Biometry / IOL calculation needed">Biometry / IOL calculation needed</option>' +
+      '<option value="Contact lens fitting required">Contact lens fitting required</option>' +
+      '</select>' +
+      '</div>' +
+      '<div class="col-md-5">' +
+      '<input type="text" id="ehrRoutingNote" class="form-control form-control-sm mb-1" maxlength="300"' +
+      ' placeholder="Or type a custom note\u2026" style="font-size:.82rem;">' +
+      '<div class="form-check form-switch mt-1">' +
+      '<input class="form-check-input" type="checkbox" id="ehrReturnToMe" style="cursor:pointer;">' +
+      '<label class="form-check-label small fw-semibold" for="ehrReturnToMe" style="cursor:pointer;color:#0d6efd;">' +
+      '<i class="bi bi-arrow-return-left me-1"></i>Return patient to me</label>' +
+      '</div>' +
+      '<div class="text-muted" style="font-size:.63rem;">Auto-set for intermediate stops (refraction, investigations, etc.)</div>' +
+      '</div></div></div>' +
       // Footer
       '<div class="modal-footer border-top bg-white py-2 px-4">' +
       '<small class="text-muted me-auto"><i class="bi bi-info-circle me-1"></i>Same-tier rooms listed first. <span style="color:#3b82f6;">Blue</span> = patient returns &middot; <span style="color:#dc2626;">Red</span> = visit ends</small>' +
@@ -212,6 +335,7 @@
   }
 
   function _renderRooms(data) {
+    _allRooms = data;  // Store for client-side filtering
     var board = document.getElementById('ehrRouteRoomBoard');
     if (!board) return;
     var html = '';
@@ -264,18 +388,19 @@
       var modalEl = wrap.firstElementChild;
       document.body.appendChild(modalEl);
 
-      // Auto-toggle "Return to me" based on DB config intermediate flag
-      function _autoToggleReturn(dest) {
-        var chk = document.getElementById('ehrReturnToMe');
-        if (!chk || chk._userOverride) return;
-        chk.checked = !!_INTERMEDIATE_CODES[dest];
-      }
-
-      // Bind quick-dest + any-card buttons
+      // Bind quick-dest buttons — filter room board first, fallback to immediate route
       modalEl.querySelectorAll('.ehr-route-dest').forEach(function(btn) {
         btn.addEventListener('click', function() {
-          _autoToggleReturn(this.dataset.dest);
-          EhrRoute.execute(this.dataset.dest, '');
+          var dest = this.dataset.dest;
+          var label = this.textContent.trim().split('\n')[0].trim();
+          // Try filtering room board to show matching rooms
+          var filtered = _filterRoomBoard(dest, label);
+          if (!filtered) {
+            // No matching rooms or not a room-type destination — route immediately
+            _autoToggleReturn(dest);
+            EhrRoute.execute(dest, '');
+          }
+          // else: room board is filtered, user picks a specific room
         });
       });
       var anyCard = document.getElementById('ehrRouteAnyCard');
@@ -287,6 +412,15 @@
       // Track manual toggle so auto-toggle doesn't override user choice
       var _retChkEl = document.getElementById('ehrReturnToMe');
       if (_retChkEl) _retChkEl.addEventListener('change', function() { this._userOverride = true; });
+
+      // Sync dropdown selection to the note input
+      var _noteSelect = document.getElementById('ehrNoteSelect');
+      var _noteInput  = document.getElementById('ehrRoutingNote');
+      if (_noteSelect && _noteInput) {
+        _noteSelect.addEventListener('change', function() {
+          _noteInput.value = this.value;
+        });
+      }
 
       // Show
       this._bsModal = new bootstrap.Modal(modalEl);
@@ -341,6 +475,32 @@
       }
     },
 
+    // Auto-save consultation form data before routing (prevents data loss)
+    _autoSaveBeforeRoute: function() {
+      var frm = document.getElementById('consultationForm');
+      if (!frm || !this._completePk) return Promise.resolve();
+      var data = new FormData(frm);
+      data.append('draft_pk', this._completePk);
+      data.append('_section', 'clinical');
+      // Also save history section
+      var data2 = new FormData(frm);
+      data2.append('draft_pk', this._completePk);
+      data2.append('_section', 'history');
+      ['presenting_complaint','history_of_presenting_complaint','ocular_history',
+       'systemic_history','drug_history','family_history','social_history'].forEach(function(n) {
+        var el = frm.querySelector('[name="' + n + '"]');
+        if (el && el.value) data2.append(n, el.value);
+      });
+      frm.querySelectorAll('[name^="dept_"]').forEach(function(el) {
+        if (el.type === 'checkbox') { if (el.checked) data.append(el.name, el.value); }
+        else data.append(el.name, el.value);
+      });
+      return Promise.all([
+        fetch('/consultations/autosave/', {method:'POST', body:data, headers:{'X-CSRFToken':_getCsrf(),'X-Requested-With':'XMLHttpRequest'}}).catch(function(){}),
+        fetch('/consultations/autosave/', {method:'POST', body:data2, headers:{'X-CSRFToken':_getCsrf(),'X-Requested-With':'XMLHttpRequest'}}).catch(function(){})
+      ]);
+    },
+
     execute: function(destination, roomId, counterId) {
       if (this._busy) return;
       this._busy = true;
@@ -362,7 +522,9 @@
       var _retEl = document.getElementById('ehrReturnToMe');
       payload.append('return_to_me', (_retEl && _retEl.checked) ? '1' : '0');
 
+      // Auto-save any open consultation form before routing
       var self = this;
+      this._autoSaveBeforeRoute().then(function() {
       fetch('/consultations/route/', {
         method:'POST',
         headers:{'X-CSRFToken':_getCsrf(),'X-Requested-With':'XMLHttpRequest'},
@@ -380,7 +542,9 @@
         self._busy = false;
         if (data.success) {
           if (self._bsModal) self._bsModal.hide();
-          _showToast(data.message || ('Sent to '+data.label), false);
+          // Short toast — patient name + destination only
+          var _shortMsg = (data.patient || 'Patient') + ' \u2192 ' + (data.label || data.destination);
+          _showToast(_shortMsg, false);
           window.dispatchEvent(new CustomEvent('ehrRouteSuccess', {detail:data}));
           if (self._completePk && data.redirect_url) {
             setTimeout(function() { window.location.href = data.redirect_url; }, 900);
@@ -400,6 +564,7 @@
         });
         _showToast((e && e.error) ? e.error : 'Server error. Please try again.', true);
       });
+      }); // end _autoSaveBeforeRoute().then()
     }
   };
 })();
@@ -440,12 +605,23 @@
     return !!document.querySelector('form[method="post"], form[method="POST"]');
   }
 
+  // Pages with forms that must NEVER be refreshed
+  var NEVER_REFRESH_PATHS = [
+    '/patients/register',
+    '/patients/edit',
+    '/reception/triage',
+    '/consultations/new',
+    '/consultations/edit',
+  ];
+
   function isDashboardPage() {
     var p = window.location.pathname;
     // Workstation has its own refresh — skip double-refresh
     if (p.includes('/workstation')) return false;
     // Stats/report pages should not auto-refresh
     if (EXCLUDE_REFRESH_PATHS.some(function(x) { return p.startsWith(x); })) return false;
+    // Explicit form pages — never refresh
+    if (NEVER_REFRESH_PATHS.some(function(x) { return p.startsWith(x); })) return false;
     // Never auto-refresh a page with a data-entry form (triage, registration, consultations…)
     if (_hasPostForm()) return false;
     return DASHBOARD_PATHS.some(function(d) { return p.startsWith(d); });
@@ -458,8 +634,9 @@
   }
 
   function doRefresh() {
-    // Final guard — never refresh a page that has a data-entry form
+    // Final guard — never refresh a page that has a data-entry form or is a form page
     if (_hasPostForm()) return;
+    if (!isDashboardPage()) { stopRefresh(); return; }
     // Use HTMX boost for a smooth partial swap (no full page reload, no sidebar flash)
     if (window.htmx) {
       // Preserve scroll position so tablet users don't lose their place mid-queue
@@ -939,7 +1116,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () { initInfoTips(document); });
-  document.addEventListener('htmx:afterSettle', function ()  { initInfoTips(document); });
+  document.addEventListener('htmx:afterSettle', function (e) { initInfoTips(e.detail && e.detail.elt ? e.detail.elt : document); });
 })();
 </script>
 
@@ -970,7 +1147,14 @@
       if (!bootstrap.Tooltip.getInstance(n)) new bootstrap.Tooltip(n);
     });
   }
-  document.addEventListener('htmx:afterSettle', function () { reinitBootstrap(document); });
+  // Scope reinit to only the swapped element (not the whole document)
+  document.addEventListener('htmx:afterSettle', function (e) {
+    reinitBootstrap(e.detail && e.detail.elt ? e.detail.elt : document.getElementById('page-content-wrapper'));
+  });
+  // HTMX history restore (back button) — must reinit the restored content
+  document.addEventListener('htmx:historyRestore', function () {
+    reinitBootstrap(document.getElementById('page-content-wrapper') || document);
+  });
 })();
 </script>
 
