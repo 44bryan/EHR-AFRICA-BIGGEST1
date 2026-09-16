@@ -45,6 +45,22 @@ document.addEventListener('click', function(evt) {
   }
 }, true);  // ← capture phase: fires BEFORE htmx's bubbling listener
 
+// ── Block HTMX from hijacking ALL native form submissions ───────────────────
+// hx-boost="true" on #wrapper converts form submit events into AJAX requests.
+// This breaks pharmacy dispensing, triage, consultation save, and any POST form.
+// Fix: a single capture-phase listener on document stops submit propagation
+// so HTMX never sees it. This is stronger than the per-form patch in ehrInit()
+// because it works on forms loaded later (modals, HTMX swaps, lazy content).
+document.addEventListener('submit', function(evt) {
+  var form = evt.target;
+  if (!form || form.tagName !== 'FORM') return;
+  // Let HTMX forms (with hx-post, hx-get, etc.) through — only block boosted forms
+  if (form.hasAttribute('hx-post') || form.hasAttribute('hx-get') ||
+      form.hasAttribute('hx-put') || form.hasAttribute('hx-delete') ||
+      form.hasAttribute('data-hx-post') || form.hasAttribute('data-hx-get')) return;
+  evt.stopPropagation();
+}, true);  // ← capture phase: fires BEFORE htmx's bubbling listener
+
 // ── Prevent HTMX from intercepting file downloads ───────────────────────────
 // When hx-boost is on, clicking download/export/PDF links causes HTMX to
 // fetch the response as AJAX. Binary responses freeze the page. This handler
