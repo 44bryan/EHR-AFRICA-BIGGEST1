@@ -39,7 +39,7 @@ def _can_request(user):
         UserRole.MEDICAL_DIRECTOR, UserRole.OPHTHALMOLOGIST, UserRole.GENERAL_PHYSICIAN,
         UserRole.NURSE, UserRole.WARD_NURSE, UserRole.THEATRE_NURSE,
         UserRole.CEO, UserRole.ADMIN_DIRECTOR,
-    ] or getattr(user, 'role', '') == 'anaesthetist'
+    ] or user.role == UserRole.ANAESTHETIST
 
 
 def _can_view(user):

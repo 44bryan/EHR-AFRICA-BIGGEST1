@@ -48,7 +48,7 @@ urlpatterns = [
     # ── Dilation-Aware Visit Plan ──────────────────────────────────────────────
     path('visit-plan/<str:patient_id>/', views.visit_plan_view, name='visit_plan'),
     path('visit-plan/detail/<uuid:plan_pk>/', views.visit_plan_detail_view, name='visit_plan_detail'),
-    path('visit-plan/step/<int:step_pk>/complete/', views.visit_plan_complete_step_view, name='visit_plan_complete_step'),
+    path('visit-plan/step/<uuid:step_pk>/complete/', views.visit_plan_complete_step_view, name='visit_plan_complete_step'),
 
     # ── Device Management ──────────────────────────────────────────────────────
     path('devices/', views.device_list_view, name='device_list'),

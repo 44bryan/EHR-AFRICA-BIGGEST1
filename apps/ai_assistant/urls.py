@@ -29,7 +29,7 @@ urlpatterns = [
     # AI Triage Scoring
     path('triage/', views.ai_triage_view, name='triage'),
     # AI Imaging / Investigation Analysis
-    path('imaging-analysis/<int:result_id>/', views.ai_imaging_analysis_view, name='imaging_analysis'),
+    path('imaging-analysis/<uuid:result_id>/', views.ai_imaging_analysis_view, name='imaging_analysis'),
     # AI SOAP Note Generator
     path('soap-note/', views.ai_soap_note_view, name='soap_note'),
     # AI Lab Result Interpretation

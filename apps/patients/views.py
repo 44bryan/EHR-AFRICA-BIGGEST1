@@ -1451,8 +1451,10 @@ def triage_view(request, visit_number):
                 except (ValueError, AttributeError):
                     pass
                 if _dispatched_counter:
-                    # Auto-assign the checked-in doctor from the counter
-                    if not _assigned_doctor and _dispatched_counter.is_checked_in_today:
+                    # Auto-assign the doctor from the counter (staff_assigned)
+                    # even if not checked in today — ensures the token's assigned_doctor
+                    # is set so the workstation filter picks it up correctly
+                    if not _assigned_doctor and _dispatched_counter.staff_assigned:
                         _assigned_doctor = _dispatched_counter.staff_assigned
                     # Use the counter's canonical service type for the token
                     _skip_svc = {'CASHIER', 'PARAMETERS', 'PARAMS_VIP', 'RECEPTIONIST'}

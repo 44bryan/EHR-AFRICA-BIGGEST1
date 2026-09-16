@@ -16,5 +16,5 @@ urlpatterns = [
     # Doctor schedule management
     path('schedules/', views.schedule_list_view, name='schedule_list'),
     path('schedules/add/', views.schedule_create_view, name='schedule_create'),
-    path('schedules/<int:pk>/delete/', views.schedule_delete_view, name='schedule_delete'),
+    path('schedules/<uuid:pk>/delete/', views.schedule_delete_view, name='schedule_delete'),
 ]

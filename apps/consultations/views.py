@@ -1609,13 +1609,16 @@ def workstation_view(request):
                 )
             ]
         else:
-            # I am not checked into any counter — only see pool tokens (no counter)
-            # and tokens from counters that have no active doctor today (fallback / orphan tokens)
+            # I am not checked into any counter — see:
+            #   1. Pool tokens (no counter assigned)
+            #   2. Tokens from counters that have no active doctor today (orphans)
+            #   3. Tokens explicitly assigned to ME (even if counter has another doctor)
             waiting_tokens = [
                 t for t in waiting_tokens
                 if (
                     getattr(t, 'counter_id', None) is None
                     or not (t.counter and t.counter.is_checked_in_today)
+                    or getattr(t, 'assigned_doctor_id', None) == user.pk
                 )
             ]
     elif selected_room:
@@ -3385,6 +3388,12 @@ def nurse_route_patient_view(request, visit_pk):
                     if not already_waiting:
                         tier = visit.service_tier
                         token_number = DailyTokenSequence.next_dept_token(qms_service)
+                        # Set assigned_doctor so the target doctor's workstation filter picks it up
+                        _token_doctor = None
+                        if _target_counter and _target_counter.staff_assigned:
+                            _token_doctor = _target_counter.staff_assigned
+                        elif _target_room and _target_room.assigned_doctor:
+                            _token_doctor = _target_room.assigned_doctor
                         QueueToken.objects.create(
                             token_number=token_number,
                             patient=visit.patient,
@@ -3395,6 +3404,7 @@ def nurse_route_patient_view(request, visit_pk):
                             issuance_point=IssuancePoint.SYSTEM,
                             priority=TIER_PRIORITY.get(tier, 0),
                             counter=_target_counter,
+                            assigned_doctor=_token_doctor,
                             notes=f'Routed by {user.get_full_name()} to {label}{_room_note}' + (f' — {referral_reason[:120]}' if referral_reason else ''),
                             issued_by=user,
                         )
