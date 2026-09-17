@@ -4439,34 +4439,34 @@ def patient_tracker_view(request):
         return HttpResponseForbidden('Access denied.')
 
     from apps.qms.models import QueueToken, TokenStatus
-    from django.db.models import Max, F
 
     today = timezone.localdate()
 
-    # Get the latest token per visit for today (shows current station)
-    latest_token_ids = (
+    # Get all today's tokens, ordered so latest per visit comes first
+    all_tokens = list(
         QueueToken.objects
         .filter(token_date=today)
         .exclude(status__in=[TokenStatus.CANCELLED, TokenStatus.NO_SHOW])
-        .values('visit_id')
-        .annotate(latest_id=Max('id'))
-        .values_list('latest_id', flat=True)
-    )
-
-    tokens = (
-        QueueToken.objects
-        .filter(id__in=latest_token_ids)
+        .exclude(visit__isnull=True)
         .select_related('patient', 'visit', 'visit__department',
                         'visit__consultation_room',
                         'visit__consultation_room__assigned_doctor',
                         'counter', 'counter__staff_assigned',
                         'assigned_doctor')
-        .order_by('-priority', 'issued_at')
+        .order_by('-issued_at')
     )
+
+    # Keep only the latest token per visit (first occurrence per visit_id)
+    seen_visits = set()
+    tokens = []
+    for t in all_tokens:
+        if t.visit_id not in seen_visits:
+            seen_visits.add(t.visit_id)
+            tokens.append(t)
 
     # Also include visits from today that might not have tokens (walk-ins registered but not yet queued)
     from apps.patients.models import VisitStatus as VS
-    tokenized_visit_ids = set(tokens.values_list('visit_id', flat=True))
+    tokenized_visit_ids = seen_visits
 
     no_token_visits = (
         Visit.objects
@@ -4474,7 +4474,7 @@ def patient_tracker_view(request):
             visit_date__date=today,
             is_deleted=False,
         )
-        .exclude(status__in=[VS.DISCHARGED, VS.CANCELLED])
+        .exclude(status=VS.DISCHARGED)
         .exclude(pk__in=tokenized_visit_ids)
         .select_related('patient', 'department', 'attending_doctor',
                         'triage_nurse', 'consultation_room',
@@ -4578,10 +4578,26 @@ def patient_tracker_view(request):
             'tier': v.service_tier,
         })
 
-    # Filter option
+    # ── Filters ────────────────────────────────────────────────────────────
     filter_station = request.GET.get('station', '')
+    filter_mine = request.GET.get('mine', '') == '1'
+    filter_staff = request.GET.get('staff', '')
+    kiosk = request.GET.get('kiosk', '') == '1'
+
     if filter_station:
         rows = [r for r in rows if filter_station.lower() in r['station'].lower()]
+
+    if filter_mine:
+        rows = [r for r in rows if r['staff'] and r['staff'].pk == user.pk]
+
+    if filter_staff:
+        rows = [r for r in rows if r['staff'] and str(r['staff'].pk) == filter_staff]
+
+    # Collect unique staff for filter dropdown
+    staff_set = {}
+    for r in rows:
+        if r['staff'] and r['staff'].pk not in staff_set:
+            staff_set[r['staff'].pk] = r['staff']
 
     # Summary counts
     station_counts = {}
@@ -4589,10 +4605,21 @@ def patient_tracker_view(request):
         base_station = r['station'].split('(')[0].strip()
         station_counts[base_station] = station_counts.get(base_station, 0) + 1
 
+    # Status summary
+    status_counts = {}
+    for r in rows:
+        status_counts[r['status_key']] = status_counts.get(r['status_key'], 0) + 1
+
     ctx = {
         'rows': rows,
         'total_patients': len(rows),
         'station_counts': sorted(station_counts.items(), key=lambda x: -x[1]),
+        'status_counts': status_counts,
         'filter_station': filter_station,
+        'filter_mine': filter_mine,
+        'filter_staff': filter_staff,
+        'staff_list': sorted(staff_set.values(), key=lambda s: s.get_full_name()),
+        'kiosk': kiosk,
     }
-    return render(request, 'consultations/patient_tracker.html', ctx)
+    template = 'consultations/patient_tracker_kiosk.html' if kiosk else 'consultations/patient_tracker.html'
+    return render(request, template, ctx)

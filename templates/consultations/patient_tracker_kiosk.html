@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patient Tracker — TV Display</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', system-ui, sans-serif; overflow-x: hidden; }
+    .kiosk-header { background: linear-gradient(135deg, #16213e 0%, #0f3460 100%); padding: 1rem 2rem; }
+    .kiosk-header h1 { font-size: 1.5rem; margin: 0; color: #e2e8f0; }
+    .kiosk-header .subtitle { font-size: .85rem; color: #94a3b8; }
+    .kiosk-stats { display: flex; gap: 1rem; padding: .75rem 2rem; background: #16213e; flex-wrap: wrap; }
+    .stat-chip { background: #1e3a5f; border-radius: .5rem; padding: .5rem 1rem; text-align: center; min-width: 100px; }
+    .stat-chip .num { font-size: 1.8rem; font-weight: 700; color: #60a5fa; line-height: 1; }
+    .stat-chip .label { font-size: .65rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
+    .kiosk-grid { padding: 1rem; }
+    .k-card { background: #16213e; border-radius: .75rem; border-left: 5px solid #475569; overflow: hidden; }
+    .k-card.status-WAITING  { border-left-color: #f59e0b; }
+    .k-card.status-CALLED   { border-left-color: #3b82f6; }
+    .k-card.status-SERVING  { border-left-color: #22c55e; }
+    .k-card.status-COMPLETED { border-left-color: #64748b; }
+    .k-card .patient-name { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+    .k-card .patient-id { font-size: .7rem; color: #64748b; }
+    .k-station { font-size: .85rem; font-weight: 600; }
+    .k-staff { font-size: .8rem; color: #94a3b8; }
+    .k-time { font-size: .75rem; }
+    .k-time.danger { color: #ef4444; animation: pulse 1.5s infinite; }
+    .k-time.warn { color: #f59e0b; }
+    .k-time.ok { color: #22c55e; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .tier-VIP { background: linear-gradient(135deg, #1e3a5f 0%, #3d2e00 100%) !important; }
+    .tier-EXPRESS { background: linear-gradient(135deg, #1e3a5f 0%, #003344 100%) !important; }
+    .legend { display: flex; gap: 1.5rem; padding: .5rem 2rem; background: #0f172a; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: .7rem; color: #94a3b8; }
+    .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .clock { font-size: 1.1rem; color: #60a5fa; font-weight: 600; }
+    .exit-kiosk { position: fixed; top: 8px; right: 12px; z-index: 999; opacity: .3; }
+    .exit-kiosk:hover { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<a href="{% url 'consultations:patient_tracker' %}" class="exit-kiosk btn btn-sm btn-outline-light">
+  <i class="bi bi-x-lg"></i> Exit TV Mode
+</a>
+
+{# ── Header ── #}
+<div class="kiosk-header d-flex justify-content-between align-items-center">
+  <div>
+    <h1><i class="bi bi-geo-alt-fill me-2" style="color:#60a5fa;"></i>Patient Tracker</h1>
+    <div class="subtitle">{{ total_patients }} patient{{ total_patients|pluralize }} in hospital</div>
+  </div>
+  <div class="clock" id="kioskClock"></div>
+</div>
+
+{# ── Legend ── #}
+<div class="legend">
+  <span class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Waiting{% if status_counts.WAITING %} ({{ status_counts.WAITING }}){% endif %}</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> Called{% if status_counts.CALLED %} ({{ status_counts.CALLED }}){% endif %}</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#22c55e;"></span> Serving{% if status_counts.SERVING %} ({{ status_counts.SERVING }}){% endif %}</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#64748b;"></span> Done{% if status_counts.COMPLETED %} ({{ status_counts.COMPLETED }}){% endif %}</span>
+  <span class="legend-item ms-auto"><i class="bi bi-arrow-repeat me-1"></i><span id="kioskCountdown">30s</span></span>
+</div>
+
+{# ── Station Summary ── #}
+<div class="kiosk-stats">
+  {% for station_name, count in station_counts %}
+  <div class="stat-chip">
+    <div class="num">{{ count }}</div>
+    <div class="label">{{ station_name }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── Patient Grid ── #}
+<div class="kiosk-grid">
+  {% if rows %}
+  <div class="row g-2">
+    {% for r in rows %}
+    <div class="col-6 col-md-4 col-lg-3 col-xl-2">
+      <div class="k-card p-2 h-100 status-{{ r.status_key }} {% if r.tier == 'VIP' %}tier-VIP{% elif r.tier == 'EXPRESS' %}tier-EXPRESS{% endif %}">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="patient-name">{{ r.patient.full_name }}</div>
+            <div class="patient-id">{{ r.patient.patient_id }}{% if r.token %} &middot; {{ r.token.token_number }}{% endif %}</div>
+          </div>
+          {% if r.tier == 'VIP' %}
+          <span class="badge bg-warning text-dark" style="font-size:.55rem;">VIP</span>
+          {% elif r.tier == 'EXPRESS' %}
+          <span class="badge bg-info text-dark" style="font-size:.55rem;">EXPRESS</span>
+          {% endif %}
+        </div>
+        <div class="mt-1">
+          <span class="k-station
+            {% if r.status_key == 'WAITING' %}text-warning
+            {% elif r.status_key == 'CALLED' %}text-info
+            {% elif r.status_key == 'SERVING' %}text-success
+            {% else %}text-secondary{% endif %}">
+            <i class="bi bi-geo-alt me-1"></i>{{ r.station }}
+          </span>
+        </div>
+        {% if r.room %}
+        <div style="font-size:.7rem;color:#64748b;"><i class="bi bi-door-open me-1"></i>{{ r.room }}</div>
+        {% endif %}
+        <div class="k-staff mt-1">
+          {% if r.staff %}
+          <i class="bi bi-person-badge me-1"></i>{{ r.staff.get_full_name }}
+          {% else %}
+          <span style="color:#475569;"><i class="bi bi-person-dash me-1"></i>Unassigned</span>
+          {% endif %}
+        </div>
+        <div class="k-time mt-1 {% if r.minutes > 30 %}danger{% elif r.minutes > 15 %}warn{% else %}ok{% endif %}">
+          <i class="bi bi-clock me-1"></i>
+          {% if r.minutes >= 60 %}{{ r.hours }}h {{ r.mins_remainder }}m{% else %}{{ r.minutes }}m{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-5">
+    <i class="bi bi-geo-alt" style="font-size:4rem;color:#475569;"></i>
+    <p style="color:#64748b;margin-top:1rem;">No patients in hospital right now.</p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+// Live clock
+function updateClock() {
+  var d = new Date();
+  var h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+  document.getElementById('kioskClock').textContent =
+    (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Auto-refresh every 30 seconds
+(function(){
+  var c = 30, el = document.getElementById('kioskCountdown');
+  setInterval(function(){
+    c--;
+    if (el) el.textContent = c + 's';
+    if (c <= 0) location.reload();
+  }, 1000);
+})();
+</script>
+</body>
+</html>
