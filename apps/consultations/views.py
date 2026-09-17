@@ -3612,6 +3612,28 @@ def smart_route_view(request):
         # No explicit override — use destination type
         should_pause = is_intermediate
 
+    # Separate "return to me" from "should pause":
+    # Specialist-to-specialist routing is a FORWARD referral — the patient does
+    # NOT return to the sending doctor.  Only test/service stops (REFRACTION,
+    # LAB, IMAGING, etc.) set referring_doctor so the tracker shows "Returning".
+    _SPECIALIST_CODES = set()
+    try:
+        from apps.patients.models import RouteDestination as _RD
+        _SPECIALIST_CODES = set(
+            _RD.objects.filter(is_active=True, group='SPECIALIST')
+            .values_list('code', flat=True)
+        )
+    except Exception:
+        pass
+    is_forward_referral = destination in _SPECIALIST_CODES
+
+    if return_to_me_override == '1':
+        actual_return_to_me = True
+    elif return_to_me_override == '0' or is_forward_referral:
+        actual_return_to_me = False
+    else:
+        actual_return_to_me = should_pause
+
     # Apply pause or complete to the consultation
     redirect_url = None
     _paused_consultation = None
@@ -3635,7 +3657,7 @@ def smart_route_view(request):
 
     routed, label = _inline_route_visit(
         visit, destination, user, room_id=room_id, counter_id=counter_id,
-        routing_note=routing_note, return_to_me=should_pause,
+        routing_note=routing_note, return_to_me=actual_return_to_me,
         paused_consultation=_paused_consultation,
     )
     if not routed:

@@ -1130,211 +1130,113 @@
     _crossOverlayX[eye] = oc.getContext('2d');
   });
 
-  // Draw anterior segment cross-section only (half eye)
-  // Shows: cornea, anterior chamber, iris, pupil, lens, zonules, ciliary body, angle
-  // Pure black & white, no labels — clean clinical diagram
+  // Draw anterior segment cross-section (half eye, side view)
+  // Clean line drawing only — no labels, no color fills
   function drawCrossBase(ctx, eye) {
     var W = CROSS_W, H = CROSS_H;
-    var CX = W * 0.55, CY = H / 2;  // shift right so anterior structures are centered
-    var S = '#222';  // stroke color
-    var SC = 1.6;    // larger scale since we only show half the eye
+    var CX = W * 0.52, CY = H / 2;
+    var S = '#222';
+    var SC = 1.5;
 
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, W, H);
 
-    // Helper: scale offset from center
     function sx(v) { return CX + v * SC; }
     function sy(v) { return CY + v * SC; }
 
-    // ── Sclera — anterior half only (arc from ~10 o'clock to ~2 o'clock) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 2.8;
+    // ── Scleral wall — anterior half arc (top + bottom) ──
+    ctx.strokeStyle = S; ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.ellipse(CX, CY, 148 * SC, 112 * SC, 0, -0.7, 0.7);
+    ctx.ellipse(CX, CY, 140 * SC, 108 * SC, 0, Math.PI - 0.75, Math.PI + 0.75);
     ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(CX, CY, 148 * SC, 112 * SC, 0, Math.PI - 0.7, Math.PI + 0.7);
-    ctx.stroke();
-
-    // ── Cut-off line at equator (clean vertical edge showing it's a section) ──
-    var cutTopY = CY - 112 * SC * Math.sin(0.7);
-    var cutBotY = CY + 112 * SC * Math.sin(0.7);
-    var cutTopX = CX + 148 * SC * Math.cos(0.7);
-    var cutBotX = CX + 148 * SC * Math.cos(0.7);
-    ctx.strokeStyle = S; ctx.lineWidth = 1.2;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath(); ctx.moveTo(cutTopX, cutTopY); ctx.lineTo(cutBotX, cutBotY); ctx.stroke();
+    // Dashed cut line at equator
+    var cutX = CX + 140 * SC * Math.cos(0.75);
+    var cutY1 = CY - 108 * SC * Math.sin(0.75);
+    var cutY2 = CY + 108 * SC * Math.sin(0.75);
+    ctx.strokeStyle = '#999'; ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(cutX, cutY1); ctx.lineTo(cutX, cutY2); ctx.stroke();
     ctx.setLineDash([]);
 
-    // ── Cornea — outer epithelial surface (prominent anterior bulge) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 2.8;
+    // ── Cornea — outer surface ──
+    ctx.strokeStyle = S; ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(sx(-128), sy(-54));
-    ctx.bezierCurveTo(sx(-178), sy(-28), sx(-178), sy(28), sx(-128), sy(54));
+    ctx.moveTo(sx(-124), sy(-52));
+    ctx.bezierCurveTo(sx(-172), sy(-26), sx(-172), sy(26), sx(-124), sy(52));
     ctx.stroke();
 
-    // ── Cornea — inner endothelial surface ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1.4;
+    // ── Cornea — inner surface ──
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(-46));
-    ctx.bezierCurveTo(sx(-162), sy(-22), sx(-162), sy(22), sx(-122), sy(46));
+    ctx.moveTo(sx(-118), sy(-44));
+    ctx.bezierCurveTo(sx(-156), sy(-20), sx(-156), sy(20), sx(-118), sy(44));
     ctx.stroke();
 
-    // ── Corneal thickness shading (light fill between epi and endo) ──
-    ctx.fillStyle = 'rgba(200,220,240,0.25)';
-    ctx.beginPath();
-    ctx.moveTo(sx(-128), sy(-54));
-    ctx.bezierCurveTo(sx(-178), sy(-28), sx(-178), sy(28), sx(-128), sy(54));
-    ctx.lineTo(sx(-122), sy(46));
-    ctx.bezierCurveTo(sx(-162), sy(22), sx(-162), sy(-22), sx(-122), sy(-46));
-    ctx.closePath(); ctx.fill();
+    // ── Iris — upper ──
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx(-118), sy(-44)); ctx.lineTo(sx(-26), sy(-16)); ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx(-114), sy(-38)); ctx.lineTo(sx(-28), sy(-12)); ctx.stroke();
 
-    // ── Anterior chamber (light aqueous fill) ──
-    ctx.fillStyle = 'rgba(180,220,255,0.12)';
-    ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(-46));
-    ctx.bezierCurveTo(sx(-162), sy(-22), sx(-162), sy(22), sx(-122), sy(46));
-    ctx.lineTo(sx(-28), sy(18));
-    ctx.lineTo(sx(-28), sy(-18));
-    ctx.closePath(); ctx.fill();
+    // ── Iris — lower ──
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx(-118), sy(44)); ctx.lineTo(sx(-26), sy(16)); ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx(-114), sy(38)); ctx.lineTo(sx(-28), sy(12)); ctx.stroke();
 
-    // ── Iris — upper leaf (tapers toward pupil) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(-46));
-    ctx.lineTo(sx(-28), sy(-18));
-    ctx.stroke();
-    // Iris thickness line (upper)
-    ctx.strokeStyle = S; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(sx(-118), sy(-40));
-    ctx.lineTo(sx(-30), sy(-14));
-    ctx.stroke();
-    // Iris body fill (upper)
-    ctx.fillStyle = 'rgba(140,120,90,0.15)';
-    ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(-46));
-    ctx.lineTo(sx(-28), sy(-18));
-    ctx.lineTo(sx(-30), sy(-14));
-    ctx.lineTo(sx(-118), sy(-40));
-    ctx.closePath(); ctx.fill();
-
-    // ── Iris — lower leaf ──
-    ctx.strokeStyle = S; ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(46));
-    ctx.lineTo(sx(-28), sy(18));
-    ctx.stroke();
-    // Iris thickness line (lower)
-    ctx.strokeStyle = S; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(sx(-118), sy(40));
-    ctx.lineTo(sx(-30), sy(14));
-    ctx.stroke();
-    // Iris body fill (lower)
-    ctx.fillStyle = 'rgba(140,120,90,0.15)';
-    ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(46));
-    ctx.lineTo(sx(-28), sy(18));
-    ctx.lineTo(sx(-30), sy(14));
-    ctx.lineTo(sx(-118), sy(40));
-    ctx.closePath(); ctx.fill();
-
-    // ── Pupil (narrow slit between iris tips) ──
+    // ── Pupil ──
     ctx.fillStyle = '#000';
     ctx.beginPath();
-    ctx.moveTo(sx(-28), sy(-18));
-    ctx.lineTo(sx(-24), sy(-10));
-    ctx.lineTo(sx(-24), sy(10));
-    ctx.lineTo(sx(-28), sy(18));
-    ctx.closePath();
-    ctx.fill();
-
-    // ── Lens — biconvex (anterior + posterior curves) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 2;
-    // Anterior lens surface
-    ctx.beginPath();
-    ctx.moveTo(sx(-18), sy(-34));
-    ctx.bezierCurveTo(sx(-38), sy(-12), sx(-38), sy(12), sx(-18), sy(34));
-    ctx.stroke();
-    // Posterior lens surface
-    ctx.beginPath();
-    ctx.moveTo(sx(-18), sy(-34));
-    ctx.bezierCurveTo(sx(32), sy(-16), sx(32), sy(16), sx(-18), sy(34));
-    ctx.stroke();
-    // Lens body fill (subtle)
-    ctx.fillStyle = 'rgba(220,230,240,0.2)';
-    ctx.beginPath();
-    ctx.moveTo(sx(-18), sy(-34));
-    ctx.bezierCurveTo(sx(-38), sy(-12), sx(-38), sy(12), sx(-18), sy(34));
-    ctx.bezierCurveTo(sx(32), sy(16), sx(32), sy(-16), sx(-18), sy(-34));
+    ctx.moveTo(sx(-26), sy(-16));
+    ctx.lineTo(sx(-22), sy(-8));
+    ctx.lineTo(sx(-22), sy(8));
+    ctx.lineTo(sx(-26), sy(16));
     ctx.closePath(); ctx.fill();
 
-    // ── Lens capsule dots (anterior) ──
-    ctx.strokeStyle = '#999'; ctx.lineWidth = 0.4;
-    ctx.setLineDash([2, 3]);
+    // ── Lens — biconvex ──
+    ctx.strokeStyle = S; ctx.lineWidth = 1.8;
     ctx.beginPath();
-    ctx.moveTo(sx(-18), sy(-34));
-    ctx.bezierCurveTo(sx(-42), sy(-12), sx(-42), sy(12), sx(-18), sy(34));
+    ctx.moveTo(sx(-16), sy(-32));
+    ctx.bezierCurveTo(sx(-34), sy(-10), sx(-34), sy(10), sx(-16), sy(32));
     ctx.stroke();
-    ctx.setLineDash([]);
-
-    // ── Zonules (suspensory ligaments — fine lines from ciliary body to lens) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 0.7;
-    ctx.beginPath(); ctx.moveTo(sx(-108), sy(-56)); ctx.lineTo(sx(-22), sy(-32)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx(-100), sy(-62)); ctx.lineTo(sx(-18), sy(-34)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx(-92), sy(-66)); ctx.lineTo(sx(-16), sy(-36)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx(-108), sy(56)); ctx.lineTo(sx(-22), sy(32)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx(-100), sy(62)); ctx.lineTo(sx(-18), sy(34)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx(-92), sy(66)); ctx.lineTo(sx(-16), sy(36)); ctx.stroke();
-
-    // ── Ciliary body (wedge shapes at iridocorneal angle) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(-46));
-    ctx.lineTo(sx(-112), sy(-64));
-    ctx.lineTo(sx(-94), sy(-54));
-    ctx.lineTo(sx(-108), sy(-44));
-    ctx.closePath(); ctx.stroke();
-    ctx.fillStyle = 'rgba(180,160,140,0.12)';
-    ctx.fill();
+    ctx.moveTo(sx(-16), sy(-32));
+    ctx.bezierCurveTo(sx(28), sy(-14), sx(28), sy(14), sx(-16), sy(32));
+    ctx.stroke();
+
+    // ── Zonules ──
+    ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(sx(-104), sy(-54)); ctx.lineTo(sx(-20), sy(-30)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(-96), sy(-58)); ctx.lineTo(sx(-16), sy(-32)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(-104), sy(54)); ctx.lineTo(sx(-20), sy(30)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(-96), sy(58)); ctx.lineTo(sx(-16), sy(32)); ctx.stroke();
+
+    // ── Ciliary body ──
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.moveTo(sx(-122), sy(46));
-    ctx.lineTo(sx(-112), sy(64));
-    ctx.lineTo(sx(-94), sy(54));
-    ctx.lineTo(sx(-108), sy(44));
+    ctx.moveTo(sx(-118), sy(-44)); ctx.lineTo(sx(-108), sy(-60));
+    ctx.lineTo(sx(-92), sy(-50)); ctx.lineTo(sx(-104), sy(-42));
     ctx.closePath(); ctx.stroke();
-    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(sx(-118), sy(44)); ctx.lineTo(sx(-108), sy(60));
+    ctx.lineTo(sx(-92), sy(50)); ctx.lineTo(sx(-104), sy(42));
+    ctx.closePath(); ctx.stroke();
 
-    // ── Ciliary processes (small bumps on ciliary body) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(sx(-96), sy(-54)); ctx.lineTo(sx(-88), sy(-60)); ctx.lineTo(sx(-82), sy(-56)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx(-96), sy(54)); ctx.lineTo(sx(-88), sy(60)); ctx.lineTo(sx(-82), sy(56)); ctx.stroke();
-
-    // ── Trabecular meshwork / angle (small hatching at angle recess) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 0.7;
-    for (var i = 0; i < 6; i++) {
-      var t = i / 5;
-      var ax = -126 + t * 8, ay = -49 + t * 4;
-      ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(ax - 3), sy(ay - 7)); ctx.stroke();
-      ax = -126 + t * 8; ay = 49 - t * 4;
-      ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(ax - 3), sy(ay + 7)); ctx.stroke();
+    // ── Angle hatching ──
+    ctx.lineWidth = 0.5;
+    for (var i = 0; i < 5; i++) {
+      var t = i / 4;
+      var ax = -122 + t * 6, ay = -47 + t * 4;
+      ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(ax - 3), sy(ay - 5)); ctx.stroke();
+      ax = -122 + t * 6; ay = 47 - t * 4;
+      ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(ax - 3), sy(ay + 5)); ctx.stroke();
     }
 
-    // ── Schlemm's canal (tiny arc at the angle) ──
-    ctx.strokeStyle = S; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(sx(-132), sy(-50), 8 * SC, -0.8, 0.3); ctx.stroke();
-    ctx.beginPath(); ctx.arc(sx(-132), sy(50), 8 * SC, -0.3, 0.8); ctx.stroke();
-
-    // ── Anatomical labels (subtle, small) ──
-    ctx.fillStyle = '#888'; ctx.font = (9 * SC) + 'px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Cornea', sx(-160), sy(-66));
-    ctx.fillText('AC', sx(-85), CY + 2);
-    ctx.fillText('Iris', sx(-78), sy(-36));
-    ctx.fillText('Lens', sx(2), CY + 2);
-    ctx.fillStyle = '#aaa'; ctx.font = (7 * SC) + 'px sans-serif';
-    ctx.fillText('CB', sx(-104), sy(-72));
-    ctx.fillText('TM', sx(-130), sy(-62));
+    // ── Schlemm's canal ──
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(sx(-126), sy(-48), 6 * SC, -0.8, 0.3); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx(-126), sy(48), 6 * SC, -0.3, 0.8); ctx.stroke();
   }
 
   function crossComposite(ctx, eye) {
