@@ -54,4 +54,6 @@ urlpatterns = [
     path('templates/create/', views.clinical_template_create_view, name='template_create'),
     path('templates/<uuid:pk>/delete/', views.clinical_template_delete_view, name='template_delete'),
     path('templates/search/', views.clinical_template_search_ajax, name='template_search'),
+    # ── Patient Tracker Board ────────────────────────────────────────────────
+    path('tracker/', views.patient_tracker_view, name='patient_tracker'),
 ]

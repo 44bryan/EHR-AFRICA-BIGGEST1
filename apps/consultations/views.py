@@ -192,8 +192,8 @@ def consultation_create_view(request, patient_id):
             return ''
     class _Stub:
         department_specific_data = _SafeDict()
-        visit = visit  # needed for {% with vs=consultation.visit.vital_signs %}
     consultation_stub = _Stub()
+    consultation_stub.visit = visit  # needed for {% with vs=consultation.visit.vital_signs %}
 
     # Previous consultations for this patient — shown as read-only history sidebar
     prev_consultations = list(
@@ -4410,3 +4410,189 @@ def clinical_template_search_ajax(request):
         qs = qs.filter(Q(title__icontains=q) | Q(tags__icontains=q) | Q(content__icontains=q))
     results = list(qs.values('pk', 'title', 'template_type', 'content')[:20])
     return JsonResponse({'results': results})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Patient Tracker Board — real-time view of where every patient is today
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@never_cache
+def patient_tracker_view(request):
+    """
+    Shows a live board of all patients currently in the hospital today,
+    with their current station, assigned staff, and wait time.
+    Accessible to doctors, refractionists, nurses, and admin roles.
+    """
+    from apps.accounts.models import UserRole
+    user = request.user
+    allowed = user.is_doctor or user.role in (
+        UserRole.OPTOMETRIST, UserRole.PEDIATRIC_REFRACTIONIST,
+        UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST,
+        UserRole.NURSE, UserRole.CONSULTATION_NURSE, UserRole.TRIAGE_NURSE,
+        UserRole.THEATRE_NURSE, UserRole.WARD_NURSE,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
+        UserRole.INVESTIGATION_TECHNICIAN,
+    )
+    if not allowed:
+        return HttpResponseForbidden('Access denied.')
+
+    from apps.qms.models import QueueToken, TokenStatus
+    from django.db.models import Max, F
+
+    today = timezone.localdate()
+
+    # Get the latest token per visit for today (shows current station)
+    latest_token_ids = (
+        QueueToken.objects
+        .filter(token_date=today)
+        .exclude(status__in=[TokenStatus.CANCELLED, TokenStatus.NO_SHOW])
+        .values('visit_id')
+        .annotate(latest_id=Max('id'))
+        .values_list('latest_id', flat=True)
+    )
+
+    tokens = (
+        QueueToken.objects
+        .filter(id__in=latest_token_ids)
+        .select_related('patient', 'visit', 'visit__department',
+                        'visit__consultation_room',
+                        'visit__consultation_room__assigned_doctor',
+                        'counter', 'counter__staff_assigned',
+                        'assigned_doctor')
+        .order_by('-priority', 'issued_at')
+    )
+
+    # Also include visits from today that might not have tokens (walk-ins registered but not yet queued)
+    from apps.patients.models import VisitStatus as VS
+    tokenized_visit_ids = set(tokens.values_list('visit_id', flat=True))
+
+    no_token_visits = (
+        Visit.objects
+        .filter(
+            visit_date__date=today,
+            is_deleted=False,
+        )
+        .exclude(status__in=[VS.DISCHARGED, VS.CANCELLED])
+        .exclude(pk__in=tokenized_visit_ids)
+        .select_related('patient', 'department', 'attending_doctor',
+                        'triage_nurse', 'consultation_room',
+                        'consultation_room__assigned_doctor')
+        .order_by('-visit_date')
+    )
+
+    now = timezone.now()
+
+    # Build tracker rows
+    rows = []
+    for t in tokens:
+        patient = t.patient
+        visit = t.visit
+        if not patient or not visit:
+            continue
+
+        # Determine current station
+        station_map = {
+            'RECEPTIONIST': 'Reception',
+            'CASHIER': 'Cashier',
+            'PARAMETERS': 'Triage',
+            'PARAMS_VIP': 'VIP Triage',
+            'GENERAL': 'Gen Oph Consultation',
+            'RETINA': 'Retina Clinic',
+            'GLAUCOMA': 'Glaucoma Clinic',
+            'CATARACT': 'Cataract / Surgical',
+            'PEDIATRIC': 'Pediatric Oph',
+            'CORNEA': 'Cornea Clinic',
+            'OCULOPLASTY': 'Oculoplasty',
+            'NEURO': 'Neuro-Ophthalmology',
+            'UVEITIS': 'Uveitis Clinic',
+            'LOW_VISION': 'Low Vision',
+            'REFRACTION': 'Refraction',
+            'VIP_CONSULT': 'VIP Consultation',
+            'EXP_CONSULT': 'Express Consultation',
+            'INSUR_CONSULT': 'Insurance Consultation',
+            'INVESTIGATION': 'Investigation',
+            'PHARMACY': 'Pharmacy',
+            'OPTICAL': 'Optical Shop',
+            'LAB': 'Laboratory',
+        }
+        station = station_map.get(t.service_type, t.get_service_type_display())
+        if t.counter:
+            station += f' ({t.counter.name})'
+
+        # Determine current staff
+        staff = None
+        if t.status in (TokenStatus.SERVING, TokenStatus.CALLED):
+            if t.assigned_doctor:
+                staff = t.assigned_doctor
+            elif t.counter and t.counter.staff_assigned:
+                staff = t.counter.staff_assigned
+        if not staff and visit.consultation_room and visit.consultation_room.assigned_doctor:
+            staff = visit.consultation_room.assigned_doctor
+
+        # Time at station
+        ref_time = t.called_at or t.served_at or t.issued_at
+        minutes_at_station = int((now - ref_time).total_seconds() / 60) if ref_time else 0
+
+        # Room info
+        room = None
+        if visit.consultation_room:
+            room = visit.consultation_room.label or f'Room {visit.consultation_room.room_number}'
+
+        rows.append({
+            'patient': patient,
+            'visit': visit,
+            'token': t,
+            'station': station,
+            'room': room,
+            'staff': staff,
+            'status': t.get_status_display(),
+            'status_key': t.status,
+            'minutes': minutes_at_station,
+            'hours': minutes_at_station // 60,
+            'mins_remainder': minutes_at_station % 60,
+            'tier': visit.service_tier,
+        })
+
+    # Add visits without tokens
+    for v in no_token_visits:
+        station = v.get_status_display()
+        staff = v.attending_doctor or v.triage_nurse
+        room = None
+        if v.consultation_room:
+            room = v.consultation_room.label or f'Room {v.consultation_room.room_number}'
+        minutes = int((now - v.visit_date).total_seconds() / 60)
+        rows.append({
+            'patient': v.patient,
+            'visit': v,
+            'token': None,
+            'station': station,
+            'room': room,
+            'staff': staff,
+            'status': v.get_status_display(),
+            'status_key': v.status,
+            'minutes': minutes,
+            'hours': minutes // 60,
+            'mins_remainder': minutes % 60,
+            'tier': v.service_tier,
+        })
+
+    # Filter option
+    filter_station = request.GET.get('station', '')
+    if filter_station:
+        rows = [r for r in rows if filter_station.lower() in r['station'].lower()]
+
+    # Summary counts
+    station_counts = {}
+    for r in rows:
+        base_station = r['station'].split('(')[0].strip()
+        station_counts[base_station] = station_counts.get(base_station, 0) + 1
+
+    ctx = {
+        'rows': rows,
+        'total_patients': len(rows),
+        'station_counts': sorted(station_counts.items(), key=lambda x: -x[1]),
+        'filter_station': filter_station,
+    }
+    return render(request, 'consultations/patient_tracker.html', ctx)
