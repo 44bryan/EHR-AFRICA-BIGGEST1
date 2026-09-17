@@ -4430,7 +4430,7 @@ def patient_tracker_view(request):
         UserRole.OPTOMETRIST, UserRole.PEDIATRIC_REFRACTIONIST,
         UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST,
         UserRole.NURSE, UserRole.CONSULTATION_NURSE, UserRole.TRIAGE_NURSE,
-        UserRole.THEATRE_NURSE, UserRole.WARD_NURSE,
+        UserRole.THEATRE_NURSE, UserRole.WARD_NURSE, UserRole.NURSE_DIRECTOR,
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
         UserRole.INVESTIGATION_TECHNICIAN,
@@ -4451,6 +4451,7 @@ def patient_tracker_view(request):
         .select_related('patient', 'visit', 'visit__department',
                         'visit__consultation_room',
                         'visit__consultation_room__assigned_doctor',
+                        'visit__attending_doctor',
                         'counter', 'counter__staff_assigned',
                         'assigned_doctor')
         .order_by('-issued_at')
@@ -4521,15 +4522,13 @@ def patient_tracker_view(request):
         if t.counter:
             station += f' ({t.counter.name})'
 
-        # Determine current staff
-        staff = None
-        if t.status in (TokenStatus.SERVING, TokenStatus.CALLED):
-            if t.assigned_doctor:
-                staff = t.assigned_doctor
-            elif t.counter and t.counter.staff_assigned:
-                staff = t.counter.staff_assigned
-        if not staff and visit.consultation_room and visit.consultation_room.assigned_doctor:
-            staff = visit.consultation_room.assigned_doctor
+        # Determine current staff — check all sources regardless of token status
+        staff = (
+            t.assigned_doctor
+            or (t.counter.staff_assigned if t.counter else None)
+            or (visit.consultation_room.assigned_doctor if visit.consultation_room else None)
+            or visit.attending_doctor
+        )
 
         # Time at station
         ref_time = t.called_at or t.served_at or t.issued_at
@@ -4580,9 +4579,20 @@ def patient_tracker_view(request):
 
     # ── Filters ────────────────────────────────────────────────────────────
     filter_station = request.GET.get('station', '')
-    filter_mine = request.GET.get('mine', '') == '1'
     filter_staff = request.GET.get('staff', '')
     kiosk = request.GET.get('kiosk', '') == '1'
+
+    # Doctors/refractionists default to "My Patients"; supervisors see all
+    is_supervisory = user.role in (
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
+        UserRole.NURSE_DIRECTOR,
+    ) or user.is_nurse
+    if 'mine' in request.GET:
+        filter_mine = request.GET['mine'] == '1'
+    else:
+        # Default: doctors see only their own patients, supervisors see all
+        filter_mine = not is_supervisory
 
     if filter_station:
         rows = [r for r in rows if filter_station.lower() in r['station'].lower()]
