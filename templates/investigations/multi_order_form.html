@@ -1,0 +1,164 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Order {% if is_optometry %}Optometry{% else %}Investigation{% endif %} Exams{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-semibold">
+          {% if is_optometry %}
+            <i class="bi bi-eye me-2 text-info"></i>Order Optometry / Orthoptics Exams
+          {% else %}
+            <i class="bi bi-search-heart me-2 text-primary"></i>Order Investigation Exams
+          {% endif %}
+        </h5>
+        <div class="text-muted small">Patient: <strong>{{ consultation.patient.full_name }}</strong> ({{ consultation.patient.patient_id }})</div>
+      </div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+
+          {# ── Exam Type Selection (checkboxes grouped by category) ── #}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Select Exams <span class="text-danger">*</span></label>
+            <div class="text-muted small mb-2">Check all exams to order for this patient.</div>
+            {% for cat_code, cat_label, types in grouped_types %}
+            <div class="card bg-light border-0 mb-2">
+              <div class="card-body py-2 px-3">
+                <div class="fw-bold small text-primary mb-1">{{ cat_label }}</div>
+                <div class="row g-1">
+                  {% for t in types %}
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input class="form-check-input exam-check" type="checkbox" name="investigation_types"
+                             value="{{ t.pk }}" id="type_{{ t.pk }}" data-category="{{ cat_code }}"
+                             data-price="{{ t.unit_price|floatformat:0 }}">
+                      <label class="form-check-label small" for="type_{{ t.pk }}">
+                        {{ t.name }}
+                        {% if t.unit_price %}<span class="text-muted">({{ t.unit_price|floatformat:0 }} FCFA)</span>{% endif %}
+                      </label>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+            <div id="selectedCount" class="text-muted small mt-1"></div>
+          </div>
+
+          {# ── Assignee (optometry only) ── #}
+          {% if is_optometry and assignee_list %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Assign To <span class="text-danger">*</span></label>
+            <select name="assigned_to" class="form-select" required>
+              <option value="">— Select examiner —</option>
+              {% for staff in assignee_list %}
+              <option value="{{ staff.pk }}">{{ staff.get_full_name }} ({{ staff.get_role_display }})</option>
+              {% endfor %}
+            </select>
+            <div class="text-muted small mt-1">Select the specific optometrist/orthoptist to perform these exams.</div>
+          </div>
+          {% endif %}
+
+          {# ── Common fields ── #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Eye</label>
+              <select name="eye" class="form-select">
+                {% for val, label in eye_choices %}
+                <option value="{{ val }}" {% if val == 'OU' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Urgency</label>
+              <select name="urgency" class="form-select">
+                {% for val, label in urgency_choices %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Clinical Indication <span class="text-danger">*</span></label>
+            <textarea name="clinical_indication" class="form-control" rows="2" required placeholder="Reason for ordering these exams..."></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea name="notes" class="form-control" rows="2" placeholder="Additional instructions for the technician..."></textarea>
+          </div>
+
+          {# ── Payment Waiver ── #}
+          <div class="card bg-light border-0 mb-4 p-3">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="payment_waived" value="1" id="waiveCheck"
+                     onchange="document.getElementById('waiveReasonBox').classList.toggle('d-none', !this.checked)">
+              <label class="form-check-label fw-semibold text-warning" for="waiveCheck">
+                <i class="bi bi-shield-exclamation me-1"></i>Waive Payment (do not send to cashier)
+              </label>
+            </div>
+            <div class="d-none" id="waiveReasonBox">
+              <label class="form-label small fw-semibold">Reason for waiver <span class="text-danger">*</span></label>
+              <input type="text" name="waive_reason" class="form-control form-control-sm"
+                     placeholder="e.g. Staff patient, charity case, repeat test same day...">
+            </div>
+          </div>
+
+          {# ── Total estimate ── #}
+          <div class="card border-info border-0 bg-info bg-opacity-10 mb-4 p-3" id="totalEstimate" style="display:none;">
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="fw-semibold"><i class="bi bi-calculator me-1"></i>Estimated Total:</span>
+              <span class="fw-bold fs-5 text-info" id="totalAmount">0 FCFA</span>
+            </div>
+            <div class="text-muted small" id="examSummary"></div>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Order <span id="orderCount">Exams</span></button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var checks = document.querySelectorAll('.exam-check');
+  var totalEl = document.getElementById('totalEstimate');
+  var amountEl = document.getElementById('totalAmount');
+  var summaryEl = document.getElementById('examSummary');
+  var countEl = document.getElementById('selectedCount');
+  var btnCount = document.getElementById('orderCount');
+
+  function updateTotals() {
+    var total = 0, count = 0, names = [];
+    checks.forEach(function(cb) {
+      if (cb.checked) {
+        count++;
+        var price = parseInt(cb.dataset.price || '0', 10);
+        total += price;
+        names.push(cb.nextElementSibling.textContent.trim().split('(')[0].trim());
+      }
+    });
+    if (count > 0) {
+      totalEl.style.display = 'block';
+      amountEl.textContent = total.toLocaleString() + ' FCFA';
+      summaryEl.textContent = count + ' exam(s): ' + names.join(', ');
+      countEl.textContent = count + ' exam(s) selected';
+      btnCount.textContent = count + ' Exam' + (count > 1 ? 's' : '');
+    } else {
+      totalEl.style.display = 'none';
+      countEl.textContent = '';
+      btnCount.textContent = 'Exams';
+    }
+  }
+
+  checks.forEach(function(cb) { cb.addEventListener('change', updateTotals); });
+});
+</script>
+{% endblock %}

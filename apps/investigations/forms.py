@@ -23,6 +23,43 @@ class InvestigationOrderForm(forms.ModelForm):
         }
 
 
+class MultiExamOrderForm(forms.Form):
+    """
+    Multi-select exam ordering form.
+    Doctor selects multiple exam types at once + shared fields.
+    For optometry/orthoptics: also selects who should perform the exam.
+    """
+    investigation_types = forms.ModelMultipleChoiceField(
+        queryset=InvestigationType.objects.filter(is_active=True).order_by('category', 'name'),
+        widget=forms.CheckboxSelectMultiple(),
+        required=True,
+        error_messages={'required': 'Please select at least one exam.'},
+    )
+    urgency = forms.ChoiceField(
+        choices=InvestigationOrder.Urgency.choices,
+        initial='ROUTINE',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+    eye = forms.ChoiceField(
+        choices=Laterality.choices,
+        initial='OU',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+    clinical_indication = forms.CharField(
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+        required=True,
+    )
+    notes = forms.CharField(
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+        required=False,
+    )
+    # For optometry: who should perform
+    assigned_to = forms.IntegerField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+
 class InvestigationResultForm(forms.ModelForm):
     result_file = forms.FileField(
         required=False,
@@ -40,3 +77,274 @@ class InvestigationResultForm(forms.ModelForm):
                 attrs={'class': 'form-select'},
             ),
         }
+
+
+# ── Structured Optometry Result Forms ──────────────────────────────────────
+
+class AutorefractionResultForm(forms.Form):
+    """Autorefraction / Keratometry result entry."""
+    # Right Eye (OD)
+    sph_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_od = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    # Left Eye (OS)
+    sph_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_os = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    # Keratometry
+    k1_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'placeholder': 'K1'}))
+    k2_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'placeholder': 'K2'}))
+    k1_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'placeholder': 'K1'}))
+    k2_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'placeholder': 'K2'}))
+    pd = forms.DecimalField(max_digits=5, decimal_places=1, required=False,
+                             widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.5', 'placeholder': 'PD (mm)'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class SubjectiveRefractionResultForm(forms.Form):
+    """Subjective/manifest refraction result entry."""
+    # OD
+    sph_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_od = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    add_od = forms.DecimalField(max_digits=5, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'ADD'}))
+    best_va_od = forms.CharField(max_length=20, required=False,
+                                  widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'}))
+    # OS
+    sph_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_os = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    add_os = forms.DecimalField(max_digits=5, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'ADD'}))
+    best_va_os = forms.CharField(max_length=20, required=False,
+                                  widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'}))
+    # Binocular
+    pd_dist = forms.DecimalField(max_digits=5, decimal_places=1, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.5', 'placeholder': 'Dist PD'}))
+    pd_near = forms.DecimalField(max_digits=5, decimal_places=1, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.5', 'placeholder': 'Near PD'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class CycloplegicRefractionResultForm(forms.Form):
+    """Cycloplegic refraction result entry."""
+    cycloplegic_agent = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('CYCLOPENTOLATE', 'Cyclopentolate 1%'),
+                 ('ATROPINE', 'Atropine 1%'), ('TROPICAMIDE', 'Tropicamide 1%'),
+                 ('HOMATROPINE', 'Homatropine 2%')],
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+        required=False,
+    )
+    instillation_time = forms.TimeField(required=False,
+                                         widget=forms.TimeInput(attrs={'class': 'form-control form-control-sm', 'type': 'time'}))
+    exam_time = forms.TimeField(required=False,
+                                 widget=forms.TimeInput(attrs={'class': 'form-control form-control-sm', 'type': 'time'}))
+    # OD
+    sph_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_od = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    # OS
+    sph_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_os = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class ContactLensResultForm(forms.Form):
+    """Contact lens assessment result."""
+    cl_type = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('SOFT', 'Soft'), ('RGP', 'RGP'),
+                 ('SCLERAL', 'Scleral'), ('HYBRID', 'Hybrid'), ('ORTHO_K', 'Ortho-K')],
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+        required=False,
+    )
+    # OD
+    base_curve_od = forms.DecimalField(max_digits=4, decimal_places=2, required=False,
+                                        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.1', 'placeholder': 'BC'}))
+    diameter_od = forms.DecimalField(max_digits=4, decimal_places=1, required=False,
+                                      widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.1', 'placeholder': 'Dia'}))
+    power_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                   widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'Power'}))
+    over_refraction_od = forms.CharField(max_length=30, required=False,
+                                          widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Over-Rx'}))
+    # OS
+    base_curve_os = forms.DecimalField(max_digits=4, decimal_places=2, required=False,
+                                        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.1', 'placeholder': 'BC'}))
+    diameter_os = forms.DecimalField(max_digits=4, decimal_places=1, required=False,
+                                      widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.1', 'placeholder': 'Dia'}))
+    power_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                   widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'Power'}))
+    over_refraction_os = forms.CharField(max_length=30, required=False,
+                                          widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Over-Rx'}))
+    fit_assessment = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('GOOD', 'Good fit'), ('TIGHT', 'Tight'),
+                 ('LOOSE', 'Loose'), ('DECENTERED', 'Decentered')],
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+        required=False,
+    )
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class LensometryResultForm(forms.Form):
+    """Current spectacle Rx reading with lensometer."""
+    # OD
+    sph_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_od = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_od = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    add_od = forms.DecimalField(max_digits=5, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'ADD'}))
+    # OS
+    sph_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'SPH'}))
+    cyl_os = forms.DecimalField(max_digits=6, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'CYL'}))
+    axis_os = forms.IntegerField(min_value=0, max_value=180, required=False,
+                                  widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Axis'}))
+    add_os = forms.DecimalField(max_digits=5, decimal_places=2, required=False,
+                                 widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.25', 'placeholder': 'ADD'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+# ── Orthoptics Result Forms ────────────────────────────────────────────────
+
+class MotilityResultForm(forms.Form):
+    """Ocular motility and EOM assessment."""
+    RATING = [('', '--'), ('FULL', 'Full'), ('RESTRICTED', 'Restricted'),
+              ('OVERACTING', 'Overacting'), ('PARETIC', 'Paretic')]
+    # Versions (9 gaze positions)
+    sr_od = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    ir_od = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    mr_od = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    lr_od = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    so_od = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    io_od = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    sr_os = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    ir_os = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    mr_os = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    lr_os = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    so_os = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    io_os = forms.ChoiceField(choices=RATING, required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    saccades = forms.ChoiceField(
+        choices=[('', '--'), ('NORMAL', 'Normal'), ('SLOW', 'Slow'), ('HYPOMETRIC', 'Hypometric'),
+                 ('HYPERMETRIC', 'Hypermetric')],
+        required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    pursuits = forms.ChoiceField(
+        choices=[('', '--'), ('SMOOTH', 'Smooth'), ('SACCADIC', 'Saccadic'), ('RESTRICTED', 'Restricted')],
+        required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    nystagmus = forms.CharField(max_length=200, required=False,
+                                 widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Describe if present'}))
+    head_posture = forms.CharField(max_length=200, required=False,
+                                    widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Abnormal head posture'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class CoverTestResultForm(forms.Form):
+    """Cover test / prism cover test result."""
+    DEVIATION_TYPE = [('', '--'), ('ORTHO', 'Orthophoria'), ('ESO', 'Esophoria/tropia'),
+                      ('EXO', 'Exophoria/tropia'), ('HYPER', 'Hyperphoria/tropia'),
+                      ('HYPO', 'Hypophoria/tropia')]
+    # Distance
+    dist_type = forms.ChoiceField(choices=DEVIATION_TYPE, required=False,
+                                   widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    dist_amount_pd = forms.IntegerField(required=False,
+                                         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'PD'}))
+    dist_vertical = forms.CharField(max_length=50, required=False,
+                                     widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Vertical'}))
+    # Near
+    near_type = forms.ChoiceField(choices=DEVIATION_TYPE, required=False,
+                                   widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    near_amount_pd = forms.IntegerField(required=False,
+                                         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'PD'}))
+    near_vertical = forms.CharField(max_length=50, required=False,
+                                     widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Vertical'}))
+    with_correction = forms.BooleanField(required=False, widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class StereopsisResultForm(forms.Form):
+    """Stereopsis test result."""
+    test_used = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('TITMUS', 'Titmus'), ('RANDOT', 'Randot'),
+                 ('LANG', 'Lang'), ('TNO', 'TNO'), ('FRISBY', 'Frisby')],
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+        required=False,
+    )
+    result_seconds_arc = forms.IntegerField(required=False,
+                                             widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Seconds of arc'}))
+    grade = forms.ChoiceField(
+        choices=[('', '--'), ('FINE', 'Fine (<60")'), ('MODERATE', 'Moderate (60-200")'),
+                 ('GROSS', 'Gross (200-3000")'), ('NIL', 'Nil')],
+        required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class NPCResultForm(forms.Form):
+    """Near Point of Convergence result."""
+    break_point_cm = forms.DecimalField(max_digits=5, decimal_places=1, required=False,
+                                         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.5', 'placeholder': 'Break (cm)'}))
+    recovery_point_cm = forms.DecimalField(max_digits=5, decimal_places=1, required=False,
+                                            widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.5', 'placeholder': 'Recovery (cm)'}))
+    method = forms.ChoiceField(
+        choices=[('', '--'), ('PEN_LIGHT', 'Pen Light'), ('RAF_RULE', 'RAF Rule'),
+                 ('ACCOMMODATION_TARGET', 'Accommodation Target')],
+        required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class FusionalVergenceResultForm(forms.Form):
+    """Prism bar / fusional vergence assessment."""
+    # Base Out (convergence)
+    bo_break_dist = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Break'}))
+    bo_recovery_dist = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Rec'}))
+    bo_break_near = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Break'}))
+    bo_recovery_near = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Rec'}))
+    # Base In (divergence)
+    bi_break_dist = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Break'}))
+    bi_recovery_dist = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Rec'}))
+    bi_break_near = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Break'}))
+    bi_recovery_near = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Rec'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+# Map investigation type codes to their structured form classes
+STRUCTURED_RESULT_FORMS = {
+    'AUTOREF': AutorefractionResultForm,
+    'SUBJ-REF': SubjectiveRefractionResultForm,
+    'DRY-REF': SubjectiveRefractionResultForm,  # Same structure
+    'CYCLO-REF': CycloplegicRefractionResultForm,
+    'CL-ASSESS': ContactLensResultForm,
+    'LENSOMETRY': LensometryResultForm,
+    'COVER': CoverTestResultForm,
+    'PRISM-COVER': CoverTestResultForm,
+    'NPC': NPCResultForm,
+    'NPA': NPCResultForm,  # Similar structure
+    'STEREO': StereopsisResultForm,
+    'MOTILITY': MotilityResultForm,
+    'PRISM-BAR': FusionalVergenceResultForm,
+}

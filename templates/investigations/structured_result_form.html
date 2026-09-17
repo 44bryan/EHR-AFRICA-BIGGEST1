@@ -1,0 +1,309 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Enter Result — {{ form_title }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <h5 class="mb-0 fw-semibold">
+              <i class="bi bi-clipboard2-data me-2 text-primary"></i>{{ form_title }}
+            </h5>
+            <div class="text-muted small">
+              Patient: <strong>{{ patient.full_name }}</strong> ({{ patient.patient_id }})
+              &bull; Eye: <strong>{{ order.get_eye_display }}</strong>
+              {% if order.assigned_to %}&bull; Assigned to: <strong>{{ order.assigned_to.get_full_name }}</strong>{% endif %}
+            </div>
+          </div>
+          <span class="badge bg-{{ order.investigation_type.category|lower }} text-dark" style="font-size:.75rem;">
+            {{ order.investigation_type.get_category_display }}
+          </span>
+        </div>
+      </div>
+      <div class="card-body">
+        {% if order.clinical_indication %}
+        <div class="alert alert-info py-2 small mb-3">
+          <i class="bi bi-info-circle me-1"></i><strong>Clinical Indication:</strong> {{ order.clinical_indication }}
+        </div>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+
+          {# ── Structured Fields (category-specific) ── #}
+          {% with code=order.investigation_type.code %}
+
+          {# ── AUTOREFRACTION ── #}
+          {% if code == 'AUTOREF' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Autorefraction / Keratometry</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-primary">OD (Right Eye)</span></div>
+            <div class="col-md-3">{{ form.sph_od.label_tag }} {{ form.sph_od }}</div>
+            <div class="col-md-3">{{ form.cyl_od.label_tag }} {{ form.cyl_od }}</div>
+            <div class="col-md-3">{{ form.axis_od.label_tag }} {{ form.axis_od }}</div>
+            <div class="col-md-3"><label class="form-label small">K1 OD</label> {{ form.k1_od }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-3"><label class="form-label small">K2 OD</label> {{ form.k2_od }}</div>
+            <div class="col-md-3"><label class="form-label small">PD (mm)</label> {{ form.pd }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-success">OS (Left Eye)</span></div>
+            <div class="col-md-3">{{ form.sph_os.label_tag }} {{ form.sph_os }}</div>
+            <div class="col-md-3">{{ form.cyl_os.label_tag }} {{ form.cyl_os }}</div>
+            <div class="col-md-3">{{ form.axis_os.label_tag }} {{ form.axis_os }}</div>
+            <div class="col-md-3"><label class="form-label small">K1 OS</label> {{ form.k1_os }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-3"><label class="form-label small">K2 OS</label> {{ form.k2_os }}</div>
+          </div>
+
+          {# ── SUBJECTIVE / DRY REFRACTION ── #}
+          {% elif code == 'SUBJ-REF' or code == 'DRY-REF' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">{{ form_title }}</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-primary">OD (Right Eye)</span></div>
+            <div class="col-md-2">{{ form.sph_od.label_tag }} {{ form.sph_od }}</div>
+            <div class="col-md-2">{{ form.cyl_od.label_tag }} {{ form.cyl_od }}</div>
+            <div class="col-md-2">{{ form.axis_od.label_tag }} {{ form.axis_od }}</div>
+            <div class="col-md-2">{{ form.add_od.label_tag }} {{ form.add_od }}</div>
+            <div class="col-md-2"><label class="form-label small">Best VA OD</label> {{ form.best_va_od }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-success">OS (Left Eye)</span></div>
+            <div class="col-md-2">{{ form.sph_os.label_tag }} {{ form.sph_os }}</div>
+            <div class="col-md-2">{{ form.cyl_os.label_tag }} {{ form.cyl_os }}</div>
+            <div class="col-md-2">{{ form.axis_os.label_tag }} {{ form.axis_os }}</div>
+            <div class="col-md-2">{{ form.add_os.label_tag }} {{ form.add_os }}</div>
+            <div class="col-md-2"><label class="form-label small">Best VA OS</label> {{ form.best_va_os }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-3"><label class="form-label small">Distance PD</label> {{ form.pd_dist }}</div>
+            <div class="col-md-3"><label class="form-label small">Near PD</label> {{ form.pd_near }}</div>
+          </div>
+
+          {# ── CYCLOPLEGIC REFRACTION ── #}
+          {% elif code == 'CYCLO-REF' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Cycloplegic Refraction</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">{{ form.cycloplegic_agent.label_tag }} {{ form.cycloplegic_agent }}</div>
+            <div class="col-md-4"><label class="form-label small">Instillation Time</label> {{ form.instillation_time }}</div>
+            <div class="col-md-4"><label class="form-label small">Exam Time</label> {{ form.exam_time }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-primary">OD</span></div>
+            <div class="col-md-3">{{ form.sph_od.label_tag }} {{ form.sph_od }}</div>
+            <div class="col-md-3">{{ form.cyl_od.label_tag }} {{ form.cyl_od }}</div>
+            <div class="col-md-3">{{ form.axis_od.label_tag }} {{ form.axis_od }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-success">OS</span></div>
+            <div class="col-md-3">{{ form.sph_os.label_tag }} {{ form.sph_os }}</div>
+            <div class="col-md-3">{{ form.cyl_os.label_tag }} {{ form.cyl_os }}</div>
+            <div class="col-md-3">{{ form.axis_os.label_tag }} {{ form.axis_os }}</div>
+          </div>
+
+          {# ── CONTACT LENS ── #}
+          {% elif code == 'CL-ASSESS' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Contact Lens Assessment</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">{{ form.cl_type.label_tag }} {{ form.cl_type }}</div>
+            <div class="col-md-4">{{ form.fit_assessment.label_tag }} {{ form.fit_assessment }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-primary">OD</span></div>
+            <div class="col-md-3"><label class="form-label small">BC</label> {{ form.base_curve_od }}</div>
+            <div class="col-md-3"><label class="form-label small">Dia</label> {{ form.diameter_od }}</div>
+            <div class="col-md-3"><label class="form-label small">Power</label> {{ form.power_od }}</div>
+            <div class="col-md-3"><label class="form-label small">Over-Rx</label> {{ form.over_refraction_od }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-success">OS</span></div>
+            <div class="col-md-3"><label class="form-label small">BC</label> {{ form.base_curve_os }}</div>
+            <div class="col-md-3"><label class="form-label small">Dia</label> {{ form.diameter_os }}</div>
+            <div class="col-md-3"><label class="form-label small">Power</label> {{ form.power_os }}</div>
+            <div class="col-md-3"><label class="form-label small">Over-Rx</label> {{ form.over_refraction_os }}</div>
+          </div>
+
+          {# ── LENSOMETRY ── #}
+          {% elif code == 'LENSOMETRY' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Lensometry (Current Rx)</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-primary">OD</span></div>
+            <div class="col-md-3">{{ form.sph_od.label_tag }} {{ form.sph_od }}</div>
+            <div class="col-md-3">{{ form.cyl_od.label_tag }} {{ form.cyl_od }}</div>
+            <div class="col-md-3">{{ form.axis_od.label_tag }} {{ form.axis_od }}</div>
+            <div class="col-md-3">{{ form.add_od.label_tag }} {{ form.add_od }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><span class="badge bg-success">OS</span></div>
+            <div class="col-md-3">{{ form.sph_os.label_tag }} {{ form.sph_os }}</div>
+            <div class="col-md-3">{{ form.cyl_os.label_tag }} {{ form.cyl_os }}</div>
+            <div class="col-md-3">{{ form.axis_os.label_tag }} {{ form.axis_os }}</div>
+            <div class="col-md-3">{{ form.add_os.label_tag }} {{ form.add_os }}</div>
+          </div>
+
+          {# ── COVER TEST / PRISM COVER ── #}
+          {% elif code == 'COVER' or code == 'PRISM-COVER' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Cover Test / Prism Cover Test</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><strong class="small">Distance</strong></div>
+            <div class="col-md-4">{{ form.dist_type.label_tag }} {{ form.dist_type }}</div>
+            <div class="col-md-4"><label class="form-label small">Amount (PD)</label> {{ form.dist_amount_pd }}</div>
+            <div class="col-md-4"><label class="form-label small">Vertical</label> {{ form.dist_vertical }}</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12"><strong class="small">Near</strong></div>
+            <div class="col-md-4">{{ form.near_type.label_tag }} {{ form.near_type }}</div>
+            <div class="col-md-4"><label class="form-label small">Amount (PD)</label> {{ form.near_amount_pd }}</div>
+            <div class="col-md-4"><label class="form-label small">Vertical</label> {{ form.near_vertical }}</div>
+          </div>
+          <div class="form-check mb-3">
+            {{ form.with_correction }} <label class="form-check-label small">With correction</label>
+          </div>
+
+          {# ── NPC ── #}
+          {% elif code == 'NPC' or code == 'NPA' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">{{ form_title }}</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-4"><label class="form-label small">Break Point (cm)</label> {{ form.break_point_cm }}</div>
+            <div class="col-md-4"><label class="form-label small">Recovery Point (cm)</label> {{ form.recovery_point_cm }}</div>
+            <div class="col-md-4">{{ form.method.label_tag }} {{ form.method }}</div>
+          </div>
+
+          {# ── STEREOPSIS ── #}
+          {% elif code == 'STEREO' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Stereopsis Test</h6></div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">{{ form.test_used.label_tag }} {{ form.test_used }}</div>
+            <div class="col-md-4"><label class="form-label small">Seconds of Arc</label> {{ form.result_seconds_arc }}</div>
+            <div class="col-md-4">{{ form.grade.label_tag }} {{ form.grade }}</div>
+          </div>
+
+          {# ── MOTILITY ── #}
+          {% elif code == 'MOTILITY' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Ocular Motility Assessment</h6></div>
+          </div>
+          <table class="table table-sm table-bordered small mb-3">
+            <thead class="table-light">
+              <tr><th></th><th>SR</th><th>IR</th><th>MR</th><th>LR</th><th>SO</th><th>IO</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fw-bold">OD</td>
+                <td>{{ form.sr_od }}</td><td>{{ form.ir_od }}</td><td>{{ form.mr_od }}</td>
+                <td>{{ form.lr_od }}</td><td>{{ form.so_od }}</td><td>{{ form.io_od }}</td>
+              </tr>
+              <tr>
+                <td class="fw-bold">OS</td>
+                <td>{{ form.sr_os }}</td><td>{{ form.ir_os }}</td><td>{{ form.mr_os }}</td>
+                <td>{{ form.lr_os }}</td><td>{{ form.so_os }}</td><td>{{ form.io_os }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="row g-2 mb-3">
+            <div class="col-md-3">{{ form.saccades.label_tag }} {{ form.saccades }}</div>
+            <div class="col-md-3">{{ form.pursuits.label_tag }} {{ form.pursuits }}</div>
+            <div class="col-md-3"><label class="form-label small">Nystagmus</label> {{ form.nystagmus }}</div>
+            <div class="col-md-3"><label class="form-label small">Head Posture</label> {{ form.head_posture }}</div>
+          </div>
+
+          {# ── PRISM BAR / FUSIONAL VERGENCE ── #}
+          {% elif code == 'PRISM-BAR' %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">Fusional Vergence (Prism Bar)</h6></div>
+          </div>
+          <table class="table table-sm table-bordered small mb-3">
+            <thead class="table-light">
+              <tr><th></th><th colspan="2">Base Out (Convergence)</th><th colspan="2">Base In (Divergence)</th></tr>
+              <tr><th></th><th>Break</th><th>Recovery</th><th>Break</th><th>Recovery</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fw-bold">Distance</td>
+                <td>{{ form.bo_break_dist }}</td><td>{{ form.bo_recovery_dist }}</td>
+                <td>{{ form.bi_break_dist }}</td><td>{{ form.bi_recovery_dist }}</td>
+              </tr>
+              <tr>
+                <td class="fw-bold">Near</td>
+                <td>{{ form.bo_break_near }}</td><td>{{ form.bo_recovery_near }}</td>
+                <td>{{ form.bi_break_near }}</td><td>{{ form.bi_recovery_near }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {# ── FALLBACK: render all fields generically ── #}
+          {% else %}
+          <div class="row mb-3">
+            <div class="col-12"><h6 class="fw-bold border-bottom pb-1 small">{{ form_title }}</h6></div>
+          </div>
+          {% for field in form %}
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
+          </div>
+          {% endfor %}
+          {% endif %}
+
+          {% endwith %}
+
+          {# ── Notes field (from structured form) ── #}
+          {% if form.notes %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Technician Notes</label>
+            {{ form.notes }}
+          </div>
+          {% endif %}
+
+          <hr>
+
+          {# ── Common result fields ── #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Overall Interpretation</label>
+            <textarea name="interpretation" class="form-control" rows="3" placeholder="Summary interpretation of findings..."></textarea>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Normal/Abnormal</label>
+              <select name="is_normal" class="form-select">
+                <option value="">-- Select --</option>
+                <option value="True">Normal</option>
+                <option value="False">Abnormal</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Upload File (optional)</label>
+              <input type="file" name="result_file" class="form-control" accept="image/*,.pdf">
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'investigations:workstation' %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i>Save Result</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -499,6 +499,9 @@ class User(AbstractUser):
             UserRole.INVESTIGATION_TECHNICIAN,
             UserRole.LAB_TECHNICIAN,
             UserRole.MEDICAL_DIRECTOR,
+            UserRole.OPTOMETRIST,
+            UserRole.PEDIATRIC_REFRACTIONIST,
+            UserRole.ORTHOPTIST,
         )
 
     def can_dispense_pharmacy(self):

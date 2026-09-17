@@ -12,7 +12,10 @@ from .models import (
     VisitInvestigationPlan, VisitInvestigationStep, ContrastReactionLog,
     InvestigationCategory, PaymentStatus, AcquisitionStatus, ReportStatus, Laterality,
 )
-from .forms import InvestigationOrderForm, InvestigationResultForm
+from .forms import (
+    InvestigationOrderForm, InvestigationResultForm,
+    MultiExamOrderForm, STRUCTURED_RESULT_FORMS,
+)
 from apps.consultations.models import Consultation
 from apps.core.context_processors import qms_active as _qms_active
 
@@ -23,7 +26,8 @@ from apps.core.context_processors import qms_active as _qms_active
 
 def _is_invest_staff(user):
     return (user.is_investigation_tech or user.is_medical_director
-            or user.is_super_admin or user.is_admin_director)
+            or user.is_super_admin or user.is_admin_director
+            or user.role in ('optometrist', 'pediatric_refractionist', 'orthoptist'))
 
 
 def _is_invest_viewer(user):
@@ -49,7 +53,36 @@ def investigation_workstation_view(request):
         is_deleted=False,
     ).select_related(
         'patient', 'investigation_type', 'ordered_by', 'device', 'checked_in_by',
+        'assigned_to',
     )
+
+    # ── Per-role category filtering ─────────────────────────────────────────
+    # Optometrists see only REFRACTION orders (+ assigned to them)
+    # Orthoptists see only ORTHOPTICS orders (+ assigned to them)
+    # Investigation techs see everything EXCEPT optometry categories
+    # Admins/directors see everything
+    user = request.user
+    _OPTOMETRY_CATS = {'REFRACTION', 'LOW_VISION'}
+    _ORTHOPTICS_CATS = {'ORTHOPTICS'}
+
+    if user.role in ('optometrist', 'pediatric_refractionist'):
+        # Optometrist: see REFRACTION + anything assigned to them
+        _base_qs = _base_qs.filter(
+            Q(investigation_type__category__in=_OPTOMETRY_CATS) |
+            Q(assigned_to=user)
+        )
+    elif user.role == 'orthoptist':
+        # Orthoptist: see ORTHOPTICS + anything assigned to them
+        _base_qs = _base_qs.filter(
+            Q(investigation_type__category__in=_ORTHOPTICS_CATS) |
+            Q(assigned_to=user)
+        )
+    elif user.is_investigation_tech:
+        # Regular investigation tech: see everything EXCEPT optometry categories
+        _base_qs = _base_qs.exclude(
+            investigation_type__category__in=(_OPTOMETRY_CATS | _ORTHOPTICS_CATS)
+        )
+    # else: admin/director/super_admin — see everything (no filter)
 
     # Only paid orders are actionable — filter by payment_status
     _paid_statuses = PaymentStatus.actionable_statuses()
@@ -793,6 +826,15 @@ def add_result_view(request, pk):
                         notification_type=NotificationType.GENERAL,
                         priority=priority,
                     )
+            except Exception:
+                pass
+
+            # Check auto-return to doctor (all exams done?)
+            try:
+                visit = getattr(order.consultation, 'visit', None) if order.consultation else None
+                if visit:
+                    from apps.core.patient_flow import check_and_autoreturn_to_doctor
+                    check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
             except Exception:
                 pass
 
@@ -2695,3 +2737,286 @@ def staff_throughput_pdf_view(request):
         'pdf_filename': f'investigation-staff-throughput-{days}d.pdf',
     }
     return render_pdf('investigations/staff_throughput_pdf.html', ctx)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MULTI-EXAM ORDERING — Doctor orders multiple exams at once
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Categories that require a specific person to be assigned
+_ASSIGNEE_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
+# Roles that can perform optometry/refraction exams
+_OPTOMETRY_ROLES = {'optometrist', 'pediatric_refractionist', 'low_vision_specialist'}
+# Roles that can perform orthoptics exams
+_ORTHOPTICS_ROLES = {'orthoptist', 'pediatric_refractionist'}
+
+
+@login_required
+def multi_exam_order_view(request, consultation_pk):
+    """
+    Doctor orders multiple exams at once.
+    For optometry/orthoptics: also selects who should perform the exam.
+    For investigation/lab: shared queue, no specific assignee.
+    """
+    if not request.user.can_order_investigations():
+        return HttpResponseForbidden()
+
+    consultation = get_object_or_404(Consultation, pk=consultation_pk, is_deleted=False)
+    from itertools import groupby as _groupby
+    from apps.accounts.models import User, UserRole
+
+    # Determine mode: optometry or investigation
+    mode = request.GET.get('cat', 'investigation')  # 'optometry' or 'investigation'
+    is_optometry = mode == 'optometry'
+
+    OPTOMETRY_CATS = {'ORTHOPTICS', 'LOW_VISION', 'REFRACTION'}
+    _qs = InvestigationType.objects.filter(is_active=True)
+    if is_optometry:
+        _qs = _qs.filter(category__in=OPTOMETRY_CATS)
+    else:
+        _qs = _qs.exclude(category__in=OPTOMETRY_CATS)
+    _all_types = _qs.order_by('category', 'name')
+    _cat_labels = dict(InvestigationCategory.choices)
+    grouped_types = []
+    for cat, items in _groupby(_all_types, key=lambda t: t.category):
+        label = _cat_labels.get(cat, (cat or 'Other').replace('_', ' ').title())
+        grouped_types.append((cat, label, list(items)))
+
+    # Available assignees for optometry
+    assignee_list = []
+    if is_optometry:
+        _roles = list(_OPTOMETRY_ROLES | _ORTHOPTICS_ROLES)
+        assignee_list = list(
+            User.objects.filter(
+                role__in=_roles,
+                is_active=True,
+            ).order_by('role', 'first_name')
+        )
+
+    if request.method == 'POST':
+        selected_type_ids = request.POST.getlist('investigation_types')
+        urgency = request.POST.get('urgency', 'ROUTINE')
+        eye = request.POST.get('eye', 'OU')
+        clinical_indication = request.POST.get('clinical_indication', '').strip()
+        notes = request.POST.get('notes', '').strip()
+        assigned_to_id = request.POST.get('assigned_to', '').strip()
+        payment_waived = request.POST.get('payment_waived') == '1'
+        waive_reason = request.POST.get('waive_reason', '').strip()
+
+        if not selected_type_ids:
+            messages.error(request, 'Please select at least one exam type.')
+        elif not clinical_indication:
+            messages.error(request, 'Clinical indication is required.')
+        elif payment_waived and not waive_reason:
+            messages.error(request, 'A reason is required when waiving payment.')
+        else:
+            # Resolve assignee
+            assigned_user = None
+            if assigned_to_id:
+                try:
+                    assigned_user = User.objects.get(pk=int(assigned_to_id), is_active=True)
+                except (User.DoesNotExist, ValueError):
+                    pass
+
+            inv_types = InvestigationType.objects.filter(pk__in=selected_type_ids, is_active=True)
+            created_orders = []
+            for inv_type in inv_types:
+                order = InvestigationOrder(
+                    consultation=consultation,
+                    patient=consultation.patient,
+                    ordered_by=request.user,
+                    created_by=request.user,
+                    investigation_type=inv_type,
+                    urgency=urgency,
+                    eye=eye,
+                    clinical_indication=clinical_indication,
+                    notes=notes,
+                )
+
+                # Assign to specific person for optometry categories
+                if inv_type.category in _ASSIGNEE_CATS and assigned_user:
+                    order.assigned_to = assigned_user
+
+                # Payment
+                if payment_waived:
+                    order.payment_status = PaymentStatus.WAIVED
+                    order.payment_authorized_by = request.user
+                    order.payment_authorized_at = timezone.now()
+                    order.payment_authorization_reason = waive_reason
+
+                # Default device
+                if inv_type.default_device:
+                    order.device = inv_type.default_device
+
+                order.save()
+                created_orders.append(order)
+
+                # Create ServiceWorkOrder for billing
+                try:
+                    from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+                    wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
+                    qty = 2 if (inv_type.billed_per_eye and eye == 'OU') else 1
+                    total_price = inv_type.unit_price * qty
+                    price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' x 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
+                    ServiceWorkOrder.objects.create(
+                        patient=consultation.patient,
+                        consultation=consultation,
+                        category=ServiceCategory.INVESTIGATION,
+                        description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
+                        status=wo_status,
+                        notes=f'Payment waived — {waive_reason}' if payment_waived else price_note,
+                        created_by=request.user,
+                    )
+                except Exception:
+                    pass
+
+            # Auto-route to investigation queue
+            try:
+                from apps.core.patient_flow import auto_route_to_investigation
+                auto_route_to_investigation(consultation, ordered_by=request.user)
+            except Exception:
+                pass
+
+            names = ', '.join(o.investigation_type.name for o in created_orders)
+            messages.success(
+                request,
+                f'{len(created_orders)} exam(s) ordered: {names}. '
+                f'Patient routed to {"optometry" if is_optometry else "investigation"} queue.'
+            )
+            return redirect('consultations:detail', pk=consultation_pk)
+
+    return render(request, 'investigations/multi_order_form.html', {
+        'consultation': consultation,
+        'grouped_types': grouped_types,
+        'is_optometry': is_optometry,
+        'assignee_list': assignee_list,
+        'urgency_choices': InvestigationOrder.Urgency.choices,
+        'eye_choices': Laterality.choices,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STRUCTURED RESULT ENTRY — Category-specific forms for optometry/orthoptics
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def structured_result_view(request, pk):
+    """
+    Enter structured results for optometry/orthoptics exams.
+    Falls back to generic result form if no structured form exists for this type.
+    """
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+
+    order = get_object_or_404(InvestigationOrder, pk=pk, is_deleted=False)
+
+    if hasattr(order, 'result'):
+        messages.info(request, 'Result already recorded.')
+        return redirect('investigations:detail', pk=pk)
+
+    inv_code = order.investigation_type.code
+    FormClass = STRUCTURED_RESULT_FORMS.get(inv_code)
+
+    if not FormClass:
+        # No structured form — redirect to generic result form
+        return redirect('investigations:add_result', pk=pk)
+
+    if request.method == 'POST':
+        form = FormClass(request.POST)
+        if form.is_valid():
+            # Save structured data as JSON in InvestigationResult.result_data
+            result_data = {}
+            for field_name, value in form.cleaned_data.items():
+                if value is not None and value != '':
+                    if hasattr(value, 'isoformat'):
+                        result_data[field_name] = value.isoformat()
+                    else:
+                        result_data[field_name] = str(value) if not isinstance(value, (int, float, bool)) else value
+
+            interpretation = request.POST.get('interpretation', '').strip()
+            is_normal_val = request.POST.get('is_normal', '')
+            is_normal = None
+            if is_normal_val == 'True':
+                is_normal = True
+            elif is_normal_val == 'False':
+                is_normal = False
+
+            result = InvestigationResult(
+                order=order,
+                performed_by=request.user,
+                created_by=request.user,
+                result_data=result_data,
+                interpretation=interpretation,
+                is_normal=is_normal,
+                reported_by=request.user,
+                reported_at=timezone.now(),
+            )
+            result.save()
+
+            # Create acquisition record
+            acq, _ = AcquisitionRecord.objects.get_or_create(
+                order=order,
+                defaults={'performed_by': request.user, 'created_by': request.user},
+            )
+            acq.completed_at = timezone.now()
+            acq.save(update_fields=['completed_at', 'updated_at'])
+
+            # Update order status
+            order.status = InvestigationOrder.Status.COMPLETED
+            order.acquisition_status = AcquisitionStatus.ACQUIRED
+            order.report_status = ReportStatus.REPORTED
+            order.save(update_fields=['status', 'acquisition_status', 'report_status', 'updated_at'])
+
+            # File upload
+            uploaded_file = request.FILES.get('result_file')
+            if uploaded_file:
+                InvestigationFile.objects.create(
+                    result=result,
+                    file=uploaded_file,
+                    file_type='IMAGE' if uploaded_file.content_type.startswith('image') else 'PDF',
+                    laterality=order.eye,
+                    uploaded_by=request.user,
+                )
+
+            # Notify ordering doctor
+            try:
+                from apps.notifications.utils import notify
+                from apps.notifications.models import NotificationType, NotificationPriority
+                if order.ordered_by:
+                    notify(
+                        recipient=order.ordered_by,
+                        title=f'Result ready: {order.investigation_type.name} — {order.patient.full_name}',
+                        message=(
+                            f'{order.investigation_type.name} ({order.get_eye_display()}) result entered by '
+                            f'{request.user.get_full_name() or request.user.username}.'
+                        ),
+                        link=f'/investigations/{order.pk}/',
+                        notification_type=NotificationType.GENERAL,
+                        priority=NotificationPriority.HIGH,
+                    )
+            except Exception:
+                pass
+
+            # Check auto-return to doctor (all exams done?)
+            try:
+                visit = getattr(consultation, 'visit', None) if hasattr(order, 'consultation') else None
+                if not visit and order.consultation:
+                    visit = getattr(order.consultation, 'visit', None)
+                if visit:
+                    from apps.core.patient_flow import check_and_autoreturn_to_doctor
+                    check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
+            except Exception:
+                pass
+
+            messages.success(request, f'Result recorded for {order.investigation_type.name}.')
+            return redirect('investigations:workstation')
+    else:
+        form = FormClass()
+
+    return render(request, 'investigations/structured_result_form.html', {
+        'form': form,
+        'order': order,
+        'inv_type': order.investigation_type,
+        'form_title': order.investigation_type.name,
+        'patient': order.patient,
+    })
