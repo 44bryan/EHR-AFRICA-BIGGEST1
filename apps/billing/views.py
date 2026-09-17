@@ -585,6 +585,24 @@ def add_payment(request, invoice_id):
         _try_open_consultation_window(invoice)
         invoice.refresh_from_db()
         _sync_surgical_deposit(invoice)
+        # ── Payment bridge: auto-complete work orders + mark investigation/lab PAID ──
+        if invoice.balance_due <= 0 and invoice.patient:
+            try:
+                _now = timezone.now()
+                _pending_wos = ServiceWorkOrder.objects.filter(
+                    patient=invoice.patient,
+                    status=WorkOrderStatus.PENDING_PAYMENT,
+                    is_deleted=False,
+                    created_at__date=timezone.localdate(),
+                )
+                for _wo in _pending_wos:
+                    _wo.status = WorkOrderStatus.DONE
+                    _wo.completed_at = _now
+                    _wo.completed_by = request.user
+                    _wo.save(update_fields=['status', 'completed_at', 'completed_by', 'updated_at'])
+                    _bridge_work_order_to_clinical(_wo, request.user)
+            except Exception:
+                pass
         # ── Route patient after full payment (same logic as patient_finalize) ──
         if invoice.balance_due <= 0 and invoice.patient:
             _route_patient_after_payment(invoice, request)
@@ -1409,6 +1427,26 @@ def pos_record_payment(request, invoice_id):
         except Exception:
             pass  # Don't block payment if claim creation fails
 
+    # ── Payment bridge: when invoice is fully paid, auto-complete work orders
+    # and mark investigation/lab orders as PAID ─────────────────────────────
+    if invoice.balance_due <= 0 and invoice.patient:
+        try:
+            _now = timezone.now()
+            pending_wos = ServiceWorkOrder.objects.filter(
+                patient=invoice.patient,
+                status=WorkOrderStatus.PENDING_PAYMENT,
+                is_deleted=False,
+                created_at__date=timezone.localdate(),
+            )
+            for _wo in pending_wos:
+                _wo.status = WorkOrderStatus.DONE
+                _wo.completed_at = _now
+                _wo.completed_by = request.user
+                _wo.save(update_fields=['status', 'completed_at', 'completed_by', 'updated_at'])
+                _bridge_work_order_to_clinical(_wo, request.user)
+        except Exception:
+            pass  # Never block payment response
+
     resp = {
         'success': True,
         'amount_paid': int(invoice.amount_paid),
@@ -1829,6 +1867,83 @@ def work_queue(request):
     })
 
 
+def _bridge_work_order_to_clinical(wo, user):
+    """
+    Payment bridge: when a ServiceWorkOrder is marked DONE (paid), update the
+    corresponding InvestigationOrder or LabOrder payment_status to PAID so the
+    technician's workstation can see it.
+    """
+    now = timezone.now()
+
+    # ── Investigation orders ──────────────────────────────────────────────
+    if wo.category == ServiceCategory.INVESTIGATION and wo.consultation_id and wo.patient_id:
+        try:
+            from apps.investigations.models import InvestigationOrder, PaymentStatus as InvPS
+            # Match: same patient + consultation + still UNPAID
+            InvestigationOrder.objects.filter(
+                consultation_id=wo.consultation_id,
+                patient_id=wo.patient_id,
+                payment_status=InvPS.UNPAID,
+                is_deleted=False,
+            ).update(
+                payment_status=InvPS.PAID,
+                payment_authorized_by=user,
+                payment_authorized_at=now,
+            )
+        except Exception:
+            pass
+
+    # ── Lab orders ────────────────────────────────────────────────────────
+    if wo.category == ServiceCategory.LABORATORY:
+        try:
+            from apps.laboratory.models import LabOrder, PaymentStatus as LabPS
+            # Per-test tracking: if work order links to a specific LabOrderItem,
+            # update that item's parent LabOrder
+            if wo.lab_order_item_id:
+                order = wo.lab_order_item.order
+                if order.payment_status == LabPS.UNPAID:
+                    # Check if ALL items for this order are now paid
+                    total_items = order.items.count()
+                    paid_wos = ServiceWorkOrder.objects.filter(
+                        lab_order_item__order=order,
+                        status=WorkOrderStatus.DONE,
+                        is_deleted=False,
+                    ).count()
+                    # Include the current WO which was just marked DONE
+                    if paid_wos >= total_items:
+                        order.payment_status = LabPS.PAID
+                        order.payment_authorized_by = user
+                        order.payment_authorized_at = now
+                        order.save(update_fields=[
+                            'payment_status', 'payment_authorized_by',
+                            'payment_authorized_at', 'updated_at',
+                        ])
+            elif wo.consultation_id and wo.patient_id:
+                # Fallback: match by consultation + patient
+                LabOrder.objects.filter(
+                    consultation_id=wo.consultation_id,
+                    patient_id=wo.patient_id,
+                    payment_status=LabPS.UNPAID,
+                    is_deleted=False,
+                ).update(
+                    payment_status=LabPS.PAID,
+                    payment_authorized_by=user,
+                    payment_authorized_at=now,
+                )
+        except Exception:
+            pass
+
+    # ── Notify investigation/lab workstation via WebSocket ─────────────────
+    try:
+        from apps.core.ws_notify import notify_queue
+        if wo.category == ServiceCategory.INVESTIGATION:
+            notify_queue('investigation')
+        elif wo.category == ServiceCategory.LABORATORY:
+            notify_queue('lab')
+    except Exception:
+        pass
+
+
 @login_required
 @require_POST
 def work_order_done(request, wo_id):
@@ -1853,6 +1968,9 @@ def work_order_done(request, wo_id):
             ).update(status=DispensingStatus.DISPENSED, dispensed_at=timezone.now())
         except Exception:
             pass
+
+    # ── Payment bridge: mark investigation/lab orders as PAID ──────────────
+    _bridge_work_order_to_clinical(wo, request.user)
 
     return JsonResponse({'success': True, 'wo_id': str(wo.id)})
 
