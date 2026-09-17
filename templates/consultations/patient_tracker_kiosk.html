@@ -15,9 +15,11 @@
     .kiosk-stats { display: flex; gap: 1rem; padding: .75rem 2rem; background: #16213e; flex-wrap: wrap; }
     .stat-chip { background: #1e3a5f; border-radius: .5rem; padding: .5rem 1rem; text-align: center; min-width: 100px; }
     .stat-chip .num { font-size: 1.8rem; font-weight: 700; color: #60a5fa; line-height: 1; }
-    .stat-chip .label { font-size: .65rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
+    .stat-chip .lbl { font-size: .65rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
     .kiosk-grid { padding: 1rem; }
-    .k-card { background: #16213e; border-radius: .75rem; overflow: hidden; }
+    .k-card { background: #16213e; border-radius: .75rem; overflow: hidden; transition: all 0.4s ease; }
+    .k-card.card-new { animation: fadeIn 0.5s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
     .k-card .patient-name { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
     .k-card .patient-id { font-size: .7rem; color: #64748b; }
     .k-station { font-size: .85rem; font-weight: 600; }
@@ -29,10 +31,14 @@
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .tier-VIP { background: linear-gradient(135deg, #1e3a5f 0%, #3d2e00 100%) !important; }
     .tier-EXPRESS { background: linear-gradient(135deg, #1e3a5f 0%, #003344 100%) !important; }
+    .tier-FAST_TRACK { background: linear-gradient(135deg, #1e3a5f 0%, #003322 100%) !important; }
     .legend { display: flex; gap: 1.5rem; padding: .5rem 2rem; background: #0f172a; }
     .legend-item { display: flex; align-items: center; gap: 6px; font-size: .7rem; color: #94a3b8; }
     .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
     .clock { font-size: 1.1rem; color: #60a5fa; font-weight: 600; }
+    .ws-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .ws-on { background: #22c55e; }
+    .ws-off { background: #ef4444; animation: pulse 1s infinite; }
     .exit-kiosk { position: fixed; top: 8px; right: 12px; z-index: 999; opacity: .3; }
     .exit-kiosk:hover { opacity: 1; }
   </style>
@@ -46,103 +52,133 @@
 <div class="kiosk-header d-flex justify-content-between align-items-center">
   <div>
     <h1><i class="bi bi-geo-alt-fill me-2" style="color:#60a5fa;"></i>Patient Tracker</h1>
-    <div class="subtitle">{{ total_patients }} patient{{ total_patients|pluralize }} in hospital</div>
+    <div class="subtitle"><span id="totalCount">0</span> patient(s) in hospital <span id="wsDot" class="ws-dot ws-off ms-2"></span></div>
   </div>
   <div class="clock" id="kioskClock"></div>
 </div>
 
-<div class="legend">
-  <span class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Waiting{% if status_counts.WAITING %} ({{ status_counts.WAITING }}){% endif %}</span>
-  <span class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> Called{% if status_counts.CALLED %} ({{ status_counts.CALLED }}){% endif %}</span>
-  <span class="legend-item"><span class="legend-dot" style="background:#22c55e;"></span> Serving{% if status_counts.SERVING %} ({{ status_counts.SERVING }}){% endif %}</span>
-  <span class="legend-item"><span class="legend-dot" style="background:#64748b;"></span> Done{% if status_counts.COMPLETED %} ({{ status_counts.COMPLETED }}){% endif %}</span>
-  <span class="legend-item ms-auto"><i class="bi bi-arrow-repeat me-1"></i><span id="kioskCountdown">30s</span></span>
+<div class="legend" id="legendBar">
+  <span class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Waiting <span id="cntWait"></span></span>
+  <span class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> Called <span id="cntCall"></span></span>
+  <span class="legend-item"><span class="legend-dot" style="background:#22c55e;"></span> Serving <span id="cntServ"></span></span>
+  <span class="legend-item"><span class="legend-dot" style="background:#64748b;"></span> Done <span id="cntDone"></span></span>
+  <span class="legend-item ms-auto"><i class="bi bi-arrow-repeat me-1"></i><span id="kioskCountdown">live</span></span>
 </div>
 
-<div class="kiosk-stats">
-  {% for station_name, count in station_counts %}
-  <div class="stat-chip">
-    <div class="num">{{ count }}</div>
-    <div class="label">{{ station_name }}</div>
-  </div>
-  {% endfor %}
-</div>
+<div class="kiosk-stats" id="statsBar"></div>
 
-<div class="kiosk-grid">
-  {% if rows %}
-  <div class="row g-2">
-    {% for r in rows %}
-    <div class="col-6 col-md-4 col-lg-3 col-xl-2">
-      <div class="k-card p-2 h-100 {% if r.tier == 'VIP' %}tier-VIP{% elif r.tier == 'EXPRESS' %}tier-EXPRESS{% endif %}">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="patient-name">{{ r.patient.full_name }}</div>
-            <div class="patient-id">{{ r.patient.patient_id }}{% if r.token %} &middot; {{ r.token.token_number }}{% endif %}</div>
-          </div>
-          {% if r.tier == 'VIP' %}
-          <span class="badge bg-warning text-dark" style="font-size:.55rem;">VIP</span>
-          {% elif r.tier == 'EXPRESS' %}
-          <span class="badge bg-info text-dark" style="font-size:.55rem;">EXPRESS</span>
-          {% endif %}
-        </div>
-        <div class="mt-1">
-          <span class="k-station
-            {% if r.status_key == 'WAITING' %}text-warning
-            {% elif r.status_key == 'CALLED' %}text-info
-            {% elif r.status_key == 'SERVING' %}text-success
-            {% else %}text-secondary{% endif %}">
-            <i class="bi bi-geo-alt me-1"></i>{{ r.station }}
-          </span>
-        </div>
-        {% if r.room %}
-        <div style="font-size:.7rem;color:#64748b;"><i class="bi bi-door-open me-1"></i>{{ r.room }}</div>
-        {% endif %}
-        <div class="k-staff mt-1">
-          {% if r.staff %}
-          <i class="bi bi-person-badge me-1"></i>{{ r.staff.get_full_name }}
-          {% else %}
-          <span style="color:#475569;"><i class="bi bi-person-dash me-1"></i>Unassigned</span>
-          {% endif %}
-        </div>
-        {% if r.referring_doctor %}
-        <div style="font-size:.65rem;color:#60a5fa;" class="mt-1">
-          <i class="bi bi-arrow-return-left me-1"></i>Returning to {{ r.referring_doctor.get_full_name }}
-        </div>
-        {% endif %}
-        <div class="k-time mt-1 {% if r.minutes > 30 %}danger{% elif r.minutes > 15 %}warn{% else %}ok{% endif %}">
-          <i class="bi bi-clock me-1"></i>
-          {% if r.minutes >= 60 %}{{ r.hours }}h {{ r.mins_remainder }}m{% else %}{{ r.minutes }}m{% endif %}
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
+<div class="kiosk-grid" id="kioskGrid">
   <div class="text-center py-5">
     <i class="bi bi-geo-alt" style="font-size:4rem;color:#475569;"></i>
-    <p style="color:#64748b;margin-top:1rem;">No patients in hospital right now.</p>
+    <p style="color:#64748b;margin-top:1rem;">Loading...</p>
   </div>
-  {% endif %}
 </div>
 
 <script>
-window.addEventListener('pageshow', function(e) {
-  if (e.persisted) location.reload();
-});
-function updateClock() {
-  var d = new Date(), h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
-  document.getElementById('kioskClock').textContent =
-    (h<10?'0':'')+h + ':' + (m<10?'0':'')+m + ':' + (s<10?'0':'')+s;
-}
-setInterval(updateClock, 1000);
-updateClock();
 (function(){
-  var c = 30, el = document.getElementById('kioskCountdown');
-  setInterval(function(){
-    c--;
-    if (el) el.textContent = c + 's';
-    if (c <= 0) location.reload();
-  }, 1000);
+  var rows=[], ws=null, reconn=null;
+  var dataUrl='{% url "consultations:patient_tracker_data" %}';
+
+  // Clock
+  function tick(){
+    var d=new Date(),h=d.getHours(),m=d.getMinutes(),s=d.getSeconds();
+    document.getElementById('kioskClock').textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+  }
+  setInterval(tick,1000);tick();
+
+  // WebSocket
+  function wsConnect(){
+    var p=location.protocol==='https:'?'wss:':'ws:';
+    ws=new WebSocket(p+'//'+location.host+'/ws/queue/tracker/');
+    ws.onopen=function(){
+      document.getElementById('wsDot').className='ws-dot ws-on';
+      document.getElementById('kioskCountdown').textContent='live';
+      if(reconn){clearInterval(reconn);reconn=null;}
+    };
+    ws.onmessage=function(e){
+      var m=JSON.parse(e.data);
+      if(m.action==='refresh') fetchData();
+    };
+    ws.onclose=function(){
+      document.getElementById('wsDot').className='ws-dot ws-off';
+      document.getElementById('kioskCountdown').textContent='reconnecting...';
+      if(!reconn) reconn=setInterval(wsConnect,5000);
+    };
+    ws.onerror=function(){ws.close();};
+  }
+  wsConnect();
+  // Fallback
+  setInterval(function(){if(!ws||ws.readyState!==1) fetchData();},15000);
+
+  // Fetch
+  function fetchData(){
+    fetch(dataUrl,{credentials:'same-origin'}).then(function(r){return r.json();})
+    .then(function(d){if(d.rows){rows=d.rows;render();}}).catch(function(){});
+  }
+
+  // Render
+  function render(){
+    document.getElementById('totalCount').textContent=rows.length;
+
+    // Status counts
+    var sc={WAITING:0,CALLED:0,SERVING:0,COMPLETED:0};
+    rows.forEach(function(r){if(sc[r.status_key]!==undefined)sc[r.status_key]++;});
+    document.getElementById('cntWait').textContent=sc.WAITING?'('+sc.WAITING+')':'';
+    document.getElementById('cntCall').textContent=sc.CALLED?'('+sc.CALLED+')':'';
+    document.getElementById('cntServ').textContent=sc.SERVING?'('+sc.SERVING+')':'';
+    document.getElementById('cntDone').textContent=sc.COMPLETED?'('+sc.COMPLETED+')':'';
+
+    // Station stats
+    var st={};
+    rows.forEach(function(r){var b=r.station.split('(')[0].trim();st[b]=(st[b]||0)+1;});
+    var sh='';
+    Object.entries(st).sort(function(a,b){return b[1]-a[1];}).forEach(function(s){
+      sh+='<div class="stat-chip"><div class="num">'+s[1]+'</div><div class="lbl">'+s[0]+'</div></div>';
+    });
+    document.getElementById('statsBar').innerHTML=sh;
+
+    // Cards
+    if(rows.length===0){
+      document.getElementById('kioskGrid').innerHTML='<div class="text-center py-5"><i class="bi bi-geo-alt" style="font-size:4rem;color:#475569;"></i><p style="color:#64748b;margin-top:1rem;">No patients in hospital right now.</p></div>';
+      return;
+    }
+    var g='<div class="row g-2">';
+    rows.forEach(function(r){
+      var tc=r.tier&&r.tier!=='STANDARD'?' tier-'+r.tier:'';
+      var stColor='text-secondary';
+      if(r.status_key==='WAITING')stColor='text-warning';
+      else if(r.status_key==='CALLED')stColor='text-info';
+      else if(r.status_key==='SERVING')stColor='text-success';
+      var timeClass='ok';if(r.minutes>30)timeClass='danger';else if(r.minutes>15)timeClass='warn';
+      var h=Math.floor(r.minutes/60),m=r.minutes%60;
+      var timeTxt=h>0?h+'h '+m+'m':m+'m';
+      var tierBdg='';
+      if(r.tier==='VIP')tierBdg='<span class="badge bg-warning text-dark" style="font-size:.55rem;">VIP</span>';
+      else if(r.tier==='EXPRESS')tierBdg='<span class="badge bg-info text-dark" style="font-size:.55rem;">EXPRESS</span>';
+      else if(r.tier==='FAST_TRACK')tierBdg='<span class="badge bg-success" style="font-size:.55rem;">FAST TRACK</span>';
+      var staffHtml=r.staff?'<i class="bi bi-person-badge me-1"></i>'+r.staff.name:'<span style="color:#475569;"><i class="bi bi-person-dash me-1"></i>Unassigned</span>';
+      var refHtml=r.referring_doctor?'<div style="font-size:.65rem;color:#60a5fa;" class="mt-1"><i class="bi bi-arrow-return-left me-1"></i>Returning to '+r.referring_doctor.name+'</div>':'';
+
+      g+='<div class="col-6 col-md-4 col-lg-3 col-xl-2">'
+        +'<div class="k-card p-2 h-100'+tc+'">'
+        +'<div class="d-flex justify-content-between align-items-start">'
+        +'<div><div class="patient-name">'+r.patient_name+'</div>'
+        +'<div class="patient-id">'+r.patient_id+(r.token_number?' &middot; '+r.token_number:'')+'</div></div>'
+        +tierBdg+'</div>'
+        +'<div class="mt-1"><span class="k-station '+stColor+'"><i class="bi bi-geo-alt me-1"></i>'+r.station+'</span></div>'
+        +(r.room?'<div style="font-size:.7rem;color:#64748b;"><i class="bi bi-door-open me-1"></i>'+r.room+'</div>':'')
+        +'<div class="k-staff mt-1">'+staffHtml+'</div>'
+        +refHtml
+        +'<div class="k-time mt-1 '+timeClass+'"><i class="bi bi-clock me-1"></i>'+timeTxt+'</div>'
+        +'</div></div>';
+    });
+    g+='</div>';
+    document.getElementById('kioskGrid').innerHTML=g;
+  }
+
+  // Initial load
+  fetchData();
+  window.addEventListener('pageshow',function(e){if(e.persisted)location.reload();});
 })();
 </script>
 </body>

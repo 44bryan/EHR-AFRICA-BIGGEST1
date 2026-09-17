@@ -1,10 +1,15 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load static %}
 {% block title %}Patient Tracker Board{% endblock %}
 
 {% block extra_css %}
 <style>
-  .tracker-card { transition: box-shadow 0.15s; border-radius: 8px; }
+  .tracker-card { transition: all 0.4s ease; border-radius: 8px; }
   .tracker-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12) !important; }
+  .tracker-card.card-new { animation: fadeSlideIn 0.5s ease; }
+  .tracker-card.card-updated { animation: highlightPulse 1s ease; }
+  @keyframes fadeSlideIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes highlightPulse { 0%{box-shadow:0 0 0 3px rgba(59,130,246,.5)} 100%{box-shadow:none} }
   .station-pill { font-size: .75rem; font-weight: 600; }
   .time-badge { font-size: .7rem; }
   .time-badge.bg-danger { animation: pulse 1.5s infinite; }
@@ -13,206 +18,352 @@
   .summary-card:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.15) !important; }
   .tier-VIP { background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%); }
   .tier-EXPRESS { background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); }
-  .tier-FAST_TRACK { background: linear-gradient(135deg, #e2d5f1 0%, #d4c5e8 100%); }
-  .filter-bar { background: #f8f9fa; border-radius: .5rem; }
-  .status-legend { display:inline-flex; align-items:center; gap:4px; font-size:.7rem; }
-  .status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
-  .mine-btn.active { background:#0d6efd !important; color:#fff !important; }
+  .tier-FAST_TRACK { background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); }
+  .dept-header { font-size: .85rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px; cursor: pointer; }
+  .dept-header:hover { color: #1e293b; }
+  .dept-header .badge { font-size: .65rem; }
+  .ws-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .ws-on { background: #22c55e; }
+  .ws-off { background: #ef4444; animation: pulse 1s infinite; }
+  .tracker-card[draggable=true] { cursor: grab; }
+  .tracker-card[draggable=true]:active { cursor: grabbing; }
+  .drop-zone { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; color: #94a3b8; transition: all 0.2s; min-height: 60px; }
+  .drop-zone.drag-active { border-color: #3b82f6; background: #eff6ff; color: #3b82f6; }
+  .timeline { position: relative; padding-left: 28px; }
+  .timeline::before { content:''; position:absolute; left:12px; top:0; bottom:0; width:2px; background:#e2e8f0; }
+  .timeline-step { position:relative; padding-bottom:16px; }
+  .timeline-step:last-child { padding-bottom:0; }
+  .timeline-dot { position:absolute; left:-22px; top:2px; width:14px; height:14px; border-radius:50%; background:#3b82f6; border:2px solid #fff; box-shadow:0 0 0 2px #3b82f6; }
+  .timeline-dot.done { background: #22c55e; box-shadow:0 0 0 2px #22c55e; }
+  .timeline-time { font-size:.75rem; font-weight:700; color:#1e293b; }
+  .timeline-label { font-size:.8rem; color:#475569; }
 </style>
 {% endblock %}
 
 {% block content %}
-
-{# ── Header ── #}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <div>
-    <h1 class="h4 mb-0 fw-bold">
-      <i class="bi bi-geo-alt-fill text-primary me-2"></i>Patient Tracker Board
-    </h1>
-    <div class="text-muted small">
-      Real-time patient location &mdash; <strong>{{ total_patients }}</strong> patient{{ total_patients|pluralize }} in hospital
-      <span id="autoRefreshBadge" class="badge bg-success ms-2" style="font-size:.65rem;">Auto-refresh 30s</span>
+<div id="trackerApp">
+  {# ── Header ─────────────────────────────────────────────────────────── #}
+  <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+      <h1 class="h4 mb-1"><i class="bi bi-geo-alt-fill text-primary me-2"></i>Patient Tracker Board</h1>
+      <div class="text-muted small">
+        <span id="totalCount">0</span> patient(s) in hospital
+        <span class="ms-2" title="WebSocket status"><span id="wsDot" class="ws-dot ws-off"></span></span>
+        <span id="wsLbl" class="text-muted ms-1" style="font-size:.65rem">connecting...</span>
+      </div>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <div class="btn-group btn-group-sm">
+        <button id="btnAll" class="btn btn-outline-secondary{% if not filter_mine %} active{% endif %}" onclick="TRK.setFilter('all')">All Patients</button>
+        <button id="btnMine" class="btn btn-outline-primary{% if filter_mine %} active{% endif %}" onclick="TRK.setFilter('mine')">My Patients</button>
+      </div>
+      <select id="staffFilter" class="form-select form-select-sm" style="width:180px;" onchange="TRK.render()">
+        <option value="">All Staff</option>
+      </select>
+      <input type="text" id="stationFilter" class="form-control form-control-sm" style="width:150px;" placeholder="Filter station..." oninput="TRK.render()">
+      <button id="btnSound" class="btn btn-sm btn-outline-secondary" onclick="TRK.toggleSound()" title="Toggle sound alerts">
+        <i class="bi bi-volume-up" id="soundIcon"></i>
+      </button>
+      <a href="{% url 'consultations:patient_tracker' %}?kiosk=1"
+         class="btn btn-sm btn-outline-dark" title="TV / Kiosk mode" hx-boost="false" target="_blank">
+        <i class="bi bi-tv me-1"></i>TV
+      </a>
     </div>
   </div>
-  <div class="d-flex gap-2 align-items-center">
-    <a href="{% url 'consultations:patient_tracker' %}?kiosk=1{% if filter_mine %}&mine=1{% endif %}"
-       class="btn btn-sm btn-outline-dark" title="Open TV / Kiosk mode (fullscreen, dark, big text)"
-       hx-boost="false" target="_blank">
-      <i class="bi bi-tv me-1"></i>TV Mode
-    </a>
+
+  {# ── Station Summary ────────────────────────────────────────────────── #}
+  <div id="stationSummary" class="d-flex gap-2 flex-wrap mb-3"></div>
+
+  {# ── Legend ──────────────────────────────────────────────────────────── #}
+  <div class="d-flex gap-3 mb-3 flex-wrap" style="font-size:.75rem;">
+    <span><span class="badge bg-warning text-dark">Waiting</span></span>
+    <span><span class="badge bg-primary">Being Seen</span></span>
+    <span><span class="badge bg-success">Completed</span></span>
+    <span><span class="badge bg-secondary">Other</span></span>
+    <span class="ms-2"><span class="badge bg-danger">&gt;60m</span> <span class="badge bg-warning text-dark">30-60m</span> <span class="badge bg-success">&lt;30m</span></span>
   </div>
-</div>
 
-{# ── Filter Bar ── #}
-<div class="filter-bar p-2 mb-3 d-flex flex-wrap gap-2 align-items-center">
-  <a href="{% url 'consultations:patient_tracker' %}{% if not filter_mine %}?mine=1{% endif %}"
-     class="btn btn-sm mine-btn {% if filter_mine %}active btn-primary{% else %}btn-outline-primary{% endif %}">
-    <i class="bi bi-person-check me-1"></i>My Patients
-  </a>
-
-  <form method="get" class="d-flex gap-1 align-items-center">
-    {% if filter_mine %}<input type="hidden" name="mine" value="1">{% endif %}
-    <select name="staff" class="form-select form-select-sm" style="min-width:170px;" onchange="this.form.submit()">
-      <option value="">All Staff</option>
-      {% for s in staff_list %}
-      <option value="{{ s.pk }}" {% if filter_staff == s.pk|slugify %}selected{% endif %}>
-        {{ s.get_full_name }} ({{ s.get_role_display }})
-      </option>
+  {% if can_dispatch %}
+  <div id="dropZone" class="drop-zone mb-3 d-none">
+    <i class="bi bi-arrow-down-circle me-2"></i>Drop patient here to reassign to:
+    <select id="dropDoctor" class="form-select form-select-sm d-inline-block ms-2" style="width:220px;">
+      {% for doc in doctors %}
+      <option value="{{ doc.pk }}">{{ doc.get_full_name }} ({{ doc.get_role_display }})</option>
       {% endfor %}
     </select>
-  </form>
-
-  <form method="get" class="d-flex gap-1 align-items-center">
-    {% if filter_mine %}<input type="hidden" name="mine" value="1">{% endif %}
-    <input type="text" name="station" class="form-control form-control-sm"
-           placeholder="Filter station..." value="{{ filter_station }}"
-           style="min-width:140px;">
-    <button type="submit" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-funnel"></i>
-    </button>
-  </form>
-
-  {% if filter_station or filter_mine or filter_staff %}
-  <a href="{% url 'consultations:patient_tracker' %}" class="btn btn-sm btn-outline-danger">
-    <i class="bi bi-x-lg"></i> Clear All
-  </a>
+  </div>
   {% endif %}
 
-  <div class="ms-auto d-flex gap-3 flex-wrap">
-    <span class="status-legend"><span class="status-dot" style="background:#ffc107;"></span> Waiting{% if status_counts.WAITING %} ({{ status_counts.WAITING }}){% endif %}</span>
-    <span class="status-legend"><span class="status-dot" style="background:#0d6efd;"></span> Called{% if status_counts.CALLED %} ({{ status_counts.CALLED }}){% endif %}</span>
-    <span class="status-legend"><span class="status-dot" style="background:#198754;"></span> Serving{% if status_counts.SERVING %} ({{ status_counts.SERVING }}){% endif %}</span>
-    <span class="status-legend"><span class="status-dot" style="background:#6c757d;"></span> Done{% if status_counts.COMPLETED %} ({{ status_counts.COMPLETED }}){% endif %}</span>
+  <div id="trackerGrid"></div>
+  <div id="emptyState" class="text-center py-5 text-muted d-none">
+    <i class="bi bi-inbox" style="font-size:3rem;"></i>
+    <p class="mt-2">No patients match your filters.</p>
   </div>
 </div>
 
-{# ── Station Summary Cards ── #}
-{% if station_counts %}
-<div class="d-flex flex-wrap gap-2 mb-3">
-  {% for station_name, count in station_counts %}
-  <a href="?station={{ station_name }}{% if filter_mine %}&mine=1{% endif %}"
-     class="summary-card card border-0 shadow-sm text-decoration-none">
-    <div class="card-body p-2 text-center">
-      <div class="fw-bold fs-5 text-primary">{{ count }}</div>
-      <div class="text-muted" style="font-size:.7rem;line-height:1.1;">{{ station_name }}</div>
-    </div>
-  </a>
-  {% endfor %}
-</div>
-{% endif %}
-
-{# ── Patient Grid ── #}
-{% if rows %}
-<div class="row g-2">
-  {% for r in rows %}
-  <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-    <div class="card tracker-card shadow-sm h-100 {% if r.tier == 'VIP' %}tier-VIP{% elif r.tier == 'EXPRESS' %}tier-EXPRESS{% elif r.tier == 'FAST_TRACK' %}tier-FAST_TRACK{% endif %}">
-      <div class="card-body p-2">
-        {# Patient name + ID #}
-        <div class="d-flex justify-content-between align-items-start mb-1">
-          <div>
-            <strong class="d-block" style="font-size:.85rem;line-height:1.2;">
-              {{ r.patient.full_name }}
-            </strong>
-            <span class="text-muted" style="font-size:.7rem;">{{ r.patient.patient_id }}</span>
-          </div>
-          <div class="text-end">
-            {% if r.tier == 'VIP' %}
-              <span class="badge bg-warning text-dark" style="font-size:.6rem;">VIP</span>
-            {% elif r.tier == 'EXPRESS' %}
-              <span class="badge bg-info text-dark" style="font-size:.6rem;">EXPRESS</span>
-            {% elif r.tier == 'FAST_TRACK' %}
-              <span class="badge text-white" style="font-size:.6rem;background:#7c3aed;">FAST</span>
-            {% endif %}
-            {% if r.token %}
-            <div class="text-muted" style="font-size:.6rem;">{{ r.token.token_number }}</div>
-            {% endif %}
-          </div>
+{# ── Timeline Modal ──────────────────────────────────────────────────── #}
+<div class="modal fade" id="timelineModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title"><i class="bi bi-clock-history me-2"></i>Patient Journey</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <strong id="tlName"></strong>
+          <span class="text-muted small ms-2" id="tlId"></span>
+          <span class="badge ms-2" id="tlTier"></span>
         </div>
-
-        {# Current Station #}
-        <div class="mb-1">
-          <span class="badge station-pill
-            {% if r.status_key == 'WAITING' %}bg-warning text-dark
-            {% elif r.status_key == 'CALLED' %}bg-primary
-            {% elif r.status_key == 'SERVING' %}bg-success
-            {% elif r.status_key == 'COMPLETED' %}bg-secondary
-            {% else %}bg-dark{% endif %}">
-            <i class="bi bi-geo-alt me-1"></i>{{ r.station }}
-          </span>
-        </div>
-
-        {# Room #}
-        {% if r.room %}
-        <div class="text-muted" style="font-size:.7rem;">
-          <i class="bi bi-door-open me-1"></i>{{ r.room }}
-        </div>
-        {% endif %}
-
-        {# Staff #}
-        <div style="font-size:.75rem;" class="mt-1">
-          {% if r.staff %}
-            <i class="bi bi-person-badge me-1 text-primary"></i>
-            <strong>{{ r.staff.get_full_name }}</strong>
-            <span class="text-muted">({{ r.staff.get_role_display }})</span>
-          {% else %}
-            <span class="text-muted"><i class="bi bi-person-dash me-1"></i>Unassigned</span>
-          {% endif %}
-        </div>
-
-        {# Returning-to badge #}
-        {% if r.referring_doctor %}
-        <div style="font-size:.7rem;" class="mt-1">
-          <span class="badge bg-info text-dark">
-            <i class="bi bi-arrow-return-left me-1"></i>Returning to {{ r.referring_doctor.get_full_name }}
-          </span>
-        </div>
-        {% endif %}
-
-        {# Time at station #}
-        <div class="d-flex justify-content-between align-items-center mt-1">
-          <span class="time-badge badge {% if r.minutes > 30 %}bg-danger{% elif r.minutes > 15 %}bg-warning text-dark{% else %}bg-light text-dark border{% endif %}">
-            <i class="bi bi-clock me-1"></i>
-            {% if r.minutes >= 60 %}{{ r.hours }}h {{ r.mins_remainder }}m
-            {% else %}{{ r.minutes }} min{% endif %}
-          </span>
-          <span class="badge {% if r.status_key == 'SERVING' %}bg-success{% elif r.status_key == 'WAITING' %}bg-warning text-dark{% elif r.status_key == 'CALLED' %}bg-primary{% else %}bg-secondary{% endif %}" style="font-size:.6rem;">
-            {{ r.status }}
-          </span>
-        </div>
+        <div id="tlSteps" class="timeline"></div>
       </div>
     </div>
   </div>
-  {% endfor %}
 </div>
-{% else %}
-<div class="text-center py-5">
-  <i class="bi bi-geo-alt display-4 text-muted"></i>
-  <p class="text-muted mt-2">
-    {% if filter_mine %}No patients assigned to you right now.
-    {% elif filter_station %}No patients at "{{ filter_station }}" right now.
-    {% else %}No patients in hospital right now.{% endif %}
-  </p>
-  {% if filter_mine or filter_station or filter_staff %}
-  <a href="{% url 'consultations:patient_tracker' %}" class="btn btn-sm btn-outline-primary">Show All Patients</a>
-  {% endif %}
-</div>
-{% endif %}
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-window.addEventListener('pageshow', function(e) {
-  if (e.persisted) location.reload();
-});
-(function(){
-  var c = 30, el = document.getElementById('autoRefreshBadge');
-  setInterval(function(){
-    c--;
-    if (el) el.textContent = 'Refresh in ' + c + 's';
-    if (c <= 0) location.reload();
-  }, 1000);
+var TRK = (function(){
+  var rows=[], prevIds=new Set(), ws=null, reconn=null;
+  var mine={{ filter_mine|yesno:"true,false" }};
+  var uPk='{{ user_pk }}';
+  var canDsp={{ can_dispatch|yesno:"true,false" }};
+  var sndOn=localStorage.getItem('trkSnd')!=='off';
+  var dataUrl='{% url "consultations:patient_tracker_data" %}';
+  var tlBaseUrl='{% url "consultations:patient_tracker_timeline" visit_id="00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000','');
+  var dspUrl='{% url "consultations:patient_tracker_dispatch" %}';
+  var csrf='{{ csrf_token }}';
+  var aCtx=null;
+
+  // ── Sound ─────────────────────────────────────────────────────────
+  function chime(){
+    if(!sndOn)return;try{
+    if(!aCtx)aCtx=new(window.AudioContext||window.webkitAudioContext)();
+    var o=aCtx.createOscillator(),g=aCtx.createGain();
+    o.connect(g);g.connect(aCtx.destination);o.type='sine';o.frequency.value=880;
+    g.gain.setValueAtTime(0.3,aCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,aCtx.currentTime+0.5);
+    o.start();o.stop(aCtx.currentTime+0.5);}catch(e){}
+  }
+  function alert3(){
+    if(!sndOn)return;try{
+    if(!aCtx)aCtx=new(window.AudioContext||window.webkitAudioContext)();
+    [440,550,660].forEach(function(f,i){
+      var o=aCtx.createOscillator(),g=aCtx.createGain();
+      o.connect(g);g.connect(aCtx.destination);o.type='sine';o.frequency.value=f;
+      g.gain.setValueAtTime(0.2,aCtx.currentTime+i*0.15);
+      g.gain.exponentialRampToValueAtTime(0.001,aCtx.currentTime+i*0.15+0.3);
+      o.start(aCtx.currentTime+i*0.15);o.stop(aCtx.currentTime+i*0.15+0.3);
+    });}catch(e){}
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────
+  function wsConnect(){
+    var p=location.protocol==='https:'?'wss:':'ws:';
+    ws=new WebSocket(p+'//'+location.host+'/ws/queue/tracker/');
+    ws.onopen=function(){
+      document.getElementById('wsDot').className='ws-dot ws-on';
+      document.getElementById('wsLbl').textContent='live';
+      if(reconn){clearInterval(reconn);reconn=null;}
+    };
+    ws.onmessage=function(e){
+      var m=JSON.parse(e.data);
+      if(m.action==='refresh') fetchData();
+    };
+    ws.onclose=function(){
+      document.getElementById('wsDot').className='ws-dot ws-off';
+      document.getElementById('wsLbl').textContent='reconnecting...';
+      if(!reconn) reconn=setInterval(wsConnect,5000);
+    };
+    ws.onerror=function(){ws.close();};
+  }
+  wsConnect();
+  // Fallback polling
+  setInterval(function(){if(!ws||ws.readyState!==1) fetchData();},15000);
+
+  // ── Fetch ─────────────────────────────────────────────────────────
+  function fetchData(){
+    fetch(dataUrl,{credentials:'same-origin'}).then(function(r){return r.json();})
+    .then(function(d){if(d.rows) processRows(d.rows);}).catch(function(){});
+  }
+
+  function processRows(nr){
+    var nIds=new Set(nr.map(function(r){return r.id;}));
+    var arrivals=nr.filter(function(r){return !prevIds.has(r.id);});
+    var overdue=nr.filter(function(r){return r.minutes>60 && r.status_key!=='COMPLETED';});
+    if(arrivals.length>0 && prevIds.size>0) chime();
+    if(overdue.length>0 && prevIds.size>0){
+      var newOd=overdue.filter(function(r){
+        var old=rows.find(function(o){return o.id===r.id;});
+        return !old||old.minutes<=60;
+      });
+      if(newOd.length>0) alert3();
+    }
+    rows=nr; prevIds=nIds; render();
+  }
+
+  // ── Render ────────────────────────────────────────────────────────
+  function render(){
+    var f=rows.slice();
+    var sfVal=document.getElementById('staffFilter').value;
+    var stVal=document.getElementById('stationFilter').value.toLowerCase();
+
+    if(mine) f=f.filter(function(r){
+      return (r.staff&&r.staff.pk===uPk)||(r.referring_doctor&&r.referring_doctor.pk===uPk);
+    });
+    if(sfVal) f=f.filter(function(r){return r.staff&&r.staff.pk===sfVal;});
+    if(stVal) f=f.filter(function(r){return r.station.toLowerCase().indexOf(stVal)!==-1;});
+
+    document.getElementById('totalCount').textContent=f.length;
+
+    // Staff dropdown
+    var sel=document.getElementById('staffFilter'), cv=sel.value, sm={};
+    f.forEach(function(r){if(r.staff&&!sm[r.staff.pk])sm[r.staff.pk]=r.staff.name;});
+    var op='<option value="">All Staff</option>';
+    Object.keys(sm).sort(function(a,b){return sm[a].localeCompare(sm[b]);})
+      .forEach(function(pk){op+='<option value="'+pk+'"'+(pk===cv?' selected':'')+'>'+sm[pk]+'</option>';});
+    sel.innerHTML=op;
+
+    // Station summary cards
+    var sc={};
+    f.forEach(function(r){var b=r.station.split('(')[0].trim();sc[b]=(sc[b]||0)+1;});
+    var sh='';
+    Object.entries(sc).sort(function(a,b){return b[1]-a[1];}).forEach(function(s){
+      sh+='<div class="summary-card card border-0 shadow-sm text-center px-3 py-2" onclick="document.getElementById(\'stationFilter\').value=\''+s[0]+'\';TRK.render();">'
+        +'<div class="fw-bold text-primary">'+s[1]+'</div>'
+        +'<div class="text-muted" style="font-size:.65rem;">'+s[0]+'</div></div>';
+    });
+    document.getElementById('stationSummary').innerHTML=sh;
+
+    // Group by department
+    var depts={};
+    f.forEach(function(r){var d=r.department||'Other';if(!depts[d])depts[d]=[];depts[d].push(r);});
+    var dk=Object.keys(depts).sort(), multi=dk.length>1, g='';
+
+    dk.forEach(function(dept){
+      if(multi){
+        g+='<div class="dept-header mt-3 mb-2" onclick="this.nextElementSibling.classList.toggle(\'d-none\')">'
+          +'<i class="bi bi-chevron-down me-1" style="font-size:.7rem;"></i>'+dept
+          +' <span class="badge bg-secondary rounded-pill">'+depts[dept].length+'</span></div>';
+      }
+      g+='<div class="row g-2 mb-2">';
+      depts[dept].forEach(function(r){ g+=cardHtml(r); });
+      g+='</div>';
+    });
+    document.getElementById('trackerGrid').innerHTML=g;
+    document.getElementById('emptyState').classList.toggle('d-none',f.length>0);
+  }
+
+  function cardHtml(r){
+    var tc=r.tier&&r.tier!=='STANDARD'?' tier-'+r.tier:'';
+    var sb=statusBdg(r.status_key,r.status);
+    var tb=timeBdg(r.minutes);
+    var st=r.staff?r.staff.name:'<span class="text-muted fst-italic">Unassigned</span>';
+    var ref=r.referring_doctor?'<span class="badge bg-info text-dark" style="font-size:.65rem;">Returning to '+r.referring_doctor.name+'</span>':'';
+    var tBdg='';
+    if(r.tier==='VIP')tBdg='<span class="badge bg-warning text-dark ms-1" style="font-size:.6rem;">VIP</span>';
+    else if(r.tier==='EXPRESS')tBdg='<span class="badge bg-info text-dark ms-1" style="font-size:.6rem;">EXPRESS</span>';
+    else if(r.tier==='FAST_TRACK')tBdg='<span class="badge bg-success ms-1" style="font-size:.6rem;">FAST TRACK</span>';
+
+    return '<div class="col-12 col-sm-6 col-lg-4 col-xl-3">'
+      +'<div class="card tracker-card shadow-sm'+tc+'" data-vid="'+r.id+'"'
+      +(canDsp?' draggable="true" ondragstart="TRK.dragStart(event,\''+r.id+'\')"':'')
+      +' onclick="TRK.timeline(\''+r.id+'\')" style="cursor:pointer;">'
+      +'<div class="card-body p-2">'
+      +'<div class="d-flex justify-content-between align-items-start">'
+      +'<div><div class="fw-bold" style="font-size:.9rem;">'+r.patient_name+tBdg+'</div>'
+      +'<div class="text-muted" style="font-size:.7rem;">'+r.patient_id+(r.token_number?' &bull; '+r.token_number:'')+'</div></div>'
+      +tb+'</div>'
+      +'<div class="mt-1"><span class="station-pill badge bg-primary bg-opacity-10 text-primary">'+r.station+'</span>'
+      +(r.room?' <span class="badge bg-light text-dark" style="font-size:.65rem;">'+r.room+'</span>':'')+'</div>'
+      +'<div class="d-flex justify-content-between align-items-center mt-1">'
+      +'<div style="font-size:.8rem;"><i class="bi bi-person me-1"></i>'+st+'</div>'+sb+'</div>'
+      +(ref?'<div class="mt-1">'+ref+'</div>':'')
+      +'</div></div></div>';
+  }
+
+  function statusBdg(k,l){
+    var c='bg-secondary';
+    if(k==='WAITING')c='bg-warning text-dark';
+    else if(k==='CALLED'||k==='SERVING')c='bg-primary';
+    else if(k==='COMPLETED')c='bg-success';
+    return '<span class="badge '+c+'" style="font-size:.65rem;">'+l+'</span>';
+  }
+  function timeBdg(m){
+    var c='bg-success';if(m>60)c='bg-danger';else if(m>30)c='bg-warning text-dark';
+    var h=Math.floor(m/60),mn=m%60;
+    return '<span class="time-badge badge '+c+'">'+(h>0?h+'h '+mn+'m':mn+'m')+'</span>';
+  }
+
+  // ── Timeline ──────────────────────────────────────────────────────
+  function showTimeline(vid){
+    fetch(tlBaseUrl+vid+'/',{credentials:'same-origin'}).then(function(r){return r.json();})
+    .then(function(d){
+      document.getElementById('tlName').textContent=d.patient_name;
+      document.getElementById('tlId').textContent=d.patient_id;
+      var te=document.getElementById('tlTier');
+      te.textContent=d.visit_tier;
+      te.className='badge ms-2 '+(d.visit_tier==='VIP'?'bg-warning text-dark':d.visit_tier==='EXPRESS'?'bg-info text-dark':'bg-secondary');
+      var h='';
+      d.steps.forEach(function(s,i){
+        h+='<div class="timeline-step"><div class="timeline-dot'+(i<d.steps.length-1?' done':'')+'"></div>'
+          +'<div class="timeline-time">'+s.time+'</div>'
+          +'<div class="timeline-label"><i class="bi bi-'+s.icon+' me-1"></i>'+s.label+'</div></div>';
+      });
+      document.getElementById('tlSteps').innerHTML=h;
+      new bootstrap.Modal(document.getElementById('timelineModal')).show();
+    }).catch(function(){});
+  }
+
+  // ── Drag-and-drop ─────────────────────────────────────────────────
+  var dragVid=null;
+  function dragStart(e,vid){
+    dragVid=vid;e.dataTransfer.effectAllowed='move';
+    var dz=document.getElementById('dropZone');
+    if(dz){dz.classList.remove('d-none');dz.classList.add('drag-active');}
+  }
+  if(canDsp){
+    var dz=document.getElementById('dropZone');
+    dz.addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='move';});
+    dz.addEventListener('drop',function(e){
+      e.preventDefault();dz.classList.add('d-none');dz.classList.remove('drag-active');
+      var docId=document.getElementById('dropDoctor').value;
+      if(dragVid&&docId){
+        fetch(dspUrl,{method:'POST',credentials:'same-origin',
+          headers:{'Content-Type':'application/json','X-CSRFToken':csrf},
+          body:JSON.stringify({visit_id:dragVid,doctor_id:docId})
+        }).then(function(r){return r.json();}).then(function(d){
+          if(d.ok){
+            var t=document.createElement('div');t.className='position-fixed bottom-0 end-0 p-3';t.style.zIndex='9999';
+            t.innerHTML='<div class="toast show bg-success text-white"><div class="toast-body"><i class="bi bi-check-circle me-2"></i>'+d.message+'</div></div>';
+            document.body.appendChild(t);setTimeout(function(){t.remove();},3000);
+            fetchData();
+          }else{alert(d.error||'Failed.');}
+        }).catch(function(){alert('Network error.');});
+      }
+      dragVid=null;
+    });
+    document.addEventListener('dragend',function(){
+      dz.classList.add('d-none');dz.classList.remove('drag-active');dragVid=null;
+    });
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────
+  document.getElementById('soundIcon').className=sndOn?'bi bi-volume-up':'bi bi-volume-mute';
+  fetchData();
+  window.addEventListener('pageshow',function(e){if(e.persisted)location.reload();});
+
+  return {
+    setFilter:function(m){mine=m==='mine';
+      document.getElementById('btnAll').classList.toggle('active',!mine);
+      document.getElementById('btnMine').classList.toggle('active',mine);render();},
+    render:render,
+    toggleSound:function(){sndOn=!sndOn;localStorage.setItem('trkSnd',sndOn?'on':'off');
+      document.getElementById('soundIcon').className=sndOn?'bi bi-volume-up':'bi bi-volume-mute';},
+    timeline:showTimeline,
+    dragStart:dragStart
+  };
 })();
 </script>
 {% endblock %}

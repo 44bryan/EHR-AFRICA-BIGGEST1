@@ -4413,183 +4413,39 @@ def clinical_template_search_ajax(request):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Patient Tracker Board — real-time view of where every patient is today
+# Patient Tracker Board — real-time WebSocket-driven view
 # ═══════════════════════════════════════════════════════════════════════════════
+
+_TRACKER_ROLES = None  # lazy-loaded tuple
+
+def _tracker_allowed(user):
+    """Check if user can access the Patient Tracker."""
+    global _TRACKER_ROLES
+    if _TRACKER_ROLES is None:
+        from apps.accounts.models import UserRole as _UR
+        _TRACKER_ROLES = (
+            _UR.OPTOMETRIST, _UR.PEDIATRIC_REFRACTIONIST,
+            _UR.LOW_VISION_SPECIALIST, _UR.ORTHOPTIST,
+            _UR.NURSE, _UR.CONSULTATION_NURSE,
+            _UR.THEATRE_NURSE, _UR.WARD_NURSE, _UR.NURSE_DIRECTOR,
+            _UR.SUPER_ADMIN, _UR.ADMIN_DIRECTOR,
+            _UR.MEDICAL_DIRECTOR, _UR.CEO,
+            _UR.INVESTIGATION_TECHNICIAN,
+        )
+    return user.is_doctor or user.role in _TRACKER_ROLES
+
 
 @login_required
 @never_cache
 def patient_tracker_view(request):
-    """
-    Shows a live board of all patients currently in the hospital today,
-    with their current station, assigned staff, and wait time.
-    Accessible to doctors, refractionists, nurses, and admin roles.
-    """
-    from apps.accounts.models import UserRole
-    user = request.user
-    allowed = user.is_doctor or user.role in (
-        UserRole.OPTOMETRIST, UserRole.PEDIATRIC_REFRACTIONIST,
-        UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST,
-        UserRole.NURSE, UserRole.CONSULTATION_NURSE,
-        UserRole.THEATRE_NURSE, UserRole.WARD_NURSE, UserRole.NURSE_DIRECTOR,
-        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
-        UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
-        UserRole.INVESTIGATION_TECHNICIAN,
-    )
-    if not allowed:
+    """Render the Patient Tracker Board (initial HTML)."""
+    if not _tracker_allowed(request.user):
         return HttpResponseForbidden('Access denied.')
 
-    from apps.qms.models import QueueToken, TokenStatus
+    from apps.accounts.models import UserRole
+    user = request.user
 
-    today = timezone.localdate()
-
-    # Get all today's tokens, ordered so latest per visit comes first
-    all_tokens = list(
-        QueueToken.objects
-        .filter(token_date=today)
-        .exclude(status__in=[TokenStatus.CANCELLED, TokenStatus.NO_SHOW])
-        .exclude(visit__isnull=True)
-        .select_related('patient', 'visit', 'visit__department',
-                        'visit__consultation_room',
-                        'visit__consultation_room__assigned_doctor',
-                        'visit__attending_doctor',
-                        'visit__referring_doctor',
-                        'counter', 'counter__staff_assigned',
-                        'assigned_doctor')
-        .order_by('-issued_at')
-    )
-
-    # Keep only the latest token per visit (first occurrence per visit_id)
-    seen_visits = set()
-    tokens = []
-    for t in all_tokens:
-        if t.visit_id not in seen_visits:
-            seen_visits.add(t.visit_id)
-            tokens.append(t)
-
-    # Also include visits from today that might not have tokens (walk-ins registered but not yet queued)
-    from apps.patients.models import VisitStatus as VS
-    tokenized_visit_ids = seen_visits
-
-    no_token_visits = (
-        Visit.objects
-        .filter(
-            visit_date__date=today,
-            is_deleted=False,
-        )
-        .exclude(status=VS.DISCHARGED)
-        .exclude(pk__in=tokenized_visit_ids)
-        .select_related('patient', 'department', 'attending_doctor',
-                        'triage_nurse', 'consultation_room',
-                        'consultation_room__assigned_doctor')
-        .order_by('-visit_date')
-    )
-
-    now = timezone.now()
-
-    # Build tracker rows
-    rows = []
-    for t in tokens:
-        patient = t.patient
-        visit = t.visit
-        if not patient or not visit:
-            continue
-
-        # Determine current station
-        station_map = {
-            'RECEPTIONIST': 'Reception',
-            'CASHIER': 'Cashier',
-            'PARAMETERS': 'Triage',
-            'PARAMS_VIP': 'VIP Triage',
-            'GENERAL': 'Gen Oph Consultation',
-            'RETINA': 'Retina Clinic',
-            'GLAUCOMA': 'Glaucoma Clinic',
-            'CATARACT': 'Cataract / Surgical',
-            'PEDIATRIC': 'Pediatric Oph',
-            'CORNEA': 'Cornea Clinic',
-            'OCULOPLASTY': 'Oculoplasty',
-            'NEURO': 'Neuro-Ophthalmology',
-            'UVEITIS': 'Uveitis Clinic',
-            'LOW_VISION': 'Low Vision',
-            'REFRACTION': 'Refraction',
-            'VIP_CONSULT': 'VIP Consultation',
-            'EXP_CONSULT': 'Express Consultation',
-            'INSUR_CONSULT': 'Insurance Consultation',
-            'INVESTIGATION': 'Investigation',
-            'PHARMACY': 'Pharmacy',
-            'OPTICAL': 'Optical Shop',
-            'LAB': 'Laboratory',
-        }
-        station = station_map.get(t.service_type, t.get_service_type_display())
-        if t.counter:
-            station += f' ({t.counter.name})'
-
-        # Determine current staff — check all sources regardless of token status
-        staff = (
-            t.assigned_doctor
-            or (t.counter.staff_assigned if t.counter else None)
-            or (visit.consultation_room.assigned_doctor if visit.consultation_room else None)
-            or visit.attending_doctor
-        )
-
-        # Time at station
-        ref_time = t.called_at or t.served_at or t.issued_at
-        minutes_at_station = int((now - ref_time).total_seconds() / 60) if ref_time else 0
-
-        # Room info
-        room = None
-        if visit.consultation_room:
-            room = visit.consultation_room.label or f'Room {visit.consultation_room.room_number}'
-
-        # Referring doctor = the doctor this patient will return to
-        referring_doc = visit.referring_doctor if visit.referring_doctor_id else None
-
-        rows.append({
-            'patient': patient,
-            'visit': visit,
-            'token': t,
-            'station': station,
-            'room': room,
-            'staff': staff,
-            'referring_doctor': referring_doc,
-            'status': t.get_status_display(),
-            'status_key': t.status,
-            'minutes': minutes_at_station,
-            'hours': minutes_at_station // 60,
-            'mins_remainder': minutes_at_station % 60,
-            'tier': visit.service_tier,
-        })
-
-    # Add visits without tokens
-    for v in no_token_visits:
-        station = v.get_status_display()
-        staff = v.attending_doctor or v.triage_nurse
-        room = None
-        if v.consultation_room:
-            room = v.consultation_room.label or f'Room {v.consultation_room.room_number}'
-        minutes = int((now - v.visit_date).total_seconds() / 60)
-        referring_doc = v.referring_doctor if v.referring_doctor_id else None
-        rows.append({
-            'patient': v.patient,
-            'visit': v,
-            'token': None,
-            'station': station,
-            'room': room,
-            'staff': staff,
-            'referring_doctor': referring_doc,
-            'status': v.get_status_display(),
-            'status_key': v.status,
-            'minutes': minutes,
-            'hours': minutes // 60,
-            'mins_remainder': minutes % 60,
-            'tier': v.service_tier,
-        })
-
-    # ── Filters ────────────────────────────────────────────────────────────
-    filter_station = request.GET.get('station', '')
-    filter_staff = request.GET.get('staff', '')
-    kiosk = request.GET.get('kiosk', '') == '1'
-
-    # Doctors/refractionists default to "My Patients"; supervisors see all
+    # Role-based default filter
     is_supervisory = user.role in (
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
@@ -4598,49 +4454,152 @@ def patient_tracker_view(request):
     if 'mine' in request.GET:
         filter_mine = request.GET['mine'] == '1'
     else:
-        # Default: doctors see only their own patients, supervisors see all
         filter_mine = not is_supervisory
 
-    if filter_station:
-        rows = [r for r in rows if filter_station.lower() in r['station'].lower()]
+    kiosk = request.GET.get('kiosk', '') == '1'
 
-    if filter_mine:
-        # "My Patients" = assigned to me OR routed away but returning to me
-        uid = user.pk
-        rows = [r for r in rows if
-                (r['staff'] and r['staff'].pk == uid) or
-                (r['referring_doctor'] and r['referring_doctor'].pk == uid)]
-
-    if filter_staff:
-        rows = [r for r in rows if r['staff'] and str(r['staff'].pk) == filter_staff]
-
-    # Collect unique staff for filter dropdown
-    staff_set = {}
-    for r in rows:
-        if r['staff'] and r['staff'].pk not in staff_set:
-            staff_set[r['staff'].pk] = r['staff']
-
-    # Summary counts
-    station_counts = {}
-    for r in rows:
-        base_station = r['station'].split('(')[0].strip()
-        station_counts[base_station] = station_counts.get(base_station, 0) + 1
-
-    # Status summary
-    status_counts = {}
-    for r in rows:
-        status_counts[r['status_key']] = status_counts.get(r['status_key'], 0) + 1
+    # Get list of doctors for drag-drop assignment
+    from apps.accounts.models import User
+    doctors = (
+        User.objects.filter(is_active=True)
+        .filter(role__in=UserRole.DOCTOR_ROLES)
+        .order_by('first_name', 'last_name')
+    )
 
     ctx = {
-        'rows': rows,
-        'total_patients': len(rows),
-        'station_counts': sorted(station_counts.items(), key=lambda x: -x[1]),
-        'status_counts': status_counts,
-        'filter_station': filter_station,
         'filter_mine': filter_mine,
-        'filter_staff': filter_staff,
-        'staff_list': sorted(staff_set.values(), key=lambda s: s.get_full_name()),
         'kiosk': kiosk,
+        'user_pk': str(user.pk),
+        'is_supervisory': is_supervisory,
+        'can_dispatch': user.is_nurse or user.is_super_admin or user.role == UserRole.NURSE_DIRECTOR,
+        'doctors': doctors,
     }
-    template = 'consultations/patient_tracker_kiosk.html' if kiosk else 'consultations/patient_tracker.html'
-    return render(request, template, ctx)
+    tpl = 'consultations/patient_tracker_kiosk.html' if kiosk else 'consultations/patient_tracker.html'
+    return render(request, tpl, ctx)
+
+
+@login_required
+@never_cache
+def patient_tracker_data(request):
+    """AJAX/WS JSON endpoint — returns current tracker state."""
+    if not _tracker_allowed(request.user):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    from apps.consultations.tracker_utils import build_tracker_rows, rows_to_json
+    rows = build_tracker_rows()
+    data = rows_to_json(rows)
+    return JsonResponse({'rows': data})
+
+
+@login_required
+def patient_tracker_timeline(request, visit_id):
+    """AJAX endpoint — returns a patient's journey timeline for today."""
+    if not _tracker_allowed(request.user):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    from apps.qms.models import QueueToken
+    visit = get_object_or_404(Visit, pk=visit_id)
+    tokens = (
+        QueueToken.objects
+        .filter(visit=visit)
+        .order_by('issued_at')
+        .select_related('assigned_doctor', 'counter', 'counter__staff_assigned')
+    )
+
+    def _ts(dt):
+        return dt.strftime('%H:%M') if dt else None
+
+    steps = []
+    # Step 1: Arrival
+    steps.append({
+        'time': _ts(visit.visit_date),
+        'label': 'Arrived / Registered',
+        'icon': 'door-open',
+    })
+
+    for t in tokens:
+        svc = t.get_service_type_display()
+        staff_name = ''
+        if t.assigned_doctor:
+            staff_name = t.assigned_doctor.get_full_name()
+        elif t.counter and t.counter.staff_assigned:
+            staff_name = t.counter.staff_assigned.get_full_name()
+
+        if t.issued_at:
+            steps.append({
+                'time': _ts(t.issued_at),
+                'label': f'Queued for {svc}',
+                'icon': 'clock',
+            })
+        if t.called_at:
+            steps.append({
+                'time': _ts(t.called_at),
+                'label': f'Called to {svc}' + (f' — {staff_name}' if staff_name else ''),
+                'icon': 'megaphone',
+            })
+        if t.served_at:
+            steps.append({
+                'time': _ts(t.served_at),
+                'label': f'Being seen at {svc}' + (f' — {staff_name}' if staff_name else ''),
+                'icon': 'person-check',
+            })
+        if t.completed_at:
+            steps.append({
+                'time': _ts(t.completed_at),
+                'label': f'Completed {svc}',
+                'icon': 'check-circle',
+            })
+
+    return JsonResponse({
+        'patient_name': visit.patient.get_full_name(),
+        'patient_id': visit.patient.patient_id,
+        'visit_tier': visit.service_tier or 'STANDARD',
+        'steps': steps,
+    })
+
+
+@login_required
+@require_POST
+def patient_tracker_dispatch(request):
+    """AJAX endpoint — reassign a patient to a different doctor (drag-drop)."""
+    from apps.accounts.models import UserRole, User
+    user = request.user
+    if not (user.is_nurse or user.is_super_admin or user.role == UserRole.NURSE_DIRECTOR):
+        return JsonResponse({'error': 'Only nurses can dispatch patients.'}, status=403)
+
+    import json
+    try:
+        body = json.loads(request.body)
+        visit_id = body['visit_id']
+        doctor_id = body['doctor_id']
+    except (json.JSONDecodeError, KeyError):
+        return JsonResponse({'error': 'Invalid request.'}, status=400)
+
+    visit = get_object_or_404(Visit, pk=visit_id)
+    doctor = get_object_or_404(User, pk=doctor_id, is_active=True)
+
+    visit.attending_doctor = doctor
+    visit.save(update_fields=['attending_doctor', 'updated_at'])
+
+    # Also update the latest token if it exists
+    from apps.qms.models import QueueToken
+    latest_token = (
+        QueueToken.objects
+        .filter(visit=visit, token_date=timezone.localdate())
+        .order_by('-issued_at')
+        .first()
+    )
+    if latest_token:
+        latest_token.assigned_doctor = doctor
+        latest_token.save(update_fields=['assigned_doctor', 'updated_at'])
+
+    # Broadcast update
+    from apps.core.ws_notify import notify_queue
+    notify_queue('tracker')
+    notify_queue('opd')
+    notify_queue('workstation')
+
+    return JsonResponse({
+        'ok': True,
+        'message': f'{visit.patient.get_full_name()} assigned to {doctor.get_full_name()}',
+    })

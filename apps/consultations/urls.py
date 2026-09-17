@@ -56,4 +56,7 @@ urlpatterns = [
     path('templates/search/', views.clinical_template_search_ajax, name='template_search'),
     # ── Patient Tracker Board ────────────────────────────────────────────────
     path('tracker/', views.patient_tracker_view, name='patient_tracker'),
+    path('tracker/data/', views.patient_tracker_data, name='patient_tracker_data'),
+    path('tracker/timeline/<uuid:visit_id>/', views.patient_tracker_timeline, name='patient_tracker_timeline'),
+    path('tracker/dispatch/', views.patient_tracker_dispatch, name='patient_tracker_dispatch'),
 ]

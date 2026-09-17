@@ -18,6 +18,9 @@ def notify_queue(room: str, action: str = 'refresh', data: dict | None = None) -
     Broadcast a queue_update event to every WebSocket client connected to
     the given room.  Safe to call from any synchronous view or signal.
 
+    Also broadcasts to the 'tracker' room so the Patient Tracker Board
+    receives instant updates whenever any queue changes.
+
     Runs in a daemon thread with a 2-second timeout so a slow/unavailable
     Redis never blocks the calling HTTP request.
     """
@@ -36,6 +39,14 @@ def notify_queue(room: str, action: str = 'refresh', data: dict | None = None) -
                 'action': action,
                 'data': data or {},
             })
+            # Also notify the Patient Tracker board (if not already)
+            if room != 'tracker':
+                tracker_group = 'ehr_queue_tracker'
+                async_to_sync(layer.group_send)(tracker_group, {
+                    'type': 'queue.update',
+                    'action': 'refresh',
+                    'data': {},
+                })
         except Exception:
             pass
 
