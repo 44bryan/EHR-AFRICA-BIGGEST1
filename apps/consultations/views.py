@@ -4452,6 +4452,7 @@ def patient_tracker_view(request):
                         'visit__consultation_room',
                         'visit__consultation_room__assigned_doctor',
                         'visit__attending_doctor',
+                        'visit__referring_doctor',
                         'counter', 'counter__staff_assigned',
                         'assigned_doctor')
         .order_by('-issued_at')
@@ -4539,6 +4540,9 @@ def patient_tracker_view(request):
         if visit.consultation_room:
             room = visit.consultation_room.label or f'Room {visit.consultation_room.room_number}'
 
+        # Referring doctor = the doctor this patient will return to
+        referring_doc = visit.referring_doctor if visit.referring_doctor_id else None
+
         rows.append({
             'patient': patient,
             'visit': visit,
@@ -4546,6 +4550,7 @@ def patient_tracker_view(request):
             'station': station,
             'room': room,
             'staff': staff,
+            'referring_doctor': referring_doc,
             'status': t.get_status_display(),
             'status_key': t.status,
             'minutes': minutes_at_station,
@@ -4562,6 +4567,7 @@ def patient_tracker_view(request):
         if v.consultation_room:
             room = v.consultation_room.label or f'Room {v.consultation_room.room_number}'
         minutes = int((now - v.visit_date).total_seconds() / 60)
+        referring_doc = v.referring_doctor if v.referring_doctor_id else None
         rows.append({
             'patient': v.patient,
             'visit': v,
@@ -4569,6 +4575,7 @@ def patient_tracker_view(request):
             'station': station,
             'room': room,
             'staff': staff,
+            'referring_doctor': referring_doc,
             'status': v.get_status_display(),
             'status_key': v.status,
             'minutes': minutes,
@@ -4598,7 +4605,11 @@ def patient_tracker_view(request):
         rows = [r for r in rows if filter_station.lower() in r['station'].lower()]
 
     if filter_mine:
-        rows = [r for r in rows if r['staff'] and r['staff'].pk == user.pk]
+        # "My Patients" = assigned to me OR routed away but returning to me
+        uid = user.pk
+        rows = [r for r in rows if
+                (r['staff'] and r['staff'].pk == uid) or
+                (r['referring_doctor'] and r['referring_doctor'].pk == uid)]
 
     if filter_staff:
         rows = [r for r in rows if r['staff'] and str(r['staff'].pk) == filter_staff]
