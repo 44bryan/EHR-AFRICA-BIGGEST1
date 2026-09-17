@@ -35,7 +35,6 @@ def _can_access_pharmacy(user):
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.ADMIN,
         UserRole.STORE_KEEPER, UserRole.FINANCE_DIRECTOR,
-        UserRole.PHARMACY_TECHNICIAN,
     ) or user.can_dispense_pharmacy()
 
 

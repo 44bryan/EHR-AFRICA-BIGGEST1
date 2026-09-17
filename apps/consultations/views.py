@@ -186,8 +186,13 @@ def consultation_create_view(request, patient_id):
 
     # Stub passed to the template so specialty form partials can render
     # with empty data (they do: {% with d=consultation.department_specific_data %})
+    # _SafeDict returns '' for any missing key, preventing VariableDoesNotExist in templates
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return ''
     class _Stub:
-        department_specific_data = {}
+        department_specific_data = _SafeDict()
+        visit = visit  # needed for {% with vs=consultation.visit.vital_signs %}
     consultation_stub = _Stub()
 
     # Previous consultations for this patient — shown as read-only history sidebar
