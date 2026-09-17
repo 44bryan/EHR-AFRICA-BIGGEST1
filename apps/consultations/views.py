@@ -4429,7 +4429,7 @@ def patient_tracker_view(request):
     allowed = user.is_doctor or user.role in (
         UserRole.OPTOMETRIST, UserRole.PEDIATRIC_REFRACTIONIST,
         UserRole.LOW_VISION_SPECIALIST, UserRole.ORTHOPTIST,
-        UserRole.NURSE, UserRole.CONSULTATION_NURSE, UserRole.TRIAGE_NURSE,
+        UserRole.NURSE, UserRole.CONSULTATION_NURSE,
         UserRole.THEATRE_NURSE, UserRole.WARD_NURSE, UserRole.NURSE_DIRECTOR,
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
