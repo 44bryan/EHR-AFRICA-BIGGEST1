@@ -3,35 +3,21 @@
 
 {% block extra_css %}
 <style>
-  .tk-card { transition: box-shadow 0.15s; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
-  .tk-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); background: #f8fafc; }
-  .tk-name { font-weight: 600; font-size: .88rem; color: #1e293b; }
-  .tk-sub { font-size: .72rem; color: #64748b; }
-  .tk-pill { font-size: .65rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; display: inline-block; }
-  .tk-pill-waiting { background: #fef3c7; color: #92400e; }
-  .tk-pill-called  { background: #e0f2fe; color: #0369a1; }
-  .tk-pill-serving { background: #dbeafe; color: #1d4ed8; }
-  .tk-pill-done    { background: #dcfce7; color: #166534; }
-  .tk-pill-default { background: #f1f5f9; color: #475569; }
-  .tk-pill-vip     { background: #ede9fe; color: #6d28d9; }
-  .tk-pill-express { background: #e0f2fe; color: #0369a1; }
-  .tk-pill-fast    { background: #fef3c7; color: #92400e; }
-  .tk-pill-return  { background: #dbeafe; color: #1d4ed8; }
-  .tk-station { font-size: .75rem; font-weight: 600; color: #334155; }
-  .tk-staff { font-size: .75rem; color: #64748b; }
-  .tk-time { font-size: .7rem; font-weight: 500; padding: 2px 6px; border-radius: 4px; display: inline-block; }
-  .tk-time-ok   { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-  .tk-time-warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-  .tk-time-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-  .tk-stat { text-align: center; padding: 10px 6px; }
-  .tk-stat-num { font-size: 1.3rem; font-weight: 700; color: #1e293b; line-height: 1; }
-  .tk-stat-label { font-size: .65rem; color: #94a3b8; margin-top: 2px; }
-  .tk-summary-card { border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; min-width: 90px; cursor: pointer; text-decoration: none; }
-  .tk-summary-card:hover { background: #f8fafc; box-shadow: 0 2px 6px rgba(0,0,0,.06); }
-  .tk-filter-bar { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }
-  .tk-legend { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; color: #64748b; }
-  .tk-legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .mine-btn.active { background: var(--ehr-primary, #0891b2) !important; color: #fff !important; border-color: var(--ehr-primary, #0891b2) !important; }
+  .tracker-card { transition: box-shadow 0.15s; border-radius: 8px; }
+  .tracker-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12) !important; }
+  .station-pill { font-size: .75rem; font-weight: 600; }
+  .time-badge { font-size: .7rem; }
+  .time-badge.bg-danger { animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .summary-card { min-width: 100px; cursor:pointer; }
+  .summary-card:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.15) !important; }
+  .tier-VIP { background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%); }
+  .tier-EXPRESS { background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); }
+  .tier-FAST_TRACK { background: linear-gradient(135deg, #e2d5f1 0%, #d4c5e8 100%); }
+  .filter-bar { background: #f8f9fa; border-radius: .5rem; }
+  .status-legend { display:inline-flex; align-items:center; gap:4px; font-size:.7rem; }
+  .status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .mine-btn.active { background:#0d6efd !important; color:#fff !important; }
 </style>
 {% endblock %}
 
@@ -40,24 +26,26 @@
 {# ── Header ── #}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
-    <h1 class="h4 mb-0 fw-bold" style="color:#1e293b;">Patient Tracker Board</h1>
+    <h1 class="h4 mb-0 fw-bold">
+      <i class="bi bi-geo-alt-fill text-primary me-2"></i>Patient Tracker Board
+    </h1>
     <div class="text-muted small">
-      Real-time patient locations &mdash; <strong>{{ total_patients }}</strong> patient{{ total_patients|pluralize }} in hospital
-      <span id="autoRefreshBadge" class="tk-pill tk-pill-serving ms-2">Auto-refresh 30s</span>
+      Real-time patient location &mdash; <strong>{{ total_patients }}</strong> patient{{ total_patients|pluralize }} in hospital
+      <span id="autoRefreshBadge" class="badge bg-success ms-2" style="font-size:.65rem;">Auto-refresh 30s</span>
     </div>
   </div>
   <div class="d-flex gap-2 align-items-center">
     <a href="{% url 'consultations:patient_tracker' %}?kiosk=1{% if filter_mine %}&mine=1{% endif %}"
-       class="btn btn-sm btn-outline-secondary" title="Open TV / Kiosk mode (fullscreen for nurse station TV)">
+       class="btn btn-sm btn-outline-dark" title="Open TV / Kiosk mode (fullscreen, dark, big text)">
       <i class="bi bi-tv me-1"></i>TV Mode
     </a>
   </div>
 </div>
 
 {# ── Filter Bar ── #}
-<div class="tk-filter-bar p-2 mb-3 d-flex flex-wrap gap-2 align-items-center">
+<div class="filter-bar p-2 mb-3 d-flex flex-wrap gap-2 align-items-center">
   <a href="{% url 'consultations:patient_tracker' %}{% if not filter_mine %}?mine=1{% endif %}"
-     class="btn btn-sm mine-btn {% if filter_mine %}active{% else %}btn-outline-secondary{% endif %}">
+     class="btn btn-sm mine-btn {% if filter_mine %}active btn-primary{% else %}btn-outline-primary{% endif %}">
     <i class="bi bi-person-check me-1"></i>My Patients
   </a>
 
@@ -84,28 +72,28 @@
   </form>
 
   {% if filter_station or filter_mine or filter_staff %}
-  <a href="{% url 'consultations:patient_tracker' %}" class="btn btn-sm btn-outline-secondary">
-    <i class="bi bi-x-lg me-1"></i>Clear
+  <a href="{% url 'consultations:patient_tracker' %}" class="btn btn-sm btn-outline-danger">
+    <i class="bi bi-x-lg"></i> Clear All
   </a>
   {% endif %}
 
   <div class="ms-auto d-flex gap-3 flex-wrap">
-    <span class="tk-legend"><span class="tk-legend-dot" style="background:#f59e0b;"></span> Waiting{% if status_counts.WAITING %} ({{ status_counts.WAITING }}){% endif %}</span>
-    <span class="tk-legend"><span class="tk-legend-dot" style="background:#0ea5e9;"></span> Called{% if status_counts.CALLED %} ({{ status_counts.CALLED }}){% endif %}</span>
-    <span class="tk-legend"><span class="tk-legend-dot" style="background:#3b82f6;"></span> Serving{% if status_counts.SERVING %} ({{ status_counts.SERVING }}){% endif %}</span>
-    <span class="tk-legend"><span class="tk-legend-dot" style="background:#22c55e;"></span> Done{% if status_counts.COMPLETED %} ({{ status_counts.COMPLETED }}){% endif %}</span>
+    <span class="status-legend"><span class="status-dot" style="background:#ffc107;"></span> Waiting{% if status_counts.WAITING %} ({{ status_counts.WAITING }}){% endif %}</span>
+    <span class="status-legend"><span class="status-dot" style="background:#0d6efd;"></span> Called{% if status_counts.CALLED %} ({{ status_counts.CALLED }}){% endif %}</span>
+    <span class="status-legend"><span class="status-dot" style="background:#198754;"></span> Serving{% if status_counts.SERVING %} ({{ status_counts.SERVING }}){% endif %}</span>
+    <span class="status-legend"><span class="status-dot" style="background:#6c757d;"></span> Done{% if status_counts.COMPLETED %} ({{ status_counts.COMPLETED }}){% endif %}</span>
   </div>
 </div>
 
-{# ── Station Summary ── #}
+{# ── Station Summary Cards ── #}
 {% if station_counts %}
 <div class="d-flex flex-wrap gap-2 mb-3">
   {% for station_name, count in station_counts %}
   <a href="?station={{ station_name }}{% if filter_mine %}&mine=1{% endif %}"
-     class="tk-summary-card d-block">
-    <div class="tk-stat">
-      <div class="tk-stat-num">{{ count }}</div>
-      <div class="tk-stat-label">{{ station_name }}</div>
+     class="summary-card card border-0 shadow-sm text-decoration-none">
+    <div class="card-body p-2 text-center">
+      <div class="fw-bold fs-5 text-primary">{{ count }}</div>
+      <div class="text-muted" style="font-size:.7rem;line-height:1.1;">{{ station_name }}</div>
     </div>
   </a>
   {% endfor %}
@@ -117,76 +105,80 @@
 <div class="row g-2">
   {% for r in rows %}
   <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-    <div class="tk-card p-2 h-100">
-      {# Patient name + tier + token #}
-      <div class="d-flex justify-content-between align-items-start mb-1">
-        <div>
-          <div class="tk-name">{{ r.patient.full_name }}</div>
-          <div class="tk-sub">{{ r.patient.patient_id }}</div>
+    <div class="card tracker-card shadow-sm h-100 {% if r.tier == 'VIP' %}tier-VIP{% elif r.tier == 'EXPRESS' %}tier-EXPRESS{% elif r.tier == 'FAST_TRACK' %}tier-FAST_TRACK{% endif %}">
+      <div class="card-body p-2">
+        {# Patient name + ID #}
+        <div class="d-flex justify-content-between align-items-start mb-1">
+          <div>
+            <strong class="d-block" style="font-size:.85rem;line-height:1.2;">
+              {{ r.patient.full_name }}
+            </strong>
+            <span class="text-muted" style="font-size:.7rem;">{{ r.patient.patient_id }}</span>
+          </div>
+          <div class="text-end">
+            {% if r.tier == 'VIP' %}
+              <span class="badge bg-warning text-dark" style="font-size:.6rem;">VIP</span>
+            {% elif r.tier == 'EXPRESS' %}
+              <span class="badge bg-info text-dark" style="font-size:.6rem;">EXPRESS</span>
+            {% elif r.tier == 'FAST_TRACK' %}
+              <span class="badge text-white" style="font-size:.6rem;background:#7c3aed;">FAST</span>
+            {% endif %}
+            {% if r.token %}
+            <div class="text-muted" style="font-size:.6rem;">{{ r.token.token_number }}</div>
+            {% endif %}
+          </div>
         </div>
-        <div class="text-end">
-          {% if r.tier == 'VIP' %}
-            <span class="tk-pill tk-pill-vip">VIP</span>
-          {% elif r.tier == 'EXPRESS' %}
-            <span class="tk-pill tk-pill-express">EXPRESS</span>
-          {% elif r.tier == 'FAST_TRACK' %}
-            <span class="tk-pill tk-pill-fast">FAST</span>
-          {% endif %}
-          {% if r.token %}
-          <div class="tk-sub">{{ r.token.token_number }}</div>
-          {% endif %}
+
+        {# Current Station #}
+        <div class="mb-1">
+          <span class="badge station-pill
+            {% if r.status_key == 'WAITING' %}bg-warning text-dark
+            {% elif r.status_key == 'CALLED' %}bg-primary
+            {% elif r.status_key == 'SERVING' %}bg-success
+            {% elif r.status_key == 'COMPLETED' %}bg-secondary
+            {% else %}bg-dark{% endif %}">
+            <i class="bi bi-geo-alt me-1"></i>{{ r.station }}
+          </span>
         </div>
-      </div>
 
-      {# Station #}
-      <div class="mb-1">
-        <span class="tk-station">
-          <i class="bi bi-geo-alt me-1" style="color:#94a3b8;"></i>{{ r.station }}
-        </span>
-      </div>
-
-      {# Room #}
-      {% if r.room %}
-      <div class="tk-sub mb-1">
-        <i class="bi bi-door-open me-1"></i>{{ r.room }}
-      </div>
-      {% endif %}
-
-      {# Staff #}
-      <div class="tk-staff">
-        {% if r.staff %}
-          <i class="bi bi-person-badge me-1"></i>
-          <strong style="color:#334155;">{{ r.staff.get_full_name }}</strong>
-          <span>({{ r.staff.get_role_display }})</span>
-        {% else %}
-          <i class="bi bi-person-dash me-1"></i>Unassigned
+        {# Room #}
+        {% if r.room %}
+        <div class="text-muted" style="font-size:.7rem;">
+          <i class="bi bi-door-open me-1"></i>{{ r.room }}
+        </div>
         {% endif %}
-      </div>
 
-      {# Returning-to badge #}
-      {% if r.referring_doctor %}
-      <div class="mt-1">
-        <span class="tk-pill tk-pill-return">
-          <i class="bi bi-arrow-return-left me-1"></i>Returning to {{ r.referring_doctor.get_full_name }}
-        </span>
-      </div>
-      {% endif %}
+        {# Staff #}
+        <div style="font-size:.75rem;" class="mt-1">
+          {% if r.staff %}
+            <i class="bi bi-person-badge me-1 text-primary"></i>
+            <strong>{{ r.staff.get_full_name }}</strong>
+            <span class="text-muted">({{ r.staff.get_role_display }})</span>
+          {% else %}
+            <span class="text-muted"><i class="bi bi-person-dash me-1"></i>Unassigned</span>
+          {% endif %}
+        </div>
 
-      {# Status + Time #}
-      <div class="d-flex justify-content-between align-items-center mt-2">
-        <span class="tk-pill
-          {% if r.status_key == 'WAITING' %}tk-pill-waiting
-          {% elif r.status_key == 'CALLED' %}tk-pill-called
-          {% elif r.status_key == 'SERVING' %}tk-pill-serving
-          {% elif r.status_key == 'COMPLETED' %}tk-pill-done
-          {% else %}tk-pill-default{% endif %}">
-          {{ r.status }}
-        </span>
-        <span class="tk-time {% if r.minutes > 30 %}tk-time-danger{% elif r.minutes > 15 %}tk-time-warn{% else %}tk-time-ok{% endif %}">
-          <i class="bi bi-clock me-1"></i>
-          {% if r.minutes >= 60 %}{{ r.hours }}h {{ r.mins_remainder }}m
-          {% else %}{{ r.minutes }} min{% endif %}
-        </span>
+        {# Returning-to badge #}
+        {% if r.referring_doctor %}
+        <div style="font-size:.7rem;" class="mt-1">
+          <span class="badge bg-info text-dark">
+            <i class="bi bi-arrow-return-left me-1"></i>Returning to {{ r.referring_doctor.get_full_name }}
+          </span>
+        </div>
+        {% endif %}
+
+        {# Time at station #}
+        <div class="d-flex justify-content-between align-items-center mt-1">
+          <span class="time-badge badge {% if r.minutes > 30 %}bg-danger{% elif r.minutes > 15 %}bg-warning text-dark{% else %}bg-light text-dark border{% endif %}">
+            <i class="bi bi-clock me-1"></i>
+            {% if r.minutes >= 60 %}{{ r.hours }}h {{ r.mins_remainder }}m
+            {% else %}{{ r.minutes }} min{% endif %}
+          </span>
+          <span class="badge {% if r.status_key == 'SERVING' %}bg-success{% elif r.status_key == 'WAITING' %}bg-warning text-dark{% elif r.status_key == 'CALLED' %}bg-primary{% else %}bg-secondary{% endif %}" style="font-size:.6rem;">
+            {{ r.status }}
+          </span>
+        </div>
       </div>
     </div>
   </div>
@@ -194,14 +186,14 @@
 </div>
 {% else %}
 <div class="text-center py-5">
-  <i class="bi bi-geo-alt" style="font-size:2rem;color:#94a3b8;"></i>
-  <p class="mt-2" style="color:#94a3b8;font-size:.88rem;">
+  <i class="bi bi-geo-alt display-4 text-muted"></i>
+  <p class="text-muted mt-2">
     {% if filter_mine %}No patients assigned to you right now.
     {% elif filter_station %}No patients at "{{ filter_station }}" right now.
     {% else %}No patients in hospital right now.{% endif %}
   </p>
   {% if filter_mine or filter_station or filter_staff %}
-  <a href="{% url 'consultations:patient_tracker' %}" class="btn btn-sm btn-outline-secondary">Show All Patients</a>
+  <a href="{% url 'consultations:patient_tracker' %}" class="btn btn-sm btn-outline-primary">Show All Patients</a>
   {% endif %}
 </div>
 {% endif %}
@@ -210,6 +202,9 @@
 
 {% block extra_js %}
 <script>
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) location.reload();
+});
 (function(){
   var c = 30, el = document.getElementById('autoRefreshBadge');
   setInterval(function(){
