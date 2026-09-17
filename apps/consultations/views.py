@@ -4462,7 +4462,7 @@ def patient_tracker_view(request):
     from apps.accounts.models import User
     doctors = (
         User.objects.filter(is_active=True)
-        .filter(role__in=UserRole.DOCTOR_ROLES)
+        .filter(role__in=User.DOCTOR_ROLES)
         .order_by('first_name', 'last_name')
     )
 
