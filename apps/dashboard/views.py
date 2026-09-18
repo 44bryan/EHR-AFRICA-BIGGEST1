@@ -651,7 +651,7 @@ def home_view(request):
             if _dept_code == 'GEN_OPH':
                 _CU_TIER_MAP = {
                     'VIP_CONSULT': ['VIP'], 'VIP': ['VIP'],
-                    'EXP_CONSULT': ['EXPRESS', 'FAST_TRACK'], 'EXPRESS': ['EXPRESS', 'FAST_TRACK'],
+                    'EXP_CONSULT': ['EXPRESS'], 'EXPRESS': ['EXPRESS'],
                     'INSUR_CONSULT': ['STANDARD'], 'INSURANCE': ['STANDARD'],
                     'GENERAL': ['STANDARD'],
                 }
@@ -701,8 +701,7 @@ def home_view(request):
         _nurse_tier = getattr(user, 'patient_tier', 'ALL')
         _NURSE_TIER_COMPAT = {
             'VIP':        ['VIP'],
-            'EXPRESS':    ['EXPRESS', 'FAST_TRACK'],
-            'FAST_TRACK': ['EXPRESS', 'FAST_TRACK'],
+            'EXPRESS':    ['EXPRESS'],
             'STANDARD':   ['STANDARD'],
         }
         _waiting_qs = Visit.objects.select_related(
@@ -1472,7 +1471,7 @@ def home_view(request):
 def cashier_select_desk(request):
     """
     Cashier chooses their own workstation tier (Standard / VIP / Express / All).
-    POST: {'station': 'STANDARD'|'FAST_TRACK'|'VIP'|'INSURED'|'ALL'}
+    POST: {'station': 'STANDARD'|'EXPRESS'|'VIP'|'INSURED'|'ALL'}
     GET:  renders the desk selection page.
     """
     from django.http import JsonResponse
@@ -2249,15 +2248,15 @@ def sysadmin_settings(request):
                     ('Cashier 1 (Standard)',     'CASH-01',  ServiceType.CASHIER,          'STANDARD'),
                     ('Cashier 2 (Standard)',     'CASH-02',  ServiceType.CASHIER,          'STANDARD'),
                     ('VIP Cashier',              'CASH-VIP', ServiceType.CASHIER,          'VIP'),
-                    ('Express / FT Cashier',     'CASH-03',  ServiceType.CASHIER,          'FAST_TRACK,EXPRESS'),
+                    ('Express Cashier',          'CASH-03',  ServiceType.CASHIER,          'EXPRESS'),
                     ('Optical Cashier',          'CASH-OPT', ServiceType.CASHIER,          ''),
                     ('Receptionist 1',           'RECEP-01', ServiceType.RECEPTIONIST,     'STANDARD'),
                     ('Receptionist 2',           'RECEP-02', ServiceType.RECEPTIONIST,     'STANDARD'),
                     ('Parameters Standard',      'PARAM-01', ServiceType.PARAMETERS,       'STANDARD'),
-                    ('Parameters VIP / Express', 'PVIP-01',  ServiceType.PARAMETERS_VIP,   'VIP,FAST_TRACK,EXPRESS'),
-                    ('Insurance Consultation',   'INS-01',   ServiceType.INSURANCE_CONSULT,'EXPRESS,FAST_TRACK'),
+                    ('Parameters VIP / Express', 'PVIP-01',  ServiceType.PARAMETERS_VIP,   'VIP,EXPRESS'),
+                    ('Insurance Consultation',   'INS-01',   ServiceType.INSURANCE_CONSULT,'EXPRESS'),
                     ('VIP Consultation Room',    'VIP-CONS', ServiceType.VIP_CONSULT,      'VIP'),
-                    ('Express Consultation',     'EXP-CONS', ServiceType.EXPRESS_CONSULT,  'FAST_TRACK,EXPRESS'),
+                    ('Express Consultation',     'EXP-CONS', ServiceType.EXPRESS_CONSULT,  'EXPRESS'),
                     ('General Ophthalmology',    'GEN-01',   ServiceType.GENERAL,          'STANDARD'),
                     ('Retina Clinic',            'RET-01',   ServiceType.RETINA,           ''),
                     ('Glaucoma Clinic',          'GLAUC-01', ServiceType.GLAUCOMA,         ''),

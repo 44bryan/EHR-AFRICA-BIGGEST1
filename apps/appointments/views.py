@@ -260,7 +260,7 @@ def appointment_check_in_view(request, pk):
         try:
             from apps.qms.models import QueueToken, DailyTokenSequence, ServiceType
             tier = appt.service_tier or 'STANDARD'
-            TIER_PRIORITY = {'STANDARD': 0, 'EXPRESS': 1, 'FAST_TRACK': 1, 'VIP': 2}
+            TIER_PRIORITY = {'STANDARD': 0, 'EXPRESS': 1, 'VIP': 2}
 
             # ── Tier-aware QMS routing ─────────────────────────────────────────
             _unit_to_qms = {
@@ -274,7 +274,7 @@ def appointment_check_in_view(request, pk):
             elif unit_status:
                 # Specialist appointment → bypass triage → unit nurse queue
                 service_type = _unit_to_qms.get(unit_status, 'GENERAL')
-            elif tier in ('EXPRESS', 'FAST_TRACK'):
+            elif tier == 'EXPRESS':
                 service_type = 'EXP_CONSULT'
             elif tier == 'VIP':
                 service_type = 'VIP_CONSULT'

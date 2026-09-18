@@ -19,9 +19,7 @@ from apps.core.decorators import json_error_handler
 # Maps a desk's primary tier to ALL tiers it handles (some desks share patients).
 # Update this dict when physical desk assignments change — no migration needed.
 DESK_TIER_GROUPS = {
-    # The Express/FT desk handles both EXPRESS and FAST_TRACK patients —
-    # there is no separate "EXPRESS" desk tier (CashDesk.tier only has STANDARD/FAST_TRACK/VIP).
-    'FAST_TRACK': ['FAST_TRACK', 'EXPRESS'],
+    'EXPRESS': ['EXPRESS'],
 }
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -961,8 +959,8 @@ def cashier_queue(request):
     _tier = _get_cashier_tier(request.user)
     if _tier == 'VIP':
         waiting = waiting.filter(service_tier='VIP')
-    elif _tier in ('EXPRESS', 'FAST_TRACK'):
-        waiting = waiting.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+    elif _tier == 'EXPRESS':
+        waiting = waiting.filter(service_tier='EXPRESS')
     elif _tier == 'STANDARD':
         waiting = waiting.filter(service_tier='STANDARD')
     # else 'ALL' → no filter
@@ -2724,7 +2722,7 @@ def service_price_list(request):
         'categories': ServiceCategory.choices,
         'tiers': [('', 'All Tiers')] + [(k, v) for k, v in [
             ('STANDARD', 'Standard Desk'),
-            ('FAST_TRACK', 'Fast Track Desk'),
+            ('EXPRESS', 'Express Desk'),
             ('VIP', 'VIP Desk'),
             ('INSURED', 'Insured / HMO Desk'),
         ]],
@@ -5792,7 +5790,7 @@ def desk_create(request):
             messages.success(request, f'Cash desk "{desk.name}" created.')
             return redirect('billing:desk_list')
     context = {'desk_types': DeskType.choices, 'tier_choices': [
-        ('STANDARD', 'Standard'), ('FAST_TRACK', 'Fast Track'), ('VIP', 'VIP'),
+        ('STANDARD', 'Standard'), ('EXPRESS', 'Express'), ('VIP', 'VIP'),
     ]}
     return render(request, 'billing/desk_form.html', context)
 
@@ -5823,7 +5821,7 @@ def desk_edit(request, desk_id):
         'desk': desk,
         'desk_types': DeskType.choices,
         'tier_choices': [
-            ('STANDARD', 'Standard'), ('FAST_TRACK', 'Fast Track'), ('VIP', 'VIP'),
+            ('STANDARD', 'Standard'), ('EXPRESS', 'Express'), ('VIP', 'VIP'),
         ],
     }
     return render(request, 'billing/desk_form.html', context)

@@ -2071,8 +2071,8 @@ def investigation_stats_view(request):
     })
 
     # ── Service tier breakdown ────────────────────────────────────────────────
-    TIER_ORDER   = ['VIP', 'EXPRESS', 'FAST_TRACK', 'STANDARD']
-    TIER_DISPLAY = {'VIP': 'VIP', 'EXPRESS': 'Express', 'FAST_TRACK': 'Fast Track', 'STANDARD': 'Standard'}
+    TIER_ORDER   = ['VIP', 'EXPRESS', 'STANDARD']
+    TIER_DISPLAY = {'VIP': 'VIP', 'EXPRESS': 'Express', 'STANDARD': 'Standard'}
     completed_base = base.filter(status='COMPLETED')
     tier_rows = list(
         completed_base.values(

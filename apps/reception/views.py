@@ -1,7 +1,7 @@
 """
 Reception Desk — unified front-desk workflow.
 Gate issues QMS token → Reception searches/registers patient →
-Selects consultation tier (Standard/Express/Fast Track/VIP) →
+Selects consultation tier (Standard/Express/VIP) →
 Appointment + Visit auto-created → Patient directed to department.
 """
 from django.contrib.auth.decorators import login_required
@@ -23,7 +23,6 @@ from apps.core.context_processors import qms_active
 TIER_META = {
     'STANDARD':   {'color': 'secondary', 'icon': 'bi-person',         'priority': 0},
     'EXPRESS':    {'color': 'info',      'icon': 'bi-lightning',       'priority': 1},
-    'FAST_TRACK': {'color': 'warning',   'icon': 'bi-lightning-charge','priority': 1},
     'VIP':        {'color': 'danger',    'icon': 'bi-star-fill',       'priority': 2},
 }
 
@@ -226,7 +225,7 @@ def walk_in(request):
         else:
             # Generalist: route to tier-specific triage queue
             # Express/FT/VIP go to PARAMS_VIP (their own nurse), Standard goes to PARAMETERS
-            if tier in ('EXPRESS', 'FAST_TRACK', 'VIP'):
+            if tier in ('EXPRESS', 'VIP'):
                 qms_service_type_str = 'PARAMS_VIP'
             else:
                 qms_service_type_str = 'PARAMETERS'

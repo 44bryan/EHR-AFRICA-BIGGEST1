@@ -1455,8 +1455,8 @@ def workstation_view(request):
                             _token_qs = _token_qs.filter(service_tier='VIP')
                         elif len(_ctiers) == 1 and _ctiers[0] == 'STANDARD':
                             _token_qs = _token_qs.filter(service_tier='STANDARD')
-                        elif len(_ctiers) == 1 and _ctiers[0] in ('EXPRESS', 'FAST_TRACK'):
-                            _token_qs = _token_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                        elif len(_ctiers) == 1 and _ctiers[0] == 'EXPRESS':
+                            _token_qs = _token_qs.filter(service_tier='EXPRESS')
                         elif 'VIP' not in _ctiers:
                             _token_qs = _token_qs.exclude(service_tier='VIP')
                         elif 'STANDARD' not in _ctiers:
@@ -2368,7 +2368,7 @@ def triage_workstation_view(request):
     Nurse's triage workstation.
     Auto-detects the nurse's assigned counter and filters the queue to their tier:
       - Gate / Standard counter → shows PARAMETERS queue (Standard only)
-      - VIP/Express counter    → shows PARAMS_VIP queue (VIP + Express + Fast Track)
+      - VIP/Express counter    → shows PARAMS_VIP queue (VIP + Express)
       - No counter assigned / Medical Director / Super Admin → shows ALL queues
     A manual tier filter in the URL (?tier=ALL|STANDARD|VIP) overrides this.
     """
@@ -2407,14 +2407,14 @@ def triage_workstation_view(request):
             show_mode = 'ALL'        # all-tier counter → supervisor-style view
         elif 'VIP' in _st:
             show_mode = 'VIP'        # explicitly VIP counter
-        elif 'EXPRESS' in _st or 'FAST_TRACK' in _st:
-            show_mode = 'EXPRESS'    # Express / Fast Track counter
+        elif 'EXPRESS' in _st:
+            show_mode = 'EXPRESS'    # Express counter
         else:
             show_mode = 'STANDARD'   # Standard-only counter
     elif _nurse_pt == 'VIP':
         show_mode = 'VIP'           # VIP triage sector — PARAMS_VIP filtered to VIP only
-    elif _nurse_pt in ('EXPRESS', 'FAST_TRACK'):
-        show_mode = 'EXPRESS'       # Express/FastTrack sector — PARAMS_VIP filtered to EXPRESS+FT
+    elif _nurse_pt == 'EXPRESS':
+        show_mode = 'EXPRESS'       # Express sector — PARAMS_VIP filtered to EXPRESS
     elif _nurse_pt == 'STANDARD':
         show_mode = 'STANDARD'      # Standard triage sector — PARAMETERS queue only
     elif _is_supervisor or _nurse_pt == 'ALL':
@@ -2444,7 +2444,7 @@ def triage_workstation_view(request):
 
             # ── VIP / Express Parameters queue ────────────────────────────────
             # show_mode='VIP'     → PARAMS_VIP tokens where service_tier=VIP only
-            # show_mode='EXPRESS' → PARAMS_VIP tokens where service_tier=EXPRESS or FAST_TRACK
+            # show_mode='EXPRESS' → PARAMS_VIP tokens where service_tier=EXPRESS
             # show_mode='ALL'     → all PARAMS_VIP tokens (supervisors)
             if show_mode in ('VIP', 'EXPRESS', 'ALL'):
                 _pvip_qs = QueueToken.objects.filter(
@@ -2456,7 +2456,7 @@ def triage_workstation_view(request):
                 if show_mode == 'VIP':
                     _pvip_qs = _pvip_qs.filter(service_tier='VIP')
                 elif show_mode == 'EXPRESS':
-                    _pvip_qs = _pvip_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                    _pvip_qs = _pvip_qs.filter(service_tier='EXPRESS')
                 # show_mode='ALL' → no additional filter (counter-assigned supervisors)
                 vip_params_queue = list(
                     _pvip_qs.select_related('patient', 'counter').order_by('-priority', 'issued_at')
@@ -2473,7 +2473,7 @@ def triage_workstation_view(request):
         if show_mode == 'VIP':
             _tv_qs = _tv_qs.filter(service_tier='VIP')
         elif show_mode == 'EXPRESS':
-            _tv_qs = _tv_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+            _tv_qs = _tv_qs.filter(service_tier='EXPRESS')
         elif show_mode == 'STANDARD':
             _tv_qs = _tv_qs.filter(service_tier='STANDARD')
         # show_mode == 'ALL' → no additional filter (supervisors see all)
@@ -2519,7 +2519,7 @@ def triage_workstation_view(request):
             total_vip_express = all_today.filter(service_type='PARAMS_VIP').count()
             total_express     = all_today.filter(
                 service_type='PARAMS_VIP',
-                service_tier__in=['EXPRESS', 'FAST_TRACK'],
+                service_tier='EXPRESS',
             ).count()
             total_vip_only    = all_today.filter(
                 service_type='PARAMS_VIP',
@@ -2539,7 +2539,7 @@ def triage_workstation_view(request):
     if show_mode == 'VIP':
         _base_vs = _base_vs.filter(service_tier='VIP')
     elif show_mode == 'EXPRESS':
-        _base_vs = _base_vs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+        _base_vs = _base_vs.filter(service_tier='EXPRESS')
     elif show_mode == 'STANDARD':
         _base_vs = _base_vs.filter(service_tier='STANDARD')
     emergency_pathway_today = _base_vs.filter(visit_type='EMERGENCY').count()
@@ -2709,8 +2709,8 @@ def clinic_nurse_view(request):
         if dept_code == 'GEN_OPH':
             if _nurse_tier == 'VIP':
                 _nq_qs = _nq_qs.filter(service_tier='VIP')
-            elif _nurse_tier in ('EXPRESS', 'FAST_TRACK'):
-                _nq_qs = _nq_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+            elif _nurse_tier == 'EXPRESS':
+                _nq_qs = _nq_qs.filter(service_tier='EXPRESS')
             elif _nurse_tier == 'STANDARD':
                 _nq_qs = _nq_qs.filter(service_tier='STANDARD')
         waiting_visits = list(_nq_qs.order_by('visit_date'))
@@ -2727,7 +2727,7 @@ def clinic_nurse_view(request):
         if _nurse_tier == 'VIP':
             _ic_qs = _ic_qs.filter(service_tier='VIP')
         elif _nurse_tier == 'EXPRESS':
-            _ic_qs = _ic_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+            _ic_qs = _ic_qs.filter(service_tier='EXPRESS')
         elif _nurse_tier == 'STANDARD':
             _ic_qs = _ic_qs.filter(service_tier='STANDARD')
         # ALL / supervisor → no tier filter
@@ -2767,7 +2767,7 @@ def clinic_nurse_view(request):
             if _nurse_tier == 'VIP':
                 _rtr_qs = _rtr_qs.filter(service_tier='VIP')
             elif _nurse_tier == 'EXPRESS':
-                _rtr_qs = _rtr_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                _rtr_qs = _rtr_qs.filter(service_tier='EXPRESS')
             elif _nurse_tier == 'STANDARD':
                 _rtr_qs = _rtr_qs.filter(service_tier='STANDARD')
             ready_to_route = list(
@@ -2954,7 +2954,7 @@ def _inline_route_visit(visit, destination, routed_by, room_id=None, counter_id=
             _tier = getattr(visit, 'service_tier', 'STANDARD') or 'STANDARD'
             if _tier == 'VIP':
                 qms_service = 'VIP_CONSULT'
-            elif _tier in ('EXPRESS', 'FAST_TRACK'):
+            elif _tier == 'EXPRESS':
                 qms_service = 'EXP_CONSULT'
 
         # Update visit status
@@ -3257,12 +3257,12 @@ def nurse_route_patient_view(request, visit_pk):
     new_status, qms_service, label = route
 
     # Tier-aware routing: after triage, send patient to the correct tier's doctor queue
-    # Standard → GENERAL, Express/FT → EXP_CONSULT, VIP → VIP_CONSULT
+    # Standard → GENERAL, Express → EXP_CONSULT, VIP → VIP_CONSULT
     if new_status == 'WAITING' and qms_service == 'GENERAL':
         _tier = getattr(visit, 'service_tier', 'STANDARD') or 'STANDARD'
         if _tier == 'VIP':
             qms_service = 'VIP_CONSULT'
-        elif _tier in ('EXPRESS', 'FAST_TRACK'):
+        elif _tier == 'EXPRESS':
             qms_service = 'EXP_CONSULT'
 
     # ── VIP Specialist Invite ─────────────────────────────────────────────────
@@ -3491,7 +3491,7 @@ def route_rooms_view(request):
 
     _tier_labels = {
         'STANDARD': 'Standard', 'VIP': 'VIP', 'EXPRESS': 'Express',
-        'FAST_TRACK': 'Fast Track', 'ALL': 'All Tiers', '': 'All Tiers',
+        'ALL': 'All Tiers', '': 'All Tiers',
     }
 
     same_tier = []

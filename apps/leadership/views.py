@@ -515,7 +515,6 @@ def monthly_stats(request):
     _tier = {d['service_tier']: d['count'] for d in tier_breakdown}
     tier_standard  = _tier.get('STANDARD', 0)
     tier_express   = _tier.get('EXPRESS', 0)
-    tier_fast      = _tier.get('FAST_TRACK', 0)
     tier_vip       = _tier.get('VIP', 0)
 
     # by billing type
@@ -670,7 +669,6 @@ def monthly_stats(request):
         'tier_breakdown': tier_breakdown,
         'tier_standard': tier_standard,
         'tier_express': tier_express,
-        'tier_fast': tier_fast,
         'tier_vip': tier_vip,
         'billing_breakdown': billing_breakdown,
         'bt_self_pay': bt_self_pay,
@@ -1044,7 +1042,6 @@ def hospital_stats_view(request):
     TIER_LABELS = {
         'STANDARD': 'Regular',
         'EXPRESS':  'Express',
-        'FAST_TRACK': 'Fast Track',
         'VIP':      'VIP',
     }
     tier_raw = (
@@ -1171,7 +1168,6 @@ def hospital_stats_view(request):
     _TIER_ROWS = [
         ('STANDARD',   'Regular',   '#0d6efd'),
         ('EXPRESS',    'Express',   '#0dcaf0'),
-        ('FAST_TRACK', 'Fast Track','#ffc107'),
         ('VIP',        'VIP',       '#dc3545'),
         ('INSURANCE',  'Insurance', '#198754'),
         ('HMO',        'HMO',       '#6f42c1'),
@@ -1373,7 +1369,6 @@ def hospital_stats_view(request):
         'tier_labels': json.dumps(tier_labels),
         'tier_standard': tier_data.get('STANDARD', 0),
         'tier_express': tier_data.get('EXPRESS', 0),
-        'tier_fast': tier_data.get('FAST_TRACK', 0),
         'tier_vip': tier_data.get('VIP', 0),
         # Billing type
         'bt_json': bt_json,
@@ -1493,7 +1488,7 @@ def department_stats_view(request):
     if not _is_supervisor:
         _tier_map = {
             'VIP': ['VIP'],
-            'EXPRESS': ['EXPRESS', 'FAST_TRACK'],
+            'EXPRESS': ['EXPRESS'],
             'STANDARD': ['STANDARD'],
         }
         _allowed_tiers = _tier_map.get(_user_tier, ['STANDARD'])
@@ -1527,7 +1522,6 @@ def department_stats_view(request):
     TIER_ROWS = [
         ('STANDARD',   'Regular',   '#0d6efd'),
         ('EXPRESS',    'Express',   '#0dcaf0'),
-        ('FAST_TRACK', 'Fast Track','#ffc107'),
         ('VIP',        'VIP',       '#dc3545'),
         ('INSURANCE',  'Insurance', '#198754'),
         ('HMO',        'HMO',       '#6f42c1'),

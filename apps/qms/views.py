@@ -4,7 +4,7 @@ QMS Views — Multi-tier ophthalmology queue management (GLUDD Hospital).
 Entry flow:
   gate_issue          → STANDARD patients only (mandatory main gate ticket)
   vip_reception_issue → VIP patients (back entrance, ticket optional)
-  express_desk_issue  → EXPRESS / FAST_TRACK patients (side entrance, ticket optional)
+  express_desk_issue  → EXPRESS patients (side entrance, ticket optional)
                         Insured patients here → routed to Insurance Consultation Room
   cashier_issue       → Any tier arriving without a prior ticket (fallback)
 
@@ -304,7 +304,7 @@ def gate_issue(request):
                 request,
                 f'{tier_name} patients should use their dedicated entry point. '
                 'VIP → VIP Reception (back entrance). '
-                'Express / Fast Track → Express Desk (side entrance). '
+                'Express → Express Desk (side entrance). '
                 'Tick "Override" below if the patient insists on entering via the main gate.'
             )
             return render(request, 'qms/gate_issue.html', {
@@ -668,8 +668,8 @@ def vip_reception_issue(request):
 @login_required
 def express_desk_issue(request):
     """
-    Express / Fast Track Desk — Side Entrance.
-    Express and Fast Track patients are NOT obliged to take a gate ticket.
+    Express Desk — Side Entrance.
+    Express patients are NOT obliged to take a gate ticket.
     Insured patients in this section → Insurance Consultation Room directly.
     """
     if request.method == 'POST':
@@ -680,8 +680,8 @@ def express_desk_issue(request):
         is_insured = request.POST.get('is_insured') == '1'
         insurance_company = request.POST.get('insurance_company', '').strip()
 
-        if tier not in [ServiceTier.EXPRESS, ServiceTier.FAST_TRACK]:
-            messages.error(request, 'This desk serves Express and Fast Track patients only.')
+        if tier != ServiceTier.EXPRESS:
+            messages.error(request, 'This desk serves Express patients only.')
             return redirect('qms:express_desk')
 
         patient = None
@@ -749,8 +749,7 @@ def express_desk_issue(request):
                 origin_zone=_resolve_zone(tier),
             )
 
-        tier_label = 'Fast Track' if tier == ServiceTier.FAST_TRACK else 'Express'
-        dest = f'{tier_label} Cashier'
+        dest = 'Express Cashier'
         messages.success(request, f'Ticket {token_number} issued. Directing to {dest}.')
         return render(request, 'qms/ticket_slip.html', {
             'token': token,
@@ -760,7 +759,7 @@ def express_desk_issue(request):
         })
 
     return render(request, 'qms/express_desk.html', {
-        'tiers': [(ServiceTier.EXPRESS, 'Express'), (ServiceTier.FAST_TRACK, 'Fast Track')],
+        'tiers': [(ServiceTier.EXPRESS, 'Express')],
         'default_tier': ServiceTier.EXPRESS,
         'today_count': _active_tokens_today().count(),
     })
@@ -862,16 +861,15 @@ def receptionist_queue(request):
       /qms/receptionist/          → all tiers
       /qms/receptionist/?tier=STANDARD    → standard desk
       /qms/receptionist/?tier=VIP         → VIP desk
-      /qms/receptionist/?tier=EXPRESS     → express/fast-track desk
+      /qms/receptionist/?tier=EXPRESS     → express desk
     """
     today = timezone.localdate()
     selected_tier = request.GET.get('tier', '').upper().strip()
 
-    # Map shorthand: EXPRESS covers both EXPRESS and FAST_TRACK
     TIER_GROUPS = {
         'STANDARD':  [ServiceTier.STANDARD],
         'VIP':       [ServiceTier.VIP],
-        'EXPRESS':   [ServiceTier.EXPRESS, ServiceTier.FAST_TRACK],
+        'EXPRESS':   [ServiceTier.EXPRESS],
     }
 
     qs = QueueToken.objects.filter(
@@ -900,7 +898,7 @@ def receptionist_queue(request):
         'ALL':      QueueToken.objects.filter(service_type=ServiceType.RECEPTIONIST, status=TokenStatus.WAITING, token_date=today, is_deleted=False).count(),
         'STANDARD': _count([ServiceTier.STANDARD]),
         'VIP':      _count([ServiceTier.VIP]),
-        'EXPRESS':  _count([ServiceTier.EXPRESS, ServiceTier.FAST_TRACK]),
+        'EXPRESS':  _count([ServiceTier.EXPRESS]),
     }
 
     return render(request, 'qms/receptionist.html', {
@@ -1071,9 +1069,8 @@ def route_to_dept(request):
     # of the waiting queue — they do not join the end of the line.
     #
     # Insertion positions (patients left ahead):
-    #   Fast Track → position 2 (skip 1 patient)  — highest priority tier
-    #   Express    → position 4 (skip 3 patients)  — mid priority
-    #   Insurance  → position 4 (same as Express)
+    #   Express    → position 2 (skip 1 patient)  — priority tier
+    #   Insurance  → position 4 (same level)
     #   VIP        → specialist is summoned to VIP room (no insertion needed)
     #   Standard   → end of queue (no insertion)
     #
@@ -1088,8 +1085,7 @@ def route_to_dept(request):
     })
     # Tier → how many patients to leave ahead in the specialist queue
     _TIER_INSERT_AFTER = {
-        ServiceTier.FAST_TRACK: 1,   # position 2 — skip only 1 patient
-        ServiceTier.EXPRESS:    3,   # position 4 — skip 3 patients
+        ServiceTier.EXPRESS:    1,   # position 2 — skip 1 patient
         ServiceTier.VIP:        3,   # VIP is handled separately (summons) below
     }
 
@@ -1817,10 +1813,10 @@ def display_board(request):  # noqa: C901
             'q': Q(service_type='LAB'),
         },
         'express': {
-            'label': 'Express · Fast Track · Insurance',
+            'label': 'Express · Insurance',
             'color': '#22d3ee',
             'q': (
-                Q(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+                Q(service_tier='EXPRESS')
                 | Q(service_type='INSUR_CONSULT')
             ),
         },
@@ -1924,7 +1920,7 @@ def display_board(request):  # noqa: C901
     last_priority_call = QueueToken.objects.filter(
         token_date=today,
         status__in=[TokenStatus.CALLED, TokenStatus.SERVING],
-        service_tier__in=[ServiceTier.VIP, ServiceTier.FAST_TRACK, ServiceTier.EXPRESS],
+        service_tier__in=[ServiceTier.VIP, ServiceTier.EXPRESS],
         is_deleted=False,
     ).select_related('counter', 'entry_token').order_by('-called_at').first()
 
@@ -1961,7 +1957,7 @@ def names_board(request):
         'pediatric':     {'label': 'Paediatric Ophthalmology',         'serving_label': 'Currently with Doctor',      'color': '#ec4899', 'q': Q(service_type='PEDIATRIC')},
         'investigation': {'label': 'Eye Investigations',               'serving_label': 'At Investigations',          'color': '#f59e0b', 'q': Q(service_type='INVEST')},
         'laboratory':    {'label': 'Laboratory',                       'serving_label': 'At Laboratory',              'color': '#14b8a6', 'q': Q(service_type='LAB')},
-        'express':       {'label': 'Express · Fast Track · Insurance', 'serving_label': 'Currently Serving',          'color': '#8b5cf6', 'q': Q(service_tier__in=['EXPRESS','FAST_TRACK','INSURANCE'])},
+        'express':       {'label': 'Express · Insurance',              'serving_label': 'Currently Serving',          'color': '#8b5cf6', 'q': Q(service_tier__in=['EXPRESS','INSURANCE'])},
         'vip':           {'label': 'VIP Services',                     'serving_label': 'Currently Serving — VIP',    'color': '#d97706', 'q': Q(service_tier='VIP')},
         'pharmacy':      {'label': 'Pharmacy',                         'serving_label': 'At Pharmacy',                'color': '#10b981', 'q': Q(service_type='PHARMACY', service_tier='STANDARD')},
     }
@@ -2648,7 +2644,7 @@ _ZONE_MANAGE_ROLES = {'super_admin', 'medical_director', 'admin_director', 'ceo'
 
 _ZONE_COLOR_CHOICES = [
     ('secondary', 'Grey — Standard'),
-    ('info',      'Cyan — Fast Track / Express'),
+    ('info',      'Cyan — Express'),
     ('warning',   'Yellow — VIP'),
     ('primary',   'Blue — Shared Services'),
     ('success',   'Green'),

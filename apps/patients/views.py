@@ -169,10 +169,10 @@ def patient_register_view(request):
             _posted_tier = request.POST.get('service_tier', 'STANDARD')
             _u2 = request.user
             _u2_tier = (getattr(_u2, 'patient_tier', '') or '').strip()
-            _all_tiers2 = ['STANDARD', 'FAST_TRACK', 'EXPRESS', 'VIP']
+            _all_tiers2 = ['STANDARD', 'EXPRESS', 'VIP']
             _unrestricted2 = _u2.is_super_admin or _u2.is_medical_director or _u2.is_admin_director or _u2.is_ceo
             if not _unrestricted2 and _u2_tier and _u2_tier not in ('ALL', ''):
-                _allowed2 = ['EXPRESS', 'FAST_TRACK'] if _u2_tier in ('EXPRESS', 'FAST_TRACK') else [_u2_tier]
+                _allowed2 = [_u2_tier]
             else:
                 _allowed2 = _all_tiers2
             if _posted_tier not in _allowed2:
@@ -388,13 +388,10 @@ def patient_register_view(request):
     # ── Tier access: any staff locked to their assigned patient_tier ──────────
     _u = request.user
     _user_tier = (getattr(_u, 'patient_tier', '') or '').strip()
-    _all_tiers = ['STANDARD', 'FAST_TRACK', 'EXPRESS', 'VIP']
+    _all_tiers = ['STANDARD', 'EXPRESS', 'VIP']
     _is_unrestricted = _u.is_super_admin or _u.is_medical_director or _u.is_admin_director or _u.is_ceo
     if not _is_unrestricted and _user_tier and _user_tier not in ('ALL', ''):
-        if _user_tier in ('EXPRESS', 'FAST_TRACK'):
-            _allowed_tiers = ['EXPRESS', 'FAST_TRACK']
-        else:
-            _allowed_tiers = [_user_tier]
+        _allowed_tiers = [_user_tier]
     else:
         _allowed_tiers = _all_tiers  # admins / staff with ALL tier → see all
 
@@ -1067,7 +1064,6 @@ def change_visit_tier_view(request, visit_number):
             _TIER_TO_SERVICE = {
                 'VIP':        'VIP_CONSULT',
                 'EXPRESS':    'EXP_CONSULT',
-                'FAST_TRACK': 'EXP_CONSULT',
                 'STANDARD':   'GENERAL',
             }
             from django.db import transaction as _tier_tx
@@ -1124,12 +1120,12 @@ def triage_view(request, visit_number):
         or _nurse_tier == 'ALL'
     )
     _NURSE_COMPAT = {
-        'VIP': ('VIP',), 'EXPRESS': ('EXPRESS', 'FAST_TRACK'),
-        'FAST_TRACK': ('EXPRESS', 'FAST_TRACK'), 'STANDARD': ('STANDARD',),
+        'VIP': ('VIP',), 'EXPRESS': ('EXPRESS',),
+        'STANDARD': ('STANDARD',),
     }
     _cross_tier = (
         not _nurse_is_supervisor
-        and visit.service_tier not in _NURSE_COMPAT.get(_nurse_tier, ('VIP', 'EXPRESS', 'FAST_TRACK', 'STANDARD'))
+        and visit.service_tier not in _NURSE_COMPAT.get(_nurse_tier, ('VIP', 'EXPRESS', 'STANDARD'))
     )
 
     from apps.departments.models import Department
@@ -1433,7 +1429,6 @@ def triage_view(request, visit_number):
             _TIER_SVC_OVERRIDE = {
                 'VIP':        'VIP_CONSULT',
                 'EXPRESS':    'EXP_CONSULT',
-                'FAST_TRACK': 'EXP_CONSULT',
             }
             if service_type == 'GENERAL' and visit.service_tier in _TIER_SVC_OVERRIDE:
                 service_type = _TIER_SVC_OVERRIDE[visit.service_tier]

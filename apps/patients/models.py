@@ -238,10 +238,9 @@ class MedicalHistory(AuditModel):
 
 
 class ServiceTier(models.TextChoices):
-    STANDARD   = 'STANDARD',   _('Standard')
-    EXPRESS    = 'EXPRESS',    _('Express')
-    FAST_TRACK = 'FAST_TRACK', _('Fast Track')
-    VIP        = 'VIP',        _('VIP')
+    STANDARD = 'STANDARD', _('Standard')
+    EXPRESS  = 'EXPRESS',  _('Express')
+    VIP      = 'VIP',      _('VIP')
 
 
 class VisitStatus(models.TextChoices):

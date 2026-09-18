@@ -63,7 +63,7 @@ def opd_dashboard(request):
     opd_total = sum(status_counts.values())
 
     _TIER_LABELS = {
-        'VIP': 'VIP', 'EXPRESS': 'Express', 'FAST_TRACK': 'Fast Track', 'STANDARD': 'Standard',
+        'VIP': 'VIP', 'EXPRESS': 'Express', 'STANDARD': 'Standard',
     }
     _tier_label = _TIER_LABELS.get(_user_tier, 'OPD') if (_user_tier and _user_tier not in ('ALL', '')) else 'OPD'
 

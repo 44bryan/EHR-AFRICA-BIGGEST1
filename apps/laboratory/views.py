@@ -444,8 +444,8 @@ def lab_stats_view(request):
 
     # ── Completed tests by service tier + WHO age groups ─────────────────────
     # Base on COMPLETED LabOrderItems (actual tests done, not just ordered)
-    TIER_DISPLAY = {'VIP': 'VIP', 'EXPRESS': 'Express', 'FAST_TRACK': 'Fast Track', 'STANDARD': 'Standard'}
-    TIER_ORDER   = ['VIP', 'EXPRESS', 'FAST_TRACK', 'STANDARD']
+    TIER_DISPLAY = {'VIP': 'VIP', 'EXPRESS': 'Express', 'STANDARD': 'Standard'}
+    TIER_ORDER   = ['VIP', 'EXPRESS', 'STANDARD']
 
     # Pull completed items with tier and patient DOB
     completed_items = list(

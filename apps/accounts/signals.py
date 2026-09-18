@@ -50,7 +50,7 @@ _ROLE_COUNTER_MAP = {
 # consultation_unit value → (service_type, name_template, serves_tiers)
 _CONSULT_UNIT_MAP = {
     'GENERAL':       ('GENERAL',      'Consulting Room',       'STANDARD'),
-    'EXP_CONSULT':   ('EXP_CONSULT',  'Express Consult Room',  'EXPRESS,FAST_TRACK'),
+    'EXP_CONSULT':   ('EXP_CONSULT',  'Express Consult Room',  'EXPRESS'),
     'VIP_CONSULT':   ('VIP_CONSULT',  'VIP Consult Room',      'VIP'),
     'INSUR_CONSULT': ('GENERAL',      'HMO Consult Room',      'STANDARD'),
     'ALL':           ('GENERAL',      'Consulting Room',        'STANDARD'),

@@ -45,13 +45,13 @@ class ServiceTierFilter(models.TextChoices):
     """
     ALL        = '',          'All Tiers (No restriction)'
     STANDARD   = 'STANDARD',  'Standard Desk Only'
-    FAST_TRACK = 'FAST_TRACK','Fast Track Desk Only'
+    EXPRESS    = 'EXPRESS',   'Express Desk Only'
     VIP        = 'VIP',       'VIP Desk Only'
     INSURED    = 'INSURED',   'Insured / HMO Desk Only'
 
 
 class DeskType(models.TextChoices):
-    TIER      = 'TIER',      'Tier Desk (Standard / Fast Track / VIP)'
+    TIER      = 'TIER',      'Tier Desk (Standard / Express / VIP)'
     PHARMACY  = 'PHARMACY',  'Pharmacy Desk'
     OPTICAL   = 'OPTICAL',   'Optical Desk'
     INSURANCE = 'INSURANCE', 'Insurance / HMO Desk'
@@ -184,7 +184,7 @@ class Invoice(AuditModel):
     # ── Tier-scoped billing fields ────────────────────────────────────────────
     service_tier = models.CharField(
         max_length=20, blank=True, default='',
-        help_text='Patient service tier at time of billing (STANDARD/FAST_TRACK/VIP)'
+        help_text='Patient service tier at time of billing (STANDARD/EXPRESS/VIP)'
     )
     routing_type = models.CharField(
         max_length=20, choices=InvoiceRoutingType.choices,
@@ -1391,7 +1391,7 @@ class APPayment(AuditModel):
 class CashDesk(AuditModel):
     """
     A physical or logical cashier desk.
-    desk_type=TIER  → bound to a specific patient service tier (STANDARD/FAST_TRACK/VIP).
+    desk_type=TIER  → bound to a specific patient service tier (STANDARD/EXPRESS/VIP).
     desk_type=PHARMACY/OPTICAL/INSURANCE → shared service desks independent of patient tier.
     """
     name           = models.CharField(max_length=100)
@@ -1400,7 +1400,7 @@ class CashDesk(AuditModel):
     )
     tier           = models.CharField(
         max_length=20, blank=True, default='',
-        help_text='Required when desk_type=TIER. Values: STANDARD, FAST_TRACK, VIP'
+        help_text='Required when desk_type=TIER. Values: STANDARD, EXPRESS, VIP'
     )
     location       = models.CharField(max_length=200, blank=True,
                       help_text='Physical location / room number')
@@ -1423,7 +1423,7 @@ class CashDesk(AuditModel):
     def clean(self):
         from django.core.exceptions import ValidationError
         if self.desk_type == DeskType.TIER and not self.tier:
-            raise ValidationError({'tier': 'Tier desk requires a tier value (STANDARD/FAST_TRACK/VIP).'})
+            raise ValidationError({'tier': 'Tier desk requires a tier value (STANDARD/EXPRESS/VIP).'})
 
     @property
     def active_session(self):

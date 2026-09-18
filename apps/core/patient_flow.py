@@ -259,7 +259,7 @@ def check_and_autoreturn_to_doctor(visit, triggered_by=None):
         # Determine the right QMS service type based on tier
         if tier == 'VIP':
             qms_service = 'VIP_CONSULT'
-        elif tier in ('EXPRESS', 'FAST_TRACK'):
+        elif tier == 'EXPRESS':
             qms_service = 'EXP_CONSULT'
         else:
             qms_service = 'GENERAL'

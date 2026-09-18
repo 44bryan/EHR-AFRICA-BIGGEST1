@@ -62,7 +62,6 @@ class Department(models.Model):
 class RoomTier(models.TextChoices):
     STANDARD   = 'STANDARD',   _('Standard')
     EXPRESS    = 'EXPRESS',    _('Express')
-    FAST_TRACK = 'FAST_TRACK', _('Fast Track')
     VIP        = 'VIP',        _('VIP')
     ALL        = 'ALL',        _('All Tiers')  # doctor sees every patient tier
 
@@ -114,13 +113,11 @@ class ConsultationRoom(models.Model):
             return {
                 'VIP':        'VIP_CONSULT',
                 'EXPRESS':    'EXP_CONSULT',
-                'FAST_TRACK': 'EXP_CONSULT',
                 'STANDARD':   'GENERAL',
             }.get(patient_tier or 'STANDARD', 'GENERAL')
         return {
             'VIP':        'VIP_CONSULT',
             'EXPRESS':    'EXP_CONSULT',
-            'FAST_TRACK': 'EXP_CONSULT',
             'STANDARD':   'GENERAL',
         }.get(self.room_tier, 'GENERAL')
 

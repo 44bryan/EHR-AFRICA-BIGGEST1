@@ -80,7 +80,7 @@ def _get_doctor_qms_service(doctor, visit):
         tier = getattr(visit, 'service_tier', 'STANDARD') or 'STANDARD'
         if service == 'GENERAL' and tier == 'VIP':
             service = 'VIP_CONSULT'
-        elif service == 'GENERAL' and tier in ('EXPRESS', 'FAST_TRACK'):
+        elif service == 'GENERAL' and tier == 'EXPRESS':
             service = 'EXP_CONSULT'
 
     return service

@@ -63,7 +63,7 @@ Context — GLUDD Eye Hospital, Cameroon:
 - Departments: General Ophthalmology, Retina, Glaucoma, Cataract/Surgical, Cornea,
   Oculoplastics, Neuro-ophthalmology, Paediatric Ophthalmology, Refraction/Optometry, Low Vision
 - Services: OPD, IPD, Theatre, Laboratory, Pharmacy, Optical Shop
-- Patient tiers: Standard, Express, Fast Track, VIP
+- Patient tiers: Standard, Express, VIP
 - Insurance: CNPS, Activa, Sanlam, Allianz, AXA and others
 - Local disease burden: glaucoma (high), sickle cell retinopathy, onchocerciasis, diabetic retinopathy, trachoma
 
@@ -241,7 +241,7 @@ def get_receptionist_response(user_message: str) -> str:
 
 Answer patient and visitor queries about:
 - Services offered (OPD, consultations, surgery, investigations, pharmacy, opticals)
-- Patient tiers (Standard, Express, Fast Track, VIP) and what they mean
+- Patient tiers (Standard, Express, VIP) and what they mean
 - How the queue system works — ticket at gate, called by cashier, then parameters, then doctor
 - Hospital hours, location, appointments
 - What to bring (referral letter, ID, insurance card, old records)
@@ -567,7 +567,7 @@ Hospital context — GLUDD Eye Hospital, Cameroon:
   Oculoplastics, Neuro-ophthalmology, Paediatric Ophthalmology, Paediatric Refraction,
   Refraction/Optometry, Low Vision, Laser
 - Staff roles: Ophthalmologists, Refractionists, Nurses, Technicians, Cashiers, Reception
-- Patient tiers: Standard, Express, Fast Track, VIP
+- Patient tiers: Standard, Express, VIP
 - Investigations: OCT, Humphrey VF, Fundus Photography, B-scan, IOL Master, Topography
 
 IMPORTANT: You answer from medical knowledge and hospital guidelines.

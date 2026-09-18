@@ -72,7 +72,7 @@ class Drug(AuditModel):
     selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0,
                                         help_text='Standard tier selling price')
     price_express = models.DecimalField(max_digits=10, decimal_places=2, default=0,
-                                         help_text='Express / Fast-Track tier price')
+                                         help_text='Express tier price')
     price_vip = models.DecimalField(max_digits=10, decimal_places=2, default=0,
                                      help_text='VIP tier price')
     price_executive_vip = models.DecimalField(max_digits=10, decimal_places=2, default=0,
@@ -128,7 +128,6 @@ class Drug(AuditModel):
         Tier mapping:
           STANDARD    → selling_price
           EXPRESS     → price_express (falls back to selling_price)
-          FAST_TRACK  → price_express (same tier)
           VIP         → price_vip (falls back to selling_price)
           EXECUTIVE_VIP → price_executive_vip (falls back to price_vip → selling_price)
           STAFF       → price_staff (falls back to cost_price)
@@ -148,7 +147,6 @@ class Drug(AuditModel):
         _map = {
             'STANDARD': sp,
             'EXPRESS': self.price_express or sp,
-            'FAST_TRACK': self.price_express or sp,
             'VIP': self.price_vip or sp,
             'EXECUTIVE_VIP': self.price_executive_vip or self.price_vip or sp,
             'STAFF': self.price_staff or self.cost_price or sp,

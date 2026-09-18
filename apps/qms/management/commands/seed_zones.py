@@ -47,7 +47,6 @@ ZONE_DEFS = [
 TIER_ZONE_MAP = {
     'STANDARD':   'STANDARD',
     'EXPRESS':    'FT_EXPRESS',
-    'FAST_TRACK': 'FT_EXPRESS',
     'VIP':        'VIP',
 }
 
@@ -61,7 +60,6 @@ SHARED_SERVICE_TYPES = {
 TIER_TO_ZONE_CODE = {
     'STANDARD':   'STANDARD',
     'EXPRESS':    'FT_EXPRESS',
-    'FAST_TRACK': 'FT_EXPRESS',
     'VIP':        'VIP',
 }
 
@@ -122,7 +120,7 @@ class Command(BaseCommand):
                     # VIP takes priority, then FT_EXPRESS, then STANDARD
                     if 'VIP' in tier_list:
                         zone_code = 'VIP'
-                    elif 'EXPRESS' in tier_list or 'FAST_TRACK' in tier_list:
+                    elif 'EXPRESS' in tier_list:
                         zone_code = 'FT_EXPRESS'
                     else:
                         zone_code = 'STANDARD'

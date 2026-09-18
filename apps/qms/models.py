@@ -2,20 +2,19 @@
 QMS - Queue Management System
 Multi-tier, multi-point patient flow management for GLUDD Specialist Eye Hospital.
 
-Tiers:  STANDARD | EXPRESS | FAST_TRACK | VIP
+Tiers:  STANDARD | EXPRESS | VIP
 
 Entry rules:
   STANDARD   — MUST take a ticket at the Main Gate before proceeding.
   EXPRESS    — NOT obliged to take a gate ticket. They enter through the
-               Express/Fast Track desk (side entrance). Ticket optional.
-  FAST_TRACK — Same as EXPRESS.
+               Express desk (side entrance). Ticket optional.
   VIP        — NOT obliged to take a gate ticket. They have their own
                dedicated VIP Reception at the back entrance. Ticket optional.
 
 Issuance points:
   GATE          → Standard patients (mandatory)
   VIP_RECEPTION → VIP patients via back entrance
-  EXPRESS_DESK  → Express / Fast Track patients via side entrance
+  EXPRESS_DESK  → Express patients via side entrance
   CASHIER       → Any tier can be issued here if they walk in without a ticket
   SYSTEM        → Auto-generated when a patient is routed between departments
 
@@ -23,7 +22,7 @@ Insurance Consultation Room:
   Patients insured by partnered insurance companies are routed to the
   INSURANCE_CONSULT service type. Billing is handled directly by the insurer.
 
-Token prefix:  S-001  E-001  FT-001  V-001
+Token prefix:  S-001  E-001  V-001
 """
 from django.db import models
 from django.utils import timezone
@@ -34,20 +33,17 @@ from apps.core.models import TimeStampedModel
 class ServiceTier(models.TextChoices):
     STANDARD   = 'STANDARD',    'Standard'
     EXPRESS    = 'EXPRESS',     'Express'
-    FAST_TRACK = 'FAST_TRACK',  'Fast Track'
     VIP        = 'VIP',         'VIP'
 
 TIER_PREFIX = {
     ServiceTier.STANDARD:   'S',
     ServiceTier.EXPRESS:    'E',
-    ServiceTier.FAST_TRACK: 'FT',
     ServiceTier.VIP:        'V',
 }
 
 TIER_PRIORITY = {
     ServiceTier.STANDARD:   0,
     ServiceTier.EXPRESS:    10,
-    ServiceTier.FAST_TRACK: 20,
     ServiceTier.VIP:        30,
 }
 
@@ -55,7 +51,7 @@ TIER_PRIORITY = {
 class IssuancePoint(models.TextChoices):
     GATE          = 'GATE',          'Main Gate (Standard — mandatory)'
     VIP_RECEPTION = 'VIP_RECEPTION', 'VIP Reception (Back Entrance)'
-    EXPRESS_DESK  = 'EXPRESS_DESK',  'Express / Fast Track Desk (Side Entrance)'
+    EXPRESS_DESK  = 'EXPRESS_DESK',  'Express Desk (Side Entrance)'
     CASHIER       = 'CASHIER',       'Cashier (walk-in without prior ticket)'
     SYSTEM        = 'SYSTEM',        'System (auto-routed)'
 
@@ -67,10 +63,10 @@ class ServiceType(models.TextChoices):
     CASHIER        = 'CASHIER',      'Cashier / Registration'
     PARAMETERS     = 'PARAMETERS',   'Parameters & Triage'
     # VIP / Express dedicated triage
-    PARAMETERS_VIP = 'PARAMS_VIP',   'Parameters — VIP / Express / Fast Track'
+    PARAMETERS_VIP = 'PARAMS_VIP',   'Parameters — VIP / Express'
     # Consultation units — tier-specific rooms
     VIP_CONSULT    = 'VIP_CONSULT',  'VIP Consultation Room'
-    EXPRESS_CONSULT= 'EXP_CONSULT',  'Express / Fast Track Consultation'
+    EXPRESS_CONSULT= 'EXP_CONSULT',  'Express Consultation'
     # Standard consultation units (shared queue, tier-priority ordered)
     GENERAL        = 'GENERAL',    'General Ophthalmology'
     RETINA         = 'RETINA',     'Retina Clinic'
@@ -88,7 +84,7 @@ class ServiceType(models.TextChoices):
     # Dispensing
     PHARMACY       = 'PHARMACY',   'Pharmacy'
     OPTICAL        = 'OPTICAL',    'Optical Shop'
-    # Insurance — insured patients (Express/FastTrack/VIP section)
+    # Insurance — insured patients (Express/VIP section)
     INSURANCE_CONSULT = 'INSUR_CONSULT', 'Insurance Consultation Room'
     # Pre-surgical
     COUNSELING     = 'COUNSEL',    'Surgical Counseling'
@@ -141,7 +137,7 @@ class Zone(TimeStampedModel):
 
     Seed zones:
       STANDARD     → Standard waiting area  (Standard tier only)
-      FT_EXPRESS   → Side-entrance section  (Fast Track + Express)
+      FT_EXPRESS   → Side-entrance section  (Express)
       VIP          → Back-entrance section  (VIP only — fully isolated)
       SHARED       → Shared services        (Lab, Pharmacy, OCT, Optical — all tiers, priority-ordered)
     """
@@ -256,7 +252,6 @@ class ServiceCounter(TimeStampedModel):
         _map = {
             'STANDARD':   'Standard',
             'EXPRESS':    'Express',
-            'FAST_TRACK': 'Fast Track',
             'VIP':        'VIP',
         }
         if not self.serves_tiers:
@@ -293,7 +288,7 @@ class QueueToken(TimeStampedModel):
     status          = models.CharField(
         max_length=20, choices=TokenStatus.choices, default=TokenStatus.WAITING
     )
-    # Higher = served sooner (Standard=0, Express=10, FastTrack=20, VIP=30)
+    # Higher = served sooner (Standard=0, Express=10, VIP=30)
     priority        = models.PositiveSmallIntegerField(default=0)
     counter         = models.ForeignKey(
         ServiceCounter, null=True, blank=True,
@@ -363,7 +358,6 @@ class QueueToken(TimeStampedModel):
         tier_map = {
             ServiceTier.STANDARD:   ('Standard', 'secondary'),
             ServiceTier.EXPRESS:    ('Express',  'info'),
-            ServiceTier.FAST_TRACK: ('Fast Track','warning'),
             ServiceTier.VIP:        ('VIP',      'danger'),
         }
         return tier_map.get(self.service_tier, ('Standard', 'secondary'))
@@ -439,7 +433,7 @@ class QueueToken(TimeStampedModel):
 class DailyTokenSequence(models.Model):
     """
     Two uses:
-    1. Entry ticket sequence — unique_key = tier code  (S, E, FT, V)
+    1. Entry ticket sequence — unique_key = tier code  (S, E, V)
     2. Dept token sequence   — unique_key = service_type code
     Shared across gate + cashier for entry tickets (preventing duplicate numbers).
     """

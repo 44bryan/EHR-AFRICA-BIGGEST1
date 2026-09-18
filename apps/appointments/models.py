@@ -27,7 +27,6 @@ class Appointment(AuditModel):
     class ServiceTier(models.TextChoices):
         STANDARD = 'STANDARD', _('Standard')
         EXPRESS = 'EXPRESS', _('Express')
-        FAST_TRACK = 'FAST_TRACK', _('Fast Track')
         VIP = 'VIP', _('VIP')
 
     appointment_number = models.CharField(max_length=20, unique=True, editable=False)

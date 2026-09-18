@@ -41,14 +41,14 @@ def dashboard(request):
     today = timezone.localdate()
     from apps.patients.models import Visit
     from django.db.models import Case, When, IntegerField, Value as _V
-    _tier_order = Case(When(service_tier='VIP', then=_V(3)), When(service_tier='FAST_TRACK', then=_V(2)),
-                       When(service_tier='EXPRESS', then=_V(1)), default=_V(0), output_field=IntegerField())
+    _tier_order = Case(When(service_tier='VIP', then=_V(3)),
+                       When(service_tier='EXPRESS', then=_V(2)), default=_V(0), output_field=IntegerField())
     _pt = getattr(request.user, 'patient_tier', 'ALL')
     _opt_qs = Visit.objects.filter(visit_date__date=today, status='OPTICAL', is_deleted=False)
     if _pt == 'VIP':
         _opt_qs = _opt_qs.filter(service_tier='VIP')
     elif _pt == 'EXPRESS':
-        _opt_qs = _opt_qs.filter(service_tier__in=['EXPRESS', 'FAST_TRACK'])
+        _opt_qs = _opt_qs.filter(service_tier='EXPRESS')
     elif _pt == 'STANDARD':
         _opt_qs = _opt_qs.filter(service_tier='STANDARD')
     # _pt == 'ALL' → no filter
@@ -844,7 +844,7 @@ def optical_stats_view(request):
         tier_map = {row['tier'] or 'STANDARD': row['count'] for row in tier_raw}
         tier_stats = [
             {'label': 'Standard',   'key': 'STANDARD',   'color': '#0d6efd', 'count': tier_map.get('STANDARD', 0)},
-            {'label': 'Fast Track', 'key': 'FAST_TRACK', 'color': '#fd7e14', 'count': tier_map.get('FAST_TRACK', 0)},
+            {'label': 'Express',    'key': 'EXPRESS',    'color': '#fd7e14', 'count': tier_map.get('EXPRESS', 0)},
             {'label': 'VIP',        'key': 'VIP',        'color': '#6f42c1', 'count': tier_map.get('VIP', 0)},
         ]
         tier_json = json.dumps({

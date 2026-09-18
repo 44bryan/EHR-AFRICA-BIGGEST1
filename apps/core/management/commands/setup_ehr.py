@@ -462,8 +462,8 @@ class Command(BaseCommand):
             ('Cashier 2 (Standard)',       'CASH-02', ServiceType.CASHIER,    'STANDARD'),
             # VIP dedicated cashier (also handles VIP new patient registration)
             ('VIP Cashier',               'CASH-VIP', ServiceType.CASHIER,   'VIP'),
-            # Express / Fast Track cashier (registration + billing for FT/Express)
-            ('Express / FT Cashier',      'CASH-03',  ServiceType.CASHIER,   'FAST_TRACK,EXPRESS'),
+            # Express cashier (registration + billing for Express)
+            ('Express Cashier',           'CASH-03',  ServiceType.CASHIER,   'EXPRESS'),
             # Optical Shop cashier (all tiers)
             ('Optical Cashier',           'CASH-OPT', ServiceType.CASHIER,   ''),
             # Receptionist desks — standard new patients only (VIP/Express handled at their cashier)
@@ -472,15 +472,15 @@ class Command(BaseCommand):
             # ── Parameters / Triage ──────────────────────────────────────────
             # Standard patients (main parameters hall)
             ('Parameters Standard',        'PARAM-01', ServiceType.PARAMETERS,     'STANDARD'),
-            # VIP / Express / Fast Track dedicated triage room
-            ('Parameters VIP / Express',   'PVIP-01',  ServiceType.PARAMETERS_VIP, 'VIP,FAST_TRACK,EXPRESS'),
+            # VIP / Express dedicated triage room
+            ('Parameters VIP / Express',   'PVIP-01',  ServiceType.PARAMETERS_VIP, 'VIP,EXPRESS'),
             # Insurance Consultation Room
-            ('Insurance Consultation',     'INS-01',   ServiceType.INSURANCE_CONSULT, 'EXPRESS,FAST_TRACK'),
+            ('Insurance Consultation',     'INS-01',   ServiceType.INSURANCE_CONSULT, 'EXPRESS'),
             # ── Tier-dedicated consultation rooms ────────────────────────────
             # VIP Consultation Room — specialist comes to patient (all specialties)
             ('VIP Consultation Room',      'VIP-CONS', ServiceType.VIP_CONSULT,    'VIP'),
-            # Express / Fast Track Consultation — GEN OPH + Uveitis on-site
-            ('Express Consultation',       'EXP-CONS', ServiceType.EXPRESS_CONSULT,'FAST_TRACK,EXPRESS'),
+            # Express Consultation — GEN OPH + Uveitis on-site
+            ('Express Consultation',       'EXP-CONS', ServiceType.EXPRESS_CONSULT,'EXPRESS'),
             # ── Standard consultation units (all tiers, priority-sorted) ─────
             ('General Ophthalmology',      'GEN-01',   ServiceType.GENERAL,    'STANDARD'),
             ('Retina Clinic',              'RET-01',   ServiceType.RETINA,     ''),

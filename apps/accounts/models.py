@@ -70,7 +70,7 @@ class CashierStation(models.TextChoices):
     """
     ALL        = 'ALL',        _('All Consultations')
     STANDARD   = 'STANDARD',   _('Standard Consultation')
-    FAST_TRACK = 'FAST_TRACK', _('Fast Track Consultation')
+    EXPRESS    = 'EXPRESS',    _('Express Consultation')
     VIP        = 'VIP',        _('VIP Consultation')
     INSURED    = 'INSURED',    _('Insured / HMO')
 
@@ -82,12 +82,12 @@ class PatientTier(models.TextChoices):
     this account sees in their queue.
     ALL      = sees every patient regardless of tier (default, supervisors)
     STANDARD = sees only standard-tier patients  (standard triage sector)
-    EXPRESS  = sees only Express + Fast Track patients (express triage sector)
+    EXPRESS  = sees only Express patients (express triage sector)
     VIP      = sees only VIP-tier patients  (VIP triage sector)
     """
     ALL      = 'ALL',      _('All Tiers')
     STANDARD = 'STANDARD', _('Standard Only')
-    EXPRESS  = 'EXPRESS',  _('Express / Fast Track Only')
+    EXPRESS  = 'EXPRESS',  _('Express Only')
     VIP      = 'VIP',      _('VIP Only')
 
 
@@ -99,7 +99,7 @@ class ConsultationUnit(models.TextChoices):
     possible desks. QMS queue is filtered by this unit.
     """
     GENERAL   = 'GENERAL',       _('General Consultation')
-    EXPRESS   = 'EXP_CONSULT',  _('Express / Fast Track')
+    EXPRESS   = 'EXP_CONSULT',  _('Express')
     VIP       = 'VIP_CONSULT',  _('VIP Consultation')
     INSURANCE = 'INSUR_CONSULT', _('Insurance Consultation')
     ALL       = 'ALL',           _('All Tiers')
