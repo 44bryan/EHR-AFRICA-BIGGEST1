@@ -1670,6 +1670,36 @@ def result_pdf_view(request, pk):
         item for item in order.items.all()
         if hasattr(item, 'result') and item.result
     ]
+
+    # Build reference ranges and technique from LabTestType master data
+    patient_gender = (order.patient.gender or '').upper()  # 'M' or 'F'
+    for item in completed_items:
+        tt = item.test_type
+        # Technique from master catalogue
+        item._technique = tt.method or ''
+        # Reference range: prefer result-level, fall back to master catalogue
+        if item.result.reference_range:
+            item._ref_range = item.result.reference_range
+        elif tt.normal_range:
+            nr = tt.normal_range
+            if isinstance(nr, dict):
+                # Gender-specific: {"male": {"min":..,"max":..,"unit":..}, "female": {..}}
+                key = 'female' if patient_gender == 'F' else 'male'
+                gen = nr.get(key) or nr.get('male') or nr.get('default') or {}
+                if isinstance(gen, dict) and ('min' in gen or 'max' in gen):
+                    lo = gen.get('min', '')
+                    hi = gen.get('max', '')
+                    unit = gen.get('unit', '')
+                    item._ref_range = f"{lo} – {hi} {unit}".strip()
+                elif isinstance(gen, str):
+                    item._ref_range = gen
+                else:
+                    item._ref_range = ''
+            else:
+                item._ref_range = str(nr)
+        else:
+            item._ref_range = ''
+
     return render_pdf('laboratory/result_pdf.html', {
         'order': order,
         'completed_items': completed_items,
