@@ -330,6 +330,12 @@ class VisitType(models.TextChoices):
     PROCEDURE = 'PROCEDURE', _('Procedure')
 
 
+class _SafeVitalSigns(dict):
+    """Dict subclass that returns '' for missing keys — prevents VariableDoesNotExist in templates."""
+    def __missing__(self, key):
+        return ''
+
+
 class Visit(AuditModel):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='visits')
     visit_number = models.CharField(max_length=20, unique=True, editable=False)
@@ -503,6 +509,17 @@ class Visit(AuditModel):
 
     def __str__(self):
         return f"{self.visit_number} — {self.patient.full_name}"
+
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        # Wrap vital_signs so template dot-access on missing keys returns ''
+        vs = instance.vital_signs
+        if vs and not isinstance(vs, _SafeVitalSigns):
+            instance.vital_signs = _SafeVitalSigns(vs)
+        elif not vs:
+            instance.vital_signs = _SafeVitalSigns()
+        return instance
 
     def save(self, *args, **kwargs):
         if not self.visit_number:
