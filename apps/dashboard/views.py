@@ -1285,10 +1285,10 @@ def home_view(request):
         ).aggregate(total=Sum('amount'))['total'] or 0
         # Enhanced KPIs
         expenses_month = Expense.objects.filter(
-            is_deleted=False, status='APPROVED', date__gte=today.replace(day=1),
+            is_deleted=False, approved_by__isnull=False, date__gte=today.replace(day=1),
         ).aggregate(total=Sum('amount'))['total'] or 0
         pending_expenses = Expense.objects.filter(
-            is_deleted=False, status='PENDING',
+            is_deleted=False, approved_by__isnull=True,
         ).count()
         ap_overdue = APBill.objects.filter(
             is_deleted=False, status=APBillStatus.OVERDUE,

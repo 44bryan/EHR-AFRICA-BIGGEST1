@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -7294,7 +7295,7 @@ def budget_ytd_report(request):
     expenses = (
         Expense.objects.filter(
             date__year=year, date__month__lte=current_month,
-            is_deleted=False, status='APPROVED',
+            is_deleted=False, approved_by__isnull=False,
         )
         .values('category')
         .annotate(total=Sum('amount'))
@@ -7501,7 +7502,7 @@ def report_donor(request):
     # Expenses by category
     expenses = (
         Expense.objects.filter(
-            date__gte=df, date__lte=dt, is_deleted=False, status='APPROVED',
+            date__gte=df, date__lte=dt, is_deleted=False, approved_by__isnull=False,
         )
         .values('category')
         .annotate(total=Sum('amount'))
@@ -7546,7 +7547,7 @@ def report_dsf(request):
     # Expenses by category
     expenses = (
         Expense.objects.filter(
-            date__year=year, is_deleted=False, status='APPROVED',
+            date__year=year, is_deleted=False, approved_by__isnull=False,
         )
         .values('category')
         .annotate(total=Sum('amount'))
@@ -7562,7 +7563,7 @@ def report_dsf(request):
     from .models import JournalLine
     gl_summary = (
         JournalLine.objects.filter(
-            entry__date__year=year, entry__is_deleted=False,
+            entry__entry_date__year=year, entry__is_deleted=False,
         )
         .extra(select={'acct_class': "SUBSTR(account_code, 1, 1)"})
         .values('acct_class')
@@ -7661,7 +7662,7 @@ def report_monthly_summary(request):
     from .models import Expense, ExpenseCategory
     expenses = (
         Expense.objects.filter(
-            is_deleted=False, status='APPROVED', date__gte=first_day, date__lte=last_day,
+            is_deleted=False, approved_by__isnull=False, date__gte=first_day, date__lte=last_day,
         ).values('category').annotate(total=Sum('amount')).order_by('category')
     )
     total_expense = sum(e['total'] for e in expenses)
@@ -7899,11 +7900,11 @@ def finance_director_dashboard(request):
     # ── Expense KPIs ──
     from .models import Expense
     expenses_month = Expense.objects.filter(
-        is_deleted=False, status='APPROVED', date__gte=first_of_month,
+        is_deleted=False, approved_by__isnull=False, date__gte=first_of_month,
     ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
     expenses_ytd = Expense.objects.filter(
-        is_deleted=False, status='APPROVED', date__gte=first_of_year,
+        is_deleted=False, approved_by__isnull=False, date__gte=first_of_year,
     ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
     # ── AR / AP totals ──
@@ -7961,7 +7962,7 @@ def finance_director_dashboard(request):
 
     # ── Pending Approvals ──
     pending_expenses = Expense.objects.filter(
-        is_deleted=False, status='PENDING',
+        is_deleted=False, approved_by__isnull=True,
     ).count()
     pending_advances = StaffAdvance.objects.filter(
         is_deleted=False, status=AdvanceStatus.REQUESTED,
@@ -7995,8 +7996,8 @@ def finance_director_dashboard(request):
         'safe_balance': safe_balance,
         'bank_total': bank_total,
         'total_liquidity': total_liquidity,
-        'trend_labels': trend_labels,
-        'trend_data': trend_data,
+        'trend_labels': json.dumps(trend_labels),
+        'trend_data': json.dumps(trend_data),
         'pending_expenses': pending_expenses,
         'pending_advances': pending_advances,
         'overdue_advances': overdue_advances,
@@ -8030,7 +8031,7 @@ def senior_accountant_dashboard(request):
 
     from .models import Expense
     expenses_month = Expense.objects.filter(
-        is_deleted=False, status='APPROVED', date__gte=first_of_month,
+        is_deleted=False, approved_by__isnull=False, date__gte=first_of_month,
     ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
     # ── AP summary ──
@@ -8065,7 +8066,7 @@ def senior_accountant_dashboard(request):
 
     # ── Pending items ──
     pending_expenses = Expense.objects.filter(
-        is_deleted=False, status='PENDING',
+        is_deleted=False, approved_by__isnull=True,
     ).count()
     pending_advances = StaffAdvance.objects.filter(
         is_deleted=False, status=AdvanceStatus.REQUESTED,
