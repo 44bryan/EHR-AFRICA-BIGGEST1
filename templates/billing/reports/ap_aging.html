@@ -1,0 +1,124 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}AP Aging Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold">Accounts Payable Aging</h5>
+    <div class="text-muted small">As of {{ today|date:"l, d F Y" }}</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Billing
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Summary KPI strip ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted mb-1">Current</div>
+      <div class="fw-bold fs-5 text-success">{{ totals.current|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted mb-1">1 &ndash; 30 Days</div>
+      <div class="fw-bold fs-5 text-warning">{{ totals.days_30|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted mb-1">31 &ndash; 60 Days</div>
+      <div class="fw-bold fs-5" style="color:#e67e22;">{{ totals.days_60|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted mb-1">61 &ndash; 90 Days</div>
+      <div class="fw-bold fs-5 text-danger">{{ totals.days_90|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted mb-1">Over 90 Days</div>
+      <div class="fw-bold fs-5 text-dark">{{ totals.over_90|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center p-3 bg-light">
+      <div class="small text-muted mb-1">Total AP</div>
+      <div class="fw-bold fs-5">{{ totals.total|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">FCFA</div>
+    </div>
+  </div>
+</div>
+
+{# ── Detail table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-table me-2"></i>Payable Detail
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Bill No.</th>
+          <th>Vendor</th>
+          <th>Due Date</th>
+          <th class="text-end">Age (days)</th>
+          <th class="text-end">Balance (FCFA)</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><code class="small">{{ row.bill.bill_number }}</code></td>
+          <td class="fw-semibold">{{ row.vendor }}</td>
+          <td class="text-muted">{{ row.due_date|date:"d M Y" }}</td>
+          <td class="text-end">{{ row.age_days }}</td>
+          <td class="text-end fw-bold">{{ row.balance|floatformat:0|intcomma }}</td>
+          <td>
+            {% if row.bucket == 'current' %}
+            <span class="badge bg-success">Current</span>
+            {% elif row.bucket == 'days_30' %}
+            <span class="badge bg-warning text-dark">1-30 Days</span>
+            {% elif row.bucket == 'days_60' %}
+            <span class="badge" style="background-color:#e67e22;">31-60 Days</span>
+            {% elif row.bucket == 'days_90' %}
+            <span class="badge bg-danger">61-90 Days</span>
+            {% elif row.bucket == 'over_90' %}
+            <span class="badge bg-dark">Over 90 Days</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ row.bucket }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">
+            <i class="bi bi-check-circle-fill text-success fs-4 d-block mb-2"></i>
+            No outstanding payables.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

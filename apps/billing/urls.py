@@ -270,4 +270,24 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════════════════
     path('budget/annual-create/', views.budget_annual_create, name='budget_annual_create'),
     path('reports/budget-ytd/', views.budget_ytd_report, name='budget_ytd_report'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ADDITIONAL FINANCIAL REPORTS (International Standards)
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('reports/ap-aging/', views.report_ap_aging, name='report_ap_aging'),
+    path('reports/monthly-summary/', views.report_monthly_summary, name='report_monthly_summary'),
+    path('reports/tva/', views.report_tva, name='report_tva'),
+    path('reports/audit-trail/', views.report_audit_trail, name='report_audit_trail'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # FISCAL PERIOD MANAGEMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('fiscal-periods/', views.fiscal_period_list, name='fiscal_period_list'),
+    path('fiscal-periods/<uuid:period_id>/action/', views.fiscal_period_action, name='fiscal_period_action'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ROLE DASHBOARDS
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('dashboard/finance-director/', views.finance_director_dashboard, name='finance_director_dashboard'),
+    path('dashboard/senior-accountant/', views.senior_accountant_dashboard, name='senior_accountant_dashboard'),
 ]

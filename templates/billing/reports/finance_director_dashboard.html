@@ -1,0 +1,379 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize static %}
+{% block title %}Finance Director Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+.fd-tile {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-left: 4px solid #1a3a5c;
+  border-radius: 6px;
+  padding: 14px 16px;
+  height: 100%;
+}
+.fd-tile.green  { border-left-color: #28a745; }
+.fd-tile.blue   { border-left-color: #0d6efd; }
+.fd-tile.info   { border-left-color: #17a2b8; }
+.fd-tile.red    { border-left-color: #dc3545; }
+.fd-tile.amber  { border-left-color: #e6a817; }
+.fd-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; margin-bottom: 4px; }
+.fd-value { font-size: 1.45rem; font-weight: 900; line-height: 1.1; color: #1a3a5c; }
+.fd-value.green { color: #28a745; }
+.fd-value.red   { color: #dc3545; }
+.fd-value.blue  { color: #0d6efd; }
+.fd-value.info  { color: #0c5460; }
+.fd-sub   { font-size: .72rem; color: #6c757d; margin-top: 3px; }
+.chart-wrap { position: relative; height: 260px; }
+.alert-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: .85rem; }
+.alert-row:last-child { border-bottom: none; }
+.ql-card {
+  transition: transform .15s;
+  text-decoration: none !important;
+}
+.ql-card:hover { transform: translateY(-2px); }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold" style="color:#1a3a5c;">Finance Director Dashboard</h5>
+    <div class="text-muted small">{{ today|date:"l, d F Y" }} &mdash; Strategic Financial Overview</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'billing:report_pl' %}" class="btn btn-outline-success btn-sm">P&amp;L</a>
+    <a href="{% url 'billing:balance_sheet' %}" class="btn btn-outline-primary btn-sm">Balance Sheet</a>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">Billing Home</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- ══════ ROW 1 — Revenue KPIs ══════ -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile green">
+      <div class="fd-label">Revenue Today</div>
+      <div class="fd-value green">{{ revenue_today|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile blue">
+      <div class="fd-label">Revenue This Month</div>
+      <div class="fd-value blue">{{ revenue_month|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile info">
+      <div class="fd-label">Revenue YTD</div>
+      <div class="fd-value info">{{ revenue_ytd|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile {% if operating_margin >= 20 %}green{% elif operating_margin >= 0 %}amber{% else %}red{% endif %}">
+      <div class="fd-label">Operating Margin</div>
+      <div class="fd-value {% if operating_margin >= 20 %}green{% elif operating_margin >= 0 %}{% else %}red{% endif %}">
+        {{ operating_margin }}%
+      </div>
+      <div class="fd-sub">target &ge; 20%</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ ROW 2 — P&L KPIs ══════ -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile red">
+      <div class="fd-label">Expenses Month</div>
+      <div class="fd-value red">{{ expenses_month|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile {% if net_month >= 0 %}green{% else %}red{% endif %}">
+      <div class="fd-label">Net This Month</div>
+      <div class="fd-value {% if net_month >= 0 %}green{% else %}red{% endif %}">{{ net_month|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile">
+      <div class="fd-label">Expenses YTD</div>
+      <div class="fd-value red">{{ expenses_ytd|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile {% if net_ytd >= 0 %}green{% else %}red{% endif %}">
+      <div class="fd-label">Net YTD</div>
+      <div class="fd-value {% if net_ytd >= 0 %}green{% else %}red{% endif %}">{{ net_ytd|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ ROW 3 — Liquidity ══════ -->
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="fd-tile">
+      <div class="fd-label">Safe Balance</div>
+      <div class="fd-value">{{ safe_balance|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="fd-tile blue">
+      <div class="fd-label">Bank Accounts</div>
+      <div class="fd-value blue">{{ bank_total|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="fd-tile green">
+      <div class="fd-label">Total Liquidity</div>
+      <div class="fd-value green" style="font-size:1.7rem;">{{ total_liquidity|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA — all sources combined</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ ROW 4 — AR / AP ══════ -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="fd-tile amber">
+      <div class="fd-label">Accounts Receivable Outstanding</div>
+      <div class="fd-value" style="color:#7a5800;">{{ ar_outstanding }} invoices</div>
+      <div class="fd-sub">{{ ar_total|floatformat:0|intcomma }} FCFA</div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="fd-tile red">
+      <div class="fd-label">Accounts Payable Outstanding</div>
+      <div class="fd-value red">{{ ap_outstanding|floatformat:0|intcomma }}</div>
+      <div class="fd-sub">FCFA</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ Revenue Trend Chart + Alerts ══════ -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+          <i class="bi bi-graph-up-arrow me-2 text-success"></i>Monthly Revenue Trend
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+          <i class="bi bi-bell me-2 text-warning"></i>Alerts &amp; Pending Actions
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="alert-row">
+          <span><i class="bi bi-receipt-cutoff me-2 text-warning"></i>Expenses awaiting approval</span>
+          <a href="{% url 'billing:expense_list' %}" class="badge bg-warning text-dark">{{ pending_expenses|default:0 }}</a>
+        </div>
+        <div class="alert-row">
+          <span><i class="bi bi-cash-stack me-2 text-info"></i>Advance requests pending</span>
+          <a href="{% url 'billing:advance_list' %}" class="badge bg-info text-dark">{{ pending_advances|default:0 }}</a>
+        </div>
+        <div class="alert-row">
+          <span><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Overdue advances</span>
+          <a href="{% url 'billing:advance_list' %}" class="badge bg-danger">{{ overdue_advances|default:0 }}</a>
+        </div>
+        <div class="alert-row">
+          <span><i class="bi bi-x-octagon me-2 text-danger"></i>Unresolved cash variances</span>
+          <a href="{% url 'billing:variance_register' %}" class="badge bg-danger">{{ unresolved_variances|default:0 }}</a>
+        </div>
+        <div class="alert-row">
+          <span><i class="bi bi-bank me-2 text-secondary"></i>Draft reconciliations</span>
+          <a href="{% url 'billing:bank_reconciliation_list' %}" class="badge bg-secondary">{{ pending_reconciliations|default:0 }}</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ Quick Links ══════ -->
+<div class="row g-3">
+  {% with links="report_pl:P&L:bar-chart-line:success,balance_sheet:Balance Sheet:building:primary,cash_flow_statement:Cash Flow:water:info,trial_balance:Trial Balance:journal-text:secondary,report_ap_aging:AP Aging:hourglass-split:warning,report_monthly_summary:Monthly Summary:calendar-month:dark,report_tva:TVA Return:percent:danger,report_audit_trail:Audit Trail:shield-lock:secondary,fiscal_period_list:Fiscal Periods:calendar-range:primary,budget_ytd_report:Budget YTD:clipboard-data:success" %}
+  {% for link in links|make_list %}{% endfor %}
+  {% endwith %}
+
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:report_pl' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-success h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-bar-chart-line text-success fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">P&amp;L</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:balance_sheet' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-primary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-building text-primary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Balance Sheet</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:cash_flow_statement' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-info h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-water text-info fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Cash Flow</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:trial_balance' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-secondary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-journal-text text-secondary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Trial Balance</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:report_ap_aging' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-warning h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-hourglass-split text-warning fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">AP Aging</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:report_monthly_summary' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-dark h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-calendar-month fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Monthly Summary</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:report_tva' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-danger h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-percent text-danger fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">TVA Return</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:report_audit_trail' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-secondary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-shield-lock text-secondary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Audit Trail</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:fiscal_period_list' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-primary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-calendar-range text-primary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Fiscal Periods</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{% url 'billing:budget_ytd_report' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-success h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-clipboard-data text-success fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Budget YTD</span>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+(function() {
+  const ctx = document.getElementById('trendChart');
+  if (!ctx) return;
+
+  const labels = {{ trend_labels|safe }};
+  const data   = {{ trend_data|safe }};
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Revenue (FCFA)',
+        data: data,
+        borderColor: '#28a745',
+        backgroundColor: 'rgba(40,167,69,0.1)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#28a745',
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ctx.parsed.y.toLocaleString() + ' FCFA';
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(v) { return (v / 1000000).toFixed(1) + 'M'; },
+            font: { size: 10 }
+          },
+          grid: { color: '#edf2f7' }
+        },
+        x: {
+          ticks: { font: { size: 10 } },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}

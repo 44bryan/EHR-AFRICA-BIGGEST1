@@ -2197,3 +2197,54 @@ class BudgetAmendment(TimeStampedModel):
 
     def __str__(self):
         return f"Budget {self.budget} amended: {self.previous_amount:,.0f} → {self.new_amount:,.0f}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FISCAL PERIOD  —  Monthly period closing/locking for GL integrity
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class FiscalPeriodStatus(models.TextChoices):
+    OPEN   = 'OPEN',   'Open'
+    CLOSED = 'CLOSED', 'Closed'
+    LOCKED = 'LOCKED', 'Locked (Final)'
+
+class FiscalPeriod(AuditModel):
+    """
+    Monthly fiscal period — controls whether journal entries can be posted.
+    OPEN = normal operations; CLOSED = soft-close (reversible by Finance Director);
+    LOCKED = permanent close (irreversible, for audited periods).
+    """
+    year   = models.PositiveIntegerField()
+    month  = models.PositiveSmallIntegerField()
+    status = models.CharField(max_length=10, choices=FiscalPeriodStatus.choices,
+                              default=FiscalPeriodStatus.OPEN)
+    closed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='closed_periods'
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+    locked_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='locked_periods'
+    )
+    locked_at = models.DateTimeField(null=True, blank=True)
+    notes     = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = [('year', 'month')]
+        ordering = ['-year', '-month']
+        verbose_name = 'Fiscal Period'
+        verbose_name_plural = 'Fiscal Periods'
+
+    def __str__(self):
+        import calendar
+        return f"{calendar.month_abbr[self.month]} {self.year} — {self.get_status_display()}"
+
+    @property
+    def is_open(self):
+        return self.status == FiscalPeriodStatus.OPEN
+
+    @property
+    def can_post(self):
+        """Can journal entries be posted to this period?"""
+        return self.status == FiscalPeriodStatus.OPEN

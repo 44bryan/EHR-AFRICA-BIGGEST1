@@ -1,0 +1,336 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize static %}
+{% block title %}Senior Accountant Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+.sa-tile {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-left: 4px solid #1a3a5c;
+  border-radius: 6px;
+  padding: 14px 16px;
+  height: 100%;
+}
+.sa-tile.green  { border-left-color: #28a745; }
+.sa-tile.blue   { border-left-color: #0d6efd; }
+.sa-tile.red    { border-left-color: #dc3545; }
+.sa-tile.amber  { border-left-color: #e6a817; }
+.sa-tile.info   { border-left-color: #17a2b8; }
+.sa-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; margin-bottom: 4px; }
+.sa-value { font-size: 1.4rem; font-weight: 900; line-height: 1.1; color: #1a3a5c; }
+.sa-value.green { color: #28a745; }
+.sa-value.red   { color: #dc3545; }
+.sa-value.blue  { color: #0d6efd; }
+.sa-value.amber { color: #7a5800; }
+.sa-sub   { font-size: .72rem; color: #6c757d; margin-top: 3px; }
+.action-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: .85rem; }
+.action-item:last-child { border-bottom: none; }
+.ql-card { transition: transform .15s; text-decoration: none !important; }
+.ql-card:hover { transform: translateY(-2px); }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold" style="color:#1a3a5c;">Senior Accountant Dashboard</h5>
+    <div class="text-muted small">{{ today|date:"l, d F Y" }}</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-outline-primary btn-sm">Journal Entries</a>
+    <a href="{% url 'billing:expense_list' %}" class="btn btn-outline-warning btn-sm">Expenses</a>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">Billing Home</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- ══════ ROW 1 — Core KPIs ══════ -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile green">
+      <div class="sa-label">Revenue Today</div>
+      <div class="sa-value green">{{ revenue_today|floatformat:0|intcomma }}</div>
+      <div class="sa-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile blue">
+      <div class="sa-label">Revenue Month</div>
+      <div class="sa-value blue">{{ revenue_month|floatformat:0|intcomma }}</div>
+      <div class="sa-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile red">
+      <div class="sa-label">Expenses Month</div>
+      <div class="sa-value red">{{ expenses_month|floatformat:0|intcomma }}</div>
+      <div class="sa-sub">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile {% if net_month >= 0 %}green{% else %}red{% endif %}">
+      <div class="sa-label">Net Month</div>
+      <div class="sa-value {% if net_month >= 0 %}green{% else %}red{% endif %}">{{ net_month|floatformat:0|intcomma }}</div>
+      <div class="sa-sub">FCFA</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ ROW 2 — AP / Budget / Unposted ══════ -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile amber">
+      <div class="sa-label">AP Pending</div>
+      <div class="sa-value amber">{{ ap_pending_count|default:0 }} bills</div>
+      <div class="sa-sub">{{ ap_pending_total|default:0|floatformat:0|intcomma }} FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile red">
+      <div class="sa-label">AP Overdue</div>
+      <div class="sa-value red">{{ ap_overdue|default:0 }}</div>
+      <div class="sa-sub">past due date</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile {% if budget_burn > 90 %}red{% elif budget_burn > 75 %}amber{% else %}green{% endif %}">
+      <div class="sa-label">Budget Burn</div>
+      <div class="sa-value {% if budget_burn > 90 %}red{% elif budget_burn > 75 %}amber{% else %}green{% endif %}">{{ budget_burn|default:0 }}%</div>
+      <div class="sa-sub">of {{ total_budget_month|default:0|floatformat:0|intcomma }} FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="sa-tile {% if unposted_entries > 0 %}amber{% else %}green{% endif %}">
+      <div class="sa-label">Unposted JE</div>
+      <div class="sa-value {% if unposted_entries > 0 %}amber{% endif %}">{{ unposted_entries|default:0 }}</div>
+      <div class="sa-sub">{% if unposted_entries > 0 %}needs attention{% else %}all posted{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ Pending Actions + Reconciliation + Fiscal Periods ══════ -->
+<div class="row g-3 mb-4">
+  <!-- Pending Actions -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+          <i class="bi bi-clock-history me-2 text-warning"></i>Pending Actions
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="action-item">
+          <span><i class="bi bi-receipt-cutoff me-2 text-warning"></i>Expenses to review</span>
+          <a href="{% url 'billing:expense_list' %}" class="badge bg-warning text-dark">{{ pending_expenses|default:0 }}</a>
+        </div>
+        <div class="action-item">
+          <span><i class="bi bi-cash-stack me-2 text-info"></i>Advances to review</span>
+          <a href="{% url 'billing:advance_list' %}" class="badge bg-info text-dark">{{ pending_advances|default:0 }}</a>
+        </div>
+        {% if pending_expenses or pending_advances %}
+        <div class="mt-3 d-flex gap-2">
+          <a href="{% url 'billing:expense_list' %}" class="btn btn-sm btn-outline-warning flex-fill">Review Expenses</a>
+          <a href="{% url 'billing:advance_list' %}" class="btn btn-sm btn-outline-info flex-fill">Review Advances</a>
+        </div>
+        {% else %}
+        <div class="text-center text-muted small py-3">
+          <i class="bi bi-check-circle text-success me-1"></i>No pending actions
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Reconciliation Status -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+          <i class="bi bi-bank me-2 text-primary"></i>Reconciliation Status
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="action-item">
+          <span>Draft reconciliations</span>
+          <span class="badge bg-secondary">{{ draft_recons|default:0 }}</span>
+        </div>
+        <div class="action-item">
+          <span>Completed, awaiting review</span>
+          <span class="badge bg-primary">{{ completed_recons|default:0 }}</span>
+        </div>
+        <div class="mt-3">
+          <a href="{% url 'billing:bank_reconciliation_list' %}" class="btn btn-sm btn-outline-primary w-100">
+            <i class="bi bi-arrow-right me-1"></i>Bank Reconciliation
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Open Fiscal Periods -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+          <i class="bi bi-calendar-range me-2 text-success"></i>Open Fiscal Periods
+        </span>
+      </div>
+      <div class="card-body">
+        {% for period in open_periods %}
+        <div class="action-item">
+          <span class="fw-semibold">{{ period.get_month_display }} {{ period.year }}</span>
+          <span class="badge bg-success">{{ period.get_status_display }}</span>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted small py-3">
+          <i class="bi bi-lock me-1"></i>No open periods
+        </div>
+        {% endfor %}
+        <div class="mt-3">
+          <a href="{% url 'billing:fiscal_period_list' %}" class="btn btn-sm btn-outline-success w-100">
+            <i class="bi bi-arrow-right me-1"></i>Manage Periods
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ Recent Journal Entries ══════ -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold" style="font-size:.85rem;color:#1a3a5c;">
+      <i class="bi bi-journal-text me-2 text-primary"></i>Recent Journal Entries
+    </span>
+    <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-outline-primary btn-sm" style="font-size:.75rem;padding:2px 10px;">
+      All Entries &rarr;
+    </a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Entry No.</th>
+            <th>Description</th>
+            <th>Posted By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in recent_entries %}
+          <tr>
+            <td class="text-muted" style="white-space:nowrap;">{{ entry.date|date:"d M Y" }}</td>
+            <td>
+              <a href="{% url 'billing:journal_entry_detail' entry.id %}" class="fw-semibold text-primary">
+                {{ entry.entry_number }}
+              </a>
+            </td>
+            <td>{{ entry.description|truncatewords:12 }}</td>
+            <td>
+              {% if entry.posted_by %}
+                {{ entry.posted_by.get_full_name|default:entry.posted_by.username }}
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="text-center text-muted py-4">No journal entries found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ Quick Links ══════ -->
+<div class="row g-3">
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:general_ledger' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-primary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-journal-bookmark text-primary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">General Ledger</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:trial_balance' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-secondary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-journal-text text-secondary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Trial Balance</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:balance_sheet' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-success h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-building text-success fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Balance Sheet</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:cash_flow_statement' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-info h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-water text-info fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Cash Flow</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:report_ap_aging' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-warning h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-hourglass-split text-warning fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">AP Aging</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:bank_reconciliation_list' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-dark h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-bank fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Bank Recon</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:fiscal_period_list' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-primary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-calendar-range text-primary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Fiscal Periods</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3 col-lg">
+    <a href="{% url 'billing:report_audit_trail' %}" class="ql-card d-block text-decoration-none">
+      <div class="card border-0 shadow-sm border-start border-4 border-secondary h-100">
+        <div class="card-body py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-shield-lock text-secondary fs-5"></i>
+          <span class="fw-semibold small" style="color:#1a3a5c;">Audit Trail</span>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{% endblock %}

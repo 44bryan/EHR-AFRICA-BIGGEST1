@@ -3,7 +3,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Q, Sum
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from .models import (Invoice, InvoiceItem, Payment, InvoiceStatus, ServiceCategory,
@@ -17,7 +17,8 @@ from .models import (Invoice, InvoiceItem, Payment, InvoiceStatus, ServiceCatego
                      CashTransfer, TransferType, TransferStatus, SafeBalance,
                      CashVarianceRegister, AssetDisposal, DisposalMethod,
                      DisposalStatus, AssetRegister, AssetStatus,
-                     BudgetAmendment, CashierSession)
+                     BudgetAmendment, CashierSession,
+                     FiscalPeriod, FiscalPeriodStatus)
 from .utils import get_or_create_today_invoice
 from apps.patients.models import Patient
 from apps.accounts.models import UserRole
@@ -7578,4 +7579,525 @@ def report_dsf(request):
         'net_result': revenue - total_expense,
         'gl_summary': gl_summary,
         'asset_count': assets.count(),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AP AGING REPORT  —  Accounts Payable Aging by Vendor
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_ap_aging(request):
+    """Accounts Payable aging — outstanding vendor bills by age bucket."""
+    if not _can_manage_bank(request.user):
+        return HttpResponseForbidden()
+    today = timezone.localdate()
+    bills = APBill.objects.filter(
+        is_deleted=False,
+        status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL, APBillStatus.OVERDUE],
+    ).select_related('vendor').order_by('due_date')
+
+    rows = []
+    totals = {'current': Decimal('0'), 'days_30': Decimal('0'), 'days_60': Decimal('0'),
+              'days_90': Decimal('0'), 'over_90': Decimal('0'), 'total': Decimal('0')}
+    for bill in bills:
+        balance = bill.balance_due
+        if balance <= 0:
+            continue
+        due = bill.due_date or bill.bill_date
+        age = (today - due).days
+        bucket = 'current'
+        if age > 90:
+            bucket = 'over_90'
+        elif age > 60:
+            bucket = 'days_90'
+        elif age > 30:
+            bucket = 'days_60'
+        elif age > 0:
+            bucket = 'days_30'
+        rows.append({
+            'bill': bill, 'vendor': bill.vendor.name, 'balance': balance,
+            'due_date': due, 'age_days': max(age, 0), 'bucket': bucket,
+        })
+        totals[bucket] += balance
+        totals['total'] += balance
+
+    return render(request, 'billing/reports/ap_aging.html', {
+        'rows': rows, 'totals': totals, 'today': today,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MONTHLY FINANCIAL SUMMARY  —  Period-end consolidated report
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_monthly_summary(request):
+    """Monthly financial summary — revenue, expenses, net, with variance vs budget."""
+    if not _can_manage_bank(request.user):
+        return HttpResponseForbidden()
+    import calendar
+    today = timezone.localdate()
+    year  = int(request.GET.get('year', today.year))
+    month = int(request.GET.get('month', today.month))
+
+    first_day = today.replace(year=year, month=month, day=1)
+    last_day_num = calendar.monthrange(year, month)[1]
+    last_day = first_day.replace(day=last_day_num)
+
+    # Revenue
+    revenue = Payment.objects.filter(
+        is_deleted=False, payment_date__date__gte=first_day, payment_date__date__lte=last_day,
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    # Revenue by payment method
+    revenue_by_method = (
+        Payment.objects.filter(
+            is_deleted=False, payment_date__date__gte=first_day, payment_date__date__lte=last_day,
+        ).values('payment_method').annotate(total=Sum('amount')).order_by('-total')
+    )
+
+    # Expenses by category
+    from .models import Expense, ExpenseCategory
+    expenses = (
+        Expense.objects.filter(
+            is_deleted=False, status='APPROVED', date__gte=first_day, date__lte=last_day,
+        ).values('category').annotate(total=Sum('amount')).order_by('category')
+    )
+    total_expense = sum(e['total'] for e in expenses)
+
+    # Budget comparison
+    budgets = Budget.objects.filter(
+        is_deleted=False, month=month, year=year,
+    )
+    total_budget = budgets.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    # Invoice stats
+    invoices_issued = Invoice.objects.filter(
+        is_deleted=False, issue_date__gte=first_day, issue_date__lte=last_day,
+    ).count()
+    invoices_paid = Invoice.objects.filter(
+        is_deleted=False, issue_date__gte=first_day, issue_date__lte=last_day,
+        status=InvoiceStatus.PAID,
+    ).count()
+
+    # AP payments
+    ap_paid = APPayment.objects.filter(
+        is_deleted=False, payment_date__gte=first_day, payment_date__lte=last_day,
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    net_position = revenue - total_expense - ap_paid
+
+    return render(request, 'billing/reports/monthly_summary.html', {
+        'year': year, 'month': month,
+        'month_name': calendar.month_name[month],
+        'revenue': revenue,
+        'revenue_by_method': revenue_by_method,
+        'expenses': expenses,
+        'total_expense': total_expense,
+        'total_budget': total_budget,
+        'budget_utilization': round(float(total_expense) / float(total_budget) * 100, 1) if total_budget else 0,
+        'invoices_issued': invoices_issued,
+        'invoices_paid': invoices_paid,
+        'ap_paid': ap_paid,
+        'net_position': net_position,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TVA / VAT RETURN  —  Tax Report (Cameroon TVA at 19.25%)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_tva(request):
+    """TVA (VAT) return — output tax on services vs input tax on purchases."""
+    if not (request.user.is_finance_director or request.user.is_super_admin
+            or request.user.role == 'senior_accountant'):
+        return HttpResponseForbidden()
+    import calendar
+    today = timezone.localdate()
+    year  = int(request.GET.get('year', today.year))
+    month = int(request.GET.get('month', today.month))
+
+    first_day = today.replace(year=year, month=month, day=1)
+    last_day_num = calendar.monthrange(year, month)[1]
+    last_day = first_day.replace(day=last_day_num)
+
+    TVA_RATE = Decimal('0.1925')  # Cameroon TVA = 19.25%
+
+    # Output TVA — on revenue (services rendered)
+    revenue = Payment.objects.filter(
+        is_deleted=False, payment_date__date__gte=first_day, payment_date__date__lte=last_day,
+    ).exclude(payment_method__in=('WAIVER',)).aggregate(
+        total=Sum('amount')
+    )['total'] or Decimal('0')
+    output_tva = (revenue * TVA_RATE / (1 + TVA_RATE)).quantize(Decimal('1'))
+
+    # Input TVA — on purchases (AP bills with tax)
+    input_tva = APBill.objects.filter(
+        is_deleted=False, bill_date__gte=first_day, bill_date__lte=last_day,
+    ).aggregate(total=Sum('tax_amount'))['total'] or Decimal('0')
+
+    net_tva = output_tva - input_tva
+
+    # Breakdown by service category
+    revenue_by_cat = (
+        Payment.objects.filter(
+            is_deleted=False, payment_date__date__gte=first_day, payment_date__date__lte=last_day,
+        ).exclude(payment_method__in=('WAIVER',))
+        .values('invoice__items__category')
+        .annotate(total=Sum('amount'))
+        .order_by('-total')
+    )
+
+    return render(request, 'billing/reports/tva_return.html', {
+        'year': year, 'month': month,
+        'month_name': calendar.month_name[month],
+        'tva_rate': '19.25',
+        'revenue': revenue,
+        'output_tva': output_tva,
+        'input_tva': input_tva,
+        'net_tva': net_tva,
+        'revenue_by_cat': revenue_by_cat,
+        'status': 'PAYABLE' if net_tva > 0 else 'CREDIT',
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FINANCIAL AUDIT TRAIL  —  Who did what, when
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_audit_trail(request):
+    """Financial audit trail — all journal entries with who posted, when, and why."""
+    if not _can_manage_bank(request.user):
+        return HttpResponseForbidden()
+    from .models import JournalEntry
+    today = timezone.localdate()
+    date_from = request.GET.get('date_from', str(today.replace(day=1)))
+    date_to   = request.GET.get('date_to', str(today))
+    source    = request.GET.get('source', '')
+
+    entries = JournalEntry.objects.filter(
+        is_deleted=False,
+        entry_date__gte=date_from,
+        entry_date__lte=date_to,
+    ).select_related('created_by').prefetch_related('lines__account').order_by('-entry_date', '-created_at')
+
+    if source:
+        entries = entries.filter(source_type=source)
+
+    source_types = (
+        JournalEntry.objects.filter(is_deleted=False)
+        .values_list('source_type', flat=True).distinct().order_by('source_type')
+    )
+
+    return render(request, 'billing/reports/audit_trail.html', {
+        'entries': entries[:200],
+        'date_from': date_from,
+        'date_to': date_to,
+        'source': source,
+        'source_types': source_types,
+        'total_count': entries.count(),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FISCAL PERIOD MANAGEMENT  —  Open / Close / Lock monthly periods
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def fiscal_period_list(request):
+    """List all fiscal periods with status."""
+    if not _can_manage_bank(request.user):
+        return HttpResponseForbidden()
+    import calendar as cal
+    today = timezone.localdate()
+
+    # Auto-create periods for current year if they don't exist
+    for m in range(1, 13):
+        FiscalPeriod.objects.get_or_create(year=today.year, month=m)
+
+    periods = FiscalPeriod.objects.filter(
+        is_deleted=False
+    ).order_by('-year', '-month')[:36]  # 3 years
+
+    return render(request, 'billing/fiscal_period_list.html', {
+        'periods': periods,
+    })
+
+
+@login_required
+@require_POST
+def fiscal_period_action(request, period_id):
+    """Close or reopen a fiscal period."""
+    if not (request.user.is_finance_director or request.user.is_super_admin
+            or request.user.role == 'senior_accountant'):
+        return HttpResponseForbidden()
+
+    period = get_object_or_404(FiscalPeriod, pk=period_id, is_deleted=False)
+    action = request.POST.get('action')
+
+    if action == 'close' and period.status == FiscalPeriodStatus.OPEN:
+        period.status = FiscalPeriodStatus.CLOSED
+        period.closed_by = request.user
+        period.closed_at = timezone.now()
+        period.save(update_fields=['status', 'closed_by', 'closed_at', 'updated_at'])
+        messages.success(request, f"Period {period} closed successfully.")
+    elif action == 'reopen' and period.status == FiscalPeriodStatus.CLOSED:
+        if not (request.user.is_finance_director or request.user.is_super_admin):
+            messages.error(request, "Only Finance Director can reopen a closed period.")
+            return redirect('billing:fiscal_period_list')
+        period.status = FiscalPeriodStatus.OPEN
+        period.closed_by = None
+        period.closed_at = None
+        period.save(update_fields=['status', 'closed_by', 'closed_at', 'updated_at'])
+        messages.success(request, f"Period {period} reopened.")
+    elif action == 'lock' and period.status == FiscalPeriodStatus.CLOSED:
+        if not (request.user.is_finance_director or request.user.is_super_admin):
+            messages.error(request, "Only Finance Director can lock a period.")
+            return redirect('billing:fiscal_period_list')
+        period.status = FiscalPeriodStatus.LOCKED
+        period.locked_by = request.user
+        period.locked_at = timezone.now()
+        period.save(update_fields=['status', 'locked_by', 'locked_at', 'updated_at'])
+        messages.warning(request, f"Period {period} LOCKED permanently. No further changes allowed.")
+    else:
+        messages.error(request, "Invalid action for this period status.")
+
+    return redirect('billing:fiscal_period_list')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FINANCE DIRECTOR STRATEGIC DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def finance_director_dashboard(request):
+    """Executive financial dashboard with KPIs, ratios, and trend charts."""
+    if not (request.user.is_finance_director or request.user.is_super_admin
+            or request.user.is_ceo):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    first_of_month = today.replace(day=1)
+    first_of_year = today.replace(month=1, day=1)
+
+    # ── Revenue KPIs ──
+    revenue_today = Payment.objects.filter(
+        is_deleted=False, payment_date__date=today,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    revenue_month = Payment.objects.filter(
+        is_deleted=False, payment_date__date__gte=first_of_month,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    revenue_ytd = Payment.objects.filter(
+        is_deleted=False, payment_date__date__gte=first_of_year,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    # ── Expense KPIs ──
+    from .models import Expense
+    expenses_month = Expense.objects.filter(
+        is_deleted=False, status='APPROVED', date__gte=first_of_month,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    expenses_ytd = Expense.objects.filter(
+        is_deleted=False, status='APPROVED', date__gte=first_of_year,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    # ── AR / AP totals ──
+    ar_outstanding = Invoice.objects.filter(
+        is_deleted=False, status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+    ).count()
+    ar_total = Decimal('0')
+    for inv in Invoice.objects.filter(
+        is_deleted=False, status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+    ):
+        ar_total += inv.balance_due
+
+    ap_outstanding = APBill.objects.filter(
+        is_deleted=False, status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL, APBillStatus.OVERDUE],
+    ).aggregate(total=Sum('amount_due'))['total'] or Decimal('0')
+    ap_paid_total = APPayment.objects.filter(
+        is_deleted=False,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    # ── Financial Ratios ──
+    # Current Ratio = Current Assets / Current Liabilities
+    # Operating Margin = (Revenue - Expenses) / Revenue
+    operating_margin = 0
+    if revenue_ytd > 0:
+        operating_margin = round(float(revenue_ytd - expenses_ytd) / float(revenue_ytd) * 100, 1)
+
+    # ── Cash Position ──
+    safe_latest = SafeBalance.objects.filter(is_deleted=False).order_by('-date').first()
+    safe_balance = safe_latest.closing_balance if safe_latest else Decimal('0')
+
+    bank_total = BankAccount.objects.filter(
+        is_deleted=False, is_active=True,
+    ).aggregate(t=Sum('opening_balance'))['t'] or Decimal('0')
+
+    total_liquidity = safe_balance + bank_total
+
+    # ── Monthly Revenue Trend (last 12 months) ──
+    import calendar
+    from django.db.models.functions import TruncMonth, ExtractMonth, ExtractYear
+    monthly_revenue = (
+        Payment.objects.filter(is_deleted=False, payment_date__date__gte=first_of_year.replace(year=today.year - 1))
+        .annotate(m=TruncMonth('payment_date'))
+        .values('m')
+        .annotate(total=Sum('amount'))
+        .order_by('m')
+    )
+    trend_labels = []
+    trend_data = []
+    for row in monthly_revenue:
+        dt = row['m']
+        if hasattr(dt, 'date'):
+            dt = dt.date()
+        trend_labels.append(f"{calendar.month_abbr[dt.month]} {dt.year}")
+        trend_data.append(float(row['total']))
+
+    # ── Pending Approvals ──
+    pending_expenses = Expense.objects.filter(
+        is_deleted=False, status='PENDING',
+    ).count()
+    pending_advances = StaffAdvance.objects.filter(
+        is_deleted=False, status=AdvanceStatus.REQUESTED,
+    ).count()
+    overdue_advances = StaffAdvance.objects.filter(
+        is_deleted=False, status=AdvanceStatus.DISBURSED,
+    ).exclude(settlement_due__isnull=True).filter(
+        settlement_due__lt=today,
+    ).count()
+    unresolved_variances = CashVarianceRegister.objects.filter(
+        is_deleted=False, is_resolved=False,
+    ).count()
+
+    # ── Unreconciled bank periods ──
+    pending_reconciliations = BankReconciliation.objects.filter(
+        is_deleted=False, status=BankReconciliationStatus.DRAFT,
+    ).count()
+
+    return render(request, 'billing/reports/finance_director_dashboard.html', {
+        'revenue_today': revenue_today,
+        'revenue_month': revenue_month,
+        'revenue_ytd': revenue_ytd,
+        'expenses_month': expenses_month,
+        'expenses_ytd': expenses_ytd,
+        'net_month': revenue_month - expenses_month,
+        'net_ytd': revenue_ytd - expenses_ytd,
+        'ar_outstanding': ar_outstanding,
+        'ar_total': ar_total,
+        'ap_outstanding': ap_outstanding,
+        'operating_margin': operating_margin,
+        'safe_balance': safe_balance,
+        'bank_total': bank_total,
+        'total_liquidity': total_liquidity,
+        'trend_labels': trend_labels,
+        'trend_data': trend_data,
+        'pending_expenses': pending_expenses,
+        'pending_advances': pending_advances,
+        'overdue_advances': overdue_advances,
+        'unresolved_variances': unresolved_variances,
+        'pending_reconciliations': pending_reconciliations,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SENIOR ACCOUNTANT DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def senior_accountant_dashboard(request):
+    """Senior accountant operations dashboard — GL health, pending approvals, reconciliation status."""
+    if not (request.user.role == 'senior_accountant' or request.user.is_finance_director
+            or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    first_of_month = today.replace(day=1)
+
+    # ── Revenue / Expense KPIs ──
+    revenue_today = Payment.objects.filter(
+        is_deleted=False, payment_date__date=today,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    revenue_month = Payment.objects.filter(
+        is_deleted=False, payment_date__date__gte=first_of_month,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    from .models import Expense
+    expenses_month = Expense.objects.filter(
+        is_deleted=False, status='APPROVED', date__gte=first_of_month,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    # ── AP summary ──
+    ap_pending_count = APBill.objects.filter(
+        is_deleted=False, status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL],
+    ).count()
+    ap_pending_total = APBill.objects.filter(
+        is_deleted=False, status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL],
+    ).aggregate(t=Sum('amount_due'))['t'] or Decimal('0')
+    ap_overdue = APBill.objects.filter(
+        is_deleted=False, status=APBillStatus.OVERDUE,
+    ).count()
+
+    # ── Reconciliation status ──
+    draft_recons = BankReconciliation.objects.filter(
+        is_deleted=False, status=BankReconciliationStatus.DRAFT,
+    ).count()
+    completed_recons = BankReconciliation.objects.filter(
+        is_deleted=False, status=BankReconciliationStatus.COMPLETED,
+    ).count()
+
+    # ── GL Health ──
+    from .models import JournalEntry
+    unposted_entries = JournalEntry.objects.filter(
+        is_deleted=False, is_posted=False,
+    ).count()
+
+    # ── Fiscal Periods ──
+    open_periods = FiscalPeriod.objects.filter(
+        is_deleted=False, status=FiscalPeriodStatus.OPEN,
+    ).order_by('-year', '-month')[:3]
+
+    # ── Pending items ──
+    pending_expenses = Expense.objects.filter(
+        is_deleted=False, status='PENDING',
+    ).count()
+    pending_advances = StaffAdvance.objects.filter(
+        is_deleted=False, status=AdvanceStatus.REQUESTED,
+    ).count()
+
+    # ── Budget burn ──
+    import calendar
+    total_budget_month = Budget.objects.filter(
+        is_deleted=False, year=today.year, month=today.month,
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    budget_burn = round(float(expenses_month) / float(total_budget_month) * 100, 1) if total_budget_month else 0
+
+    # ── Recent journal entries ──
+    recent_entries = JournalEntry.objects.filter(
+        is_deleted=False,
+    ).select_related('created_by').order_by('-created_at')[:10]
+
+    return render(request, 'billing/reports/senior_accountant_dashboard.html', {
+        'revenue_today': revenue_today,
+        'revenue_month': revenue_month,
+        'expenses_month': expenses_month,
+        'net_month': revenue_month - expenses_month,
+        'ap_pending_count': ap_pending_count,
+        'ap_pending_total': ap_pending_total,
+        'ap_overdue': ap_overdue,
+        'draft_recons': draft_recons,
+        'completed_recons': completed_recons,
+        'unposted_entries': unposted_entries,
+        'open_periods': open_periods,
+        'pending_expenses': pending_expenses,
+        'pending_advances': pending_advances,
+        'total_budget_month': total_budget_month,
+        'budget_burn': budget_burn,
+        'recent_entries': recent_entries,
     })

@@ -5,26 +5,21 @@
 {% block page_header %}
 <div class="d-flex justify-content-between align-items-center mb-2">
   <div>
-    <h4 class="fw-bold mb-0">
-      {% if user.role == 'senior_accountant' %}Senior Accountant{% else %}Accountant{% endif %} Dashboard
-    </h4>
+    <h4 class="fw-bold mb-0">Accountant Dashboard</h4>
     <p class="text-muted small mb-0">{% now "l, d F Y" %} &mdash; Accounting &amp; financial control</p>
   </div>
   <div class="d-flex gap-2">
-    <a href="{% url 'billing:invoice_list' %}" class="btn btn-primary btn-sm">
-      All Invoices
-    </a>
-    <a href="{% url 'billing:ar_aging' %}" class="btn btn-outline-secondary btn-sm">
-      AR Aging
-    </a>
+    <a href="{% url 'billing:invoice_list' %}" class="btn btn-primary btn-sm">All Invoices</a>
+    <a href="{% url 'billing:ar_aging' %}" class="btn btn-outline-secondary btn-sm">AR Aging</a>
+    <a href="{% url 'billing:report_ap_aging' %}" class="btn btn-outline-secondary btn-sm">AP Aging</a>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
 
-{# ── KPIs ── #}
-<div class="row g-3 mb-4">
+{# ── Row 1: Core KPIs ── #}
+<div class="row g-3 mb-3">
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm">
       <div class="card-body py-3">
@@ -39,14 +34,14 @@
       <div class="card-body py-3">
         <div class="text-muted small text-uppercase fw-semibold">Revenue This Month</div>
         <div class="fs-3 fw-bold text-primary">{{ revenue_month|floatformat:0|intcomma }}</div>
-        <div class="text-muted" style="font-size:.72rem;">FCFA — {% now "F Y" %}</div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA &mdash; {% now "F Y" %}</div>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm">
       <div class="card-body py-3">
-        <div class="text-muted small text-uppercase fw-semibold">Unpaid Bills</div>
+        <div class="text-muted small text-uppercase fw-semibold">Unpaid Invoices</div>
         <div class="fs-3 fw-bold text-danger">{{ unpaid_count }}</div>
         <div class="text-muted" style="font-size:.72rem;">invoices outstanding</div>
       </div>
@@ -55,15 +50,51 @@
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm">
       <div class="card-body py-3">
-        <div class="text-muted small text-uppercase fw-semibold">Quick Actions</div>
-        <div class="d-flex flex-column gap-1 pt-1">
-          <a href="{% url 'billing:invoice_create' %}" class="btn btn-sm btn-outline-primary py-0">
-            <i class="bi bi-file-earmark-plus me-1"></i>New Invoice
-          </a>
-          <a href="{% url 'billing:report_daily_summary' %}" class="btn btn-sm btn-outline-secondary py-0">
-            <i class="bi bi-calendar-day me-1"></i>Daily Report
-          </a>
+        <div class="text-muted small text-uppercase fw-semibold">Expenses This Month</div>
+        <div class="fs-3 fw-bold text-danger">{{ expenses_month|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA approved</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Row 2: Enhanced KPIs ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Net This Month</div>
+        <div class="fs-3 fw-bold {% if net_month >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ net_month|floatformat:0|intcomma }}
         </div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA (revenue &minus; expenses)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">AP Payable</div>
+        <div class="fs-3 fw-bold text-warning">{{ ap_pending_total|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">FCFA vendor bills pending</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">AP Overdue</div>
+        <div class="fs-3 fw-bold {% if ap_overdue > 0 %}text-danger{% else %}text-success{% endif %}">{{ ap_overdue }}</div>
+        <div class="text-muted" style="font-size:.72rem;">vendor bills past due</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body py-3">
+        <div class="text-muted small text-uppercase fw-semibold">Pending Expenses</div>
+        <div class="fs-3 fw-bold {% if pending_expenses > 0 %}text-warning{% else %}text-muted{% endif %}">{{ pending_expenses }}</div>
+        <div class="text-muted" style="font-size:.72rem;">awaiting approval</div>
       </div>
     </div>
   </div>
@@ -109,7 +140,7 @@
   </div>
 </div>
 
-{# ── Accounting quick links ── #}
+{# ── Quick Links ── #}
 <div class="row g-3">
   <div class="col-md-4">
     <a href="{% url 'billing:corporate_list' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
@@ -128,8 +159,20 @@
       <div class="card-body d-flex align-items-center gap-3 py-3">
         <i class="bi bi-hourglass-split text-warning fs-3 flex-shrink-0"></i>
         <div>
-          <div class="fw-semibold small">Accounts Receivable Aging</div>
-          <div class="text-muted" style="font-size:.72rem;">Overdue &amp; aged debt report</div>
+          <div class="fw-semibold small">AR Aging Report</div>
+          <div class="text-muted" style="font-size:.72rem;">Overdue patient &amp; corporate debt</div>
+        </div>
+        <i class="bi bi-chevron-right text-muted ms-auto"></i>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="{% url 'billing:report_ap_aging' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <i class="bi bi-hourglass-bottom text-danger fs-3 flex-shrink-0"></i>
+        <div>
+          <div class="fw-semibold small">AP Aging Report</div>
+          <div class="text-muted" style="font-size:.72rem;">Outstanding vendor bills by age</div>
         </div>
         <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
@@ -141,50 +184,36 @@
         <i class="bi bi-calculator text-success fs-3 flex-shrink-0"></i>
         <div>
           <div class="fw-semibold small">Cashier Reconciliation</div>
-          <div class="text-muted" style="font-size:.72rem;">Daily cash vs system reconciliation</div>
-        </div>
-        <i class="bi bi-chevron-right text-muted ms-auto"></i>
-      </div>
-    </a>
-  </div>
-  {% if user.role == 'senior_accountant' %}
-  <div class="col-md-4">
-    <a href="{% url 'billing:expense_list' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
-      <div class="card-body d-flex align-items-center gap-3 py-3">
-        <i class="bi bi-receipt-cutoff text-danger fs-3 flex-shrink-0"></i>
-        <div>
-          <div class="fw-semibold small">Expenses &amp; Approvals</div>
-          <div class="text-muted" style="font-size:.72rem;">Review and approve expense claims</div>
+          <div class="text-muted" style="font-size:.72rem;">Daily cash vs system</div>
         </div>
         <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     </a>
   </div>
   <div class="col-md-4">
-    <a href="{% url 'billing:petty_cash_list' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+    <a href="{% url 'billing:cheque_register' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
       <div class="card-body d-flex align-items-center gap-3 py-3">
-        <i class="bi bi-wallet2 text-info fs-3 flex-shrink-0"></i>
+        <i class="bi bi-credit-card text-info fs-3 flex-shrink-0"></i>
         <div>
-          <div class="fw-semibold small">Petty Cash</div>
-          <div class="text-muted" style="font-size:.72rem;">Petty cash funds management</div>
+          <div class="fw-semibold small">Cheque Register</div>
+          <div class="text-muted" style="font-size:.72rem;">Issued &amp; cleared cheques</div>
         </div>
         <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     </a>
   </div>
   <div class="col-md-4">
-    <a href="{% url 'billing:budget_list' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
+    <a href="{% url 'billing:report_audit_trail' %}" class="card border-0 shadow-sm text-decoration-none text-dark h-100">
       <div class="card-body d-flex align-items-center gap-3 py-3">
-        <i class="bi bi-bar-chart-line text-secondary fs-3 flex-shrink-0"></i>
+        <i class="bi bi-shield-check text-secondary fs-3 flex-shrink-0"></i>
         <div>
-          <div class="fw-semibold small">Budget vs Actual</div>
-          <div class="text-muted" style="font-size:.72rem;">Track departmental budgets</div>
+          <div class="fw-semibold small">Audit Trail</div>
+          <div class="text-muted" style="font-size:.72rem;">Financial activity log</div>
         </div>
         <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     </a>
   </div>
-  {% endif %}
 </div>
 
 {% endblock %}

@@ -1,0 +1,144 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Financial Audit Trail{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold">Financial Audit Trail</h5>
+    <div class="text-muted small">Journal entry log with full line-item detail</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Billing
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filter form ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex align-items-end gap-3 flex-wrap">
+      <div>
+        <label class="form-label small mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from|date:'Y-m-d' }}" style="width:160px;">
+      </div>
+      <div>
+        <label class="form-label small mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to|date:'Y-m-d' }}" style="width:160px;">
+      </div>
+      <div>
+        <label class="form-label small mb-1">Source</label>
+        <select name="source" class="form-select form-select-sm" style="width:160px;">
+          <option value="">All Sources</option>
+          {% for st in source_types %}
+          <option value="{{ st }}" {% if selected_source == st %}selected{% endif %}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Count badge ── #}
+<div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-4 small">
+  <i class="bi bi-info-circle fs-5"></i>
+  Showing <strong>{{ entries|length }}</strong> of <strong>{{ total_count }}</strong> entries.
+</div>
+
+{# ── Entries table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th style="width:30px;"></th>
+          <th>Date</th>
+          <th>Entry No.</th>
+          <th>Description</th>
+          <th>Source</th>
+          <th>Posted By</th>
+          <th class="text-end">Debit Total (FCFA)</th>
+          <th class="text-end">Credit Total (FCFA)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr class="cursor-pointer" data-bs-toggle="collapse" data-bs-target="#lines-{{ forloop.counter }}" aria-expanded="false" style="cursor:pointer;">
+          <td class="text-center">
+            <i class="bi bi-chevron-right small text-muted toggle-icon" id="icon-{{ forloop.counter }}"></i>
+          </td>
+          <td class="text-muted">{{ e.entry_date|date:"d M Y" }}</td>
+          <td><code class="small">{{ e.entry_number }}</code></td>
+          <td class="fw-semibold">{{ e.description|truncatewords:12 }}</td>
+          <td><span class="badge bg-secondary">{{ e.source_type }}</span></td>
+          <td>
+            {% if e.created_by.get_full_name %}
+              {{ e.created_by.get_full_name }}
+            {% else %}
+              {{ e.created_by.username }}
+            {% endif %}
+          </td>
+          <td class="text-end fw-bold">{{ e.total_debits|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold">{{ e.total_credits|floatformat:0|intcomma }}</td>
+        </tr>
+        {# ── Expandable journal lines ── #}
+        <tr class="collapse" id="lines-{{ forloop.counter }}">
+          <td colspan="8" class="p-0">
+            <div class="bg-light p-3">
+              <table class="table table-sm table-bordered mb-0 small bg-white">
+                <thead>
+                  <tr class="table-secondary">
+                    <th>Account Code</th>
+                    <th>Account Name</th>
+                    <th>Description</th>
+                    <th class="text-end">Debit (FCFA)</th>
+                    <th class="text-end">Credit (FCFA)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for line in e.lines.all %}
+                  <tr>
+                    <td><code>{{ line.account.code }}</code></td>
+                    <td>{{ line.account.name }}</td>
+                    <td class="text-muted">{{ line.description|default:"-" }}</td>
+                    <td class="text-end {% if line.debit_amount %}fw-semibold{% endif %}">
+                      {% if line.debit_amount %}{{ line.debit_amount|floatformat:0|intcomma }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end {% if line.credit_amount %}fw-semibold{% endif %}">
+                      {% if line.credit_amount %}{{ line.credit_amount|floatformat:0|intcomma }}{% else %}-{% endif %}
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr><td colspan="5" class="text-center text-muted">No journal lines.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">
+            <i class="bi bi-journal-x fs-3 d-block mb-2"></i>
+            No entries found for the selected filters.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

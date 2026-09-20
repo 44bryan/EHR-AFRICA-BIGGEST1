@@ -339,9 +339,9 @@ def home_view(request):
     if user.is_super_admin:
         return redirect('dashboard:sysadmin')
 
-    # ── Finance Director → Billing Dashboard (operational home) ──────────
+    # ── Finance Director → Strategic Finance Dashboard ───────────────────
     if user.is_finance_director:
-        return redirect('billing:dashboard')
+        return redirect('billing:finance_director_dashboard')
 
     # ── CEO → Full Executive Dashboard ───────────────────────────────────
     if user.is_ceo:
@@ -1267,8 +1267,12 @@ def home_view(request):
         return render(request, 'dashboard/chief_cashier.html', ctx)
 
     # ── Accountant / Senior Accountant ────────────────────────────────────
-    if user.role in ('accountant', 'senior_accountant'):
-        from apps.billing.models import Invoice, InvoiceStatus, Payment
+    if user.role == 'senior_accountant':
+        return redirect('billing:senior_accountant_dashboard')
+
+    if user.role == 'accountant':
+        from apps.billing.models import (Invoice, InvoiceStatus, Payment, Expense,
+                                         APBill, APBillStatus)
         unpaid = Invoice.objects.select_related('patient').filter(
             status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
             is_deleted=False
@@ -1279,11 +1283,29 @@ def home_view(request):
         revenue_month = Payment.objects.filter(
             payment_date__date__gte=today.replace(day=1), is_deleted=False
         ).aggregate(total=Sum('amount'))['total'] or 0
+        # Enhanced KPIs
+        expenses_month = Expense.objects.filter(
+            is_deleted=False, status='APPROVED', date__gte=today.replace(day=1),
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        pending_expenses = Expense.objects.filter(
+            is_deleted=False, status='PENDING',
+        ).count()
+        ap_overdue = APBill.objects.filter(
+            is_deleted=False, status=APBillStatus.OVERDUE,
+        ).count()
+        ap_pending_total = APBill.objects.filter(
+            is_deleted=False, status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL],
+        ).aggregate(total=Sum('amount_due'))['total'] or 0
         ctx.update({
             'unpaid_invoices': unpaid,
             'unpaid_count': unpaid.count(),
             'revenue_today': revenue_today,
             'revenue_month': revenue_month,
+            'expenses_month': expenses_month,
+            'net_month': revenue_month - expenses_month,
+            'pending_expenses': pending_expenses,
+            'ap_overdue': ap_overdue,
+            'ap_pending_total': ap_pending_total,
         })
         return render(request, 'dashboard/accountant.html', ctx)
 

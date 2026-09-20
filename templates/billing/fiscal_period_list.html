@@ -1,0 +1,148 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Fiscal Period Management{% endblock %}
+
+{% block extra_css %}
+<style>
+.fp-info {
+  background: #f0f5ff;
+  border: 1px solid #c8daea;
+  border-radius: 8px;
+  padding: 14px 18px;
+  font-size: .85rem;
+  color: #1a3a5c;
+  margin-bottom: 1.25rem;
+}
+.fp-info i { font-size: 1.1rem; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold" style="color:#1a3a5c;">Fiscal Period Management</h5>
+    <div class="text-muted small">Control journal entry posting windows</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-outline-primary btn-sm">Journal Entries</a>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">Billing Home</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="fp-info">
+  <i class="bi bi-info-circle me-2"></i>
+  Control which months are open for journal entries. <strong>Closed</strong> periods can be reopened by the Finance Director.
+  <strong>Locked</strong> periods are permanent and cannot be modified.
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Year</th>
+            <th>Month</th>
+            <th>Status</th>
+            <th>Closed By</th>
+            <th>Closed At</th>
+            <th>Locked By</th>
+            <th>Locked At</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for period in periods %}
+          <tr>
+            <td class="fw-semibold">{{ period.year }}</td>
+            <td>{{ period }}</td>
+            <td>
+              {% if period.status == 'OPEN' %}
+                <span class="badge bg-success">OPEN</span>
+              {% elif period.status == 'CLOSED' %}
+                <span class="badge bg-warning text-dark">CLOSED</span>
+              {% elif period.status == 'LOCKED' %}
+                <span class="badge bg-danger">LOCKED</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ period.status }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if period.closed_by %}
+                {{ period.closed_by.get_full_name|default:period.closed_by.username }}
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if period.closed_at %}
+                {{ period.closed_at|date:"d M Y H:i" }}
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if period.locked_by %}
+                {{ period.locked_by.get_full_name|default:period.locked_by.username }}
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if period.locked_at %}
+                {{ period.locked_at|date:"d M Y H:i" }}
+              {% else %}
+                <span class="text-muted">--</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if period.status == 'OPEN' %}
+                <form method="post" action="{% url 'billing:fiscal_period_action' period.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="close">
+                  <button type="submit" class="btn btn-sm btn-outline-warning"
+                          onclick="return confirm('Close this period? Journal entries will no longer be allowed for {{ period }} {{ period.year }}.');">
+                    <i class="bi bi-lock me-1"></i>Close
+                  </button>
+                </form>
+              {% elif period.status == 'CLOSED' %}
+                <form method="post" action="{% url 'billing:fiscal_period_action' period.pk %}" class="d-inline me-1">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="reopen">
+                  <button type="submit" class="btn btn-sm btn-outline-success"
+                          onclick="return confirm('Reopen {{ period }} {{ period.year }}? Journal entries will be allowed again.');">
+                    <i class="bi bi-unlock me-1"></i>Reopen
+                  </button>
+                </form>
+                <form method="post" action="{% url 'billing:fiscal_period_action' period.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="lock">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"
+                          onclick="return confirm('PERMANENTLY LOCK {{ period }} {{ period.year }}? This action cannot be undone.');">
+                    <i class="bi bi-shield-lock me-1"></i>Lock
+                  </button>
+                </form>
+              {% elif period.status == 'LOCKED' %}
+                <span class="text-muted small">
+                  <i class="bi bi-shield-lock-fill text-danger me-1"></i>Permanent
+                </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">
+              No fiscal periods configured. Periods are created automatically when journal entries are posted.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
