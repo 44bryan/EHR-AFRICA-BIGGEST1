@@ -1,0 +1,106 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}{% if editing %}Edit{% else %}New{% endif %} Bank Account{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:bank_account_list' %}">Bank Accounts</a></li>
+    <li class="breadcrumb-item active">{% if editing %}Edit{% else %}New{% endif %}</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0 fw-bold">
+    <i class="bi bi-bank me-2"></i>{% if editing %}Edit{% else %}New{% endif %} Bank Account
+  </h4>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label for="id_account_name" class="form-label fw-semibold">Account Name <span class="text-danger">*</span></label>
+          <input type="text" name="account_name" id="id_account_name" class="form-control form-control-sm"
+                 value="{{ account.account_name|default:'' }}" required>
+        </div>
+
+        <div class="col-md-6">
+          <label for="id_bank_name" class="form-label fw-semibold">Bank Name <span class="text-danger">*</span></label>
+          <input type="text" name="bank_name" id="id_bank_name" class="form-control form-control-sm"
+                 value="{{ account.bank_name|default:'' }}" required>
+        </div>
+
+        <div class="col-md-6">
+          <label for="id_account_number" class="form-label fw-semibold">Account Number <span class="text-danger">*</span></label>
+          <input type="text" name="account_number" id="id_account_number" class="form-control form-control-sm"
+                 value="{{ account.account_number|default:'' }}" required>
+        </div>
+
+        <div class="col-md-6">
+          <label for="id_branch" class="form-label fw-semibold">Branch</label>
+          <input type="text" name="branch" id="id_branch" class="form-control form-control-sm"
+                 value="{{ account.branch|default:'' }}">
+        </div>
+
+        <div class="col-md-4">
+          <label for="id_swift_code" class="form-label fw-semibold">SWIFT Code</label>
+          <input type="text" name="swift_code" id="id_swift_code" class="form-control form-control-sm"
+                 value="{{ account.swift_code|default:'' }}">
+        </div>
+
+        <div class="col-md-4">
+          <label for="id_currency" class="form-label fw-semibold">Currency</label>
+          <input type="text" name="currency" id="id_currency" class="form-control form-control-sm"
+                 value="{{ account.currency|default:'XAF' }}">
+        </div>
+
+        <div class="col-md-4">
+          <label for="id_gl_account" class="form-label fw-semibold">GL Account</label>
+          <select name="gl_account" id="id_gl_account" class="form-select form-select-sm">
+            <option value="">-- Select GL Account --</option>
+            {% for gl in gl_accounts %}
+              <option value="{{ gl.pk }}" {% if account.gl_account_id == gl.pk %}selected{% endif %}>
+                {{ gl.code }} — {{ gl.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-4">
+          <label for="id_opening_balance" class="form-label fw-semibold">Opening Balance (XAF)</label>
+          <input type="number" name="opening_balance" id="id_opening_balance" class="form-control form-control-sm"
+                 value="{{ account.opening_balance|default:'0' }}" step="1" min="0">
+        </div>
+
+        {% if editing %}
+        <div class="col-md-4 d-flex align-items-end">
+          <div class="form-check">
+            <input type="checkbox" name="is_active" id="id_is_active" class="form-check-input"
+                   {% if account.is_active %}checked{% endif %}>
+            <label for="id_is_active" class="form-check-label">Active</label>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="col-12">
+          <label for="id_notes" class="form-label fw-semibold">Notes</label>
+          <textarea name="notes" id="id_notes" rows="3" class="form-control form-control-sm">{{ account.notes|default:'' }}</textarea>
+        </div>
+      </div>
+
+      <div class="mt-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-check-lg me-1"></i>{% if editing %}Update{% else %}Create{% endif %}
+        </button>
+        <a href="{% url 'billing:bank_account_list' %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

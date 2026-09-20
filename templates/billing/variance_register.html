@@ -1,0 +1,128 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Cash Variance Register{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Finance</li>
+    <li class="breadcrumb-item active">Cash Variance Register</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-exclamation-diamond me-2"></i>Cash Variance Register</h4>
+    <small class="text-muted">Track and resolve cash discrepancies</small>
+  </div>
+</div>
+
+{% if unresolved > 0 %}
+<div class="alert alert-warning d-flex align-items-center">
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <strong>{{ unresolved }} unresolved variance{{ unresolved|pluralize }}.</strong>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Cashier</th>
+          <th class="text-end">Expected</th>
+          <th class="text-end">Declared</th>
+          <th class="text-end">Variance</th>
+          <th>Explanation</th>
+          <th>Status</th>
+          <th>Resolution</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in variances %}
+        <tr>
+          <td class="fw-semibold">{{ v.date|date:"d M Y" }}</td>
+          <td>{{ v.cashier.get_full_name }}</td>
+          <td class="text-end">{{ v.expected|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end">{{ v.declared|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end fw-bold {% if v.variance < 0 %}text-danger{% elif v.variance > 0 %}text-warning{% else %}text-success{% endif %}">
+            {% if v.variance > 0 %}+{% endif %}{{ v.variance|floatformat:0|intcomma }} XAF
+          </td>
+          <td>{{ v.explanation|default:"&mdash;"|truncatewords:10 }}</td>
+          <td>
+            {% if v.resolved %}
+            <span class="badge bg-success">Resolved</span>
+            {% else %}
+            <span class="badge bg-warning text-dark">Unresolved</span>
+            {% endif %}
+          </td>
+          <td>{{ v.resolution|default:"&mdash;"|truncatewords:10 }}</td>
+          <td class="text-end">
+            {% if not v.resolved %}
+            <button type="button" class="btn btn-sm btn-outline-success py-0 px-2"
+                    data-bs-toggle="modal" data-bs-target="#resolveModal{{ v.pk }}">
+              <i class="bi bi-check-lg me-1"></i>Resolve
+            </button>
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center py-4 text-muted">
+            No cash variances recorded.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Resolve modals #}
+{% for v in variances %}
+{% if not v.resolved %}
+<div class="modal fade" id="resolveModal{{ v.pk }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-check-circle me-1"></i>Resolve Variance &mdash; {{ v.date|date:"d M Y" }} ({{ v.cashier.get_full_name }})
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'billing:variance_resolve' v.pk %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="mb-2 small">
+            <strong>Variance:</strong>
+            <span class="{% if v.variance < 0 %}text-danger{% else %}text-warning{% endif %}">
+              {% if v.variance > 0 %}+{% endif %}{{ v.variance|floatformat:0|intcomma }} XAF
+            </span>
+          </div>
+          <div class="mb-3">
+            <label for="id_resolution_{{ v.pk }}" class="form-label fw-semibold">Resolution</label>
+            <textarea name="resolution" id="id_resolution_{{ v.pk }}" class="form-control" rows="3"
+                      required placeholder="Describe how this variance was resolved..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success btn-sm">
+            <i class="bi bi-check-lg me-1"></i>Mark Resolved
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

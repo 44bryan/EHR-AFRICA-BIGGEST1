@@ -1,0 +1,141 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}DSF — Annual Tax Return {{ year }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item active">DSF {{ year }}</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Declaration Statistique et Fiscale (DSF)</h4>
+    <small class="text-muted">Annual Tax Return — Fiscal Year {{ year }}</small>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <form method="get" class="d-flex gap-2">
+      <input type="number" name="year" class="form-control form-control-sm" value="{{ year }}" style="width:100px;">
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Go</button>
+    </form>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Total Revenue (Chiffre d'Affaires)</div>
+        <div class="fs-4 fw-bold text-success">{{ revenue|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Total Charges</div>
+        <div class="fs-4 fw-bold text-danger">{{ total_expense|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Resultat Net</div>
+        <div class="fs-4 fw-bold {% if net_result >= 0 %}text-success{% else %}text-danger{% endif %}">{{ net_result|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Dotation aux Amortissements</div>
+        <div class="fs-4 fw-bold text-info">{{ total_depreciation|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+        <div class="text-muted" style="font-size:.7rem;">{{ asset_count }} asset{{ asset_count|pluralize }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-receipt me-1"></i>Charges par Categorie</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Categorie</th><th class="text-end">Montant (XAF)</th></tr>
+          </thead>
+          <tbody>
+            {% for e in expenses %}
+            <tr>
+              <td>{{ e.category }}</td>
+              <td class="text-end fw-semibold">{{ e.total|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted py-3">Aucune charge</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light">
+            <tr><td class="fw-bold">Total Charges</td><td class="text-end fw-bold">{{ total_expense|floatformat:0|intcomma }} XAF</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-journal-text me-1"></i>Resume GL par Classe OHADA</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Classe</th><th class="text-end">Total Debit (XAF)</th><th class="text-end">Total Credit (XAF)</th></tr>
+          </thead>
+          <tbody>
+            {% for row in gl_summary %}
+            <tr>
+              <td class="fw-semibold">
+                Classe {{ row.acct_class }}
+                {% if row.acct_class == "1" %} — Capitaux{% elif row.acct_class == "2" %} — Immobilisations{% elif row.acct_class == "3" %} — Stocks{% elif row.acct_class == "4" %} — Tiers{% elif row.acct_class == "5" %} — Tresorerie{% elif row.acct_class == "6" %} — Charges{% elif row.acct_class == "7" %} — Produits{% endif %}
+              </td>
+              <td class="text-end">{{ row.total_dr|floatformat:0|intcomma|default:"0" }}</td>
+              <td class="text-end">{{ row.total_cr|floatformat:0|intcomma|default:"0" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-3">No GL data for {{ year }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold"><i class="bi bi-info-circle me-1"></i>Informations Complementaires</div>
+  <div class="card-body small">
+    <div class="row">
+      <div class="col-md-4">
+        <div class="text-muted">Raison Sociale</div>
+        <div class="fw-semibold">AFRICA EYE FOUNDATION / MICEI</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted">Exercice Fiscal</div>
+        <div class="fw-semibold">01/01/{{ year }} — 31/12/{{ year }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted">Devise</div>
+        <div class="fw-semibold">XAF (FCFA)</div>
+      </div>
+    </div>
+    <hr>
+    <p class="text-muted mb-0">
+      Ce rapport est genere automatiquement a partir des donnees comptables du systeme EHR.
+      Il doit etre revise par le Directeur Financier et l'Expert-Comptable avant depot aupres
+      de l'Administration Fiscale.
+    </p>
+  </div>
+</div>
+{% endblock %}

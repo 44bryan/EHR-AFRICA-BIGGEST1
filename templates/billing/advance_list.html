@@ -1,0 +1,102 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Staff Advances{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Finance</li>
+    <li class="breadcrumb-item active">Staff Advances</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-cash-coin me-2"></i>Staff Advances</h4>
+    <small class="text-muted">Track salary and business advance requests</small>
+  </div>
+  <a href="{% url 'billing:advance_request' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-circle me-1"></i>Request Advance
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Staff Name</th>
+          <th>Type</th>
+          <th class="text-end">Amount Requested</th>
+          <th class="text-end">Amount Approved</th>
+          <th>Status</th>
+          <th>Requested Date</th>
+          <th>Settlement Due</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for advance in advances %}
+        <tr>
+          <td class="fw-semibold">{{ advance.staff.get_full_name }}</td>
+          <td>
+            {% if advance.advance_type == 'SALARY' %}
+            <span class="badge bg-info text-dark">Salary</span>
+            {% elif advance.advance_type == 'BUSINESS' %}
+            <span class="badge bg-secondary">Business</span>
+            {% else %}
+            <span class="badge bg-light text-dark border">{{ advance.get_advance_type_display }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ advance.amount_requested|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end">
+            {% if advance.amount_approved %}
+            {{ advance.amount_approved|floatformat:0|intcomma }} XAF
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if advance.status == 'REQUESTED' %}
+            <span class="badge bg-warning text-dark">Requested</span>
+            {% elif advance.status == 'APPROVED' %}
+            <span class="badge bg-info text-dark">Approved</span>
+            {% elif advance.status == 'DISBURSED' %}
+            <span class="badge bg-primary">Disbursed</span>
+            {% elif advance.status == 'SETTLED' %}
+            <span class="badge bg-success">Settled</span>
+            {% elif advance.status == 'REJECTED' %}
+            <span class="badge bg-danger">Rejected</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ advance.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td>{{ advance.requested_date|date:"d M Y" }}</td>
+          <td>
+            {{ advance.settlement_due|date:"d M Y"|default:"&mdash;" }}
+            {% if advance.is_overdue %}
+            <span class="badge bg-danger ms-1">Overdue</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'billing:advance_detail' advance.pk %}" class="btn btn-sm btn-outline-primary py-0 px-2">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center py-4 text-muted">
+            No advance requests found. <a href="{% url 'billing:advance_request' %}">Create the first request</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Dispose Asset — {{ asset.name }}{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:asset_list' %}">Asset Register</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:asset_disposal_list' %}">Disposals</a></li>
+    <li class="breadcrumb-item active">Dispose Asset</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7 col-md-9">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom">
+        <h5 class="mb-0 fw-bold"><i class="bi bi-trash3 me-2"></i>Dispose Asset &mdash; {{ asset.name }}</h5>
+      </div>
+      <div class="card-body">
+        {# Asset info summary #}
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="border rounded p-3 bg-light">
+              <div class="text-muted small">Asset #</div>
+              <div class="fw-bold">{{ asset.serial_number|default:"N/A" }}</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="border rounded p-3 bg-light">
+              <div class="text-muted small">Name</div>
+              <div class="fw-bold">{{ asset.name }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="border rounded p-3 bg-light">
+              <div class="text-muted small">Category</div>
+              <div class="fw-semibold">{{ asset.get_category_display }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="border rounded p-3 bg-light">
+              <div class="text-muted small">Purchase Cost</div>
+              <div class="fw-bold text-primary">{{ asset.purchase_cost|floatformat:0|intcomma }} XAF</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="border rounded p-3 bg-light">
+              <div class="text-muted small">Net Book Value</div>
+              <div class="fw-bold {% if asset.net_book_value <= 0 %}text-muted{% else %}text-success{% endif %}">
+                {{ asset.net_book_value|floatformat:0|intcomma }} XAF
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="border rounded p-3 bg-light">
+              <div class="text-muted small">Accumulated Depreciation</div>
+              <div class="fw-bold text-danger">{{ asset.accumulated_depreciation|floatformat:0|intcomma }} XAF</div>
+            </div>
+          </div>
+        </div>
+
+        <hr>
+
+        {# Disposal form #}
+        <form method="post" action="{% url 'billing:asset_dispose' asset.pk %}">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label for="id_disposal_method" class="form-label fw-semibold">Disposal Method <span class="text-danger">*</span></label>
+            <select name="disposal_method" id="id_disposal_method" class="form-select" required>
+              <option value="">-- Select method --</option>
+              {% for value, label in disposal_methods %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label for="id_reason" class="form-label fw-semibold">Reason for Disposal <span class="text-danger">*</span></label>
+            <textarea name="reason" id="id_reason" class="form-control" rows="3"
+                      required placeholder="Describe why this asset is being disposed..."></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label for="id_estimated_value" class="form-label fw-semibold">Estimated Value (XAF)</label>
+            <div class="input-group">
+              <input type="number" name="estimated_value" id="id_estimated_value" class="form-control"
+                     min="0" step="1" placeholder="0"
+                     value="{{ asset.net_book_value|floatformat:0 }}">
+              <span class="input-group-text">XAF</span>
+            </div>
+            <div class="form-text">Pre-filled with net book value. Adjust as needed.</div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{% url 'billing:asset_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-danger">
+              <i class="bi bi-trash3 me-1"></i>Submit Disposal Request
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

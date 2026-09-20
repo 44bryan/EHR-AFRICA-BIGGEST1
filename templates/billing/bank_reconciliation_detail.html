@@ -1,0 +1,217 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Reconciliation — {{ recon.bank_account }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:bank_reconciliation_list' %}">Reconciliations</a></li>
+    <li class="breadcrumb-item active">Detail</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold">
+      <i class="bi bi-clipboard-check me-2"></i>Reconciliation &mdash; {{ recon.bank_account }}
+    </h4>
+    <small class="text-muted">
+      Period: {{ recon.period_start|date:"d M Y" }} &ndash; {{ recon.period_end|date:"d M Y" }}
+    </small>
+  </div>
+  <div>
+    {% if recon.status == 'DRAFT' %}
+      <span class="badge bg-warning text-dark fs-6">Draft</span>
+    {% elif recon.status == 'COMPLETED' %}
+      <span class="badge bg-info fs-6">Completed</span>
+    {% elif recon.status == 'REVIEWED' %}
+      <span class="badge bg-success fs-6">Reviewed</span>
+    {% else %}
+      <span class="badge bg-secondary fs-6">{{ recon.status }}</span>
+    {% endif %}
+  </div>
+</div>
+
+{# Summary cards #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-5 fw-bold text-primary">{{ recon.bank_statement_balance|floatformat:0|intcomma }}</div>
+        <div class="text-muted small">Bank Statement Balance (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-5 fw-bold text-info">{{ recon.book_balance|floatformat:0|intcomma }}</div>
+        <div class="text-muted small">Book Balance (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-5 fw-bold text-success">{{ bank_adj|floatformat:0|intcomma }}</div>
+        <div class="text-muted small">Adjusted Bank Balance (XAF)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <div class="fs-5 fw-bold text-warning">{{ book_adj|floatformat:0|intcomma }}</div>
+        <div class="text-muted small">Adjusted Book Balance (XAF)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Reconciling items table #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-list-ul me-1"></i>Reconciling Items
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Type</th>
+            <th>Date</th>
+            <th>Reference</th>
+            <th>Description</th>
+            <th class="text-end">Amount (XAF)</th>
+            <th class="text-center">Side</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td>{{ item.get_item_type_display|default:item.item_type }}</td>
+            <td>{{ item.date|date:"d M Y" }}</td>
+            <td><code>{{ item.reference|default:"-" }}</code></td>
+            <td>{{ item.description }}</td>
+            <td class="text-end">{{ item.amount|floatformat:0|intcomma }} XAF</td>
+            <td class="text-center">
+              {% if item.side == 'BANK' %}
+                <span class="badge bg-primary">Bank</span>
+              {% else %}
+                <span class="badge bg-info">Book</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-3">No reconciling items yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if recon.status == 'DRAFT' %}
+{# Add reconciling item form #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-plus-circle me-1"></i>Add Reconciling Item
+  </div>
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add_item">
+
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label for="id_item_type" class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
+          <select name="item_type" id="id_item_type" class="form-select form-select-sm" required>
+            <option value="">-- Select --</option>
+            {% for val, label in item_types %}
+              <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-2">
+          <label for="id_item_date" class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+          <input type="date" name="date" id="id_item_date" class="form-control form-control-sm" required>
+        </div>
+
+        <div class="col-md-2">
+          <label for="id_item_reference" class="form-label fw-semibold">Reference</label>
+          <input type="text" name="reference" id="id_item_reference" class="form-control form-control-sm">
+        </div>
+
+        <div class="col-md-5">
+          <label for="id_item_description" class="form-label fw-semibold">Description <span class="text-danger">*</span></label>
+          <input type="text" name="description" id="id_item_description" class="form-control form-control-sm" required>
+        </div>
+
+        <div class="col-md-3">
+          <label for="id_item_amount" class="form-label fw-semibold">Amount (XAF) <span class="text-danger">*</span></label>
+          <input type="number" name="amount" id="id_item_amount" class="form-control form-control-sm" step="1" min="0" required>
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Side <span class="text-danger">*</span></label>
+          <div class="d-flex gap-3 mt-1">
+            <div class="form-check">
+              <input type="radio" name="side" value="BANK" id="id_side_bank" class="form-check-input" checked required>
+              <label for="id_side_bank" class="form-check-label">Bank</label>
+            </div>
+            <div class="form-check">
+              <input type="radio" name="side" value="BOOK" id="id_side_book" class="form-check-input">
+              <label for="id_side_book" class="form-check-label">Book</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-5 d-flex align-items-end">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>Add Item
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Mark Complete #}
+<div class="d-flex gap-2">
+  <form method="post" action="{% url 'billing:bank_reconciliation_complete' recon.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-success btn-sm"
+            onclick="return confirm('Mark this reconciliation as complete?')">
+      <i class="bi bi-check-circle me-1"></i>Mark Complete
+    </button>
+  </form>
+  <a href="{% url 'billing:bank_reconciliation_list' %}" class="btn btn-outline-secondary btn-sm">Back to List</a>
+</div>
+{% endif %}
+
+{% if recon.status == 'COMPLETED' %}
+<div class="d-flex gap-2">
+  <form method="post" action="{% url 'billing:bank_reconciliation_review' recon.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-success btn-sm"
+            onclick="return confirm('Approve this reconciliation?')">
+      <i class="bi bi-shield-check me-1"></i>Review &amp; Approve
+    </button>
+  </form>
+  <a href="{% url 'billing:bank_reconciliation_list' %}" class="btn btn-outline-secondary btn-sm">Back to List</a>
+</div>
+{% endif %}
+
+{% if recon.status == 'REVIEWED' %}
+<div class="mt-2">
+  <a href="{% url 'billing:bank_reconciliation_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to List
+  </a>
+</div>
+{% endif %}
+{% endblock %}

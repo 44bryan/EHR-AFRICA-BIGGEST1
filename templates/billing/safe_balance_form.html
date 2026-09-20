@@ -1,0 +1,116 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Record Safe Balance{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:safe_balance_list' %}">Safe Balance Log</a></li>
+    <li class="breadcrumb-item active">Record Balance</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6 col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom">
+        <h5 class="mb-0 fw-bold"><i class="bi bi-safe me-2"></i>Record Safe Balance</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          <strong>Policy:</strong> Maximum 5,000,000 XAF to be kept in the safe at any given time.
+        </div>
+
+        <form method="post" action="{% url 'billing:safe_balance_record' %}">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label for="id_date" class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+            <input type="date" name="date" id="id_date" class="form-control"
+                   value="{{ today|date:'Y-m-d' }}" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="id_opening_balance" class="form-label fw-semibold">Opening Balance (XAF) <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="number" name="opening_balance" id="id_opening_balance" class="form-control"
+                     min="0" step="1" required value="{{ last_closing|floatformat:0|default:'0' }}">
+              <span class="input-group-text">XAF</span>
+            </div>
+            {% if last_closing %}
+            <div class="form-text">Pre-filled from last closing balance: {{ last_closing|floatformat:0|intcomma }} XAF</div>
+            {% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label for="id_total_deposits" class="form-label fw-semibold">Total Deposits (XAF) <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="number" name="total_deposits" id="id_total_deposits" class="form-control"
+                     min="0" step="1" required placeholder="0">
+              <span class="input-group-text">XAF</span>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="id_total_withdrawals" class="form-label fw-semibold">Total Withdrawals (XAF) <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="number" name="total_withdrawals" id="id_total_withdrawals" class="form-control"
+                     min="0" step="1" required placeholder="0">
+              <span class="input-group-text">XAF</span>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="id_closing_balance" class="form-label fw-semibold">Closing Balance (XAF) <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="number" name="closing_balance" id="id_closing_balance" class="form-control"
+                     min="0" step="1" required placeholder="0">
+              <span class="input-group-text">XAF</span>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="id_notes" class="form-label fw-semibold">Notes</label>
+            <textarea name="notes" id="id_notes" class="form-control" rows="2"
+                      placeholder="Optional notes..."></textarea>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{% url 'billing:safe_balance_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>Save Balance
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  const opening = document.getElementById('id_opening_balance');
+  const deposits = document.getElementById('id_total_deposits');
+  const withdrawals = document.getElementById('id_total_withdrawals');
+  const closing = document.getElementById('id_closing_balance');
+
+  function recalc() {
+    const o = parseFloat(opening.value) || 0;
+    const d = parseFloat(deposits.value) || 0;
+    const w = parseFloat(withdrawals.value) || 0;
+    closing.value = o + d - w;
+  }
+
+  [opening, deposits, withdrawals].forEach(function(el) {
+    el.addEventListener('input', recalc);
+  });
+})();
+</script>
+{% endblock %}

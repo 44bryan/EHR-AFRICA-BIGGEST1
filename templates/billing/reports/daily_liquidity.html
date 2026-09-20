@@ -1,0 +1,112 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Daily Liquidity Position{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:report_daily_summary' %}">Reports</a></li>
+    <li class="breadcrumb-item active">Daily Liquidity</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Daily Liquidity Position</h4>
+    <small class="text-muted">{{ today|date:"d M Y" }}</small>
+  </div>
+  <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+</div>
+
+{% if safe_balance > safe_limit %}
+<div class="alert alert-danger d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <strong>Safe balance ({{ safe_balance|floatformat:0|intcomma }} XAF) exceeds the {{ safe_limit|floatformat:0|intcomma }} XAF policy limit!</strong>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Total Liquidity</div>
+        <div class="fs-4 fw-bold text-primary">{{ total_liquidity|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Safe Balance</div>
+        <div class="fs-4 fw-bold {% if safe_balance > safe_limit %}text-danger{% else %}text-success{% endif %}">{{ safe_balance|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Bank Balances</div>
+        <div class="fs-4 fw-bold text-info">{{ total_bank|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Today's Collections</div>
+        <div class="fs-4 fw-bold text-success">{{ today_collections|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-bank me-1"></i>Bank Accounts</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Bank</th><th>Account</th><th class="text-end">Balance</th><th>As of</th></tr>
+          </thead>
+          <tbody>
+            {% for b in bank_data %}
+            <tr>
+              <td class="fw-semibold">{{ b.account.bank_name }}</td>
+              <td class="text-muted">{{ b.account.account_number }}</td>
+              <td class="text-end">{{ b.last_balance|floatformat:0|intcomma }} XAF</td>
+              <td class="text-muted">{{ b.last_date|date:"d/m/Y"|default:"Opening" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No bank accounts configured</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light">
+            <tr><td colspan="2" class="fw-bold">Total</td><td class="text-end fw-bold">{{ total_bank|floatformat:0|intcomma }} XAF</td><td></td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-safe me-1"></i>Deductions & Pending</div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+          <span>Outstanding Cheques</span>
+          <span class="fw-bold text-danger">{{ outstanding_cheques|floatformat:0|intcomma }} XAF</span>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Pending Bank Deposits</span>
+          <span class="fw-bold text-warning">{{ pending_deposits|floatformat:0|intcomma }} XAF</span>
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between">
+          <span class="fw-bold">Net Available Liquidity</span>
+          <span class="fw-bold text-primary fs-5">{{ total_liquidity|floatformat:0|intcomma }} XAF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

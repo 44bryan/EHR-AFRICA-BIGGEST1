@@ -20,6 +20,11 @@ AR_INSURANCE          = '412000'   # Insurance Receivables
 AR_CORPORATE          = '413000'   # Corporate Receivables
 AP_VENDORS            = '401000'   # Accounts Payable (Suppliers)
 PATIENT_DEPOSITS      = '499000'   # Patient Wallet / Deposits Liability
+STAFF_ADVANCES        = '421000'   # Staff Advances Receivable
+LOSS_ON_DISPOSAL      = '654000'   # Loss on Asset Disposal
+GAIN_ON_DISPOSAL      = '754000'   # Gain on Asset Disposal
+ACCUM_DEPRECIATION    = '281000'   # Accumulated Depreciation
+FIXED_ASSETS          = '241000'   # Fixed Assets (Equipment)
 
 # Revenue accounts by ServiceCategory
 REVENUE_MAP = {
@@ -286,3 +291,128 @@ def reverse_entry(original_entry, reason, user=None):
     except Exception as e:
         logger.exception(f"GL reversal failed for entry {original_entry.pk}: {e}")
         return None
+
+
+def post_cash_to_bank(deposit, user=None):
+    """
+    GL posting for cash deposit to bank.
+    Dr  Bank 521000  |  Cr  Cash 572000
+    """
+    try:
+        bank_code = deposit.bank_account.gl_account.code if deposit.bank_account.gl_account else BANK_ACCOUNT
+        return _create_entry(
+            date=deposit.deposit_date,
+            description=f"Cash deposit to {deposit.bank_account.bank_name} — {deposit.reference}",
+            reference=deposit.reference or f"DEP-{deposit.pk}",
+            source_type='cash_to_bank',
+            source_id=deposit.pk,
+            lines=[
+                (bank_code, deposit.amount, 0, f"Bank deposit — {deposit.bank_account.bank_name}"),
+                (CASH_ACCOUNT, 0, deposit.amount, "Cash withdrawn from safe"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for cash-to-bank {deposit.pk}: {e}")
+
+
+def post_advance_disbursement(advance, user=None):
+    """
+    GL posting when a staff advance is disbursed.
+    Dr  Staff Advance 421000  |  Cr  Cash/Bank
+    """
+    try:
+        cr_code = PAYMENT_METHOD_ACCOUNT.get(advance.payment_method, CASH_ACCOUNT)
+        if cr_code is None:
+            cr_code = CASH_ACCOUNT
+        amount = advance.amount_approved or advance.amount_requested
+        return _create_entry(
+            date=advance.disbursed_date,
+            description=f"Staff advance to {advance.staff.get_full_name()} ({advance.get_advance_type_display()})",
+            reference=advance.reference or f"ADV-{advance.pk}",
+            source_type='advance_disburse',
+            source_id=advance.pk,
+            lines=[
+                (STAFF_ADVANCES, amount, 0, f"Advance to {advance.staff.get_full_name()}"),
+                (cr_code, 0, amount, "Cash/bank disbursement"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for advance {advance.pk}: {e}")
+
+
+def post_advance_settlement(advance, user=None):
+    """
+    GL posting when a staff advance is settled.
+    Dr  Cash/Bank  |  Cr  Staff Advance 421000
+    """
+    try:
+        amount = advance.amount_approved or advance.amount_requested
+        return _create_entry(
+            date=advance.settled_date,
+            description=f"Advance settlement — {advance.staff.get_full_name()}",
+            reference=f"ADVS-{advance.pk}",
+            source_type='advance_settle',
+            source_id=advance.pk,
+            lines=[
+                (CASH_ACCOUNT, amount, 0, "Cash received for advance settlement"),
+                (STAFF_ADVANCES, 0, amount, f"Settlement of advance by {advance.staff.get_full_name()}"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for advance settlement {advance.pk}: {e}")
+
+
+def post_asset_disposal(disposal, user=None):
+    """
+    GL posting for fixed asset disposal.
+
+    Dr  Accumulated Depreciation (for depreciated amount)
+    Dr  Cash/Bank (for actual proceeds, if sold)
+    Dr  Loss on Disposal (if NBV > proceeds)  OR  Cr Gain on Disposal (if proceeds > NBV)
+    Cr  Fixed Asset (at original cost)
+    """
+    try:
+        asset = disposal.asset
+        cost = asset.purchase_cost
+        accum_dep = Decimal(str(asset.accumulated_depreciation))
+        nbv = cost - accum_dep
+        proceeds = disposal.actual_proceeds
+
+        lines = [
+            (ACCUM_DEPRECIATION, accum_dep, 0, f"Accumulated depreciation on {asset.name}"),
+            (FIXED_ASSETS, 0, cost, f"Disposal of {asset.name} (cost)"),
+        ]
+
+        if proceeds > 0:
+            lines.append(
+                (CASH_ACCOUNT, proceeds, 0, f"Proceeds from disposal of {asset.name}")
+            )
+
+        diff = nbv - proceeds
+        if diff > 0:
+            lines.append(
+                (LOSS_ON_DISPOSAL, diff, 0, f"Loss on disposal of {asset.name}")
+            )
+        elif diff < 0:
+            lines.append(
+                (GAIN_ON_DISPOSAL, 0, abs(diff), f"Gain on disposal of {asset.name}")
+            )
+
+        entry = _create_entry(
+            date=disposal.disposal_date,
+            description=f"Asset disposal: {asset.name} ({disposal.get_disposal_method_display()})",
+            reference=f"DISP-{disposal.pk}",
+            source_type='asset_disposal',
+            source_id=disposal.pk,
+            lines=lines,
+            user=user,
+        )
+        if entry:
+            disposal.journal_entry = entry
+            disposal.save(update_fields=['journal_entry'])
+        return entry
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for asset disposal {disposal.pk}: {e}")

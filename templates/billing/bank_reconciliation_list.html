@@ -1,0 +1,82 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Bank Reconciliations{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Cash Management</li>
+    <li class="breadcrumb-item active">Bank Reconciliations</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-clipboard-check me-2"></i>Bank Reconciliations</h4>
+    <small class="text-muted">Match bank statements to book entries</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:bank_statement_import' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-upload me-1"></i>Import Statement
+    </a>
+    <a href="{% url 'billing:bank_reconciliation_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>New Reconciliation
+    </a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Period End</th>
+            <th>Bank</th>
+            <th class="text-end">Bank Balance</th>
+            <th class="text-end">Book Balance</th>
+            <th class="text-center">Status</th>
+            <th>Prepared By</th>
+            <th>Reviewed By</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in recons %}
+          <tr>
+            <td>{{ r.period_end|date:"d M Y" }}</td>
+            <td>{{ r.bank_account.bank_name }}</td>
+            <td class="text-end">{{ r.bank_statement_balance|floatformat:0|intcomma }} XAF</td>
+            <td class="text-end">{{ r.book_balance|floatformat:0|intcomma }} XAF</td>
+            <td class="text-center">
+              {% if r.status == 'DRAFT' %}
+                <span class="badge bg-warning text-dark">Draft</span>
+              {% elif r.status == 'COMPLETED' %}
+                <span class="badge bg-info">Completed</span>
+              {% elif r.status == 'REVIEWED' %}
+                <span class="badge bg-success">Reviewed</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ r.status }}</span>
+              {% endif %}
+            </td>
+            <td>{{ r.prepared_by|default:"-" }}</td>
+            <td>{{ r.reviewed_by|default:"-" }}</td>
+            <td class="text-end">
+              <a href="{% url 'billing:bank_reconciliation_detail' r.pk %}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-eye me-1"></i>View
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">No reconciliations found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

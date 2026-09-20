@@ -1,0 +1,151 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Asset Disposals{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:asset_list' %}">Asset Register</a></li>
+    <li class="breadcrumb-item active">Asset Disposals</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-trash3 me-2"></i>Asset Disposals</h4>
+    <small class="text-muted">Asset disposal requests and approvals</small>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Asset Name</th>
+          <th>Asset #</th>
+          <th>Method</th>
+          <th>Status</th>
+          <th class="text-end">Estimated Value</th>
+          <th class="text-end">Actual Proceeds</th>
+          <th>Requested By</th>
+          <th>Disposal Date</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for disposal in disposals %}
+        <tr>
+          <td class="fw-semibold">{{ disposal.asset.name }}</td>
+          <td class="text-muted">{{ disposal.asset.serial_number|default:"&mdash;" }}</td>
+          <td>
+            <span class="badge bg-secondary">{{ disposal.get_disposal_method_display }}</span>
+          </td>
+          <td>
+            {% if disposal.status == 'REQUESTED' %}
+            <span class="badge bg-warning text-dark">Requested</span>
+            {% elif disposal.status == 'APPROVED' %}
+            <span class="badge bg-info text-dark">Approved</span>
+            {% elif disposal.status == 'COMPLETED' %}
+            <span class="badge bg-success">Completed</span>
+            {% elif disposal.status == 'REJECTED' %}
+            <span class="badge bg-danger">Rejected</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ disposal.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ disposal.estimated_value|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end">
+            {% if disposal.actual_proceeds is not None %}
+            {{ disposal.actual_proceeds|floatformat:0|intcomma }} XAF
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+          <td>{{ disposal.requested_by.get_full_name }}</td>
+          <td>{{ disposal.disposal_date|date:"d M Y"|default:"&mdash;" }}</td>
+          <td class="text-end">
+            {% if disposal.status == 'REQUESTED' %}
+            <form method="post" action="{% url 'billing:asset_disposal_approve' disposal.pk %}" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="approve">
+              <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2"
+                      onclick="return confirm('Approve this disposal?')">
+                <i class="bi bi-check-lg"></i> Approve
+              </button>
+            </form>
+            <form method="post" action="{% url 'billing:asset_disposal_approve' disposal.pk %}" class="d-inline ms-1">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="reject">
+              <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"
+                      onclick="return confirm('Reject this disposal?')">
+                <i class="bi bi-x-lg"></i> Reject
+              </button>
+            </form>
+            {% elif disposal.status == 'APPROVED' %}
+            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2"
+                    data-bs-toggle="modal" data-bs-target="#completeModal{{ disposal.pk }}">
+              <i class="bi bi-check2-all me-1"></i>Complete
+            </button>
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center py-4 text-muted">
+            No asset disposals recorded.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Complete disposal modals #}
+{% for disposal in disposals %}
+{% if disposal.status == 'APPROVED' %}
+<div class="modal fade" id="completeModal{{ disposal.pk }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-check2-all me-1"></i>Complete Disposal &mdash; {{ disposal.asset.name }}
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'billing:asset_disposal_approve' disposal.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="complete">
+        <div class="modal-body">
+          <div class="mb-2 small">
+            <strong>Estimated Value:</strong> {{ disposal.estimated_value|floatformat:0|intcomma }} XAF
+          </div>
+          <div class="mb-3">
+            <label for="id_actual_proceeds_{{ disposal.pk }}" class="form-label fw-semibold">Actual Proceeds (XAF)</label>
+            <div class="input-group">
+              <input type="number" name="actual_proceeds" id="id_actual_proceeds_{{ disposal.pk }}"
+                     class="form-control" min="0" step="1" required placeholder="0">
+              <span class="input-group-text">XAF</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-check2-all me-1"></i>Complete Disposal
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Create Annual Budget{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:budget_list' %}">Budget</a></li>
+    <li class="breadcrumb-item active">Annual Create</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold">Create Annual Budget</h5>
+        <a href="{% url 'billing:budget_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Fiscal Year <span class="text-danger">*</span></label>
+              <input type="number" name="fiscal_year" class="form-control" value="{{ current_year }}" required>
+            </div>
+            <div class="col-md-8">
+              <div class="alert alert-info py-2 small mb-0 mt-4">
+                <i class="bi bi-info-circle me-1"></i>
+                Annual amounts will be divided equally across 12 months. Existing budget lines for the same category/month will not be overwritten.
+              </div>
+            </div>
+          </div>
+
+          <h6 class="fw-bold mb-3"><i class="bi bi-list-check me-1"></i>Budget Lines</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0 small" id="budgetTable">
+              <thead class="table-light">
+                <tr>
+                  <th style="min-width:200px;">Expense Category <span class="text-danger">*</span></th>
+                  <th style="width:180px;">Annual Amount (XAF) <span class="text-danger">*</span></th>
+                  <th style="width:120px;">Monthly (est.)</th>
+                  <th style="width:50px;"></th>
+                </tr>
+              </thead>
+              <tbody id="budgetBody">
+                <tr class="budget-row">
+                  <td>
+                    <select name="category[]" class="form-select form-select-sm" required>
+                      <option value="">-- Select --</option>
+                      {% for val, label in categories %}
+                      <option value="{{ val }}">{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" name="annual_amount[]" class="form-control form-control-sm annual-input" min="0" step="1000" required>
+                  </td>
+                  <td class="text-end text-muted monthly-est">—</td>
+                  <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 remove-row"><i class="bi bi-x-lg"></i></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="addRow">
+            <i class="bi bi-plus me-1"></i>Add Line
+          </button>
+
+          <hr class="my-4">
+          <button type="submit" class="btn btn-primary px-4">
+            <i class="bi bi-save me-1"></i>Create Annual Budget
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const tbody = document.getElementById('budgetBody');
+  const addBtn = document.getElementById('addRow');
+
+  function createRow() {
+    const row = tbody.querySelector('.budget-row').cloneNode(true);
+    row.querySelector('select').value = '';
+    row.querySelector('.annual-input').value = '';
+    row.querySelector('.monthly-est').textContent = '—';
+    return row;
+  }
+
+  addBtn.addEventListener('click', function() { tbody.appendChild(createRow()); });
+
+  tbody.addEventListener('click', function(e) {
+    const btn = e.target.closest('.remove-row');
+    if (btn && tbody.querySelectorAll('.budget-row').length > 1) {
+      btn.closest('tr').remove();
+    }
+  });
+
+  tbody.addEventListener('input', function(e) {
+    if (e.target.classList.contains('annual-input')) {
+      const val = parseFloat(e.target.value) || 0;
+      const monthly = Math.round(val / 12);
+      e.target.closest('tr').querySelector('.monthly-est').textContent =
+        monthly.toLocaleString('fr-FR') + ' XAF';
+    }
+  });
+});
+</script>
+{% endblock %}

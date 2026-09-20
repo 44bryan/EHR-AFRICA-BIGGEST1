@@ -1648,3 +1648,552 @@ class InvoiceTierChange(AuditModel):
             f"{self.invoice.invoice_number}: "
             f"{self.old_tier} → {self.new_tier} by {self.changed_by.username}"
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BANK OPERATIONS  —  Bank Accounts, Statements, Reconciliation, Cash-to-Bank
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BankAccount(AuditModel):
+    """Bank account linked to OHADA GL account (class 521)."""
+    account_name   = models.CharField(max_length=200)
+    bank_name      = models.CharField(max_length=200)
+    account_number = models.CharField(max_length=50, unique=True)
+    branch         = models.CharField(max_length=200, blank=True)
+    swift_code     = models.CharField(max_length=20, blank=True)
+    currency       = models.CharField(max_length=5, default='XAF')
+    gl_account     = models.ForeignKey(
+        GLAccount, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='bank_accounts',
+        help_text='Maps to GL class 521xxx'
+    )
+    opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    is_active       = models.BooleanField(default=True)
+    notes           = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['bank_name', 'account_name']
+        verbose_name = 'Bank Account'
+        verbose_name_plural = 'Bank Accounts'
+
+    def __str__(self):
+        return f"{self.bank_name} — {self.account_number}"
+
+
+class BankStatement(AuditModel):
+    """Imported bank statement line for reconciliation."""
+    bank_account   = models.ForeignKey(
+        BankAccount, on_delete=models.CASCADE, related_name='statements'
+    )
+    statement_date = models.DateField()
+    reference      = models.CharField(max_length=100, blank=True)
+    description    = models.CharField(max_length=300)
+    debit_amount   = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    credit_amount  = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    balance        = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    value_date     = models.DateField(null=True, blank=True)
+    is_reconciled  = models.BooleanField(default=False)
+    reconciled_with = models.ForeignKey(
+        JournalEntry, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='reconciled_statements'
+    )
+    imported_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-statement_date', '-imported_at']
+        verbose_name = 'Bank Statement Line'
+        verbose_name_plural = 'Bank Statement Lines'
+
+    def __str__(self):
+        return f"{self.bank_account} {self.statement_date} — {self.description[:50]}"
+
+
+class BankReconciliationStatus(models.TextChoices):
+    DRAFT     = 'DRAFT',     'Draft'
+    COMPLETED = 'COMPLETED', 'Completed'
+    REVIEWED  = 'REVIEWED',  'Reviewed by Finance Manager'
+
+
+class ReconciliationItemType(models.TextChoices):
+    OUTSTANDING_CHEQUE = 'OUT_CHQ',    'Outstanding Cheque'
+    DEPOSIT_IN_TRANSIT = 'DEP_TRANSIT', 'Deposit in Transit'
+    BANK_CHARGE        = 'BANK_CHG',   'Bank Charge'
+    INTEREST_EARNED    = 'INTEREST',   'Interest Earned'
+    ERROR_CORRECTION   = 'ERROR',      'Error Correction'
+    OTHER              = 'OTHER',      'Other'
+
+
+class BankReconciliation(AuditModel):
+    """Monthly bank reconciliation per MICEI finance policy."""
+    bank_account         = models.ForeignKey(
+        BankAccount, on_delete=models.PROTECT, related_name='reconciliations'
+    )
+    period_start         = models.DateField()
+    period_end           = models.DateField()
+    bank_statement_balance = models.DecimalField(max_digits=14, decimal_places=2)
+    book_balance           = models.DecimalField(max_digits=14, decimal_places=2)
+    adjusted_bank_balance  = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    adjusted_book_balance  = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    status = models.CharField(
+        max_length=20, choices=BankReconciliationStatus.choices,
+        default=BankReconciliationStatus.DRAFT
+    )
+    prepared_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='reconciliations_prepared'
+    )
+    reviewed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='reconciliations_reviewed'
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    notes       = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-period_end']
+        unique_together = [('bank_account', 'period_end')]
+        verbose_name = 'Bank Reconciliation'
+        verbose_name_plural = 'Bank Reconciliations'
+
+    def __str__(self):
+        return f"Recon {self.bank_account} — {self.period_end:%b %Y}"
+
+
+class BankReconciliationItem(TimeStampedModel):
+    """Individual reconciling item within a bank reconciliation."""
+    reconciliation = models.ForeignKey(
+        BankReconciliation, on_delete=models.CASCADE, related_name='items'
+    )
+    item_type   = models.CharField(max_length=20, choices=ReconciliationItemType.choices)
+    date        = models.DateField()
+    reference   = models.CharField(max_length=100, blank=True)
+    description = models.CharField(max_length=300)
+    amount      = models.DecimalField(max_digits=14, decimal_places=2)
+    side        = models.CharField(max_length=10, choices=[
+        ('BANK', 'Bank Adjustment'),
+        ('BOOK', 'Book Adjustment'),
+    ])
+
+    class Meta:
+        ordering = ['date']
+
+    def __str__(self):
+        return f"{self.get_item_type_display()} — {self.amount:,.0f} XAF"
+
+
+class CashToBankStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'Pending Deposit'
+    DEPOSITED = 'DEPOSITED', 'Deposited at Bank'
+    CONFIRMED = 'CONFIRMED', 'Confirmed by Accountant'
+
+
+class CashToBank(AuditModel):
+    """Records physical cash deposit from safe to bank account."""
+    bank_account  = models.ForeignKey(
+        BankAccount, on_delete=models.PROTECT, related_name='cash_deposits'
+    )
+    deposit_date  = models.DateField()
+    amount        = models.DecimalField(max_digits=14, decimal_places=2)
+    reference     = models.CharField(max_length=100, blank=True, help_text='Deposit slip number')
+    status = models.CharField(
+        max_length=20, choices=CashToBankStatus.choices,
+        default=CashToBankStatus.PENDING
+    )
+    prepared_by  = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='bank_deposits_prepared'
+    )
+    confirmed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bank_deposits_confirmed'
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    journal_entry = models.ForeignKey(
+        JournalEntry, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cash_to_bank_records'
+    )
+    notes        = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-deposit_date']
+        verbose_name = 'Cash-to-Bank Deposit'
+        verbose_name_plural = 'Cash-to-Bank Deposits'
+
+    def __str__(self):
+        return f"Deposit {self.amount:,.0f} XAF → {self.bank_account} ({self.deposit_date})"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHEQUE MANAGEMENT  —  Cheque Books, Issuance Register
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ChequeBook(AuditModel):
+    """Tracks cheque booklets per bank account."""
+    bank_account   = models.ForeignKey(
+        BankAccount, on_delete=models.PROTECT, related_name='chequebooks'
+    )
+    series_prefix  = models.CharField(max_length=20, blank=True)
+    start_number   = models.PositiveIntegerField()
+    end_number     = models.PositiveIntegerField()
+    current_number = models.PositiveIntegerField(help_text='Next available cheque number')
+    received_date  = models.DateField()
+    is_exhausted   = models.BooleanField(default=False)
+    notes          = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-received_date']
+        verbose_name = 'Cheque Book'
+        verbose_name_plural = 'Cheque Books'
+
+    def __str__(self):
+        return f"{self.bank_account.bank_name} #{self.start_number}-{self.end_number}"
+
+    @property
+    def total_cheques(self):
+        return self.end_number - self.start_number + 1
+
+    @property
+    def used_cheques(self):
+        return self.cheques.exclude(status=ChequeStatus.VOIDED).count()
+
+    @property
+    def remaining_cheques(self):
+        return self.total_cheques - self.used_cheques
+
+
+class ChequeStatus(models.TextChoices):
+    ISSUED  = 'ISSUED',  'Issued'
+    CLEARED = 'CLEARED', 'Cleared'
+    BOUNCED = 'BOUNCED', 'Bounced / Returned'
+    VOIDED  = 'VOIDED',  'Voided / Cancelled'
+    STALE   = 'STALE',   'Stale (Expired)'
+
+
+class ChequeRegister(AuditModel):
+    """Individual cheque issuance and tracking."""
+    cheque_book    = models.ForeignKey(
+        ChequeBook, on_delete=models.PROTECT, related_name='cheques'
+    )
+    cheque_number  = models.CharField(max_length=30)
+    bank_account   = models.ForeignKey(
+        BankAccount, on_delete=models.PROTECT, related_name='cheques_issued'
+    )
+    payee          = models.CharField(max_length=200)
+    amount         = models.DecimalField(max_digits=14, decimal_places=2)
+    issue_date     = models.DateField()
+    cleared_date   = models.DateField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20, choices=ChequeStatus.choices,
+        default=ChequeStatus.ISSUED
+    )
+    ap_payment     = models.ForeignKey(
+        APPayment, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cheques'
+    )
+    reason         = models.CharField(max_length=300, blank=True)
+    issued_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='cheques_issued_by'
+    )
+    voided_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cheques_voided'
+    )
+    voided_at      = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-issue_date', '-cheque_number']
+        unique_together = [('cheque_book', 'cheque_number')]
+        verbose_name = 'Cheque'
+        verbose_name_plural = 'Cheque Register'
+
+    def __str__(self):
+        return f"Cheque #{self.cheque_number} — {self.payee} ({self.amount:,.0f} XAF)"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAFF ADVANCES  —  Salary & Business Advances per AEF Finance Policy
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AdvanceType(models.TextChoices):
+    SALARY   = 'SALARY',   'Salary Advance'
+    BUSINESS = 'BUSINESS', 'Business Advance'
+
+
+class AdvanceStatus(models.TextChoices):
+    REQUESTED  = 'REQUESTED',  'Requested'
+    APPROVED   = 'APPROVED',   'Approved'
+    DISBURSED  = 'DISBURSED',  'Disbursed'
+    SETTLED    = 'SETTLED',    'Settled'
+    REJECTED   = 'REJECTED',   'Rejected'
+
+
+class StaffAdvance(AuditModel):
+    """
+    Staff salary/business advance tracking.
+    Business advances: max 1 outstanding per staff, settle within 5 working days.
+    """
+    staff = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='advances'
+    )
+    advance_type = models.CharField(max_length=20, choices=AdvanceType.choices)
+    amount_requested = models.DecimalField(max_digits=12, decimal_places=2)
+    amount_approved  = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    purpose          = models.TextField()
+    status = models.CharField(
+        max_length=20, choices=AdvanceStatus.choices,
+        default=AdvanceStatus.REQUESTED
+    )
+    requested_date   = models.DateField(default=timezone.localdate)
+    approved_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_advances'
+    )
+    approved_at      = models.DateTimeField(null=True, blank=True)
+    disbursed_date   = models.DateField(null=True, blank=True)
+    settlement_due   = models.DateField(null=True, blank=True,
+        help_text='Auto-set: disbursed_date + 5 working days for business advances')
+    settled_date     = models.DateField(null=True, blank=True)
+    payment_method   = models.CharField(
+        max_length=20, choices=PaymentMethod.choices, blank=True
+    )
+    reference        = models.CharField(max_length=100, blank=True)
+    notes            = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-requested_date']
+        verbose_name = 'Staff Advance'
+        verbose_name_plural = 'Staff Advances'
+
+    def __str__(self):
+        return f"{self.get_advance_type_display()} — {self.staff.get_full_name()} ({self.amount_requested:,.0f} XAF)"
+
+    @property
+    def is_overdue(self):
+        if self.settlement_due and self.status == AdvanceStatus.DISBURSED:
+            return timezone.localdate() > self.settlement_due
+        return False
+
+    @property
+    def amount_outstanding(self):
+        amt = self.amount_approved or self.amount_requested
+        if self.status == AdvanceStatus.SETTLED:
+            return 0
+        return amt
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CASH TRANSFER & SAFE MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TransferType(models.TextChoices):
+    DESK_TO_SAFE  = 'DESK_SAFE',  'Cash Desk → Safe'
+    SAFE_TO_BANK  = 'SAFE_BANK',  'Safe → Bank'
+    DESK_TO_DESK  = 'DESK_DESK',  'Desk → Desk'
+    FLOAT_ISSUE   = 'FLOAT',      'Float Issued to Desk'
+
+
+class TransferStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'Pending Confirmation'
+    CONFIRMED = 'CONFIRMED', 'Confirmed'
+    REJECTED  = 'REJECTED',  'Rejected'
+
+
+class CashTransfer(AuditModel):
+    """
+    Physical cash movement between desks, to safe, or to bank.
+    Main cashier collects cash from cashiers per AEF daily close procedure.
+    """
+    transfer_type = models.CharField(max_length=20, choices=TransferType.choices)
+    from_desk     = models.ForeignKey(
+        CashDesk, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transfers_out'
+    )
+    to_desk       = models.ForeignKey(
+        CashDesk, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transfers_in'
+    )
+    amount        = models.DecimalField(max_digits=14, decimal_places=2)
+    transfer_date = models.DateTimeField(default=timezone.now)
+    initiated_by  = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='cash_transfers_initiated'
+    )
+    confirmed_by  = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cash_transfers_confirmed'
+    )
+    confirmed_at  = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20, choices=TransferStatus.choices,
+        default=TransferStatus.PENDING
+    )
+    reference     = models.CharField(max_length=100, blank=True)
+    notes         = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-transfer_date']
+        verbose_name = 'Cash Transfer'
+        verbose_name_plural = 'Cash Transfers'
+
+    def __str__(self):
+        return f"{self.get_transfer_type_display()} — {self.amount:,.0f} XAF"
+
+
+class SafeBalance(AuditModel):
+    """
+    Daily safe balance snapshot.
+    Policy: max 5,000,000 FCFA in safe at any time; deposit to bank 3x/week.
+    """
+    SAFE_MAX_BALANCE = 5_000_000
+
+    date             = models.DateField(unique=True)
+    opening_balance  = models.DecimalField(max_digits=14, decimal_places=2)
+    total_deposits   = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+        help_text='Cash received from desks')
+    total_withdrawals = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+        help_text='Sent to bank or floats issued')
+    closing_balance  = models.DecimalField(max_digits=14, decimal_places=2)
+    counted_by       = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='safe_counts'
+    )
+    notes            = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date']
+        verbose_name = 'Safe Balance'
+        verbose_name_plural = 'Safe Balances'
+
+    def __str__(self):
+        return f"Safe {self.date} — {self.closing_balance:,.0f} XAF"
+
+    @property
+    def exceeds_limit(self):
+        return self.closing_balance > self.SAFE_MAX_BALANCE
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CASH VARIANCE REGISTER  —  Shortage / Overage Tracking
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CashVarianceRegister(AuditModel):
+    """
+    Dedicated register for cash shortages and overages.
+    Auto-created when session/shift verified with non-zero variance.
+    Per policy: both shortages and overages must be declared;
+    shortages are deducted from salary; overages investigated.
+    """
+    session       = models.ForeignKey(
+        CashierSession, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='variance_records'
+    )
+    shift         = models.ForeignKey(
+        CashierShift, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='variance_records'
+    )
+    cashier       = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='cash_variances'
+    )
+    variance_date = models.DateField()
+    expected_amount  = models.DecimalField(max_digits=14, decimal_places=2)
+    declared_amount  = models.DecimalField(max_digits=14, decimal_places=2)
+    variance_amount  = models.DecimalField(max_digits=14, decimal_places=2,
+        help_text='Positive = overage, negative = shortage')
+    explanation      = models.TextField(blank=True)
+    resolution       = models.TextField(blank=True)
+    resolved_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='variances_resolved'
+    )
+    resolved_at      = models.DateTimeField(null=True, blank=True)
+    is_resolved      = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-variance_date']
+        verbose_name = 'Cash Variance'
+        verbose_name_plural = 'Cash Variance Register'
+
+    def __str__(self):
+        kind = 'Overage' if self.variance_amount > 0 else 'Shortage'
+        return f"{kind} {abs(self.variance_amount):,.0f} XAF — {self.cashier.get_full_name()}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSET DISPOSAL  —  Formal disposal workflow with GL posting
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class DisposalMethod(models.TextChoices):
+    SOLD     = 'SOLD',     'Sold'
+    DONATED  = 'DONATED',  'Donated'
+    SCRAPPED = 'SCRAPPED', 'Scrapped / Discarded'
+    LOST     = 'LOST',     'Lost / Missing'
+    STOLEN   = 'STOLEN',   'Stolen'
+
+
+class DisposalStatus(models.TextChoices):
+    REQUESTED = 'REQUESTED', 'Disposal Requested'
+    APPROVED  = 'APPROVED',  'Approved'
+    COMPLETED = 'COMPLETED', 'Completed'
+    REJECTED  = 'REJECTED',  'Rejected'
+
+
+class AssetDisposal(AuditModel):
+    """
+    Formal asset disposal request and approval.
+    On completion: sets asset.status=DISPOSED and posts GL entry.
+    """
+    asset = models.ForeignKey(
+        AssetRegister, on_delete=models.PROTECT, related_name='disposals'
+    )
+    disposal_method = models.CharField(max_length=20, choices=DisposalMethod.choices)
+    status = models.CharField(
+        max_length=20, choices=DisposalStatus.choices,
+        default=DisposalStatus.REQUESTED
+    )
+    reason          = models.TextField()
+    estimated_value = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+        help_text='Expected sale proceeds (0 for scrapped/donated)')
+    actual_proceeds = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    disposal_date   = models.DateField(null=True, blank=True)
+    requested_by    = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='asset_disposal_requests'
+    )
+    approved_by     = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='asset_disposal_approvals'
+    )
+    approved_at     = models.DateTimeField(null=True, blank=True)
+    buyer_info      = models.CharField(max_length=300, blank=True,
+        help_text='Purchaser details if sold')
+    journal_entry   = models.ForeignKey(
+        JournalEntry, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='asset_disposals'
+    )
+    notes           = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Asset Disposal'
+        verbose_name_plural = 'Asset Disposals'
+
+    def __str__(self):
+        return f"Dispose {self.asset.name} ({self.get_disposal_method_display()})"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUDGET AMENDMENT  —  Track changes to approved budgets
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BudgetAmendment(TimeStampedModel):
+    """Audit trail for budget amendments."""
+    budget          = models.ForeignKey(
+        Budget, on_delete=models.CASCADE, related_name='amendments'
+    )
+    previous_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    new_amount      = models.DecimalField(max_digits=14, decimal_places=2)
+    reason          = models.TextField()
+    amended_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='budget_amendments'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Budget {self.budget} amended: {self.previous_amount:,.0f} → {self.new_amount:,.0f}"

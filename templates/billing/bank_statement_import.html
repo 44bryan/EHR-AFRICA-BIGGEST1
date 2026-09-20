@@ -1,0 +1,58 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Import Bank Statement{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Cash Management</li>
+    <li class="breadcrumb-item active">Import Statement</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0 fw-bold">
+    <i class="bi bi-upload me-2"></i>Import Bank Statement
+  </h4>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <form method="post" action="{% url 'billing:bank_statement_import' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label for="id_bank_account" class="form-label fw-semibold">Bank Account <span class="text-danger">*</span></label>
+          <select name="bank_account" id="id_bank_account" class="form-select form-select-sm" required>
+            <option value="">-- Select Bank Account --</option>
+            {% for ba in bank_accounts %}
+              <option value="{{ ba.pk }}">{{ ba.bank_name }} — {{ ba.account_number }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-6">
+          <label for="id_csv_file" class="form-label fw-semibold">CSV File <span class="text-danger">*</span></label>
+          <input type="file" name="csv_file" id="id_csv_file" class="form-control form-control-sm" accept=".csv" required>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt-3 small mb-0">
+        <i class="bi bi-info-circle me-1"></i>
+        Upload a CSV file with columns: <strong>date</strong>, <strong>reference</strong>, <strong>description</strong>,
+        <strong>debit</strong>, <strong>credit</strong>, <strong>balance</strong>, <strong>value_date</strong>
+      </div>
+
+      <div class="mt-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-upload me-1"></i>Import
+        </button>
+        <a href="{% url 'billing:bank_reconciliation_list' %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

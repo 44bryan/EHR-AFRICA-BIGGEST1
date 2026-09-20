@@ -1,0 +1,71 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Cheque Books{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Cash Management</li>
+    <li class="breadcrumb-item active">Cheque Books</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-journal-text me-2"></i>Cheque Books</h4>
+    <small class="text-muted">Track cheque book inventory and usage</small>
+  </div>
+  <a href="{% url 'billing:chequebook_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Cheque Book
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Bank</th>
+            <th>Series</th>
+            <th>Range</th>
+            <th>Current #</th>
+            <th>Used / Total</th>
+            <th class="text-center">Status</th>
+            <th>Received Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for book in books %}
+          <tr>
+            <td>{{ book.bank_account.bank_name }}</td>
+            <td><code>{{ book.series_prefix|default:"-" }}</code></td>
+            <td>{{ book.start_number }} &ndash; {{ book.end_number }}</td>
+            <td>{{ book.current_number|default:book.start_number }}</td>
+            <td>
+              {% with total=book.end_number|add:"-"|add:book.start_number|default:0 %}
+                {{ book.used_count|default:0 }} / {{ book.total_leaves|default:"-" }}
+              {% endwith %}
+            </td>
+            <td class="text-center">
+              {% if book.is_exhausted %}
+                <span class="badge bg-danger">Exhausted</span>
+              {% else %}
+                <span class="badge bg-success">Active</span>
+              {% endif %}
+            </td>
+            <td>{{ book.received_date|date:"d M Y" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">No cheque books registered yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

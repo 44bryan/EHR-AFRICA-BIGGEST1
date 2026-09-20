@@ -1,0 +1,76 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Safe Balance Log{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Finance</li>
+    <li class="breadcrumb-item active">Safe Balance Log</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-safe me-2"></i>Safe Balance Log</h4>
+    <small class="text-muted">Daily safe balance tracking and reconciliation</small>
+  </div>
+  <a href="{% url 'billing:safe_balance_record' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-circle me-1"></i>Record Balance
+  </a>
+</div>
+
+{% if balances and balances.0.closing_balance > 5000000 %}
+<div class="alert alert-danger d-flex align-items-center">
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <strong>WARNING:</strong>&nbsp;Safe balance exceeds 5,000,000 XAF policy limit!
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th class="text-end">Opening Balance</th>
+          <th class="text-end">Deposits</th>
+          <th class="text-end">Withdrawals</th>
+          <th class="text-end">Closing Balance</th>
+          <th>Counted By</th>
+          <th>Alert</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for bal in balances %}
+        <tr>
+          <td class="fw-semibold">{{ bal.date|date:"d M Y" }}</td>
+          <td class="text-end">{{ bal.opening_balance|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end text-success">{{ bal.total_deposits|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end text-danger">{{ bal.total_withdrawals|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end fw-bold">{{ bal.closing_balance|floatformat:0|intcomma }} XAF</td>
+          <td>{{ bal.counted_by.get_full_name|default:"&mdash;" }}</td>
+          <td>
+            {% if bal.exceeds_limit %}
+            <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Over Limit</span>
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center py-4 text-muted">
+            No safe balance records. <a href="{% url 'billing:safe_balance_record' %}">Record the first entry</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

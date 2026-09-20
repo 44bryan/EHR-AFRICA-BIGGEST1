@@ -1,0 +1,84 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Revenue by Department{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item active">Revenue by Department</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h4 class="fw-bold mb-0">Revenue by Department</h4>
+  <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+</div>
+
+<form method="get" class="row g-2 mb-4 align-items-end">
+  <div class="col-auto">
+    <label class="form-label small fw-semibold">From</label>
+    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+  </div>
+  <div class="col-auto">
+    <label class="form-label small fw-semibold">To</label>
+    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
+  </div>
+</form>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Total Revenue</div>
+        <div class="fs-4 fw-bold text-primary">{{ grand_total|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold"><i class="bi bi-building me-1"></i>Department Breakdown</div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Department</th>
+          <th class="text-end">Items</th>
+          <th class="text-end">Revenue (XAF)</th>
+          <th class="text-end">% of Total</th>
+          <th style="width:150px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in by_dept %}
+        <tr>
+          <td class="fw-semibold">{{ row.category }}</td>
+          <td class="text-end">{{ row.count }}</td>
+          <td class="text-end">{{ row.total|floatformat:0|intcomma }}</td>
+          <td class="text-end">{% if grand_total %}{% widthratio row.total grand_total 100 %}%{% else %}0%{% endif %}</td>
+          <td>
+            <div class="progress" style="height:8px;">
+              <div class="progress-bar bg-success" style="width:{% if grand_total %}{% widthratio row.total grand_total 100 %}{% else %}0{% endif %}%"></div>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center text-muted py-3">No revenue in this period</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light">
+        <tr>
+          <td class="fw-bold">Total</td>
+          <td></td>
+          <td class="text-end fw-bold">{{ grand_total|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end fw-bold">100%</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endblock %}

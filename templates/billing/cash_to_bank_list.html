@@ -1,0 +1,83 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Cash-to-Bank Deposits{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Cash Management</li>
+    <li class="breadcrumb-item active">Cash-to-Bank Deposits</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-cash-coin me-2"></i>Cash-to-Bank Deposits</h4>
+    <small class="text-muted">Track cash deposits made to bank accounts</small>
+  </div>
+  <a href="{% url 'billing:cash_to_bank_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Deposit
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Bank Account</th>
+            <th class="text-end">Amount (XAF)</th>
+            <th>Reference</th>
+            <th class="text-center">Status</th>
+            <th>Prepared By</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in deposits %}
+          <tr>
+            <td>{{ d.deposit_date|date:"d M Y" }}</td>
+            <td>{{ d.bank_account.bank_name }} &mdash; {{ d.bank_account.account_number }}</td>
+            <td class="text-end fw-semibold">{{ d.amount|floatformat:0|intcomma }} XAF</td>
+            <td><code>{{ d.reference|default:"-" }}</code></td>
+            <td class="text-center">
+              {% if d.status == 'PENDING' %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% elif d.status == 'DEPOSITED' %}
+                <span class="badge bg-info">Deposited</span>
+              {% elif d.status == 'CONFIRMED' %}
+                <span class="badge bg-success">Confirmed</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ d.status }}</span>
+              {% endif %}
+            </td>
+            <td>{{ d.prepared_by|default:"-" }}</td>
+            <td class="text-end">
+              {% if d.status != 'CONFIRMED' %}
+                <form method="post" action="{% url 'billing:cash_to_bank_confirm' d.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-outline-success btn-sm"
+                          onclick="return confirm('Confirm this deposit?')">
+                    <i class="bi bi-check-lg me-1"></i>Confirm
+                  </button>
+                </form>
+              {% else %}
+                <span class="text-muted small">--</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">No deposits recorded yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

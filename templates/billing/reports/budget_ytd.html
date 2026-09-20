@@ -1,0 +1,69 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Budget vs Actual — YTD {{ year }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:budget_list' %}">Budget</a></li>
+    <li class="breadcrumb-item active">YTD {{ year }}</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Budget vs Actual — Year to Date</h4>
+    <small class="text-muted">{{ year }} (through month {{ current_month }})</small>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <form method="get" class="d-flex gap-2">
+      <input type="number" name="year" class="form-control form-control-sm" value="{{ year }}" style="width:100px;">
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Go</button>
+    </form>
+    <a href="{% url 'billing:budget_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Budgets</a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Category</th>
+          <th class="text-end">YTD Budget (XAF)</th>
+          <th class="text-end">YTD Actual (XAF)</th>
+          <th class="text-end">Variance (XAF)</th>
+          <th class="text-end">% Used</th>
+          <th style="width:120px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.pct > 100 %}table-danger{% elif row.pct > 90 %}table-warning{% endif %}">
+          <td class="fw-semibold">{{ row.category }}</td>
+          <td class="text-end">{{ row.budget|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ row.actual|floatformat:0|intcomma }}</td>
+          <td class="text-end {% if row.variance < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+            {{ row.variance|floatformat:0|intcomma }}
+          </td>
+          <td class="text-end">{{ row.pct }}%</td>
+          <td>
+            {% if row.pct > 100 %}
+            <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Over Budget</span>
+            {% elif row.pct > 90 %}
+            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation me-1"></i>Near Limit</span>
+            {% elif row.budget > 0 %}
+            <span class="badge bg-success">On Track</span>
+            {% else %}
+            <span class="badge bg-secondary">No Budget</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4">No budget data for {{ year }}. <a href="{% url 'billing:budget_annual_create' %}">Create annual budget</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

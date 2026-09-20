@@ -1,0 +1,238 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Advance — {{ advance.staff.get_full_name }}{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'billing:advance_list' %}">Staff Advances</a></li>
+    <li class="breadcrumb-item active">Advance Detail</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-cash-coin me-2"></i>Advance &mdash; {{ advance.staff.get_full_name }}</h4>
+  </div>
+  <a href="{% url 'billing:advance_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to List
+  </a>
+</div>
+
+{% if advance.is_overdue %}
+<div class="alert alert-danger d-flex align-items-center">
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <strong>This advance is overdue!</strong> Settlement was due on {{ advance.settlement_due|date:"d M Y" }}.
+</div>
+{% endif %}
+
+{# Info cards #}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Type</div>
+        <div class="fw-bold">{{ advance.get_advance_type_display }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Amount Requested</div>
+        <div class="fw-bold fs-5">{{ advance.amount_requested|floatformat:0|intcomma }} XAF</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Amount Approved</div>
+        <div class="fw-bold fs-5">
+          {% if advance.amount_approved %}
+          {{ advance.amount_approved|floatformat:0|intcomma }} XAF
+          {% else %}
+          <span class="text-muted">&mdash;</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Status</div>
+        <div>
+          {% if advance.status == 'REQUESTED' %}
+          <span class="badge bg-warning text-dark fs-6">Requested</span>
+          {% elif advance.status == 'APPROVED' %}
+          <span class="badge bg-info text-dark fs-6">Approved</span>
+          {% elif advance.status == 'DISBURSED' %}
+          <span class="badge bg-primary fs-6">Disbursed</span>
+          {% elif advance.status == 'SETTLED' %}
+          <span class="badge bg-success fs-6">Settled</span>
+          {% elif advance.status == 'REJECTED' %}
+          <span class="badge bg-danger fs-6">Rejected</span>
+          {% else %}
+          <span class="badge bg-secondary fs-6">{{ advance.get_status_display }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Requested</div>
+        <div class="fw-semibold">{{ advance.requested_date|date:"d M Y" }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Approved / Disbursed</div>
+        <div class="fw-semibold">
+          {{ advance.approved_date|date:"d M Y"|default:"&mdash;" }}
+          {% if advance.disbursed_date %} / {{ advance.disbursed_date|date:"d M Y" }}{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Settlement Due / Settled</div>
+        <div class="fw-semibold">
+          {{ advance.settlement_due|date:"d M Y"|default:"&mdash;" }}
+          {% if advance.settled_date %} / {{ advance.settled_date|date:"d M Y" }}{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if advance.purpose %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <div class="text-muted small mb-1">Purpose</div>
+    <p class="mb-0">{{ advance.purpose }}</p>
+  </div>
+</div>
+{% endif %}
+
+{# Action buttons based on status and permissions #}
+{% if can_approve %}
+
+  {# REQUESTED: Approve or Reject #}
+  {% if advance.status == 'REQUESTED' %}
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm border-start border-4 border-success">
+        <div class="card-body">
+          <h6 class="fw-bold text-success"><i class="bi bi-check-circle me-1"></i>Approve Advance</h6>
+          <form method="post" action="{% url 'billing:advance_approve' advance.pk %}">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label for="id_amount_approved" class="form-label fw-semibold">Amount to Approve (XAF)</label>
+              <div class="input-group">
+                <input type="number" name="amount_approved" id="id_amount_approved"
+                       class="form-control" min="1" step="1" required
+                       value="{{ advance.amount_requested|floatformat:0 }}">
+                <span class="input-group-text">XAF</span>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-check-lg me-1"></i>Approve
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm border-start border-4 border-danger">
+        <div class="card-body">
+          <h6 class="fw-bold text-danger"><i class="bi bi-x-circle me-1"></i>Reject Advance</h6>
+          <form method="post" action="{% url 'billing:advance_reject' advance.pk %}">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label for="id_reject_notes" class="form-label fw-semibold">Reason for Rejection</label>
+              <textarea name="notes" id="id_reject_notes" class="form-control" rows="2"
+                        required placeholder="Reason..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-danger btn-sm">
+              <i class="bi bi-x-lg me-1"></i>Reject
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# APPROVED: Disburse #}
+  {% if advance.status == 'APPROVED' %}
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm border-start border-4 border-primary">
+        <div class="card-body">
+          <h6 class="fw-bold text-primary"><i class="bi bi-wallet2 me-1"></i>Disburse Advance</h6>
+          <form method="post" action="{% url 'billing:advance_disburse' advance.pk %}">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label for="id_payment_method" class="form-label fw-semibold">Payment Method</label>
+              <select name="payment_method" id="id_payment_method" class="form-select" required>
+                <option value="">-- Select --</option>
+                <option value="CASH">Cash</option>
+                <option value="TRANSFER">Bank Transfer</option>
+                <option value="MOBILE">Mobile Money</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="id_reference" class="form-label fw-semibold">Reference</label>
+              <input type="text" name="reference" id="id_reference" class="form-control"
+                     placeholder="Transaction reference...">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-send me-1"></i>Disburse
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# DISBURSED: Mark Settled #}
+  {% if advance.status == 'DISBURSED' %}
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm border-start border-4 border-success">
+        <div class="card-body">
+          <h6 class="fw-bold text-success"><i class="bi bi-check2-all me-1"></i>Mark as Settled</h6>
+          <form method="post" action="{% url 'billing:advance_settle' advance.pk %}">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label for="id_settlement_notes" class="form-label fw-semibold">Settlement Notes</label>
+              <textarea name="settlement_notes" id="id_settlement_notes" class="form-control" rows="3"
+                        placeholder="Settlement details..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-check2-all me-1"></i>Mark Settled
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% endif %}
+{% endblock %}

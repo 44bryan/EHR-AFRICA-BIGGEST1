@@ -8,7 +8,16 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from .models import (Invoice, InvoiceItem, Payment, InvoiceStatus, ServiceCategory,
                      PaymentMethod, ServicePrice, Refund, CashierShift, ShiftStatus,
-                     ServiceWorkOrder, WorkOrderStatus, Budget, BudgetType)
+                     ServiceWorkOrder, WorkOrderStatus, Budget, BudgetType,
+                     BankAccount, BankStatement, BankReconciliation,
+                     BankReconciliationStatus, BankReconciliationItem,
+                     ReconciliationItemType, CashToBank, CashToBankStatus,
+                     ChequeBook, ChequeRegister, ChequeStatus,
+                     StaffAdvance, AdvanceType, AdvanceStatus,
+                     CashTransfer, TransferType, TransferStatus, SafeBalance,
+                     CashVarianceRegister, AssetDisposal, DisposalMethod,
+                     DisposalStatus, AssetRegister, AssetStatus,
+                     BudgetAmendment, CashierSession)
 from .utils import get_or_create_today_invoice
 from apps.patients.models import Patient
 from apps.accounts.models import UserRole
@@ -6395,3 +6404,1178 @@ def revenue_by_desk(request):
         'date_to': dt,
     }
     return render(request, 'billing/revenue_by_desk.html', context)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ROLE-BASED ACCESS HELPERS  —  Finance module role segregation
+# ═══════════════════════════════════════════════════════════════════════════════
+# Per AEF Finance Policy Manual role hierarchy:
+#   Cashier → Senior Cashier (Chief Cashier) → Accountant → Senior Accountant
+#   → Finance Manager (Finance Director) → Admin Director → CEO
+# Additional: Storekeeper, Procurement Officer, Insurance In-charge
+
+def _can_manage_bank(user):
+    """Bank operations — Senior Accountant and above."""
+    return user.role in (
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_do_reconciliation(user):
+    """Bank reconciliation — Senior Accountant (prepares), Finance Manager (reviews)."""
+    return user.role in (
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_manage_cheques(user):
+    """Cheque management — Accountant (writes), Senior Accountant (supervises)."""
+    return user.role in (
+        UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_manage_advances(user):
+    """Staff advance approval — Finance Manager/CEO approves, Senior Accountant reviews."""
+    return user.role in (
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.ADMIN_DIRECTOR, UserRole.CEO, UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_manage_cash_transfers(user):
+    """Cash transfers — Chief Cashier (initiates), Senior Accountant (confirms)."""
+    return user.role in (
+        UserRole.CHIEF_CASHIER, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_manage_safe(user):
+    """Safe balance — Chief Cashier and Accountant (dual-key per policy)."""
+    return user.role in (
+        UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT,
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_manage_assets_full(user):
+    """Full asset management including disposal — Senior Accountant and above."""
+    return user.role in (
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_view_variance_register(user):
+    """Variance register — Chief Cashier, Accountant and above."""
+    return user.role in (
+        UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT,
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
+
+
+def _can_request_advance(user):
+    """Any staff member can request an advance."""
+    return user.is_authenticated
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BANK ACCOUNT MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def bank_account_list(request):
+    if not _can_manage_bank(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    accounts = BankAccount.objects.filter(is_deleted=False)
+    return render(request, 'billing/bank_account_list.html', {'accounts': accounts})
+
+
+@login_required
+def bank_account_create(request):
+    if not _can_manage_bank(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    gl_accounts = GLAccount.objects.filter(
+        account_code__startswith='521', is_deleted=False
+    ).order_by('account_code')
+    if request.method == 'POST':
+        acct = BankAccount(
+            account_name=request.POST.get('account_name', '').strip(),
+            bank_name=request.POST.get('bank_name', '').strip(),
+            account_number=request.POST.get('account_number', '').strip(),
+            branch=request.POST.get('branch', '').strip(),
+            swift_code=request.POST.get('swift_code', '').strip(),
+            currency=request.POST.get('currency', 'XAF').strip(),
+            opening_balance=Decimal(request.POST.get('opening_balance', '0') or '0'),
+            notes=request.POST.get('notes', '').strip(),
+        )
+        gl_id = request.POST.get('gl_account')
+        if gl_id:
+            acct.gl_account_id = gl_id
+        acct.save()
+        messages.success(request, f'Bank account "{acct.account_name}" created.')
+        return redirect('billing:bank_account_list')
+    return render(request, 'billing/bank_account_form.html', {
+        'gl_accounts': gl_accounts, 'editing': False,
+    })
+
+
+@login_required
+def bank_account_edit(request, account_id):
+    if not _can_manage_bank(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    acct = get_object_or_404(BankAccount, pk=account_id, is_deleted=False)
+    gl_accounts = GLAccount.objects.filter(
+        account_code__startswith='521', is_deleted=False
+    ).order_by('account_code')
+    if request.method == 'POST':
+        acct.account_name = request.POST.get('account_name', '').strip()
+        acct.bank_name = request.POST.get('bank_name', '').strip()
+        acct.account_number = request.POST.get('account_number', '').strip()
+        acct.branch = request.POST.get('branch', '').strip()
+        acct.swift_code = request.POST.get('swift_code', '').strip()
+        acct.currency = request.POST.get('currency', 'XAF').strip()
+        acct.opening_balance = Decimal(request.POST.get('opening_balance', '0') or '0')
+        acct.notes = request.POST.get('notes', '').strip()
+        acct.is_active = 'is_active' in request.POST
+        gl_id = request.POST.get('gl_account')
+        acct.gl_account_id = gl_id if gl_id else None
+        acct.save()
+        messages.success(request, f'Bank account "{acct.account_name}" updated.')
+        return redirect('billing:bank_account_list')
+    return render(request, 'billing/bank_account_form.html', {
+        'account': acct, 'gl_accounts': gl_accounts, 'editing': True,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BANK STATEMENT IMPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def bank_statement_import(request):
+    if not _can_do_reconciliation(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    bank_accounts = BankAccount.objects.filter(is_deleted=False, is_active=True)
+    if request.method == 'POST':
+        bank_id = request.POST.get('bank_account')
+        bank_acct = get_object_or_404(BankAccount, pk=bank_id, is_deleted=False)
+        csv_file = request.FILES.get('csv_file')
+        if not csv_file:
+            messages.error(request, 'Please upload a CSV file.')
+            return redirect('billing:bank_statement_import')
+        import csv, io
+        decoded = csv_file.read().decode('utf-8-sig')
+        reader = csv.DictReader(io.StringIO(decoded))
+        count = 0
+        for row in reader:
+            try:
+                BankStatement.objects.create(
+                    bank_account=bank_acct,
+                    statement_date=row.get('date', '').strip(),
+                    reference=row.get('reference', '').strip(),
+                    description=row.get('description', '').strip(),
+                    debit_amount=Decimal(row.get('debit', '0').replace(',', '') or '0'),
+                    credit_amount=Decimal(row.get('credit', '0').replace(',', '') or '0'),
+                    balance=Decimal(row.get('balance', '0').replace(',', '') or '0'),
+                    value_date=row.get('value_date', '').strip() or None,
+                )
+                count += 1
+            except Exception:
+                continue
+        messages.success(request, f'{count} statement lines imported for {bank_acct}.')
+        return redirect('billing:bank_reconciliation_list')
+    return render(request, 'billing/bank_statement_import.html', {
+        'bank_accounts': bank_accounts,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BANK RECONCILIATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def bank_reconciliation_list(request):
+    if not _can_do_reconciliation(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    recons = BankReconciliation.objects.filter(is_deleted=False).select_related(
+        'bank_account', 'prepared_by', 'reviewed_by'
+    )
+    return render(request, 'billing/bank_reconciliation_list.html', {'recons': recons})
+
+
+@login_required
+def bank_reconciliation_create(request):
+    if not _can_do_reconciliation(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    bank_accounts = BankAccount.objects.filter(is_deleted=False, is_active=True)
+    if request.method == 'POST':
+        recon = BankReconciliation(
+            bank_account_id=request.POST.get('bank_account'),
+            period_start=request.POST.get('period_start'),
+            period_end=request.POST.get('period_end'),
+            bank_statement_balance=Decimal(request.POST.get('bank_statement_balance', '0') or '0'),
+            book_balance=Decimal(request.POST.get('book_balance', '0') or '0'),
+            prepared_by=request.user,
+            notes=request.POST.get('notes', '').strip(),
+        )
+        recon.save()
+        messages.success(request, 'Bank reconciliation created.')
+        return redirect('billing:bank_reconciliation_detail', recon_id=recon.pk)
+    return render(request, 'billing/bank_reconciliation_form.html', {
+        'bank_accounts': bank_accounts,
+    })
+
+
+@login_required
+def bank_reconciliation_detail(request, recon_id):
+    if not _can_do_reconciliation(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    recon = get_object_or_404(BankReconciliation, pk=recon_id, is_deleted=False)
+    items = recon.items.all()
+
+    if request.method == 'POST' and recon.status == BankReconciliationStatus.DRAFT:
+        # Add reconciling item
+        BankReconciliationItem.objects.create(
+            reconciliation=recon,
+            item_type=request.POST.get('item_type'),
+            date=request.POST.get('date'),
+            reference=request.POST.get('reference', '').strip(),
+            description=request.POST.get('description', '').strip(),
+            amount=Decimal(request.POST.get('amount', '0') or '0'),
+            side=request.POST.get('side', 'BANK'),
+        )
+        # Recalculate adjusted balances
+        bank_adj = sum(i.amount for i in recon.items.filter(side='BANK'))
+        book_adj = sum(i.amount for i in recon.items.filter(side='BOOK'))
+        recon.adjusted_bank_balance = recon.bank_statement_balance - bank_adj
+        recon.adjusted_book_balance = recon.book_balance + book_adj
+        recon.save()
+        messages.success(request, 'Reconciling item added.')
+        return redirect('billing:bank_reconciliation_detail', recon_id=recon.pk)
+
+    bank_adj = sum(i.amount for i in items.filter(side='BANK'))
+    book_adj = sum(i.amount for i in items.filter(side='BOOK'))
+    return render(request, 'billing/bank_reconciliation_detail.html', {
+        'recon': recon, 'items': items,
+        'bank_adj': bank_adj, 'book_adj': book_adj,
+        'item_types': ReconciliationItemType.choices,
+    })
+
+
+@login_required
+@require_POST
+def bank_reconciliation_complete(request, recon_id):
+    if not _can_do_reconciliation(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    recon = get_object_or_404(BankReconciliation, pk=recon_id, is_deleted=False)
+    if recon.status == BankReconciliationStatus.DRAFT:
+        recon.status = BankReconciliationStatus.COMPLETED
+        recon.save()
+        messages.success(request, 'Reconciliation marked as completed.')
+    return redirect('billing:bank_reconciliation_detail', recon_id=recon.pk)
+
+
+@login_required
+@require_POST
+def bank_reconciliation_review(request, recon_id):
+    """Finance Manager reviews and approves the reconciliation."""
+    if not (request.user.role in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN) or request.user.is_superuser):
+        messages.error(request, 'Only Finance Manager can review reconciliations.')
+        return redirect('billing:dashboard')
+    recon = get_object_or_404(BankReconciliation, pk=recon_id, is_deleted=False)
+    if recon.status == BankReconciliationStatus.COMPLETED:
+        recon.status = BankReconciliationStatus.REVIEWED
+        recon.reviewed_by = request.user
+        recon.reviewed_at = timezone.now()
+        recon.save()
+        messages.success(request, 'Reconciliation reviewed and approved.')
+    return redirect('billing:bank_reconciliation_detail', recon_id=recon.pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CASH-TO-BANK DEPOSITS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def cash_to_bank_list(request):
+    if not _can_manage_cash_transfers(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    deposits = CashToBank.objects.filter(is_deleted=False).select_related(
+        'bank_account', 'prepared_by', 'confirmed_by'
+    )
+    return render(request, 'billing/cash_to_bank_list.html', {'deposits': deposits})
+
+
+@login_required
+def cash_to_bank_create(request):
+    if not _can_manage_cash_transfers(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    bank_accounts = BankAccount.objects.filter(is_deleted=False, is_active=True)
+    if request.method == 'POST':
+        dep = CashToBank(
+            bank_account_id=request.POST.get('bank_account'),
+            deposit_date=request.POST.get('deposit_date'),
+            amount=Decimal(request.POST.get('amount', '0') or '0'),
+            reference=request.POST.get('reference', '').strip(),
+            prepared_by=request.user,
+            notes=request.POST.get('notes', '').strip(),
+        )
+        dep.save()
+        messages.success(request, f'Deposit of {dep.amount:,.0f} XAF recorded.')
+        return redirect('billing:cash_to_bank_list')
+    return render(request, 'billing/cash_to_bank_form.html', {
+        'bank_accounts': bank_accounts,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+@require_POST
+def cash_to_bank_confirm(request, deposit_id):
+    """Accountant confirms deposit was received at bank."""
+    if not _can_manage_bank(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    dep = get_object_or_404(CashToBank, pk=deposit_id, is_deleted=False)
+    if dep.status != CashToBankStatus.CONFIRMED:
+        dep.status = CashToBankStatus.CONFIRMED
+        dep.confirmed_by = request.user
+        dep.confirmed_at = timezone.now()
+        dep.save()
+        # GL posting: Dr Bank / Cr Cash
+        try:
+            from apps.billing.gl_service import post_cash_to_bank
+            post_cash_to_bank(dep, request.user)
+        except Exception:
+            pass  # GL posting is best-effort; manual JE can be created
+        messages.success(request, 'Deposit confirmed.')
+    return redirect('billing:cash_to_bank_list')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHEQUE BOOK MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def chequebook_list(request):
+    if not _can_manage_cheques(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    books = ChequeBook.objects.filter(is_deleted=False).select_related('bank_account')
+    return render(request, 'billing/chequebook_list.html', {'books': books})
+
+
+@login_required
+def chequebook_create(request):
+    if not _can_manage_cheques(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    bank_accounts = BankAccount.objects.filter(is_deleted=False, is_active=True)
+    if request.method == 'POST':
+        start = int(request.POST.get('start_number', 0))
+        end = int(request.POST.get('end_number', 0))
+        book = ChequeBook(
+            bank_account_id=request.POST.get('bank_account'),
+            series_prefix=request.POST.get('series_prefix', '').strip(),
+            start_number=start,
+            end_number=end,
+            current_number=start,
+            received_date=request.POST.get('received_date'),
+            notes=request.POST.get('notes', '').strip(),
+        )
+        book.save()
+        messages.success(request, f'Cheque book #{start}-{end} created.')
+        return redirect('billing:chequebook_list')
+    return render(request, 'billing/chequebook_form.html', {
+        'bank_accounts': bank_accounts,
+        'today': timezone.localdate(),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHEQUE REGISTER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def cheque_register(request):
+    if not _can_manage_cheques(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    cheques = ChequeRegister.objects.filter(is_deleted=False).select_related(
+        'cheque_book', 'bank_account', 'issued_by'
+    )[:200]
+    return render(request, 'billing/cheque_register.html', {'cheques': cheques})
+
+
+@login_required
+def cheque_issue(request):
+    if not _can_manage_cheques(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    books = ChequeBook.objects.filter(is_deleted=False, is_exhausted=False).select_related('bank_account')
+    if request.method == 'POST':
+        book_id = request.POST.get('cheque_book')
+        book = get_object_or_404(ChequeBook, pk=book_id, is_deleted=False)
+        cheque_number = str(book.current_number)
+        if book.series_prefix:
+            cheque_number = f"{book.series_prefix}{cheque_number}"
+        chq = ChequeRegister(
+            cheque_book=book,
+            cheque_number=cheque_number,
+            bank_account=book.bank_account,
+            payee=request.POST.get('payee', '').strip(),
+            amount=Decimal(request.POST.get('amount', '0') or '0'),
+            issue_date=request.POST.get('issue_date'),
+            reason=request.POST.get('reason', '').strip(),
+            issued_by=request.user,
+        )
+        chq.save()
+        # Advance cheque book counter
+        book.current_number += 1
+        if book.current_number > book.end_number:
+            book.is_exhausted = True
+        book.save()
+        messages.success(request, f'Cheque #{cheque_number} issued to {chq.payee}.')
+        return redirect('billing:cheque_register')
+    return render(request, 'billing/cheque_issue.html', {
+        'books': books, 'today': timezone.localdate(),
+    })
+
+
+@login_required
+@require_POST
+def cheque_void(request, cheque_id):
+    if not _can_manage_cheques(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    chq = get_object_or_404(ChequeRegister, pk=cheque_id, is_deleted=False)
+    if chq.status == ChequeStatus.ISSUED:
+        chq.status = ChequeStatus.VOIDED
+        chq.voided_by = request.user
+        chq.voided_at = timezone.now()
+        chq.reason = request.POST.get('reason', chq.reason)
+        chq.save()
+        messages.success(request, f'Cheque #{chq.cheque_number} voided.')
+    return redirect('billing:cheque_register')
+
+
+@login_required
+@require_POST
+def cheque_clear(request, cheque_id):
+    if not _can_manage_cheques(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    chq = get_object_or_404(ChequeRegister, pk=cheque_id, is_deleted=False)
+    if chq.status == ChequeStatus.ISSUED:
+        chq.status = ChequeStatus.CLEARED
+        chq.cleared_date = request.POST.get('cleared_date') or timezone.localdate()
+        chq.save()
+        messages.success(request, f'Cheque #{chq.cheque_number} marked as cleared.')
+    return redirect('billing:cheque_register')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAFF ADVANCES (Salary & Business)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def advance_list(request):
+    """View advances — staff sees own, managers see all."""
+    user = request.user
+    if _can_manage_advances(user):
+        advances = StaffAdvance.objects.filter(is_deleted=False).select_related('staff', 'approved_by')
+    else:
+        advances = StaffAdvance.objects.filter(staff=user, is_deleted=False)
+    return render(request, 'billing/advance_list.html', {
+        'advances': advances,
+        'can_approve': _can_manage_advances(user),
+    })
+
+
+@login_required
+def advance_request(request):
+    if request.method == 'POST':
+        adv = StaffAdvance(
+            staff=request.user,
+            advance_type=request.POST.get('advance_type', AdvanceType.SALARY),
+            amount_requested=Decimal(request.POST.get('amount_requested', '0') or '0'),
+            purpose=request.POST.get('purpose', '').strip(),
+        )
+        # Business advance: check no outstanding
+        if adv.advance_type == AdvanceType.BUSINESS:
+            outstanding = StaffAdvance.objects.filter(
+                staff=request.user, advance_type=AdvanceType.BUSINESS,
+                status__in=[AdvanceStatus.REQUESTED, AdvanceStatus.APPROVED, AdvanceStatus.DISBURSED],
+                is_deleted=False,
+            ).exists()
+            if outstanding:
+                messages.error(request, 'You already have an outstanding business advance. Settle it first.')
+                return redirect('billing:advance_list')
+        adv.save()
+        messages.success(request, 'Advance request submitted.')
+        return redirect('billing:advance_list')
+    return render(request, 'billing/advance_form.html', {
+        'advance_types': AdvanceType.choices,
+    })
+
+
+@login_required
+def advance_detail(request, advance_id):
+    adv = get_object_or_404(StaffAdvance, pk=advance_id, is_deleted=False)
+    # Staff can see own, managers can see all
+    if adv.staff != request.user and not _can_manage_advances(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:advance_list')
+    return render(request, 'billing/advance_detail.html', {
+        'advance': adv,
+        'can_approve': _can_manage_advances(request.user),
+    })
+
+
+@login_required
+@require_POST
+def advance_approve(request, advance_id):
+    if not _can_manage_advances(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    adv = get_object_or_404(StaffAdvance, pk=advance_id, is_deleted=False)
+    if adv.status == AdvanceStatus.REQUESTED:
+        adv.status = AdvanceStatus.APPROVED
+        adv.amount_approved = Decimal(request.POST.get('amount_approved', '0') or '0') or adv.amount_requested
+        adv.approved_by = request.user
+        adv.approved_at = timezone.now()
+        adv.save()
+        messages.success(request, f'Advance approved for {adv.amount_approved:,.0f} XAF.')
+    return redirect('billing:advance_detail', advance_id=adv.pk)
+
+
+@login_required
+@require_POST
+def advance_reject(request, advance_id):
+    if not _can_manage_advances(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    adv = get_object_or_404(StaffAdvance, pk=advance_id, is_deleted=False)
+    if adv.status == AdvanceStatus.REQUESTED:
+        adv.status = AdvanceStatus.REJECTED
+        adv.notes = request.POST.get('notes', '')
+        adv.approved_by = request.user
+        adv.approved_at = timezone.now()
+        adv.save()
+        messages.success(request, 'Advance request rejected.')
+    return redirect('billing:advance_list')
+
+
+@login_required
+@require_POST
+def advance_disburse(request, advance_id):
+    if not _can_manage_cash_transfers(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    adv = get_object_or_404(StaffAdvance, pk=advance_id, is_deleted=False)
+    if adv.status == AdvanceStatus.APPROVED:
+        from datetime import timedelta
+        adv.status = AdvanceStatus.DISBURSED
+        adv.disbursed_date = timezone.localdate()
+        adv.payment_method = request.POST.get('payment_method', PaymentMethod.CASH)
+        adv.reference = request.POST.get('reference', '').strip()
+        if adv.advance_type == AdvanceType.BUSINESS:
+            adv.settlement_due = adv.disbursed_date + timedelta(days=5)
+        adv.save()
+        messages.success(request, f'Advance disbursed to {adv.staff.get_full_name()}.')
+    return redirect('billing:advance_detail', advance_id=adv.pk)
+
+
+@login_required
+@require_POST
+def advance_settle(request, advance_id):
+    if not _can_manage_advances(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    adv = get_object_or_404(StaffAdvance, pk=advance_id, is_deleted=False)
+    if adv.status == AdvanceStatus.DISBURSED:
+        adv.status = AdvanceStatus.SETTLED
+        adv.settled_date = timezone.localdate()
+        adv.notes = request.POST.get('settlement_notes', adv.notes)
+        adv.save()
+        messages.success(request, f'Advance settled for {adv.staff.get_full_name()}.')
+    return redirect('billing:advance_list')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CASH TRANSFERS (Desk → Safe, Safe → Bank, Desk → Desk, Float Issue)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def cash_transfer_list(request):
+    if not _can_manage_cash_transfers(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    transfers = CashTransfer.objects.filter(is_deleted=False).select_related(
+        'from_desk', 'to_desk', 'initiated_by', 'confirmed_by'
+    )[:200]
+    return render(request, 'billing/cash_transfer_list.html', {'transfers': transfers})
+
+
+@login_required
+def cash_transfer_create(request):
+    if not _can_manage_cash_transfers(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    desks = CashDesk.objects.filter(is_deleted=False, is_active=True)
+    if request.method == 'POST':
+        xfer = CashTransfer(
+            transfer_type=request.POST.get('transfer_type'),
+            amount=Decimal(request.POST.get('amount', '0') or '0'),
+            initiated_by=request.user,
+            reference=request.POST.get('reference', '').strip(),
+            notes=request.POST.get('notes', '').strip(),
+        )
+        from_desk_id = request.POST.get('from_desk')
+        to_desk_id = request.POST.get('to_desk')
+        if from_desk_id:
+            xfer.from_desk_id = from_desk_id
+        if to_desk_id:
+            xfer.to_desk_id = to_desk_id
+        xfer.save()
+        messages.success(request, f'Cash transfer of {xfer.amount:,.0f} XAF recorded.')
+        return redirect('billing:cash_transfer_list')
+    return render(request, 'billing/cash_transfer_form.html', {
+        'desks': desks,
+        'transfer_types': TransferType.choices,
+    })
+
+
+@login_required
+@require_POST
+def cash_transfer_confirm(request, transfer_id):
+    if not _can_manage_safe(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    xfer = get_object_or_404(CashTransfer, pk=transfer_id, is_deleted=False)
+    if xfer.status == TransferStatus.PENDING:
+        xfer.status = TransferStatus.CONFIRMED
+        xfer.confirmed_by = request.user
+        xfer.confirmed_at = timezone.now()
+        xfer.save()
+        messages.success(request, 'Cash transfer confirmed.')
+    return redirect('billing:cash_transfer_list')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SAFE BALANCE MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def safe_balance_list(request):
+    if not _can_manage_safe(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    balances = SafeBalance.objects.filter(is_deleted=False)[:90]
+    return render(request, 'billing/safe_balance_list.html', {'balances': balances})
+
+
+@login_required
+def safe_balance_record(request):
+    if not _can_manage_safe(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    if request.method == 'POST':
+        sb = SafeBalance(
+            date=request.POST.get('date'),
+            opening_balance=Decimal(request.POST.get('opening_balance', '0') or '0'),
+            total_deposits=Decimal(request.POST.get('total_deposits', '0') or '0'),
+            total_withdrawals=Decimal(request.POST.get('total_withdrawals', '0') or '0'),
+            closing_balance=Decimal(request.POST.get('closing_balance', '0') or '0'),
+            counted_by=request.user,
+            notes=request.POST.get('notes', '').strip(),
+        )
+        sb.save()
+        if sb.exceeds_limit:
+            messages.warning(
+                request,
+                f'WARNING: Safe closing balance ({sb.closing_balance:,.0f} XAF) exceeds '
+                f'the {SafeBalance.SAFE_MAX_BALANCE:,.0f} XAF policy limit! Arrange bank deposit immediately.'
+            )
+        else:
+            messages.success(request, f'Safe balance for {sb.date} recorded.')
+        return redirect('billing:safe_balance_list')
+    # Pre-fill opening from previous day's closing
+    last = SafeBalance.objects.filter(is_deleted=False).first()
+    return render(request, 'billing/safe_balance_form.html', {
+        'today': timezone.localdate(),
+        'last_closing': last.closing_balance if last else 0,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CASH VARIANCE REGISTER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def variance_register(request):
+    if not _can_view_variance_register(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    variances = CashVarianceRegister.objects.filter(is_deleted=False).select_related(
+        'cashier', 'resolved_by'
+    )
+    unresolved = variances.filter(is_resolved=False).count()
+    return render(request, 'billing/variance_register.html', {
+        'variances': variances[:200],
+        'unresolved': unresolved,
+    })
+
+
+@login_required
+@require_POST
+def variance_resolve(request, variance_id):
+    if not _can_manage_advances(request.user):  # Senior Accountant+ resolves
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    var = get_object_or_404(CashVarianceRegister, pk=variance_id, is_deleted=False)
+    if not var.is_resolved:
+        var.resolution = request.POST.get('resolution', '').strip()
+        var.resolved_by = request.user
+        var.resolved_at = timezone.now()
+        var.is_resolved = True
+        var.save()
+        messages.success(request, f'Variance for {var.cashier.get_full_name()} resolved.')
+    return redirect('billing:variance_register')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSET DISPOSAL WORKFLOW
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def asset_disposal_list(request):
+    if not _can_manage_assets_full(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    disposals = AssetDisposal.objects.filter(is_deleted=False).select_related(
+        'asset', 'requested_by', 'approved_by'
+    )
+    return render(request, 'billing/asset_disposal_list.html', {'disposals': disposals})
+
+
+@login_required
+def asset_dispose(request, asset_id):
+    if not _can_manage_assets_full(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    asset = get_object_or_404(AssetRegister, pk=asset_id, is_deleted=False)
+    if request.method == 'POST':
+        disp = AssetDisposal(
+            asset=asset,
+            disposal_method=request.POST.get('disposal_method'),
+            reason=request.POST.get('reason', '').strip(),
+            estimated_value=Decimal(request.POST.get('estimated_value', '0') or '0'),
+            requested_by=request.user,
+        )
+        disp.save()
+        messages.success(request, f'Disposal request for "{asset.name}" submitted.')
+        return redirect('billing:asset_disposal_list')
+    return render(request, 'billing/asset_disposal_form.html', {
+        'asset': asset,
+        'disposal_methods': DisposalMethod.choices,
+    })
+
+
+@login_required
+@require_POST
+def asset_disposal_approve(request, disposal_id):
+    if not (request.user.role in (UserRole.FINANCE_DIRECTOR, UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN) or request.user.is_superuser):
+        messages.error(request, 'Only Finance Director or Admin Director can approve disposals.')
+        return redirect('billing:dashboard')
+    disp = get_object_or_404(AssetDisposal, pk=disposal_id, is_deleted=False)
+    action = request.POST.get('action', 'approve')
+    if action == 'approve' and disp.status == DisposalStatus.REQUESTED:
+        disp.status = DisposalStatus.APPROVED
+        disp.approved_by = request.user
+        disp.approved_at = timezone.now()
+        disp.save()
+        messages.success(request, f'Disposal of "{disp.asset.name}" approved.')
+    elif action == 'reject' and disp.status == DisposalStatus.REQUESTED:
+        disp.status = DisposalStatus.REJECTED
+        disp.approved_by = request.user
+        disp.approved_at = timezone.now()
+        disp.notes = request.POST.get('notes', disp.notes)
+        disp.save()
+        messages.success(request, 'Disposal request rejected.')
+    elif action == 'complete' and disp.status == DisposalStatus.APPROVED:
+        disp.status = DisposalStatus.COMPLETED
+        disp.disposal_date = timezone.localdate()
+        disp.actual_proceeds = Decimal(request.POST.get('actual_proceeds', '0') or '0')
+        disp.buyer_info = request.POST.get('buyer_info', '').strip()
+        disp.save()
+        # Update asset status
+        asset = disp.asset
+        asset.status = AssetStatus.DISPOSED
+        asset.save()
+        messages.success(request, f'Asset "{asset.name}" disposed and removed from register.')
+    return redirect('billing:asset_disposal_list')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUDGET ANNUAL CREATE + YTD REPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def budget_annual_create(request):
+    if not _can_manage_bank(request.user):  # Senior Accountant+
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from .models import ExpenseCategory
+    if request.method == 'POST':
+        fiscal_year = int(request.POST.get('fiscal_year', timezone.localdate().year))
+        categories = request.POST.getlist('category[]')
+        amounts = request.POST.getlist('annual_amount[]')
+        created = 0
+        for cat, amt in zip(categories, amounts):
+            if not amt:
+                continue
+            annual = Decimal(amt)
+            monthly = (annual / 12).quantize(Decimal('1'))
+            for month in range(1, 13):
+                Budget.objects.get_or_create(
+                    budget_type=BudgetType.EXPENSE,
+                    category=cat,
+                    year=fiscal_year,
+                    month=month,
+                    defaults={'amount': monthly, 'notes': f'Auto-created from annual budget wizard'},
+                )
+            created += 1
+        messages.success(request, f'{created} annual budget lines created for FY {fiscal_year}.')
+        return redirect('billing:budget_list')
+    categories = ExpenseCategory.choices
+    return render(request, 'billing/budget_annual_create.html', {
+        'categories': categories,
+        'current_year': timezone.localdate().year,
+    })
+
+
+@login_required
+def budget_ytd_report(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    year = int(request.GET.get('year', timezone.localdate().year))
+    current_month = timezone.localdate().month if year == timezone.localdate().year else 12
+    budgets = Budget.objects.filter(year=year, is_deleted=False).order_by('category', 'month')
+    # Aggregate by category
+    from collections import defaultdict
+    cat_data = defaultdict(lambda: {'budget': Decimal('0'), 'actual': Decimal('0')})
+    for b in budgets:
+        if b.month <= current_month:
+            cat_data[b.category]['budget'] += b.amount
+            if hasattr(b, 'actual_amount'):
+                cat_data[b.category]['actual'] += (b.actual_amount or 0)
+    # Calculate actual from expenses
+    from .models import Expense
+    expenses = (
+        Expense.objects.filter(
+            date__year=year, date__month__lte=current_month,
+            is_deleted=False, status='APPROVED',
+        )
+        .values('category')
+        .annotate(total=Sum('amount'))
+    )
+    for exp in expenses:
+        if exp['category'] in cat_data:
+            cat_data[exp['category']]['actual'] = exp['total']
+        else:
+            cat_data[exp['category']] = {'budget': Decimal('0'), 'actual': exp['total']}
+
+    rows = []
+    for cat, data in sorted(cat_data.items()):
+        variance = data['budget'] - data['actual']
+        pct = (data['actual'] / data['budget'] * 100) if data['budget'] else 0
+        rows.append({
+            'category': cat,
+            'budget': data['budget'],
+            'actual': data['actual'],
+            'variance': variance,
+            'pct': round(pct, 1),
+        })
+    return render(request, 'billing/reports/budget_ytd.html', {
+        'rows': rows, 'year': year, 'current_month': current_month,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DAILY LIQUIDITY REPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_daily_liquidity(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    today = timezone.localdate()
+    # Safe balance
+    safe = SafeBalance.objects.filter(date=today, is_deleted=False).first()
+    # Bank balances
+    bank_accounts = BankAccount.objects.filter(is_deleted=False, is_active=True)
+    bank_data = []
+    for ba in bank_accounts:
+        last_stmt = ba.statements.filter(is_deleted=False).order_by('-statement_date').first()
+        bank_data.append({
+            'account': ba,
+            'last_balance': last_stmt.balance if last_stmt else ba.opening_balance,
+            'last_date': last_stmt.statement_date if last_stmt else None,
+        })
+    # Outstanding cheques
+    outstanding_cheques = ChequeRegister.objects.filter(
+        status=ChequeStatus.ISSUED, is_deleted=False
+    ).aggregate(total=Sum('amount'))['total'] or 0
+    # Pending deposits
+    pending_deposits = CashToBank.objects.filter(
+        status__in=[CashToBankStatus.PENDING, CashToBankStatus.DEPOSITED],
+        is_deleted=False,
+    ).aggregate(total=Sum('amount'))['total'] or 0
+    # Today's collections
+    today_collections = Payment.objects.filter(
+        payment_date__date=today, is_deleted=False
+    ).aggregate(total=Sum('amount'))['total'] or 0
+
+    total_bank = sum(b['last_balance'] for b in bank_data)
+    safe_balance = safe.closing_balance if safe else 0
+    total_liquidity = total_bank + safe_balance - outstanding_cheques
+
+    return render(request, 'billing/reports/daily_liquidity.html', {
+        'today': today,
+        'safe': safe,
+        'safe_balance': safe_balance,
+        'bank_data': bank_data,
+        'total_bank': total_bank,
+        'outstanding_cheques': outstanding_cheques,
+        'pending_deposits': pending_deposits,
+        'today_collections': today_collections,
+        'total_liquidity': total_liquidity,
+        'safe_limit': SafeBalance.SAFE_MAX_BALANCE,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SURGERY REVENUE ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_surgery_revenue(request):
+    if not _can_view_pl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from django.db.models import Count
+    from django.db.models.functions import TruncMonth
+    df = request.GET.get('date_from', '')
+    dt = request.GET.get('date_to', '')
+    today = timezone.localdate()
+    if not df:
+        df = today.replace(day=1).isoformat()
+    if not dt:
+        dt = today.isoformat()
+
+    items = InvoiceItem.objects.filter(
+        invoice__is_deleted=False,
+        invoice__status__in=[InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID],
+        category=ServiceCategory.SURGICAL,
+        is_deleted=False,
+        invoice__created_at__date__gte=df,
+        invoice__created_at__date__lte=dt,
+    )
+
+    # By service name
+    by_service = (
+        items.values('service_name')
+        .annotate(count=Count('id'), total=Sum('amount'))
+        .order_by('-total')
+    )
+
+    # By month
+    by_month = (
+        items.annotate(month=TruncMonth('invoice__created_at'))
+        .values('month')
+        .annotate(total=Sum('amount'), count=Count('id'))
+        .order_by('month')
+    )
+
+    grand_total = items.aggregate(total=Sum('amount'))['total'] or 0
+    grand_count = items.count()
+
+    return render(request, 'billing/reports/surgery_revenue.html', {
+        'by_service': by_service,
+        'by_month': by_month,
+        'grand_total': grand_total,
+        'grand_count': grand_count,
+        'date_from': df,
+        'date_to': dt,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REVENUE BY DEPARTMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_revenue_by_department(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from django.db.models import Count
+    df = request.GET.get('date_from', '')
+    dt = request.GET.get('date_to', '')
+    today = timezone.localdate()
+    if not df:
+        df = today.replace(day=1).isoformat()
+    if not dt:
+        dt = today.isoformat()
+
+    items = InvoiceItem.objects.filter(
+        invoice__is_deleted=False,
+        invoice__status__in=[InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID],
+        is_deleted=False,
+        invoice__created_at__date__gte=df,
+        invoice__created_at__date__lte=dt,
+    )
+
+    by_dept = (
+        items.values('category')
+        .annotate(count=Count('id'), total=Sum('amount'))
+        .order_by('-total')
+    )
+
+    grand_total = items.aggregate(total=Sum('amount'))['total'] or 0
+
+    return render(request, 'billing/reports/revenue_by_department.html', {
+        'by_dept': by_dept,
+        'grand_total': grand_total,
+        'date_from': df,
+        'date_to': dt,
+        'categories': ServiceCategory.choices,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DONOR REPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_donor(request):
+    if not _can_view_pl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from .models import Expense, ExpenseCategory
+    df = request.GET.get('date_from', '')
+    dt = request.GET.get('date_to', '')
+    today = timezone.localdate()
+    if not df:
+        df = today.replace(month=1, day=1).isoformat()
+    if not dt:
+        dt = today.isoformat()
+
+    # Revenue
+    revenue = Payment.objects.filter(
+        payment_date__date__gte=df, payment_date__date__lte=dt,
+        is_deleted=False,
+    ).aggregate(total=Sum('amount'))['total'] or 0
+
+    # Expenses by category
+    expenses = (
+        Expense.objects.filter(
+            date__gte=df, date__lte=dt, is_deleted=False, status='APPROVED',
+        )
+        .values('category')
+        .annotate(total=Sum('amount'))
+        .order_by('-total')
+    )
+    total_expense = sum(e['total'] for e in expenses)
+
+    # Budget comparison
+    year = today.year
+    budgets = Budget.objects.filter(year=year, is_deleted=False)
+    total_budget = budgets.aggregate(total=Sum('amount'))['total'] or 0
+
+    return render(request, 'billing/reports/donor_report.html', {
+        'revenue': revenue,
+        'expenses': expenses,
+        'total_expense': total_expense,
+        'total_budget': total_budget,
+        'budget_utilization': round(total_expense / total_budget * 100, 1) if total_budget else 0,
+        'net_position': revenue - total_expense,
+        'date_from': df,
+        'date_to': dt,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DSF — Declaration Statistique et Fiscale (Cameroon annual tax return)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def report_dsf(request):
+    if not _can_view_pl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from .models import Expense
+    year = int(request.GET.get('year', timezone.localdate().year))
+
+    # Total revenue
+    revenue = Payment.objects.filter(
+        payment_date__year=year, is_deleted=False,
+    ).aggregate(total=Sum('amount'))['total'] or 0
+
+    # Expenses by category
+    expenses = (
+        Expense.objects.filter(
+            date__year=year, is_deleted=False, status='APPROVED',
+        )
+        .values('category')
+        .annotate(total=Sum('amount'))
+        .order_by('category')
+    )
+    total_expense = sum(e['total'] for e in expenses)
+
+    # Asset depreciation
+    assets = AssetRegister.objects.filter(is_deleted=False, status=AssetStatus.ACTIVE)
+    total_depreciation = sum(a.annual_depreciation for a in assets)
+
+    # GL summary by OHADA class
+    from .models import JournalLine
+    gl_summary = (
+        JournalLine.objects.filter(
+            entry__date__year=year, entry__is_deleted=False,
+        )
+        .extra(select={'acct_class': "SUBSTR(account_code, 1, 1)"})
+        .values('acct_class')
+        .annotate(total_dr=Sum('debit'), total_cr=Sum('credit'))
+        .order_by('acct_class')
+    )
+
+    return render(request, 'billing/reports/dsf.html', {
+        'year': year,
+        'revenue': revenue,
+        'expenses': expenses,
+        'total_expense': total_expense,
+        'total_depreciation': total_depreciation,
+        'net_result': revenue - total_expense,
+        'gl_summary': gl_summary,
+        'asset_count': assets.count(),
+    })

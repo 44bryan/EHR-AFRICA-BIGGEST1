@@ -1,0 +1,102 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Cheque Register{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Cash Management</li>
+    <li class="breadcrumb-item active">Cheque Register</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-card-checklist me-2"></i>Cheque Register</h4>
+    <small class="text-muted">Track issued cheques and their clearance status</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:chequebook_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-journal-text me-1"></i>Cheque Books
+    </a>
+    <a href="{% url 'billing:cheque_issue' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Issue Cheque
+    </a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Cheque #</th>
+            <th>Bank</th>
+            <th>Payee</th>
+            <th class="text-end">Amount (XAF)</th>
+            <th>Issue Date</th>
+            <th class="text-center">Status</th>
+            <th>Cleared Date</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for chq in cheques %}
+          <tr>
+            <td><code>{{ chq.cheque_number }}</code></td>
+            <td>{{ chq.cheque_book.bank_account.bank_name|default:"-" }}</td>
+            <td>{{ chq.payee }}</td>
+            <td class="text-end fw-semibold">{{ chq.amount|floatformat:0|intcomma }} XAF</td>
+            <td>{{ chq.issue_date|date:"d M Y" }}</td>
+            <td class="text-center">
+              {% if chq.status == 'ISSUED' %}
+                <span class="badge bg-primary">Issued</span>
+              {% elif chq.status == 'CLEARED' %}
+                <span class="badge bg-success">Cleared</span>
+              {% elif chq.status == 'BOUNCED' %}
+                <span class="badge bg-danger">Bounced</span>
+              {% elif chq.status == 'VOIDED' %}
+                <span class="badge bg-secondary">Voided</span>
+              {% elif chq.status == 'STALE' %}
+                <span class="badge bg-warning text-dark">Stale</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ chq.status }}</span>
+              {% endif %}
+            </td>
+            <td>{{ chq.cleared_date|date:"d M Y"|default:"-" }}</td>
+            <td class="text-end">
+              {% if chq.status == 'ISSUED' %}
+                <form method="post" action="{% url 'billing:cheque_clear' chq.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="cleared_date" value="{{ today }}">
+                  <button type="submit" class="btn btn-outline-success btn-sm"
+                          onclick="return confirm('Mark cheque {{ chq.cheque_number }} as cleared?')">
+                    <i class="bi bi-check2-circle me-1"></i>Clear
+                  </button>
+                </form>
+                <form method="post" action="{% url 'billing:cheque_void' chq.pk %}" class="d-inline ms-1">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-outline-danger btn-sm"
+                          onclick="return confirm('Void cheque {{ chq.cheque_number }}? This cannot be undone.')">
+                    <i class="bi bi-x-circle me-1"></i>Void
+                  </button>
+                </form>
+              {% else %}
+                <span class="text-muted small">--</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">No cheques issued yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

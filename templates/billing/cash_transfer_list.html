@@ -1,0 +1,91 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+
+{% block title %}Cash Transfers{% endblock %}
+
+{% block page_header %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'billing:cashier_dashboard' %}">Billing</a></li>
+    <li class="breadcrumb-item">Finance</li>
+    <li class="breadcrumb-item active">Cash Transfers</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-2"></i>Cash Transfers</h4>
+    <small class="text-muted">Inter-desk and safe cash movements</small>
+  </div>
+  <a href="{% url 'billing:cash_transfer_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-circle me-1"></i>New Transfer
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>From Desk</th>
+          <th>To Desk</th>
+          <th class="text-end">Amount</th>
+          <th>Status</th>
+          <th>Initiated By</th>
+          <th>Confirmed By</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for transfer in transfers %}
+        <tr>
+          <td>{{ transfer.created_at|date:"d M Y H:i" }}</td>
+          <td>
+            <span class="badge bg-secondary">{{ transfer.get_transfer_type_display }}</span>
+          </td>
+          <td>{{ transfer.from_desk|default:"&mdash;" }}</td>
+          <td>{{ transfer.to_desk|default:"&mdash;" }}</td>
+          <td class="text-end fw-semibold">{{ transfer.amount|floatformat:0|intcomma }} XAF</td>
+          <td>
+            {% if transfer.status == 'PENDING' %}
+            <span class="badge bg-warning text-dark">Pending</span>
+            {% elif transfer.status == 'CONFIRMED' %}
+            <span class="badge bg-success">Confirmed</span>
+            {% elif transfer.status == 'REJECTED' %}
+            <span class="badge bg-danger">Rejected</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ transfer.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td>{{ transfer.initiated_by.get_full_name }}</td>
+          <td>{{ transfer.confirmed_by.get_full_name|default:"&mdash;" }}</td>
+          <td class="text-end">
+            {% if transfer.status == 'PENDING' %}
+            <form method="post" action="{% url 'billing:cash_transfer_confirm' transfer.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2"
+                      onclick="return confirm('Confirm this cash transfer?')">
+                <i class="bi bi-check-lg me-1"></i>Confirm
+              </button>
+            </form>
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center py-4 text-muted">
+            No cash transfers recorded. <a href="{% url 'billing:cash_transfer_create' %}">Create one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

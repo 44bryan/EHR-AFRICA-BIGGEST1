@@ -194,4 +194,80 @@ urlpatterns = [
     path('export/void-register/', views.export_void_register, name='export_void_register'),
     path('export/corporate/', views.export_corporate_list, name='export_corporate_list'),
     path('export/patient-financial/', views.export_patient_financial, name='export_patient_financial'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # BANK OPERATIONS
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('bank/accounts/', views.bank_account_list, name='bank_account_list'),
+    path('bank/accounts/create/', views.bank_account_create, name='bank_account_create'),
+    path('bank/accounts/<uuid:account_id>/edit/', views.bank_account_edit, name='bank_account_edit'),
+    path('bank/statements/import/', views.bank_statement_import, name='bank_statement_import'),
+    path('bank/reconciliation/', views.bank_reconciliation_list, name='bank_reconciliation_list'),
+    path('bank/reconciliation/create/', views.bank_reconciliation_create, name='bank_reconciliation_create'),
+    path('bank/reconciliation/<uuid:recon_id>/', views.bank_reconciliation_detail, name='bank_reconciliation_detail'),
+    path('bank/reconciliation/<uuid:recon_id>/complete/', views.bank_reconciliation_complete, name='bank_reconciliation_complete'),
+    path('bank/reconciliation/<uuid:recon_id>/review/', views.bank_reconciliation_review, name='bank_reconciliation_review'),
+
+    # ── Cash-to-Bank Deposits ───────────────────────────────────────────────
+    path('bank/deposits/', views.cash_to_bank_list, name='cash_to_bank_list'),
+    path('bank/deposits/create/', views.cash_to_bank_create, name='cash_to_bank_create'),
+    path('bank/deposits/<uuid:deposit_id>/confirm/', views.cash_to_bank_confirm, name='cash_to_bank_confirm'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CHEQUE MANAGEMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('cheques/books/', views.chequebook_list, name='chequebook_list'),
+    path('cheques/books/create/', views.chequebook_create, name='chequebook_create'),
+    path('cheques/register/', views.cheque_register, name='cheque_register'),
+    path('cheques/issue/', views.cheque_issue, name='cheque_issue'),
+    path('cheques/<uuid:cheque_id>/void/', views.cheque_void, name='cheque_void'),
+    path('cheques/<uuid:cheque_id>/clear/', views.cheque_clear, name='cheque_clear'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STAFF ADVANCES
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('advances/', views.advance_list, name='advance_list'),
+    path('advances/request/', views.advance_request, name='advance_request'),
+    path('advances/<uuid:advance_id>/', views.advance_detail, name='advance_detail'),
+    path('advances/<uuid:advance_id>/approve/', views.advance_approve, name='advance_approve'),
+    path('advances/<uuid:advance_id>/reject/', views.advance_reject, name='advance_reject'),
+    path('advances/<uuid:advance_id>/disburse/', views.advance_disburse, name='advance_disburse'),
+    path('advances/<uuid:advance_id>/settle/', views.advance_settle, name='advance_settle'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CASH TRANSFERS & SAFE
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('cash/transfers/', views.cash_transfer_list, name='cash_transfer_list'),
+    path('cash/transfers/create/', views.cash_transfer_create, name='cash_transfer_create'),
+    path('cash/transfers/<uuid:transfer_id>/confirm/', views.cash_transfer_confirm, name='cash_transfer_confirm'),
+    path('cash/safe/', views.safe_balance_list, name='safe_balance_list'),
+    path('cash/safe/record/', views.safe_balance_record, name='safe_balance_record'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CASH VARIANCE REGISTER
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('reports/variance-register/', views.variance_register, name='variance_register'),
+    path('reports/variance/<uuid:variance_id>/resolve/', views.variance_resolve, name='variance_resolve'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ASSET DISPOSAL
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('assets/<uuid:asset_id>/dispose/', views.asset_dispose, name='asset_dispose'),
+    path('assets/disposals/', views.asset_disposal_list, name='asset_disposal_list'),
+    path('assets/disposals/<uuid:disposal_id>/action/', views.asset_disposal_approve, name='asset_disposal_approve'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ADVANCED FINANCIAL REPORTS
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('reports/liquidity/', views.report_daily_liquidity, name='report_daily_liquidity'),
+    path('reports/surgery-revenue/', views.report_surgery_revenue, name='report_surgery_revenue'),
+    path('reports/revenue-by-department/', views.report_revenue_by_department, name='report_revenue_by_department'),
+    path('reports/donor/', views.report_donor, name='report_donor'),
+    path('reports/dsf/', views.report_dsf, name='report_dsf'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # BUDGET ENHANCEMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('budget/annual-create/', views.budget_annual_create, name='budget_annual_create'),
+    path('reports/budget-ytd/', views.budget_ytd_report, name='budget_ytd_report'),
 ]
