@@ -1,0 +1,58 @@
+{% extends 'base_authenticated.html' %}
+{% load humanize %}
+
+{% block title %}ADR Reports{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Adverse Drug Reaction Reports</h5>
+    <a href="{% url 'pharmacy:adr_create' %}" class="btn btn-sm btn-danger">
+      <i class="bi bi-plus-lg me-1"></i>Report ADR
+    </a>
+  </div>
+
+  <div class="mb-3">
+    <select class="form-select form-select-sm w-auto d-inline-block" onchange="location.href='?severity='+this.value">
+      <option value="">All Severities</option>
+      <option value="MILD" {% if severity_filter == 'MILD' %}selected{% endif %}>Mild</option>
+      <option value="MODERATE" {% if severity_filter == 'MODERATE' %}selected{% endif %}>Moderate</option>
+      <option value="SEVERE" {% if severity_filter == 'SEVERE' %}selected{% endif %}>Severe</option>
+      <option value="FATAL" {% if severity_filter == 'FATAL' %}selected{% endif %}>Fatal</option>
+    </select>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th><th>Patient</th><th>Drug</th><th>Severity</th>
+            <th>Outcome</th><th>Causality</th><th>Reported By</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in reports %}
+          <tr>
+            <td>{{ r.reaction_date|date:"d M Y" }}</td>
+            <td><strong>{{ r.patient.full_name }}</strong><br><span class="text-muted small">{{ r.patient.patient_id }}</span></td>
+            <td>{{ r.drug.name }}</td>
+            <td>
+              <span class="badge {% if r.severity == 'SEVERE' or r.severity == 'FATAL' %}bg-danger{% elif r.severity == 'MODERATE' %}bg-warning text-dark{% else %}bg-info{% endif %}">
+                {{ r.get_severity_display }}
+              </span>
+            </td>
+            <td>{{ r.get_outcome_display }}</td>
+            <td>{{ r.get_causality_display }}</td>
+            <td class="text-muted small">{{ r.reported_by.get_full_name }}</td>
+            <td><a href="{% url 'pharmacy:adr_detail' adr_id=r.id %}" class="btn btn-sm btn-outline-secondary py-0">View</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="text-center text-muted py-4">No ADR reports yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

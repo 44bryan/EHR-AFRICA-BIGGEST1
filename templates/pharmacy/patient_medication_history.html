@@ -1,0 +1,79 @@
+{% extends 'base_authenticated.html' %}
+{% load humanize %}
+
+{% block title %}Medication History — {{ patient.full_name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="{% url 'pharmacy:patient_search' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+      <h5 class="mb-0 fw-bold">Medication History</h5>
+      <span class="text-muted small">{{ patient.full_name }} &mdash; {{ patient.patient_id }}</span>
+    </div>
+    <span class="badge bg-primary ms-auto">{{ dispensings|length }} dispensing{{ dispensings|length|pluralize }}</span>
+  </div>
+
+  {% if dispensings %}
+  {% for d in dispensings %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white py-2 px-3 d-flex align-items-center justify-content-between">
+      <div>
+        <strong class="small">{{ d.dispensing_number }}</strong>
+        <span class="text-muted small ms-2">{{ d.dispensed_at|date:"d M Y H:i" }}</span>
+        {% if d.is_otc %}<span class="badge bg-warning text-dark ms-1">OTC</span>{% endif %}
+      </div>
+      <div>
+        <span class="badge {% if d.status == 'DISPENSED' %}bg-success{% elif d.status == 'CANCELLED' %}bg-danger{% else %}bg-secondary{% endif %}">
+          {{ d.get_status_display }}
+        </span>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+        <thead class="table-light">
+          <tr><th>Drug</th><th>Qty</th><th>Batch / Exp</th><th class="text-end">Amount</th></tr>
+        </thead>
+        <tbody>
+        {% for item in d.items.all %}
+          <tr>
+            <td>
+              <strong>{{ item.display_name }}</strong>
+              {% if item.substituted_for %}<br><span class="text-muted small">Substituted for: {{ item.substituted_for }}</span>{% endif %}
+              {% if item.instructions %}<br><span class="text-info small">{{ item.instructions }}</span>{% endif %}
+            </td>
+            <td>{{ item.quantity_dispensed }}</td>
+            <td class="text-muted small">
+              {% if item.stock_batch %}{{ item.stock_batch.batch_number }} &mdash; {{ item.stock_batch.expiry_date|date:"M Y" }}{% else %}&mdash;{% endif %}
+            </td>
+            <td class="text-end">{{ item.subtotal|floatformat:0|intcomma }} FCFA</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="table-light">
+            <td colspan="3" class="text-end fw-semibold small">Total</td>
+            <td class="text-end fw-bold">{{ d.total_amount|floatformat:0|intcomma }} FCFA</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="card-footer bg-white py-1 px-3 small text-muted">
+      Pharmacist: {{ d.dispensed_by.get_full_name }}
+      {% if d.prescription %} &mdash; Prescribed by: {{ d.prescription.prescribed_by.get_full_name }}{% endif %}
+      {% if d.verified_by_pharmacist %} &mdash; <span class="text-success"><i class="bi bi-check-circle"></i> Verified</span>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-capsule fs-1 d-block mb-2"></i>
+    No medication history found for this patient.
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

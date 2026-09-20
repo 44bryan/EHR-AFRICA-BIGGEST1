@@ -2076,10 +2076,12 @@ def dispensing_receipt(request, dispensing_id):
         item.rx_eye = (rx.get_eye_display() if rx and rx.eye and rx.eye != 'NA' else '')
         item.rx_times = _FREQ_TIME_SLOTS.get(rx.frequency.strip(), '') if rx and rx.frequency else ''
         items_with_rx.append(item)
+    from apps.reports.views import _sig_b64
     return render(request, 'pharmacy/dispensing_receipt.html', {
         'dispensing': dispensing,
         'balance_due': balance_due,
         'items_with_rx': items_with_rx,
+        'pharmacist_signature': _sig_b64(dispensing.dispensed_by),
     })
 
 
@@ -3173,8 +3175,12 @@ def controlled_register_pdf(request):
         .select_related('drug', 'patient', 'performed_by', 'witness')
         .order_by('drug__name', 'entry_date')
     )
-    from apps.accounts.models import HospitalConfig
+    from apps.accounts.models import HospitalConfig, User
     config = HospitalConfig.get()
+    from apps.reports.views import _sig_b64
+    # Find head pharmacist and medical director for signatures
+    chief_pharm = User.objects.filter(role='head_pharmacist', is_active=True).first()
+    supervisor = User.objects.filter(role__in=['medical_director', 'admin_director'], is_active=True).first()
     from django.template.loader import render_to_string
     from django.http import HttpResponse
     try:
@@ -3183,6 +3189,8 @@ def controlled_register_pdf(request):
             'entries': entries,
             'report_date': report_date,
             'config': config,
+            'chief_pharmacist_signature': _sig_b64(chief_pharm),
+            'supervisor_signature': _sig_b64(supervisor),
         }, request=request)
         pdf = weasyprint.HTML(string=html).write_pdf()
         response = HttpResponse(pdf, content_type='application/pdf')
@@ -4756,3 +4764,217 @@ def stock_movement_log(request):
         'movement_types': movement_types,
         'total_count': len(movements),
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PATIENT MEDICATION HISTORY
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def patient_medication_history(request, patient_id):
+    """Complete medication dispensing history for a patient."""
+    if not _can_access_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+    dispensings = (
+        Dispensing.objects.filter(patient=patient, is_deleted=False)
+        .select_related('dispensed_by', 'prescription__prescribed_by')
+        .prefetch_related('items__drug', 'items__stock_batch')
+        .order_by('-dispensed_at')
+    )
+    return render(request, 'pharmacy/patient_medication_history.html', {
+        'patient': patient,
+        'dispensings': dispensings,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ADR — Adverse Drug Reaction Reporting
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def adr_list(request):
+    """List all adverse drug reaction reports."""
+    if not _can_access_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    from .models import AdverseDrugReaction
+    reports = (
+        AdverseDrugReaction.objects.filter(is_deleted=False)
+        .select_related('patient', 'drug', 'reported_by')
+        .order_by('-reaction_date')
+    )
+    severity = request.GET.get('severity', '')
+    if severity:
+        reports = reports.filter(severity=severity)
+    return render(request, 'pharmacy/adr_list.html', {
+        'reports': reports[:200],
+        'severity_filter': severity,
+    })
+
+
+@login_required
+def adr_create(request):
+    """Report a new adverse drug reaction."""
+    if not _can_access_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    from .models import AdverseDrugReaction, ADRSeverity, ADROutcome, ADRCausality
+    if request.method == 'POST':
+        patient = get_object_or_404(Patient, id=request.POST.get('patient_id'))
+        drug = get_object_or_404(Drug, id=request.POST.get('drug_id'))
+        disp_id = request.POST.get('dispensing_id')
+        adr = AdverseDrugReaction.objects.create(
+            patient=patient,
+            drug=drug,
+            dispensing_id=disp_id if disp_id else None,
+            reaction_date=request.POST.get('reaction_date', timezone.localdate()),
+            reaction_description=request.POST.get('reaction_description', ''),
+            severity=request.POST.get('severity', 'MILD'),
+            outcome=request.POST.get('outcome', 'UNKNOWN'),
+            causality=request.POST.get('causality', 'UNASSESSED'),
+            action_taken=request.POST.get('action_taken', ''),
+            treatment_given=request.POST.get('treatment_given', ''),
+            rechallenge=request.POST.get('rechallenge', ''),
+            reported_by=request.user,
+            notes=request.POST.get('notes', ''),
+            created_by=request.user,
+        )
+        messages.success(request, f'ADR report created for {patient.full_name} — {drug.name}.')
+        return redirect('pharmacy:adr_list')
+    return render(request, 'pharmacy/adr_form.html', {
+        'severities': ADRSeverity.choices,
+        'outcomes': ADROutcome.choices,
+        'causalities': ADRCausality.choices,
+    })
+
+
+@login_required
+def adr_detail(request, adr_id):
+    """View ADR report details."""
+    if not _can_access_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    from .models import AdverseDrugReaction
+    adr = get_object_or_404(
+        AdverseDrugReaction.objects.select_related('patient', 'drug', 'dispensing', 'reported_by'),
+        id=adr_id, is_deleted=False,
+    )
+    return render(request, 'pharmacy/adr_detail.html', {'adr': adr})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHYSICAL INVENTORY COUNT / STOCKTAKE
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def stocktake_list(request):
+    """List all stocktake sessions."""
+    if not _can_manage_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    from .models import Stocktake
+    stocktakes = Stocktake.objects.filter(is_deleted=False).select_related('initiated_by', 'finalized_by').order_by('-count_date')
+    return render(request, 'pharmacy/stocktake_list.html', {'stocktakes': stocktakes})
+
+
+@login_required
+def stocktake_create(request):
+    """Create a new stocktake session and pre-populate with current stock."""
+    if not _can_manage_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    from .models import Stocktake, StocktakeItem
+    if request.method == 'POST':
+        stocktake = Stocktake.objects.create(
+            title=request.POST.get('title', ''),
+            initiated_by=request.user,
+            notes=request.POST.get('notes', ''),
+            created_by=request.user,
+        )
+        # Pre-populate with all active batches that have stock
+        batches = DrugStock.objects.filter(
+            is_deleted=False, quantity_remaining__gt=0,
+        ).select_related('drug').order_by('drug__name', 'batch_number')
+        items = []
+        for b in batches:
+            items.append(StocktakeItem(
+                stocktake=stocktake,
+                drug=b.drug,
+                batch=b,
+                system_quantity=b.quantity_remaining,
+                counted_quantity=b.quantity_remaining,  # default to system qty
+                counted_by=request.user,
+            ))
+        StocktakeItem.objects.bulk_create(items)
+        messages.success(request, f'Stocktake {stocktake.reference} created with {len(items)} items.')
+        return redirect('pharmacy:stocktake_detail', stocktake_id=stocktake.id)
+    return render(request, 'pharmacy/stocktake_form.html', {})
+
+
+@login_required
+def stocktake_detail(request, stocktake_id):
+    """View / edit counted quantities for a stocktake session."""
+    if not _can_manage_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    from .models import Stocktake, StocktakeItem
+    stocktake = get_object_or_404(
+        Stocktake.objects.select_related('initiated_by'),
+        id=stocktake_id, is_deleted=False,
+    )
+    if request.method == 'POST' and stocktake.status == 'IN_PROGRESS':
+        # Bulk update counted quantities
+        updated = 0
+        for item in stocktake.items.all():
+            key = f'count_{item.pk}'
+            if key in request.POST:
+                try:
+                    new_count = int(request.POST[key])
+                    if new_count != item.counted_quantity:
+                        item.counted_quantity = new_count
+                        item.save()
+                        updated += 1
+                except (ValueError, TypeError):
+                    pass
+        messages.success(request, f'{updated} count(s) updated.')
+        return redirect('pharmacy:stocktake_detail', stocktake_id=stocktake.id)
+
+    items = (
+        stocktake.items.select_related('drug', 'batch', 'counted_by')
+        .order_by('drug__name', 'batch__batch_number')
+    )
+    variance_items = [i for i in items if i.variance != 0]
+    return render(request, 'pharmacy/stocktake_detail.html', {
+        'stocktake': stocktake,
+        'items': items,
+        'variance_items': variance_items,
+    })
+
+
+@login_required
+@require_POST
+def stocktake_finalize(request, stocktake_id):
+    """Finalize stocktake — apply variances as StockAdjustments."""
+    if not _can_manage_pharmacy(request.user):
+        return _pharmacy_forbidden(request)
+    from .models import Stocktake, StocktakeItem
+    stocktake = get_object_or_404(Stocktake, id=stocktake_id, is_deleted=False)
+    if stocktake.status != 'IN_PROGRESS':
+        messages.warning(request, 'This stocktake has already been finalized.')
+        return redirect('pharmacy:stocktake_detail', stocktake_id=stocktake.id)
+
+    adjustments_created = 0
+    for item in stocktake.items.filter(is_deleted=False).exclude(variance=0):
+        reason = 'COUNT_UP' if item.variance > 0 else 'COUNT_DOWN'
+        StockAdjustment.objects.create(
+            batch=item.batch,
+            reason=reason,
+            quantity_before=item.system_quantity,
+            quantity_change=item.variance,
+            quantity_after=item.counted_quantity,
+            notes=f'Stocktake {stocktake.reference}: physical count variance',
+            created_by=request.user,
+        )
+        adjustments_created += 1
+
+    stocktake.status = 'FINALIZED'
+    stocktake.finalized_by = request.user
+    stocktake.finalized_at = timezone.now()
+    stocktake.save(update_fields=['status', 'finalized_by', 'finalized_at'])
+    messages.success(request, f'Stocktake finalized — {adjustments_created} adjustment(s) applied.')
+    return redirect('pharmacy:stocktake_detail', stocktake_id=stocktake.id)

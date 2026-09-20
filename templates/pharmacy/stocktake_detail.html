@@ -1,0 +1,90 @@
+{% extends 'base_authenticated.html' %}
+
+{% block title %}Stocktake {{ stocktake.reference }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="{% url 'pharmacy:stocktake_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ stocktake.reference }}</h5>
+      <span class="text-muted small">{{ stocktake.title|default:"Physical Inventory Count" }} &mdash; {{ stocktake.count_date|date:"d M Y" }}</span>
+    </div>
+    <span class="badge {% if stocktake.status == 'FINALIZED' %}bg-success{% else %}bg-primary{% endif %} ms-auto">
+      {{ stocktake.get_status_display }}
+    </span>
+  </div>
+
+  {% if variance_items and stocktake.status == 'IN_PROGRESS' %}
+  <div class="alert alert-warning py-2 small">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    <strong>{{ variance_items|length }} variance(s) detected.</strong> Review and finalize to apply stock adjustments.
+  </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="card border-0 shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Drug</th><th>Batch</th><th>Expiry</th>
+              <th class="text-center">System Qty</th>
+              <th class="text-center">Counted Qty</th>
+              <th class="text-center">Variance</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for item in items %}
+            <tr class="{% if item.variance > 0 %}table-info{% elif item.variance < 0 %}table-danger{% endif %}">
+              <td class="fw-semibold">{{ item.drug.name }}</td>
+              <td class="text-muted">{{ item.batch.batch_number }}</td>
+              <td class="text-muted">{{ item.batch.expiry_date|date:"M Y"|default:"—" }}</td>
+              <td class="text-center">{{ item.system_quantity }}</td>
+              <td class="text-center">
+                {% if stocktake.status == 'IN_PROGRESS' %}
+                <input type="number" name="count_{{ item.pk }}" value="{{ item.counted_quantity }}"
+                       class="form-control form-control-sm text-center" style="width:80px;margin:0 auto;" min="0">
+                {% else %}
+                {{ item.counted_quantity }}
+                {% endif %}
+              </td>
+              <td class="text-center fw-bold {% if item.variance > 0 %}text-info{% elif item.variance < 0 %}text-danger{% endif %}">
+                {% if item.variance > 0 %}+{% endif %}{{ item.variance }}
+              </td>
+              <td class="text-muted small">{{ item.notes }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if stocktake.status == 'IN_PROGRESS' %}
+    <div class="d-flex justify-content-end gap-2 mt-3">
+      <button type="submit" class="btn btn-sm btn-primary">
+        <i class="bi bi-save me-1"></i>Save Counts
+      </button>
+      <button type="button" class="btn btn-sm btn-success"
+              onclick="if(confirm('Finalize this stocktake? Variances will be applied as stock adjustments. This cannot be undone.')){document.getElementById('finalizeForm').submit();}">
+        <i class="bi bi-check-circle me-1"></i>Finalize Stocktake
+      </button>
+    </div>
+    {% endif %}
+  </form>
+
+  {% if stocktake.status == 'IN_PROGRESS' %}
+  <form id="finalizeForm" method="post" action="{% url 'pharmacy:stocktake_finalize' stocktake_id=stocktake.id %}" style="display:none;">
+    {% csrf_token %}
+  </form>
+  {% endif %}
+
+  {% if stocktake.finalized_by %}
+  <div class="text-muted small mt-3">
+    Finalized by {{ stocktake.finalized_by.get_full_name }} on {{ stocktake.finalized_at|date:"d M Y H:i" }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

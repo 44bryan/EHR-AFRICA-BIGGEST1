@@ -1006,3 +1006,154 @@ class VENClassification(models.TextChoices):
     VITAL     = 'V', 'Vital — Life-saving, always in stock'
     ESSENTIAL = 'E', 'Essential — Important but alternatives exist'
     NON_ESSENTIAL = 'N', 'Non-essential — Nice to have'
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ADR — Adverse Drug Reaction Reporting (Pharmacovigilance)
+# WHO Uppsala Monitoring Centre & ICH E2B
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ADRSeverity(models.TextChoices):
+    MILD     = 'MILD',     'Mild — no treatment change needed'
+    MODERATE = 'MODERATE', 'Moderate — required intervention'
+    SEVERE   = 'SEVERE',   'Severe — hospitalisation / life-threatening'
+    FATAL    = 'FATAL',    'Fatal'
+
+
+class ADROutcome(models.TextChoices):
+    RECOVERED      = 'RECOVERED',      'Recovered / Resolved'
+    RECOVERING     = 'RECOVERING',     'Recovering'
+    NOT_RECOVERED  = 'NOT_RECOVERED',  'Not Yet Recovered'
+    SEQUELAE       = 'SEQUELAE',       'Recovered with Sequelae'
+    FATAL          = 'FATAL',          'Fatal'
+    UNKNOWN        = 'UNKNOWN',        'Unknown'
+
+
+class ADRCausality(models.TextChoices):
+    CERTAIN    = 'CERTAIN',    'Certain'
+    PROBABLE   = 'PROBABLE',   'Probable / Likely'
+    POSSIBLE   = 'POSSIBLE',   'Possible'
+    UNLIKELY   = 'UNLIKELY',   'Unlikely'
+    UNRELATED  = 'UNRELATED',  'Unrelated'
+    UNASSESSED = 'UNASSESSED', 'Not Assessed'
+
+
+class AdverseDrugReaction(AuditModel):
+    """
+    Pharmacovigilance — adverse drug reaction report.
+    WHO/ICH guidelines for ADR reporting.
+    """
+    patient = models.ForeignKey(
+        'patients.Patient', on_delete=models.PROTECT, related_name='adverse_reactions',
+    )
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='adverse_reactions')
+    dispensing = models.ForeignKey(
+        Dispensing, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='adverse_reactions',
+    )
+    reaction_date = models.DateField()
+    reaction_description = models.TextField(help_text='Describe the adverse reaction in detail')
+    severity = models.CharField(max_length=10, choices=ADRSeverity.choices)
+    outcome = models.CharField(max_length=15, choices=ADROutcome.choices, default=ADROutcome.UNKNOWN)
+    causality = models.CharField(
+        max_length=15, choices=ADRCausality.choices, default=ADRCausality.UNASSESSED,
+        help_text='WHO-UMC causality assessment',
+    )
+    action_taken = models.TextField(blank=True, help_text='Drug withdrawn, dose reduced, etc.')
+    treatment_given = models.TextField(blank=True, help_text='Treatment for the adverse reaction')
+    rechallenge = models.CharField(
+        max_length=20, blank=True,
+        choices=[('YES_POS', 'Yes — Reaction recurred'), ('YES_NEG', 'Yes — No recurrence'),
+                 ('NO', 'Not re-administered'), ('NA', 'Not applicable')],
+    )
+    reported_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='adr_reports',
+    )
+    reported_to_authority = models.BooleanField(
+        default=False, help_text='Reported to MINSANTE / national pharmacovigilance centre',
+    )
+    authority_reference = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-reaction_date']
+        verbose_name = 'Adverse Drug Reaction'
+
+    def __str__(self):
+        return f"ADR: {self.patient.full_name} — {self.drug.name} ({self.get_severity_display()})"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Physical Inventory Count / Stocktake
+# ══════════════════════════════════════════════════════════════════════════════
+
+class StocktakeStatus(models.TextChoices):
+    IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
+    FINALIZED   = 'FINALIZED',   'Finalized — Adjustments Applied'
+    CANCELLED   = 'CANCELLED',   'Cancelled'
+
+
+class Stocktake(AuditModel):
+    """
+    Physical inventory count session. Head pharmacist initiates,
+    staff count, then finalize to apply variances as StockAdjustments.
+    """
+    reference = models.CharField(max_length=30, unique=True)
+    title = models.CharField(max_length=200, blank=True, help_text='e.g. Monthly Full Count — September 2026')
+    status = models.CharField(max_length=15, choices=StocktakeStatus.choices, default=StocktakeStatus.IN_PROGRESS)
+    count_date = models.DateField(default=timezone.localdate)
+    initiated_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='stocktakes_initiated',
+    )
+    finalized_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stocktakes_finalized',
+    )
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-count_date']
+
+    def __str__(self):
+        return f"{self.reference} — {self.count_date}"
+
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            today = timezone.localdate()
+            count = Stocktake.objects.filter(count_date__year=today.year).count() + 1
+            self.reference = f"STK-{today.year}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def total_items(self):
+        return self.items.count()
+
+    @property
+    def variance_count(self):
+        return self.items.exclude(variance=0).count()
+
+
+class StocktakeItem(TimeStampedModel):
+    """Individual count line within a stocktake."""
+    stocktake = models.ForeignKey(Stocktake, on_delete=models.CASCADE, related_name='items')
+    drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name='stocktake_items')
+    batch = models.ForeignKey(DrugStock, on_delete=models.PROTECT, related_name='stocktake_items')
+    system_quantity = models.IntegerField(help_text='System stock at time of count')
+    counted_quantity = models.IntegerField(help_text='Physical count by staff')
+    variance = models.IntegerField(default=0, help_text='counted - system (positive=surplus, negative=shortage)')
+    counted_by = models.ForeignKey(
+        'accounts.User', on_delete=models.PROTECT, related_name='stocktake_counts',
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ('stocktake', 'batch')
+
+    def save(self, *args, **kwargs):
+        self.variance = self.counted_quantity - self.system_quantity
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        sign = '+' if self.variance >= 0 else ''
+        return f"{self.drug.name} Batch {self.batch.batch_number}: {sign}{self.variance}"

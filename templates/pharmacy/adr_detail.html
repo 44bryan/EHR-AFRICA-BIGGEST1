@@ -1,0 +1,74 @@
+{% extends 'base_authenticated.html' %}
+
+{% block title %}ADR Report — {{ adr.drug.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:800px;">
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="{% url 'pharmacy:adr_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+    <h5 class="mb-0 fw-bold">Adverse Drug Reaction Report</h5>
+    <span class="badge {% if adr.severity == 'SEVERE' or adr.severity == 'FATAL' %}bg-danger{% elif adr.severity == 'MODERATE' %}bg-warning text-dark{% else %}bg-info{% endif %} ms-auto">
+      {{ adr.get_severity_display }}
+    </span>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="text-muted small">Patient</label>
+          <div class="fw-semibold">{{ adr.patient.full_name }} <span class="text-muted">({{ adr.patient.patient_id }})</span></div>
+        </div>
+        <div class="col-md-6">
+          <label class="text-muted small">Drug</label>
+          <div class="fw-semibold">{{ adr.drug.name }} {{ adr.drug.strength }}</div>
+        </div>
+        <div class="col-md-4">
+          <label class="text-muted small">Reaction Date</label>
+          <div>{{ adr.reaction_date|date:"d M Y" }}</div>
+        </div>
+        <div class="col-md-4">
+          <label class="text-muted small">Outcome</label>
+          <div>{{ adr.get_outcome_display }}</div>
+        </div>
+        <div class="col-md-4">
+          <label class="text-muted small">Causality (WHO-UMC)</label>
+          <div>{{ adr.get_causality_display }}</div>
+        </div>
+        <div class="col-12">
+          <label class="text-muted small">Reaction Description</label>
+          <div class="border rounded p-2 bg-light" style="font-size:.9rem;">{{ adr.reaction_description|linebreaksbr }}</div>
+        </div>
+        {% if adr.action_taken %}
+        <div class="col-md-6">
+          <label class="text-muted small">Action Taken</label>
+          <div>{{ adr.action_taken }}</div>
+        </div>
+        {% endif %}
+        {% if adr.treatment_given %}
+        <div class="col-md-6">
+          <label class="text-muted small">Treatment Given</label>
+          <div>{{ adr.treatment_given }}</div>
+        </div>
+        {% endif %}
+        {% if adr.rechallenge %}
+        <div class="col-md-6">
+          <label class="text-muted small">Rechallenge</label>
+          <div>{{ adr.get_rechallenge_display }}</div>
+        </div>
+        {% endif %}
+        {% if adr.notes %}
+        <div class="col-12">
+          <label class="text-muted small">Notes</label>
+          <div class="text-muted">{{ adr.notes }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card-footer bg-white small text-muted py-2">
+      Reported by {{ adr.reported_by.get_full_name }} on {{ adr.created_at|date:"d M Y H:i" }}
+      {% if adr.reported_to_authority %}<span class="badge bg-success ms-2">Reported to Authority</span>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

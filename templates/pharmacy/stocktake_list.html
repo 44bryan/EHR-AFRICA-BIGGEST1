@@ -1,0 +1,42 @@
+{% extends 'base_authenticated.html' %}
+
+{% block title %}Physical Inventory Counts{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0 fw-bold"><i class="bi bi-clipboard-check text-primary me-2"></i>Stocktake / Physical Inventory Counts</h5>
+    <a href="{% url 'pharmacy:stocktake_create' %}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New Stocktake</a>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+        <thead class="table-light">
+          <tr><th>Reference</th><th>Title</th><th>Date</th><th>Items</th><th>Variances</th><th>Status</th><th>Initiated By</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for s in stocktakes %}
+          <tr>
+            <td class="fw-semibold">{{ s.reference }}</td>
+            <td>{{ s.title|default:"—" }}</td>
+            <td>{{ s.count_date|date:"d M Y" }}</td>
+            <td>{{ s.total_items }}</td>
+            <td>{% if s.variance_count %}<span class="badge bg-warning text-dark">{{ s.variance_count }}</span>{% else %}<span class="text-muted">0</span>{% endif %}</td>
+            <td>
+              <span class="badge {% if s.status == 'FINALIZED' %}bg-success{% elif s.status == 'CANCELLED' %}bg-danger{% else %}bg-primary{% endif %}">
+                {{ s.get_status_display }}
+              </span>
+            </td>
+            <td class="text-muted small">{{ s.initiated_by.get_full_name }}</td>
+            <td><a href="{% url 'pharmacy:stocktake_detail' stocktake_id=s.id %}" class="btn btn-sm btn-outline-secondary py-0">Open</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="text-center text-muted py-4">No stocktakes yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

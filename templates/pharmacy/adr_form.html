@@ -1,0 +1,132 @@
+{% extends 'base_authenticated.html' %}
+
+{% block title %}Report Adverse Drug Reaction{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:800px;">
+  <h5 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Report Adverse Drug Reaction</h5>
+
+  <form method="post" class="card border-0 shadow-sm">
+    {% csrf_token %}
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Patient <span class="text-danger">*</span></label>
+          <input type="text" id="patientSearch" class="form-control form-control-sm" placeholder="Search patient..." autocomplete="off">
+          <input type="hidden" name="patient_id" id="patientId" required>
+          <div id="patientResults" class="list-group mt-1" style="position:absolute;z-index:99;max-height:200px;overflow-y:auto;"></div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Drug <span class="text-danger">*</span></label>
+          <input type="text" id="drugSearch" class="form-control form-control-sm" placeholder="Search drug..." autocomplete="off">
+          <input type="hidden" name="drug_id" id="drugId" required>
+          <div id="drugResults" class="list-group mt-1" style="position:absolute;z-index:99;max-height:200px;overflow-y:auto;"></div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Reaction Date <span class="text-danger">*</span></label>
+          <input type="date" name="reaction_date" class="form-control form-control-sm" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Severity <span class="text-danger">*</span></label>
+          <select name="severity" class="form-select form-select-sm" required>
+            {% for val, label in severities %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Outcome</label>
+          <select name="outcome" class="form-select form-select-sm">
+            {% for val, label in outcomes %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Reaction Description <span class="text-danger">*</span></label>
+          <textarea name="reaction_description" class="form-control form-control-sm" rows="3" required placeholder="Describe the adverse reaction in detail..."></textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Causality Assessment</label>
+          <select name="causality" class="form-select form-select-sm">
+            {% for val, label in causalities %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Rechallenge</label>
+          <select name="rechallenge" class="form-select form-select-sm">
+            <option value="">N/A</option>
+            <option value="YES_POS">Yes — Reaction recurred</option>
+            <option value="YES_NEG">Yes — No recurrence</option>
+            <option value="NO">Not re-administered</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Action Taken</label>
+          <textarea name="action_taken" class="form-control form-control-sm" rows="2" placeholder="Drug withdrawn, dose reduced, etc."></textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Treatment Given</label>
+          <textarea name="treatment_given" class="form-control form-control-sm" rows="2" placeholder="Treatment for the reaction..."></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Notes</label>
+          <textarea name="notes" class="form-control form-control-sm" rows="2"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer bg-white d-flex justify-content-end gap-2 py-2">
+      <a href="{% url 'pharmacy:adr_list' %}" class="btn btn-sm btn-light border">Cancel</a>
+      <button type="submit" class="btn btn-sm btn-danger">Submit ADR Report</button>
+    </div>
+  </form>
+</div>
+
+<script>
+// Simple typeahead for patient
+(function(){
+  var timer;
+  var ps = document.getElementById('patientSearch');
+  var pr = document.getElementById('patientResults');
+  ps.addEventListener('input', function(){
+    clearTimeout(timer);
+    var q = ps.value.trim();
+    if(q.length < 2){ pr.innerHTML=''; return; }
+    timer = setTimeout(function(){
+      fetch('{% url "pharmacy:patient_typeahead_ajax" %}?q='+encodeURIComponent(q))
+        .then(r=>r.json()).then(function(d){
+          pr.innerHTML = (d.results||[]).map(function(p){
+            return '<button type="button" class="list-group-item list-group-item-action py-1 small" data-id="'+p.id+'">'+p.name+' ('+p.patient_id+')</button>';
+          }).join('');
+          pr.querySelectorAll('button').forEach(function(b){
+            b.addEventListener('click', function(){
+              document.getElementById('patientId').value = b.dataset.id;
+              ps.value = b.textContent;
+              pr.innerHTML = '';
+            });
+          });
+        });
+    }, 300);
+  });
+  // Drug search
+  var ds = document.getElementById('drugSearch');
+  var dr = document.getElementById('drugResults');
+  ds.addEventListener('input', function(){
+    clearTimeout(timer);
+    var q = ds.value.trim();
+    if(q.length < 2){ dr.innerHTML=''; return; }
+    timer = setTimeout(function(){
+      fetch('{% url "pharmacy:drug_search_ajax" %}?q='+encodeURIComponent(q))
+        .then(r=>r.json()).then(function(d){
+          dr.innerHTML = (d.results||[]).map(function(p){
+            return '<button type="button" class="list-group-item list-group-item-action py-1 small" data-id="'+p.id+'">'+p.name+'</button>';
+          }).join('');
+          dr.querySelectorAll('button').forEach(function(b){
+            b.addEventListener('click', function(){
+              document.getElementById('drugId').value = b.dataset.id;
+              ds.value = b.textContent;
+              dr.innerHTML = '';
+            });
+          });
+        });
+    }, 300);
+  });
+})();
+</script>
+{% endblock %}

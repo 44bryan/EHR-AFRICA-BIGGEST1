@@ -137,4 +137,18 @@ urlpatterns = [
     path('reports/sales-journal/', views.sales_journal, name='report_sales_journal'),
     path('reports/expiring/', views.expiring_stock_report, name='report_expiring'),
     path('reports/supplier-history/', views.supplier_purchase_history, name='report_supplier_history'),
+
+    # ── Patient Medication History ─────────────────────────────────
+    path('patient/<str:patient_id>/medication-history/', views.patient_medication_history, name='patient_medication_history'),
+
+    # ── ADR (Adverse Drug Reaction) Reporting ─────────────────────
+    path('adr/', views.adr_list, name='adr_list'),
+    path('adr/new/', views.adr_create, name='adr_create'),
+    path('adr/<uuid:adr_id>/', views.adr_detail, name='adr_detail'),
+
+    # ── Physical Inventory Count / Stocktake ──────────────────────
+    path('stocktake/', views.stocktake_list, name='stocktake_list'),
+    path('stocktake/new/', views.stocktake_create, name='stocktake_create'),
+    path('stocktake/<uuid:stocktake_id>/', views.stocktake_detail, name='stocktake_detail'),
+    path('stocktake/<uuid:stocktake_id>/finalize/', views.stocktake_finalize, name='stocktake_finalize'),
 ]
