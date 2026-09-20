@@ -795,10 +795,18 @@ def lab_detail_view(request, pk):
         bool(items_with_results) and
         all(i.result.is_verified for i in items_with_results)
     )
+    # ISO 15189 §5.8.3 — amendment audit trail
+    result_ids = [i.result.pk for i in items_with_results]
+    amendments = list(
+        LabResultAmendment.objects.filter(result_id__in=result_ids)
+        .select_related('amended_by', 'result__order_item__test_type')
+        .order_by('-created_at')
+    ) if result_ids else []
     return render(request, 'laboratory/detail.html', {
         'order': order,
         'sample': sample,
         'all_verified': all_verified,
+        'amendments': amendments,
     })
 
 
