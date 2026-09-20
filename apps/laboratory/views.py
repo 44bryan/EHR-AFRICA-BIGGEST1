@@ -1708,9 +1708,18 @@ def result_pdf_view(request, pk):
         else:
             item._ref_range = ''
 
+    # Collect signers for the three signature columns
+    from apps.reports.views import _sig_b64
+    first_result = completed_items[0].result if completed_items else None
+    performer = first_result.performed_by if first_result else None
+    verifier = first_result.verified_by if first_result and first_result.verified_by else None
+
     return render_pdf('laboratory/result_pdf.html', {
         'order': order,
         'completed_items': completed_items,
+        'performer_signature': _sig_b64(performer),
+        'verifier_signature': _sig_b64(verifier),
+        'doctor_signature': _sig_b64(order.ordered_by),
         'pdf_filename': f'lab-result-{order.patient.patient_id}-{order.created_at:%Y%m%d}.pdf',
         'pdf_seal_label': 'LABORATORY REPORT',
     })

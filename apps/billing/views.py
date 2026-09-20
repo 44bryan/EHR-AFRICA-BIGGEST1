@@ -1764,12 +1764,14 @@ def receipt_view(request, invoice_id):
         )
     total_paid = sum(p.amount for p in payments)
     change_given = max(0, total_paid - invoice.total)
+    from apps.reports.views import _sig_b64
     ctx = {
         'invoice': invoice,
         'items': items,
         'payments': payments,
         'today_token': today_token,
         'change_given': change_given,
+        'cashier_signature': _sig_b64(invoice.created_by),
     }
     if request.GET.get('format') == 'pdf':
         return _render_pdf(

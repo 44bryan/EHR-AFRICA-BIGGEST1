@@ -171,6 +171,7 @@ def optical_prescription_pdf_view(request, pk):
         'hospital_address': settings.HOSPITAL_ADDRESS,
         'hospital_phone': settings.HOSPITAL_PHONE,
         'pdf_filename': f'optical_rx_{rx.patient.patient_id}_{rx.prescription_date}.pdf',
+        'prescriber_signature': _sig_b64(rx.prescribed_by),
     }
     return render_pdf('reports/pdf/optical_prescription.html', context)
 
@@ -287,6 +288,7 @@ def medical_certificate_view(request, consultation_pk):
             'hospital_phone': settings.HOSPITAL_PHONE,
             'hospital_reg': getattr(settings, 'HOSPITAL_REG_NUMBER', ''),
             'pdf_filename': f'medical_certificate_{consult.patient.patient_id}.pdf',
+            'doctor_signature': _sig_b64(consult.consulting_doctor),
         }
         return render_pdf('reports/pdf/medical_certificate.html', context)
 
@@ -329,6 +331,7 @@ def referral_letter_view(request, consultation_pk):
             'hospital_phone': settings.HOSPITAL_PHONE,
             'hospital_reg': getattr(settings, 'HOSPITAL_REG_NUMBER', ''),
             'pdf_filename': f'referral_{consult.patient.patient_id}.pdf',
+            'doctor_signature': _sig_b64(consult.consulting_doctor),
         }
         return render_pdf('reports/pdf/referral_letter.html', context)
 
