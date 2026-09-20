@@ -9,6 +9,9 @@ from .models import (
     ContactLensFitting, LowVisionAidDispensing, LensPriceMatrix,
     CoatingType, PowerBand, OpticalWarranty, WarrantyStatus,
     OpticalRepair, RepairType, RepairStatus,
+    FrameSupplier, FrameGoodsReceived, FrameGRNStatus, FrameGRNItem,
+    FrameStocktake, FrameStocktakeStatus, FrameStocktakeItem,
+    FrameMinStockAlert,
 )
 
 
@@ -1650,3 +1653,502 @@ def warranty_list(request):
         'status_filter': status_filter,
         'today': today,
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FRAME SUPPLIERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def supplier_list(request):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    suppliers = FrameSupplier.objects.filter(is_deleted=False).order_by('name')
+    return render(request, 'opticals/supplier_list.html', {'suppliers': suppliers})
+
+
+@login_required
+def supplier_create(request):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            messages.error(request, 'Supplier name is required.')
+        else:
+            FrameSupplier.objects.create(
+                name=name,
+                contact_person=request.POST.get('contact_person', '').strip(),
+                phone=request.POST.get('phone', '').strip(),
+                email=request.POST.get('email', '').strip(),
+                address=request.POST.get('address', '').strip(),
+                website=request.POST.get('website', '').strip(),
+                brands_carried=request.POST.get('brands_carried', '').strip(),
+                payment_terms=request.POST.get('payment_terms', '').strip(),
+                is_active=True,
+                created_by=request.user,
+            )
+            messages.success(request, f'Supplier "{name}" added.')
+            return redirect('opticals:supplier_list')
+    return render(request, 'opticals/supplier_form.html', {})
+
+
+@login_required
+def supplier_edit(request, supplier_id):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    supplier = get_object_or_404(FrameSupplier, id=supplier_id, is_deleted=False)
+    if request.method == 'POST':
+        supplier.name = request.POST.get('name', supplier.name).strip()
+        supplier.contact_person = request.POST.get('contact_person', '').strip()
+        supplier.phone = request.POST.get('phone', '').strip()
+        supplier.email = request.POST.get('email', '').strip()
+        supplier.address = request.POST.get('address', '').strip()
+        supplier.website = request.POST.get('website', '').strip()
+        supplier.brands_carried = request.POST.get('brands_carried', '').strip()
+        supplier.payment_terms = request.POST.get('payment_terms', '').strip()
+        supplier.is_active = 'is_active' in request.POST
+        supplier.save()
+        messages.success(request, f'Supplier "{supplier.name}" updated.')
+        return redirect('opticals:supplier_list')
+    return render(request, 'opticals/supplier_form.html', {'supplier': supplier})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GOODS RECEIVED NOTES (GRN)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def grn_list(request):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    grns = FrameGoodsReceived.objects.filter(is_deleted=False).select_related(
+        'supplier', 'received_by'
+    ).prefetch_related('items')
+    return render(request, 'opticals/grn_list.html', {'grns': grns[:200]})
+
+
+@login_required
+def grn_create(request):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        supplier_id = request.POST.get('supplier')
+        supplier = FrameSupplier.objects.filter(id=supplier_id, is_deleted=False).first() if supplier_id else None
+
+        grn = FrameGoodsReceived.objects.create(
+            supplier=supplier,
+            supplier_invoice=request.POST.get('supplier_invoice', '').strip(),
+            received_date=request.POST.get('received_date') or timezone.localdate(),
+            received_by=request.user,
+            status=FrameGRNStatus.DRAFT,
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+
+        # Parse line items
+        frame_ids = request.POST.getlist('frame[]')
+        quantities = request.POST.getlist('quantity[]')
+        costs = request.POST.getlist('unit_cost[]')
+        batches = request.POST.getlist('batch_number[]')
+
+        from decimal import Decimal, InvalidOperation
+        for i, fid in enumerate(frame_ids):
+            if not fid:
+                continue
+            frame = Frame.objects.filter(id=fid, is_deleted=False).first()
+            if not frame:
+                continue
+            try:
+                qty = int(quantities[i]) if i < len(quantities) else 1
+            except (ValueError, IndexError):
+                qty = 1
+            try:
+                cost = Decimal(costs[i]) if i < len(costs) else Decimal(0)
+            except (ValueError, IndexError, InvalidOperation):
+                cost = Decimal(0)
+            batch = batches[i].strip() if i < len(batches) else ''
+
+            FrameGRNItem.objects.create(
+                grn=grn, frame=frame, quantity=max(1, qty),
+                unit_cost=cost, batch_number=batch,
+            )
+
+        messages.success(request, f'GRN {grn.grn_number} created with {grn.items.count()} line items.')
+        return redirect('opticals:grn_detail', grn_id=grn.id)
+
+    suppliers = FrameSupplier.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    frames = Frame.objects.filter(is_active=True, is_deleted=False).order_by('brand', 'model')
+    return render(request, 'opticals/grn_create.html', {
+        'suppliers': suppliers, 'frames': frames, 'today': timezone.localdate(),
+    })
+
+
+@login_required
+def grn_detail(request, grn_id):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    grn = get_object_or_404(FrameGoodsReceived, id=grn_id, is_deleted=False)
+    items = grn.items.select_related('frame').all()
+    return render(request, 'opticals/grn_detail.html', {'grn': grn, 'items': items})
+
+
+@login_required
+@require_POST
+def grn_confirm(request, grn_id):
+    """Confirm receipt — updates frame stock quantities."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    grn = get_object_or_404(FrameGoodsReceived, id=grn_id, is_deleted=False)
+    if grn.status != FrameGRNStatus.DRAFT:
+        messages.warning(request, 'This GRN has already been processed.')
+        return redirect('opticals:grn_detail', grn_id=grn.id)
+
+    # Update stock for each line item
+    for item in grn.items.select_related('frame').all():
+        Frame.objects.filter(id=item.frame_id).update(
+            quantity_in_stock=F('quantity_in_stock') + item.quantity,
+            cost_price=item.unit_cost if item.unit_cost > 0 else F('cost_price'),
+        )
+
+    grn.status = FrameGRNStatus.RECEIVED
+    grn.save(update_fields=['status'])
+    messages.success(request, f'GRN {grn.grn_number} confirmed — {grn.total_units} units added to stock.')
+    return redirect('opticals:grn_detail', grn_id=grn.id)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FRAME STOCKTAKE
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def frame_stocktake_list(request):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    stocktakes = FrameStocktake.objects.filter(is_deleted=False).select_related('conducted_by')
+    return render(request, 'opticals/frame_stocktake_list.html', {'stocktakes': stocktakes[:100]})
+
+
+@login_required
+def frame_stocktake_create(request):
+    """Create a new stocktake session pre-populated with all active frames."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    if request.method == 'POST':
+        st = FrameStocktake.objects.create(
+            title=request.POST.get('title', '').strip(),
+            date=request.POST.get('date') or timezone.localdate(),
+            conducted_by=request.user,
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        # Pre-populate with all active frames
+        active_frames = Frame.objects.filter(is_active=True, is_deleted=False)
+        items = [
+            FrameStocktakeItem(
+                stocktake=st,
+                frame=f,
+                system_qty=f.quantity_in_stock,
+            )
+            for f in active_frames
+        ]
+        FrameStocktakeItem.objects.bulk_create(items)
+        messages.success(request, f'Stocktake created with {len(items)} frame items. Enter your counts.')
+        return redirect('opticals:frame_stocktake_detail', stocktake_id=st.id)
+
+    return render(request, 'opticals/frame_stocktake_list.html', {
+        'stocktakes': FrameStocktake.objects.filter(is_deleted=False).select_related('conducted_by')[:100],
+        'show_create_modal': True,
+    })
+
+
+@login_required
+def frame_stocktake_detail(request, stocktake_id):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    st = get_object_or_404(FrameStocktake, id=stocktake_id, is_deleted=False)
+    items = st.items.select_related('frame').all()
+
+    if request.method == 'POST' and st.status == FrameStocktakeStatus.IN_PROGRESS:
+        # Save counted quantities
+        for item in items:
+            val = request.POST.get(f'count_{item.id}', '').strip()
+            if val != '':
+                try:
+                    item.counted_qty = int(val)
+                    item.save(update_fields=['counted_qty'])
+                except (ValueError, TypeError):
+                    pass
+        messages.success(request, 'Counts saved.')
+        return redirect('opticals:frame_stocktake_detail', stocktake_id=st.id)
+
+    return render(request, 'opticals/frame_stocktake_detail.html', {'stocktake': st, 'items': items})
+
+
+@login_required
+@require_POST
+def frame_stocktake_finalize(request, stocktake_id):
+    """Finalize stocktake — adjust system stock to match counted quantities."""
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    st = get_object_or_404(FrameStocktake, id=stocktake_id, is_deleted=False)
+    if st.status != FrameStocktakeStatus.IN_PROGRESS:
+        messages.warning(request, 'This stocktake has already been finalized.')
+        return redirect('opticals:frame_stocktake_detail', stocktake_id=st.id)
+
+    adjusted = 0
+    for item in st.items.select_related('frame').all():
+        if item.counted_qty is not None and item.variance != 0:
+            item.frame.quantity_in_stock = item.counted_qty
+            item.frame.save(update_fields=['quantity_in_stock'])
+            adjusted += 1
+
+    st.status = FrameStocktakeStatus.FINALIZED
+    st.save(update_fields=['status'])
+    messages.success(request, f'Stocktake finalized — {adjusted} frame stock levels adjusted.')
+    return redirect('opticals:frame_stocktake_detail', stocktake_id=st.id)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MINIMUM STOCK ALERTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def min_stock_alerts(request):
+    if not _can_manage_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    frames = Frame.objects.filter(is_active=True, is_deleted=False).order_by('brand', 'model')
+
+    if request.method == 'POST':
+        for frame in frames:
+            val = request.POST.get(f'min_{frame.id}', '').strip()
+            if val:
+                try:
+                    threshold = int(val)
+                except (ValueError, TypeError):
+                    continue
+                alert, _ = FrameMinStockAlert.objects.get_or_create(
+                    frame=frame, defaults={'created_by': request.user}
+                )
+                alert.min_quantity = max(0, threshold)
+                if frame.quantity_in_stock <= threshold:
+                    alert.status = 'ACTIVE'
+                    alert.last_triggered = timezone.now()
+                else:
+                    alert.status = 'RESOLVED'
+                alert.save()
+        messages.success(request, 'Minimum stock thresholds updated.')
+        return redirect('opticals:min_stock_alerts')
+
+    # Build frame list with alert info
+    alert_map = {a.frame_id: a for a in FrameMinStockAlert.objects.filter(frame__in=frames)}
+    frame_data = []
+    for f in frames:
+        alert = alert_map.get(f.id)
+        frame_data.append({
+            'frame': f,
+            'min_qty': alert.min_quantity if alert else 0,
+            'is_triggered': f.quantity_in_stock <= (alert.min_quantity if alert else 0) if alert else False,
+            'status': alert.status if alert else '',
+        })
+    triggered_count = sum(1 for d in frame_data if d['is_triggered'])
+
+    return render(request, 'opticals/min_stock_alerts.html', {
+        'frame_data': frame_data, 'triggered_count': triggered_count,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SALES REPORT & ANALYTICS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def sales_report(request):
+    if not (request.user.is_optical_dispenser or request.user.is_medical_director
+            or request.user.is_super_admin or request.user.is_ceo
+            or request.user.is_admin_director or request.user.is_finance_director):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    import json
+    from datetime import date as _date, timedelta
+    from django.db.models import Count, Sum, Avg, Q as _Q
+
+    today = timezone.localdate()
+    from_date = request.GET.get('from_date')
+    to_date = request.GET.get('to_date')
+
+    try:
+        from_dt = _date.fromisoformat(from_date) if from_date else today.replace(day=1)
+        to_dt = _date.fromisoformat(to_date) if to_date else today
+    except (ValueError, TypeError):
+        from_dt = today.replace(day=1)
+        to_dt = today
+
+    base = OpticalOrder.objects.filter(
+        is_deleted=False, ordered_date__gte=from_dt, ordered_date__lte=to_dt,
+    )
+    delivered = base.filter(status=OpticalOrderStatus.DELIVERED)
+
+    # KPIs
+    total_orders = base.count()
+    total_revenue = delivered.aggregate(t=Sum('total_amount'))['t'] or 0
+    avg_order_value = delivered.aggregate(a=Avg('total_amount'))['a'] or 0
+    delivered_count = delivered.count()
+    delivery_rate = round(delivered_count / total_orders * 100, 1) if total_orders else 0
+
+    # Daily revenue chart
+    daily_data = []
+    d = from_dt
+    while d <= to_dt:
+        day_rev = OpticalOrder.objects.filter(
+            is_deleted=False, ordered_date=d, status=OpticalOrderStatus.DELIVERED,
+        ).aggregate(t=Sum('total_amount'))['t'] or 0
+        daily_data.append({'date': d.strftime('%d %b'), 'revenue': float(day_rev)})
+        d += timedelta(days=1)
+    daily_json = json.dumps({
+        'labels': [dd['date'] for dd in daily_data],
+        'data': [dd['revenue'] for dd in daily_data],
+    })
+
+    # Revenue by frame brand
+    brand_raw = list(
+        delivered.filter(frame__isnull=False)
+        .values('frame__brand')
+        .annotate(revenue=Sum('frame_price'), count=Count('id'))
+        .order_by('-revenue')[:10]
+    )
+    brand_json = json.dumps({
+        'labels': [b['frame__brand'] for b in brand_raw],
+        'data': [float(b['revenue'] or 0) for b in brand_raw],
+    })
+
+    # Lens type breakdown
+    lens_raw = list(
+        delivered.filter(lens__isnull=False)
+        .values('lens__lens_type')
+        .annotate(count=Count('id'), revenue=Sum('lens_price'))
+        .order_by('-count')
+    )
+    lens_type_display = dict(LensType.choices)
+    lens_type_json = json.dumps({
+        'labels': [lens_type_display.get(l['lens__lens_type'], l['lens__lens_type']) for l in lens_raw],
+        'data': [l['count'] for l in lens_raw],
+    })
+
+    # Top 10 frames by revenue
+    top_frames = list(
+        delivered.filter(frame__isnull=False)
+        .values('frame__brand', 'frame__model', 'frame__cost_price')
+        .annotate(units=Count('id'), revenue=Sum('frame_price'), avg_price=Avg('frame_price'))
+        .order_by('-revenue')[:10]
+    )
+
+    # Profit margins
+    frame_revenue = delivered.aggregate(t=Sum('frame_price'))['t'] or 0
+    lens_revenue = delivered.aggregate(t=Sum('lens_price'))['t'] or 0
+    fitting_revenue = delivered.aggregate(t=Sum('fitting_charge'))['t'] or 0
+    # Approximate cost from frame cost_price
+    total_cost = sum(
+        (o.frame.cost_price if o.frame else 0) + (o.lens.cost_price if o.lens else 0)
+        for o in delivered.select_related('frame', 'lens')
+    )
+    gross_profit = float(total_revenue) - float(total_cost)
+    margin_pct = round(gross_profit / float(total_revenue) * 100, 1) if total_revenue else 0
+
+    context = {
+        'from_date': from_dt, 'to_date': to_dt,
+        'total_orders': total_orders, 'total_revenue': total_revenue,
+        'avg_order_value': avg_order_value, 'delivery_rate': delivery_rate,
+        'delivered_count': delivered_count,
+        'daily_json': daily_json, 'brand_json': brand_json,
+        'lens_type_json': lens_type_json,
+        'top_frames': top_frames,
+        'frame_revenue': frame_revenue, 'lens_revenue': lens_revenue,
+        'fitting_revenue': fitting_revenue,
+        'total_cost': total_cost, 'gross_profit': gross_profit,
+        'margin_pct': margin_pct,
+        'today': today,
+    }
+    if request.GET.get('pdf'):
+        from apps.reports.views import render_pdf
+        context['pdf_filename'] = 'optical-sales-report.pdf'
+        return render_pdf('opticals/sales_report.html', context)
+    return render(request, 'opticals/sales_report.html', context)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PATIENT OPTICAL HISTORY CARD
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def patient_optical_history(request, patient_id):
+    if not _can_access_optical(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    from apps.patients.models import Patient
+    from apps.prescriptions.models import OpticalPrescription
+
+    patient = get_object_or_404(Patient, id=patient_id, is_deleted=False)
+
+    prescriptions = list(
+        OpticalPrescription.objects.filter(patient=patient, is_deleted=False)
+        .select_related('prescribed_by')
+        .order_by('-prescription_date')
+    )
+    orders = list(
+        OpticalOrder.objects.filter(patient=patient, is_deleted=False)
+        .select_related('frame', 'lens')
+        .order_by('-ordered_date')
+    )
+    cl_fittings = list(
+        ContactLensFitting.objects.filter(patient=patient, is_deleted=False)
+        .select_related('fitted_by')
+        .order_by('-fitting_date')
+    )
+    lva_dispensings = list(
+        LowVisionAidDispensing.objects.filter(patient=patient, is_deleted=False)
+        .select_related('dispensed_by')
+        .order_by('-dispensing_date')
+    )
+    repairs = list(
+        OpticalRepair.objects.filter(patient=patient, is_deleted=False)
+        .select_related('order', 'received_by')
+        .order_by('-received_date')
+    )
+    warranties = list(
+        OpticalWarranty.objects.filter(
+            order__patient=patient, is_deleted=False,
+        ).select_related('order').order_by('-start_date')
+    )
+
+    context = {
+        'patient': patient,
+        'prescriptions': prescriptions,
+        'orders': orders,
+        'cl_fittings': cl_fittings,
+        'lva_dispensings': lva_dispensings,
+        'repairs': repairs,
+        'warranties': warranties,
+    }
+    if request.GET.get('pdf'):
+        from apps.reports.views import render_pdf
+        context['pdf_filename'] = f'optical-history-{patient.patient_id}.pdf'
+        return render_pdf('opticals/patient_optical_history.html', context)
+    return render(request, 'opticals/patient_optical_history.html', context)

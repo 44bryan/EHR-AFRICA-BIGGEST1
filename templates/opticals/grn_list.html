@@ -1,0 +1,65 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Goods Received Notes — Optical{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'opticals:dashboard' %}">Optical</a></li>
+    <li class="breadcrumb-item active">Goods Received Notes</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Goods Received Notes</h4>
+    <div class="text-muted small">Track frame deliveries from suppliers</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:grn_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>New GRN</a>
+    <a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>GRN Number</th>
+          <th>Supplier</th>
+          <th>Received Date</th>
+          <th>Received By</th>
+          <th>Status</th>
+          <th class="text-end">Total Units</th>
+          <th class="text-end">Total Cost (FCFA)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for grn in grns %}
+        <tr>
+          <td class="fw-semibold">
+            <a href="{% url 'opticals:grn_detail' grn.id %}" class="text-decoration-none">{{ grn.grn_number }}</a>
+          </td>
+          <td>{{ grn.supplier.name|default:"--" }}</td>
+          <td class="text-muted">{{ grn.received_date|date:"d M Y" }}</td>
+          <td class="text-muted">{{ grn.received_by|user_display|default:"--" }}</td>
+          <td>
+            <span class="badge {% if grn.status == 'DRAFT' %}bg-secondary{% elif grn.status == 'RECEIVED' %}bg-success{% elif grn.status == 'RETURNED' %}bg-danger{% else %}bg-info{% endif %}">
+              {{ grn.get_status_display }}
+            </span>
+          </td>
+          <td class="text-end">{{ grn.total_units|default:"0" }}</td>
+          <td class="text-end fw-semibold">{{ grn.total_cost|floatformat:0|intcomma }}</td>
+          <td class="text-nowrap">
+            <a href="{% url 'opticals:grn_detail' grn.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No goods received notes yet. <a href="{% url 'opticals:grn_create' %}">Create first GRN</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

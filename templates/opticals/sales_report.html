@@ -1,0 +1,411 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static humanize ehr_tags %}
+{% block title %}Optical Sales Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div>
+    <h5 class="mb-0 fw-bold">Optical Sales Report</h5>
+    <div class="text-muted small">Revenue analytics &amp; frame performance</div>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a href="{% url 'opticals:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+    <button onclick="window.open('{{ request.path }}?from_date={{ from_date|date:'Y-m-d' }}&to_date={{ to_date|date:'Y-m-d' }}&pdf=1','_blank')" class="btn btn-sm btn-danger">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+    </button>
+    <button onclick="printWithCharts()" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'opticals:dashboard' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Sales Report</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+
+<div class="print-only" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;margin-bottom:10px;border-bottom:3px solid #0dcaf0;">
+    <div>
+      <div style="font-size:18px;font-weight:800;color:#0dcaf0;">Optical Sales Report</div>
+      <div style="font-size:11px;color:#555;margin-top:3px;">Period: {{ from_date|date:"d M Y" }} — {{ to_date|date:"d M Y" }} &bull; Generated: {% now "d M Y H:i" %}</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#6c757d;">CONFIDENTIAL — INTERNAL USE ONLY<br><em>For management review only.</em></div>
+  </div>
+  <div style="background:#0dcaf0;color:#fff;padding:5px 12px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;letter-spacing:.5px;">
+    EHR Africa — Optical Sales Analytics
+  </div>
+</div>
+
+{# ── Date Range Filter ────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex align-items-center gap-3 flex-wrap">
+      <label class="small fw-semibold text-muted mb-0">From</label>
+      <input type="date" name="from_date" value="{{ from_date|date:'Y-m-d' }}" class="form-control form-control-sm" style="max-width:170px;">
+      <label class="small fw-semibold text-muted mb-0">To</label>
+      <input type="date" name="to_date" value="{{ to_date|date:'Y-m-d' }}" class="form-control form-control-sm" style="max-width:170px;">
+      <button type="submit" class="btn btn-sm btn-info text-white">
+        <i class="bi bi-funnel me-1"></i>Apply
+      </button>
+      <span class="text-muted small ms-auto">{{ from_date|date:"d M Y" }} — {{ to_date|date:"d M Y" }}</span>
+    </form>
+  </div>
+</div>
+
+{# ── KPI Cards ────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary mb-0">{{ total_orders }}</div>
+        <div class="small text-muted"><i class="bi bi-cart3 me-1"></i>Total Orders</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-success mb-0">{{ total_revenue|floatformat:0|intcomma }}</div>
+        <div class="small text-muted"><i class="bi bi-cash-stack me-1"></i>Total Revenue (FCFA)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-info mb-0">{{ avg_order_value|floatformat:0|intcomma }}</div>
+        <div class="small text-muted"><i class="bi bi-calculator me-1"></i>Avg Order Value (FCFA)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center h-100">
+      <div class="card-body py-3">
+        <div class="h2 fw-bold text-primary mb-0">{{ delivery_rate }}%</div>
+        <div class="small text-muted"><i class="bi bi-truck me-1"></i>Delivery Rate</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Charts Row 1: Daily Revenue + Brand Breakdown ───────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold">
+        <i class="bi bi-bar-chart-fill text-info me-2"></i>Daily Revenue
+      </div>
+      <div class="card-body">
+        {% if total_orders > 0 %}
+        <canvas id="dailyRevenueChart" height="90"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-bar-chart fs-1 d-block mb-2 opacity-25"></i>
+          No revenue data for this period
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-eyeglasses text-info me-1"></i>Revenue by Frame Brand
+      </div>
+      <div class="card-body">
+        {% if total_orders > 0 %}
+        <canvas id="brandChart" height="200"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-pie-chart fs-1 d-block mb-2 opacity-25"></i>
+          No brand data
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Charts Row 2: Lens Type Doughnut ────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold small">
+        <i class="bi bi-circle text-info me-1"></i>Lens Type Breakdown
+      </div>
+      <div class="card-body text-center">
+        {% if total_orders > 0 %}
+        <canvas id="lensTypeChart" height="200"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-circle fs-1 d-block mb-2 opacity-25"></i>
+          No lens data
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Top 10 Frames Table ── #}
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-2 fw-semibold">
+        <i class="bi bi-trophy text-warning me-2"></i>Top 10 Frames by Revenue
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0 small">
+            <thead class="table-light">
+              <tr>
+                <th>#</th>
+                <th>Frame (Brand + Model)</th>
+                <th class="text-center">Units Sold</th>
+                <th class="text-end">Revenue (FCFA)</th>
+                <th class="text-end">Avg Price (FCFA)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in top_frames %}
+              <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td class="fw-semibold">{{ f.brand|default:"—" }} {{ f.model|default:"" }}</td>
+                <td class="text-center">{{ f.units_sold }}</td>
+                <td class="text-end fw-bold text-success">{{ f.revenue|floatformat:0|intcomma }}</td>
+                <td class="text-end text-muted">{{ f.avg_price|floatformat:0|intcomma }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-4">No frame sales in this period</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Profit Margin Section ────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2 fw-semibold">
+    <i class="bi bi-graph-up-arrow text-success me-2"></i>Profit Margin Summary
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Category</th>
+            <th class="text-end">Revenue (FCFA)</th>
+            <th class="text-end">Cost (FCFA)</th>
+            <th class="text-end">Gross Profit (FCFA)</th>
+            <th class="text-end">Margin %</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="fw-semibold"><i class="bi bi-eyeglasses text-primary me-1"></i>Frame Revenue</td>
+            <td class="text-end">{{ margin.frame_revenue|floatformat:0|intcomma }}</td>
+            <td class="text-end text-muted">{{ margin.frame_cost|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-bold {% if margin.frame_profit > 0 %}text-success{% else %}text-danger{% endif %}">{{ margin.frame_profit|floatformat:0|intcomma }}</td>
+            <td class="text-end">
+              <span class="badge {% if margin.frame_margin >= 30 %}bg-success{% elif margin.frame_margin >= 15 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                {{ margin.frame_margin|floatformat:1 }}%
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td class="fw-semibold"><i class="bi bi-circle text-info me-1"></i>Lens Revenue</td>
+            <td class="text-end">{{ margin.lens_revenue|floatformat:0|intcomma }}</td>
+            <td class="text-end text-muted">{{ margin.lens_cost|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-bold {% if margin.lens_profit > 0 %}text-success{% else %}text-danger{% endif %}">{{ margin.lens_profit|floatformat:0|intcomma }}</td>
+            <td class="text-end">
+              <span class="badge {% if margin.lens_margin >= 30 %}bg-success{% elif margin.lens_margin >= 15 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                {{ margin.lens_margin|floatformat:1 }}%
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td class="fw-semibold"><i class="bi bi-wrench text-warning me-1"></i>Fitting Revenue</td>
+            <td class="text-end">{{ margin.fitting_revenue|floatformat:0|intcomma }}</td>
+            <td class="text-end text-muted">{{ margin.fitting_cost|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-bold {% if margin.fitting_profit > 0 %}text-success{% else %}text-danger{% endif %}">{{ margin.fitting_profit|floatformat:0|intcomma }}</td>
+            <td class="text-end">
+              <span class="badge {% if margin.fitting_margin >= 30 %}bg-success{% elif margin.fitting_margin >= 15 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                {{ margin.fitting_margin|floatformat:1 }}%
+              </span>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot class="table-light">
+          <tr class="fw-bold">
+            <td><i class="bi bi-calculator me-1"></i>Total</td>
+            <td class="text-end">{{ margin.total_revenue|floatformat:0|intcomma }}</td>
+            <td class="text-end text-muted">{{ margin.total_cost|floatformat:0|intcomma }}</td>
+            <td class="text-end {% if margin.gross_profit > 0 %}text-success{% else %}text-danger{% endif %}">{{ margin.gross_profit|floatformat:0|intcomma }}</td>
+            <td class="text-end">
+              <span class="badge fs-6 {% if margin.total_margin >= 30 %}bg-success{% elif margin.total_margin >= 15 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                {{ margin.total_margin|floatformat:1 }}%
+              </span>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+function _c(){
+  if(!document.querySelector("#page-content-wrapper canvas, canvas[id]")){return;}
+  window.__ehrChartInit=null;
+
+  const DAILY = {{ daily_json|safe }};
+  const BRAND = {{ brand_json|safe }};
+  const LENS  = {{ lens_type_json|safe }};
+
+  /* ── Daily Revenue Bar Chart ── */
+  if(document.getElementById('dailyRevenueChart')){
+    new Chart(document.getElementById('dailyRevenueChart'), {
+      type: 'bar',
+      data: {
+        labels: DAILY.labels,
+        datasets: [{
+          label: 'Revenue (FCFA)',
+          data: DAILY.data,
+          backgroundColor: 'rgba(13,202,240,.7)',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(v){ return v.toLocaleString() + ' F'; }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  /* ── Brand Revenue Horizontal Bar ── */
+  if(document.getElementById('brandChart')){
+    new Chart(document.getElementById('brandChart'), {
+      type: 'bar',
+      data: {
+        labels: BRAND.labels,
+        datasets: [{
+          label: 'Revenue (FCFA)',
+          data: BRAND.data,
+          backgroundColor: [
+            '#0d6efd','#198754','#0dcaf0','#ffc107','#dc3545',
+            '#6f42c1','#fd7e14','#20c997','#6c757d','#d63384'
+          ],
+          borderRadius: 4
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(v){ return v.toLocaleString(); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  /* ── Lens Type Doughnut ── */
+  if(document.getElementById('lensTypeChart')){
+    new Chart(document.getElementById('lensTypeChart'), {
+      type: 'doughnut',
+      data: {
+        labels: LENS.labels,
+        datasets: [{
+          data: LENS.data,
+          backgroundColor: [
+            '#0d6efd','#198754','#0dcaf0','#ffc107','#dc3545',
+            '#6f42c1','#fd7e14','#20c997','#6c757d','#d63384'
+          ]
+        }]
+      },
+      options: {
+        responsive: true,
+        cutout: '55%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 12, font: { size: 11 } }
+          }
+        }
+      }
+    });
+  }
+}
+window.__ehrChartInit=_c;_c();
+</script>
+
+<style>
+@media print {
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+  .print-only { display: block !important; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  .row.g-3 { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-md-8 { width: 64% !important; flex: none; }
+  .col-md-4 { width: 33% !important; flex: none; }
+  .print-chart-img { width: 100% !important; height: auto !important; display: block; }
+  .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+
+<script>
+function printWithCharts() {
+  var pairs = [];
+  document.querySelectorAll('canvas').forEach(function(canvas) {
+    var chart = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+    if (!chart) return;
+    var img = new Image();
+    img.src = chart.toBase64Image('image/png', 1.0);
+    img.className = 'print-chart-img';
+    img.style.maxWidth = canvas.offsetWidth + 'px';
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = 'none';
+    pairs.push({ canvas: canvas, img: img });
+  });
+  window.print();
+  setTimeout(function() {
+    pairs.forEach(function(p) {
+      p.canvas.style.display = '';
+      if (p.img.parentNode) p.img.parentNode.removeChild(p.img);
+    });
+  }, 2000);
+}
+</script>
+{% endblock %}

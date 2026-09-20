@@ -1,0 +1,384 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Optical History — {{ patient.full_name }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div>
+    <h5 class="mb-0 fw-bold">Patient Optical History</h5>
+    <div class="text-muted small">Complete optical timeline</div>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a href="{% url 'opticals:create_order' %}?patient={{ patient.id }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-circle me-1"></i>New Order
+    </a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'opticals:patient_search' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-0 small">
+    <li class="breadcrumb-item"><a href="{% url 'opticals:dashboard' %}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'opticals:patient_search' %}">Patient Search</a></li>
+    <li class="breadcrumb-item active">Patient Optical History</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+
+{# ── Patient Banner ───────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-3">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="rounded-circle bg-info bg-opacity-10 d-flex align-items-center justify-content-center" style="width:56px;height:56px;">
+        <i class="bi bi-person-fill text-info fs-3"></i>
+      </div>
+      <div class="flex-grow-1">
+        <h5 class="mb-0 fw-bold">{{ patient.full_name }}</h5>
+        <div class="d-flex gap-3 flex-wrap mt-1 small text-muted">
+          <span><i class="bi bi-hash me-1"></i>{{ patient.patient_id }}</span>
+          {% if patient.phone_number %}
+          <span><i class="bi bi-telephone me-1"></i>{{ patient.phone_number }}</span>
+          {% endif %}
+          <span>
+            <i class="bi bi-{% if patient.gender == 'M' %}gender-male{% elif patient.gender == 'F' %}gender-female{% else %}person{% endif %} me-1"></i>
+            {{ patient.get_gender_display|default:"—" }}
+          </span>
+          {% if patient.date_of_birth %}
+          <span><i class="bi bi-calendar me-1"></i>{{ patient.age }} yrs</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="text-end">
+        <span class="badge bg-info bg-opacity-10 text-info px-3 py-2">
+          <i class="bi bi-eyeglasses me-1"></i>{{ orders|length }} Order{{ orders|length|pluralize }}
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Tab Navigation ───────────────────────────────────────────────────── #}
+<ul class="nav nav-tabs mb-0" id="optHistoryTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-prescriptions" data-bs-toggle="tab" data-bs-target="#pane-prescriptions" type="button" role="tab">
+      <i class="bi bi-file-earmark-medical me-1"></i>Prescriptions
+      {% if prescriptions %}<span class="badge bg-primary ms-1">{{ prescriptions|length }}</span>{% endif %}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-orders" data-bs-toggle="tab" data-bs-target="#pane-orders" type="button" role="tab">
+      <i class="bi bi-cart3 me-1"></i>Orders
+      {% if orders %}<span class="badge bg-info ms-1">{{ orders|length }}</span>{% endif %}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-cl" data-bs-toggle="tab" data-bs-target="#pane-cl" type="button" role="tab">
+      <i class="bi bi-eye me-1"></i>Contact Lenses
+      {% if cl_fittings %}<span class="badge bg-success ms-1">{{ cl_fittings|length }}</span>{% endif %}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-lva" data-bs-toggle="tab" data-bs-target="#pane-lva" type="button" role="tab">
+      <i class="bi bi-search me-1"></i>Low Vision
+      {% if lva_dispensings %}<span class="badge bg-warning text-dark ms-1">{{ lva_dispensings|length }}</span>{% endif %}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-repairs" data-bs-toggle="tab" data-bs-target="#pane-repairs" type="button" role="tab">
+      <i class="bi bi-wrench me-1"></i>Repairs
+      {% if repairs %}<span class="badge bg-secondary ms-1">{{ repairs|length }}</span>{% endif %}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-warranties" data-bs-toggle="tab" data-bs-target="#pane-warranties" type="button" role="tab">
+      <i class="bi bi-shield-check me-1"></i>Warranties
+      {% if warranties %}<span class="badge bg-dark ms-1">{{ warranties|length }}</span>{% endif %}
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content border border-top-0 rounded-bottom bg-white shadow-sm mb-4">
+
+  {# ── Prescriptions Tab ─────────────────────────────────────────────── #}
+  <div class="tab-pane fade show active p-0" id="pane-prescriptions" role="tabpanel">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Doctor</th>
+            <th colspan="4" class="text-center border-start">Right Eye (RE)</th>
+            <th colspan="4" class="text-center border-start">Left Eye (LE)</th>
+            <th class="border-start text-center">PD</th>
+            <th>Status</th>
+          </tr>
+          <tr class="small text-muted">
+            <th></th><th></th>
+            <th class="text-center border-start">SPH</th><th class="text-center">CYL</th><th class="text-center">AXIS</th><th class="text-center">ADD</th>
+            <th class="text-center border-start">SPH</th><th class="text-center">CYL</th><th class="text-center">AXIS</th><th class="text-center">ADD</th>
+            <th class="border-start"></th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rx in prescriptions %}
+          <tr>
+            <td class="text-muted">{{ rx.prescription_date|date:"d M Y" }}</td>
+            <td class="fw-semibold">{{ rx.prescribed_by|user_display|default:"—" }}</td>
+            <td class="text-center border-start">{{ rx.re_sphere|default:"—" }}</td>
+            <td class="text-center">{{ rx.re_cylinder|default:"—" }}</td>
+            <td class="text-center">{{ rx.re_axis|default:"—" }}</td>
+            <td class="text-center">{{ rx.re_add|default:"—" }}</td>
+            <td class="text-center border-start">{{ rx.le_sphere|default:"—" }}</td>
+            <td class="text-center">{{ rx.le_cylinder|default:"—" }}</td>
+            <td class="text-center">{{ rx.le_axis|default:"—" }}</td>
+            <td class="text-center">{{ rx.le_add|default:"—" }}</td>
+            <td class="text-center border-start">{{ rx.interpupillary_distance|default:"—" }}</td>
+            <td>
+              {% if rx.is_dispensed %}
+              <span class="badge bg-success">Dispensed</span>
+              {% else %}
+              <span class="badge bg-primary">Active</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="12" class="text-center text-muted py-4"><i class="bi bi-file-earmark-medical fs-4 d-block mb-2 opacity-25"></i>No prescriptions on file</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Orders Tab ─────────────────────────────────────────────────────── #}
+  <div class="tab-pane fade p-0" id="pane-orders" role="tabpanel">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Order #</th>
+            <th>Date</th>
+            <th>Frame</th>
+            <th>Lens</th>
+            <th>Status</th>
+            <th class="text-end">Total (FCFA)</th>
+            <th class="text-end">Balance Due (FCFA)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orders %}
+          <tr>
+            <td><a href="{% url 'opticals:order_detail' o.id %}" class="fw-semibold text-decoration-none">{{ o.order_number }}</a></td>
+            <td class="text-muted">{{ o.ordered_date|date:"d M Y" }}</td>
+            <td>{{ o.frame|default:"—" }}</td>
+            <td>{{ o.lens|default:"—" }}</td>
+            <td>
+              <span class="badge {% if o.status == 'DELIVERED' %}bg-success{% elif o.status == 'READY' %}bg-success bg-opacity-75{% elif o.status == 'LAB' %}bg-warning text-dark{% elif o.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %}">
+                {{ o.get_status_display }}
+              </span>
+            </td>
+            <td class="text-end fw-bold">{{ o.total_amount|floatformat:0|intcomma }}</td>
+            <td class="text-end {% if o.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+              {% if o.balance_due > 0 %}{{ o.balance_due|floatformat:0|intcomma }}{% else %}Paid{% endif %}
+            </td>
+            <td>
+              <a href="{% url 'opticals:order_detail' o.id %}" class="btn btn-xs btn-outline-info" style="font-size:.7rem;padding:2px 6px;">View</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="text-center text-muted py-4"><i class="bi bi-cart3 fs-4 d-block mb-2 opacity-25"></i>No orders yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Contact Lenses Tab ─────────────────────────────────────────────── #}
+  <div class="tab-pane fade p-0" id="pane-cl" role="tabpanel">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Fitting #</th>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Brand</th>
+            <th class="text-center">RE Params</th>
+            <th class="text-center">LE Params</th>
+            <th>Follow-up</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cl in cl_fittings %}
+          <tr>
+            <td class="fw-semibold">{{ cl.fitting_number }}</td>
+            <td class="text-muted">{{ cl.fitting_date|date:"d M Y" }}</td>
+            <td>{{ cl.get_lens_type_display }}</td>
+            <td>{{ cl.brand|default:"—" }}</td>
+            <td class="text-center small">
+              {% if cl.re_base_curve %}BC {{ cl.re_base_curve }} / D {{ cl.re_diameter|default:"—" }} / S {{ cl.re_sphere|default:"—" }}{% else %}—{% endif %}
+            </td>
+            <td class="text-center small">
+              {% if cl.le_base_curve %}BC {{ cl.le_base_curve }} / D {{ cl.le_diameter|default:"—" }} / S {{ cl.le_sphere|default:"—" }}{% else %}—{% endif %}
+            </td>
+            <td class="text-muted">
+              {% if cl.next_follow_up %}{{ cl.next_follow_up|date:"d M Y" }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-eye fs-4 d-block mb-2 opacity-25"></i>No contact lens fittings</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Low Vision Tab ─────────────────────────────────────────────────── #}
+  <div class="tab-pane fade p-0" id="pane-lva" role="tabpanel">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Dispensing #</th>
+            <th>Date</th>
+            <th>Aid Type</th>
+            <th>Magnification</th>
+            <th>VA Achieved</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lv in lva_dispensings %}
+          <tr>
+            <td class="fw-semibold">{{ lv.dispensing_number }}</td>
+            <td class="text-muted">{{ lv.dispensing_date|date:"d M Y" }}</td>
+            <td>{{ lv.get_aid_type_display }}</td>
+            <td>{{ lv.magnification|default:"—" }}</td>
+            <td>
+              {% if lv.va_achieved_with_aid %}
+              <span class="badge bg-success bg-opacity-10 text-success">{{ lv.va_achieved_with_aid }}</span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-search fs-4 d-block mb-2 opacity-25"></i>No low vision dispensing records</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Repairs Tab ────────────────────────────────────────────────────── #}
+  <div class="tab-pane fade p-0" id="pane-repairs" role="tabpanel">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Repair #</th>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th class="text-end">Cost (FCFA)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in repairs %}
+          <tr>
+            <td class="fw-semibold">{{ r.repair_number|default:r.pk }}</td>
+            <td class="text-muted">{{ r.received_date|date:"d M Y" }}</td>
+            <td>{{ r.get_repair_type_display }}</td>
+            <td>
+              <span class="badge {% if r.status == 'COMPLETED' %}bg-success{% elif r.status == 'IN_PROG' %}bg-warning text-dark{% elif r.status == 'CANCELLED' %}bg-secondary{% else %}bg-primary{% endif %}">
+                {{ r.get_status_display }}
+              </span>
+            </td>
+            <td class="text-end">{{ r.cost|floatformat:0|intcomma|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-wrench fs-4 d-block mb-2 opacity-25"></i>No repair records</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Warranties Tab ─────────────────────────────────────────────────── #}
+  <div class="tab-pane fade p-0" id="pane-warranties" role="tabpanel">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Order #</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Status</th>
+            <th>Terms</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in warranties %}
+          <tr>
+            <td>
+              <a href="{% url 'opticals:order_detail' w.order.id %}" class="fw-semibold text-decoration-none">{{ w.order.order_number }}</a>
+            </td>
+            <td class="text-muted">{{ w.start_date|date:"d M Y" }}</td>
+            <td class="text-muted">{{ w.end_date|date:"d M Y" }}</td>
+            <td>
+              <span class="badge {% if w.status == 'ACTIVE' %}bg-success{% elif w.status == 'EXPIRED' %}bg-secondary{% elif w.status == 'CLAIMED' %}bg-warning text-dark{% elif w.status == 'VOIDED' %}bg-danger{% else %}bg-info{% endif %}">
+                {{ w.get_status_display|default:w.status }}
+              </span>
+            </td>
+            <td class="text-muted small">{{ w.terms|default:"Standard warranty"|truncatewords:12 }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-shield-check fs-4 d-block mb-2 opacity-25"></i>No warranty records</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<style>
+@media print {
+  #sidebar, nav.navbar, .btn, .btn-group, .btn-toolbar,
+  .dropdown-menu, .breadcrumb, .no-print, .nav-tabs { display: none !important; }
+  #page-content-wrapper { margin-left: 0 !important; width: 100% !important; padding: 0 6px !important; }
+  #wrapper { display: block; }
+  body { padding: 0; background: #fff !important; }
+  @page { size: A4 portrait; margin: 10mm 12mm; }
+  .card { break-inside: avoid; border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  /* Show all tab panes when printing */
+  .tab-pane { display: block !important; opacity: 1 !important; }
+  .tab-content { border: none !important; }
+  .tab-pane::before {
+    content: attr(aria-labelledby);
+    display: block;
+    font-weight: 700;
+    font-size: 14px;
+    margin: 16px 0 6px 0;
+    padding: 4px 10px;
+    background: #e9ecef;
+    border-radius: 3px;
+  }
+  #pane-prescriptions::before { content: "Prescriptions"; }
+  #pane-orders::before { content: "Orders"; }
+  #pane-cl::before { content: "Contact Lenses"; }
+  #pane-lva::before { content: "Low Vision"; }
+  #pane-repairs::before { content: "Repairs"; }
+  #pane-warranties::before { content: "Warranties"; }
+}
+</style>
+{% endblock %}

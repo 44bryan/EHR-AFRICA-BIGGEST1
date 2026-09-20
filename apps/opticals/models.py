@@ -467,3 +467,160 @@ class OpticalRepair(AuditModel):
             count = OpticalRepair.objects.filter(received_date__year=today.year).count() + 1
             self.repair_number = f"RPR-{today.strftime('%Y')}-{count:04d}"
         super().save(*args, **kwargs)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPTICAL INVENTORY MANAGEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+class FrameSupplier(AuditModel):
+    """Optical frame / lens supplier — separate from pharmacy suppliers."""
+    name = models.CharField(max_length=200)
+    contact_person = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.TextField(blank=True)
+    website = models.URLField(blank=True)
+    brands_carried = models.TextField(blank=True, help_text='Comma-separated list of brands supplied')
+    payment_terms = models.CharField(max_length=100, blank=True, help_text='e.g. Net 30, COD, 50% advance')
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class FrameGRNStatus(models.TextChoices):
+    DRAFT    = 'DRAFT',    'Draft'
+    RECEIVED = 'RECEIVED', 'Received & Verified'
+    RETURNED = 'RETURNED', 'Returned to Supplier'
+
+
+class FrameGoodsReceived(AuditModel):
+    """
+    Goods Received Note for optical frames — tracks each delivery batch.
+    Each GRN has line items (FrameGRNItem) that update frame stock on receipt.
+    """
+    grn_number = models.CharField(max_length=30, unique=True)
+    supplier = models.ForeignKey(FrameSupplier, null=True, blank=True, on_delete=models.SET_NULL, related_name='grns')
+    supplier_invoice = models.CharField(max_length=100, blank=True, help_text='Supplier invoice / delivery note number')
+    received_date = models.DateField(default=timezone.now)
+    received_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='optical_grns_received')
+    status = models.CharField(max_length=10, choices=FrameGRNStatus.choices, default=FrameGRNStatus.DRAFT)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-received_date']
+        verbose_name = 'Frame GRN'
+
+    def __str__(self):
+        return f"GRN {self.grn_number} — {self.supplier or 'Unknown'}"
+
+    def save(self, *args, **kwargs):
+        if not self.grn_number:
+            today = timezone.localdate()
+            count = FrameGoodsReceived.objects.filter(received_date__year=today.year).count() + 1
+            self.grn_number = f"OGRN-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def total_cost(self):
+        return sum(item.line_total for item in self.items.all())
+
+    @property
+    def total_units(self):
+        return sum(item.quantity for item in self.items.all())
+
+
+class FrameGRNItem(TimeStampedModel):
+    """Line item on a frame GRN — links to a Frame catalogue entry."""
+    grn = models.ForeignKey(FrameGoodsReceived, on_delete=models.CASCADE, related_name='items')
+    frame = models.ForeignKey(Frame, on_delete=models.PROTECT, related_name='grn_items')
+    quantity = models.PositiveIntegerField(default=1)
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text='Cost per unit from supplier')
+    batch_number = models.CharField(max_length=50, blank=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.frame} x {self.quantity}"
+
+    @property
+    def line_total(self):
+        return self.unit_cost * self.quantity
+
+
+class FrameStocktakeStatus(models.TextChoices):
+    IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
+    FINALIZED   = 'FINALIZED',   'Finalized'
+
+
+class FrameStocktake(AuditModel):
+    """Physical inventory count session for optical frames."""
+    title = models.CharField(max_length=200, blank=True)
+    date = models.DateField(default=timezone.now)
+    status = models.CharField(max_length=15, choices=FrameStocktakeStatus.choices, default=FrameStocktakeStatus.IN_PROGRESS)
+    conducted_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='optical_stocktakes')
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"Stocktake {self.date} — {self.title or 'Untitled'}"
+
+    @property
+    def total_items(self):
+        return self.items.count()
+
+    @property
+    def variance_count(self):
+        return sum(1 for item in self.items.all() if item.variance != 0)
+
+
+class FrameStocktakeItem(TimeStampedModel):
+    """Individual frame count line in a stocktake."""
+    stocktake = models.ForeignKey(FrameStocktake, on_delete=models.CASCADE, related_name='items')
+    frame = models.ForeignKey(Frame, on_delete=models.PROTECT, related_name='stocktake_items')
+    system_qty = models.PositiveIntegerField(default=0, help_text='System stock at time of count')
+    counted_qty = models.PositiveIntegerField(null=True, blank=True, help_text='Actual physical count')
+
+    class Meta:
+        ordering = ['frame__brand', 'frame__model']
+        unique_together = [('stocktake', 'frame')]
+
+    def __str__(self):
+        return f"{self.frame} — system:{self.system_qty} counted:{self.counted_qty}"
+
+    @property
+    def variance(self):
+        if self.counted_qty is None:
+            return 0
+        return self.counted_qty - self.system_qty
+
+
+class MinStockAlertStatus(models.TextChoices):
+    ACTIVE       = 'ACTIVE',       'Active'
+    ACKNOWLEDGED = 'ACKNOWLEDGED', 'Acknowledged'
+    RESOLVED     = 'RESOLVED',     'Resolved'
+
+
+class FrameMinStockAlert(AuditModel):
+    """Minimum stock threshold alert for a frame."""
+    frame = models.OneToOneField(Frame, on_delete=models.CASCADE, related_name='min_stock_alert')
+    min_quantity = models.PositiveIntegerField(default=2, help_text='Alert when stock drops to or below this')
+    status = models.CharField(max_length=15, choices=MinStockAlertStatus.choices, default=MinStockAlertStatus.ACTIVE)
+    last_triggered = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['frame__brand', 'frame__model']
+
+    def __str__(self):
+        return f"Min stock alert: {self.frame} (threshold: {self.min_quantity})"
+
+    @property
+    def is_triggered(self):
+        return self.frame.quantity_in_stock <= self.min_quantity

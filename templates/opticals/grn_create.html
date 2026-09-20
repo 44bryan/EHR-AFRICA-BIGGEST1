@@ -1,0 +1,151 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Create Goods Received Note{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'opticals:dashboard' %}">Optical</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'opticals:grn_list' %}">GRN</a></li>
+    <li class="breadcrumb-item active">New</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fw-semibold">Create Goods Received Note</h5>
+        <a href="{% url 'opticals:grn_list' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+      </div>
+      <div class="card-body">
+        <form method="post" id="grnForm">
+          {% csrf_token %}
+
+          {# -- Header fields -- #}
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Supplier <span class="text-danger">*</span></label>
+              <select name="supplier" class="form-select" required>
+                <option value="">-- Select Supplier --</option>
+                {% for s in suppliers %}
+                <option value="{{ s.id }}">{{ s.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Supplier Invoice #</label>
+              <input type="text" name="supplier_invoice" class="form-control" placeholder="INV-XXXX">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Received Date <span class="text-danger">*</span></label>
+              <input type="date" name="received_date" class="form-control" value="{{ today|date:'Y-m-d' }}" required>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-semibold small">&nbsp;</label>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Notes</label>
+              <textarea name="notes" class="form-control" rows="2" placeholder="Delivery remarks, damage notes, etc."></textarea>
+            </div>
+          </div>
+
+          <hr>
+
+          {# -- Line items -- #}
+          <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>Frame Items</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 small" id="itemsTable">
+              <thead class="table-light">
+                <tr>
+                  <th style="min-width:250px;">Frame <span class="text-danger">*</span></th>
+                  <th style="width:100px;">Qty <span class="text-danger">*</span></th>
+                  <th style="width:140px;">Unit Cost (FCFA) <span class="text-danger">*</span></th>
+                  <th style="width:140px;">Batch No</th>
+                  <th style="width:50px;"></th>
+                </tr>
+              </thead>
+              <tbody id="itemsBody">
+                <tr class="item-row">
+                  <td>
+                    <select name="frame[]" class="form-select form-select-sm" required>
+                      <option value="">-- Select Frame --</option>
+                      {% for f in frames %}
+                      <option value="{{ f.id }}">{{ f.brand }} {{ f.model }}{% if f.color %} — {{ f.color }}{% endif %}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" value="1" required></td>
+                  <td><input type="number" name="unit_cost[]" class="form-control form-control-sm" min="0" step="100" value="0" required></td>
+                  <td><input type="text" name="batch_number[]" class="form-control form-control-sm" placeholder="Optional"></td>
+                  <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 remove-row" title="Remove line">
+                      <i class="bi bi-x-lg"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="addRow">
+            <i class="bi bi-plus me-1"></i>Add Line
+          </button>
+
+          <hr class="my-4">
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-save me-1"></i>Create GRN (Draft)
+            </button>
+            <a href="{% url 'opticals:grn_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const tbody = document.getElementById('itemsBody');
+  const addBtn = document.getElementById('addRow');
+
+  // Template row HTML
+  function createRow() {
+    const row = tbody.querySelector('.item-row').cloneNode(true);
+    row.querySelector('select[name="frame[]"]').value = '';
+    row.querySelector('input[name="quantity[]"]').value = '1';
+    row.querySelector('input[name="unit_cost[]"]').value = '0';
+    row.querySelector('input[name="batch_number[]"]').value = '';
+    return row;
+  }
+
+  addBtn.addEventListener('click', function() {
+    tbody.appendChild(createRow());
+    updateRemoveButtons();
+  });
+
+  tbody.addEventListener('click', function(e) {
+    const btn = e.target.closest('.remove-row');
+    if (btn) {
+      const rows = tbody.querySelectorAll('.item-row');
+      if (rows.length > 1) {
+        btn.closest('tr').remove();
+      }
+      updateRemoveButtons();
+    }
+  });
+
+  function updateRemoveButtons() {
+    const rows = tbody.querySelectorAll('.item-row');
+    rows.forEach(function(row) {
+      const btn = row.querySelector('.remove-row');
+      btn.disabled = rows.length <= 1;
+    });
+  }
+
+  updateRemoveButtons();
+});
+</script>
+{% endblock %}

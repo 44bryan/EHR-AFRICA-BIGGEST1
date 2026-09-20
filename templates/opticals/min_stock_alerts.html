@@ -1,0 +1,82 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Min Stock Alerts — Optical{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'opticals:dashboard' %}">Optical</a></li>
+    <li class="breadcrumb-item active">Min Stock Alerts</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Minimum Stock Alerts</h4>
+    <div class="text-muted small">Set reorder thresholds and monitor low-stock frames</div>
+  </div>
+  <a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+</div>
+
+{% if triggered_count %}
+<div class="alert alert-danger d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <strong>{{ triggered_count }} frame{{ triggered_count|pluralize }} below minimum stock level!</strong>
+</div>
+{% endif %}
+
+<form method="post" action="{% url 'opticals:min_stock_alerts' %}">
+  {% csrf_token %}
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Frame</th>
+            <th class="text-end">Current Stock</th>
+            <th class="text-end" style="width:140px;">Min Threshold</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in frame_data %}
+          <tr class="{% if item.is_triggered %}table-danger{% endif %}">
+            <td>
+              <div class="fw-semibold">{{ item.frame.brand }} {{ item.frame.model }}</div>
+              {% if item.frame.color %}<div class="text-muted" style="font-size:.72rem;">{{ item.frame.color }}</div>{% endif %}
+            </td>
+            <td class="text-end">
+              <span class="badge bg-{% if item.frame.quantity_in_stock > 5 %}success{% elif item.frame.quantity_in_stock > 0 %}warning text-dark{% else %}danger{% endif %}">
+                {{ item.frame.quantity_in_stock }}
+              </span>
+            </td>
+            <td class="text-end">
+              <input type="number" name="min_{{ item.frame.id }}" class="form-control form-control-sm text-end"
+                     value="{{ item.min_qty }}" min="0" style="width:100px;display:inline-block;">
+            </td>
+            <td>
+              {% if item.is_triggered %}
+              <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Below Min</span>
+              {% elif item.min_qty %}
+              <span class="badge bg-success">OK</span>
+              {% else %}
+              <span class="badge bg-secondary">Not Set</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-center text-muted py-4">No active frames in catalogue. <a href="{% url 'opticals:frame_create' %}">Add frames first</a></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if frame_data %}
+  <div class="mt-3">
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-save me-1"></i>Save Thresholds
+    </button>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}

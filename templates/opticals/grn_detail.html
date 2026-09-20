@@ -1,0 +1,109 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}GRN {{ grn.grn_number }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'opticals:dashboard' %}">Optical</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'opticals:grn_list' %}">GRN</a></li>
+    <li class="breadcrumb-item active">{{ grn.grn_number }}</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">{{ grn.grn_number }}</h4>
+    <small class="text-muted">{{ grn.supplier.name }} &bull; {{ grn.received_date|date:"d M Y" }}</small>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <span class="badge fs-6 px-3 py-2 {% if grn.status == 'DRAFT' %}bg-secondary{% elif grn.status == 'RECEIVED' %}bg-success{% elif grn.status == 'RETURNED' %}bg-danger{% else %}bg-info{% endif %}">
+      {{ grn.get_status_display }}
+    </span>
+    <a href="{% url 'opticals:grn_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  </div>
+</div>
+
+{# -- Header Info -- #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white fw-semibold py-2">GRN Details</div>
+  <div class="card-body">
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3 text-muted">Supplier</dt>
+      <dd class="col-sm-9 fw-semibold">{{ grn.supplier.name }}</dd>
+      <dt class="col-sm-3 text-muted">Received Date</dt>
+      <dd class="col-sm-9">{{ grn.received_date|date:"d M Y" }}</dd>
+      <dt class="col-sm-3 text-muted">Received By</dt>
+      <dd class="col-sm-9">{{ grn.received_by|user_display|default:"--" }}</dd>
+      {% if grn.supplier_invoice %}
+      <dt class="col-sm-3 text-muted">Supplier Invoice #</dt>
+      <dd class="col-sm-9"><code>{{ grn.supplier_invoice }}</code></dd>
+      {% endif %}
+      {% if grn.notes %}
+      <dt class="col-sm-3 text-muted">Notes</dt>
+      <dd class="col-sm-9 fst-italic">{{ grn.notes }}</dd>
+      {% endif %}
+    </dl>
+  </div>
+</div>
+
+{# -- Items Table -- #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white fw-semibold py-2">
+    <i class="bi bi-box-seam me-1 text-secondary"></i>Items Received
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Frame</th>
+          <th class="text-end">Qty</th>
+          <th class="text-end">Unit Cost (FCFA)</th>
+          <th>Batch No</th>
+          <th class="text-end">Line Total (FCFA)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td class="fw-semibold">{{ item.frame.brand }} {{ item.frame.model }}
+            {% if item.frame.color %}<span class="text-muted" style="font-size:.72rem;"> — {{ item.frame.color }}</span>{% endif %}
+          </td>
+          <td class="text-end">{{ item.quantity }}</td>
+          <td class="text-end">{{ item.unit_cost|floatformat:0|intcomma }}</td>
+          <td class="text-muted">{{ item.batch_number|default:"--" }}</td>
+          <td class="text-end fw-semibold">{{ item.line_total|floatformat:0|intcomma }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-3">No items on this GRN.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if items %}
+      <tfoot class="table-light">
+        <tr>
+          <td colspan="2" class="fw-semibold text-end">Totals</td>
+          <td class="text-end fw-bold">{{ total_units }}</td>
+          <td></td>
+          <td></td>
+          <td class="text-end fw-bold text-primary">{{ total_cost|floatformat:0|intcomma }} FCFA</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{# -- Confirm Receipt button (DRAFT only) -- #}
+{% if grn.status == 'DRAFT' %}
+<div class="d-flex gap-2">
+  <form method="post" action="{% url 'opticals:grn_confirm' grn.id %}"
+        onsubmit="return confirm('Confirm receipt of all items? This will update frame stock levels.')">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-success">
+      <i class="bi bi-check-circle me-1"></i>Confirm Receipt
+    </button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -57,4 +57,30 @@ urlpatterns = [
     path('repairs/', views.repair_list, name='repair_list'),
     path('repairs/new/', views.repair_create, name='repair_create'),
     path('repairs/<uuid:repair_id>/action/', views.repair_action, name='repair_action'),
+
+    # Frame suppliers
+    path('suppliers/', views.supplier_list, name='supplier_list'),
+    path('suppliers/new/', views.supplier_create, name='supplier_create'),
+    path('suppliers/<uuid:supplier_id>/edit/', views.supplier_edit, name='supplier_edit'),
+
+    # Goods Received Notes
+    path('grn/', views.grn_list, name='grn_list'),
+    path('grn/new/', views.grn_create, name='grn_create'),
+    path('grn/<uuid:grn_id>/', views.grn_detail, name='grn_detail'),
+    path('grn/<uuid:grn_id>/confirm/', views.grn_confirm, name='grn_confirm'),
+
+    # Frame stocktake
+    path('stocktake/', views.frame_stocktake_list, name='frame_stocktake_list'),
+    path('stocktake/new/', views.frame_stocktake_create, name='frame_stocktake_create'),
+    path('stocktake/<uuid:stocktake_id>/', views.frame_stocktake_detail, name='frame_stocktake_detail'),
+    path('stocktake/<uuid:stocktake_id>/finalize/', views.frame_stocktake_finalize, name='frame_stocktake_finalize'),
+
+    # Min stock alerts
+    path('min-stock-alerts/', views.min_stock_alerts, name='min_stock_alerts'),
+
+    # Sales report & analytics
+    path('sales-report/', views.sales_report, name='sales_report'),
+
+    # Patient optical history
+    path('patient/<uuid:patient_id>/history/', views.patient_optical_history, name='patient_optical_history'),
 ]

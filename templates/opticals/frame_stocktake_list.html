@@ -1,0 +1,69 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize ehr_tags %}
+{% block title %}Frame Stocktakes — Optical{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'opticals:dashboard' %}">Optical</a></li>
+    <li class="breadcrumb-item active">Stocktakes</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Frame Stocktakes</h4>
+    <div class="text-muted small">Physical inventory counts and variance tracking</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:frame_stocktake_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>New Stocktake</a>
+    <a href="{% url 'opticals:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Conducted By</th>
+          <th class="text-end">Total Items</th>
+          <th class="text-end">Variances</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for st in stocktakes %}
+        <tr>
+          <td class="text-muted">{{ st.date|date:"d M Y" }}</td>
+          <td class="fw-semibold">
+            <a href="{% url 'opticals:frame_stocktake_detail' st.id %}" class="text-decoration-none">{{ st.title }}</a>
+          </td>
+          <td>
+            <span class="badge {% if st.status == 'IN_PROGRESS' %}bg-warning text-dark{% elif st.status == 'FINALIZED' %}bg-success{% elif st.status == 'CANCELLED' %}bg-secondary{% else %}bg-info{% endif %}">
+              {{ st.get_status_display }}
+            </span>
+          </td>
+          <td class="text-muted">{{ st.conducted_by|user_display|default:"--" }}</td>
+          <td class="text-end">{{ st.total_items|default:"0" }}</td>
+          <td class="text-end">
+            {% if st.variance_count %}
+            <span class="badge bg-danger">{{ st.variance_count }} variance{{ st.variance_count|pluralize }}</span>
+            {% else %}
+            <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td class="text-nowrap">
+            <a href="{% url 'opticals:frame_stocktake_detail' st.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No stocktakes performed yet. <a href="{% url 'opticals:frame_stocktake_create' %}">Start first stocktake</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
