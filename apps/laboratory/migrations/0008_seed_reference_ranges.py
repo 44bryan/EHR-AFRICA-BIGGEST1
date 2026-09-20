@@ -118,7 +118,7 @@ def seed_ranges(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('laboratory', '0007_alter_laborder_options_and_more'),
+        ('laboratory', '0007_antibioticsensitivity_deleted_at_and_more'),
     ]
 
     operations = [

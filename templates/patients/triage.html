@@ -316,76 +316,13 @@
                         data-bs-toggle="collapse" data-bs-target="#secOph" aria-expanded="true" aria-controls="secOph">
                   <i class="bi bi-eye me-2 text-secondary fs-5"></i>
                   <span class="fs-6">Ophthalmic Parameters</span>
-                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">VA &amp; IOP</span>
+                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">IOP</span>
                 </button>
               </h2>
               <div id="secOph" class="accordion-collapse collapse show" aria-labelledby="hOph">
                 <div class="accordion-body pt-2">
+                  <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>VA is recorded by the Optometrist during refraction, not at triage.</div>
                   <div class="row g-3">
-                    {# VA OD #}
-                    <div class="col-6 col-lg-3">
-                      <label class="form-label fw-semibold small">Visual Acuity Right Eye (OD)</label>
-                      <select class="form-select form-select-sm" id="sel_va_r" onchange="applySelect(this,'id_visual_acuity_right','right','va')">
-                        <option value="">— Not examined —</option>
-                        <option value="10/10">10/10 — Normal</option>
-                        <option value="9/10">9/10</option>
-                        <option value="8/10">8/10</option>
-                        <option value="7/10">7/10</option>
-                        <option value="6/10">6/10</option>
-                        <option value="5/10">5/10</option>
-                        <option value="4/10">4/10</option>
-                        <option value="3/10">3/10</option>
-                        <option value="2/10">2/10</option>
-                        <option value="1/10">1/10</option>
-                        <option value="CF@1m">CF@1m — Count Fingers at 1 m</option>
-                        <option value="CF@2m">CF@2m — Count Fingers at 2 m</option>
-                        <option value="CF@3m">CF@3m — Count Fingers at 3 m</option>
-                        <option value="CF@4m">CF@4m — Count Fingers at 4 m</option>
-                        <option value="CF@5m">CF@5m — Count Fingers at 5 m</option>
-                        <option value="HM">HM — Hand Motion</option>
-                        <option value="PL">PL — Light Perception</option>
-                        <option value="NPL">NPL — No Light Perception</option>
-                        <option value="__other">Other (specify)</option>
-                      </select>
-                      <input type="text" name="visual_acuity_right" id="id_visual_acuity_right"
-                             class="form-control form-control-sm mt-1 d-none" maxlength="20"
-                             placeholder="e.g. 10/10 P, 1.5/10…"
-                             value="{{ form.visual_acuity_right.value|default:'' }}"
-                             oninput="checkVA(this.value,'right');autoSuggestPriority();">
-                      <div class="vital-alert-msg text-danger small d-none" id="alert_va_right"></div>
-                    </div>
-                    {# VA OS #}
-                    <div class="col-6 col-lg-3">
-                      <label class="form-label fw-semibold small">Visual Acuity Left Eye (OS)</label>
-                      <select class="form-select form-select-sm" id="sel_va_l" onchange="applySelect(this,'id_visual_acuity_left','left','va')">
-                        <option value="">— Not examined —</option>
-                        <option value="10/10">10/10 — Normal</option>
-                        <option value="9/10">9/10</option>
-                        <option value="8/10">8/10</option>
-                        <option value="7/10">7/10</option>
-                        <option value="6/10">6/10</option>
-                        <option value="5/10">5/10</option>
-                        <option value="4/10">4/10</option>
-                        <option value="3/10">3/10</option>
-                        <option value="2/10">2/10</option>
-                        <option value="1/10">1/10</option>
-                        <option value="CF@1m">CF@1m — Count Fingers at 1 m</option>
-                        <option value="CF@2m">CF@2m — Count Fingers at 2 m</option>
-                        <option value="CF@3m">CF@3m — Count Fingers at 3 m</option>
-                        <option value="CF@4m">CF@4m — Count Fingers at 4 m</option>
-                        <option value="CF@5m">CF@5m — Count Fingers at 5 m</option>
-                        <option value="HM">HM — Hand Motion</option>
-                        <option value="PL">PL — Light Perception</option>
-                        <option value="NPL">NPL — No Light Perception</option>
-                        <option value="__other">Other (specify)</option>
-                      </select>
-                      <input type="text" name="visual_acuity_left" id="id_visual_acuity_left"
-                             class="form-control form-control-sm mt-1 d-none" maxlength="20"
-                             placeholder="e.g. 10/10 P, 1.5/10…"
-                             value="{{ form.visual_acuity_left.value|default:'' }}"
-                             oninput="checkVA(this.value,'left');autoSuggestPriority();">
-                      <div class="vital-alert-msg text-danger small d-none" id="alert_va_left"></div>
-                    </div>
                     {# IOP OD #}
                     <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">IOP Right Eye (mmHg)</label>
@@ -639,7 +576,9 @@
                 {# Department — largest possible select for easy tap #}
                 <select name="dispatch_department" id="dispatch_department"
                         class="form-select form-select-lg mb-2 fw-semibold"
-                        onchange="onDeptChange(this.value, this.options[this.selectedIndex].text)">
+                        onchange="onDeptChange(this.value, this.options[this.selectedIndex].text)"
+                        onfocus="this._prev=this.value"
+                        onclick="if(this.value && this.value===this._prev){onDeptChange(this.value,this.options[this.selectedIndex].text);}">
                   <option value="">— Select Department / Clinic —</option>
                   {% for dept in departments %}
                   <option value="{{ dept.pk }}" data-code="{{ dept.code }}" {% if visit.department and visit.department.pk == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
@@ -872,7 +811,6 @@ function applySelect(sel, inpId, alertSide, alertType) {
     inp.value = sel.value;
   }
   // Trigger validation
-  if (alertType === 'va' && alertSide)  { checkVA(inp.value, alertSide);  autoSuggestPriority(); }
   if (alertType === 'iop' && alertSide) { checkIOP(inp.value, alertSide); autoSuggestPriority();
     // Auto-set IOP time if not already set
     if (inp.value) {
@@ -943,7 +881,9 @@ function _isHomeTier(serveTiersList) {
   return serveTiersList.some(t => home.includes(t));
 }
 
-let _currentDeptId = '';      // UUID of currently selected department
+// Initialise from pre-selected dept (re-dispatch case)
+var _initDeptSel = document.getElementById('dispatch_department');
+let _currentDeptId = (_initDeptSel && _initDeptSel.value) ? _initDeptSel.value : '';
 let _dispatchMode  = 'DEPT';  // 'DEPT' | 'ROOM'
 
 function setDispatchMode(mode) {
@@ -1291,18 +1231,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ── Quick vitals templates ────────────────────────────────────────────────────
 var templates = {
-  postop:    { va_r: '7/10', va_l: '9/10', iop_r: '16', iop_l: '14', note: 'Post-operative day 1 review.' },
+  postop:    { iop_r: '16', iop_l: '14', note: 'Post-operative day 1 review.' },
   glaucoma:  { note: 'Glaucoma follow-up — IOP monitoring.' },
   diabetic:  { note: 'Annual diabetic eye screening.' },
   pediatric: { note: 'Paediatric eye examination.' },
-  emergency: { va_r: 'VBLM — Hand Motion', note: 'EMERGENCY — urgent review required.', priority: 'EMERGENCY' }
+  emergency: { note: 'EMERGENCY — urgent review required.', priority: 'EMERGENCY' }
 };
 
 function applyTemplate(key) {
   const t = templates[key];
   if (!t) return;
-  if (t.va_r)  setSelectVal('sel_va_r',  'id_visual_acuity_right', t.va_r);
-  if (t.va_l)  setSelectVal('sel_va_l',  'id_visual_acuity_left',  t.va_l);
   if (t.iop_r) setSelectVal('sel_iop_r', 'id_intraocular_pressure_right', t.iop_r);
   if (t.iop_l) setSelectVal('sel_iop_l', 'id_intraocular_pressure_left',  t.iop_l);
   if (t.bp)    setSelectVal('sel_bp',    'id_blood_pressure', t.bp);
@@ -1348,25 +1286,6 @@ function highlightPriority(val) {
 highlightPriority('NORMAL');
 
 // ── Abnormal vitals detection ─────────────────────────────────────────────────
-// VA uses Cameroon 10/10 scale. Severity 0=worst, 10=best.
-var VA_SEVERITY = {
-  'PL-': 0, 'PL+': 1,
-  'VBLM — HAND MOTION': 2, 'HM': 2,
-  'CDM — COUNT FINGERS': 3, 'CF': 3,
-  '1/10': 1, '2/10': 2, '3/10': 3, '4/10': 4, '5/10': 5,
-  '6/10': 6, '7/10': 7, '8/10': 8, '9/10': 9, '10/10': 10,
-};
-
-function vaLevel(val) {
-  if (!val) return null;
-  const upper = val.trim().toUpperCase();
-  if (upper in VA_SEVERITY) return VA_SEVERITY[upper];
-  // Parse any N/10 pattern
-  const m = upper.match(/^(\d+)\/10$/);
-  if (m) return parseInt(m[1]);
-  return null;
-}
-
 function showAlert(elId, msg, level) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -1393,13 +1312,6 @@ function checkIOP(val, side) {
   else if (n > 21)  showAlert(id, `IOP ${n} mmHg — elevated (>21 mmHg)`, 'warning');
   else              showAlert(id, null);
 }
-function checkVA(val, side) {
-  const level = vaLevel(val); const id = 'alert_va_' + side;
-  if (level === null) { showAlert(id, null); return; }
-  if (level <= 2)      showAlert(id, `⚠ Severe vision loss (${val}) — flag for urgent review`, 'danger');
-  else if (level <= 4) showAlert(id, `Vision impairment (${val})`, 'warning');
-  else                 showAlert(id, null);
-}
 function checkBP(val) {
   const m = val.match(/^(\d+)\s*\/\s*(\d+)/); if (!m) return;
   const sys = parseInt(m[1]), dia = parseInt(m[2]);
@@ -1425,8 +1337,6 @@ function checkTemp(val) {
 function checkAllVitals() {
   checkIOP(document.getElementById('id_intraocular_pressure_right').value, 'right');
   checkIOP(document.getElementById('id_intraocular_pressure_left').value,  'left');
-  checkVA(document.getElementById('id_visual_acuity_right').value, 'right');
-  checkVA(document.getElementById('id_visual_acuity_left').value,  'left');
   checkBP(document.getElementById('id_blood_pressure').value);
   checkPulse(document.getElementById('id_pulse').value);
   checkTemp(document.getElementById('id_temperature').value);
@@ -1443,12 +1353,6 @@ function autoSuggestPriority() {
   const iopL = parseFloat(document.getElementById('id_intraocular_pressure_left').value);
   if (iopR > 30 || iopL > 30) emergencyHints.push('IOP >30 mmHg');
   else if (iopR > 21 || iopL > 21) urgentHints.push('Elevated IOP');
-
-  const vaR = vaLevel(document.getElementById('id_visual_acuity_right').value);
-  const vaL = vaLevel(document.getElementById('id_visual_acuity_left').value);
-  if (vaR !== null && vaR <= 2) emergencyHints.push('Severe VA loss OD');
-  if (vaL !== null && vaL <= 2) emergencyHints.push('Severe VA loss OS');
-  if ((vaR !== null && vaR > 2 && vaR <= 4) || (vaL !== null && vaL > 2 && vaL <= 4)) urgentHints.push('VA impairment');
 
   const bpM = document.getElementById('id_blood_pressure').value.match(/^(\d+)\s*\/\s*(\d+)/);
   if (bpM) {
@@ -1478,8 +1382,6 @@ function autoSuggestPriority() {
 }
 
 // ── Initialise selects from stored values on page load ─────────────────────────
-initSelect('sel_va_r',   'id_visual_acuity_right');
-initSelect('sel_va_l',   'id_visual_acuity_left');
 initSelect('sel_iop_r',  'id_intraocular_pressure_right');
 initSelect('sel_iop_l',  'id_intraocular_pressure_left');
 initSelect('sel_bp',     'id_blood_pressure');
@@ -1487,6 +1389,14 @@ initSelect('sel_pulse',  'id_pulse');
 initSelect('sel_temp',   'id_temperature');
 
 checkAllVitals();
+
+// ── Auto-init dispatch if dept is pre-selected (re-dispatch case) ──────────────
+if (_currentDeptId) {
+  var _ds = document.getElementById('dispatch_department');
+  if (_ds && _ds.selectedIndex > 0) {
+    onDeptChange(_ds.value, _ds.options[_ds.selectedIndex].text);
+  }
+}
 
 // ── Doctor dispatch picker (VIP / Express) ────────────────────────────────────
 // gph_doctors: [{id, first_name, last_name, consultation_unit}, ...]

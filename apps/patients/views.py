@@ -1261,13 +1261,6 @@ def triage_view(request, visit_number):
             vitals = {k: str(v) for k, v in cd.items() if v not in (None, '', 'None')}
 
             # ── Compute and store vital sign flags (HIGH / LOW) ──────────────
-            def _va_is_low(va):
-                if not va:
-                    return False
-                low_vals = ('CF@1m','CF@2m','CF@3m','CF@4m','CF@5m','HM','PL','NPL',
-                            'CDM','VBLM','PL+','PL-','1/10','2/10','1/60','2/60','3/60')
-                return str(va).strip() in low_vals
-
             def _iop_flag(iop_str):
                 try:
                     v = float(str(iop_str).replace('>', '').replace('<', '').strip())
@@ -1314,10 +1307,6 @@ def triage_view(request, visit_number):
                 return None
 
             flags = {}
-            if _va_is_low(vitals.get('visual_acuity_right')):
-                flags['va_right'] = 'LOW'
-            if _va_is_low(vitals.get('visual_acuity_left')):
-                flags['va_left'] = 'LOW'
             f = _iop_flag(vitals.get('intraocular_pressure_right'))
             if f:
                 flags['iop_right'] = f
