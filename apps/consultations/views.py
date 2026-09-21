@@ -3303,8 +3303,10 @@ _NURSE_ROUTE_MAP = {
     'CONTACT_LENS':('WAITING',           'CONTACT_LENS','Contact Lens Clinic'),
     'LASER':       ('WAITING',           'LASER',      'Laser Clinic'),
     'INJECTION':   ('WAITING',           'INJECTION',  'Injection Clinic'),
+    'PROCEDURE_ROOM':('PROCEDURE_ROOM',   'PROCEDURE_ROOM','Procedure Room (Injections/Laser)'),
     'DISCHARGE':   ('COMPLETED',         None,         'Discharge / Done'),
     'TRIAGE':      ('PARAMETERS',        'PARAMETERS', 'Triage / Re-dispatch'),
+    'RECEPTION':   ('RECEPTION',         None,         'Reception'),
     # Aliases — service_type codes from ServiceCounter used as routing destinations
     'EXP_CONSULT':  ('WAITING',          'EXP_CONSULT',  'Express Consultation'),
     'VIP_CONSULT':  ('WAITING',          'VIP_CONSULT',  'VIP Consultation'),

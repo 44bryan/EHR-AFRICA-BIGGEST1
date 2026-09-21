@@ -1,0 +1,116 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ record.record_number }} — {{ record.get_procedure_type_display }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small">
+    <li class="breadcrumb-item"><a href="{% url 'ipd:procedure_room_queue' %}">Procedure Room</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'ipd:procedure_room_stats' %}">Register</a></li>
+    <li class="breadcrumb-item active">{{ record.record_number }}</li>
+  </ol>
+</nav>
+
+{# ── Patient + Procedure Header ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-3">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div>
+        <h5 class="fw-bold mb-0">{{ record.patient.full_name }}</h5>
+        <div class="text-muted small">{{ record.patient.patient_id }} &middot; {{ record.patient.age_display|default:"" }}</div>
+      </div>
+      <div class="ms-auto d-flex gap-2 align-items-center">
+        <span class="badge bg-info fs-6">{{ record.get_procedure_type_display }}</span>
+        <span class="badge bg-light text-dark border fs-6">{{ record.eye }}</span>
+        <span class="badge bg-success fs-6">{{ record.get_status_display }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  {# ── Left: Procedure Details ── #}
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small">Procedure Details</h6></div>
+      <div class="card-body small">
+        <div class="row g-2">
+          <div class="col-6"><strong>Record #:</strong> {{ record.record_number }}</div>
+          <div class="col-6"><strong>Date:</strong> {{ record.procedure_date|date:"d M Y H:i"|default:"—" }}</div>
+          <div class="col-6"><strong>Ordered By:</strong> Dr. {{ record.ordered_by.get_full_name|default:"—" }}</div>
+          <div class="col-6"><strong>Performed By:</strong> Dr. {{ record.performed_by.get_full_name|default:"—" }}</div>
+          {% if record.medication_used %}<div class="col-6"><strong>Medication:</strong> {{ record.medication_used }}</div>{% endif %}
+          {% if record.medication_batch %}<div class="col-6"><strong>Batch:</strong> {{ record.medication_batch }} {% if record.medication_expiry %}(exp: {{ record.medication_expiry|date:"M Y" }}){% endif %}</div>{% endif %}
+          {% if record.injection_site %}<div class="col-6"><strong>Injection Site:</strong> {{ record.injection_site }}</div>{% endif %}
+          {% if record.anaesthesia %}<div class="col-6"><strong>Anaesthesia:</strong> {{ record.anaesthesia }}</div>{% endif %}
+          {% if record.laser_settings.power_mw %}
+          <div class="col-12 mt-2">
+            <strong>Laser Settings:</strong> {{ record.laser_settings.power_mw }}mW &middot; {{ record.laser_settings.duration_ms }}ms &middot; {{ record.laser_settings.spot_size_um }}um &middot; {{ record.laser_settings.num_spots }} spots
+          </div>
+          {% endif %}
+          {% if record.procedure_outcome %}<div class="col-12 mt-2"><strong>Outcome:</strong> {{ record.procedure_outcome }}</div>{% endif %}
+          {% if record.complications %}<div class="col-12 text-danger"><strong>Complications:</strong> {{ record.complications }}</div>{% endif %}
+          {% if record.procedure_notes %}<div class="col-12"><strong>Notes:</strong> {{ record.procedure_notes }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Vitals #}
+    {% if record.pre_vitals or record.post_vitals %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small">Vitals</h6></div>
+      <div class="card-body small">
+        <table class="table table-sm table-bordered mb-0">
+          <thead class="table-light">
+            <tr><th></th><th>BP</th><th>IOP RE</th><th>IOP LE</th><th>VA RE</th><th>VA LE</th></tr>
+          </thead>
+          <tbody>
+          {% if record.pre_vitals %}
+          <tr>
+            <td class="fw-semibold">Pre</td>
+            <td>{{ record.pre_vitals.bp|default:"—" }}</td>
+            <td>{{ record.pre_vitals.iop_re|default:"—" }}</td>
+            <td>{{ record.pre_vitals.iop_le|default:"—" }}</td>
+            <td>{{ record.pre_vitals.va_re|default:"—" }}</td>
+            <td>{{ record.pre_vitals.va_le|default:"—" }}</td>
+          </tr>
+          {% endif %}
+          {% if record.post_vitals %}
+          <tr>
+            <td class="fw-semibold">Post @15min</td>
+            <td>—</td>
+            <td>{{ record.post_vitals.iop_re_15min|default:"—" }}</td>
+            <td>{{ record.post_vitals.iop_le_15min|default:"—" }}</td>
+            <td>{{ record.post_vitals.va_re|default:"—" }}</td>
+            <td>{{ record.post_vitals.va_le|default:"—" }}</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold">Post @30min</td>
+            <td>—</td>
+            <td>{{ record.post_vitals.iop_re_30min|default:"—" }}</td>
+            <td>{{ record.post_vitals.iop_le_30min|default:"—" }}</td>
+            <td>—</td><td>—</td>
+          </tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Right: Summary ── #}
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small">Summary</h6></div>
+      <div class="card-body small">
+        <div class="mb-2"><strong>Consent:</strong> {% if record.consent_signed %}<span class="text-success">Signed {{ record.consent_date|date:"d M" }}</span>{% else %}<span class="text-danger">Not signed</span>{% endif %}</div>
+        <div class="mb-2"><strong>Status:</strong> {{ record.get_status_display }}</div>
+        {% if record.discharged_at %}<div class="mb-2"><strong>Discharged:</strong> {{ record.discharged_at|date:"d M Y H:i" }}</div>{% endif %}
+        {% if record.follow_up_date %}<div class="mb-2"><strong>Follow-up:</strong> {{ record.follow_up_date|date:"d M Y" }}</div>{% endif %}
+        {% if record.next_injection_date %}<div class="mb-2"><strong>Next Injection:</strong> {{ record.next_injection_date|date:"d M Y" }}</div>{% endif %}
+        {% if record.follow_up_instructions %}<div class="mb-2"><strong>Instructions:</strong> {{ record.follow_up_instructions }}</div>{% endif %}
+        {% if record.post_instructions %}<div class="mb-2"><strong>Post-op Instructions:</strong> {{ record.post_instructions }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

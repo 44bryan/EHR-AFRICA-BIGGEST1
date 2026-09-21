@@ -11,6 +11,7 @@ from .models import (
     WardType, VitalSigns, FluidBalance, FluidEntryType,
     SurgicalOutcome, OutcomeGrade,
     MedicationReconciliation, MedRecItem, MedRecPhase, MedRecAction,
+    ProcedureRecord, ProcedureRecordStatus, ProcedureType,
 )
 from django.views.decorators.http import require_POST
 from apps.core.context_processors import qms_active as _qms_active
@@ -166,9 +167,33 @@ def counseling_queue(request):
         except Exception:
             pass
 
+    # Stats for counseling nurse dashboard
+    from django.db.models import Count, Q
+    import datetime
+    month_start = today.replace(day=1)
+    month_bookings = SurgicalBooking.objects.filter(
+        is_deleted=False, created_at__date__gte=month_start,
+    )
+    counseling_stats = {
+        'month_total': month_bookings.count(),
+        'month_consented': month_bookings.filter(consent_signed=True).count(),
+        'month_pending': month_bookings.filter(consent_signed=False).count(),
+        'month_confirmed': month_bookings.filter(status=SurgicalBookingStatus.CONFIRMED).count(),
+        'consent_rate': round(
+            month_bookings.filter(consent_signed=True).count() /
+            max(month_bookings.count(), 1) * 100, 1
+        ),
+    }
+    # Recent bookings by this nurse (if counseling nurse)
+    recent_bookings = SurgicalBooking.objects.filter(
+        is_deleted=False
+    ).select_related('patient').order_by('-created_at')[:10]
+
     return render(request, 'ipd/counseling_queue.html', {
         'waiting': waiting,
         'completed_today': completed_today,
+        'stats': counseling_stats,
+        'recent_bookings': recent_bookings,
     })
 
 
@@ -2567,3 +2592,427 @@ def medrec_item_delete(request, item_id):
     item.delete()
     messages.success(request, f'Medication "{item.medication_name}" removed.')
     return redirect('ipd:medrec_detail', medrec_id=rec.pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROCEDURE ROOM — Injections / Laser / Minor Procedures
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _can_procedure_room(user):
+    """Roles that can access the procedure room queue and record procedures."""
+    return (user.is_doctor or user.is_super_admin or user.is_medical_director
+            or user.role in ('nurse', 'consultation_nurse', 'ward_nurse'))
+
+
+@login_required
+def procedure_room_queue(request):
+    """
+    Procedure Room dashboard — shows patients waiting for injections/laser/minor procedures.
+    Also shows today's completed procedures and a quick register.
+    """
+    if not _can_procedure_room(request.user):
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    q = request.GET.get('q', '').strip()
+
+    # QMS waiting queue
+    waiting = []
+    if _qms_active():
+        try:
+            from apps.qms.models import QueueToken, TokenStatus
+            waiting = list(
+                QueueToken.objects.filter(
+                    service_type='PROCEDURE_ROOM',
+                    status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                    token_date=today,
+                    is_deleted=False,
+                ).select_related('patient', 'visit').order_by('-priority', 'issued_at')
+            )
+        except Exception:
+            pass
+
+    # Today's procedure records
+    today_records = ProcedureRecord.objects.filter(
+        created_at__date=today, is_deleted=False,
+    ).select_related('patient', 'ordered_by', 'performed_by').order_by('-created_at')
+
+    # Search
+    search_results = None
+    if q:
+        from django.db.models import Q
+        search_results = ProcedureRecord.objects.filter(
+            Q(patient__first_name__icontains=q) |
+            Q(patient__last_name__icontains=q) |
+            Q(patient__patient_id__icontains=q) |
+            Q(record_number__icontains=q),
+            is_deleted=False,
+        ).select_related('patient', 'ordered_by', 'performed_by').order_by('-created_at')[:30]
+
+    # Stats
+    stats = {
+        'waiting': len(waiting),
+        'in_progress': today_records.filter(status=ProcedureRecordStatus.IN_PROGRESS).count(),
+        'completed': today_records.filter(status__in=[
+            ProcedureRecordStatus.COMPLETED,
+            ProcedureRecordStatus.MONITORING,
+            ProcedureRecordStatus.DISCHARGED,
+        ]).count(),
+        'total_today': today_records.count(),
+    }
+
+    return render(request, 'ipd/procedure_room_queue.html', {
+        'waiting': waiting,
+        'today_records': today_records,
+        'search_results': search_results,
+        'q': q,
+        'stats': stats,
+    })
+
+
+@login_required
+def procedure_room_record(request, record_id):
+    """
+    Full procedure record form — record consent, pre-procedure vitals,
+    perform the procedure, record medications/laser settings, post-procedure monitoring.
+    """
+    if not _can_procedure_room(request.user):
+        return HttpResponseForbidden()
+
+    record = get_object_or_404(
+        ProcedureRecord.objects.select_related('patient', 'visit', 'consultation', 'ordered_by', 'performed_by'),
+        pk=record_id, is_deleted=False
+    )
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+
+        if action == 'consent':
+            record.consent_signed = request.POST.get('consent_signed') == 'yes'
+            record.consent_date = timezone.now() if record.consent_signed else None
+            if record.consent_signed:
+                record.status = ProcedureRecordStatus.READY
+            else:
+                record.status = ProcedureRecordStatus.CONSENT_PENDING
+            record.save(update_fields=['consent_signed', 'consent_date', 'status', 'updated_at'])
+            messages.success(request, 'Consent recorded.')
+
+        elif action == 'pre_vitals':
+            record.pre_vitals = {
+                'bp': request.POST.get('pre_bp', ''),
+                'iop_re': request.POST.get('pre_iop_re', ''),
+                'iop_le': request.POST.get('pre_iop_le', ''),
+                'va_re': request.POST.get('pre_va_re', ''),
+                'va_le': request.POST.get('pre_va_le', ''),
+                'pupil_dilated': request.POST.get('pre_pupil_dilated', ''),
+            }
+            record.anaesthesia = request.POST.get('anaesthesia', '')
+            record.status = ProcedureRecordStatus.READY
+            record.save(update_fields=['pre_vitals', 'anaesthesia', 'status', 'updated_at'])
+            messages.success(request, 'Pre-procedure vitals recorded.')
+
+        elif action == 'perform':
+            record.performed_by = request.user
+            record.procedure_date = timezone.now()
+            record.medication_used = request.POST.get('medication_used', '')
+            record.medication_batch = request.POST.get('medication_batch', '')
+            _exp = request.POST.get('medication_expiry', '').strip()
+            if _exp:
+                try:
+                    from datetime import date as _d
+                    record.medication_expiry = _d.fromisoformat(_exp)
+                except (ValueError, TypeError):
+                    pass
+            record.injection_site = request.POST.get('injection_site', '')
+            record.complications = request.POST.get('complications', '')
+            record.procedure_outcome = request.POST.get('procedure_outcome', '')
+            record.procedure_notes = request.POST.get('procedure_notes', '')
+            # Laser settings
+            _power = request.POST.get('laser_power', '')
+            _duration = request.POST.get('laser_duration', '')
+            _spot = request.POST.get('laser_spot_size', '')
+            _spots = request.POST.get('laser_num_spots', '')
+            if any([_power, _duration, _spot, _spots]):
+                record.laser_settings = {
+                    'power_mw': _power,
+                    'duration_ms': _duration,
+                    'spot_size_um': _spot,
+                    'num_spots': _spots,
+                }
+            record.status = ProcedureRecordStatus.COMPLETED
+            record.save()
+            messages.success(request, f'Procedure recorded by Dr. {request.user.get_full_name()}.')
+
+        elif action == 'post_vitals':
+            record.post_vitals = {
+                'iop_re_15min': request.POST.get('post_iop_re_15', ''),
+                'iop_le_15min': request.POST.get('post_iop_le_15', ''),
+                'iop_re_30min': request.POST.get('post_iop_re_30', ''),
+                'iop_le_30min': request.POST.get('post_iop_le_30', ''),
+                'va_re': request.POST.get('post_va_re', ''),
+                'va_le': request.POST.get('post_va_le', ''),
+            }
+            record.post_instructions = request.POST.get('post_instructions', '')
+            record.monitoring_complete = True
+            record.status = ProcedureRecordStatus.MONITORING
+            record.save(update_fields=[
+                'post_vitals', 'post_instructions', 'monitoring_complete',
+                'status', 'updated_at'
+            ])
+            messages.success(request, 'Post-procedure monitoring recorded.')
+
+        elif action == 'discharge':
+            record.discharged_at = timezone.now()
+            record.status = ProcedureRecordStatus.DISCHARGED
+            _fu = request.POST.get('follow_up_date', '').strip()
+            if _fu:
+                try:
+                    from datetime import date as _d2
+                    record.follow_up_date = _d2.fromisoformat(_fu)
+                except (ValueError, TypeError):
+                    pass
+            record.follow_up_instructions = request.POST.get('follow_up_instructions', '')
+            _next_inj = request.POST.get('next_injection_date', '').strip()
+            if _next_inj:
+                try:
+                    from datetime import date as _d3
+                    record.next_injection_date = _d3.fromisoformat(_next_inj)
+                except (ValueError, TypeError):
+                    pass
+            record.save()
+
+            # Auto-create follow-up appointment
+            if record.follow_up_date:
+                try:
+                    from apps.appointments.models import Appointment
+                    Appointment.objects.create(
+                        patient=record.patient,
+                        department=record.consultation.department if record.consultation else None,
+                        appointment_date=record.follow_up_date,
+                        appointment_type='FOLLOW_UP',
+                        reason=f'Post-procedure follow-up: {record.get_procedure_type_display()}',
+                        status='SCHEDULED',
+                        booked_by=request.user,
+                        created_by=request.user,
+                    )
+                except Exception:
+                    pass
+
+            # Route to pharmacy if needed
+            if request.POST.get('route_pharmacy') == '1' and _qms_active() and record.visit:
+                try:
+                    from apps.qms.models import (
+                        QueueToken, DailyTokenSequence, IssuancePoint,
+                        TokenStatus, TIER_PRIORITY,
+                    )
+                    from django.db import transaction as _tx
+                    tier = record.visit.service_tier or 'STANDARD'
+                    with _tx.atomic():
+                        token_num = DailyTokenSequence.next_dept_token('PHARMACY')
+                        QueueToken.objects.create(
+                            token_number=token_num,
+                            patient=record.patient,
+                            visit=record.visit,
+                            service_type='PHARMACY',
+                            service_tier=tier,
+                            issuance_point=IssuancePoint.SYSTEM,
+                            priority=TIER_PRIORITY.get(tier, 0),
+                            status=TokenStatus.WAITING,
+                            notes=f'Post-procedure: {record.get_procedure_type_display()}',
+                            issued_by=request.user,
+                        )
+                except Exception:
+                    pass
+
+            # Complete procedure room QMS token
+            if _qms_active() and record.visit:
+                try:
+                    from apps.qms.models import QueueToken, TokenStatus
+                    proc_token = QueueToken.objects.filter(
+                        visit=record.visit,
+                        service_type='PROCEDURE_ROOM',
+                        status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                        token_date=timezone.localdate(),
+                        is_deleted=False,
+                    ).first()
+                    if proc_token:
+                        proc_token.status = TokenStatus.COMPLETED
+                        proc_token.completed_at = timezone.now()
+                        proc_token.save(update_fields=['status', 'completed_at', 'updated_at'])
+                except Exception:
+                    pass
+
+            messages.success(request, f'Patient discharged from procedure room.')
+            return redirect('ipd:procedure_room_queue')
+
+        elif action == 'cancel':
+            record.status = ProcedureRecordStatus.CANCELLED
+            record.procedure_notes = request.POST.get('cancel_reason', '')
+            record.save(update_fields=['status', 'procedure_notes', 'updated_at'])
+            messages.warning(request, 'Procedure cancelled.')
+            return redirect('ipd:procedure_room_queue')
+
+        return redirect('ipd:procedure_room_record', record_id=record.pk)
+
+    return render(request, 'ipd/procedure_room_record.html', {
+        'record': record,
+        'procedure_types': ProcedureType.choices,
+    })
+
+
+@login_required
+def procedure_room_create(request, visit_id):
+    """
+    Create a new ProcedureRecord — usually called from the doctor's consultation
+    when they order a procedure, or manually by the procedure room nurse.
+    """
+    if not _can_procedure_room(request.user):
+        return HttpResponseForbidden()
+
+    from apps.patients.models import Visit
+    from apps.consultations.models import Consultation
+
+    visit = get_object_or_404(Visit, pk=visit_id, is_deleted=False)
+    patient = visit.patient
+    consultation = Consultation.objects.filter(
+        visit=visit, is_deleted=False
+    ).order_by('-consultation_date').first()
+
+    if request.method == 'POST':
+        proc_type = request.POST.get('procedure_type', '')
+        eye = request.POST.get('eye', 'RE')
+        notes = request.POST.get('procedure_notes', '')
+
+        record = ProcedureRecord.objects.create(
+            patient=patient,
+            visit=visit,
+            consultation=consultation,
+            procedure_type=proc_type,
+            eye=eye,
+            procedure_notes=notes,
+            ordered_by=request.user,
+            status=ProcedureRecordStatus.CONSENT_PENDING,
+            created_by=request.user,
+        )
+        messages.success(request,
+            f'Procedure order created: {record.get_procedure_type_display()} ({record.record_number})')
+        return redirect('ipd:procedure_room_record', record_id=record.pk)
+
+    return render(request, 'ipd/procedure_room_create.html', {
+        'visit': visit,
+        'patient': patient,
+        'consultation': consultation,
+        'procedure_types': ProcedureType.choices,
+    })
+
+
+@login_required
+def procedure_room_detail(request, record_id):
+    """Read-only detail view of a completed procedure record."""
+    record = get_object_or_404(
+        ProcedureRecord.objects.select_related(
+            'patient', 'visit', 'consultation', 'ordered_by', 'performed_by'
+        ),
+        pk=record_id, is_deleted=False
+    )
+    if not (_can_procedure_room(request.user) or request.user.is_ceo
+            or request.user.is_admin_director):
+        return HttpResponseForbidden()
+
+    return render(request, 'ipd/procedure_room_detail.html', {'record': record})
+
+
+@login_required
+def procedure_room_stats(request):
+    """
+    Procedure Room Register & Stats — tracks all procedures, injections, lasers.
+    Filterable by date range, procedure type, eye, status.
+    Shows: prescribed vs completed, by type, by eye, by doctor.
+    """
+    if not (request.user.is_super_admin or request.user.is_medical_director
+            or request.user.is_admin_director or request.user.is_ceo
+            or request.user.is_doctor or request.user.role == 'admission_officer'):
+        return HttpResponseForbidden()
+
+    from django.db.models import Count, Q
+    import datetime
+
+    # Date filters
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    proc_filter = request.GET.get('procedure_type', '')
+    status_filter = request.GET.get('status', '')
+    eye_filter = request.GET.get('eye', '')
+
+    today = timezone.localdate()
+    if not date_from:
+        date_from = (today - datetime.timedelta(days=30)).isoformat()
+    if not date_to:
+        date_to = today.isoformat()
+
+    qs = ProcedureRecord.objects.filter(
+        is_deleted=False,
+        created_at__date__gte=date_from,
+        created_at__date__lte=date_to,
+    ).select_related('patient', 'ordered_by', 'performed_by')
+
+    if proc_filter:
+        qs = qs.filter(procedure_type=proc_filter)
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if eye_filter:
+        qs = qs.filter(eye=eye_filter)
+
+    records = qs.order_by('-created_at')
+
+    # Aggregate stats
+    total = qs.count()
+    stats_agg = qs.aggregate(
+        ordered=Count('id', filter=Q(status=ProcedureRecordStatus.ORDERED)),
+        completed=Count('id', filter=Q(status__in=[
+            ProcedureRecordStatus.COMPLETED,
+            ProcedureRecordStatus.MONITORING,
+            ProcedureRecordStatus.DISCHARGED,
+        ])),
+        cancelled=Count('id', filter=Q(status=ProcedureRecordStatus.CANCELLED)),
+        in_progress=Count('id', filter=Q(status=ProcedureRecordStatus.IN_PROGRESS)),
+    )
+
+    # By procedure type
+    by_type = list(
+        qs.values('procedure_type').annotate(count=Count('id')).order_by('-count')
+    )
+    for item in by_type:
+        item['label'] = dict(ProcedureType.choices).get(item['procedure_type'], item['procedure_type'])
+
+    # By eye
+    by_eye = list(
+        qs.values('eye').annotate(count=Count('id')).order_by('-count')
+    )
+
+    # By doctor (performed_by)
+    by_doctor = list(
+        qs.exclude(performed_by__isnull=True)
+        .values('performed_by__first_name', 'performed_by__last_name')
+        .annotate(count=Count('id')).order_by('-count')[:10]
+    )
+
+    # Completion rate
+    completion_rate = round(stats_agg['completed'] / total * 100, 1) if total > 0 else 0
+
+    return render(request, 'ipd/procedure_room_stats.html', {
+        'records': records,
+        'total': total,
+        'stats': stats_agg,
+        'completion_rate': completion_rate,
+        'by_type': by_type,
+        'by_eye': by_eye,
+        'by_doctor': by_doctor,
+        'date_from': date_from,
+        'date_to': date_to,
+        'proc_filter': proc_filter,
+        'status_filter': status_filter,
+        'eye_filter': eye_filter,
+        'procedure_types': ProcedureType.choices,
+        'status_choices': ProcedureRecordStatus.choices,
+    })

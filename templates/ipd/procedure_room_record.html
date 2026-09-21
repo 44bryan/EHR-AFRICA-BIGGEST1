@@ -1,0 +1,362 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ record.record_number }} — {{ record.get_procedure_type_display }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small">
+    <li class="breadcrumb-item"><a href="{% url 'ipd:procedure_room_queue' %}">Procedure Room</a></li>
+    <li class="breadcrumb-item active">{{ record.record_number }}</li>
+  </ol>
+</nav>
+
+{# ── Patient Banner ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="rounded-circle bg-info bg-opacity-10 d-flex align-items-center justify-content-center" style="width:44px;height:44px;">
+        <i class="bi bi-person fs-5 text-info"></i>
+      </div>
+      <div>
+        <div class="fw-bold">{{ record.patient.full_name }}</div>
+        <div class="text-muted small">{{ record.patient.patient_id }} &middot; {{ record.patient.age_display|default:"" }} &middot; {{ record.patient.get_gender_display|default:"" }}</div>
+      </div>
+      <div class="ms-auto d-flex gap-2 align-items-center">
+        <span class="badge bg-info">{{ record.get_procedure_type_display }}</span>
+        <span class="badge bg-light text-dark border">{{ record.eye }}</span>
+        <span class="badge {% if record.status == 'COMPLETED' or record.status == 'DISCHARGED' %}bg-success{% elif record.status == 'CANCELLED' %}bg-danger{% elif record.status == 'IN_PROGRESS' %}bg-primary{% elif record.status == 'MONITORING' %}bg-info{% else %}bg-warning text-dark{% endif %} fs-6">
+          {{ record.get_status_display }}
+        </span>
+      </div>
+    </div>
+    {% if record.ordered_by %}
+    <div class="text-muted small mt-1">
+      Ordered by: Dr. {{ record.ordered_by.get_full_name }} &middot; {{ record.created_at|date:"d M Y H:i" }}
+      {% if record.procedure_notes %} &middot; <em>{{ record.procedure_notes }}</em>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Step Progress ── #}
+{% with s=record.status %}
+<div class="d-flex align-items-center gap-1 mb-4 flex-wrap" style="font-size:.75rem;">
+  <span class="badge rounded-pill {% if s == 'CONSENT_PENDING' %}bg-warning text-dark{% elif s != 'ORDERED' %}bg-success{% else %}bg-secondary{% endif %} px-3 py-2">1. Consent</span>
+  <i class="bi bi-chevron-right text-muted"></i>
+  <span class="badge rounded-pill {% if s == 'READY' %}bg-warning text-dark{% elif s == 'IN_PROGRESS' or s == 'COMPLETED' or s == 'MONITORING' or s == 'DISCHARGED' %}bg-success{% else %}bg-secondary{% endif %} px-3 py-2">2. Pre-Vitals</span>
+  <i class="bi bi-chevron-right text-muted"></i>
+  <span class="badge rounded-pill {% if s == 'IN_PROGRESS' %}bg-warning text-dark{% elif s == 'COMPLETED' or s == 'MONITORING' or s == 'DISCHARGED' %}bg-success{% else %}bg-secondary{% endif %} px-3 py-2">3. Perform</span>
+  <i class="bi bi-chevron-right text-muted"></i>
+  <span class="badge rounded-pill {% if s == 'MONITORING' %}bg-info{% elif s == 'DISCHARGED' %}bg-success{% else %}bg-secondary{% endif %} px-3 py-2">4. Post-Monitor</span>
+  <i class="bi bi-chevron-right text-muted"></i>
+  <span class="badge rounded-pill {% if s == 'DISCHARGED' %}bg-success{% else %}bg-secondary{% endif %} px-3 py-2">5. Discharge</span>
+</div>
+{% endwith %}
+
+{# ══════ STEP 1: CONSENT ══════ #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex align-items-center">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-pen me-1 text-warning"></i>Step 1 — Informed Consent</h6>
+    {% if record.consent_signed %}<span class="badge bg-success ms-auto">Signed {{ record.consent_date|date:"d M H:i" }}</span>{% endif %}
+  </div>
+  {% if not record.consent_signed and record.status != 'CANCELLED' %}
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="consent">
+      <div class="alert alert-light border small mb-3">
+        <strong>Procedure:</strong> {{ record.get_procedure_type_display }}<br>
+        <strong>Eye:</strong> {{ record.eye }}<br>
+        <strong>Risks explained:</strong> infection, bleeding, raised IOP, retinal detachment, visual loss (as applicable)
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="consentCheck" name="consent_signed" value="yes" required>
+        <label class="form-check-label fw-semibold" for="consentCheck">
+          Patient has been informed of risks, benefits, and alternatives and gives consent for the procedure
+        </label>
+      </div>
+      <button type="submit" class="btn btn-sm btn-warning"><i class="bi bi-check-lg me-1"></i>Record Consent</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{# ══════ STEP 2: PRE-PROCEDURE VITALS ══════ #}
+{% if record.consent_signed %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex align-items-center">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-heart-pulse me-1 text-primary"></i>Step 2 — Pre-Procedure Assessment</h6>
+    {% if record.pre_vitals and record.pre_vitals.bp %}<span class="badge bg-success ms-auto">Recorded</span>{% endif %}
+  </div>
+  {% if not record.pre_vitals.bp and record.status not in 'COMPLETED,MONITORING,DISCHARGED,CANCELLED' %}
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="pre_vitals">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Blood Pressure</label>
+          <input type="text" name="pre_bp" class="form-control form-control-sm" placeholder="120/80">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">IOP RE (mmHg)</label>
+          <input type="text" name="pre_iop_re" class="form-control form-control-sm" placeholder="14">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">IOP LE (mmHg)</label>
+          <input type="text" name="pre_iop_le" class="form-control form-control-sm" placeholder="15">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">VA RE</label>
+          <input type="text" name="pre_va_re" class="form-control form-control-sm" placeholder="6/12">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">VA LE</label>
+          <input type="text" name="pre_va_le" class="form-control form-control-sm" placeholder="6/9">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Pupil Dilated?</label>
+          <select name="pre_pupil_dilated" class="form-select form-select-sm">
+            <option value="">N/A</option>
+            <option value="yes">Yes — dilated</option>
+            <option value="no">No — not required</option>
+            <option value="pending">Pending — drops given</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Anaesthesia</label>
+          <input type="text" name="anaesthesia" class="form-control form-control-sm"
+                 placeholder="e.g. Topical proparacaine 0.5%" value="{{ record.anaesthesia }}">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-sm btn-primary mt-3"><i class="bi bi-check-lg me-1"></i>Save Pre-Vitals</button>
+    </form>
+  </div>
+  {% elif record.pre_vitals %}
+  <div class="card-body py-2">
+    <div class="row g-2 small">
+      <div class="col-auto"><strong>BP:</strong> {{ record.pre_vitals.bp|default:"—" }}</div>
+      <div class="col-auto"><strong>IOP RE:</strong> {{ record.pre_vitals.iop_re|default:"—" }}</div>
+      <div class="col-auto"><strong>IOP LE:</strong> {{ record.pre_vitals.iop_le|default:"—" }}</div>
+      <div class="col-auto"><strong>VA RE:</strong> {{ record.pre_vitals.va_re|default:"—" }}</div>
+      <div class="col-auto"><strong>VA LE:</strong> {{ record.pre_vitals.va_le|default:"—" }}</div>
+      {% if record.anaesthesia %}<div class="col-auto"><strong>Anaesthesia:</strong> {{ record.anaesthesia }}</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ══════ STEP 3: PERFORM PROCEDURE ══════ #}
+{% if record.consent_signed and record.status not in 'ORDERED,CONSENT_PENDING' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex align-items-center">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-eyedropper me-1 text-danger"></i>Step 3 — Perform Procedure</h6>
+    {% if record.procedure_date %}<span class="badge bg-success ms-auto">Done {{ record.procedure_date|date:"d M H:i" }}</span>{% endif %}
+  </div>
+  {% if not record.procedure_date and record.status != 'CANCELLED' %}
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="perform">
+
+      {# Injection fields #}
+      <div id="injectionFields">
+        <div class="row g-2 mb-3">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Medication / Drug Used <span class="text-danger">*</span></label>
+            <input type="text" name="medication_used" class="form-control form-control-sm"
+                   placeholder="e.g. Aflibercept (Eylea) 2mg/0.05mL" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Batch / Lot Number</label>
+            <input type="text" name="medication_batch" class="form-control form-control-sm" placeholder="LOT-12345">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small fw-semibold">Expiry Date</label>
+            <input type="date" name="medication_expiry" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Injection Site</label>
+            <input type="text" name="injection_site" class="form-control form-control-sm"
+                   placeholder="3.5mm from limbus IT">
+          </div>
+        </div>
+      </div>
+
+      {# Laser fields #}
+      <div id="laserFields">
+        <div class="fw-semibold small text-muted mb-2"><i class="bi bi-lightning me-1"></i>Laser Settings (if applicable)</div>
+        <div class="row g-2 mb-3">
+          <div class="col-md-3">
+            <label class="form-label small">Power (mW)</label>
+            <input type="text" name="laser_power" class="form-control form-control-sm" placeholder="200">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Duration (ms)</label>
+            <input type="text" name="laser_duration" class="form-control form-control-sm" placeholder="100">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Spot Size (um)</label>
+            <input type="text" name="laser_spot_size" class="form-control form-control-sm" placeholder="200">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Number of Spots</label>
+            <input type="text" name="laser_num_spots" class="form-control form-control-sm" placeholder="1200">
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Procedure Outcome</label>
+          <textarea name="procedure_outcome" class="form-control form-control-sm" rows="2"
+                    placeholder="e.g. Injection given without complications, subconjunctival haemorrhage noted"></textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Complications</label>
+          <textarea name="complications" class="form-control form-control-sm" rows="2"
+                    placeholder="None / describe any complications"></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Additional Notes</label>
+          <textarea name="procedure_notes" class="form-control form-control-sm" rows="1"
+                    placeholder="Any other notes...">{{ record.procedure_notes }}</textarea>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-sm btn-danger mt-3"><i class="bi bi-check-circle me-1"></i>Record Procedure Done</button>
+    </form>
+  </div>
+  {% elif record.procedure_date %}
+  <div class="card-body py-2">
+    <div class="row g-2 small">
+      {% if record.medication_used %}<div class="col-auto"><strong>Drug:</strong> {{ record.medication_used }}</div>{% endif %}
+      {% if record.medication_batch %}<div class="col-auto"><strong>Batch:</strong> {{ record.medication_batch }}</div>{% endif %}
+      {% if record.injection_site %}<div class="col-auto"><strong>Site:</strong> {{ record.injection_site }}</div>{% endif %}
+      {% if record.laser_settings.power_mw %}<div class="col-auto"><strong>Laser:</strong> {{ record.laser_settings.power_mw }}mW / {{ record.laser_settings.duration_ms }}ms / {{ record.laser_settings.spot_size_um }}um / {{ record.laser_settings.num_spots }} spots</div>{% endif %}
+      {% if record.procedure_outcome %}<div class="col-12 mt-1"><strong>Outcome:</strong> {{ record.procedure_outcome }}</div>{% endif %}
+      {% if record.complications %}<div class="col-12 text-danger"><strong>Complications:</strong> {{ record.complications }}</div>{% endif %}
+      <div class="col-auto"><strong>By:</strong> Dr. {{ record.performed_by.get_full_name|default:"—" }}</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ══════ STEP 4: POST-PROCEDURE MONITORING ══════ #}
+{% if record.procedure_date %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex align-items-center">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-clipboard2-check me-1 text-info"></i>Step 4 — Post-Procedure Monitoring</h6>
+    {% if record.monitoring_complete %}<span class="badge bg-success ms-auto">Complete</span>{% endif %}
+  </div>
+  {% if not record.monitoring_complete and record.status != 'CANCELLED' %}
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="post_vitals">
+      <div class="alert alert-info small border-0 py-2 mb-3">
+        <i class="bi bi-clock me-1"></i>For intravitreal injections: check IOP at 15 minutes and 30 minutes post-injection
+      </div>
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">IOP RE @ 15 min</label>
+          <input type="text" name="post_iop_re_15" class="form-control form-control-sm" placeholder="mmHg">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">IOP LE @ 15 min</label>
+          <input type="text" name="post_iop_le_15" class="form-control form-control-sm" placeholder="mmHg">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">IOP RE @ 30 min</label>
+          <input type="text" name="post_iop_re_30" class="form-control form-control-sm" placeholder="mmHg">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">IOP LE @ 30 min</label>
+          <input type="text" name="post_iop_le_30" class="form-control form-control-sm" placeholder="mmHg">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">VA RE (post)</label>
+          <input type="text" name="post_va_re" class="form-control form-control-sm" placeholder="CF / HM / 6/60">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">VA LE (post)</label>
+          <input type="text" name="post_va_le" class="form-control form-control-sm" placeholder="CF / HM / 6/60">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">Post-Procedure Instructions</label>
+          <textarea name="post_instructions" class="form-control form-control-sm" rows="2"
+                    placeholder="e.g. Use antibiotic drops QID x 1 week, no rubbing, report pain/vision loss immediately"></textarea>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-sm btn-info mt-3"><i class="bi bi-check-lg me-1"></i>Save Monitoring</button>
+    </form>
+  </div>
+  {% elif record.post_vitals %}
+  <div class="card-body py-2">
+    <div class="row g-2 small">
+      {% if record.post_vitals.iop_re_15min %}<div class="col-auto"><strong>IOP RE @15:</strong> {{ record.post_vitals.iop_re_15min }}</div>{% endif %}
+      {% if record.post_vitals.iop_le_15min %}<div class="col-auto"><strong>IOP LE @15:</strong> {{ record.post_vitals.iop_le_15min }}</div>{% endif %}
+      {% if record.post_vitals.iop_re_30min %}<div class="col-auto"><strong>IOP RE @30:</strong> {{ record.post_vitals.iop_re_30min }}</div>{% endif %}
+      {% if record.post_vitals.iop_le_30min %}<div class="col-auto"><strong>IOP LE @30:</strong> {{ record.post_vitals.iop_le_30min }}</div>{% endif %}
+      {% if record.post_vitals.va_re %}<div class="col-auto"><strong>VA RE:</strong> {{ record.post_vitals.va_re }}</div>{% endif %}
+      {% if record.post_vitals.va_le %}<div class="col-auto"><strong>VA LE:</strong> {{ record.post_vitals.va_le }}</div>{% endif %}
+      {% if record.post_instructions %}<div class="col-12 mt-1"><strong>Instructions:</strong> {{ record.post_instructions }}</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ══════ STEP 5: DISCHARGE ══════ #}
+{% if record.monitoring_complete or record.status == 'COMPLETED' %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex align-items-center">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-door-open me-1 text-success"></i>Step 5 — Discharge</h6>
+    {% if record.discharged_at %}<span class="badge bg-success ms-auto">Discharged {{ record.discharged_at|date:"d M H:i" }}</span>{% endif %}
+  </div>
+  {% if not record.discharged_at and record.status != 'CANCELLED' %}
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="discharge">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Follow-up Date</label>
+          <input type="date" name="follow_up_date" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label small fw-semibold">Follow-up Instructions</label>
+          <input type="text" name="follow_up_instructions" class="form-control form-control-sm"
+                 placeholder="e.g. Review in 1 week with OCT">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Next Injection Date</label>
+          <input type="date" name="next_injection_date" class="form-control form-control-sm">
+          <div class="form-text" style="font-size:.6rem;">For anti-VEGF series</div>
+        </div>
+        <div class="col-12">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="routePharm" name="route_pharmacy" value="1">
+            <label class="form-check-label small" for="routePharm">Route patient to Pharmacy for post-procedure drops</label>
+          </div>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-sm btn-success mt-3"><i class="bi bi-check-circle me-1"></i>Discharge Patient</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ══════ CANCEL BUTTON ══════ #}
+{% if record.status not in 'COMPLETED,MONITORING,DISCHARGED,CANCELLED' %}
+<div class="text-end mt-3">
+  <form method="post" class="d-inline" onsubmit="return confirm('Cancel this procedure?');">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="cancel">
+    <input type="text" name="cancel_reason" class="form-control form-control-sm d-inline-block me-2" style="width:250px;" placeholder="Reason for cancellation">
+    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Cancel Procedure</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

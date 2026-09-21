@@ -1,0 +1,197 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load static %}
+{% block title %}Procedure Room — Register &amp; Stats{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <div class="rounded-circle bg-info bg-opacity-10 d-flex align-items-center justify-content-center flex-shrink-0" style="width:48px;height:48px;">
+    <i class="bi bi-bar-chart text-info fs-4"></i>
+  </div>
+  <div>
+    <h4 class="fw-bold mb-0">Procedure Room Register &amp; Statistics</h4>
+    <p class="text-muted small mb-0">Injections, laser procedures &amp; minor ophthalmic procedures — complete register</p>
+  </div>
+  <a href="{% url 'ipd:procedure_room_queue' %}" class="btn btn-sm btn-outline-info ms-auto">
+    <i class="bi bi-arrow-left me-1"></i>Back to Queue
+  </a>
+</div>
+
+{# ── Filters ── #}
+<form method="get" class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold mb-0">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold mb-0">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-0">Procedure Type</label>
+        <select name="procedure_type" class="form-select form-select-sm">
+          <option value="">All Types</option>
+          {% for val, label in procedure_types %}
+          <option value="{{ val }}" {% if proc_filter == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold mb-0">Status</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All</option>
+          {% for val, label in status_choices %}
+          <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label small fw-semibold mb-0">Eye</label>
+        <select name="eye" class="form-select form-select-sm">
+          <option value="">All</option>
+          <option value="RE" {% if eye_filter == 'RE' %}selected{% endif %}>RE</option>
+          <option value="LE" {% if eye_filter == 'LE' %}selected{% endif %}>LE</option>
+          <option value="BE" {% if eye_filter == 'BE' %}selected{% endif %}>BE</option>
+        </select>
+      </div>
+      <div class="col-md-2 d-flex gap-1">
+        <button class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Filter</button>
+        <a href="{% url 'ipd:procedure_room_stats' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+{# ── KPI Cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ total }}</div>
+      <div class="text-muted small">Total Procedures</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ stats.completed }}</div>
+      <div class="text-muted small">Completed</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-danger">{{ stats.cancelled }}</div>
+      <div class="text-muted small">Cancelled</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-info">{{ completion_rate }}%</div>
+      <div class="text-muted small">Completion Rate</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── By Procedure Type ── #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small">By Procedure Type</h6></div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light"><tr><th>Type</th><th class="text-end">Count</th><th style="width:40%"></th></tr></thead>
+          <tbody>
+          {% for item in by_type %}
+          <tr>
+            <td class="small">{{ item.label }}</td>
+            <td class="text-end fw-bold">{{ item.count }}</td>
+            <td>
+              <div class="progress" style="height:6px;">
+                <div class="progress-bar bg-info" style="width:{% widthratio item.count total 100 %}%"></div>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="3" class="text-muted text-center py-3">No data</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    {# ── By Eye ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small">By Eye</h6></div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+          {% for item in by_eye %}
+          <tr>
+            <td><span class="badge bg-light text-dark border">{{ item.eye }}</span></td>
+            <td class="text-end fw-bold">{{ item.count }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    {# ── By Doctor ── #}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small">By Doctor</h6></div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <tbody>
+          {% for item in by_doctor %}
+          <tr>
+            <td class="small">Dr. {{ item.performed_by__last_name }}</td>
+            <td class="text-end fw-bold">{{ item.count }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="2" class="text-muted text-center py-2">No data</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Full Register Table ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 d-flex align-items-center">
+    <h6 class="mb-0 fw-bold small">Procedure Register</h6>
+    <span class="badge bg-light text-dark border ms-auto">{{ records.count }} records</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem;">
+      <thead class="table-light"><tr>
+        <th>Record #</th><th>Date</th><th>Patient</th><th>Procedure</th><th>Eye</th>
+        <th>Ordered By</th><th>Performed By</th><th>Status</th><th>Medication</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for r in records %}
+      <tr>
+        <td class="fw-semibold">{{ r.record_number }}</td>
+        <td>{{ r.created_at|date:"d/m/Y" }}</td>
+        <td>{{ r.patient.full_name }}</td>
+        <td>{{ r.get_procedure_type_display }}</td>
+        <td><span class="badge bg-light text-dark border">{{ r.eye }}</span></td>
+        <td>{% if r.ordered_by %}Dr. {{ r.ordered_by.last_name }}{% else %}—{% endif %}</td>
+        <td>{% if r.performed_by %}Dr. {{ r.performed_by.last_name }}{% else %}—{% endif %}</td>
+        <td><span class="badge {% if r.status == 'COMPLETED' or r.status == 'DISCHARGED' %}bg-success{% elif r.status == 'CANCELLED' %}bg-danger{% elif r.status == 'IN_PROGRESS' %}bg-primary{% elif r.status == 'MONITORING' %}bg-info{% else %}bg-warning text-dark{% endif %}">{{ r.get_status_display }}</span></td>
+        <td class="small">{{ r.medication_used|truncatechars:30|default:"—" }}</td>
+        <td>
+          <a href="{% url 'ipd:procedure_room_detail' record_id=r.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="10" class="text-muted text-center py-4">No procedure records for this period</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

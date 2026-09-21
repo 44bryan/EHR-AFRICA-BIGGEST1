@@ -1046,3 +1046,160 @@ class MedRecItem(TimeStampedModel):
 
     def __str__(self):
         return f"{self.medication_name} → {self.get_action_display()}"
+
+
+# ── Minor Procedures / Injections / Laser ─────────────────────────────────────
+
+class ProcedureType(models.TextChoices):
+    """Procedure types done in procedure room (NOT full theatre)."""
+    # Intravitreal Injections
+    ANTI_VEGF       = 'ANTI_VEGF',       'Intravitreal Anti-VEGF Injection'
+    IVT_STEROID     = 'IVT_STEROID',     'Intravitreal Steroid Injection'
+    IVT_ANTIBIOTIC  = 'IVT_ANTIBIOTIC',  'Intravitreal Antibiotic Injection'
+    # Laser Procedures
+    SLT             = 'SLT',             'Selective Laser Trabeculoplasty (SLT)'
+    YAG_CAPSULOTOMY = 'YAG_CAPSULOTOMY', 'YAG Laser Capsulotomy'
+    YAG_PI          = 'YAG_PI',          'YAG Peripheral Iridotomy (PI)'
+    PRP             = 'PRP',             'Pan-Retinal Photocoagulation (PRP)'
+    FOCAL_LASER     = 'FOCAL_LASER',     'Focal / Grid Laser Photocoagulation'
+    # Minor Procedures
+    CHALAZION       = 'CHALAZION',       'Chalazion Incision & Curettage'
+    FB_REMOVAL      = 'FB_REMOVAL',      'Corneal / Conjunctival Foreign Body Removal'
+    SUTURE_REMOVAL  = 'SUTURE_REMOVAL',  'Suture Removal'
+    PUNCTAL_PLUG    = 'PUNCTAL_PLUG',    'Punctal Plug Insertion'
+    PROBING         = 'PROBING',         'Nasolacrimal Duct Probing'
+    SUBCONJ_INJ     = 'SUBCONJ_INJ',    'Sub-conjunctival Injection'
+    PERIBULBAR_INJ  = 'PERIBULBAR_INJ',  'Peribulbar / Retrobulbar Injection'
+    OTHER           = 'OTHER',           'Other (specify in notes)'
+
+
+class ProcedureRecordStatus(models.TextChoices):
+    ORDERED         = 'ORDERED',         'Ordered'
+    CONSENT_PENDING = 'CONSENT_PENDING', 'Awaiting Consent'
+    READY           = 'READY',           'Ready for Procedure'
+    IN_PROGRESS     = 'IN_PROGRESS',     'In Progress'
+    COMPLETED       = 'COMPLETED',       'Completed'
+    MONITORING      = 'MONITORING',      'Post-Procedure Monitoring'
+    DISCHARGED      = 'DISCHARGED',      'Discharged'
+    CANCELLED       = 'CANCELLED',       'Cancelled'
+
+
+class ProcedureRecord(AuditModel):
+    """
+    Record of a minor procedure / injection / laser done in the procedure room.
+    NOT a full theatre case — no IPD admission needed.
+
+    Flow:
+      Doctor orders procedure (from consultation) →
+      Patient routed to PROCEDURE_ROOM queue →
+      Consent recorded →
+      Pre-procedure vitals checked →
+      Procedure performed + recorded →
+      Post-procedure monitoring (IOP check for injections) →
+      Patient discharged or routed to pharmacy
+    """
+    # Identifiers
+    record_number = models.CharField(max_length=30, unique=True, editable=False)
+    patient = models.ForeignKey(
+        'patients.Patient', on_delete=models.PROTECT, related_name='procedure_records'
+    )
+    visit = models.ForeignKey(
+        'patients.Visit', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='procedure_records'
+    )
+    consultation = models.ForeignKey(
+        'consultations.Consultation', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='procedure_records'
+    )
+
+    # Procedure details
+    procedure_type = models.CharField(max_length=20, choices=ProcedureType.choices)
+    procedure_notes = models.CharField(
+        max_length=300, blank=True,
+        help_text='Additional details or specify if "Other" selected'
+    )
+    eye = models.CharField(max_length=2, choices=[
+        ('RE', 'Right Eye (OD)'),
+        ('LE', 'Left Eye (OS)'),
+        ('BE', 'Both Eyes (OU)'),
+        ('NA', 'Not Eye-specific'),
+    ], default='RE')
+    status = models.CharField(
+        max_length=20, choices=ProcedureRecordStatus.choices,
+        default=ProcedureRecordStatus.ORDERED
+    )
+
+    # Ordering & performing
+    ordered_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, related_name='procedures_ordered'
+    )
+    performed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='minor_procedures_performed'
+    )
+
+    # Consent
+    consent_signed = models.BooleanField(default=False)
+    consent_date = models.DateTimeField(null=True, blank=True)
+
+    # Pre-procedure
+    pre_vitals = models.JSONField(
+        default=dict, blank=True,
+        help_text='Pre-procedure vitals: BP, IOP, VA, pupil dilation status'
+    )
+    anaesthesia = models.CharField(max_length=50, blank=True,
+        help_text='e.g. Topical proparacaine, Peribulbar lidocaine')
+
+    # Procedure execution
+    procedure_date = models.DateTimeField(null=True, blank=True)
+    medication_used = models.CharField(
+        max_length=200, blank=True,
+        help_text='Drug name, dose, batch/lot number'
+    )
+    medication_batch = models.CharField(max_length=50, blank=True,
+        help_text='Batch/lot number for traceability')
+    medication_expiry = models.DateField(null=True, blank=True)
+    laser_settings = models.JSONField(
+        default=dict, blank=True,
+        help_text='For laser: power (mW), duration (ms), spot size (um), number of spots'
+    )
+    injection_site = models.CharField(max_length=100, blank=True,
+        help_text='e.g. 3.5mm from limbus inferotemporal')
+    complications = models.TextField(blank=True,
+        help_text='Any immediate complications')
+    procedure_outcome = models.TextField(blank=True,
+        help_text='Immediate outcome notes')
+
+    # Post-procedure monitoring
+    post_vitals = models.JSONField(
+        default=dict, blank=True,
+        help_text='Post-procedure vitals: IOP at 15min, 30min, VA'
+    )
+    post_instructions = models.TextField(blank=True,
+        help_text='Post-procedure instructions given to patient')
+    monitoring_complete = models.BooleanField(default=False)
+    discharged_at = models.DateTimeField(null=True, blank=True)
+
+    # Next visit
+    follow_up_date = models.DateField(null=True, blank=True)
+    follow_up_instructions = models.CharField(max_length=300, blank=True)
+    next_injection_date = models.DateField(null=True, blank=True,
+        help_text='For anti-VEGF: planned next injection date')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Procedure Record'
+        verbose_name_plural = 'Procedure Records'
+
+    def __str__(self):
+        return f"{self.record_number} — {self.get_procedure_type_display()} ({self.patient.full_name})"
+
+    def save(self, *args, **kwargs):
+        if not self.record_number:
+            today = timezone.localdate()
+            count = ProcedureRecord.objects.filter(
+                created_at__year=today.year
+            ).count() + 1
+            self.record_number = f"PR-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)

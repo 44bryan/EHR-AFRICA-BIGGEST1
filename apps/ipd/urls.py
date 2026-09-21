@@ -86,4 +86,11 @@ urlpatterns = [
     path('medrec/<uuid:medrec_id>/', views.medrec_detail, name='medrec_detail'),
     path('medrec/<uuid:medrec_id>/verify/', views.medrec_verify, name='medrec_verify'),
     path('medrec/item/<uuid:item_id>/delete/', views.medrec_item_delete, name='medrec_item_delete'),
+
+    # ── Procedure Room (Injections / Laser / Minor Procedures) ──────────────
+    path('procedure-room/', views.procedure_room_queue, name='procedure_room_queue'),
+    path('procedure-room/<uuid:visit_id>/create/', views.procedure_room_create, name='procedure_room_create'),
+    path('procedure-room/<uuid:record_id>/record/', views.procedure_room_record, name='procedure_room_record'),
+    path('procedure-room/<uuid:record_id>/detail/', views.procedure_room_detail, name='procedure_room_detail'),
+    path('procedure-room/stats/', views.procedure_room_stats, name='procedure_room_stats'),
 ]
