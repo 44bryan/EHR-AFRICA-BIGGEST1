@@ -27,6 +27,7 @@ urlpatterns = [
     path('route/suggest/', views.route_suggest_view, name='route_suggest'),
     path('autosave/', views.consultation_autosave_view, name='autosave'),
     path('diagnoses/search/', views.diagnosis_search_view, name='diagnosis_search'),
+    path('referral-doctors/', views.referral_doctors_ajax, name='referral_doctors'),
     path('clinic-nurse/', views.clinic_nurse_view, name='clinic_nurse'),
     path('clinic-nurse/call/<uuid:visit_pk>/', views.clinic_call_patient_view, name='clinic_call'),
     path('clinic-nurse/route/<uuid:visit_pk>/', views.nurse_route_patient_view, name='nurse_route'),

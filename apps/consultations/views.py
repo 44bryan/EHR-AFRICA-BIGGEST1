@@ -542,6 +542,15 @@ def consultation_create_view(request, patient_id):
                             'ORBIT', 'COUNSELING', 'PHARMACY', 'LAB',
                         ) else 'WAITING'
                         visit.save(update_fields=['department', 'status', 'updated_at'])
+                        # Resolve preferred doctor (optional)
+                        _pref_doctor = None
+                        _pref_id = request.POST.get('preferred_doctor', '').strip()
+                        if _pref_id:
+                            from apps.accounts.models import User as _RefUser
+                            try:
+                                _pref_doctor = _RefUser.objects.get(pk=_pref_id, is_active=True)
+                            except _RefUser.DoesNotExist:
+                                pass
                         if _qms_active():
                             from apps.qms.models import (
                                 QueueToken, DailyTokenSequence, IssuancePoint,
@@ -551,6 +560,13 @@ def consultation_create_view(request, patient_id):
                             tier = visit.service_tier or 'STANDARD'
                             with _ref_tx.atomic():
                                 token_number = DailyTokenSequence.next_dept_token(svc)
+                                _ref_notes = (
+                                    f'Referred by Dr. {request.user.get_full_name()} '
+                                    f'({consultation.department.name if consultation.department else ""})'
+                                    + (f': {consultation.referral_reason[:120]}' if consultation.referral_reason else '')
+                                )
+                                if _pref_doctor:
+                                    _ref_notes += f' | Preferred: Dr. {_pref_doctor.get_full_name()}'
                                 QueueToken.objects.create(
                                     token_number=token_number,
                                     service_type=svc,
@@ -560,17 +576,14 @@ def consultation_create_view(request, patient_id):
                                     issuance_point=IssuancePoint.SYSTEM,
                                     priority=TIER_PRIORITY.get(tier, 0),
                                     status=TokenStatus.WAITING,
-                                    notes=(
-                                        f'Referred by Dr. {request.user.get_full_name()} '
-                                        f'({consultation.department.name if consultation.department else ""})'
-                                        + (f': {consultation.referral_reason[:120]}' if consultation.referral_reason else '')
-                                    ),
+                                    assigned_doctor=_pref_doctor,
+                                    notes=_ref_notes,
                                     created_by=request.user,
                                 )
-                        messages.info(
-                            request,
-                            f'Patient referred and routed to {ref_dept.name}.'
-                        )
+                        _msg = f'Patient referred and routed to {ref_dept.name}.'
+                        if _pref_doctor:
+                            _msg += f' Preferred doctor: Dr. {_pref_doctor.get_full_name()}'
+                        messages.info(request, _msg)
                 except Exception:
                     pass  # Never block the doctor
 
@@ -1395,6 +1408,63 @@ def diagnosis_search_view(request):
         Q(icd10_code__icontains=q) | Q(icd11_code__icontains=q) | Q(description__icontains=q)
     ).values('id', 'icd10_code', 'icd11_code', 'description')[:20]
     return JsonResponse({'results': list(diagnoses)})
+
+
+@login_required
+def referral_doctors_ajax(request):
+    """
+    AJAX: GET /consultations/referral-doctors/?department_id=<uuid>&tier=<STANDARD|VIP|...>
+    Returns doctors in the given department, filtered by tier compatibility.
+    Used by the "Preferred Doctor" dropdown in the Management Plan referral section.
+    """
+    dept_id = request.GET.get('department_id', '').strip()
+    tier = request.GET.get('tier', '').strip().upper() or 'STANDARD'
+
+    if not dept_id:
+        return JsonResponse({'doctors': []})
+
+    from apps.accounts.models import User
+    try:
+        dept = Department.objects.get(pk=dept_id, is_active=True)
+    except (Department.DoesNotExist, Exception):
+        return JsonResponse({'doctors': []})
+
+    # Get active doctors in this department
+    doctors = User.objects.filter(
+        is_active=True,
+        department=dept,
+    ).exclude(
+        role__in=['NURSE', 'TRIAGE_NURSE', 'WARD_NURSE', 'CONSULTATION_NURSE',
+                  'PHARMACIST', 'HEAD_PHARMACIST', 'CASHIER', 'CHIEF_CASHIER',
+                  'RECEPTIONIST', 'LAB_TECHNICIAN', 'INVESTIGATION_TECHNICIAN',
+                  'REFRACTIONIST', 'OPTOMETRIST', 'ORTHOPTIST',
+                  'CSSD_TECHNICIAN', 'MEDICAL_RECORDS']
+    )
+
+    # Tier filtering: if VIP patient, prefer VIP/ALL doctors; same for STANDARD
+    if tier == 'VIP':
+        doctors = doctors.filter(
+            Q(consultation_unit__in=['VIP_CONSULT', '']) |
+            Q(consultation_unit__isnull=True) |
+            Q(patient_tier__in=['VIP', 'ALL', '']) |
+            Q(patient_tier__isnull=True)
+        )
+    elif tier in ('STANDARD', 'EXPRESS'):
+        doctors = doctors.exclude(
+            consultation_unit='VIP_CONSULT'
+        ).exclude(
+            patient_tier='VIP'
+        )
+
+    results = [
+        {
+            'id': str(d.pk),
+            'name': f'Dr. {d.get_full_name()}',
+            'role': d.get_role_display() if hasattr(d, 'get_role_display') else '',
+        }
+        for d in doctors.order_by('first_name', 'last_name')[:20]
+    ]
+    return JsonResponse({'doctors': results})
 
 
 # ── Doctor's Workstation ──────────────────────────────────────────────────────

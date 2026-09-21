@@ -489,8 +489,22 @@
             {{ form.referral_department }}
           </div>
           <div class="col-md-5">
-            <label class="form-label fw-semibold small">Referral Reason</label>
+            <label class="form-label fw-semibold small">Referral Reason <span class="text-danger">*</span></label>
             {{ form.referral_reason }}
+            <div class="form-text" style="font-size:.65rem;">Required when referring to a specialist</div>
+          </div>
+          <div class="col-md-4" id="preferredDoctorWrap" style="display:none;">
+            <div class="form-check form-switch mb-1">
+              <input class="form-check-input" type="checkbox" id="preferDoctorToggle"
+                     onchange="document.getElementById('preferredDoctorSelect').style.display=this.checked?'block':'none';">
+              <label class="form-check-label small fw-semibold" for="preferDoctorToggle">
+                Choose specific doctor
+              </label>
+            </div>
+            <select id="preferredDoctorSelect" name="preferred_doctor" class="form-select form-select-sm" style="display:none;">
+              <option value="">Any available doctor</option>
+            </select>
+            <div class="form-text" style="font-size:.65rem;">Optional — patient joins dept queue if left blank</div>
           </div>
         </div>
 
@@ -749,6 +763,39 @@ document.getElementById('macroTypeFilter').addEventListener('change', searchMacr
     navigator.sendBeacon(window.location.href, beacon);
     e.preventDefault();
     e.returnValue = 'You have unsaved consultation data. Are you sure you want to leave?';
+  });
+})();
+
+/* ── Preferred Doctor loader for referral section ── */
+(function(){
+  var deptSel = document.getElementById('id_referral_department');
+  var wrap = document.getElementById('preferredDoctorWrap');
+  var docSel = document.getElementById('preferredDoctorSelect');
+  var toggle = document.getElementById('preferDoctorToggle');
+  var tier = '{{ consultation.visit.service_tier|default:"STANDARD" }}';
+  if (!deptSel || !wrap) return;
+
+  deptSel.addEventListener('change', function(){
+    var deptId = this.value;
+    if (!deptId) { wrap.style.display='none'; return; }
+    wrap.style.display='block';
+    toggle.checked = false;
+    docSel.style.display = 'none';
+    docSel.innerHTML = '<option value="">Loading...</option>';
+    fetch('{% url "consultations:referral_doctors" %}?department_id=' + deptId + '&tier=' + tier)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        docSel.innerHTML = '<option value="">Any available doctor</option>';
+        (data.doctors||[]).forEach(function(d){
+          var opt = document.createElement('option');
+          opt.value = d.id;
+          opt.textContent = d.name + (d.role ? ' — '+d.role : '');
+          docSel.appendChild(opt);
+        });
+      })
+      .catch(function(){
+        docSel.innerHTML = '<option value="">Any available doctor</option>';
+      });
   });
 })();
 </script>
