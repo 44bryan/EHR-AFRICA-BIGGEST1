@@ -78,7 +78,9 @@
 
   <!-- ehr-page-css -->{% block extra_css %}{% endblock %}<!-- /ehr-page-css -->
 
-  <!-- Chart.js — loaded in <head> so inline chart scripts in body run after it -->
+  <!-- Preload critical font -->
+  <link rel="preload" href="{% static 'vendor/inter/inter.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <!-- Chart.js — locally served (<5ms on LAN), needed by 34+ chart pages -->
   <script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
 
   <!-- ── Inline-style font-size fix for tablet readability ──
@@ -104,11 +106,27 @@
 {% block body %}{% endblock %}
 
 <!-- Bootstrap 5 JS — local -->
-<script src="{% static 'vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
+<script src="{% static 'vendor/bootstrap/js/bootstrap.bundle.min.js' %}" defer></script>
 <!-- HTMX — local -->
-<script src="{% static 'vendor/htmx.min.js' %}"></script>
+<script src="{% static 'vendor/htmx.min.js' %}" defer></script>
 <!-- Custom JS -->
-<script src="{% static 'js/main.js' %}?v=20260916a"></script>
+<script src="{% static 'js/main.js' %}?v=20260921a" defer></script>
+
+<!-- HTMX navigation loading bar -->
+<style>
+#ehr-progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,#0891b2,#06b6d4);z-index:9999;transition:width .2s;display:none;width:0}
+#ehr-progress.active{display:block}
+</style>
+<div id="ehr-progress"></div>
+<script>
+(function(){
+  var bar=document.getElementById('ehr-progress');
+  if(!bar)return;
+  document.addEventListener('htmx:beforeSend',function(){bar.style.width='30%';bar.classList.add('active');});
+  document.addEventListener('htmx:afterSettle',function(){bar.style.width='100%';setTimeout(function(){bar.classList.remove('active');bar.style.width='0';},200);});
+  document.addEventListener('htmx:sendError',function(){bar.classList.remove('active');bar.style.width='0';});
+})();
+</script>
 
 <!-- Chart.js print handler: resize all charts to full width before the print dialog opens -->
 <script>

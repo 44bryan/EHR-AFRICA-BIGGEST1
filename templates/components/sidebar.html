@@ -353,10 +353,12 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="Clinical Templates / Macros">
       <i class="bi bi-file-earmark-text"></i><span>Clinical Macros</span>
     </a>
+    {% if u.role != 'optometrist' and u.role != 'pediatric_refractionist' and u.role != 'low_vision_specialist' %}
     <a href="{% url 'investigations:list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Eye Investigations (OCT, B-scan, FFA)">
       <i class="bi bi-search-heart"></i><span>Investigations</span>
     </a>
+    {% endif %}
     {% if not modules or modules.module_laboratory %}
     {% if u.role != 'optometrist' and u.role != 'pediatric_refractionist' and u.role != 'low_vision_specialist' and u.role != 'orthoptist' and not u.is_lab_tech %}
     <a href="{% url 'laboratory:list' %}" class="sidebar-link"
@@ -484,10 +486,7 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Consultations">
       <i class="bi bi-file-medical"></i><span>Consultations</span>
     </a>
-    <a href="{% url 'investigations:list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Investigations (Perimetry, Biometry)">
-      <i class="bi bi-search-heart"></i><span>Investigations</span>
-    </a>
+    {# Investigations link is in the Eye Investigations section below — no duplicate here #}
     {% elif u.is_nurse_director %}
     {# ── Director of Nursing / Head Nurse ───────────────────────── #}
     <div class="sidebar-label">Nursing Leadership</div>
@@ -582,12 +581,13 @@
     {% endif %}
 
     {# ── Investigations (Eye Imaging: OCT, B-scan, FFA, Fundus) — completely separate from lab ── #}
-    {% if u.is_super_admin or u.is_investigation_tech or u.is_medical_director or u.is_ceo or u.role == 'optometrist' or u.role == 'pediatric_refractionist' or u.role == 'orthoptist' %}
-    <div class="sidebar-label">{% if u.role == 'optometrist' or u.role == 'pediatric_refractionist' %}Optometry{% elif u.role == 'orthoptist' %}Orthoptics{% else %}Eye Investigations{% endif %}</div>
-    {% if u.is_super_admin or u.is_investigation_tech or u.is_medical_director or u.role == 'optometrist' or u.role == 'pediatric_refractionist' or u.role == 'orthoptist' %}
+    {# Optometrists/refractionists do NOT do investigations — they do refraction & consultations only #}
+    {% if u.is_super_admin or u.is_investigation_tech or u.is_medical_director or u.is_ceo or u.role == 'orthoptist' %}
+    <div class="sidebar-label">{% if u.role == 'orthoptist' %}Orthoptics{% else %}Eye Investigations{% endif %}</div>
+    {% if u.is_super_admin or u.is_investigation_tech or u.is_medical_director or u.role == 'orthoptist' %}
     <a href="{% url 'investigations:workstation' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="{% if u.role == 'optometrist' or u.role == 'pediatric_refractionist' %}Optometry Workstation{% elif u.role == 'orthoptist' %}Orthoptics Workstation{% else %}Investigation Workstation{% endif %}">
-      <i class="bi bi-display"></i><span>{% if u.role == 'optometrist' or u.role == 'pediatric_refractionist' %}Optometry Workstation{% elif u.role == 'orthoptist' %}Orthoptics Workstation{% else %}Investigation Workstation{% endif %}</span>
+       data-bs-toggle="tooltip" data-bs-placement="right" title="{% if u.role == 'orthoptist' %}Orthoptics Workstation{% else %}Investigation Workstation{% endif %}">
+      <i class="bi bi-display"></i><span>{% if u.role == 'orthoptist' %}Orthoptics Workstation{% else %}Investigation Workstation{% endif %}</span>
     </a>
     {% endif %}
     <a href="{% url 'investigations:list' %}" class="sidebar-link"
@@ -1461,7 +1461,7 @@
 
     {# Dietary & Nutrition — ward nurses, medical director, admin director, super admin #}
     {% if not modules or modules.module_dietary %}
-    {% if u.is_super_admin or u.is_medical_director or u.is_admin_director or u.is_nurse or u.is_ward_nurse or u.is_head_nurse or u.is_nurse_director or u.is_doctor or u.is_ophthalmologist or u.is_ceo %}
+    {% if u.is_super_admin or u.is_medical_director or u.is_admin_director or u.is_nurse or u.is_ward_nurse or u.is_head_nurse or u.is_nurse_director or u.is_ceo or u.is_doctor and u.role != 'optometrist' and u.role != 'pediatric_refractionist' and u.role != 'low_vision_specialist' and u.role != 'orthoptist' and u.role != 'intern' %}
     <div class="sidebar-label">Dietary &amp; Nutrition</div>
     <a href="{% url 'dietary:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Dietary & Nutrition Dashboard">
@@ -2127,9 +2127,9 @@
     </a>
     {% endif %}
 
-    {# ── Chief Cashier ─────────────────────────────────────────────────────── #}
+    {# ── Chief Cashier — Cash operations only ───────────────────────────── #}
     {% if u.role == 'chief_cashier' and not u.is_super_admin %}
-    <div class="sidebar-label">Shift &amp; Session Management</div>
+    <div class="sidebar-label">Cash Operations</div>
     <a href="{% url 'billing:shift_day_open' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Open Working Day for All Cashiers">
       <i class="bi bi-sun"></i><span>Open Cashier Day</span>
@@ -2142,30 +2142,23 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Desk Sessions — verify and Z-reports">
       <i class="bi bi-collection"></i><span>Desk Sessions</span>
     </a>
-    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
-      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
-    </a>
     <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Reconciliation">
       <i class="bi bi-calculator"></i><span>Reconciliation</span>
     </a>
-    <div class="sidebar-label">Invoices &amp; Accounts</div>
-    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices — full audit trail">
-      <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
+      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
     </a>
-    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial Records">
-      <i class="bi bi-person-lines-fill"></i><span>Patient Financial Records</span>
+    {% if not modules or modules.module_qms %}
+    <a href="{% url 'billing:cashdesks_overview' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cash Desks Live View">
+      <i class="bi bi-grid-3x3-gap"></i><span>Cash Desks Live</span>
     </a>
+    {% endif %}
     <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
       <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
-    </a>
-    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Accounts Receivable Aging — overdue balances">
-      <i class="bi bi-hourglass-split"></i><span>AR Aging</span>
     </a>
     <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue breakdown by desk and tier">
@@ -2177,12 +2170,6 @@
       <i class="bi bi-eyeglasses"></i><span>Optical Billing</span>
     </a>
     {% endif %}
-    {% if not modules or modules.module_qms %}
-    <a href="{% url 'billing:cashdesks_overview' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cash Desks Live View">
-      <i class="bi bi-grid-3x3-gap"></i><span>Cash Desks Live</span>
-    </a>
-    {% endif %}
     <div class="sidebar-label">Patients</div>
     <a href="{% url 'patients:list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Search">
@@ -2192,28 +2179,10 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="Walk-in / Check-in">
       <i class="bi bi-person-walking"></i><span>Walk-in / Check-in</span>
     </a>
-    <a href="{% url 'patients:register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Register New Patient">
-      <i class="bi bi-person-plus"></i><span>Register Patient</span>
-    </a>
-    <a href="{% url 'patients:prereg_lookup' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Pre-Registration Scan">
-      <i class="bi bi-qr-code-scan"></i><span>Pre-Reg Scan</span>
-    </a>
-    <a href="{% url 'patients:emergency_register' %}" class="sidebar-link text-danger"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Emergency Registration">
-      <i class="bi bi-exclamation-octagon-fill"></i><span>Emergency Reg</span>
-    </a>
-    {% if not modules or modules.module_qms %}
-    <a href="{% url 'qms:receptionist' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Registration Queue">
-      <i class="bi bi-people"></i><span>Registration Queue</span>
-    </a>
-    {% endif %}
     {% endif %}
 
-    {# ── Accountant / Senior Accountant ────────────────────────────────────── #}
-    {% if u.role == 'accountant' or u.role == 'senior_accountant' %}
+    {# ── Accountant — day-to-day accounting ────────────────────────────────── #}
+    {% if u.role == 'accountant' %}
     <div class="sidebar-label">Accounting</div>
     <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
@@ -2221,11 +2190,15 @@
     </a>
     <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial Records">
-      <i class="bi bi-person-lines-fill"></i><span>Patient Financial Records</span>
+      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
     </a>
     <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate Accounts">
       <i class="bi bi-building"></i><span>Corporate Accounts</span>
+    </a>
+    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Expenses">
+      <i class="bi bi-receipt-cutoff"></i><span>Expenses</span>
     </a>
     <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="AR Aging Report">
@@ -2239,67 +2212,72 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register">
       <i class="bi bi-slash-circle"></i><span>Void Register</span>
     </a>
-    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Expenses">
-      <i class="bi bi-receipt-cutoff"></i><span>Expenses</span>
-    </a>
+    <div class="sidebar-label">Reports</div>
     <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
-      <i class="bi bi-calendar-day"></i><span>Daily Cash Summary</span>
+      <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
+    </a>
+    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal">
+      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
     </a>
     <a href="{% url 'billing:report_top_services' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Top Services by Revenue">
       <i class="bi bi-trophy"></i><span>Top Services</span>
     </a>
-    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal — all daily transactions">
-      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
-    </a>
-    <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Proforma Invoices">
-      <i class="bi bi-file-earmark-text"></i><span>Proforma Invoices</span>
-    </a>
+    {% endif %}
+
+    {# ── Senior Accountant — GL + AP + Banking + Budgets ──────────────────── #}
     {% if u.role == 'senior_accountant' %}
-    <div class="sidebar-label">Senior Accounting</div>
-    <a href="{% url 'billing:desk_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Configure Cash Desks">
-      <i class="bi bi-building-check"></i><span>Desk Configuration</span>
+    <div class="sidebar-label">Accounting</div>
+    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-list-ul"></i><span>All Invoices</span>
     </a>
-    <a href="{% url 'billing:session_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cashier Sessions — Z-reports &amp; Verify">
-      <i class="bi bi-collection"></i><span>Cashier Sessions</span>
+    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial Records">
+      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
     </a>
-    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Discount Approvals">
-      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
+    <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate Accounts">
+      <i class="bi bi-building"></i><span>Corporate Accounts</span>
     </a>
-    <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Desk &amp; Tier">
-      <i class="bi bi-bar-chart-steps"></i><span>Revenue by Desk</span>
+    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Expenses">
+      <i class="bi bi-receipt-cutoff"></i><span>Expenses</span>
     </a>
     <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds">
       <i class="bi bi-wallet2"></i><span>Petty Cash</span>
     </a>
-    <a href="{% url 'billing:budget_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual">
-      <i class="bi bi-pie-chart"></i><span>Budget vs Actual</span>
-    </a>
     <a href="{% url 'billing:service_price_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog">
       <i class="bi bi-tags"></i><span>Price Catalog</span>
     </a>
-    <a href="{% url 'billing:report_pl' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="P&amp;L Statement">
-      <i class="bi bi-file-earmark-bar-graph"></i><span>P&amp;L Statement</span>
+    <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Proforma Invoices">
+      <i class="bi bi-file-earmark-text"></i><span>Proforma Invoices</span>
     </a>
     <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets">
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Wallets">
       <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
     </a>
     <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register">
       <i class="bi bi-building-gear"></i><span>Asset Register</span>
+    </a>
+    <div class="sidebar-label">Cash Operations</div>
+    <a href="{% url 'billing:session_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Sessions — Z-reports &amp; Verify">
+      <i class="bi bi-collection"></i><span>Cashier Sessions</span>
+    </a>
+    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Reconciliation">
+      <i class="bi bi-calculator"></i><span>Reconciliation</span>
+    </a>
+    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Discount Approvals">
+      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
     </a>
     <div class="sidebar-label">General Ledger</div>
     <a href="{% url 'billing:chart_of_accounts' %}" class="sidebar-link"
@@ -2320,14 +2298,38 @@
     </a>
     <div class="sidebar-label">Accounts Payable</div>
     <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors — service providers paid via bills">
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors">
       <i class="bi bi-building"></i><span>AP Vendors</span>
     </a>
     <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills">
       <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
     </a>
-    {% endif %}
+    <div class="sidebar-label">Reports</div>
+    <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
+      <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
+    </a>
+    <a href="{% url 'billing:report_pl' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="P&amp;L Statement">
+      <i class="bi bi-file-earmark-bar-graph"></i><span>P&amp;L Statement</span>
+    </a>
+    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AR Aging">
+      <i class="bi bi-hourglass-split"></i><span>AR Aging</span>
+    </a>
+    <a href="{% url 'billing:budget_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual">
+      <i class="bi bi-pie-chart"></i><span>Budget vs Actual</span>
+    </a>
+    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal">
+      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
+    </a>
+    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Void Register">
+      <i class="bi bi-slash-circle"></i><span>Void Register</span>
+    </a>
     {% endif %}
 
     {% if not modules or modules.module_ai %}

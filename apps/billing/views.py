@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, F
 from django.http import JsonResponse, HttpResponseForbidden
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -4679,8 +4679,8 @@ def export_shift_list(request):
             s.cashier.get_full_name() or s.cashier.username,
             float(s.opening_cash),
             float(s.total_collected),
-            float(s.closing_cash) if s.closing_cash else '',
-            float(s.variance) if hasattr(s, 'variance') and s.closing_cash else '',
+            float(s.closing_cash_declared) if s.closing_cash_declared else '',
+            '',
             s.get_status_display(),
             s.verified_by.get_full_name() if s.verified_by else '',
         ])
@@ -6506,8 +6506,8 @@ def bank_account_create(request):
         messages.error(request, 'Access denied.')
         return redirect('billing:dashboard')
     gl_accounts = GLAccount.objects.filter(
-        account_code__startswith='521', is_deleted=False
-    ).order_by('account_code')
+        code__startswith='521', is_deleted=False
+    ).order_by('code')
     if request.method == 'POST':
         acct = BankAccount(
             account_name=request.POST.get('account_name', '').strip(),
@@ -6537,8 +6537,8 @@ def bank_account_edit(request, account_id):
         return redirect('billing:dashboard')
     acct = get_object_or_404(BankAccount, pk=account_id, is_deleted=False)
     gl_accounts = GLAccount.objects.filter(
-        account_code__startswith='521', is_deleted=False
-    ).order_by('account_code')
+        code__startswith='521', is_deleted=False
+    ).order_by('code')
     if request.method == 'POST':
         acct.account_name = request.POST.get('account_name', '').strip()
         acct.bank_name = request.POST.get('bank_name', '').strip()
@@ -7287,7 +7287,7 @@ def budget_ytd_report(request):
     cat_data = defaultdict(lambda: {'budget': Decimal('0'), 'actual': Decimal('0')})
     for b in budgets:
         if b.month <= current_month:
-            cat_data[b.category]['budget'] += b.amount
+            cat_data[b.category]['budget'] += b.budgeted_amount
             if hasattr(b, 'actual_amount'):
                 cat_data[b.category]['actual'] += (b.actual_amount or 0)
     # Calculate actual from expenses
@@ -7406,8 +7406,8 @@ def report_surgery_revenue(request):
 
     # By service name
     by_service = (
-        items.values('service_name')
-        .annotate(count=Count('id'), total=Sum('amount'))
+        items.values('description')
+        .annotate(count=Count('id'), total=Sum(F('quantity') * F('unit_price')))
         .order_by('-total')
     )
 
@@ -7415,11 +7415,11 @@ def report_surgery_revenue(request):
     by_month = (
         items.annotate(month=TruncMonth('invoice__created_at'))
         .values('month')
-        .annotate(total=Sum('amount'), count=Count('id'))
+        .annotate(total=Sum(F('quantity') * F('unit_price')), count=Count('id'))
         .order_by('month')
     )
 
-    grand_total = items.aggregate(total=Sum('amount'))['total'] or 0
+    grand_total = items.aggregate(total=Sum(F('quantity') * F('unit_price')))['total'] or 0
     grand_count = items.count()
 
     return render(request, 'billing/reports/surgery_revenue.html', {
@@ -7460,11 +7460,11 @@ def report_revenue_by_department(request):
 
     by_dept = (
         items.values('category')
-        .annotate(count=Count('id'), total=Sum('amount'))
+        .annotate(count=Count('id'), total=Sum(F('quantity') * F('unit_price')))
         .order_by('-total')
     )
 
-    grand_total = items.aggregate(total=Sum('amount'))['total'] or 0
+    grand_total = items.aggregate(total=Sum(F('quantity') * F('unit_price')))['total'] or 0
 
     return render(request, 'billing/reports/revenue_by_department.html', {
         'by_dept': by_dept,
@@ -7513,7 +7513,7 @@ def report_donor(request):
     # Budget comparison
     year = today.year
     budgets = Budget.objects.filter(year=year, is_deleted=False)
-    total_budget = budgets.aggregate(total=Sum('amount'))['total'] or 0
+    total_budget = budgets.aggregate(total=Sum('budgeted_amount'))['total'] or 0
 
     return render(request, 'billing/reports/donor_report.html', {
         'revenue': revenue,
@@ -7561,13 +7561,14 @@ def report_dsf(request):
 
     # GL summary by OHADA class
     from .models import JournalLine
+    from django.db.models.functions import Left
     gl_summary = (
         JournalLine.objects.filter(
             entry__entry_date__year=year, entry__is_deleted=False,
         )
-        .extra(select={'acct_class': "SUBSTR(account_code, 1, 1)"})
+        .annotate(acct_class=Left('account__code', 1))
         .values('acct_class')
-        .annotate(total_dr=Sum('debit'), total_cr=Sum('credit'))
+        .annotate(total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount'))
         .order_by('acct_class')
     )
 
@@ -7671,7 +7672,7 @@ def report_monthly_summary(request):
     budgets = Budget.objects.filter(
         is_deleted=False, month=month, year=year,
     )
-    total_budget = budgets.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    total_budget = budgets.aggregate(total=Sum('budgeted_amount'))['total'] or Decimal('0')
 
     # Invoice stats
     invoices_issued = Invoice.objects.filter(
@@ -8076,7 +8077,7 @@ def senior_accountant_dashboard(request):
     import calendar
     total_budget_month = Budget.objects.filter(
         is_deleted=False, year=today.year, month=today.month,
-    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    ).aggregate(t=Sum('budgeted_amount'))['t'] or Decimal('0')
     budget_burn = round(float(expenses_month) / float(total_budget_month) * 100, 1) if total_budget_month else 0
 
     # ── Recent journal entries ──
