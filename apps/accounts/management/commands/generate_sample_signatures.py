@@ -22,25 +22,27 @@ from apps.accounts.models import User
 def _make_signature_image(full_name):
     """
     Generate a transparent-background PNG with the person's name
-    rendered in a slanted, signature-like style.
+    rendered in a bold, signature-like style — large enough to be
+    clearly visible on printed PDF reports.
     Returns bytes of the PNG.
     """
     from PIL import Image, ImageDraw, ImageFont
 
-    width, height = 400, 120
+    width, height = 600, 160
     img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
 
     # Try common handwriting / italic fonts; fall back to default
     font = None
-    font_size = 36
+    font_size = 52
     candidates = [
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',   # Linux (server)
+        '/usr/share/fonts/truetype/freefont/FreeMonoOblique.ttf',     # Linux alt
+        '/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf',
         'Segoe Script',        # Windows
         'Palace Script MT',    # Windows
         'Lucida Handwriting',  # Windows
         'Comic Sans MS',       # Windows fallback
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',   # Linux
-        '/usr/share/fonts/truetype/freefont/FreeMonoOblique.ttf',     # Linux
     ]
     for candidate in candidates:
         try:
@@ -51,18 +53,20 @@ def _make_signature_image(full_name):
     if font is None:
         font = ImageFont.load_default()
 
-    # Draw the name with a slight navy-blue ink colour
-    ink = (15, 30, 80, 230)
-    # Center vertically, left-pad slightly
+    # Draw the name with dark navy-blue ink — fully opaque for clarity
+    ink = (10, 20, 70, 255)
     bbox = draw.textbbox((0, 0), full_name, font=font)
     text_h = bbox[3] - bbox[1]
-    y = (height - text_h) // 2 - 5
-    draw.text((20, y), full_name, fill=ink, font=font)
-
-    # Add a signature underline
-    line_y = y + text_h + 8
     text_w = bbox[2] - bbox[0]
-    draw.line([(18, line_y), (22 + text_w, line_y)], fill=(15, 30, 80, 120), width=1)
+    y = (height - text_h) // 2 - 8
+    draw.text((24, y), full_name, fill=ink, font=font)
+
+    # Bold effect — draw again offset by 1px
+    draw.text((25, y), full_name, fill=ink, font=font)
+
+    # Add a visible signature underline
+    line_y = y + text_h + 10
+    draw.line([(22, line_y), (28 + text_w, line_y)], fill=(10, 20, 70, 180), width=2)
 
     buf = BytesIO()
     img.save(buf, format='PNG')
