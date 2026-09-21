@@ -17,6 +17,7 @@ class ConsultationForm(forms.ModelForm):
             'management_plan',
             'follow_up_date',
             'follow_up_instructions',
+            'follow_up_department',
             'referral_department',
             'referral_reason',
         ]
@@ -32,6 +33,7 @@ class ConsultationForm(forms.ModelForm):
             'management_plan': forms.Textarea(attrs={'class': 'form-control', 'rows': 5}),
             'follow_up_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'follow_up_instructions': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+            'follow_up_department': forms.Select(attrs={'class': 'form-select form-select-sm'}),
             'referral_department': forms.Select(attrs={'class': 'form-select'}),
             'referral_reason': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
         }

@@ -579,10 +579,12 @@ def consultation_create_view(request, patient_id):
                 try:
                     from apps.appointments.models import Appointment
                     import datetime
+                    _fu_dept = consultation.follow_up_department or consultation.department
+                    _fu_doctor = request.user if not consultation.follow_up_department else None
                     Appointment.objects.create(
                         patient=patient,
-                        department=consultation.department,
-                        doctor=request.user,
+                        department=_fu_dept,
+                        doctor=_fu_doctor,
                         appointment_date=consultation.follow_up_date,
                         appointment_time=datetime.time(8, 0),
                         appointment_type=Appointment.AppointmentType.FOLLOW_UP,
@@ -592,12 +594,39 @@ def consultation_create_view(request, patient_id):
                         booked_by=request.user,
                         created_by=request.user,
                     )
+                    _dept_label = _fu_dept.name if _fu_dept else ''
                     messages.info(request,
-                        f'Follow-up appointment auto-scheduled for {consultation.follow_up_date:%d %b %Y}.')
+                        f'Follow-up appointment auto-scheduled for {consultation.follow_up_date:%d %b %Y}'
+                        + (f' ({_dept_label})' if _fu_dept else '') + '.')
                 except Exception:
                     pass  # Never block the doctor
 
-            messages.success(request, 'Consultation saved. Review and click Complete when ready.')
+            # If doctor clicks "Save & Complete", mark as completed now
+            if request.POST.get('save_mode') == 'complete':
+                consultation.status = ConsultationStatus.COMPLETED
+                consultation.save(update_fields=['status', 'updated_at'])
+                if _qms_active():
+                    try:
+                        from apps.qms.models import QueueToken, TokenStatus
+                        dept_code = request.user.role_department_code
+                        svc_types = _DEPT_TO_SERVICE_TYPES.get(dept_code, [])
+                        if svc_types:
+                            active_token = QueueToken.objects.filter(
+                                visit=visit,
+                                service_type__in=svc_types,
+                                status__in=[TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.SERVING],
+                                is_deleted=False,
+                            ).first()
+                            if active_token:
+                                active_token.status = TokenStatus.COMPLETED
+                                active_token.completed_at = timezone.now()
+                                active_token.save(update_fields=['status', 'completed_at'])
+                    except Exception:
+                        pass
+                messages.success(request, 'Consultation completed and signed.')
+                return redirect('consultations:detail', pk=consultation.pk)
+
+            messages.success(request, 'Consultation saved. Review and click Complete & Sign when ready.')
             return redirect('consultations:detail', pk=consultation.pk)
     else:
         dept = request.user.department
@@ -858,9 +887,12 @@ def consultation_edit_view(request, pk):
                     is_deleted=False,
                 ).exists()
                 if not already:
+                    _fu_dept = c.follow_up_department or c.department
+                    _fu_doctor = request.user if not c.follow_up_department else None
                     Appointment.objects.create(
                         patient=c.patient,
-                        department=c.department,
+                        department=_fu_dept,
+                        doctor=_fu_doctor,
                         appointment_date=c.follow_up_date,
                         appointment_type='FOLLOW_UP',
                         reason=f"Follow-up from consultation {c.consultation_date.strftime('%d/%m/%Y')}",
@@ -3634,23 +3666,22 @@ def smart_route_view(request):
     else:
         actual_return_to_me = should_pause
 
-    # Apply pause or complete to the consultation
+    # ── International standard (HL7 FHIR / IHE PAM / JCI MOI.2): ────────
+    # Routing NEVER auto-completes a consultation.  Only the authoring
+    # doctor may complete/sign their own note.  Routing always PAUSES the
+    # consultation so the doctor can resume it later.  This prevents data
+    # loss and respects provider note ownership.
     redirect_url = None
     _paused_consultation = None
     if complete_pk:
         try:
             consult = Consultation.objects.get(pk=complete_pk, is_deleted=False)
-            if should_pause and consult.status in (ConsultationStatus.IN_PROGRESS, ConsultationStatus.PENDING):
+            if consult.status in (ConsultationStatus.IN_PROGRESS, ConsultationStatus.PENDING):
                 consult.status = ConsultationStatus.PAUSED
                 consult.save(update_fields=['status', 'updated_at'])
                 _paused_consultation = consult
-            elif not should_pause and consult.status != ConsultationStatus.COMPLETED:
-                consult.status = ConsultationStatus.COMPLETED
-                if hasattr(consult, 'completed_at'):
-                    consult.completed_at = timezone.now()
-                    consult.save(update_fields=['status', 'completed_at', 'updated_at'])
-                else:
-                    consult.save(update_fields=['status', 'updated_at'])
+                should_pause = True
+                actual_return_to_me = True
             redirect_url = '/'
         except Exception:
             pass

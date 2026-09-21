@@ -103,6 +103,14 @@ class Consultation(AuditModel):
     management_plan = models.TextField(blank=True)
     follow_up_date = models.DateField(null=True, blank=True)
     follow_up_instructions = models.TextField(blank=True)
+    follow_up_department = models.ForeignKey(
+        'departments.Department',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='follow_up_consultations',
+        help_text='Department for the follow-up appointment (defaults to current if blank)',
+    )
 
     # Referral
     referral_department = models.ForeignKey(

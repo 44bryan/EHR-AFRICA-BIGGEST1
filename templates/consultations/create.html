@@ -223,8 +223,8 @@
 <div class="row g-3">
 
   <!-- ═══════ SECTION 1: HISTORY ═══════ -->
-  {# GP has its own Section 1 (Chief Complaint & History) inside _general_physician_form.html #}
-  {% if dept_code != 'GEN_PHYS' %}
+  {# GP has its own Section 1; Optometrists (refraction/orthoptics) skip history — they do clinical exams only #}
+  {% if dept_code != 'GEN_PHYS' and dept_code != 'REFRAC' and dept_code != 'PEDS_REFRAC' and dept_code != 'ORTHO' %}
   <div class="col-12">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
@@ -516,8 +516,8 @@
   </div>
 
   <!-- ═══════ SECTION 3: MANAGEMENT ═══════ -->
-  {# GP form has its own Section 9 Management Plan — hide the generic one to avoid duplication #}
-  {% if dept_code != 'GEN_PHYS' %}
+  {# GP has its own; Optometrists don't make management plans — they do clinical refraction only #}
+  {% if dept_code != 'GEN_PHYS' and dept_code != 'REFRAC' and dept_code != 'PEDS_REFRAC' and dept_code != 'ORTHO' %}
   <div class="col-12 mt-3">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
@@ -529,13 +529,31 @@
       </div>
       <div id="bodyMgmt" class="card-body collapse show">
         <div class="row g-3">
+          <div class="col-12 mb-2">
+            <div class="fw-semibold text-uppercase text-muted" style="font-size:.7rem;letter-spacing:.06em;">
+              <i class="bi bi-calendar-check me-1"></i>Follow-up Appointment
+              <span class="text-muted fw-normal ms-1">(patient comes back on a future date)</span>
+            </div>
+          </div>
           <div class="col-12 col-sm-6 col-lg-3">
             <label class="form-label fw-semibold small">Follow-up Date</label>
             {{ form.follow_up_date }}
           </div>
-          <div class="col-12 col-lg-5">
+          <div class="col-12 col-sm-6 col-lg-3">
+            <label class="form-label fw-semibold small">Follow-up With</label>
+            {{ form.follow_up_department }}
+            <div class="form-text" style="font-size:.65rem;">Leave blank = come back to me</div>
+          </div>
+          <div class="col-12 col-lg-6">
             <label class="form-label fw-semibold small">Follow-up Instructions</label>
             {{ form.follow_up_instructions }}
+          </div>
+
+          <div class="col-12 mt-2 mb-2">
+            <div class="fw-semibold text-uppercase text-muted" style="font-size:.7rem;letter-spacing:.06em;">
+              <i class="bi bi-signpost-split me-1"></i>Immediate Referral
+              <span class="text-muted fw-normal ms-1">(send patient to another department right now, same visit)</span>
+            </div>
           </div>
           <div class="col-12 col-sm-6 col-lg-3">
             <label class="form-label fw-semibold small">Refer to Department</label>
@@ -651,7 +669,7 @@
       </div>
     </div>
   </div>
-  {% endif %}{# /GEN_PHYS management hide #}
+  {% endif %}{# /GEN_PHYS + optometrist management hide #}
 
   <!-- ═══════ ACTION BUTTONS — always last, always visible ═══════ -->
   <div class="col-12 mt-3 pt-3 border-top">
@@ -673,10 +691,14 @@
               onclick="ehrSubmitConsult('', this)">
         <i class="bi bi-floppy me-1"></i>Save Consultation
       </button>
+      <button type="button" class="btn btn-sm btn-success"
+              onclick="if(confirm('Save and complete this consultation? The note will be signed and locked for editing.')) ehrSubmitConsult('complete', this)">
+        <i class="bi bi-check2-circle me-1"></i>Save &amp; Complete
+      </button>
     </div>
     <p class="text-muted small mt-2 mb-0">
       <i class="bi bi-info-circle me-1"></i>
-      <strong>Save Consultation</strong> saves your notes as a draft — you can review, modify, and click <strong>Complete</strong> from the consultation record.
+      <strong>Save Consultation</strong> saves your notes as a draft — you can review, modify, and click <strong>Complete &amp; Sign</strong> when done.
       Use <strong>Order Tests First</strong> to request investigations before saving.
     </p>
   </div>
@@ -1074,5 +1096,79 @@ function ehrSubmitConsult(mode, btn) {
   });
   tmp.submit();
 }
+
+// ── Periodic autosave (every 60s) — prevents data loss if doctor navigates away ──
+(function() {
+  var _dirty = false;
+  var frm = document.getElementById('consultationForm');
+  if (!frm) return;
+  frm.addEventListener('input',  function() { _dirty = true; });
+  frm.addEventListener('change', function() { _dirty = true; });
+
+  setInterval(function() {
+    if (!_dirty) return;
+    _dirty = false;
+    // Save both sections silently
+    var draftPkEl = document.getElementById('draftPk');
+    var patientId = document.getElementById('patientIdHidden');
+    var visitId   = document.getElementById('visitIdHidden');
+    if (!patientId || !visitId) return;
+    var csrfInfo = _getDraftCsrf();
+
+    // History section
+    var d1 = new FormData();
+    d1.append('csrfmiddlewaretoken', csrfInfo.csrf);
+    d1.append('_section', 'history');
+    d1.append('draft_pk', draftPkEl ? draftPkEl.value : '');
+    d1.append('patient_id', patientId.value);
+    d1.append('visit_id', visitId.value);
+    ['presenting_complaint','history_of_presenting_complaint','ocular_history',
+     'systemic_history','drug_history','family_history','social_history'].forEach(function(n) {
+      var el = frm.querySelector('[name="' + n + '"]');
+      if (el) d1.append(n, el.value);
+    });
+
+    // Clinical section
+    var d2 = new FormData();
+    d2.append('csrfmiddlewaretoken', csrfInfo.csrf);
+    d2.append('_section', 'clinical');
+    d2.append('draft_pk', draftPkEl ? draftPkEl.value : '');
+    d2.append('patient_id', patientId.value);
+    d2.append('visit_id', visitId.value);
+    frm.querySelectorAll('[name^="dept_"]').forEach(function(el) {
+      if (el.type === 'checkbox') { if (el.checked) d2.append(el.name, el.value); }
+      else d2.append(el.name, el.value);
+    });
+
+    fetch(_autosaveUrl, { method: 'POST', body: d1,
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Session-Slot': csrfInfo.slot }
+    }).then(function(r) { return r.json(); }).then(function(j) {
+      if (j.ok && j.pk && draftPkEl) draftPkEl.value = j.pk;
+    }).catch(function(){});
+    fetch(_autosaveUrl, { method: 'POST', body: d2,
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Session-Slot': csrfInfo.slot }
+    }).catch(function(){});
+  }, 30000);
+
+  // Warn doctor if they try to leave with unsaved changes
+  window.addEventListener('beforeunload', function(e) {
+    if (!_dirty) return;
+    // Fire a synchronous save attempt (best-effort on modern browsers)
+    var beacon = new FormData();
+    beacon.append('csrfmiddlewaretoken', _getDraftCsrf().csrf);
+    beacon.append('_section', 'history');
+    beacon.append('draft_pk', draftPkEl ? draftPkEl.value : '');
+    beacon.append('patient_id', patientId.value);
+    beacon.append('visit_id', visitId.value);
+    ['presenting_complaint','history_of_presenting_complaint','ocular_history',
+     'systemic_history','drug_history','family_history','social_history'].forEach(function(n) {
+      var el = frm.querySelector('[name="' + n + '"]');
+      if (el) beacon.append(n, el.value);
+    });
+    navigator.sendBeacon(_autosaveUrl, beacon);
+    e.preventDefault();
+    e.returnValue = 'You have unsaved consultation data. Are you sure you want to leave?';
+  });
+})();
 </script>
 {% endblock %}

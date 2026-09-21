@@ -135,8 +135,8 @@
 <div class="row g-3">
 
   <!-- ═══════ SECTION 1: HISTORY ═══════ -->
-  {# GP has its own Section 1 (Chief Complaint & History) inside _general_physician_form.html #}
-  {% if dept_code != 'GEN_PHYS' %}
+  {# GP has its own Section 1; Optometrists skip history — they do clinical exams only #}
+  {% if dept_code != 'GEN_PHYS' and dept_code != 'REFRAC' and dept_code != 'PEDS_REFRAC' and dept_code != 'ORTHO' %}
   <div class="col-12">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
@@ -369,7 +369,7 @@
       </div>
     </div>
   </div>
-  {% endif %}{# /GEN_PHYS Section 1 hide #}
+  {% endif %}{# /GEN_PHYS + optometrist Section 1 hide #}
 
   <!-- ═══════ SECTION 2: CLINICAL EXAMINATION ═══════ -->
   <div class="col-12 mt-3">
@@ -430,8 +430,8 @@
   </div>
 
   <!-- ═══════ SECTION 3: MANAGEMENT ═══════ -->
-  {# GP form has its own Section 9 Management Plan — hide the generic one to avoid duplication #}
-  {% if dept_code != 'GEN_PHYS' %}
+  {# GP has its own; Optometrists don't make management plans — they do clinical refraction only #}
+  {% if dept_code != 'GEN_PHYS' and dept_code != 'REFRAC' and dept_code != 'PEDS_REFRAC' and dept_code != 'ORTHO' %}
   <div class="col-12 mt-3">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
@@ -459,15 +459,31 @@
             </div>
           </div>
           {% endif %}
+          <div class="col-12 mb-1">
+            <div class="fw-semibold text-uppercase text-muted" style="font-size:.7rem;letter-spacing:.06em;">
+              <i class="bi bi-calendar-check me-1"></i>Follow-up Appointment
+              <span class="text-muted fw-normal ms-1">(patient comes back on a future date)</span>
+            </div>
+          </div>
           <div class="col-md-3">
             <label class="form-label fw-semibold small">Follow-up Date</label>
             {{ form.follow_up_date }}
           </div>
-          <div class="col-md-5">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small">Follow-up With</label>
+            {{ form.follow_up_department }}
+            <div class="form-text" style="font-size:.65rem;">Leave blank = come back to me</div>
+          </div>
+          <div class="col-md-6">
             <label class="form-label fw-semibold small">Follow-up Instructions</label>
             {{ form.follow_up_instructions }}
           </div>
-          <div class="col-md-4"></div>
+          <div class="col-12 mt-2 mb-1">
+            <div class="fw-semibold text-uppercase text-muted" style="font-size:.7rem;letter-spacing:.06em;">
+              <i class="bi bi-signpost-split me-1"></i>Immediate Referral
+              <span class="text-muted fw-normal ms-1">(send patient to another department right now, same visit)</span>
+            </div>
+          </div>
           <div class="col-md-3">
             <label class="form-label fw-semibold small">Refer to Department</label>
             {{ form.referral_department }}
@@ -487,7 +503,7 @@
       </div>
     </div>
   </div>
-  {% endif %}{# /GEN_PHYS management hide #}
+  {% endif %}{# /GEN_PHYS + optometrist management hide #}
 
   <!-- ═══════ ACTION BUTTONS ═══════ -->
   <div class="col-12 mt-3 pt-3 border-top d-flex gap-2 align-items-center flex-wrap">
@@ -496,6 +512,10 @@
     </a>
     <button type="submit" class="btn btn-sm btn-primary ms-auto">
       <i class="bi bi-save me-1"></i>Save
+    </button>
+    <button type="submit" name="save_mode" value="complete" class="btn btn-sm btn-success"
+            onclick="return confirm('Save and complete this consultation? The note will be signed and locked for editing.')">
+      <i class="bi bi-check2-circle me-1"></i>Save &amp; Complete
     </button>
   </div>
 
@@ -693,5 +713,43 @@ function insertMacro(idx) {
 
 document.getElementById('macroSearchInput').addEventListener('input', function() { clearTimeout(this._d); this._d = setTimeout(searchMacros, 300); });
 document.getElementById('macroTypeFilter').addEventListener('change', searchMacros);
+
+// ── Periodic autosave (every 60s) — prevents data loss if doctor navigates away ──
+(function() {
+  var _dirty = false;
+  var frm = document.getElementById('consultationForm');
+  if (!frm) return;
+  frm.addEventListener('input',  function() { _dirty = true; });
+  frm.addEventListener('change', function() { _dirty = true; });
+
+  setInterval(function() {
+    if (!_dirty) return;
+    _dirty = false;
+    var data = new FormData(frm);
+    data.append('_section', 'clinical');
+    fetch(window.location.href, {
+      method: 'POST', body: data,
+      headers: {'X-Requested-With': 'XMLHttpRequest'}
+    }).catch(function(){});
+    // Also save history
+    var d2 = new FormData(frm);
+    d2.append('_section', 'history');
+    fetch(window.location.href, {
+      method: 'POST', body: d2,
+      headers: {'X-Requested-With': 'XMLHttpRequest'}
+    }).catch(function(){});
+  }, 30000);
+
+  // Warn doctor if they try to leave with unsaved changes
+  window.addEventListener('beforeunload', function(e) {
+    if (!_dirty) return;
+    // Best-effort save via beacon
+    var beacon = new FormData(frm);
+    beacon.append('_section', 'history');
+    navigator.sendBeacon(window.location.href, beacon);
+    e.preventDefault();
+    e.returnValue = 'You have unsaved consultation data. Are you sure you want to leave?';
+  });
+})();
 </script>
 {% endblock %}

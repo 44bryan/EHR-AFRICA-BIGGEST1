@@ -113,6 +113,20 @@
 </div>
 {% endif %}
 
+{# ── Diagnosis Quick View — visible at top without scrolling ── #}
+{% with diags=consultation.consultation_diagnoses.all %}
+{% if diags %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3 px-2 py-2 rounded-3" style="background:#f0f4ff;border-left:4px solid #3b82f6;">
+  <span class="fw-bold small text-primary"><i class="bi bi-clipboard2-pulse me-1"></i>Dx:</span>
+  {% for cd in diags %}
+  <span class="{% if cd.is_primary %}fw-bold text-danger{% else %}fw-semibold text-dark{% endif %}" style="font-size:.82rem;">
+    {% if cd.is_primary %}<i class="bi bi-star-fill" style="font-size:.55rem;color:#dc3545;"></i> {% endif %}{{ cd.diagnosis.name }}{% if cd.laterality and cd.laterality != 'NA' %} <span class="text-muted" style="font-size:.65rem;">({{ cd.laterality }})</span>{% endif %}{% if not forloop.last %}<span class="text-muted mx-1">·</span>{% endif %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
 <!-- Consultation Meta -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2">
@@ -131,18 +145,20 @@
           Edit Notes
         </a>
         {% endif %}
-        {% if consultation.status == 'IN_PROGRESS' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
+        {% if consultation.status == 'IN_PROGRESS' or consultation.status == 'PAUSED' %}
+        {% if consultation.consulting_doctor == request.user or request.user.is_medical_director %}
         <form method="post" action="{% url 'consultations:complete' pk=consultation.pk %}" class="d-inline" hx-boost="false">
           {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-success"
-                  onclick="return confirm('Mark complete without routing?')">
-            Complete only
+          <button type="submit" class="btn btn-sm btn-success"
+                  onclick="return confirm('Complete and sign this consultation? No further edits will be possible.')">
+            <i class="bi bi-check2-circle me-1"></i>Complete &amp; Sign
           </button>
         </form>
         {% endif %}
+        {% endif %}
         {% if consultation.status == 'PAUSED' and consultation.consulting_doctor == request.user or request.user.is_medical_director %}
         <a href="{% url 'consultations:edit' pk=consultation.pk %}" class="btn btn-sm btn-warning" hx-boost="false">
-          Resume Consultation
+          <i class="bi bi-play-circle me-1"></i>Resume Consultation
         </a>
         {% endif %}
         {% if consultation.status == 'COMPLETED' and consultation.consulting_doctor == request.user or request.user.is_medical_director or request.user.is_super_admin %}
@@ -284,7 +300,7 @@
 {# ── Triage Vitals Strip — always visible at top of consultation ── #}
 {% if consultation.visit and consultation.visit.vital_signs %}
 {% with v=consultation.visit.vital_signs fl=consultation.visit.vital_signs.vital_flags %}
-<div class="card border-0 shadow-sm mb-3 {% if fl %}border-start border-4 {% if fl.iop_right == 'HIGH' or fl.iop_left == 'HIGH' or fl.bp == 'HIGH' %}border-danger{% elif fl.va_right == 'LOW' or fl.va_left == 'LOW' %}border-warning{% else %}border-info{% endif %}{% endif %}">
+<div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2 px-3">
     <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
       <span class="fw-bold small text-primary me-2"><i class="bi bi-heart-pulse me-1"></i>Triage Vitals</span>
@@ -294,51 +310,49 @@
       </span>
       {% endif %}
       {% if fl %}
-      {% for fkey, fval in fl.items %}
-      <span class="badge {% if fval == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.65rem;">
-        <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ fkey|upper }} {{ fval }}
+      <span class="small text-danger fw-bold" style="font-size:.65rem;">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>Abnormal values flagged in red
       </span>
-      {% endfor %}
       {% endif %}
       <span class="text-muted small ms-1">Recorded by nurse before consultation</span>
     </div>
     <div class="d-flex flex-wrap gap-3 small">
       {% if v.visual_acuity_right or v.visual_acuity_left %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.va_right == 'LOW' or fl.va_left == 'LOW' %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
         <span class="text-muted" style="font-size:.65rem;">VA (Unaided)</span>
         <span class="fw-semibold">
-          RE: <span class="{{ v.visual_acuity_right|va_css }}">{{ v.visual_acuity_right|default:"—" }}</span>{% if fl.va_right %} <span class="badge bg-warning text-dark" style="font-size:.6rem;">{{ fl.va_right }}</span>{% endif %}
+          RE: <span class="{{ v.visual_acuity_right|va_css }}">{{ v.visual_acuity_right|default:"—" }}</span>
           &nbsp;
-          LE: <span class="{{ v.visual_acuity_left|va_css }}">{{ v.visual_acuity_left|default:"—" }}</span>{% if fl.va_left %} <span class="badge bg-warning text-dark" style="font-size:.6rem;">{{ fl.va_left }}</span>{% endif %}
+          LE: <span class="{{ v.visual_acuity_left|va_css }}">{{ v.visual_acuity_left|default:"—" }}</span>
         </span>
       </div>
       {% endif %}
       {% if v.intraocular_pressure_right or v.intraocular_pressure_left %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.iop_right == 'HIGH' or fl.iop_left == 'HIGH' %}bg-danger bg-opacity-10{% else %}bg-light{% endif %}">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
         <span class="text-muted" style="font-size:.65rem;">IOP (mmHg)</span>
         <span class="fw-semibold">
-          RE: <span class="{{ v.intraocular_pressure_right|vital_css:'iop' }}">{{ v.intraocular_pressure_right|default:"—" }}</span>{% if fl.iop_right %} <span class="badge {% if fl.iop_right == 'HIGH' %}bg-danger{% else %}bg-info{% endif %}" style="font-size:.6rem;">{{ fl.iop_right }}</span>{% endif %}
+          RE: <span class="{{ v.intraocular_pressure_right|vital_css:'iop' }}">{{ v.intraocular_pressure_right|default:"—" }}</span>
           &nbsp;
-          LE: <span class="{{ v.intraocular_pressure_left|vital_css:'iop' }}">{{ v.intraocular_pressure_left|default:"—" }}</span>{% if fl.iop_left %} <span class="badge {% if fl.iop_left == 'HIGH' %}bg-danger{% else %}bg-info{% endif %}" style="font-size:.6rem;">{{ fl.iop_left }}</span>{% endif %}
+          LE: <span class="{{ v.intraocular_pressure_left|vital_css:'iop' }}">{{ v.intraocular_pressure_left|default:"—" }}</span>
         </span>
       </div>
       {% endif %}
       {% if v.blood_pressure %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.bp == 'HIGH' %}bg-danger bg-opacity-10{% elif fl.bp == 'LOW' %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
         <span class="text-muted" style="font-size:.65rem;">Blood Pressure</span>
-        <span class="fw-semibold {{ v.blood_pressure|bp_css }}">{{ v.blood_pressure }} mmHg{% if fl.bp %} <span class="badge {% if fl.bp == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.6rem;">{{ fl.bp }}</span>{% endif %}</span>
+        <span class="fw-semibold {{ v.blood_pressure|bp_css }}">{{ v.blood_pressure }} mmHg</span>
       </div>
       {% endif %}
       {% if v.pulse %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.pulse %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
         <span class="text-muted" style="font-size:.65rem;">Pulse</span>
-        <span class="fw-semibold {{ v.pulse|vital_css:'pulse' }}">{{ v.pulse }} bpm{% if fl.pulse %} <span class="badge {% if fl.pulse == 'HIGH' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.6rem;">{{ fl.pulse }}</span>{% endif %}</span>
+        <span class="fw-semibold {{ v.pulse|vital_css:'pulse' }}">{{ v.pulse }} bpm</span>
       </div>
       {% endif %}
       {% if v.temperature %}
-      <div class="d-flex flex-column align-items-center px-2 py-1 rounded {% if fl.temperature %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
+      <div class="d-flex flex-column align-items-center px-2 py-1 rounded bg-light">
         <span class="text-muted" style="font-size:.65rem;">Temp</span>
-        <span class="fw-semibold {{ v.temperature|vital_css:'temperature' }}">{{ v.temperature }} &deg;C{% if fl.temperature %} <span class="badge {% if fl.temperature == 'HIGH' %}bg-danger{% else %}bg-info{% endif %}" style="font-size:.6rem;">{{ fl.temperature }}</span>{% endif %}</span>
+        <span class="fw-semibold {{ v.temperature|vital_css:'temperature' }}">{{ v.temperature }} &deg;C</span>
       </div>
       {% endif %}
       {% if v.weight %}
