@@ -401,11 +401,27 @@ def surgical_booking_queue(request):
         recent_qs = recent_qs.filter(status=status_filter)
     recent_bookings = recent_qs.order_by('-created_at')[:20]
 
+    # ── Quick KPI summary (this month) ────────────────────────────────────
+    from django.db.models import Count
+    from django.db.models import Q as _DQ
+    month_start = today.replace(day=1)
+    month_qs = SurgicalBooking.objects.filter(
+        is_deleted=False, created_at__date__gte=month_start
+    )
+    queue_stats = month_qs.aggregate(
+        month_total=Count('id'),
+        month_pending=Count('id', filter=_DQ(status=SurgicalBookingStatus.PENDING_PAYMENT)),
+        month_confirmed=Count('id', filter=_DQ(status=SurgicalBookingStatus.CONFIRMED)),
+        month_completed=Count('id', filter=_DQ(status=SurgicalBookingStatus.COMPLETED)),
+        month_cancelled=Count('id', filter=_DQ(status=SurgicalBookingStatus.CANCELLED)),
+    )
+
     return render(request, 'ipd/surgical_booking_queue.html', {
         'waiting': waiting,
         'recent_bookings': recent_bookings,
         'search_results': search_results,
         'today_surgeries': today_surgeries,
+        'queue_stats': queue_stats,
         'q': q,
         'status_filter': status_filter,
         'booking_statuses': SurgicalBookingStatus.choices,
@@ -489,6 +505,23 @@ def surgical_booking_create(request, visit_id):
                     )
                 ) if parse_date(surgery_date_str) else None
             )
+
+        # ── Theatre conflict detection ────────────────────────────────────
+        if surgery_date and theatre:
+            conflict = SurgicalBooking.objects.filter(
+                is_deleted=False,
+                surgery_date__date=surgery_date.date(),
+                theatre__iexact=theatre,
+            ).exclude(status=SurgicalBookingStatus.CANCELLED)
+            if booking:
+                conflict = conflict.exclude(pk=booking.pk)
+            conflict_count = conflict.count()
+            if conflict_count > 0:
+                messages.warning(
+                    request,
+                    f'Note: {conflict_count} other booking(s) already scheduled in {theatre} on that date. '
+                    f'Verify theatre availability.'
+                )
 
         # Build ward/room note if selected
         ward_note = ''
@@ -849,11 +882,43 @@ def admit_from_booking(request, booking_id):
         return HttpResponseForbidden()
 
     booking = get_object_or_404(SurgicalBooking, pk=booking_id, is_deleted=False)
+
+    # ── Payment verification gate ─────────────────────────────────────────
+    payment_verified = False
+    if booking.deposit_required > 0 and booking.deposit_paid >= booking.deposit_required:
+        payment_verified = True
+    elif booking.deposit_required == 0:
+        payment_verified = True  # no deposit required
+    # Also check if an invoice exists and has been paid
+    if not payment_verified and booking.invoice:
+        try:
+            payment_verified = booking.invoice.amount_paid >= booking.deposit_required
+        except Exception:
+            pass
+    # Check proforma → invoice conversion
+    if not payment_verified:
+        try:
+            from apps.billing.models import Proforma, Invoice
+            proforma = Proforma.objects.filter(
+                patient=booking.patient,
+                notes__icontains=booking.booking_number,
+                is_deleted=False,
+            ).exclude(status='CANCELLED').first()
+            if proforma and proforma.status == 'CONVERTED':
+                payment_verified = True
+        except Exception:
+            pass
+
     available_beds = Bed.objects.filter(
         status=BedStatus.AVAILABLE, is_deleted=False
     ).select_related('ward').order_by('ward__name', 'bed_number')
 
     if request.method == 'POST':
+        # Allow override with explicit confirmation
+        if not payment_verified and not request.POST.get('override_payment'):
+            messages.error(request, 'Deposit not yet confirmed. Check with cashier or tick "Override" to proceed.')
+            return redirect('ipd:admit_from_booking', booking_id=booking.pk)
+
         bed_id = request.POST.get('bed_id')
         diagnosis = request.POST.get('diagnosis_on_admission', '').strip() or booking.procedure
         bed = get_object_or_404(Bed, pk=bed_id, status=BedStatus.AVAILABLE)
@@ -882,7 +947,90 @@ def admit_from_booking(request, booking_id):
     return render(request, 'ipd/admit_from_booking.html', {
         'booking': booking,
         'available_beds': available_beds,
+        'payment_verified': payment_verified,
     })
+
+
+@login_required
+def surgical_booking_cancel(request, booking_id):
+    """Cancel or reschedule a surgical booking with documented reason."""
+    if not (request.user.is_admission_officer or request.user.is_super_admin
+            or request.user.is_medical_director):
+        return HttpResponseForbidden()
+
+    booking = get_object_or_404(SurgicalBooking, pk=booking_id, is_deleted=False)
+
+    if booking.status in (SurgicalBookingStatus.COMPLETED, SurgicalBookingStatus.CANCELLED):
+        messages.warning(request, f'Booking {booking.booking_number} is already {booking.get_status_display()}.')
+        return redirect('ipd:surgical_booking_detail', booking_id=booking.pk)
+
+    if request.method == 'POST':
+        action = request.POST.get('action', 'cancel')
+        reason = request.POST.get('reason', '').strip()
+
+        if not reason:
+            messages.error(request, 'A reason is required for cancellation or rescheduling.')
+            return redirect('ipd:surgical_booking_cancel', booking_id=booking.pk)
+
+        if action == 'reschedule':
+            new_date_str = request.POST.get('new_date', '').strip()
+            from django.utils.dateparse import parse_datetime, parse_date
+            new_date = None
+            if new_date_str:
+                new_date = parse_datetime(new_date_str) or (
+                    timezone.make_aware(
+                        timezone.datetime.combine(parse_date(new_date_str), timezone.datetime.min.time())
+                    ) if parse_date(new_date_str) else None
+                )
+            old_date = booking.surgery_date
+            booking.surgery_date = new_date
+            booking.status = SurgicalBookingStatus.RESCHEDULED
+            booking.notes = (
+                f'{booking.notes}\n---\n'
+                f'RESCHEDULED by {request.user.get_full_name()} on {timezone.localdate()}: '
+                f'{reason}. Old date: {old_date}, New date: {new_date}'
+            ).strip()
+            booking.save()
+
+            # Release any reserved bed
+            _release_booking_bed(booking)
+
+            messages.success(
+                request,
+                f'Booking {booking.booking_number} rescheduled to {new_date_str or "TBD"}. Reason: {reason}'
+            )
+        else:
+            booking.status = SurgicalBookingStatus.CANCELLED
+            booking.notes = (
+                f'{booking.notes}\n---\n'
+                f'CANCELLED by {request.user.get_full_name()} on {timezone.localdate()}: {reason}'
+            ).strip()
+            booking.save()
+
+            # Release any reserved bed
+            _release_booking_bed(booking)
+
+            messages.success(
+                request,
+                f'Booking {booking.booking_number} cancelled. Reason: {reason}'
+            )
+
+        return redirect('ipd:surgical_booking_detail', booking_id=booking.pk)
+
+    return render(request, 'ipd/surgical_booking_cancel.html', {'booking': booking})
+
+
+def _release_booking_bed(booking):
+    """Release any bed reserved for this booking's admission."""
+    try:
+        admission = Admission.objects.filter(
+            surgical_booking=booking, status=AdmissionStatus.ADMITTED, is_deleted=False
+        ).first()
+        if admission:
+            admission.bed.status = BedStatus.AVAILABLE
+            admission.bed.save(update_fields=['status', 'updated_at'])
+    except Exception:
+        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1973,7 +2121,11 @@ def pre_op_checkin(request):
 
 @login_required
 def admission_stats(request):
-    """Admission Officer / leadership statistics for surgical bookings."""
+    """
+    Admission Officer / leadership statistics for surgical bookings.
+    Tracks the full conversion funnel: prescribed → paid → admitted → completed,
+    plus breakdowns by eye, surgery category, surgeon performance, and revenue.
+    """
     from apps.accounts.models import UserRole
     allowed = [
         UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
@@ -1982,7 +2134,7 @@ def admission_stats(request):
     if request.user.role not in allowed:
         return HttpResponseForbidden()
 
-    from django.db.models import Count, Q, Sum
+    from django.db.models import Count, Q, Sum, Case, When, IntegerField, F
     from django.db.models.functions import TruncMonth
 
     # ── Date range filter ─────────────────────────────────────────────────
@@ -1999,6 +2151,23 @@ def admission_stats(request):
 
     total = qs.count()
 
+    # ── Conversion funnel (single aggregate) ──────────────────────────────
+    funnel = qs.aggregate(
+        prescribed=Count('id'),
+        paid=Count('id', filter=Q(deposit_paid__gte=F('deposit_required'), deposit_required__gt=0)),
+        confirmed=Count('id', filter=Q(status=SurgicalBookingStatus.CONFIRMED)),
+        scheduled=Count('id', filter=Q(status=SurgicalBookingStatus.SCHEDULED)),
+        completed=Count('id', filter=Q(status=SurgicalBookingStatus.COMPLETED)),
+        cancelled=Count('id', filter=Q(status=SurgicalBookingStatus.CANCELLED)),
+        pending_payment=Count('id', filter=Q(status=SurgicalBookingStatus.PENDING_PAYMENT)),
+    )
+    # Admitted count from Admission table
+    admit_qs = Admission.objects.filter(surgical_booking__isnull=False, is_deleted=False)
+    if period != 'all':
+        admit_qs = admit_qs.filter(admission_date__date__gte=cutoff)
+    funnel['admitted'] = admit_qs.count()
+    funnel['conversion_rate'] = round(funnel['completed'] / total * 100) if total else 0
+
     # By status
     by_status = dict(qs.values('status').annotate(n=Count('id')).values_list('status', 'n'))
 
@@ -2007,21 +2176,21 @@ def admission_stats(request):
         qs.values('procedure').annotate(n=Count('id')).order_by('-n')[:10]
     )
 
-    # By service tier
-    from apps.patients.models import Visit
-    tier_data = {}
-    for booking in qs.select_related('patient'):
-        visit = Visit.objects.filter(
-            patient=booking.patient,
-            visit_date__date=booking.created_at.date() if booking.created_at else timezone.localdate(),
-            is_deleted=False,
-        ).order_by('-visit_date').first()
-        tier = visit.service_tier if visit else 'STANDARD'
-        tier_data[tier] = tier_data.get(tier, 0) + 1
+    # ── By eye laterality ─────────────────────────────────────────────────
+    by_eye = list(
+        qs.filter(eye_laterality__gt='')
+        .values('eye_laterality').annotate(n=Count('id')).order_by('-n')
+    )
 
-    # By gender
+    # ── By surgery category ───────────────────────────────────────────────
+    by_category = list(
+        qs.filter(surgery_category__gt='')
+        .values('surgery_category').annotate(n=Count('id')).order_by('-n')
+    )
+
+    # By gender (efficient single aggregate)
     by_gender = dict(
-        qs.select_related('patient').values('patient__gender').annotate(n=Count('id')).values_list('patient__gender', 'n')
+        qs.values('patient__gender').annotate(n=Count('id')).values_list('patient__gender', 'n')
     )
 
     # Revenue
@@ -2029,25 +2198,37 @@ def admission_stats(request):
         total_invoiced=Sum('total_amount'),
         total_deposited=Sum('deposit_paid'),
     )
+    revenue['outstanding'] = (revenue['total_invoiced'] or 0) - (revenue['total_deposited'] or 0)
 
-    # Monthly trend (last 6 months)
+    # Monthly trend (last 12 months)
     monthly = list(
         qs.annotate(month=TruncMonth('created_at'))
-        .values('month').annotate(n=Count('id')).order_by('month')
+        .values('month').annotate(
+            n=Count('id'),
+            completed_n=Count('id', filter=Q(status=SurgicalBookingStatus.COMPLETED)),
+        ).order_by('month')
     )
 
-    # Top surgeons
+    # ── Top surgeons with performance ─────────────────────────────────────
     top_surgeons = list(
         qs.filter(surgeon__isnull=False)
-        .values('surgeon__first_name', 'surgeon__last_name')
-        .annotate(n=Count('id')).order_by('-n')[:5]
+        .values('surgeon__first_name', 'surgeon__last_name', 'surgeon__pk')
+        .annotate(
+            total=Count('id'),
+            completed=Count('id', filter=Q(status=SurgicalBookingStatus.COMPLETED)),
+            cancelled=Count('id', filter=Q(status=SurgicalBookingStatus.CANCELLED)),
+        ).order_by('-total')[:10]
     )
+    for s in top_surgeons:
+        s['completion_rate'] = round(s['completed'] / s['total'] * 100) if s['total'] else 0
 
     _ipd_ctx = {
         'total': total,
+        'funnel': funnel,
         'by_status': by_status,
         'by_procedure': by_procedure,
-        'tier_data': tier_data,
+        'by_eye': by_eye,
+        'by_category': by_category,
         'by_gender': by_gender,
         'revenue': revenue,
         'monthly': monthly,

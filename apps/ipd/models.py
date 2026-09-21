@@ -278,6 +278,14 @@ class SurgicalBooking(AuditModel):
     def __str__(self):
         return f"SB-{self.booking_number} — {self.patient.full_name} ({self.procedure})"
 
+    @property
+    def balance_due(self):
+        return max(self.deposit_required - self.deposit_paid, 0)
+
+    @property
+    def is_fully_deposited(self):
+        return self.deposit_paid >= self.deposit_required
+
     def save(self, *args, **kwargs):
         if not self.booking_number:
             today = timezone.localdate()
@@ -338,14 +346,6 @@ class SurgicalOutcome(AuditModel):
 
     def __str__(self):
         return f"Outcome — {self.patient.full_name} ({self.booking.get_procedure_display()})"
-
-    @property
-    def balance_due(self):
-        return max(self.deposit_required - self.deposit_paid, 0)
-
-    @property
-    def is_fully_deposited(self):
-        return self.deposit_paid >= self.deposit_required
 
 
 class NursingNote(AuditModel):

@@ -1,0 +1,89 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Cancel / Reschedule Booking{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <div class="rounded-circle bg-danger bg-opacity-10 d-flex align-items-center justify-content-center flex-shrink-0" style="width:48px;height:48px;">
+    <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
+  </div>
+  <div>
+    <h4 class="fw-bold mb-0">Cancel / Reschedule Booking</h4>
+    <p class="text-muted small mb-0">{{ booking.booking_number }} — {{ booking.patient.full_name }}</p>
+  </div>
+  <a href="{% url 'ipd:surgical_booking_detail' booking_id=booking.pk %}" class="btn btn-sm btn-outline-secondary ms-auto">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <div class="small text-muted">Procedure</div>
+        <div class="fw-semibold">{{ booking.get_procedure_display }}</div>
+      </div>
+      <div class="col-md-2">
+        <div class="small text-muted">Eye</div>
+        <div class="fw-semibold">{{ booking.get_eye_laterality_display|default:"—" }}</div>
+      </div>
+      <div class="col-md-3">
+        <div class="small text-muted">Surgery Date</div>
+        <div class="fw-semibold">{{ booking.surgery_date|date:"d M Y"|default:"Not set" }}</div>
+      </div>
+      <div class="col-md-3">
+        <div class="small text-muted">Current Status</div>
+        <div><span class="badge bg-warning text-dark">{{ booking.get_status_display }}</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# ── Cancel ── #}
+  <div class="col-md-6">
+    <div class="card border-danger border-opacity-25 shadow-sm h-100">
+      <div class="card-header bg-danger bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold text-danger"><i class="bi bi-x-circle me-1"></i>Cancel Booking</h6>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="cancel">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Reason for cancellation <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control" rows="3" required placeholder="e.g. Patient declined surgery, medical contraindication, financial reasons..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-danger w-100" onclick="return confirm('Cancel this booking permanently?')">
+            <i class="bi bi-x-circle me-1"></i>Cancel Booking
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ── Reschedule ── #}
+  <div class="col-md-6">
+    <div class="card border-info border-opacity-25 shadow-sm h-100">
+      <div class="card-header bg-info bg-opacity-10 py-2">
+        <h6 class="mb-0 fw-bold text-info"><i class="bi bi-calendar-event me-1"></i>Reschedule</h6>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reschedule">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Reason for rescheduling <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control" rows="2" required placeholder="e.g. Theatre unavailable, surgeon schedule conflict..."></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">New Surgery Date</label>
+            <input type="date" name="new_date" class="form-control" min="{{ today|date:'Y-m-d' }}">
+          </div>
+          <button type="submit" class="btn btn-info w-100">
+            <i class="bi bi-calendar-event me-1"></i>Reschedule Booking
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

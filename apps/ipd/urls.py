@@ -19,6 +19,7 @@ urlpatterns = [
     path('surgical-booking/detail/<uuid:booking_id>/', views.surgical_booking_detail, name='surgical_booking_detail'),
     path('surgical-booking/detail/<uuid:booking_id>/pdf/', views.surgical_booking_slip_pdf, name='surgical_booking_slip_pdf'),
     path('surgical-booking/<uuid:booking_id>/admit/', views.admit_from_booking, name='admit_from_booking'),
+    path('surgical-booking/<uuid:booking_id>/cancel/', views.surgical_booking_cancel, name='surgical_booking_cancel'),
     path('nursing-stats/', views.ipd_nursing_stats, name='nursing_stats'),
 
     # ── MAR — Medication Administration Record ────────────────────────────────

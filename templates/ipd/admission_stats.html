@@ -1,14 +1,17 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load ehr_tags %}
+{% load ehr_tags static %}
 
 {% block title %}Admission & Surgical Statistics{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
+    <div class="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center flex-shrink-0" style="width:48px;height:48px;">
+      <i class="bi bi-graph-up text-primary fs-4"></i>
+    </div>
     <div>
       <h5 class="mb-0 fw-bold">Admission & Surgical Statistics</h5>
-      <div class="text-muted small">Surgical booking overview for leadership</div>
+      <div class="text-muted small">Conversion funnel, surgeon performance & revenue analytics</div>
     </div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
@@ -16,15 +19,56 @@
     <a href="?period=30"  class="btn btn-sm {% if period == '30' or not period %}btn-primary{% else %}btn-outline-secondary{% endif %}">30 days</a>
     <a href="?period=90"  class="btn btn-sm {% if period == '90' %}btn-primary{% else %}btn-outline-secondary{% endif %}">90 days</a>
     <a href="?period=all" class="btn btn-sm {% if period == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All time</a>
-    <button onclick="window.open('{{ request.path }}?period={{ period|default:&quot;30&quot; }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger">
-      Export PDF
+    <button onclick="window.open('{{ request.path }}?period={{ period|default:'30' }}&amp;pdf=1','_blank')" class="btn btn-sm btn-danger">
+      <i class="bi bi-file-pdf me-1"></i>Export PDF
     </button>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
-{# ── KPI Row ───────────────────────────────────────────────────────────────── #}
+{# ── Conversion Funnel ──────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small"><i class="bi bi-funnel me-1 text-primary"></i>Surgical Conversion Funnel</h6></div>
+  <div class="card-body">
+    <div class="row g-2 text-center">
+      <div class="col">
+        <div class="fs-3 fw-bold text-primary">{{ funnel.prescribed }}</div>
+        <div class="text-muted small">Prescribed</div>
+        <div class="progress mt-1" style="height:4px;"><div class="progress-bar bg-primary" style="width:100%"></div></div>
+      </div>
+      <div class="col d-flex align-items-center justify-content-center"><i class="bi bi-chevron-right text-muted"></i></div>
+      <div class="col">
+        <div class="fs-3 fw-bold text-warning">{{ funnel.paid }}</div>
+        <div class="text-muted small">Paid Deposit</div>
+        <div class="progress mt-1" style="height:4px;"><div class="progress-bar bg-warning" style="width:{% widthratio funnel.paid funnel.prescribed 100 %}%"></div></div>
+      </div>
+      <div class="col d-flex align-items-center justify-content-center"><i class="bi bi-chevron-right text-muted"></i></div>
+      <div class="col">
+        <div class="fs-3 fw-bold text-info">{{ funnel.admitted }}</div>
+        <div class="text-muted small">Admitted</div>
+        <div class="progress mt-1" style="height:4px;"><div class="progress-bar bg-info" style="width:{% widthratio funnel.admitted funnel.prescribed 100 %}%"></div></div>
+      </div>
+      <div class="col d-flex align-items-center justify-content-center"><i class="bi bi-chevron-right text-muted"></i></div>
+      <div class="col">
+        <div class="fs-3 fw-bold text-success">{{ funnel.completed }}</div>
+        <div class="text-muted small">Completed</div>
+        <div class="progress mt-1" style="height:4px;"><div class="progress-bar bg-success" style="width:{% widthratio funnel.completed funnel.prescribed 100 %}%"></div></div>
+      </div>
+      <div class="col d-flex align-items-center justify-content-center"><i class="bi bi-chevron-right text-muted"></i></div>
+      <div class="col">
+        <div class="fs-3 fw-bold text-danger">{{ funnel.cancelled }}</div>
+        <div class="text-muted small">Cancelled</div>
+        <div class="progress mt-1" style="height:4px;"><div class="progress-bar bg-danger" style="width:{% widthratio funnel.cancelled funnel.prescribed 100 %}%"></div></div>
+      </div>
+    </div>
+    <div class="text-center mt-3">
+      <span class="badge bg-success bg-opacity-75 fs-6">{{ funnel.conversion_rate }}% Completion Rate</span>
+    </div>
+  </div>
+</div>
+
+{# ── KPI Row ───────────────────────────────────────────────────────────── #}
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm text-center py-3">
@@ -52,24 +96,126 @@
   </div>
 </div>
 
-{# ── Revenue ──────────────────────────────────────────────────────────────── #}
+{# ── Revenue ──────────────────────────────────────────────────────────── #}
 <div class="row g-3 mb-4">
-  <div class="col-md-6">
+  <div class="col-md-4">
     <div class="card border-0 shadow-sm py-3 text-center">
       <div class="fw-bold text-success fs-5">{{ revenue.total_invoiced|default:0|floatformat:0 }} FCFA</div>
       <div class="text-muted small">Total Invoiced</div>
     </div>
   </div>
-  <div class="col-md-6">
+  <div class="col-md-4">
     <div class="card border-0 shadow-sm py-3 text-center">
       <div class="fw-bold text-primary fs-5">{{ revenue.total_deposited|default:0|floatformat:0 }} FCFA</div>
-      <div class="text-muted small">Total Deposits Collected</div>
+      <div class="text-muted small">Deposits Collected</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm py-3 text-center">
+      <div class="fw-bold text-danger fs-5">{{ revenue.outstanding|default:0|floatformat:0 }} FCFA</div>
+      <div class="text-muted small">Outstanding Balance</div>
     </div>
   </div>
 </div>
 
-<div class="row g-3">
-  {# ── By Procedure ─────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  {# ── By Eye Laterality ──────────────────────────────────────────────── #}
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold small py-2">
+        <i class="bi bi-eye me-1 text-info"></i>By Eye
+      </div>
+      <div class="card-body py-2">
+        {% for row in by_eye %}
+        <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size:.82rem;">
+          <span>
+            {% if row.eye_laterality == 'RE' %}Right Eye (RE)
+            {% elif row.eye_laterality == 'LE' %}Left Eye (LE)
+            {% elif row.eye_laterality == 'BE' %}Both Eyes (BE)
+            {% else %}{{ row.eye_laterality }}{% endif %}
+          </span>
+          <span class="badge bg-info bg-opacity-75">{{ row.n }}</span>
+        </div>
+        {% empty %}
+        <p class="text-muted small mb-0">No data.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# ── By Surgery Category ────────────────────────────────────────────── #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold small py-2">
+        <i class="bi bi-diagram-3 me-1 text-success"></i>By Surgery Category
+      </div>
+      <div class="card-body py-2">
+        {% for row in by_category %}
+        <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size:.82rem;">
+          <span>{{ row.surgery_category|title }}</span>
+          <div class="d-flex align-items-center gap-2" style="min-width:100px;">
+            <div class="progress flex-grow-1" style="height:6px;">
+              <div class="progress-bar bg-success" style="width:{% widthratio row.n total 100 %}%"></div>
+            </div>
+            <span class="badge bg-success bg-opacity-75">{{ row.n }}</span>
+          </div>
+        </div>
+        {% empty %}
+        <p class="text-muted small mb-0">No data.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# ── By Gender & Status ─────────────────────────────────────────────── #}
+  <div class="col-md-5">
+    <div class="row g-3">
+      <div class="col-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-header bg-white fw-semibold small py-2">
+            <i class="bi bi-people me-1 text-warning"></i>By Gender
+          </div>
+          <div class="card-body py-2">
+            {% for gender, count in by_gender.items %}
+            <div class="d-flex justify-content-between py-1 border-bottom" style="font-size:.82rem;">
+              <span>{{ gender|default:"Unknown"|capfirst }}</span>
+              <span class="badge bg-secondary bg-opacity-75">{{ count }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-header bg-white fw-semibold small py-2">
+            <i class="bi bi-pie-chart me-1 text-info"></i>By Status
+          </div>
+          <div class="card-body py-2">
+            {% for status_val, status_label in booking_statuses %}
+            {% with count=by_status|get_item:status_val|default:0 %}
+            {% if count %}
+            <div class="d-flex justify-content-between py-1 border-bottom" style="font-size:.82rem;">
+              <span>{{ status_label }}</span>
+              <span class="badge
+                {% if status_val == 'CONFIRMED' %}bg-success
+                {% elif status_val == 'COMPLETED' %}bg-primary
+                {% elif status_val == 'PENDING_PAYMENT' %}bg-warning text-dark
+                {% elif status_val == 'CANCELLED' %}bg-danger
+                {% else %}bg-secondary{% endif %}
+                bg-opacity-75">{{ count }}</span>
+            </div>
+            {% endif %}
+            {% endwith %}
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── Top Procedures ─────────────────────────────────────────────────── #}
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold small py-2">
@@ -82,96 +228,72 @@
           <span class="badge bg-primary bg-opacity-75">{{ row.n }}</span>
         </div>
         {% empty %}
-        <p class="text-muted small">No data.</p>
+        <p class="text-muted small mb-0">No data.</p>
         {% endfor %}
       </div>
     </div>
   </div>
 
-  {# ── By Status ────────────────────────────────────────────────────────── #}
+  {# ── Surgeon Performance ────────────────────────────────────────────── #}
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white fw-semibold small py-2">
-        <i class="bi bi-pie-chart me-1 text-info"></i>Bookings by Status
+        <i class="bi bi-person-badge me-1 text-success"></i>Surgeon Performance
       </div>
-      <div class="card-body py-2">
-        {% for status_val, status_label in booking_statuses %}
-        {% with count=by_status|get_item:status_val|default:0 %}
-        <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size:.82rem;">
-          <span>{{ status_label }}</span>
-          <span class="badge
-            {% if status_val == 'CONFIRMED' %}bg-success
-            {% elif status_val == 'COMPLETED' %}bg-primary
-            {% elif status_val == 'PENDING_PAYMENT' %}bg-warning text-dark
-            {% elif status_val == 'CANCELLED' %}bg-danger
-            {% else %}bg-secondary{% endif %}
-            bg-opacity-75">{{ count }}</span>
-        </div>
-        {% endwith %}
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-
-  {# ── Top Surgeons ─────────────────────────────────────────────────────── #}
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold small py-2">
-        <i class="bi bi-person-badge me-1 text-success"></i>Top Surgeons
-      </div>
-      <div class="card-body py-2">
-        {% for s in top_surgeons %}
-        <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size:.82rem;">
-          <span>{{ s.surgeon__first_name }} {{ s.surgeon__last_name }}</span>
-          <span class="badge bg-success bg-opacity-75">{{ s.n }}</span>
-        </div>
-        {% empty %}
-        <p class="text-muted small">No data.</p>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-
-  {# ── By Gender & Tier ─────────────────────────────────────────────────── #}
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white fw-semibold small py-2">
-        <i class="bi bi-people me-1 text-warning"></i>Demographics
-      </div>
-      <div class="card-body py-2">
-        <div class="small text-muted mb-1 fw-semibold">By Gender</div>
-        {% for gender, count in by_gender.items %}
-        <div class="d-flex justify-content-between py-1 border-bottom" style="font-size:.82rem;">
-          <span>{{ gender|capfirst }}</span>
-          <span class="badge bg-secondary bg-opacity-75">{{ count }}</span>
-        </div>
-        {% endfor %}
-        <div class="small text-muted mb-1 fw-semibold mt-3">By Service Tier</div>
-        {% for tier, count in tier_data.items %}
-        <div class="d-flex justify-content-between py-1 border-bottom" style="font-size:.82rem;">
-          <span>{{ tier|title }}</span>
-          <span class="badge bg-info bg-opacity-75">{{ count }}</span>
-        </div>
-        {% endfor %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem;">
+          <thead class="table-light"><tr>
+            <th>Surgeon</th><th class="text-center">Total</th><th class="text-center">Done</th>
+            <th class="text-center">Cancelled</th><th class="text-center">Rate</th>
+          </tr></thead>
+          <tbody>
+          {% for s in top_surgeons %}
+          <tr>
+            <td>Dr. {{ s.surgeon__first_name }} {{ s.surgeon__last_name }}</td>
+            <td class="text-center fw-bold">{{ s.total }}</td>
+            <td class="text-center text-success">{{ s.completed }}</td>
+            <td class="text-center text-danger">{{ s.cancelled }}</td>
+            <td class="text-center">
+              <span class="badge {% if s.completion_rate >= 80 %}bg-success{% elif s.completion_rate >= 50 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                {{ s.completion_rate }}%
+              </span>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-muted text-center py-3">No data.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
 </div>
 
+{# ── Monthly Trend Chart ──────────────────────────────────────────────── #}
+{% if monthly %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2"><h6 class="mb-0 fw-bold small"><i class="bi bi-bar-chart me-1 text-primary"></i>Monthly Trend</h6></div>
+  <div class="card-body" style="height:260px;">
+    <canvas id="monthlyChart"></canvas>
+  </div>
+</div>
+<script src="{% static 'vendor/chart.min.js' %}"></script>
 <script>
-window._AI_STATS = {
-  dept: 'ipd',
-  data: {
-    period: '{% if period == "all" %}All Time{% else %}Last {{ period }} days{% endif %}',
-    total_bookings: {{ total }},
-    confirmed: {{ by_status.CONFIRMED|default:0 }},
-    completed: {{ by_status.COMPLETED|default:0 }},
-    pending_payment: {{ by_status.PENDING_PAYMENT|default:0 }},
-    total_invoiced_fcfa: {{ revenue.total_invoiced|default:0|floatformat:0 }},
-    deposits_collected_fcfa: {{ revenue.total_deposited|default:0|floatformat:0 }},
-    top_procedures: [{% for p in by_procedure|slice:":5" %}{"procedure":"{{ p.procedure|escapejs }}","count":{{ p.n }}}{% if not forloop.last %},{% endif %}{% endfor %}]
-  }
-};
+(function(){
+  const data = [{% for m in monthly %}{month:'{{ m.month|date:"M Y" }}',total:{{ m.n }},completed:{{ m.completed_n }}}{% if not forloop.last %},{% endif %}{% endfor %}];
+  new Chart(document.getElementById('monthlyChart'),{
+    type:'bar',
+    data:{
+      labels: data.map(d=>d.month),
+      datasets:[
+        {label:'Total Bookings', data:data.map(d=>d.total), backgroundColor:'rgba(13,110,253,.5)', borderRadius:4},
+        {label:'Completed', data:data.map(d=>d.completed), backgroundColor:'rgba(25,135,84,.5)', borderRadius:4},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,ticks:{stepSize:1}}},plugins:{legend:{position:'bottom'}}}
+  });
+})();
 </script>
-{% include "components/ai_stats_insights.html" %}
+{% endif %}
+
 {% endblock %}
