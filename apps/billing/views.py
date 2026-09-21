@@ -119,8 +119,9 @@ def _can_view_financial_reports(user):
 
 
 def _can_view_pl(user):
-    """P&L and strategic financial reports — Finance Director and above only."""
+    """P&L and strategic financial reports — Senior Accountant, Finance Director and above."""
     return user.role in (
+        UserRole.SENIOR_ACCOUNTANT,
         UserRole.FINANCE_DIRECTOR,
         UserRole.CEO,
         UserRole.ADMIN_DIRECTOR,
@@ -2546,7 +2547,7 @@ def shift_reopen(request, shift_id):
 @login_required
 def shift_list(request):
     """List all cashier shifts — filterable by date, cashier, and status."""
-    if not _can_verify_shift(request.user):
+    if not (_can_verify_shift(request.user) or _can_view_financial_reports(request.user)):
         messages.error(request, 'Access denied.')
         return redirect('billing:dashboard')
     from django.core.paginator import Paginator
@@ -3711,7 +3712,8 @@ def cashier_reconciliation(request):
       - Variance (declared - expected) — positive = overage, negative = shortage
     Only Chief Cashier, Billing Officer, Finance Director, and Management can view.
     """
-    if not (_can_verify_shift(request.user) or _can_authorize_billing(request.user)):
+    if not (_can_verify_shift(request.user) or _can_authorize_billing(request.user)
+            or _can_view_financial_reports(request.user)):
         messages.error(request, 'Access denied. Chief Cashier, Billing Officers and Finance only.')
         return redirect('billing:dashboard')
 
@@ -3940,9 +3942,9 @@ def cashdesks_overview(request):
     """
     Live overview of ALL cashier desks for today.
     Shows each cashier's shift status, cash collected, and balance.
-    Access: Chief Cashier, Billing Officer, Finance Director, Admin, Super Admin.
+    Access: Chief Cashier, Billing Officer, Finance Director, Accountant, Admin, Super Admin.
     """
-    if not _can_verify_shift(request.user):
+    if not (_can_verify_shift(request.user) or _can_view_financial_reports(request.user)):
         messages.error(request, 'Access denied.')
         return redirect('billing:dashboard')
 
@@ -5183,8 +5185,11 @@ from .models import GLAccount, AccountType, JournalEntry, JournalLine
 def _can_access_gl(user):
     return user.role in (
         UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.ACCOUNTANT, UserRole.SUPER_ADMIN,
-    )
+        UserRole.ACCOUNTANT, UserRole.CHIEF_CASHIER,
+        UserRole.BILLING_OFFICER, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
+        UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
 
 
 # ── Chart of Accounts ─────────────────────────────────────────────────────────
@@ -5530,9 +5535,11 @@ from .models import APVendor, APBill, APPayment, APBillStatus
 
 def _can_access_ap(user):
     return user.role in (
-        UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.ACCOUNTANT, UserRole.SUPER_ADMIN,
-    )
+        UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR, UserRole.BILLING_OFFICER,
+        UserRole.CEO, UserRole.ADMIN_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) or user.is_superuser
 
 
 @login_required
@@ -5738,11 +5745,14 @@ def _get_active_cashier_session(user):
 
 
 def _can_manage_desks(user):
-    """Create / edit cash desks — Finance Director, Senior Accountant, Super Admin."""
+    """Create / edit cash desks — Chief Cashier, Senior Accountant, Finance Director, oversight roles."""
     return user.role in (
+        UserRole.CHIEF_CASHIER,
         UserRole.SENIOR_ACCOUNTANT,
         UserRole.FINANCE_DIRECTOR,
+        UserRole.CEO,
         UserRole.ADMIN_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR,
         UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
@@ -5758,12 +5768,15 @@ def _can_verify_session(user):
 
 
 def _can_approve_discount(user):
-    """Approve discount requests from cashiers — Chief Cashier and above."""
+    """Approve discount requests from cashiers — Chief Cashier and above, oversight roles can view."""
     return user.role in (
         UserRole.CHIEF_CASHIER,
         UserRole.ACCOUNTANT,
         UserRole.SENIOR_ACCOUNTANT,
         UserRole.FINANCE_DIRECTOR,
+        UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR,
         UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
@@ -6417,26 +6430,33 @@ def revenue_by_desk(request):
 # Additional: Storekeeper, Procurement Officer, Insurance In-charge
 
 def _can_manage_bank(user):
-    """Bank operations — Senior Accountant and above."""
+    """Bank operations — Accountant and above (view), Senior Accountant+ (modify)."""
     return user.role in (
-        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
-        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
+        UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR, UserRole.CHIEF_CASHIER,
+        UserRole.BILLING_OFFICER, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
+        UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
 
 def _can_do_reconciliation(user):
-    """Bank reconciliation — Senior Accountant (prepares), Finance Manager (reviews)."""
+    """Bank reconciliation — Accountant (assists), Senior Accountant (prepares), Finance Manager (reviews)."""
     return user.role in (
-        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
         UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
 
 def _can_manage_cheques(user):
-    """Cheque management — Accountant (writes), Senior Accountant (supervises)."""
+    """Cheque management — Accountant (writes), Senior Accountant (supervises), oversight roles (view)."""
     return user.role in (
         UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN,
+        UserRole.FINANCE_DIRECTOR, UserRole.CHIEF_CASHIER,
+        UserRole.BILLING_OFFICER, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
 
@@ -6449,27 +6469,32 @@ def _can_manage_advances(user):
 
 
 def _can_manage_cash_transfers(user):
-    """Cash transfers — Chief Cashier (initiates), Senior Accountant (confirms)."""
+    """Cash transfers — Chief Cashier (initiates), Accountant/Senior Accountant (confirms), oversight (view)."""
     return user.role in (
-        UserRole.CHIEF_CASHIER, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN,
+        UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT,
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.BILLING_OFFICER, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
 
 def _can_manage_safe(user):
-    """Safe balance — Chief Cashier and Accountant (dual-key per policy)."""
+    """Safe balance — Chief Cashier and Accountant (dual-key per policy), oversight roles (view)."""
     return user.role in (
         UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT,
         UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
-        UserRole.SUPER_ADMIN,
+        UserRole.BILLING_OFFICER, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
 
 def _can_manage_assets_full(user):
-    """Full asset management including disposal — Senior Accountant and above."""
+    """Full asset management including disposal — Accountant and above."""
     return user.role in (
-        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
-        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
+        UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.FINANCE_DIRECTOR, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
+        UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
 
@@ -6478,7 +6503,9 @@ def _can_view_variance_register(user):
     return user.role in (
         UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT,
         UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
-        UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
+        UserRole.BILLING_OFFICER, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
+        UserRole.SUPER_ADMIN,
     ) or user.is_superuser
 
 
@@ -7591,8 +7618,9 @@ def report_dsf(request):
 @login_required
 def report_ap_aging(request):
     """Accounts Payable aging — outstanding vendor bills by age bucket."""
-    if not _can_manage_bank(request.user):
-        return HttpResponseForbidden()
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
     today = timezone.localdate()
     bills = APBill.objects.filter(
         is_deleted=False,
@@ -7636,8 +7664,9 @@ def report_ap_aging(request):
 @login_required
 def report_monthly_summary(request):
     """Monthly financial summary — revenue, expenses, net, with variance vs budget."""
-    if not _can_manage_bank(request.user):
-        return HttpResponseForbidden()
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
     import calendar
     today = timezone.localdate()
     year  = int(request.GET.get('year', today.year))
@@ -7713,9 +7742,9 @@ def report_monthly_summary(request):
 @login_required
 def report_tva(request):
     """TVA (VAT) return — output tax on services vs input tax on purchases."""
-    if not (request.user.is_finance_director or request.user.is_super_admin
-            or request.user.role == 'senior_accountant'):
-        return HttpResponseForbidden()
+    if not _can_view_pl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
     import calendar
     today = timezone.localdate()
     year  = int(request.GET.get('year', today.year))
@@ -7772,8 +7801,9 @@ def report_tva(request):
 @login_required
 def report_audit_trail(request):
     """Financial audit trail — all journal entries with who posted, when, and why."""
-    if not _can_manage_bank(request.user):
-        return HttpResponseForbidden()
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
     from .models import JournalEntry
     today = timezone.localdate()
     date_from = request.GET.get('date_from', str(today.replace(day=1)))
@@ -7811,8 +7841,9 @@ def report_audit_trail(request):
 @login_required
 def fiscal_period_list(request):
     """List all fiscal periods with status."""
-    if not _can_manage_bank(request.user):
-        return HttpResponseForbidden()
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
     import calendar as cal
     today = timezone.localdate()
 
@@ -7833,9 +7864,11 @@ def fiscal_period_list(request):
 @require_POST
 def fiscal_period_action(request, period_id):
     """Close or reopen a fiscal period."""
-    if not (request.user.is_finance_director or request.user.is_super_admin
-            or request.user.role == 'senior_accountant'):
-        return HttpResponseForbidden()
+    if not (request.user.role in (
+        UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN,
+    ) or request.user.is_superuser):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:fiscal_period_list')
 
     period = get_object_or_404(FiscalPeriod, pk=period_id, is_deleted=False)
     action = request.POST.get('action')
@@ -7877,9 +7910,9 @@ def fiscal_period_action(request, period_id):
 @login_required
 def finance_director_dashboard(request):
     """Executive financial dashboard with KPIs, ratios, and trend charts."""
-    if not (request.user.is_finance_director or request.user.is_super_admin
-            or request.user.is_ceo):
-        return HttpResponseForbidden()
+    if not _can_view_pl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
 
     today = timezone.localdate()
     first_of_month = today.replace(day=1)
@@ -8014,9 +8047,9 @@ def finance_director_dashboard(request):
 @login_required
 def senior_accountant_dashboard(request):
     """Senior accountant operations dashboard — GL health, pending approvals, reconciliation status."""
-    if not (request.user.role == 'senior_accountant' or request.user.is_finance_director
-            or request.user.is_super_admin):
-        return HttpResponseForbidden()
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
 
     today = timezone.localdate()
     first_of_month = today.replace(day=1)
