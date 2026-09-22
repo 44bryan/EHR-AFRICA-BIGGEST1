@@ -559,6 +559,26 @@ def patient_detail_view(request, patient_id):
 
     consultations_by_dept = sorted(dept_groups.items(), key=lambda x: dept_sort_key(x[0]))
 
+    # Latest diagnoses (RE / LE) — shown prominently in patient banner
+    from apps.consultations.models import ConsultationDiagnosis, ConsultationStatus as _CStatus
+    _latest_diags_p = ConsultationDiagnosis.objects.filter(
+        consultation__patient=patient,
+        consultation__is_deleted=False,
+        consultation__status=_CStatus.COMPLETED,
+    ).select_related('diagnosis', 'consultation').order_by('-consultation__consultation_date')[:20]
+    latest_diagnoses_re = []
+    latest_diagnoses_le = []
+    _seen_re_p = set()
+    _seen_le_p = set()
+    for ld in _latest_diags_p:
+        desc = ld.diagnosis.description
+        if ld.laterality in ('RE', 'BE') and desc not in _seen_re_p:
+            latest_diagnoses_re.append(ld)
+            _seen_re_p.add(desc)
+        if ld.laterality in ('LE', 'BE') and desc not in _seen_le_p:
+            latest_diagnoses_le.append(ld)
+            _seen_le_p.add(desc)
+
     # Latest optical prescription for the summary banner
     try:
         from apps.prescriptions.models import OpticalPrescription
@@ -837,6 +857,8 @@ def patient_detail_view(request, patient_id):
         'latest_invoice_status': latest_invoice_status,
         'documents': documents,
         'patient_consents': patient_consents,
+        'latest_diagnoses_re': latest_diagnoses_re[:5],
+        'latest_diagnoses_le': latest_diagnoses_le[:5],
     })
 
 

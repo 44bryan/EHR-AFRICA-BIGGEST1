@@ -206,6 +206,31 @@ def consultation_create_view(request, patient_id):
         ).order_by('-consultation_date')[:5]
     )
 
+    # Latest diagnoses (RE / LE) — shown prominently near triage vitals bar
+    from apps.consultations.models import ConsultationDiagnosis
+    _latest_diags = ConsultationDiagnosis.objects.filter(
+        consultation__patient=patient,
+        consultation__is_deleted=False,
+        consultation__status=ConsultationStatus.COMPLETED,
+    ).select_related('diagnosis', 'consultation').order_by('-consultation__consultation_date')[:20]
+    latest_diagnoses_re = []
+    latest_diagnoses_le = []
+    latest_diagnoses_be = []
+    _seen_re = set()
+    _seen_le = set()
+    _seen_be = set()
+    for ld in _latest_diags:
+        desc = ld.diagnosis.description
+        if ld.laterality in ('RE', 'BE') and desc not in _seen_re:
+            latest_diagnoses_re.append(ld)
+            _seen_re.add(desc)
+        if ld.laterality in ('LE', 'BE') and desc not in _seen_le:
+            latest_diagnoses_le.append(ld)
+            _seen_le.add(desc)
+        if ld.laterality == 'BE' and desc not in _seen_be:
+            latest_diagnoses_be.append(ld)
+            _seen_be.add(desc)
+
     # Most recent investigation results for this patient — used by Glaucoma/Retina forms
     # to show VF, OCT, B-scan as read-only. Reads from InvestigationResult.result_data.
     from apps.investigations.models import InvestigationOrder, InvestigationResult
@@ -676,6 +701,9 @@ def consultation_create_view(request, patient_id):
         'patient_medications': patient_medications,
         'patient_allergies': patient_allergies,
         'can_do_refraction': getattr(request.user, 'can_do_refraction', False),
+        'latest_diagnoses_re': latest_diagnoses_re[:5],
+        'latest_diagnoses_le': latest_diagnoses_le[:5],
+        'latest_diagnoses_be': latest_diagnoses_be[:5],
     })
 
 
@@ -971,6 +999,33 @@ def consultation_edit_view(request, pk):
     ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
     refraction_data = refraction_consult.department_specific_data if refraction_consult else {}
 
+    # Latest diagnoses (RE / LE) — shown prominently near triage vitals bar
+    from apps.consultations.models import ConsultationDiagnosis
+    _latest_diags_e = ConsultationDiagnosis.objects.filter(
+        consultation__patient=consultation.patient,
+        consultation__is_deleted=False,
+        consultation__status=ConsultationStatus.COMPLETED,
+    ).exclude(consultation=consultation).select_related(
+        'diagnosis', 'consultation'
+    ).order_by('-consultation__consultation_date')[:20]
+    latest_diagnoses_re = []
+    latest_diagnoses_le = []
+    latest_diagnoses_be = []
+    _seen_re = set()
+    _seen_le = set()
+    _seen_be = set()
+    for ld in _latest_diags_e:
+        desc = ld.diagnosis.description
+        if ld.laterality in ('RE', 'BE') and desc not in _seen_re:
+            latest_diagnoses_re.append(ld)
+            _seen_re.add(desc)
+        if ld.laterality in ('LE', 'BE') and desc not in _seen_le:
+            latest_diagnoses_le.append(ld)
+            _seen_le.add(desc)
+        if ld.laterality == 'BE' and desc not in _seen_be:
+            latest_diagnoses_be.append(ld)
+            _seen_be.add(desc)
+
     return render(request, 'consultations/edit.html', {
         'form': form,
         'consultation': consultation,
@@ -980,6 +1035,9 @@ def consultation_edit_view(request, pk):
         'refraction_consult': refraction_consult,
         'refraction_data': refraction_data,
         'can_do_refraction': getattr(request.user, 'can_do_refraction', False),
+        'latest_diagnoses_re': latest_diagnoses_re[:5],
+        'latest_diagnoses_le': latest_diagnoses_le[:5],
+        'latest_diagnoses_be': latest_diagnoses_be[:5],
     })
 
 
