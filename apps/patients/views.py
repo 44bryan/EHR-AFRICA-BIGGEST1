@@ -560,14 +560,14 @@ def patient_detail_view(request, patient_id):
     consultations_by_dept = sorted(dept_groups.items(), key=lambda x: dept_sort_key(x[0]))
 
     # Latest diagnosis summary — shown prominently in patient banner
-    from apps.consultations.models import ConsultationStatus as _CStatus
-    _last_dx_consult = consultations.filter(
-        status=_CStatus.COMPLETED,
-    ).exclude(diagnosis_summary='').values_list('diagnosis_summary', flat=True).first()
-    # Fallback: check department_specific_data.diagnosis_summary
+    # Search ANY consultation (not just COMPLETED — PAUSED/IN_PROGRESS also have diagnoses)
+    _last_dx_consult = consultations.exclude(
+        diagnosis_summary=''
+    ).values_list('diagnosis_summary', flat=True).first()
     last_dx_summary = _last_dx_consult or ''
+    # Fallback: check department_specific_data.diagnosis_summary
     if not last_dx_summary:
-        for c in consultations.filter(status=_CStatus.COMPLETED):
+        for c in consultations:
             _dsd = c.department_specific_data or {}
             if _dsd.get('diagnosis_summary'):
                 last_dx_summary = _dsd['diagnosis_summary']

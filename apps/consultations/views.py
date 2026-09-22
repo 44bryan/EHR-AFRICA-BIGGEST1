@@ -681,10 +681,17 @@ def consultation_create_view(request, patient_id):
                 val = getattr(referring_consult, field, '')
                 if val:
                     initial[field] = val
-        # Auto-carry-forward diagnosis_summary from most recent consultation
-        if prev_consultations:
+        # Auto-carry-forward diagnosis_summary from most recent consultation (any status)
+        _carry_dx = Consultation.objects.filter(
+            patient=patient, is_deleted=False,
+        ).exclude(diagnosis_summary='').order_by('-consultation_date').values_list(
+            'diagnosis_summary', flat=True
+        ).first()
+        if _carry_dx:
+            initial['diagnosis_summary'] = _carry_dx
+        elif prev_consultations:
             for _pc in prev_consultations:
-                _ds = _pc.diagnosis_summary or (_pc.department_specific_data or {}).get('diagnosis_summary', '')
+                _ds = (_pc.department_specific_data or {}).get('diagnosis_summary', '')
                 if _ds:
                     initial['diagnosis_summary'] = _ds
                     break
