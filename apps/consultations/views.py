@@ -471,18 +471,15 @@ def consultation_create_view(request, patient_id):
                         PaymentStatus as _InvPS, AcquisitionStatus as _AcqS, ReportStatus as _RepS,
                     )
                     _OPTOM_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
+                    # Find ALL paid optometry orders for this patient today
+                    # (order may belong to the doctor's consultation, not ours)
                     _pending_inv = InvestigationOrder.objects.filter(
                         patient=patient,
                         is_deleted=False,
                         investigation_type__category__in=_OPTOM_CATS,
                         status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+                        created_at__date=timezone.localdate(),
                     ).exclude(payment_status='UNPAID')
-                    # Scope to this consultation or today's orders
-                    from django.db.models import Q as _InvQ
-                    _pending_inv = _pending_inv.filter(
-                        _InvQ(consultation=consultation) |
-                        _InvQ(consultation__isnull=True, created_at__date=timezone.localdate())
-                    )
                     for _inv_ord in _pending_inv:
                         # Create result from dept_data if not exists
                         if not hasattr(_inv_ord, 'result'):
@@ -1022,15 +1019,13 @@ def consultation_edit_view(request, pk):
                         PaymentStatus as _InvPS2, AcquisitionStatus as _AcqS2, ReportStatus as _RepS2,
                     )
                     _OPTOM_CATS2 = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
-                    from django.db.models import Q as _InvQ2
+                    # Match ALL paid optometry orders for this patient today
                     _pending2 = InvestigationOrder.objects.filter(
                         patient=c.patient, is_deleted=False,
                         investigation_type__category__in=_OPTOM_CATS2,
                         status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
-                    ).exclude(payment_status='UNPAID').filter(
-                        _InvQ2(consultation=c) |
-                        _InvQ2(consultation__isnull=True, created_at__date=timezone.localdate())
-                    )
+                        created_at__date=timezone.localdate(),
+                    ).exclude(payment_status='UNPAID')
                     for _io2 in _pending2:
                         if not hasattr(_io2, 'result'):
                             InvestigationResult.objects.create(
