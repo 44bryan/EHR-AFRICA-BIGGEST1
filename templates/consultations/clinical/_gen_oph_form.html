@@ -78,32 +78,74 @@
 {% if not can_do_refraction %}
 <div class="mb-3 rounded border-0 shadow-sm">
 
-  {# Zone header — auto-expand if refraction data exists #}
+  {# Zone header — auto-expand if refraction data exists (from InvestigationResult) #}
   <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top cfm-hdr bg-light border-bottom"
        style="cursor:pointer;"
-       data-bs-toggle="collapse" data-bs-target="#cfm_gen_refract" aria-expanded="{% if refraction_consult %}true{% else %}false{% endif %}">
+       data-bs-toggle="collapse" data-bs-target="#cfm_gen_refract" aria-expanded="{% if rd %}true{% else %}false{% endif %}">
     <i class="bi bi-eyeglasses text-secondary"></i>
     <span class="fw-bold text-secondary text-uppercase" style="letter-spacing:.06em;font-size:.82rem;">
-      Refractionist Data
+      Optometry Exam Results
     </span>
     <span class="small text-muted ms-1">
-      {% if refraction_consult %}
-        <i class="bi bi-check-circle-fill text-success me-1"></i>
-        From {{ refraction_consult.consulting_doctor.full_name|default:"Refractionist" }}
-        · {{ refraction_consult.consultation_date|date:"d M Y" }}
+      {% if rd %}
+        <i class="bi bi-check-circle-fill text-success me-1"></i>Results available
       {% else %}
-        <i class="bi bi-hourglass-split me-1"></i>Awaiting refractionist
+        <i class="bi bi-hourglass-split me-1"></i>Awaiting optometrist
       {% endif %}
     </span>
     <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
   </div>
 
-  <div class="collapse {% if refraction_consult %}show{% endif %}" id="cfm_gen_refract">
+  <div class="collapse {% if rd %}show{% endif %}" id="cfm_gen_refract">
   <div class="p-3">
-    {% if refraction_consult %}
-      {% include 'consultations/clinical/_refraction.html' with consultation=refraction_consult %}
+    {% if rd %}
+      {# ── Subjective Refraction ── #}
+      {% if rd.sub_sph_od or rd.sub_sph_os %}
+      <h6 class="fw-bold text-uppercase text-muted small border-bottom pb-1">Subjective Refraction</h6>
+      <div class="table-responsive mb-2">
+        <table class="table table-bordered table-sm mb-0 small">
+          <thead class="table-light"><tr><th>Eye</th><th class="text-center">Sph</th><th class="text-center">Cyl</th><th class="text-center">Axis</th><th class="text-center">Add</th><th class="text-center">Best VA</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-medium text-primary">OD</td><td class="text-center">{{ rd.sub_sph_od|default:"—" }}</td><td class="text-center">{{ rd.sub_cyl_od|default:"—" }}</td><td class="text-center">{{ rd.sub_axis_od|default:"—" }}</td><td class="text-center">{{ rd.sub_add_od|default:"—" }}</td><td class="text-center">{{ rd.sub_best_va_od|default:"—" }}</td></tr>
+            <tr><td class="fw-medium text-success">OS</td><td class="text-center">{{ rd.sub_sph_os|default:"—" }}</td><td class="text-center">{{ rd.sub_cyl_os|default:"—" }}</td><td class="text-center">{{ rd.sub_axis_os|default:"—" }}</td><td class="text-center">{{ rd.sub_add_os|default:"—" }}</td><td class="text-center">{{ rd.sub_best_va_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% if rd.sub_pd_dist or rd.sub_pd_near %}
+      <div class="small text-muted mb-2">PD: Dist {{ rd.sub_pd_dist|default:"—" }}mm &bull; Near {{ rd.sub_pd_near|default:"—" }}mm</div>
+      {% endif %}
+      {% endif %}
+      {# ── Auto-Refraction ── #}
+      {% if rd.auto_sph_od or rd.auto_sph_os %}
+      <h6 class="fw-bold text-uppercase text-muted small border-bottom pb-1">Auto-Refraction / Keratometry</h6>
+      <div class="table-responsive mb-2">
+        <table class="table table-bordered table-sm mb-0 small">
+          <thead class="table-light"><tr><th>Eye</th><th class="text-center">Sph</th><th class="text-center">Cyl</th><th class="text-center">Axis</th><th class="text-center">K1</th><th class="text-center">K2</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-medium text-primary">OD</td><td class="text-center">{{ rd.auto_sph_od|default:"—" }}</td><td class="text-center">{{ rd.auto_cyl_od|default:"—" }}</td><td class="text-center">{{ rd.auto_axis_od|default:"—" }}</td><td class="text-center">{{ rd.auto_k1_od|default:"—" }}</td><td class="text-center">{{ rd.auto_k2_od|default:"—" }}</td></tr>
+            <tr><td class="fw-medium text-success">OS</td><td class="text-center">{{ rd.auto_sph_os|default:"—" }}</td><td class="text-center">{{ rd.auto_cyl_os|default:"—" }}</td><td class="text-center">{{ rd.auto_axis_os|default:"—" }}</td><td class="text-center">{{ rd.auto_k1_os|default:"—" }}</td><td class="text-center">{{ rd.auto_k2_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {# ── Lensometry / Patient's Glasses ── #}
+      {% if rd.lens_sph_od or rd.lens_sph_os %}
+      <h6 class="fw-bold text-uppercase text-muted small border-bottom pb-1">Patient's Glasses (Lensometry)</h6>
+      <div class="table-responsive mb-2">
+        <table class="table table-bordered table-sm mb-0 small">
+          <thead class="table-light"><tr><th>Eye</th><th class="text-center">Sph</th><th class="text-center">Cyl</th><th class="text-center">Axis</th><th class="text-center">Add</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-medium text-primary">OD</td><td class="text-center">{{ rd.lens_sph_od|default:"—" }}</td><td class="text-center">{{ rd.lens_cyl_od|default:"—" }}</td><td class="text-center">{{ rd.lens_axis_od|default:"—" }}</td><td class="text-center">{{ rd.lens_add_od|default:"—" }}</td></tr>
+            <tr><td class="fw-medium text-success">OS</td><td class="text-center">{{ rd.lens_sph_os|default:"—" }}</td><td class="text-center">{{ rd.lens_cyl_os|default:"—" }}</td><td class="text-center">{{ rd.lens_axis_os|default:"—" }}</td><td class="text-center">{{ rd.lens_add_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {% if rd.interpretation %}
+      <div class="small"><strong>Interpretation:</strong> {{ rd.interpretation }}</div>
+      {% endif %}
     {% else %}
-      <div class="text-muted small fst-italic py-2">No refraction data recorded yet — awaiting refractionist.</div>
+      <div class="text-muted small fst-italic py-2">No optometry exam results yet — awaiting optometrist.</div>
     {% endif %}
   </div>
   </div>
