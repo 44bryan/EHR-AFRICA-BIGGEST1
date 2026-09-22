@@ -224,6 +224,8 @@ class InvestigationOrder(AuditModel):
     consultation = models.ForeignKey(
         'consultations.Consultation', on_delete=models.CASCADE,
         related_name='investigation_orders',
+        null=True, blank=True,
+        help_text='Null when exam is ordered at triage (nurse-initiated, before consultation).',
     )
     patient = models.ForeignKey(
         'patients.Patient', on_delete=models.CASCADE,

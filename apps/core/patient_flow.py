@@ -173,25 +173,41 @@ def auto_route_to_lab(consultation, ordered_by):
         pass
 
 
-def auto_route_to_investigation(consultation, ordered_by):
+def auto_route_to_investigation(consultation, ordered_by, category=None):
     """
-    After an investigation order is placed, route patient to INVESTIGATION queue.
-    If patient is already at INVESTIGATION, skip.
+    After an investigation order is placed, route patient to the correct queue.
+    Optometry exams (REFRACTION, ORTHOPTICS, LOW_VISION) → optometrist's own queue.
+    All other investigations → generic INVESTIGATION queue.
     """
+    _OPTOMETRY_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
     try:
         visit = getattr(consultation, 'visit', None)
         if not visit:
             return
-        if visit.status == 'INVESTIGATION':
-            return
-        _auto_route_to_dept(
-            visit=visit,
-            visit_status='INVESTIGATION',
-            qms_service_type='INVEST',
-            dept_code='INVEST',
-            triggered_by=ordered_by,
-            notes='Auto-routed after investigation order placed.',
-        )
+
+        if category and category in _OPTOMETRY_CATS:
+            # Route to the optometrist's queue — same as consultation routing
+            if visit.status == 'REFRACTION':
+                return
+            _auto_route_to_dept(
+                visit=visit,
+                visit_status='REFRACTION',
+                qms_service_type='REFRACTION',
+                dept_code='REFRAC',
+                triggered_by=ordered_by,
+                notes=f'Auto-routed for {category.lower()} exam.',
+            )
+        else:
+            if visit.status == 'INVESTIGATION':
+                return
+            _auto_route_to_dept(
+                visit=visit,
+                visit_status='INVESTIGATION',
+                qms_service_type='INVEST',
+                dept_code='INVEST',
+                triggered_by=ordered_by,
+                notes='Auto-routed after investigation order placed.',
+            )
     except Exception:
         pass
 

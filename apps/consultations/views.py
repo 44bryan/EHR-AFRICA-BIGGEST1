@@ -463,6 +463,53 @@ def consultation_create_view(request, patient_id):
                 visit.vital_signs = _vs
                 visit.save(update_fields=['vital_signs', 'updated_at'])
 
+            # ── Mark matching InvestigationOrders as COMPLETED when refractionist saves ──
+            if _dept_code in ('REFRAC', 'PEDS_REFRAC'):
+                try:
+                    from apps.investigations.models import (
+                        InvestigationOrder, InvestigationResult, AcquisitionRecord,
+                        PaymentStatus as _InvPS, AcquisitionStatus as _AcqS, ReportStatus as _RepS,
+                    )
+                    _OPTOM_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
+                    _pending_inv = InvestigationOrder.objects.filter(
+                        patient=patient,
+                        is_deleted=False,
+                        investigation_type__category__in=_OPTOM_CATS,
+                        status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+                    ).exclude(payment_status='UNPAID')
+                    # Scope to this consultation or today's orders
+                    from django.db.models import Q as _InvQ
+                    _pending_inv = _pending_inv.filter(
+                        _InvQ(consultation=consultation) |
+                        _InvQ(consultation__isnull=True, created_at__date=timezone.localdate())
+                    )
+                    for _inv_ord in _pending_inv:
+                        # Create result from dept_data if not exists
+                        if not hasattr(_inv_ord, 'result'):
+                            InvestigationResult.objects.create(
+                                order=_inv_ord,
+                                performed_by=request.user,
+                                created_by=request.user,
+                                result_data=dept_data,
+                                interpretation='Completed via consultation form.',
+                                reported_by=request.user,
+                                reported_at=timezone.now(),
+                            )
+                        _inv_ord.status = InvestigationOrder.Status.COMPLETED
+                        _inv_ord.acquisition_status = _AcqS.ACQUIRED
+                        _inv_ord.report_status = _RepS.REPORTED
+                        _inv_ord.save(update_fields=['status', 'acquisition_status', 'report_status', 'updated_at'])
+
+                    # ── Route patient after refraction ──
+                    # Nurse-ordered: NO auto-route — optometrist manually dispatches via room/doctor routing
+                    # Doctor-ordered: auto-return to ordering doctor
+                    _has_doctor_ordered = _pending_inv.filter(consultation__isnull=False).exists()
+                    if visit and _has_doctor_ordered:
+                        from apps.core.patient_flow import check_and_autoreturn_to_doctor
+                        check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
+                except Exception:
+                    pass
+
             # ── GP pre-op clearance → write back to SurgicalBooking ────────────
             preop_clearance = dept_data.get('preop_clearance_status', '')
             if preop_clearance and visit:
@@ -966,6 +1013,42 @@ def consultation_edit_view(request, pk):
                         _vs2['va_bcva_left'] = _bcva_l2
                     _vst.vital_signs = _vs2
                     _vst.save(update_fields=['vital_signs', 'updated_at'])
+
+            # ── Mark matching InvestigationOrders as COMPLETED on edit too ──
+            if dept_data and _dept_code2 in ('REFRAC', 'PEDS_REFRAC'):
+                try:
+                    from apps.investigations.models import (
+                        InvestigationOrder, InvestigationResult,
+                        PaymentStatus as _InvPS2, AcquisitionStatus as _AcqS2, ReportStatus as _RepS2,
+                    )
+                    _OPTOM_CATS2 = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
+                    from django.db.models import Q as _InvQ2
+                    _pending2 = InvestigationOrder.objects.filter(
+                        patient=c.patient, is_deleted=False,
+                        investigation_type__category__in=_OPTOM_CATS2,
+                        status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+                    ).exclude(payment_status='UNPAID').filter(
+                        _InvQ2(consultation=c) |
+                        _InvQ2(consultation__isnull=True, created_at__date=timezone.localdate())
+                    )
+                    for _io2 in _pending2:
+                        if not hasattr(_io2, 'result'):
+                            InvestigationResult.objects.create(
+                                order=_io2, performed_by=request.user, created_by=request.user,
+                                result_data=dept_data, interpretation='Completed via consultation edit.',
+                                reported_by=request.user, reported_at=timezone.now(),
+                            )
+                        _io2.status = InvestigationOrder.Status.COMPLETED
+                        _io2.acquisition_status = _AcqS2.ACQUIRED
+                        _io2.report_status = _RepS2.REPORTED
+                        _io2.save(update_fields=['status', 'acquisition_status', 'report_status', 'updated_at'])
+                    # Doctor-ordered: auto-return to ordering doctor (nurse-ordered: manual dispatch)
+                    _has_doc_ordered2 = _pending2.filter(consultation__isnull=False).exists()
+                    if c.visit and _has_doc_ordered2:
+                        from apps.core.patient_flow import check_and_autoreturn_to_doctor
+                        check_and_autoreturn_to_doctor(c.visit, triggered_by=request.user)
+                except Exception:
+                    pass
 
             # Auto-create follow-up appointment if follow_up_date was set
             if c.follow_up_date:

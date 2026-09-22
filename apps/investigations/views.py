@@ -388,10 +388,10 @@ def investigation_order_view(request, consultation_pk):
                         'ServiceWorkOrder creation failed for investigation %s: %s', order.pk, exc,
                     )
 
-                # Auto-route to investigation queue
+                # Auto-route to correct queue (optometry → refraction queue, others → investigation queue)
                 try:
                     from apps.core.patient_flow import auto_route_to_investigation
-                    auto_route_to_investigation(consultation, ordered_by=request.user)
+                    auto_route_to_investigation(consultation, ordered_by=request.user, category=inv_type.category)
                 except Exception as exc:
                     import logging as _logging
                     _logging.getLogger('ehr.investigations').warning(
@@ -2814,7 +2814,7 @@ def multi_exam_order_view(request, consultation_pk):
             assigned_user = None
             if assigned_to_id:
                 try:
-                    assigned_user = User.objects.get(pk=int(assigned_to_id), is_active=True)
+                    assigned_user = User.objects.get(pk=assigned_to_id, is_active=True)
                 except (User.DoesNotExist, ValueError):
                     pass
 
@@ -2870,10 +2870,12 @@ def multi_exam_order_view(request, consultation_pk):
                 except Exception:
                     pass
 
-            # Auto-route to investigation queue
+            # Auto-route to correct queue based on exam category
             try:
                 from apps.core.patient_flow import auto_route_to_investigation
-                auto_route_to_investigation(consultation, ordered_by=request.user)
+                # Use first order's category — optometry mode orders are all optometry cats
+                _first_cat = created_orders[0].investigation_type.category if created_orders else None
+                auto_route_to_investigation(consultation, ordered_by=request.user, category=_first_cat)
             except Exception:
                 pass
 

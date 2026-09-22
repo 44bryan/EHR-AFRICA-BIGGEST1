@@ -614,9 +614,16 @@ def add_payment(request, invoice_id):
             except Exception:
                 pass
         # ── Route patient after full payment (same logic as patient_finalize) ──
+        # Skip if bridge already routed patient to exam queue (REFRACTION/INVESTIGATION)
         if invoice.balance_due <= 0 and invoice.patient:
-            _route_patient_after_payment(invoice, request)
-            messages.success(request, 'Payment recorded. Patient routed to triage.')
+            from apps.patients.models import Visit as _PV
+            _cur_visit = _PV.objects.filter(
+                patient=invoice.patient, visit_date__date=timezone.localdate(), is_deleted=False,
+            ).first()
+            _already_routed = _cur_visit and _cur_visit.status in ('REFRACTION', 'INVESTIGATION')
+            if not _already_routed:
+                _route_patient_after_payment(invoice, request)
+            messages.success(request, 'Payment recorded.')
             return redirect('billing:receipt', invoice_id=invoice.id)
         messages.success(request, f'Payment of {amount} FCFA recorded.')
         return redirect('billing:invoice_detail', invoice_id=invoice.id)
@@ -1945,11 +1952,43 @@ def _bridge_work_order_to_clinical(wo, user):
         except Exception:
             pass
 
+    # ── Auto-route patient after exam payment ──────────────────────────────
+    # If patient was at cashier (nurse-ordered exam), route to examiner queue
+    if wo.category == ServiceCategory.INVESTIGATION and wo.patient_id:
+        try:
+            from apps.patients.models import Visit
+            from apps.investigations.models import InvestigationOrder
+            _today = timezone.localdate()
+            _visit = Visit.objects.filter(
+                patient_id=wo.patient_id,
+                visit_date__date=_today,
+                is_deleted=False,
+                status='AT_CASHIER',
+            ).first()
+            if _visit:
+                # Find what exam category was just paid — route accordingly
+                _paid_order = InvestigationOrder.objects.filter(
+                    patient_id=wo.patient_id,
+                    payment_status='PAID',
+                    is_deleted=False,
+                    created_at__date=_today,
+                ).select_related('investigation_type').first()
+                if _paid_order:
+                    _cat = _paid_order.investigation_type.category
+                    from apps.core.patient_flow import auto_route_to_investigation
+                    # Fake a consultation-like object with visit attribute
+                    class _VisitHolder:
+                        def __init__(self, v): self.visit = v
+                    auto_route_to_investigation(_VisitHolder(_visit), ordered_by=user, category=_cat)
+        except Exception:
+            pass
+
     # ── Notify investigation/lab workstation via WebSocket ─────────────────
     try:
         from apps.core.ws_notify import notify_queue
         if wo.category == ServiceCategory.INVESTIGATION:
             notify_queue('investigation')
+            notify_queue('refraction')
         elif wo.category == ServiceCategory.LABORATORY:
             notify_queue('lab')
     except Exception:

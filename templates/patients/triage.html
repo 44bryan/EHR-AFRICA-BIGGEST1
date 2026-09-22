@@ -672,6 +672,73 @@
                 <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
                 <input type="hidden" name="assigned_doctor_id" id="assigned_doctor_id" value="">
 
+                {# ── Exam Picker Panel — appears when REFRACTION or INVEST is selected ── #}
+                <div id="examPickerPanel" class="d-none mb-3 p-3 rounded" style="background:#f0f9ff;border:1px solid #bae6fd;">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="small fw-bold" style="color:#0369a1;">
+                      <i class="bi bi-clipboard2-check me-1"></i>Select Exam(s) &amp; Examiner
+                    </span>
+                    <button type="button" class="btn btn-xs btn-link text-secondary p-0 small" onclick="clearExamPicker()">
+                      <i class="bi bi-x"></i> Clear
+                    </button>
+                  </div>
+
+                  {# Exam type checkboxes — optometry group #}
+                  <div id="examGroupOptom" class="d-none">
+                    {% for cat_label, types in exam_optom_grouped %}
+                    <div class="mb-2">
+                      <div class="text-muted small fw-semibold mb-1">{{ cat_label }}</div>
+                      {% for t in types %}
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input exam-type-cb" type="checkbox" name="exam_type_ids" value="{{ t.pk }}" id="ext_{{ t.pk }}">
+                        <label class="form-check-label small" for="ext_{{ t.pk }}">{{ t.name }}</label>
+                      </div>
+                      {% endfor %}
+                    </div>
+                    {% endfor %}
+                  </div>
+
+                  {# Exam type checkboxes — investigation group #}
+                  <div id="examGroupInvest" class="d-none">
+                    {% for cat_label, types in exam_invest_grouped %}
+                    <div class="mb-2">
+                      <div class="text-muted small fw-semibold mb-1">{{ cat_label }}</div>
+                      {% for t in types %}
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input exam-type-cb" type="checkbox" name="exam_type_ids" value="{{ t.pk }}" id="ext_{{ t.pk }}">
+                        <label class="form-check-label small" for="ext_{{ t.pk }}">{{ t.name }}</label>
+                      </div>
+                      {% endfor %}
+                    </div>
+                    {% endfor %}
+                  </div>
+
+                  {# Examiner picker #}
+                  <div class="mt-2">
+                    <label class="small fw-semibold text-muted mb-1 d-block">Assign Examiner (optional)</label>
+                    <input type="hidden" name="exam_assignee_id" id="examAssigneeId" value="">
+                    <input type="text" class="form-control form-control-sm" id="examAssigneeSearch"
+                           autocomplete="off" placeholder="Type name to search...">
+                    <div id="examAssigneeDropdown" class="list-group position-absolute shadow-sm"
+                         style="z-index:10;max-height:180px;overflow-y:auto;display:none;width:calc(100% - 2rem);">
+                      {% for staff in exam_assignees %}
+                      <button type="button" class="list-group-item list-group-item-action py-1 px-2 small exam-assignee-opt"
+                              data-id="{{ staff.pk }}" data-name="{{ staff.get_full_name }}" data-role="{{ staff.get_role_display }}">
+                        <span class="fw-semibold">{{ staff.get_full_name }}</span>
+                        <span class="text-muted ms-1">({{ staff.get_role_display }})</span>
+                      </button>
+                      {% endfor %}
+                    </div>
+                    <div id="examAssigneeBadge" class="mt-1 d-none">
+                      <span class="badge bg-info text-dark"><i class="bi bi-person-check me-1"></i><span id="examAssigneeName"></span></span>
+                    </div>
+                  </div>
+
+                  <div class="mt-2 small text-muted">
+                    <i class="bi bi-info-circle me-1"></i>Patient will be routed to <strong>cashier</strong> to pay first, then auto-routed to the examiner after payment.
+                  </div>
+                </div>
+
                 {# Doctor picker — VIP/Express direct route #}
                 <div id="doctorPickPanel" class="d-none mb-3 p-2 rounded" style="background:#fff8f0;border:1px solid #fed7aa;">
                   <div class="d-flex align-items-center justify-content-between mb-1">
@@ -990,6 +1057,30 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
       if (chk) chk.classList.remove('d-none');
     }
     if (roomPanel) { roomPanel.classList.add('d-none'); clearRoomBtns(); }
+
+    // Show exam picker for REFRACTION or INVEST
+    var examPanel = document.getElementById('examPickerPanel');
+    if (examPanel) {
+      if (serviceCode === 'REFRACTION' || serviceCode === 'INVEST') {
+        examPanel.classList.remove('d-none');
+        // Show correct exam group
+        var optomGrp = document.getElementById('examGroupOptom');
+        var investGrp = document.getElementById('examGroupInvest');
+        if (serviceCode === 'REFRACTION') {
+          optomGrp.classList.remove('d-none');
+          investGrp.classList.add('d-none');
+          // Uncheck invest checkboxes
+          investGrp.querySelectorAll('.exam-type-cb').forEach(cb => cb.checked = false);
+        } else {
+          investGrp.classList.remove('d-none');
+          optomGrp.classList.add('d-none');
+          optomGrp.querySelectorAll('.exam-type-cb').forEach(cb => cb.checked = false);
+        }
+      } else {
+        examPanel.classList.add('d-none');
+        clearExamPicker();
+      }
+    }
   }
 
   const badge = document.getElementById('routeConfirmBadge');
@@ -1475,7 +1566,57 @@ const _origOnDeptChange = onDeptChange;
 onDeptChange = function(deptId, label) {
   _origOnDeptChange(deptId, label);
   hideDoctorPicker();
+  // Hide exam picker when switching to dept
+  var ep = document.getElementById('examPickerPanel');
+  if (ep) { ep.classList.add('d-none'); clearExamPicker(); }
 };
+
+// ── Exam picker helpers ──
+function clearExamPicker() {
+  document.querySelectorAll('.exam-type-cb').forEach(cb => cb.checked = false);
+  document.getElementById('examAssigneeId').value = '';
+  document.getElementById('examAssigneeSearch').value = '';
+  var badge = document.getElementById('examAssigneeBadge');
+  if (badge) badge.classList.add('d-none');
+}
+
+// Examiner typeahead
+(function() {
+  var inp = document.getElementById('examAssigneeSearch');
+  var dd = document.getElementById('examAssigneeDropdown');
+  if (!inp || !dd) return;
+
+  inp.addEventListener('input', function() {
+    var q = this.value.toLowerCase().trim();
+    var opts = dd.querySelectorAll('.exam-assignee-opt');
+    var any = false;
+    opts.forEach(function(o) {
+      var txt = (o.dataset.name + ' ' + o.dataset.role).toLowerCase();
+      var show = q.length === 0 || txt.indexOf(q) >= 0;
+      o.style.display = show ? '' : 'none';
+      if (show) any = true;
+    });
+    dd.style.display = any ? 'block' : 'none';
+  });
+  inp.addEventListener('focus', function() {
+    if (this.value.length === 0) {
+      dd.querySelectorAll('.exam-assignee-opt').forEach(o => o.style.display = '');
+      dd.style.display = 'block';
+    }
+  });
+  document.addEventListener('click', function(e) {
+    if (!inp.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+  });
+  dd.querySelectorAll('.exam-assignee-opt').forEach(function(o) {
+    o.addEventListener('click', function() {
+      document.getElementById('examAssigneeId').value = this.dataset.id;
+      inp.value = this.dataset.name;
+      dd.style.display = 'none';
+      document.getElementById('examAssigneeName').textContent = this.dataset.name + ' (' + this.dataset.role + ')';
+      document.getElementById('examAssigneeBadge').classList.remove('d-none');
+    });
+  });
+})();
 </script>
 
 {% if cross_tier %}

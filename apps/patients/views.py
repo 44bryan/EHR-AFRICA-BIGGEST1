@@ -1169,6 +1169,27 @@ def triage_view(request, visit_number):
         {'code': 'EXP_CONSULT', 'label': 'Express Consultation Room'},
     ]
 
+    # ── Exam types + examiners for nurse-initiated exam ordering ─────────
+    from apps.investigations.models import InvestigationType, InvestigationCategory
+    from itertools import groupby as _triage_groupby
+    _OPTOMETRY_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
+    _exam_qs = InvestigationType.objects.filter(is_active=True, is_deleted=False)
+    _optom_types = _exam_qs.filter(category__in=_OPTOMETRY_CATS).order_by('category', 'name')
+    _invest_types = _exam_qs.exclude(category__in=_OPTOMETRY_CATS).order_by('category', 'name')
+    _cat_labels = dict(InvestigationCategory.choices)
+    exam_optom_grouped = []
+    for cat, items in _triage_groupby(_optom_types, key=lambda t: t.category):
+        exam_optom_grouped.append((_cat_labels.get(cat, cat), list(items)))
+    exam_invest_grouped = []
+    for cat, items in _triage_groupby(_invest_types, key=lambda t: t.category):
+        exam_invest_grouped.append((_cat_labels.get(cat, cat), list(items)))
+    from apps.accounts.models import User as _ExamUser
+    exam_assignees = list(_ExamUser.objects.filter(
+        role__in=['optometrist', 'pediatric_refractionist', 'low_vision_specialist',
+                  'orthoptist', 'investigation_technician'],
+        is_active=True,
+    ).order_by('role', 'first_name'))
+
     # ── Payment check: patient must have paid before triage starts ──────────
     from apps.billing.models import Invoice, InvoiceStatus as _IS
     visit_date = visit.visit_date.date()
@@ -1207,6 +1228,9 @@ def triage_view(request, visit_number):
                 'med_history': med_history, 'prev_visit': prev_visit,
                 'recent_consultations': [],
                 'payment_blocked': True,
+                'exam_optom_grouped': exam_optom_grouped,
+                'exam_invest_grouped': exam_invest_grouped,
+                'exam_assignees': exam_assignees,
             })
         if is_emergency and payment_blocked:
             # Flag the visit as emergency-bypassed for audit
@@ -1468,6 +1492,69 @@ def triage_view(request, visit_number):
             visit.save(update_fields=_save_fields)
             _notif_status = visit.status  # capture before any further changes
 
+            # ── Nurse-initiated exam ordering ────────────────────────────────
+            # When nurse selects exam types at triage, create InvestigationOrder(s)
+            # + ServiceWorkOrder(s) and route to CASHIER first.
+            _exam_type_ids = request.POST.getlist('exam_type_ids')
+            _exam_assignee_id = request.POST.get('exam_assignee_id', '').strip()
+            if _exam_type_ids and direct_service in ('REFRACTION', 'INVEST'):
+                try:
+                    from apps.investigations.models import (
+                        InvestigationType, InvestigationOrder, PaymentStatus as _InvPS,
+                    )
+                    from apps.billing.models import (
+                        ServiceWorkOrder, WorkOrderStatus as _WOS, ServiceCategory as _SC,
+                    )
+                    _exam_assignee = None
+                    if _exam_assignee_id:
+                        from apps.accounts.models import User as _EU
+                        _exam_assignee = _EU.objects.filter(pk=_exam_assignee_id, is_active=True).first()
+
+                    _exam_types = InvestigationType.objects.filter(pk__in=_exam_type_ids, is_active=True)
+                    _created_names = []
+                    for _et in _exam_types:
+                        _order = InvestigationOrder.objects.create(
+                            patient=visit.patient,
+                            ordered_by=request.user,
+                            created_by=request.user,
+                            investigation_type=_et,
+                            urgency='ROUTINE',
+                            eye='OU',
+                            clinical_indication=f'Nurse-ordered at triage: {nursing_notes[:100]}' if nursing_notes else 'Nurse-ordered at triage',
+                            assigned_to=_exam_assignee,
+                        )
+                        # ServiceWorkOrder for billing
+                        _qty = 1
+                        _total = _et.unit_price * _qty
+                        _price_note = f'{_et.unit_price:,.0f} FCFA'
+                        ServiceWorkOrder.objects.create(
+                            patient=visit.patient,
+                            category=_SC.INVESTIGATION,
+                            description=f'Exam: {_et.name} (OU) — {_price_note}',
+                            status=_WOS.PENDING_PAYMENT,
+                            notes=_price_note,
+                            created_by=request.user,
+                        )
+                        _created_names.append(_et.name)
+
+                    # Override routing: send to cashier FIRST, not directly to refraction
+                    direct_service = 'CASHIER'
+                    service_type = 'CASHIER'
+                    visit.status = 'AT_CASHIER'
+                    visit.save(update_fields=['status', 'updated_at'])
+                    _notif_status = 'AT_CASHIER'
+
+                    if _created_names:
+                        _exam_msg = ', '.join(_created_names)
+                        _assignee_msg = f' (assigned to {_exam_assignee.get_full_name()})' if _exam_assignee else ''
+                        messages.info(
+                            request,
+                            f'Exam(s) ordered: {_exam_msg}{_assignee_msg}. Patient routed to cashier for payment.'
+                        )
+                except Exception as _exam_exc:
+                    import logging as _log
+                    _log.getLogger('ehr.triage').error('Nurse exam order failed: %s', _exam_exc, exc_info=True)
+
             # ── QMS Integration: flexible routing ─────────────────────────────
             # Priority 1: nurse picked a direct service (REFRACTION, LAB, etc.)
             # Priority 2: dept has a known service type mapping
@@ -1630,6 +1717,10 @@ def triage_view(request, visit_number):
         # Cross-tier audit
         'cross_tier': _cross_tier,
         'nurse_tier_display': request.user.get_patient_tier_display(),
+        # Exam ordering at triage
+        'exam_optom_grouped': exam_optom_grouped,
+        'exam_invest_grouped': exam_invest_grouped,
+        'exam_assignees': exam_assignees,
     })
 
 
