@@ -1981,7 +1981,7 @@ def _bridge_work_order_to_clinical(wo, user):
     # ── Auto-route patient after exam payment ──────────────────────────────
     # After cashier pays for investigation/exam, route patient to the examiner queue.
     # Works for both doctor-ordered and nurse-ordered exams.
-    # Only routes when ALL today's investigation orders for this patient are paid.
+    # Routes when ALL today's investigation orders for this patient are paid.
     if wo.category == ServiceCategory.INVESTIGATION and wo.patient_id:
         try:
             from apps.patients.models import Visit
@@ -1991,10 +1991,11 @@ def _bridge_work_order_to_clinical(wo, user):
                 patient_id=wo.patient_id,
                 visit_date__date=_today,
                 is_deleted=False,
-                status='AT_CASHIER',
+            ).exclude(
+                status__in=['COMPLETED', 'DISCHARGED', 'CANCELLED']
             ).first()
-            if _visit:
-                # Check if any unpaid orders remain — only route when all are paid
+            if _visit and _visit.status not in ('REFRACTION', 'INVESTIGATION'):
+                # Only route if not already at examiner and all orders are paid
                 _still_unpaid = InvestigationOrder.objects.filter(
                     patient_id=wo.patient_id,
                     payment_status=_BridgePS.UNPAID,
@@ -2002,10 +2003,10 @@ def _bridge_work_order_to_clinical(wo, user):
                     created_at__date=_today,
                 ).exists()
                 if not _still_unpaid:
-                    # Find the paid order to determine exam category for routing
                     _paid_order = InvestigationOrder.objects.filter(
                         patient_id=wo.patient_id,
                         payment_status=_BridgePS.PAID,
+                        status='ORDERED',
                         is_deleted=False,
                         created_at__date=_today,
                     ).select_related('investigation_type').first()
