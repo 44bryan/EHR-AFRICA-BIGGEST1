@@ -264,6 +264,24 @@ def consultation_create_view(request, patient_id):
         is_deleted=False,
     ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
 
+    # ── Determine form dept_code: if patient has a pending exam order, use that exam's
+    # department code so the correct form is shown (e.g. LOW_VIS form for low vision order) ──
+    _exam_dept_override = ''
+    _EXAM_CAT_TO_DEPT = {
+        'REFRACTION': 'REFRAC',
+        'LOW_VISION': 'LOW_VIS',
+        'ORTHOPTICS': 'ORTHO',
+    }
+    _pending_exam = InvestigationOrder.objects.filter(
+        patient=patient,
+        is_deleted=False,
+        investigation_type__category__in=_EXAM_CAT_TO_DEPT.keys(),
+        status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+        created_at__date=timezone.localdate(),
+    ).exclude(payment_status='UNPAID').select_related('investigation_type').first()
+    if _pending_exam:
+        _exam_dept_override = _EXAM_CAT_TO_DEPT.get(_pending_exam.investigation_type.category, '')
+
     if request.method == 'POST':
         _dept = request.user.department
         if _dept is None:
@@ -271,6 +289,12 @@ def consultation_create_view(request, patient_id):
             _role_code = request.user.role_department_code
             if _role_code:
                 _dept = _Dept.objects.filter(code=_role_code).first()
+        # Override department if patient has a pending exam order for a specific dept
+        if _exam_dept_override:
+            from apps.departments.models import Department as _Dept2
+            _override_dept = _Dept2.objects.filter(code=_exam_dept_override, is_active=True).first()
+            if _override_dept:
+                _dept = _override_dept
 
         # ── Draft mode: save minimal record so doctor can order tests first ──
         if request.POST.get('save_mode') == 'draft':
@@ -770,6 +794,7 @@ def consultation_create_view(request, patient_id):
         'patient_medications': patient_medications,
         'patient_allergies': patient_allergies,
         'can_do_refraction': getattr(request.user, 'can_do_refraction', False),
+        'exam_dept_override': _exam_dept_override,
         'latest_diagnoses_re': latest_diagnoses_re[:5],
         'latest_diagnoses_le': latest_diagnoses_le[:5],
         'latest_diagnoses_be': latest_diagnoses_be[:5],
