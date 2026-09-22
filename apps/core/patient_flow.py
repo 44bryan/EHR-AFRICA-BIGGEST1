@@ -12,6 +12,7 @@ _STATUS_TO_TOKEN_TYPES = {
     'TRIAGE':           ['PARAMETERS', 'PARAMS_VIP'],
     'WAITING':          ['GENERAL', 'EXP_CONSULT', 'VIP_CONSULT', 'GEN_PHYS'],
     'IN_CONSULTATION':  ['GENERAL', 'EXP_CONSULT', 'VIP_CONSULT', 'GEN_PHYS'],
+    'AT_CASHIER':       ['CASHIER'],
     'REFRACTION':       ['REFRACTION'],
     'AT_RETINA':        ['RETINA'],
     'AT_GLAUCOMA':      ['GLAUCOMA'],
@@ -227,7 +228,7 @@ def check_and_autoreturn_to_doctor(visit, triggered_by=None):
     try:
         if not visit:
             return
-        if visit.status not in ('LABORATORY', 'INVESTIGATION'):
+        if visit.status not in ('LABORATORY', 'INVESTIGATION', 'REFRACTION'):
             return
 
         from apps.laboratory.models import LabOrder, LabResult

@@ -1759,7 +1759,33 @@ def patient_finalize(request, patient_id):
         }, status=400)
 
     _try_open_consultation_window(invoice)
-    _route_patient_after_payment(invoice, request)
+
+    # ── Payment bridge: auto-complete work orders + mark investigation/lab PAID ──
+    try:
+        _now = timezone.now()
+        _pending_wos = ServiceWorkOrder.objects.filter(
+            patient=patient,
+            status__in=[WorkOrderStatus.PENDING_PAYMENT, WorkOrderStatus.PENDING],
+            is_deleted=False,
+            created_at__date=today,
+        )
+        for _wo in _pending_wos:
+            _wo.status = WorkOrderStatus.DONE
+            _wo.completed_at = _now
+            _wo.completed_by = request.user
+            _wo.save(update_fields=['status', 'completed_at', 'completed_by', 'updated_at'])
+            _bridge_work_order_to_clinical(_wo, request.user)
+    except Exception:
+        pass
+
+    # Check if bridge already routed patient to exam queue (REFRACTION/INVESTIGATION)
+    from apps.patients.models import Visit as _FV
+    _fin_visit = _FV.objects.filter(
+        patient=patient, visit_date__date=today, is_deleted=False,
+    ).first()
+    _already_routed = _fin_visit and _fin_visit.status in ('REFRACTION', 'INVESTIGATION')
+    if not _already_routed:
+        _route_patient_after_payment(invoice, request)
 
     redirect_url = reverse('billing:receipt', kwargs={'invoice_id': str(invoice.id)})
     return JsonResponse({'success': True, 'redirect_url': redirect_url})
@@ -1953,11 +1979,13 @@ def _bridge_work_order_to_clinical(wo, user):
             pass
 
     # ── Auto-route patient after exam payment ──────────────────────────────
-    # If patient was at cashier (nurse-ordered exam), route to examiner queue
+    # After cashier pays for investigation/exam, route patient to the examiner queue.
+    # Works for both doctor-ordered and nurse-ordered exams.
+    # Only routes when ALL today's investigation orders for this patient are paid.
     if wo.category == ServiceCategory.INVESTIGATION and wo.patient_id:
         try:
             from apps.patients.models import Visit
-            from apps.investigations.models import InvestigationOrder
+            from apps.investigations.models import InvestigationOrder, PaymentStatus as _BridgePS
             _today = timezone.localdate()
             _visit = Visit.objects.filter(
                 patient_id=wo.patient_id,
@@ -1966,20 +1994,28 @@ def _bridge_work_order_to_clinical(wo, user):
                 status='AT_CASHIER',
             ).first()
             if _visit:
-                # Find what exam category was just paid — route accordingly
-                _paid_order = InvestigationOrder.objects.filter(
+                # Check if any unpaid orders remain — only route when all are paid
+                _still_unpaid = InvestigationOrder.objects.filter(
                     patient_id=wo.patient_id,
-                    payment_status='PAID',
+                    payment_status=_BridgePS.UNPAID,
                     is_deleted=False,
                     created_at__date=_today,
-                ).select_related('investigation_type').first()
-                if _paid_order:
-                    _cat = _paid_order.investigation_type.category
-                    from apps.core.patient_flow import auto_route_to_investigation
-                    # Fake a consultation-like object with visit attribute
-                    class _VisitHolder:
-                        def __init__(self, v): self.visit = v
-                    auto_route_to_investigation(_VisitHolder(_visit), ordered_by=user, category=_cat)
+                ).exists()
+                if not _still_unpaid:
+                    # Find the paid order to determine exam category for routing
+                    _paid_order = InvestigationOrder.objects.filter(
+                        patient_id=wo.patient_id,
+                        payment_status=_BridgePS.PAID,
+                        is_deleted=False,
+                        created_at__date=_today,
+                    ).select_related('investigation_type').first()
+                    if _paid_order:
+                        _cat = _paid_order.investigation_type.category
+                        from apps.core.patient_flow import auto_route_to_investigation
+
+                        class _VisitHolder:
+                            def __init__(self, v): self.visit = v
+                        auto_route_to_investigation(_VisitHolder(_visit), ordered_by=user, category=_cat)
         except Exception:
             pass
 

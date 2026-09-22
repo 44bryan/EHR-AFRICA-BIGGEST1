@@ -388,20 +388,35 @@ def investigation_order_view(request, consultation_pk):
                         'ServiceWorkOrder creation failed for investigation %s: %s', order.pk, exc,
                     )
 
-                # Auto-route to correct queue (optometry → refraction queue, others → investigation queue)
+                # Route: waived → direct to examiner, not waived → cashier first
                 try:
-                    from apps.core.patient_flow import auto_route_to_investigation
-                    auto_route_to_investigation(consultation, ordered_by=request.user, category=inv_type.category)
+                    if payment_waived:
+                        from apps.core.patient_flow import auto_route_to_investigation
+                        auto_route_to_investigation(consultation, ordered_by=request.user, category=inv_type.category)
+                    else:
+                        # Route to cashier — after payment, billing bridge routes to examiner
+                        from apps.core.patient_flow import _auto_route_to_dept
+                        visit = getattr(consultation, 'visit', None)
+                        if visit and visit.status not in ('AT_CASHIER', 'BILLING', 'COMPLETED', 'DISCHARGED'):
+                            _auto_route_to_dept(
+                                visit=visit,
+                                visit_status='AT_CASHIER',
+                                qms_service_type='CASHIER',
+                                dept_code='CASHIER',
+                                triggered_by=request.user,
+                                notes=f'Routed to cashier for {inv_type.name} payment.',
+                            )
                 except Exception as exc:
                     import logging as _logging
                     _logging.getLogger('ehr.investigations').warning(
-                        'Auto-route to investigation failed for order %s: %s', order.pk, exc,
+                        'Auto-route after investigation order failed for order %s: %s', order.pk, exc,
                     )
 
+                _route_msg = 'cashier for payment' if not payment_waived else 'examiner queue'
                 messages.success(
                     request,
                     f'Investigation ordered: {inv_type.name} ({order.get_eye_display()}). '
-                    'Patient has been routed to the investigation queue.'
+                    f'Patient routed to {_route_msg}.'
                 )
                 return redirect('consultations:detail', pk=consultation_pk)
     else:
@@ -2870,20 +2885,33 @@ def multi_exam_order_view(request, consultation_pk):
                 except Exception:
                     pass
 
-            # Auto-route to correct queue based on exam category
+            # Route: waived → direct to examiner, not waived → cashier first
             try:
-                from apps.core.patient_flow import auto_route_to_investigation
-                # Use first order's category — optometry mode orders are all optometry cats
                 _first_cat = created_orders[0].investigation_type.category if created_orders else None
-                auto_route_to_investigation(consultation, ordered_by=request.user, category=_first_cat)
+                if payment_waived:
+                    from apps.core.patient_flow import auto_route_to_investigation
+                    auto_route_to_investigation(consultation, ordered_by=request.user, category=_first_cat)
+                else:
+                    from apps.core.patient_flow import _auto_route_to_dept
+                    _visit = getattr(consultation, 'visit', None)
+                    if _visit and _visit.status not in ('AT_CASHIER', 'BILLING', 'COMPLETED', 'DISCHARGED'):
+                        _auto_route_to_dept(
+                            visit=_visit,
+                            visit_status='AT_CASHIER',
+                            qms_service_type='CASHIER',
+                            dept_code='CASHIER',
+                            triggered_by=request.user,
+                            notes=f'Routed to cashier for exam payment ({len(created_orders)} exam(s)).',
+                        )
             except Exception:
                 pass
 
             names = ', '.join(o.investigation_type.name for o in created_orders)
+            _route_msg = 'cashier for payment' if not payment_waived else ('optometry' if is_optometry else 'investigation') + ' queue'
             messages.success(
                 request,
                 f'{len(created_orders)} exam(s) ordered: {names}. '
-                f'Patient routed to {"optometry" if is_optometry else "investigation"} queue.'
+                f'Patient routed to {_route_msg}.'
             )
             return redirect('consultations:detail', pk=consultation_pk)
 
