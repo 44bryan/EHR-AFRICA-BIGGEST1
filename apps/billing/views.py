@@ -601,7 +601,7 @@ def add_payment(request, invoice_id):
                 _now = timezone.now()
                 _pending_wos = ServiceWorkOrder.objects.filter(
                     patient=invoice.patient,
-                    status=WorkOrderStatus.PENDING_PAYMENT,
+                    status__in=[WorkOrderStatus.PENDING_PAYMENT, WorkOrderStatus.PENDING],
                     is_deleted=False,
                     created_at__date=timezone.localdate(),
                 )
@@ -1444,7 +1444,7 @@ def pos_record_payment(request, invoice_id):
             _now = timezone.now()
             pending_wos = ServiceWorkOrder.objects.filter(
                 patient=invoice.patient,
-                status=WorkOrderStatus.PENDING_PAYMENT,
+                status__in=[WorkOrderStatus.PENDING_PAYMENT, WorkOrderStatus.PENDING],
                 is_deleted=False,
                 created_at__date=timezone.localdate(),
             )
@@ -1888,16 +1888,16 @@ def _bridge_work_order_to_clinical(wo, user):
     now = timezone.now()
 
     # ── Investigation orders ──────────────────────────────────────────────
-    if wo.category == ServiceCategory.INVESTIGATION and wo.consultation_id and wo.patient_id:
+    if wo.category == ServiceCategory.INVESTIGATION and wo.patient_id:
         try:
             from apps.investigations.models import InvestigationOrder, PaymentStatus as InvPS
-            # Match: same patient + consultation + still UNPAID
-            InvestigationOrder.objects.filter(
-                consultation_id=wo.consultation_id,
-                patient_id=wo.patient_id,
-                payment_status=InvPS.UNPAID,
-                is_deleted=False,
-            ).update(
+            _inv_filter = {'patient_id': wo.patient_id, 'payment_status': InvPS.UNPAID, 'is_deleted': False}
+            if wo.consultation_id:
+                _inv_filter['consultation_id'] = wo.consultation_id
+            else:
+                # No consultation link — match today's unpaid orders for this patient
+                _inv_filter['created_at__date'] = now.date()
+            InvestigationOrder.objects.filter(**_inv_filter).update(
                 payment_status=InvPS.PAID,
                 payment_authorized_by=user,
                 payment_authorized_at=now,
