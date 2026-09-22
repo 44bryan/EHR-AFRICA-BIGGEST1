@@ -31,11 +31,9 @@
                   <div class="col-md-6 col-lg-4">
                     <div class="form-check">
                       <input class="form-check-input exam-check" type="checkbox" name="investigation_types"
-                             value="{{ t.pk }}" id="type_{{ t.pk }}" data-category="{{ cat_code }}"
-                             data-price="{{ t.unit_price|floatformat:0 }}">
+                             value="{{ t.pk }}" id="type_{{ t.pk }}" data-category="{{ cat_code }}">
                       <label class="form-check-label small" for="type_{{ t.pk }}">
                         {{ t.name }}
-                        {% if t.unit_price %}<span class="text-muted">({{ t.unit_price|floatformat:0 }} FCFA)</span>{% endif %}
                       </label>
                     </div>
                   </div>
@@ -47,17 +45,23 @@
             <div id="selectedCount" class="text-muted small mt-1"></div>
           </div>
 
-          {# ── Assignee (optometry only) ── #}
+          {# ── Assignee (optometry only) — searchable ── #}
           {% if is_optometry and assignee_list %}
-          <div class="mb-3">
+          <div class="mb-3 position-relative">
             <label class="form-label fw-semibold">Assign To <span class="text-danger">*</span></label>
-            <select name="assigned_to" class="form-select" required>
-              <option value="">— Select examiner —</option>
+            <input type="hidden" name="assigned_to" id="assignedToId" required>
+            <input type="text" class="form-control" id="assigneeSearch" autocomplete="off"
+                   placeholder="Type examiner name to search...">
+            <div id="assigneeDropdown" class="list-group position-absolute w-100 shadow-sm" style="z-index:10;max-height:220px;overflow-y:auto;display:none;">
               {% for staff in assignee_list %}
-              <option value="{{ staff.pk }}">{{ staff.get_full_name }} ({{ staff.get_role_display }})</option>
+              <button type="button" class="list-group-item list-group-item-action py-1 px-2 small assignee-option"
+                      data-id="{{ staff.pk }}" data-name="{{ staff.get_full_name }}" data-role="{{ staff.get_role_display }}">
+                <span class="fw-semibold">{{ staff.get_full_name }}</span>
+                <span class="text-muted ms-1">({{ staff.get_role_display }})</span>
+              </button>
               {% endfor %}
-            </select>
-            <div class="text-muted small mt-1">Select the specific optometrist/orthoptist to perform these exams.</div>
+            </div>
+            <div class="text-muted small mt-1">Type to search or scroll to select the examiner.</div>
           </div>
           {% endif %}
 
@@ -107,15 +111,6 @@
             </div>
           </div>
 
-          {# ── Total estimate ── #}
-          <div class="card border-info border-0 bg-info bg-opacity-10 mb-4 p-3" id="totalEstimate" style="display:none;">
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="fw-semibold"><i class="bi bi-calculator me-1"></i>Estimated Total:</span>
-              <span class="fw-bold fs-5 text-info" id="totalAmount">0 FCFA</span>
-            </div>
-            <div class="text-muted small" id="examSummary"></div>
-          </div>
-
           <div class="d-flex gap-2 justify-content-end">
             <a href="{% url 'consultations:detail' pk=consultation.pk %}" class="btn btn-secondary">Cancel</a>
             <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Order <span id="orderCount">Exams</span></button>
@@ -129,36 +124,55 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   var checks = document.querySelectorAll('.exam-check');
-  var totalEl = document.getElementById('totalEstimate');
-  var amountEl = document.getElementById('totalAmount');
-  var summaryEl = document.getElementById('examSummary');
   var countEl = document.getElementById('selectedCount');
   var btnCount = document.getElementById('orderCount');
 
-  function updateTotals() {
-    var total = 0, count = 0, names = [];
-    checks.forEach(function(cb) {
-      if (cb.checked) {
-        count++;
-        var price = parseInt(cb.dataset.price || '0', 10);
-        total += price;
-        names.push(cb.nextElementSibling.textContent.trim().split('(')[0].trim());
-      }
-    });
+  function updateCount() {
+    var count = 0;
+    checks.forEach(function(cb) { if (cb.checked) count++; });
     if (count > 0) {
-      totalEl.style.display = 'block';
-      amountEl.textContent = total.toLocaleString() + ' FCFA';
-      summaryEl.textContent = count + ' exam(s): ' + names.join(', ');
       countEl.textContent = count + ' exam(s) selected';
       btnCount.textContent = count + ' Exam' + (count > 1 ? 's' : '');
     } else {
-      totalEl.style.display = 'none';
       countEl.textContent = '';
       btnCount.textContent = 'Exams';
     }
   }
 
-  checks.forEach(function(cb) { cb.addEventListener('change', updateTotals); });
+  checks.forEach(function(cb) { cb.addEventListener('change', updateCount); });
+
+  // ── Assignee typeahead search ──
+  var searchInput = document.getElementById('assigneeSearch');
+  var dropdown = document.getElementById('assigneeDropdown');
+  var hiddenId = document.getElementById('assignedToId');
+  if (searchInput && dropdown) {
+    var options = dropdown.querySelectorAll('.assignee-option');
+
+    searchInput.addEventListener('focus', function() { dropdown.style.display = 'block'; filterOptions(); });
+    searchInput.addEventListener('input', filterOptions);
+    document.addEventListener('click', function(e) {
+      if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
+    });
+
+    function filterOptions() {
+      var q = searchInput.value.toLowerCase().trim();
+      var visible = 0;
+      options.forEach(function(opt) {
+        var match = opt.dataset.name.toLowerCase().includes(q) || opt.dataset.role.toLowerCase().includes(q);
+        opt.style.display = match ? '' : 'none';
+        if (match) visible++;
+      });
+      dropdown.style.display = visible > 0 ? 'block' : 'none';
+    }
+
+    options.forEach(function(opt) {
+      opt.addEventListener('click', function() {
+        hiddenId.value = opt.dataset.id;
+        searchInput.value = opt.dataset.name + ' (' + opt.dataset.role + ')';
+        dropdown.style.display = 'none';
+      });
+    });
+  }
 });
 </script>
 {% endblock %}
