@@ -3029,22 +3029,12 @@ def structured_result_view(request, pk):
 
             # Check auto-return to doctor (all exams done?)
             try:
-                _visit = None
-                if order.consultation:
-                    _visit = getattr(order.consultation, 'visit', None)
-                if not _visit:
-                    # Nurse-ordered or standalone order — find active visit for patient today
-                    from apps.patients.models import Visit
-                    _visit = Visit.objects.filter(
-                        patient=order.patient,
-                        visit_date__date=timezone.localdate(),
-                        is_deleted=False,
-                    ).exclude(status__in=['COMPLETED', 'DISCHARGED', 'CANCELLED']).first()
-                if _visit and order.consultation:
-                    # Doctor-ordered exam: auto-return to doctor when all exams done
+                visit = getattr(consultation, 'visit', None) if hasattr(order, 'consultation') else None
+                if not visit and order.consultation:
+                    visit = getattr(order.consultation, 'visit', None)
+                if visit:
                     from apps.core.patient_flow import check_and_autoreturn_to_doctor
-                    check_and_autoreturn_to_doctor(_visit, triggered_by=request.user)
-                # Nurse-ordered (no consultation): optometrist manually dispatches — no auto-return
+                    check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
             except Exception:
                 pass
 

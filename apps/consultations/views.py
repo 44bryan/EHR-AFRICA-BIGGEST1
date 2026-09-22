@@ -14,52 +14,6 @@ from .forms import ConsultationForm, ConsultationNoteForm, DiagnosisForm
 from apps.core.decorators import clinical_staff_required, doctor_required, json_error_handler
 from apps.core.context_processors import qms_active as _qms_active
 
-
-def _get_optometry_results(visit):
-    """
-    Gather optometry exam results from InvestigationResult.result_data for a visit.
-    Returns a dict with keys grouped by exam type code for easy template access:
-      - subj_*  : Subjective/Dry refraction (SUBJ-REF / DRY-REF)
-      - auto_*  : Autorefraction (AUTOREF)
-      - cyclo_* : Cycloplegic refraction (CYCLO-REF)
-      - lens_*  : Lensometry / patient's glasses (LENSOMETRY)
-      - Also stores raw per-code dicts: results_by_code['SUBJ-REF'] = {sph_od: ...}
-    """
-    if not visit:
-        return {}
-    from apps.investigations.models import InvestigationResult
-    _OPTOM_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
-    _visit_date = visit.visit_date.date() if hasattr(visit.visit_date, 'date') else visit.visit_date
-    results = InvestigationResult.objects.filter(
-        order__patient=visit.patient,
-        order__is_deleted=False,
-        order__investigation_type__category__in=_OPTOM_CATS,
-        order__created_at__date=_visit_date,
-    ).select_related('order__investigation_type').order_by('created_at')
-
-    merged = {}
-    # Prefix mapping: investigation type code → prefix for merged dict
-    _PREFIX = {
-        'SUBJ-REF': 'sub_', 'DRY-REF': 'sub_',
-        'AUTOREF': 'auto_',
-        'CYCLO-REF': 'cyclo_',
-        'LENSOMETRY': 'lens_',
-        'CL-ASSESS': 'cl_',
-    }
-    for r in results:
-        if not r.result_data:
-            continue
-        code = r.order.investigation_type.code
-        prefix = _PREFIX.get(code, f'{code.lower().replace("-", "_")}_')
-        for k, v in r.result_data.items():
-            if v is not None and v != '':
-                merged[f'{prefix}{k}'] = v
-                # Also store interpretation/notes without prefix for general display
-                if k in ('interpretation', 'notes'):
-                    merged[k] = v
-    return merged
-
-
 # Maps department code → QMS service types handled by that dept
 _DEPT_TO_SERVICE_TYPES = {
     'GEN_OPH':    ['GENERAL', 'VIP_CONSULT', 'EXP_CONSULT', 'INSUR_CONSULT'],
@@ -294,10 +248,14 @@ def consultation_create_view(request, patient_id):
     # Store most recent result for "recorded by" display
     investigation_consult = recent_results.first() if recent_results else None
 
-    # Optometry exam results for THIS visit — from InvestigationResult.result_data
-    # (optometrists now fill structured exam forms, not consultations)
-    refraction_data = _get_optometry_results(visit)
-    refraction_consult = None  # Legacy compat — no longer a consultation
+    # Refractionist consultation for THIS visit — used by Gen Oph form to show
+    # VA and refraction data as read-only (refractionist's work, not the doctor's)
+    refraction_consult = Consultation.objects.filter(
+        visit=visit,
+        is_deleted=False,
+        department__code__in=['REFRAC', 'PEDS_REFRAC'],
+    ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
+    refraction_data = refraction_consult.department_specific_data if refraction_consult else {}
 
     # Most recent consultation from THIS visit by another doctor — used to pre-fill
     # history fields so referred specialists don't have to re-enter what was already taken
@@ -938,8 +896,15 @@ def consultation_detail_view(request, pk):
         except Exception:
             pass
 
-    # ── Optometry exam results from InvestigationResult.result_data ──
-    _refraction_data = _get_optometry_results(consultation.visit)
+    # ── Refraction data from this visit (optometrist's consultation) ──
+    _refraction_data = {}
+    if consultation.visit:
+        _refrac_consult = Consultation.objects.filter(
+            visit=consultation.visit, is_deleted=False,
+            department__code__in=['REFRAC', 'PEDS_REFRAC', 'LOW_VIS', 'ORTHO'],
+        ).order_by('-consultation_date').first()
+        if _refrac_consult and _refrac_consult.department_specific_data:
+            _refraction_data = _refrac_consult.department_specific_data
 
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
@@ -1189,9 +1154,13 @@ def consultation_edit_view(request, pk):
         ).select_related('investigation_type', 'result').order_by('-created_at')
     )
 
-    # Optometry exam results from InvestigationResult.result_data
-    refraction_data = _get_optometry_results(consultation.visit)
-    refraction_consult = None  # Legacy compat
+    # Most recent refractionist consultation for this patient — shown as read-only grey section
+    refraction_consult = Consultation.objects.filter(
+        patient=consultation.patient,
+        is_deleted=False,
+        department__code__in=['REFRAC', 'PEDS_REFRAC'],
+    ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
+    refraction_data = refraction_consult.department_specific_data if refraction_consult else {}
 
     # Latest diagnoses (RE / LE) — shown prominently near triage vitals bar
     from apps.consultations.models import ConsultationDiagnosis

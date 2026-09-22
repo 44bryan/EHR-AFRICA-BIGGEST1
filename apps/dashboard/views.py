@@ -549,10 +549,6 @@ def home_view(request):
         })
         return render(request, 'dashboard/medical_director.html', ctx)
 
-    # ── Optometrist / Orthoptist → Investigation Workstation (exam forms) ──
-    if user.role in ('optometrist', 'pediatric_refractionist', 'low_vision_specialist', 'orthoptist'):
-        return redirect('investigations:workstation')
-
     # ── Doctors (all specialist types) ───────────────────────────────────
     if user.is_doctor:
         # ── Use QMS tokens as source of truth (same as workstation) when QMS is on ──
