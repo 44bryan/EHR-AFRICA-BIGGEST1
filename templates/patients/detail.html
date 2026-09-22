@@ -201,13 +201,6 @@
           <span class="pt-pill" style="background:#dc2626;color:#fff;border:none;"><i class="bi bi-x-circle-fill me-1"></i>OUTSTANDING</span>
         {% endif %}
       </div>
-      {% if last_dx_summary %}
-      <div class="mt-2" style="font-size:.78rem;">
-        <i class="bi bi-eye-fill me-1" style="color:#fca5a5;"></i>
-        <span class="fw-bold" style="color:#93c5fd;">Last Dx:</span>
-        <span class="pt-pill" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#e2e8f0;font-size:.75rem;">{{ last_dx_summary }}</span>
-      </div>
-      {% endif %}
     </div>
     <div class="d-flex gap-2 flex-wrap">
       {% if pr.can_new_consultation %}
@@ -282,28 +275,6 @@
   {% endwith %}
 </div>
 
-{# ── Diagnosis Quick View — latest diagnoses without scrolling ── #}
-{% with latest_consult=consultations.0 %}
-{% if latest_consult %}
-{% with diags=latest_consult.consultation_diagnoses.all dx_sum=latest_consult.diagnosis_summary %}
-{% if diags or dx_sum %}
-<div class="d-flex flex-wrap align-items-center gap-2 mb-3 px-3 py-2 rounded-3" style="background:#f0f4ff;border-left:4px solid #3b82f6;">
-  <span class="fw-bold small text-primary"><i class="bi bi-clipboard2-pulse me-1"></i>Latest Dx:</span>
-  {% if diags %}
-  {% for cd in diags %}
-  <span class="{% if cd.is_primary %}fw-bold text-danger{% else %}fw-semibold text-dark{% endif %}" style="font-size:.82rem;">
-    {% if cd.is_primary %}<i class="bi bi-star-fill" style="font-size:.55rem;color:#dc3545;"></i> {% endif %}{{ cd.diagnosis.name }}{% if cd.laterality and cd.laterality != 'NA' %} <span class="text-muted" style="font-size:.65rem;">({{ cd.laterality }})</span>{% endif %}{% if not forloop.last %}<span class="text-muted mx-1">·</span>{% endif %}
-  </span>
-  {% endfor %}
-  {% elif dx_sum %}
-  <span class="fw-semibold text-dark" style="font-size:.82rem;">{{ dx_sum }}</span>
-  {% endif %}
-  <span class="text-muted ms-auto" style="font-size:.65rem;">{{ latest_consult.consultation_date|date:"d M Y" }} · Dr. {{ latest_consult.consulting_doctor.last_name|default:"" }}</span>
-</div>
-{% endif %}
-{% endwith %}
-{% endif %}
-{% endwith %}
 
 {# ═══ TWO-COLUMN LAYOUT ═══════════════════════════════════════════════ #}
 <div class="row g-3 align-items-start">
@@ -554,24 +525,20 @@
             <div class="mb-2 small"><span class="text-muted fw-semibold">Chief Complaint: </span>{{ consult.presenting_complaint }}</div>
             {% endif %}
 
-            {% with diags=consult.consultation_diagnoses.all %}
-            {% if diags %}
-            <div class="mb-2">
-              <span class="text-muted small fw-semibold">Diagnosis: </span>
-              {% for cd in diags %}
-              <span class="diag-badge">
-                {% if cd.laterality == 'RE' %}<span style="color:#2563eb;font-weight:700;">RE</span>
-                {% elif cd.laterality == 'LE' %}<span style="color:#dc2626;font-weight:700;">LE</span>
-                {% elif cd.laterality == 'BE' %}<span style="color:#7c3aed;font-weight:700;">BE</span>
-                {% endif %}
-                {{ cd.diagnosis.description|truncatechars:60 }}
-              </span>
-              {% endfor %}
-            </div>
-            {% elif consult.diagnosis_summary %}
-            <div class="mb-2">
-              <span class="text-muted small fw-semibold">Diagnosis: </span>
-              <span class="diag-badge">{{ consult.diagnosis_summary }}</span>
+            {% with dsd=consult.department_specific_data %}
+            {% if consult.diagnosis_re or consult.diagnosis_le or dsd.diagnosis_primary or dsd.corneal_diagnosis or dsd.neuro_diagnosis or dsd.peds_diagnosis or consult.diagnosis_summary %}
+            <div class="mb-2 px-2 py-1 rounded" style="background:#f0f9ff;border:1px solid #bfdbfe;font-size:.82rem;">
+              <div class="text-muted fw-bold" style="font-size:.68rem;letter-spacing:.04em;margin-bottom:2px;">DIAGNOSIS</div>
+              {% if consult.diagnosis_re %}<div><strong style="color:#2563eb;">RE:</strong> <span class="fw-semibold">{{ consult.diagnosis_re }}</span></div>{% endif %}
+              {% if consult.diagnosis_le %}<div><strong style="color:#dc2626;">LE:</strong> <span class="fw-semibold">{{ consult.diagnosis_le }}</span></div>{% endif %}
+              {% if dsd.diagnosis_primary %}<div><strong class="text-dark">Primary:</strong> <span class="fw-semibold">{{ dsd.diagnosis_primary }}</span></div>{% endif %}
+              {% if dsd.diagnosis_secondary %}<div><strong class="text-muted">Secondary:</strong> <span class="fw-semibold">{{ dsd.diagnosis_secondary }}</span></div>{% endif %}
+              {% if dsd.corneal_diagnosis %}<div><span class="fw-semibold">{{ dsd.corneal_diagnosis }}</span></div>{% endif %}
+              {% if dsd.neuro_diagnosis %}<div><span class="fw-semibold">{{ dsd.neuro_diagnosis }}</span></div>{% endif %}
+              {% if dsd.peds_diagnosis %}<div><span class="fw-semibold">{{ dsd.peds_diagnosis }}</span></div>{% endif %}
+              {% if not consult.diagnosis_re and not consult.diagnosis_le and not dsd.diagnosis_primary and not dsd.corneal_diagnosis and not dsd.neuro_diagnosis and not dsd.peds_diagnosis and consult.diagnosis_summary %}
+              <span class="fw-semibold">{{ consult.diagnosis_summary }}</span>
+              {% endif %}
             </div>
             {% endif %}
             {% endwith %}
@@ -998,24 +965,20 @@ function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[i
             {% endif %}
 
             {# Diagnoses #}
-            {% with diags=consult.consultation_diagnoses.all %}
-            {% if diags %}
-            <div class="mb-2">
-              <span class="text-muted small fw-semibold">Diagnosis: </span>
-              {% for cd in diags %}
-              <span class="diag-badge">
-                {% if cd.laterality == 'RE' %}<span style="color:#2563eb;font-weight:700;">RE</span>
-                {% elif cd.laterality == 'LE' %}<span style="color:#dc2626;font-weight:700;">LE</span>
-                {% elif cd.laterality == 'BE' %}<span style="color:#7c3aed;font-weight:700;">BE</span>
-                {% endif %}
-                {{ cd.diagnosis.description|truncatechars:60 }}
-              </span>
-              {% endfor %}
-            </div>
-            {% elif consult.diagnosis_summary %}
-            <div class="mb-2">
-              <span class="text-muted small fw-semibold">Diagnosis: </span>
-              <span class="diag-badge">{{ consult.diagnosis_summary }}</span>
+            {% with dsd=consult.department_specific_data %}
+            {% if consult.diagnosis_re or consult.diagnosis_le or dsd.diagnosis_primary or dsd.corneal_diagnosis or dsd.neuro_diagnosis or dsd.peds_diagnosis or consult.diagnosis_summary %}
+            <div class="mb-2 px-2 py-1 rounded" style="background:#f0f9ff;border:1px solid #bfdbfe;font-size:.82rem;">
+              <div class="text-muted fw-bold" style="font-size:.68rem;letter-spacing:.04em;margin-bottom:2px;">DIAGNOSIS</div>
+              {% if consult.diagnosis_re %}<div><strong style="color:#2563eb;">RE:</strong> <span class="fw-semibold">{{ consult.diagnosis_re }}</span></div>{% endif %}
+              {% if consult.diagnosis_le %}<div><strong style="color:#dc2626;">LE:</strong> <span class="fw-semibold">{{ consult.diagnosis_le }}</span></div>{% endif %}
+              {% if dsd.diagnosis_primary %}<div><strong class="text-dark">Primary:</strong> <span class="fw-semibold">{{ dsd.diagnosis_primary }}</span></div>{% endif %}
+              {% if dsd.diagnosis_secondary %}<div><strong class="text-muted">Secondary:</strong> <span class="fw-semibold">{{ dsd.diagnosis_secondary }}</span></div>{% endif %}
+              {% if dsd.corneal_diagnosis %}<div><span class="fw-semibold">{{ dsd.corneal_diagnosis }}</span></div>{% endif %}
+              {% if dsd.neuro_diagnosis %}<div><span class="fw-semibold">{{ dsd.neuro_diagnosis }}</span></div>{% endif %}
+              {% if dsd.peds_diagnosis %}<div><span class="fw-semibold">{{ dsd.peds_diagnosis }}</span></div>{% endif %}
+              {% if not consult.diagnosis_re and not consult.diagnosis_le and not dsd.diagnosis_primary and not dsd.corneal_diagnosis and not dsd.neuro_diagnosis and not dsd.peds_diagnosis and consult.diagnosis_summary %}
+              <span class="fw-semibold">{{ consult.diagnosis_summary }}</span>
+              {% endif %}
             </div>
             {% endif %}
             {% endwith %}

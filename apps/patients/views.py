@@ -559,19 +559,12 @@ def patient_detail_view(request, patient_id):
 
     consultations_by_dept = sorted(dept_groups.items(), key=lambda x: dept_sort_key(x[0]))
 
-    # Latest diagnosis summary — shown prominently in patient banner
-    # Search ANY consultation (not just COMPLETED — PAUSED/IN_PROGRESS also have diagnoses)
-    _last_dx_consult = consultations.exclude(
-        diagnosis_summary=''
-    ).values_list('diagnosis_summary', flat=True).first()
-    last_dx_summary = _last_dx_consult or ''
-    # Fallback: check department_specific_data.diagnosis_summary
-    if not last_dx_summary:
-        for c in consultations:
-            _dsd = c.department_specific_data or {}
-            if _dsd.get('diagnosis_summary'):
-                last_dx_summary = _dsd['diagnosis_summary']
-                break
+    # Latest diagnosis — shown in patient banner (RE/LE or legacy summary)
+    _last_dx_consult_obj = None
+    for _c in consultations:
+        if _c.diagnosis_re or _c.diagnosis_le or _c.diagnosis_summary:
+            _last_dx_consult_obj = _c
+            break
 
     # Latest optical prescription for the summary banner
     try:
@@ -851,7 +844,7 @@ def patient_detail_view(request, patient_id):
         'latest_invoice_status': latest_invoice_status,
         'documents': documents,
         'patient_consents': patient_consents,
-        'last_dx_summary': last_dx_summary,
+        'latest_dx_consult': _last_dx_consult_obj,
     })
 
 

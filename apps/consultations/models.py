@@ -95,9 +95,21 @@ class Consultation(AuditModel):
     )
 
     # ── Assessment & Plan ─────────────────────────────────────────────────────
+    diagnosis_re = models.CharField(
+        max_length=255, blank=True,
+        help_text='Right eye diagnosis (free text)',
+    )
+    diagnosis_le = models.CharField(
+        max_length=255, blank=True,
+        help_text='Left eye diagnosis (free text)',
+    )
+    diagnosis_general = models.CharField(
+        max_length=255, blank=True,
+        help_text='General / systemic diagnosis (free text)',
+    )
     diagnosis_summary = models.CharField(
         max_length=500, blank=True,
-        help_text='Quick diagnosis summary e.g. "RE: Glaucoma suspect | LE: Dry eye"',
+        help_text='Auto-built from RE/LE/General fields',
     )
     diagnoses = models.ManyToManyField(
         Diagnosis,
