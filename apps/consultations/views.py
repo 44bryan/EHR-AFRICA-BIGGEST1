@@ -896,6 +896,16 @@ def consultation_detail_view(request, pk):
         except Exception:
             pass
 
+    # ── Refraction data from this visit (optometrist's consultation) ──
+    _refraction_data = {}
+    if consultation.visit:
+        _refrac_consult = Consultation.objects.filter(
+            visit=consultation.visit, is_deleted=False,
+            department__code__in=['REFRAC', 'PEDS_REFRAC', 'LOW_VIS', 'ORTHO'],
+        ).order_by('-consultation_date').first()
+        if _refrac_consult and _refrac_consult.department_specific_data:
+            _refraction_data = _refrac_consult.department_specific_data
+
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
         'note_form': note_form,
@@ -907,6 +917,7 @@ def consultation_detail_view(request, pk):
         'visit': consultation.visit,
         'patient': consultation.patient,
         'active_rooms': active_rooms,
+        'refraction_data': _refraction_data,
         'procedures': procedures,
         'prev_consultations': prev_consultations,
         'procedure_types': ProcedureRecord.ProcedureType.choices,
