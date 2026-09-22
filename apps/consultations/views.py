@@ -403,6 +403,10 @@ def consultation_create_view(request, patient_id):
             ef['pupils'] = dept_data.get('pupils', '')
             ef['ocular_motility'] = dept_data.get('ocular_motility', '')
             consultation.examination_findings = ef
+            # Sync dept_diagnosis_summary → model-level diagnosis_summary
+            _dept_dx = dept_data.get('diagnosis_summary', '')
+            if _dept_dx and not consultation.diagnosis_summary:
+                consultation.diagnosis_summary = _dept_dx
             consultation.status = ConsultationStatus.IN_PROGRESS
             consultation.save()
             visit.status = 'IN_CONSULTATION'
@@ -677,6 +681,13 @@ def consultation_create_view(request, patient_id):
                 val = getattr(referring_consult, field, '')
                 if val:
                     initial[field] = val
+        # Auto-carry-forward diagnosis_summary from most recent consultation
+        if prev_consultations:
+            for _pc in prev_consultations:
+                _ds = _pc.diagnosis_summary or (_pc.department_specific_data or {}).get('diagnosis_summary', '')
+                if _ds:
+                    initial['diagnosis_summary'] = _ds
+                    break
         form = ConsultationForm(initial=initial)
 
     from apps.patients.models import PatientMedication, PatientAllergy
@@ -704,6 +715,7 @@ def consultation_create_view(request, patient_id):
         'latest_diagnoses_re': latest_diagnoses_re[:5],
         'latest_diagnoses_le': latest_diagnoses_le[:5],
         'latest_diagnoses_be': latest_diagnoses_be[:5],
+        'last_dx_summary': initial.get('diagnosis_summary', ''),
     })
 
 
@@ -893,6 +905,11 @@ def consultation_edit_view(request, pk):
                     combined.get('iop_le') or combined.get('iop_os') or
                     ef['intraocular_pressure'].get('left', ''))
                 c.examination_findings = ef
+            # Sync dept_diagnosis_summary → model-level diagnosis_summary
+            if dept_data:
+                _dept_dx_e = dept_data.get('diagnosis_summary', '')
+                if _dept_dx_e and not c.diagnosis_summary:
+                    c.diagnosis_summary = _dept_dx_e
             c.save()
 
             # ── Push refraction VA back to visit.vital_signs on edit too ────

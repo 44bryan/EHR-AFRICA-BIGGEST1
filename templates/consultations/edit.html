@@ -52,8 +52,9 @@
   </div>
 </div>
 
-<!-- Triage vitals + Latest diagnoses bar -->
-{% if consultation.visit.vital_signs or latest_diagnoses_re or latest_diagnoses_le %}
+<!-- Triage vitals + Last diagnosis bar -->
+{% with dx_display=consultation.diagnosis_summary|default:consultation.department_specific_data.diagnosis_summary %}
+{% if consultation.visit.vital_signs or dx_display %}
 <div class="alert alert-info py-2 px-3 mb-3 small">
   <div class="d-flex flex-wrap gap-3 align-items-center">
     {% if consultation.visit.vital_signs %}
@@ -70,16 +71,16 @@
     {% if v.weight %}<span>Wt: {{ v.weight }} kg</span>{% endif %}
     {% endwith %}
     {% endif %}
-    {% if latest_diagnoses_re or latest_diagnoses_le %}
+    {% if dx_display %}
     <span class="border-start ps-3 ms-auto" style="border-color:rgba(0,0,0,.15) !important;">
       <i class="bi bi-eye-fill text-danger me-1"></i><strong>Dx:</strong>
-      {% for ld in latest_diagnoses_re %}<span class="badge ms-1" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;font-size:.7rem;">RE {{ ld.diagnosis.description|truncatechars:35 }}</span>{% endfor %}
-      {% for ld in latest_diagnoses_le %}<span class="badge ms-1" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;font-size:.7rem;">LE {{ ld.diagnosis.description|truncatechars:35 }}</span>{% endfor %}
+      <span class="fw-semibold" style="color:#881337;">{{ dx_display }}</span>
     </span>
     {% endif %}
   </div>
 </div>
 {% endif %}
+{% endwith %}
 
 {# ── Investigation results panel — shown when resuming with results available ── #}
 {% if investigation_orders %}
@@ -454,6 +455,15 @@
       </div>
       <div id="bodyMgmt" class="card-body">
         <div class="row g-3">
+          <!-- ── Diagnosis Summary — quick glance field ── -->
+          <div class="col-12">
+            <label class="form-label fw-bold small mb-1">
+              <i class="bi bi-eye me-1 text-danger"></i>Diagnosis Summary
+              <span class="text-muted fw-normal ms-1">(quick glance — carried forward to next visit)</span>
+            </label>
+            {{ form.diagnosis_summary }}
+          </div>
+
           {# Management Plan text — hidden for ophthalmology (Section 10 treatment chips handle this) #}
           {% if dept_code != 'GEN_OPH' and dept_code != 'RETINA' and dept_code != 'GLAUC' and dept_code != 'GLAUCOMA' and dept_code != 'REFRAC' and dept_code != 'PEDS' and dept_code != 'PEDS_OPH' and dept_code != 'UVEITIS' and dept_code != 'CORNEA' and dept_code != 'OCULOPLASTY' and dept_code != 'NEURO_OPH' and dept_code != 'CATARACT' and dept_code != 'LOW_VIS' %}
           <div class="col-12">

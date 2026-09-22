@@ -95,6 +95,10 @@ class Consultation(AuditModel):
     )
 
     # ── Assessment & Plan ─────────────────────────────────────────────────────
+    diagnosis_summary = models.CharField(
+        max_length=500, blank=True,
+        help_text='Quick diagnosis summary e.g. "RE: Glaucoma suspect | LE: Dry eye"',
+    )
     diagnoses = models.ManyToManyField(
         Diagnosis,
         through='ConsultationDiagnosis',

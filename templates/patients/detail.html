@@ -201,26 +201,11 @@
           <span class="pt-pill" style="background:#dc2626;color:#fff;border:none;"><i class="bi bi-x-circle-fill me-1"></i>OUTSTANDING</span>
         {% endif %}
       </div>
-      {% if latest_diagnoses_re or latest_diagnoses_le %}
-      <div class="d-flex flex-wrap gap-3 mt-2" style="font-size:.75rem;">
-        {% if latest_diagnoses_re %}
-        <div>
-          <i class="bi bi-eye-fill me-1" style="color:#93c5fd;"></i>
-          <span class="fw-bold" style="color:#93c5fd;">RE:</span>
-          {% for ld in latest_diagnoses_re %}
-          <span class="pt-pill" style="background:rgba(37,99,235,.25);border-color:rgba(37,99,235,.4);color:#bfdbfe;">{{ ld.diagnosis.description|truncatechars:45 }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
-        {% if latest_diagnoses_le %}
-        <div>
-          <i class="bi bi-eye-fill me-1" style="color:#fca5a5;"></i>
-          <span class="fw-bold" style="color:#fca5a5;">LE:</span>
-          {% for ld in latest_diagnoses_le %}
-          <span class="pt-pill" style="background:rgba(220,38,38,.25);border-color:rgba(220,38,38,.4);color:#fecaca;">{{ ld.diagnosis.description|truncatechars:45 }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
+      {% if last_dx_summary %}
+      <div class="mt-2" style="font-size:.78rem;">
+        <i class="bi bi-eye-fill me-1" style="color:#fca5a5;"></i>
+        <span class="fw-bold" style="color:#93c5fd;">Last Dx:</span>
+        <span class="pt-pill" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#e2e8f0;font-size:.75rem;">{{ last_dx_summary }}</span>
       </div>
       {% endif %}
     </div>
@@ -300,15 +285,19 @@
 {# ── Diagnosis Quick View — latest diagnoses without scrolling ── #}
 {% with latest_consult=consultations.0 %}
 {% if latest_consult %}
-{% with diags=latest_consult.consultation_diagnoses.all %}
-{% if diags %}
+{% with diags=latest_consult.consultation_diagnoses.all dx_sum=latest_consult.diagnosis_summary %}
+{% if diags or dx_sum %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3 px-3 py-2 rounded-3" style="background:#f0f4ff;border-left:4px solid #3b82f6;">
   <span class="fw-bold small text-primary"><i class="bi bi-clipboard2-pulse me-1"></i>Latest Dx:</span>
+  {% if diags %}
   {% for cd in diags %}
   <span class="{% if cd.is_primary %}fw-bold text-danger{% else %}fw-semibold text-dark{% endif %}" style="font-size:.82rem;">
     {% if cd.is_primary %}<i class="bi bi-star-fill" style="font-size:.55rem;color:#dc3545;"></i> {% endif %}{{ cd.diagnosis.name }}{% if cd.laterality and cd.laterality != 'NA' %} <span class="text-muted" style="font-size:.65rem;">({{ cd.laterality }})</span>{% endif %}{% if not forloop.last %}<span class="text-muted mx-1">·</span>{% endif %}
   </span>
   {% endfor %}
+  {% elif dx_sum %}
+  <span class="fw-semibold text-dark" style="font-size:.82rem;">{{ dx_sum }}</span>
+  {% endif %}
   <span class="text-muted ms-auto" style="font-size:.65rem;">{{ latest_consult.consultation_date|date:"d M Y" }} · Dr. {{ latest_consult.consulting_doctor.last_name|default:"" }}</span>
 </div>
 {% endif %}
@@ -578,6 +567,11 @@
                 {{ cd.diagnosis.description|truncatechars:60 }}
               </span>
               {% endfor %}
+            </div>
+            {% elif consult.diagnosis_summary %}
+            <div class="mb-2">
+              <span class="text-muted small fw-semibold">Diagnosis: </span>
+              <span class="diag-badge">{{ consult.diagnosis_summary }}</span>
             </div>
             {% endif %}
             {% endwith %}
@@ -1017,6 +1011,11 @@ function _c(){if(!document.querySelector("#page-content-wrapper canvas, canvas[i
                 {{ cd.diagnosis.description|truncatechars:60 }}
               </span>
               {% endfor %}
+            </div>
+            {% elif consult.diagnosis_summary %}
+            <div class="mb-2">
+              <span class="text-muted small fw-semibold">Diagnosis: </span>
+              <span class="diag-badge">{{ consult.diagnosis_summary }}</span>
             </div>
             {% endif %}
             {% endwith %}
